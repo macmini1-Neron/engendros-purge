@@ -966,9 +966,18 @@ class EnemyManager {
 
   _bossTank(e, dt) {
     const pp = this.game.player.pos;
-    const toP = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z);
-    const dist = toP.length() || 1; toP.multiplyScalar(1 / dist);
-    let desired = Math.atan2(toP.x, toP.z);                 // heading toward player
+
+    // Task 14: entrance steering — redirect steering goal to arena center until close enough
+    if (e.entering) {
+      const gd = Math.hypot(e.entryTarget.x - e.pos.x, e.entryTarget.z - e.pos.z);
+      if (gd < 8) e.entering = false;
+    }
+    const goal = e.entering ? e.entryTarget : pp;
+
+    const toPlayer = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z);
+    const dist = toPlayer.length() || 1;                     // always dist-to-player (for combat range checks)
+    const toGoal = new THREE.Vector3(goal.x - e.pos.x, 0, goal.z - e.pos.z).normalize();
+    let desired = Math.atan2(toGoal.x, toGoal.z);            // heading toward goal
 
     // whisker rays for obstacle avoidance (around buildings)
     const probe = (ang) => {
@@ -1012,6 +1021,10 @@ class EnemyManager {
       else e.pos.z += (e.pos.z < (b.min.z + b.max.z) / 2 ? -pz : pz);
     }
 
+    // Task 14: engine rumble — low cadence idle/drive rumble
+    e._engT = (e._engT || 0) - dt;
+    if (e._engT <= 0) { e._engT = 0.28; this.game.audio.tone(42, 0.26, 'sawtooth', 0.05 + (Math.abs(spd) > 0.1 ? 0.04 : 0)); }
+
     // apply transform + boss bar
     e.mesh.position.set(e.pos.x, 0, e.pos.z);
     e.mesh.rotation.y = e.hullYaw;
@@ -1025,6 +1038,9 @@ class EnemyManager {
     let dT = ((want - e.turYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     e.turYaw += Math.min(Math.abs(dT), (enraged ? 40 : 28) * Math.PI / 180 * dt) * Math.sign(dT);
     if (e.mesh.userData.turret) e.mesh.userData.turret.rotation.y = e.turYaw - e.hullYaw; // turret is child of hull-rotated root
+    // Task 14: servo whir when turret is slewing
+    e._servoT = (e._servoT || 0) - dt;
+    if (Math.abs(dT) > 0.05 && e._servoT <= 0) { e._servoT = 0.18; this.game.audio.tone(220, 0.12, 'square', 0.03); }
     // gun elevation toward player height
     const muzzleY = e.pos.y + 2.4, wantPitch = Math.atan2((pp.y + 1) - muzzleY, dist);
     e.gunPitch += clamp(wantPitch - e.gunPitch, -30 * Math.PI / 180 * dt, 30 * Math.PI / 180 * dt);
@@ -2228,6 +2244,11 @@ class WaveManager {
       const e = this.game.enemies.spawn('tank', pos, Math.round(ENEMY_TYPES.tank.armorHP * hpScale), ENEMY_TYPES.tank.speed);
       e.armorHP = e.armorHPmax = Math.round(ENEMY_TYPES.tank.armorHP * hpScale);
       e.mitriHP = e.mitriHPmax = Math.round(ENEMY_TYPES.tank.mitriHP * Math.min(hpScale, 2.0)); // cap so capture stays viable late-game
+      // Task 14: dramatic entrance — tank rolls in from spawn edge toward arena center
+      e.entering = true;
+      e.entryTarget = { x: 0, z: 0 }; // plaza/arena center
+      this.game.hud.bigMessage('T-90M «MITRI» ROLLS IN', 'armored boss inbound');
+      this.game.audio.tone(40, 0.6, 'sawtooth', 0.35); // low engine roar entrance sting
     } else {
       this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
     }
