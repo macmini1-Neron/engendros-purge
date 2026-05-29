@@ -835,6 +835,7 @@ class EnemyManager {
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       if (!e.alive) { this.active.splice(i, 1); continue; }
+      if (e.isTank) { this._bossTank(e, dt); continue; }
       let tgt = pp, tgtId = 'host'; const _mp = this.game.mp; if (_mp && _mp.active && _mp.isHost) { const _np = _mp.nearestPlayer(e.pos.x, e.pos.z); if (_np) { tgt = _np.pos; tgtId = _np.id; } } e._tgtId = tgtId;
       let dx = tgt.x - e.pos.x, dz = tgt.z - e.pos.z;
       const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;
@@ -896,33 +897,7 @@ class EnemyManager {
 
       // mini-boss elites borrow the boss bar (no laser / no phase-2)
       if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);
-      // --- BOSS TOLO behaviour ---
-      if (e.def.boss) {
-        this.game.hud.setBoss(e.hp / e.maxHp, e.name);
-        if (e.phase === 1 && e.hp <= e.maxHp * 0.5) { e.phase = 2; e.addCD = 0.6; this.game.hud.bigMessage('TOLO ENRAGED', 'he summons mini-Tolos!'); }
-        // laser cannon charging up out of the belly target, then firing
-        if (e.charging > 0) {
-          e.charging -= dt;
-          if (e.mesh.material.emissive) { e.mesh.material.emissive.setHex(0xff2010); e.mesh.material.emissiveIntensity = 1.3 * (1 - e.charging / 0.85); }
-          if (e.charging <= 0) this._bossLaser(e);
-        } else {
-          if (e.mesh.material.emissiveIntensity > 0.02) e.mesh.material.emissiveIntensity *= 0.85;
-          e.laserCD -= dt;
-          if (e.laserCD <= 0) {
-            e.laserCD = e.phase === 2 ? 2.6 : 3.8; e.charging = 0.85;
-            e.aim.set(pp.x - e.pos.x, (pp.y + 1.0) - (e.pos.y + 1.2 * e.scale), pp.z - e.pos.z).normalize();
-          }
-        }
-        if (e.beamLife > 0 && e._beam) { e.beamLife -= dt; e._beam.material.opacity = Math.max(0, e.beamLife / 0.18); if (e.beamLife <= 0) e._beam.visible = false; }
-        // phase 2: keep summoning small fast mini-Tolos around himself
-        if (e.phase === 2) {
-          e.addCD -= dt;
-          if (e.addCD <= 0 && this.active.length < 18) {
-            e.addCD = 6;
-            for (let k = 0; k < 3; k++) { const a = rr(0, TAU); this.spawn('minitolo', { x: e.pos.x + Math.cos(a) * 3.5, y: 0, z: e.pos.z + Math.sin(a) * 3.5 }, ENEMY_TYPES.minitolo.hp, ENEMY_TYPES.minitolo.speed); }
-          }
-        }
-      }
+      if (e.def.boss) this._bossTolo(e, dt);
     }
   }
 
@@ -944,6 +919,39 @@ class EnemyManager {
     const t = clamp((p.x - belly.x) * dir.x + (p.y + 1.0 - belly.y) * dir.y + (p.z - belly.z) * dir.z, 0, len);
     const dl = Math.hypot(p.x - (belly.x + dir.x * t), p.y + 1.0 - (belly.y + dir.y * t), p.z - (belly.z + dir.z * t));
     if (dl < 1.7) this.game.player.hurt(e.phase === 2 ? 26 : 18);
+  }
+
+  _bossTolo(e, dt) {
+    const pp = this.game.player.pos;
+    this.game.hud.setBoss(e.hp / e.maxHp, e.name);
+    if (e.phase === 1 && e.hp <= e.maxHp * 0.5) { e.phase = 2; e.addCD = 0.6; this.game.hud.bigMessage('TOLO ENRAGED', 'he summons mini-Tolos!'); }
+    // laser cannon charging up out of the belly target, then firing
+    if (e.charging > 0) {
+      e.charging -= dt;
+      if (e.mesh.material.emissive) { e.mesh.material.emissive.setHex(0xff2010); e.mesh.material.emissiveIntensity = 1.3 * (1 - e.charging / 0.85); }
+      if (e.charging <= 0) this._bossLaser(e);
+    } else {
+      if (e.mesh.material.emissiveIntensity > 0.02) e.mesh.material.emissiveIntensity *= 0.85;
+      e.laserCD -= dt;
+      if (e.laserCD <= 0) {
+        e.laserCD = e.phase === 2 ? 2.6 : 3.8; e.charging = 0.85;
+        e.aim.set(pp.x - e.pos.x, (pp.y + 1.0) - (e.pos.y + 1.2 * e.scale), pp.z - e.pos.z).normalize();
+      }
+    }
+    if (e.beamLife > 0 && e._beam) { e.beamLife -= dt; e._beam.material.opacity = Math.max(0, e.beamLife / 0.18); if (e.beamLife <= 0) e._beam.visible = false; }
+    // phase 2: keep summoning small fast mini-Tolos around himself
+    if (e.phase === 2) {
+      e.addCD -= dt;
+      if (e.addCD <= 0 && this.active.length < 18) {
+        e.addCD = 6;
+        for (let k = 0; k < 3; k++) { const a = rr(0, TAU); this.spawn('minitolo', { x: e.pos.x + Math.cos(a) * 3.5, y: 0, z: e.pos.z + Math.sin(a) * 3.5 }, ENEMY_TYPES.minitolo.hp, ENEMY_TYPES.minitolo.speed); }
+      }
+    }
+  }
+
+  _bossTank(e, dt) {
+    this.game.hud.setBoss(e.armorHP / e.armorHPmax, e.name);
+    // movement + attacks added in the next task
   }
 
   rayHit(origin, dir, maxDist) {
@@ -2299,6 +2307,152 @@ class WeaponPreview {
     const d = this.dist;
     this.cam.position.set(d * 0.55, d * 0.42, d * 0.8); this.cam.lookAt(0, 0, 0);
     this.renderer.render(this.scene, this.cam);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin asset viewer — orbit any 3D asset (weapons model+POV, enemy skins, props)
+// and audition every sound. Opened from the menu; its own WebGL canvas.
+// ---------------------------------------------------------------------------
+class AssetViewer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.scene = new THREE.Scene();
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x55606e, 1.2));
+    const d1 = new THREE.DirectionalLight(0xfff1d0, 1.8); d1.position.set(4, 6, 5); this.scene.add(d1);
+    const d2 = new THREE.DirectionalLight(0x90b0ff, 0.6); d2.position.set(-5, -2, -4); this.scene.add(d2);
+    this.cam = new THREE.PerspectiveCamera(35, 1.6, 0.01, 4000);
+    this.holder = new THREE.Group(); this.scene.add(this.holder);
+    this.spin = 0.6; this.dist = 3; this.pov = false; this.dragX = 0; this.dragY = 0;
+    this._drag = false; this._lx = 0; this._ly = 0;
+    canvas.addEventListener('pointerdown', (e) => { this._drag = true; this._lx = e.clientX; this._ly = e.clientY; try { canvas.setPointerCapture(e.pointerId); } catch (x) {} });
+    const up = () => { this._drag = false; };
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointerleave', up);
+    canvas.addEventListener('pointermove', (e) => { if (!this._drag) return; this.dragY += (e.clientX - this._lx) * 0.01; this.dragX = clamp(this.dragX + (e.clientY - this._ly) * 0.01, -1.3, 1.3); this._lx = e.clientX; this._ly = e.clientY; });
+    this.setSize();
+  }
+  setSize() {
+    const w = this.canvas.clientWidth || 600, h = this.canvas.clientHeight || 380;
+    this.renderer.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix();
+  }
+  clear() {
+    while (this.holder.children.length) {
+      const c = this.holder.children.pop();
+      c.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); });
+    }
+  }
+  show(obj, pov = false) {
+    this.clear(); this.pov = pov; this.dragX = 0; this.dragY = 0; this.spin = 0.6;
+    obj.traverse((o) => { if (o.material) { o.material.depthTest = true; o.renderOrder = 0; } });
+    this.holder.add(obj);
+    if (pov) { obj.position.set(0.3, -0.27, -0.72); }
+    else {
+      const box = new THREE.Box3().setFromObject(obj);
+      const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+      obj.position.sub(ctr);
+      this.dist = Math.max(size.x, size.y, size.z, 0.5) * 1.6 + 0.4;
+    }
+  }
+  render(dt) {
+    if (this.pov) {
+      this.cam.fov = 75; this.cam.position.set(0, 0, 0.0001); this.cam.up.set(0, 1, 0); this.cam.lookAt(0, -0.05, -1);
+      this.holder.rotation.set(0, 0, 0);
+    } else {
+      this.spin += dt * 0.5; this.holder.rotation.y = this.spin + this.dragY; this.holder.rotation.x = this.dragX;
+      const d = this.dist; this.cam.fov = 35; this.cam.position.set(d * 0.5, d * 0.42, d * 0.85); this.cam.up.set(0, 1, 0); this.cam.lookAt(0, 0, 0);
+    }
+    this.cam.updateProjectionMatrix();
+    this.renderer.render(this.scene, this.cam);
+  }
+}
+
+class Admin {
+  constructor(game) {
+    this.game = game; this.tab = 'weapons'; this.pov = false; this.curIdx = 0;
+    this.viewer = new AssetViewer(document.getElementById('adminCanvas'));
+    this.tabsEl = document.getElementById('adminTabs');
+    this.listEl = document.getElementById('adminList');
+    this.nameEl = document.getElementById('adminName');
+    this.povBtn = document.getElementById('adminPovBtn');
+    this._buildTabs();
+    this.povBtn.addEventListener('click', () => { this.pov = !this.pov; this.povBtn.classList.toggle('on', this.pov); this._select(this.curIdx); });
+  }
+  _buildTabs() {
+    this.tabsEl.innerHTML = '';
+    for (const [id, label] of [['weapons', 'Weapons'], ['enemies', 'Enemies / Skins'], ['props', 'Props'], ['sounds', 'Sounds']]) {
+      const t = document.createElement('div'); t.className = 'tab' + (id === this.tab ? ' on' : ''); t.textContent = label;
+      t.addEventListener('click', () => { this.tab = id; for (const c of this.tabsEl.children) c.classList.toggle('on', c.textContent === label); this._render(); });
+      this.tabsEl.appendChild(t);
+    }
+  }
+  open() { this.game.audio.init(); this.game.ui.show('admin'); this.viewer.setSize(); this._render(); }
+  _crate() {
+    const cb = new MeshBuilder();
+    cb.box(1.4, 1.2, 1.4, 0, 0.6, 0, 0x4a5a32, { tint: 0.04 });
+    cb.box(1.5, 0.16, 1.5, 0, 1.18, 0, 0x6a3a1a); cb.box(1.5, 0.16, 1.5, 0, 0.04, 0, 0x6a3a1a);
+    cb.box(0.16, 1.3, 0.16, 0.62, 0.6, 0.62, 0xffcf5c); cb.box(0.16, 1.3, 0.16, -0.62, 0.6, -0.62, 0xffcf5c);
+    return new THREE.Mesh(cb.build(), voxelMaterial({ emissive: 0x3a2a00, emissiveIntensity: 0.3 }));
+  }
+  _items() {
+    const g = this.game;
+    if (this.tab === 'weapons') return WEAPON_ORDER.map((k) => ({ name: WEAPONS[k].name, sub: WEAPONS[k].class, make: () => { const grp = new THREE.Group(); grp.add(buildViewmodel(WEAPONS[k])); const sm = WEAPONS[k].spinMag; if (sm) { const mg = buildMag(sm); mg.position.set(sm.x, sm.y, sm.z); grp.add(mg); } return grp; } }));
+    if (this.tab === 'enemies') {
+      const list = ENGENDRO_COLORS.map((col) => ({ name: col.name, sub: 'engendro skin', make: () => new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()) }));
+      list.push({ name: 'BOSS TOLO', sub: 'boss', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'Tolo' }, 'boss'), voxelMaterial()) });
+      list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'mini' }, 'normal'), voxelMaterial()) });
+      list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: () => new THREE.Mesh(buildEngendro(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length], 'exploder'), voxelMaterial()) });
+      list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
+      return list;
+    }
+    if (this.tab === 'props') return [
+      { name: 'Su-24M Fencer', sub: 'supply plane', make: () => buildSu24() },
+      { name: 'Radio (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('radio') },
+      { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
+      { name: 'Lootbox Key', sub: 'pickup', make: () => g.loot._keyMesh() },
+      { name: 'Medkit', sub: 'pickup', make: () => g.loot._pickupMesh('medkit') },
+      { name: 'Ammo box', sub: 'pickup', make: () => g.loot._pickupMesh('ammo') },
+      { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
+      { name: 'Flare', sub: 'thrown light', make: () => new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff6a2a })) },
+    ];
+    return [];
+  }
+  _sounds() {
+    const a = this.game.audio;
+    return [
+      ['📻 Radio call (Su-24)', () => a.radioCall()], ['Gunshot', () => a.gunshot({})], ['Explosion', () => a.explosion()],
+      ['Reload click', () => a.reloadClick()], ['Reload in', () => a.reloadIn()], ['Dry fire', () => a.dryFire()],
+      ['Hit marker', () => a.hitMarker()], ['Headshot', () => a.headshot()], ['Enemy hurt', () => a.enemyHurt()],
+      ['Enemy die', () => a.enemyDie()], ['Enemy growl', () => a.enemyGrowl()], ['Player hurt', () => a.playerHurt()],
+      ['Footstep', () => a.footstep()], ['Jump', () => a.jump()], ['Land (hard)', () => a.land(true)],
+      ['UI click', () => a.uiClick()], ['UI hover', () => a.uiHover()], ['Buy', () => a.buy()], ['No money', () => a.noMoney()],
+      ['Wave start', () => a.waveStart()], ['Wave clear', () => a.waveClear()], ['Game over', () => a.gameOver()],
+    ];
+  }
+  _render() {
+    this.listEl.innerHTML = '';
+    const isSound = this.tab === 'sounds';
+    this.povBtn.style.display = this.tab === 'weapons' ? '' : 'none';
+    this.viewer.canvas.style.display = isSound ? 'none' : '';
+    if (isSound) {
+      this.nameEl.textContent = '🔊 Click a sound to play it';
+      for (const [label, fn] of this._sounds()) { const el = document.createElement('div'); el.className = 'arow snd'; el.innerHTML = `<span>${label}</span>`; el.addEventListener('click', fn); this.listEl.appendChild(el); }
+      return;
+    }
+    this._cache = this._items(); this._rows = [];
+    this._cache.forEach((it, i) => {
+      const el = document.createElement('div'); el.className = 'arow'; el.innerHTML = `<span>${it.name}</span><small>${it.sub || ''}</small>`;
+      el.addEventListener('click', () => this._select(i)); this.listEl.appendChild(el); this._rows.push(el);
+    });
+    if (this._cache.length) this._select(0);
+  }
+  _select(i) {
+    if (!this._cache || !this._cache[i]) return;
+    this.curIdx = i; this._rows.forEach((r, j) => r.classList.toggle('on', j === i));
+    const it = this._cache[i], usePov = this.pov && this.tab === 'weapons';
+    this.viewer.show(it.make(), usePov);
+    this.nameEl.textContent = it.name + (usePov ? '  ·  POV' : '');
   }
 }
 
