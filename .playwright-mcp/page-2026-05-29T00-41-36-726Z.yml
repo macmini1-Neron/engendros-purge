@@ -1,0 +1,50 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic: WAVE 1
+      - generic: $0
+      - generic: 🔑 0
+      - generic: "0"
+    - generic:
+      - generic: BOSS TOLO
+    - generic:
+      - generic: Armor / Health
+      - generic: "100"
+    - generic:
+      - generic: 12 / ∞
+      - generic: LUGER
+      - generic: pistol · slot 1
+    - generic:
+      - generic: BARREL HEAT
+  - generic [ref=e4]:
+    - generic [ref=e5]: ENGENDROS PURGE
+    - generic [ref=e6]: The voodoo plushies woke up hungry. Hold the dusty arena, pop them for stuffing & cash, snatch keys to crack open weapon lootboxes, and gear up between waves.
+    - generic [ref=e7]:
+      - button "▶ PURGE arcade wave modes — special waves, mini-bosses" [ref=e8] [cursor=pointer]:
+        - text: ▶ PURGE
+        - generic [ref=e9]: arcade wave modes — special waves, mini-bosses
+      - button "🌙 THE LONG NIGHT endless survival · day/night · pitch-dark nights" [ref=e10] [cursor=pointer]:
+        - text: 🌙 THE LONG NIGHT
+        - generic [ref=e11]: endless survival · day/night · pitch-dark nights
+    - button "👥 MULTIPLAYERco-op for 2–4 · host or join with a room code" [ref=e12] [cursor=pointer]
+    - button "⚙ SETTINGS" [ref=e13] [cursor=pointer]
+    - generic [ref=e14]:
+      - generic [ref=e15]: WASD move
+      - generic [ref=e16]: Mouse look
+      - generic [ref=e17]: LMB attack
+      - generic [ref=e18]: RMB aim/scope
+      - generic [ref=e19]: R reload
+      - generic [ref=e20]: Space jump
+      - generic [ref=e21]: Shift sprint
+      - generic [ref=e22]: 1-9 weapons
+      - generic [ref=e23]: Wheel cycle
+      - generic [ref=e24]: V melee
+      - generic [ref=e25]: G grenade
+      - generic [ref=e26]: E open lootbox
+      - generic [ref=e27]: B fire mode
+      - generic [ref=e28]: L flashlight
+      - generic [ref=e29]: C flare
+      - generic [ref=e30]: F fullscreen
+      - generic [ref=e31]: Esc pause
+      - generic [ref=e32]: M mute
+  - generic [ref=e33]: Click the canvas to lock the mouse · Esc to pause

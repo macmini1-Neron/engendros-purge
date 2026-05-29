@@ -1,0 +1,41 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic: WAVE 1
+      - generic: $0
+      - generic: 🔑 0
+      - generic: "0"
+    - generic:
+      - generic: BOSS TOLO
+    - generic:
+      - generic: Armor / Health
+      - generic: "100"
+    - generic:
+      - generic: 12 / ∞
+      - generic: LUGER
+      - generic: pistol · slot 1
+    - generic:
+      - generic: BARREL HEAT
+  - generic [ref=e4]:
+    - generic [ref=e5]: ENGENDROS PURGE
+    - generic [ref=e6]: The voodoo plushies woke up hungry. Hold the dusty arena, pop them for stuffing & cash, snatch keys to crack open weapon lootboxes, and gear up between waves.
+    - button "▶ PLAY" [ref=e7] [cursor=pointer]
+    - button "⚙ SETTINGS" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]: WASD move
+      - generic [ref=e11]: Mouse look
+      - generic [ref=e12]: LMB attack
+      - generic [ref=e13]: RMB aim/scope
+      - generic [ref=e14]: R reload
+      - generic [ref=e15]: Space jump
+      - generic [ref=e16]: Shift sprint
+      - generic [ref=e17]: 1-9 weapons
+      - generic [ref=e18]: Wheel cycle
+      - generic [ref=e19]: V melee
+      - generic [ref=e20]: G grenade
+      - generic [ref=e21]: E open lootbox
+      - generic [ref=e22]: B fire mode
+      - generic [ref=e23]: F fullscreen
+      - generic [ref=e24]: Esc pause
+      - generic [ref=e25]: M mute
+  - generic [ref=e26]: Click the canvas to lock the mouse · Esc to pause

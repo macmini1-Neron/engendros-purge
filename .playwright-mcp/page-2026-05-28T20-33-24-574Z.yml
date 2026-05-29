@@ -1,0 +1,35 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic: WAVE 1
+      - generic: $0
+      - generic: 🔑 0
+      - generic: "0"
+    - generic:
+      - generic: Armor / Health
+      - generic: "100"
+    - generic:
+      - generic: 12 / ∞
+      - generic: LUGER
+      - generic: pistol · slot 1
+  - generic [ref=e4]:
+    - generic [ref=e5]: ENGENDROS PURGE
+    - generic [ref=e6]: The voodoo plushies woke up hungry. Hold the dusty arena, pop them for stuffing & cash, snatch keys to crack open weapon lootboxes, and gear up between waves.
+    - button "▶ PLAY" [ref=e7] [cursor=pointer]
+    - generic [ref=e8]:
+      - generic [ref=e9]: WASD move
+      - generic [ref=e10]: Mouse look
+      - generic [ref=e11]: LMB attack
+      - generic [ref=e12]: RMB aim/scope
+      - generic [ref=e13]: R reload
+      - generic [ref=e14]: Space jump
+      - generic [ref=e15]: Shift sprint
+      - generic [ref=e16]: 1-9 weapons
+      - generic [ref=e17]: Wheel cycle
+      - generic [ref=e18]: V melee
+      - generic [ref=e19]: G grenade
+      - generic [ref=e20]: E open lootbox
+      - generic [ref=e21]: F fullscreen
+      - generic [ref=e22]: Esc pause
+      - generic [ref=e23]: M mute
+  - generic [ref=e24]: Click the canvas to lock the mouse · Esc to pause

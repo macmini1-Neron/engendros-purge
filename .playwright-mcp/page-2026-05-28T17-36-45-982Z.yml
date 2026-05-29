@@ -1,0 +1,226 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic:
+        - iframe [ref=e3]:
+          
+        - iframe [ref=e4]:
+          
+  - generic [ref=e5]:
+    - link "Otevřít upoutávku" [ref=e7] [cursor=pointer]:
+      - /url: "#"
+      - img "Otevřít upoutávku" [ref=e8]
+    - generic [ref=e9]:
+      - link "SUPER CENA PŘÍŠEREK" [ref=e10] [cursor=pointer]:
+        - /url: https://web.archive.org/web/20140517025908/http://www.engendros.cz/?page=eshop
+      - link "Zavřít upoutávku" [ref=e11] [cursor=pointer]:
+        - /url: "#"
+      - link [ref=e12] [cursor=pointer]:
+        - /url: "#"
+  - generic:
+    - generic [ref=e13]:
+      - link "Příšerky Engendros - Hádanky o ceny" [ref=e14] [cursor=pointer]:
+        - /url: "?page=hadanky-o-ceny"
+      - img "klikni zde - kup si příšerku" [ref=e15]
+      - link "klikni zde - eshop" [ref=e16] [cursor=pointer]:
+        - /url: "?page=eshop"
+        - img "klikni zde - eshop" [ref=e17]
+    - generic [ref=e18]:
+      - generic:
+        - link "Příšerky Engendros - Hry" [ref=e19] [cursor=pointer]:
+          - /url: "?page=hry"
+        - link "Příšerky Engendros - Chat" [ref=e20] [cursor=pointer]:
+          - /url: "?page=chat"
+        - link "Příšerky Engendros - Soutěže" [ref=e21] [cursor=pointer]:
+          - /url: "?page=souteze"
+      - generic:
+        - generic [ref=e23]: HLAVNÍ MENU
+        - generic [ref=e25]:
+          - list [ref=e26]:
+            - listitem [ref=e27]:
+              - link "domů" [ref=e28] [cursor=pointer]:
+                - /url: "?page=domu"
+            - listitem [ref=e29]:
+              - link "enneagram" [ref=e30] [cursor=pointer]:
+                - /url: "?page=enneagram"
+            - listitem [ref=e31]:
+              - link "test osobnosti" [ref=e32] [cursor=pointer]:
+                - /url: "?page=test"
+            - listitem [ref=e33]:
+              - link "profily příšerek" [ref=e34] [cursor=pointer]:
+                - /url: "?page=profily"
+            - listitem [ref=e35]:
+              - link "Kdo jsou příšerky" [ref=e36] [cursor=pointer]:
+                - /url: "?page=porid-si-svoji-priserku"
+            - listitem [ref=e37]:
+              - link "kde nás koupit" [ref=e38] [cursor=pointer]:
+                - /url: "?page=prodejni-mista"
+            - listitem [ref=e39]:
+              - link "internetové-obchody" [ref=e40] [cursor=pointer]:
+                - /url: "?page=internetove-obchody"
+            - listitem [ref=e41]:
+              - link "E-shop" [ref=e42] [cursor=pointer]:
+                - /url: "?page=eshop"
+            - listitem [ref=e43]:
+              - link "stáhni si" [ref=e44] [cursor=pointer]:
+                - /url: "?page=ke-stazeni"
+            - listitem [ref=e45]:
+              - link "napsali o nás" [ref=e46] [cursor=pointer]:
+                - /url: "?page=napsali-o-priserkach"
+            - listitem [ref=e47]:
+              - link "Příšerky na cestách" [ref=e48] [cursor=pointer]:
+                - /url: "?page=priserky-na-cestach"
+            - listitem [ref=e49]:
+              - link "fotogalerie" [ref=e50] [cursor=pointer]:
+                - /url: "?page=fotogalerie"
+            - listitem [ref=e51]:
+              - link "videogalerie" [ref=e52] [cursor=pointer]:
+                - /url: "?page=video"
+            - listitem [ref=e53]:
+              - link "minikomiks" [ref=e54] [cursor=pointer]:
+                - /url: "?page=komiks"
+            - listitem [ref=e55]:
+              - link "ankety" [ref=e56] [cursor=pointer]:
+                - /url: "?page=ankety"
+            - listitem [ref=e57]:
+              - link "chat" [ref=e58] [cursor=pointer]:
+                - /url: "?page=chat"
+            - listitem [ref=e59]:
+              - link "napište nám" [ref=e60] [cursor=pointer]:
+                - /url: "?page=napiste-nam"
+            - listitem [ref=e61]:
+              - link "návštěvní kniha" [ref=e62] [cursor=pointer]:
+                - /url: "?page=navstevni-kniha"
+          - list [ref=e63]:
+            - listitem [ref=e64]:
+              - link "Online hry" [ref=e65] [cursor=pointer]:
+                - /url: "?page=hry"
+            - listitem [ref=e66]:
+              - link "Hádanky o ceny" [ref=e67] [cursor=pointer]:
+                - /url: "?page=hadanky-o-ceny"
+            - listitem [ref=e68]:
+              - link "Vaše výtvory" [ref=e69] [cursor=pointer]:
+                - /url: "?page=vase-vytvory"
+            - listitem [ref=e70]:
+              - link "Galerie profilů" [ref=e71] [cursor=pointer]:
+                - /url: "?page=galerie-profilu"
+            - listitem [ref=e72]:
+              - link "Můj profil" [ref=e73] [cursor=pointer]:
+                - /url: "?page=profil-uzivatele"
+      - generic:
+        - generic [ref=e76]: PŘIHLÁŠENÍ
+        - generic [ref=e79]:
+          - text: "Přihlašovací jméno:"
+          - textbox [ref=e80]
+          - text: "Heslo:"
+          - textbox [ref=e81]
+          - button "Přihlásit se" [ref=e82]
+          - generic [ref=e83]:
+            - text: Pokud nejsi registrovaný
+            - link "Registruj se" [ref=e84] [cursor=pointer]:
+              - /url: "?page=registrace"
+      - generic:
+        - generic [ref=e87]: NÁVŠTĚVNOST
+        - link "TOPlist" [ref=e90] [cursor=pointer]:
+          - /url: https://web.archive.org/web/20140517025908/http://www.toplist.cz/stat/1121657
+          - img "TOPlist" [ref=e91]
+      - generic:
+        - generic [ref=e94]: Facebook
+        - generic [ref=e96]: "Doporučuje:"
+    - generic [ref=e98]:
+      - generic [ref=e100]:
+        - generic [ref=e101]:
+          - heading "Vydej se na zábavnou cestu za štěstím. Odhal svoje skryté \"Já\" a bav se!" [level=1] [ref=e102]:
+            - text: Vydej se na zábavnou cestu za štěstím.
+            - text: Odhal svoje skryté "Já" a bav se!
+          - generic [ref=e103]:
+            - link [ref=e104] [cursor=pointer]:
+              - /url: "?page=test"
+            - link [ref=e105] [cursor=pointer]:
+              - /url: "?page=porid-si-svoji-priserku"
+            - link [ref=e106] [cursor=pointer]:
+              - /url: "?page=hry"
+          - heading "Poznej sám sebe!" [level=2] [ref=e107]
+          - heading "Zjisti, kdo jsou Tvoji přátelé a blízcí!" [level=2] [ref=e108]
+          - heading "Pošli jim odkaz na test a uvidíš, v čem se podobáte a v čem jste zcela odlišní." [level=2] [ref=e109]:
+            - text: Pošli jim odkaz na
+            - link "test" [ref=e110] [cursor=pointer]:
+              - /url: index.php?page=test
+            - text: a uvidíš, v čem se podobáte a v čem jste zcela odlišní.
+          - generic [ref=e111]:
+            - paragraph [ref=e112]: Hodíte se k sobě se svým partnerem?
+            - paragraph [ref=e113]: Máte správné kamarády?
+            - paragraph [ref=e114]: Skřípe to mezi Vámi v rodině?
+            - paragraph [ref=e115]: Děláte tu správnou práci?
+            - paragraph [ref=e116]:
+              - text: Více napoví výsledek on-line
+              - link "testu" [ref=e117] [cursor=pointer]:
+                - /url: index.php?page=test
+              - text: .
+        - img "Enneagram" [ref=e119]
+        - generic [ref=e120]:
+          - heading "Na těchto stránkách najdete on-line testy, vše o příšerkách Engendros, starodávném Enneagramu a řadu dalších informací. K dispozici máte hry, soutěže, ankety, fotografie, videa a věcičky ke stažení..." [level=3] [ref=e121]
+          - 'heading "Engendros jsou vše co si jen můžete přát: hračky pro kluky, hračky pro holky, hračky do auta, hračky do postele, plyšové hračky. Na jejich stránkách naleznete: hry pro děti, hry, hry online, hry zdarma, hry na PC, tapety na mobil, spořiče, testy online." [level=3] [ref=e122]'
+      - link [ref=e125] [cursor=pointer]:
+        - /url: "?page=video"
+      - generic [ref=e126]:
+        - text: © 1991 - 2010
+        - link "Nekupto s.r.o." [ref=e127] [cursor=pointer]:
+          - /url: https://web.archive.org/web/20140517025908/http://www.nekupto.cz/
+        - text: . Všechna práva autorů vyhrazena. | Coding & Webdesign -
+        - link "ArkAngelMichael" [ref=e128] [cursor=pointer]:
+          - /url: https://web.archive.org/web/20140517025908/http://www.arkangelmichael.net/
+    - generic [ref=e129]:
+      - paragraph [ref=e132]: Je prázdný !!!
+      - generic:
+        - generic [ref=e134]: NOVINKY
+        - generic [ref=e136]:
+          - text: 11-10-2012
+          - generic [ref=e137]:
+            - text: Nová SUPER VÁNOČNÍ CENA všech příšerek. Tak neváhejte a nakupujte v našem
+            - link "e-shopu." [ref=e138] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20140517025908/http://engendros.cz/?page=eshop
+          - text: Příšerky Engendros
+          - text: 11-04-2011
+          - generic [ref=e139]: V sekci VAŠE VÝTVORY byly uveřejněny první soutěžní povídky. Tak si je utíkejte přečíst, jsou opravdu vynikající.
+          - text: Příšerky Engendros
+          - text: 25-03-2011
+          - generic [ref=e140]:
+            - text: Byla spuštěna nová, již čtvrtá soutěž, tak neváhejte a zúčastněte se :).
+            - text: Tentokrát budou mít účastníci za úkol napsat libovolnou povídku na téma Příšerky.
+          - text: Příšerky Engendros
+          - text: 03-11-2010
+          - generic [ref=e141]:
+            - text: Právě probíhají nové soutěže, tak neváhejte a zúčastněte se :).
+            - text: Nyní máte také možnost shlédnout a ohodnotit výtvory ostatních příšerkářů v sekci - VAŠE VÝTVORY
+          - text: Příšerky Engendros
+          - text: 15-10-2010
+          - generic [ref=e142]:
+            - text: "\"Hrejte si, bavte se v nové sekci -"
+            - strong [ref=e143]: Online hry!
+            - text: "\""
+          - text: Příšerky Engendros
+      - generic:
+        - generic [ref=e146]: Doporuč známým
+        - generic [ref=e149]:
+          - text: "Tvé jméno a přijmení:"
+          - textbox [ref=e150]
+          - text: "E-mail známého:"
+          - textbox [ref=e151]
+          - button "Doporučit" [ref=e152]
+      - generic:
+        - generic [ref=e155]: Aktuálně
+        - generic [ref=e156]:
+          - generic [ref=e157]:
+            - text: Dnes je
+            - strong [ref=e158]:
+              - text: sobota
+              - text: 17.5.2014.
+            - text: Svátek má
+            - strong [ref=e159]: Aneta
+          - generic [ref=e160]:
+            - img "Loading" [ref=e162]
+            - link "BlueBoard.cz" [ref=e163] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20140517025908/http://blueboard.cz/
+      - link [ref=e165] [cursor=pointer]:
+        - /url: "?page=enneagram"
