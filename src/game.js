@@ -718,6 +718,7 @@ class World {
     const hw = 2.0, hl = 3.6, h = 1.6;
     this.boxes.push({ min: new THREE.Vector3(pos.x - hw, 0, pos.z - hl), max: new THREE.Vector3(pos.x + hw, h, pos.z + hl), wreck: true });
   }
+  clearWrecks() { this.boxes = this.boxes.filter(b => !b.wreck); }
 }
 
 // ---------------------------------------------------------------------------
@@ -910,6 +911,8 @@ class EnemyManager {
         this.game.effects.explosion(p.clone(), s.radius);
         const pl = this.game.player, dp = Math.hypot(p.x - pl.pos.x, p.z - pl.pos.z);
         if (dp < s.radius) pl.hurt(s.dmg * (1 - dp / s.radius));
+        const ct = this.game.capturedTank;
+        if (ct && ct.hp > 0) { const cd = Math.hypot(p.x - ct.pos.x, p.z - ct.pos.z); if (cd < s.radius) ct.hurt(s.dmg * (1 - cd / s.radius)); }
         if (this.game.engine.shake) this.game.engine.shake(0.4);
         this.game.engine.scene.remove(s.mesh); this.shells.splice(i, 1);
       } else if (p.y < -5) { this.game.engine.scene.remove(s.mesh); this.shells.splice(i, 1); }
@@ -1273,11 +1276,12 @@ class EnemyManager {
     this.game.hud.hideBoss();
     this.game.hud.bigMessage('TANK COMMANDEERED!', 'press E to board');
     this.game.onEnemyKilled(e, attacker);
+    if (this.game.capturedTank && this.game.capturedTank.forceReset) this.game.capturedTank.forceReset();
     this.game.capturedTank = new CapturedTank(this.game, e.tankGroup, e.pos.clone(), e.hullYaw || 0);
     e.tankGroup = null; // ownership transferred — clearAll/pool won't touch it; next tank spawn builds fresh
     return true;
   }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this._aimRing) this._aimRing.material.opacity = 0; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
@@ -3246,6 +3250,9 @@ class CapturedTank {
     this.active = null;
     this.seats.driver.occupant = null;
     this.seats.gunner.occupant = null;
+    this._showOverlay('none');
+    if (this.game.hud) this.game.hud.setTankHp(-1);
+    if (this.group && this.group.parent) this.group.parent.remove(this.group);
   }
 }
 
@@ -3835,6 +3842,7 @@ class Game {
     this.enemies.clearAll(); this.loot.reset();
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
+    this.world.clearWrecks && this.world.clearWrecks();
     this.weapons.resetLoadout();
     this.waves.reset();
     this._clearFlares();
@@ -3903,6 +3911,7 @@ class Game {
     const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.mountedGun.forceReset();
+    if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.enemies.clearAll(); this.audio.stopMusic(); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
   }
@@ -3966,6 +3975,8 @@ class Game {
   _mpGameOver() {
     if (this.state === 'dead') return;
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.mountedGun.forceReset();
+    if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.audio.gameOver(); this.audio.stopMusic(); this.hud.show(false);
     const lab = document.getElementById('mp-labels'); if (lab) lab.style.display = 'none';
     const rec = document.getElementById('goRecord'); if (rec) rec.innerHTML = 'the whole squad got unstuffed';
@@ -3989,6 +4000,7 @@ class Game {
   onPlayerDead() {
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.mountedGun.forceReset();
+    if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.audio.gameOver(); this.audio.stopMusic(); this.hud.show(false);
     // persistent meta (per mode) + lifetime tallies
     const m = this.meta; m.kills = (m.kills || 0) + this.kills; m.runs = (m.runs || 0) + 1;
