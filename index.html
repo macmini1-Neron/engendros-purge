@@ -68,6 +68,11 @@
     #armorfill { height: 100%; width: 0%; background: linear-gradient(90deg,#4f8fe0,#9fd0ff); transition: width .12s; }
     #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg, #e8533a, #ffb24a); transition: width .12s; }
     #hpnum { font-size: 20px; font-weight: bold; margin-top: 3px; }
+    #hungerbar { height: 9px; margin-top: 4px; }
+    #hungerfill { height: 100%; width: 100%; background: linear-gradient(90deg,#8a5a2a,#dfa050); transition: width .12s, filter .2s; }
+    #survival { font-size: 12px; font-weight: 800; margin-top: 4px; min-height: 14px; letter-spacing: .5px; }
+    #survival .leg { color: #ff6a52; }
+    #survival .spl { color: #c9a8ff; }
     #ammonum { font-size: 34px; font-weight: bold; line-height: 1; }
     #ammonum .res { font-size: 18px; opacity: .65; font-weight: normal; }
     #wepname { font-size: 14px; letter-spacing: 1px; margin-top: 4px; font-weight: 800; }
@@ -103,6 +108,10 @@
     #interact b { color: var(--gold); }
 
     #vignette { position: fixed; inset: 0; z-index: 9; pointer-events: none; box-shadow: inset 0 0 200px 40px rgba(200,30,20,0); transition: box-shadow .15s; }
+    #firevig { position: fixed; inset: 0; z-index: 9; pointer-events: none; box-shadow: inset 0 0 220px 80px rgba(255,90,20,0); transition: box-shadow .1s; }
+    #firepov { position: fixed; inset: 0; z-index: 9; pointer-events: none; opacity: 0; mix-blend-mode: screen; background: radial-gradient(140% 55% at 50% 122%, rgba(255,150,30,0) 42%, rgba(255,110,20,.85) 74%, rgba(255,210,70,.95) 100%); }
+    #firepov.on { opacity: .85; animation: firepovF .5s steps(4) infinite; }
+    @keyframes firepovF { 0% { transform: translateY(2%) scaleY(1); } 50% { transform: translateY(-3%) scaleY(1.09); } 100% { transform: translateY(2%) scaleY(1); } }
     #killfeed { position: absolute; top: 60px; right: 26px; text-align: right; font-size: 14px; opacity: .9; }
     #killfeed div { margin: 2px 0; opacity: 0; animation: kf 2.4s forwards; }
     @keyframes kf { 0%{opacity:0; transform: translateX(20px);} 12%{opacity:1; transform:none;} 80%{opacity:1;} 100%{opacity:0;} }
@@ -270,6 +279,8 @@
 
   <div id="hud">
     <div id="vignette"></div>
+    <div id="firevig"></div>
+    <div id="firepov"></div>
     <div id="cross"><i class="h l"></i><i class="h r"></i><i class="v t"></i><i class="v b"></i><i class="dot"></i></div>
     <div id="hitmarker"><i class="h"></i><i class="v"></i></div>
 
@@ -279,12 +290,14 @@
       <div id="money">$0</div>
       <div id="keys">🔑 0</div>
       <div id="radios"></div>
+      <div id="buildmats" style="color:#cdb887;font-weight:800"></div>
       <div id="score">0</div>
     </div>
     <div id="toast"></div>
     <div id="wavetag"></div>
     <div id="clock"></div>
     <div id="nightgear"></div>
+    <div id="molotovhud" style="position:absolute;top:104px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:800;color:#ff8a3a;text-shadow:0 1px 3px #000"></div>
     <div id="bossbar"><div class="bn" id="bossname">BOSS TOLO</div><div class="bb"><div id="bossfill"></div><div id="bosspip"></div></div></div>
     <div id="killfeed"></div>
 
@@ -293,6 +306,8 @@
       <div class="bar" id="armorbar"><div id="armorfill"></div></div>
       <div class="bar"><div id="hpfill"></div></div>
       <div id="hpnum">100</div>
+      <div class="bar" id="hungerbar"><div id="hungerfill"></div></div>
+      <div id="survival"></div>
     </div>
     <div id="ammowrap" class="panel">
       <div id="ammonum">12<span class="res"> / ∞</span></div>
@@ -446,6 +461,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=84"></script>
+  <script type="module" src="./src/game.js?v=99"></script>
 </body>
 </html>

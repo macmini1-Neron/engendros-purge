@@ -9,6 +9,7 @@ import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
 import { MeshBuilder, voxelMaterial, clamp, damp, makeRNG, randRange, TAU, shade } from './util.js';
 import { Net, makeRoomCode } from './net.js';
+import { buildT34Hull, buildT34Model, buildT34Tracks, buildT34Turret } from './t34model.js';
 
 // --- gameplay RNG (non-deterministic; map gen uses a seeded rng) ---
 const rr = (lo, hi) => lo + (hi - lo) * Math.random();
@@ -21,6 +22,31 @@ function weightedPick(entries) {
   for (const e of entries) { r -= e.w; if (r <= 0) return e.v; }
   return entries[entries.length - 1].v;
 }
+
+// --- survival mechanics tuning (fall damage + broken leg + hunger), HARDCORE ---
+const FALL_SAFE = -8.0;              // |vy| below this on landing = no damage (a flat 7.2 jump lands ~ -7.2..-7.6, leave margin)
+const FALL_HURT = -9.5;              // at/below this the fall also BREAKS THE LEG (damage onset is FALL_SAFE) — ~a 2m drop
+const FALL_LETHAL = -15.5;           // at/below this: effectively lethal (~a 5.5m drop)
+const FALL_DMG_PER_VY = 9;           // HP per (m/s) of impact speed beyond FALL_SAFE
+const FALL_DMG_BONUS_AT_LETHAL = 35; // extra flat damage past FALL_LETHAL to guarantee a kill through armor
+const FALL_ARMOR_BYPASS = 0.6;       // blunt trauma: 60% of fall damage ignores armor
+const LEG_BREAK_VY = FALL_HURT;      // any damaging fall also breaks the leg (frequent/hardcore)
+const LIMP_SPEED_MULT = 0.55;        // walk speed while leg broken (no sprint at all)
+const SPLINT_APPLY_TIME = 3.0;       // seconds immobile while binding a splint
+const HUNGER_MAX = 100;
+const HUNGER_DRAIN_PER_SEC = 0.45;   // 100 -> 0 in ~3.7 min
+const HUNGER_LOW = 25;               // below this: walk slowed + HP regen disabled
+const HUNGER_LOW_SPEED_MULT = 0.7;   // walk speed while starving
+const STARVE_TICK_TIME = 2.0;        // seconds between starvation damage ticks at hunger<=0
+const STARVE_TICK_DMG = 5;           // HP per starvation tick (bypasses armor) — never drops HP below 50% maxHp; starvation can't kill
+const FOOD_RESTORE = 40;             // hunger restored per ration
+
+// --- molotov tuning ---
+const MOLO_THROW_SPEED = 18, MOLO_THROW_LIFT = 4, MOLO_GRAV = 22, MOLO_PROJ_R = 0.16, MOLO_MAX_FLIGHT = 6.0;
+const MOLO_IGNITE_T = 0.7, MOLO_HAND_FUSE = 12.0, MOLO_THROW_CD = 0.4;
+const FIRE_POOL_RADIUS = 3.2, FIRE_POOL_LIFE = 7.0, FIRE_POOL_MAX = 4, OCCLUSION_INSET = 0.4;
+const FIRE_DOT_ENEMY = 22, FIRE_BURN_TICK = 0.25, ENEMY_BURN_DUR = 2.0, ENEMY_BURN_SLOW = 0.45;
+const PLAYER_BURN_DUR = 3.0, PLAYER_BURN_DPS = 9, PLAYER_BURN_TICK = 0.4;
 
 // ---------------------------------------------------------------------------
 // Ray vs AABB (slab). Returns forward entry distance >=0, or null.
@@ -81,8 +107,15 @@ const WEAPONS = {
   mosin:    { name: 'Mosin-Nagant', class: 'sniper', shape: 'mosin', dmg: 165, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0022, bloom: 0, pellets: 1, recoil: 2.7, range: 480, adsFov: 26, scope: true, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54 },
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 30, auto: false, mag: 1, reserveMax: 8, reload: 2.8, spread: 0.004, bloom: 0, pellets: 1, recoil: 2.6, range: 300, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
+  // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
+  flashlight: { name: 'Flashlight', class: 'tool', shape: 'flashlight', color: 0x9aa0a6, accent: 0xc23a2a },
+  binoculars: { name: 'Binoculars', class: 'tool', shape: 'binoculars', zoom: true, scope: true, adsFov: 16, color: 0x4a5240, accent: 0xb08a3a }, // Soviet B-6 6×30 — RMB zooms to a realistic 6× (FOV≈16°)
+  // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
+  build_sandbag: { name: 'Sandbags',     class: 'builder', shape: 'build_sandbag', buildKind: 'sandbag', color: 0xcdb887, accent: 0xb89a5e },
+  build_wire:    { name: 'Barbed Wire',  class: 'builder', shape: 'build_wire',    buildKind: 'wire',    color: 0x8a8f98, accent: 0x5a4a32 },
+  build_wood:    { name: 'Barricade',    class: 'builder', shape: 'build_wood',    buildKind: 'wood',    color: 0x8a6a40, accent: 0x5a4026 },
 };
-const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98'];
+const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98', 'flashlight', 'binoculars', 'build_sandbag', 'build_wire', 'build_wood'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
 
@@ -210,13 +243,19 @@ function buildEngendro(col, variant = 'normal') {
 
 // ── Shared colour palette ────────────────────────────────────────────────────
 function _tankPalette() {
+  // TEMP working palette — single muted military GREEN family (matches the
+  // reference render so the SHAPE reads cleanly without colour distraction).
+  // Final desert 3-tone camo is a later one-function swap (Milestone 6).
+  // All keys the part-builders use are kept: sand*/olv* = body greens,
+  // brn* = a slightly darker green so ERA tiles read as separate modules,
+  // steel/wheel/track/rubber = mechanical greys.
   return {
-    sandHi:   0xd8c49a, sandMid:  0xc9b48a, sandLo:   0xb09468,
-    brnHi:    0x9a7a55, brnMid:   0x8a6a45, brnLo:    0x70512e,
-    olvHi:    0x7e7f5a, olvMid:   0x6e6f4a, olvLo:    0x575835,
+    sandHi:   0x808d5e, sandMid:  0x6b774b, sandLo:   0x545e39, // hull / deck body
+    brnHi:    0x6c7748, brnMid:   0x59633a, brnLo:    0x454d2c, // ERA tiles / storage
+    olvHi:    0x778354, olvMid:   0x626e44, olvLo:    0x4b5535, // turret body
     steelHi:  0x666b72, steelMid: 0x44474d, steelLo:  0x2e3035,
-    slotCol:  0x222428,   // near-black recesses
-    rubbCol:  0x2a2c2e,   // rubber road-wheel rim
+    slotCol:  0x202227,   // near-black recesses
+    rubbCol:  0x282a2c,   // rubber road-wheel rim
     wheelHi:  0x565a60, wheelMid: 0x3e4147, wheelLo:  0x282b2f,
     trackCol: 0x333538, trackSlot:0x1a1c1e,
     mangalCol:0x44474d,   // slat cage (= steelMid)
@@ -245,38 +284,42 @@ function _tankEraFn(P) {
   };
 }
 
-// ── Hull: main box + sloped glacis + rear deck/grilles + mudguards + tow hooks ──
+// ── Hull: lower tub + wide flat fender deck + clean sloped glacis + rear deck ──
+// Clean low/wide T-90M chassis. NO ERA here (added cleanly in the ERA pass).
 function _tankHull(b, P) {
   const slab = _tankSlabFn();
-  // Main hull box — low/squat T-90 profile (3.6 wide x 7.2 long, centre y=0.9)
-  slab(b, 3.6, 1.8, 7.2, 0, 0.9, 0, P.sandMid, P.sandHi, P.sandLo);
 
-  // Sloped glacis plate (front upper hull, tilted ~31 deg)
-  b.box(3.5, 1.1,  1.8, 0, 1.65, 3.10, P.sandMid, { tint: 0.03, rx: -0.55 });
-  b.box(3.5, 0.14, 1.8, 0, 2.15, 3.05, P.sandHi,  { rx: -0.55 }); // top lit strip
+  // Lower hull tub — sits between the tracks (narrower than the deck), boxy.
+  slab(b, 3.2, 1.20, 6.5, 0, 0.82, -0.10, P.sandMid, P.sandHi, P.sandLo);
 
-  // Rear hull — boxy engine deck
-  slab(b, 3.6, 0.5, 1.4, 0, 1.95, -2.8, P.brnMid, P.brnHi, P.brnLo);
-  // Engine deck grilles (dark slots x 5)
+  // Wide flat fender deck — the clean top surface that overhangs the tracks.
+  slab(b, 3.95, 0.32, 6.2, 0, 1.46, -0.15, P.sandMid, P.sandHi, P.sandLo);
+
+  // Sloped upper glacis — one clean wedge plate (tilted ~34°).
+  b.box(3.35, 1.05, 1.55, 0, 1.30, 2.92, P.sandMid, { tint: 0.025, rx: -0.6 });
+  b.box(3.35, 0.16, 1.55, 0, 1.78, 2.80, P.sandHi,  { rx: -0.6 }); // top lit strip
+  // Short near-vertical lower front plate.
+  b.box(3.10, 0.62, 0.20, 0, 0.62, 3.28, P.sandLo, { tint: 0.02 });
+
+  // Driver hatch + periscope cluster (centre of the deck, just behind glacis).
+  b.box(0.52, 0.07, 0.50, 0, 1.65, 1.95, P.sandLo, { tint: 0.02 });
+  b.box(0.42, 0.05, 0.07, 0, 1.70, 2.16, P.slotCol); // periscope slit
+
+  // Rear engine deck — slightly raised, lengthwise grille panels.
+  slab(b, 3.75, 0.30, 1.55, 0, 1.55, -2.65, P.olvMid, P.olvHi, P.olvLo);
   for (let i = 0; i < 5; i++) {
-    b.box(0.55, 0.06, 0.08, -1.1 + i * 0.55, 2.22, -3.1, P.slotCol);
+    b.box(0.46, 0.05, 0.95, -1.20 + i * 0.60, 1.71, -2.65, P.slotCol); // grille slots
   }
-  b.box(3.5, 0.05, 0.1, 0, 2.22, -2.5, P.slotCol); // rear vent strip 1
-  b.box(3.5, 0.05, 0.1, 0, 2.22, -3.5, P.slotCol); // rear vent strip 2
+  // Rear vertical plate.
+  b.box(3.45, 0.95, 0.20, 0, 0.95, -3.28, P.sandLo, { tint: 0.02 });
 
-  // Rear tool box / storage
-  b.box(1.4, 0.38, 0.5,  -1.0, 2.12, -3.65, P.olvMid, { tint: 0.03 });
-  b.box(1.4, 0.05, 0.5,  -1.0, 2.32, -3.65, P.olvHi);
-  b.box(0.8, 0.32, 0.48,  0.9, 2.12, -3.65, P.brnMid, { tint: 0.03 });
+  // Front mudguards (over the front of the tracks).
+  b.box(0.72, 0.12, 1.5, -1.96, 1.58, 2.05, P.olvLo);
+  b.box(0.72, 0.12, 1.5,  1.96, 1.58, 2.05, P.olvLo);
 
-  // Front mudguard plates (left + right)
-  b.box(0.55, 0.12, 1.5, -1.93, 1.84, 2.2, P.sandMid);
-  b.box(0.55, 0.12, 1.5,  1.93, 1.84, 2.2, P.sandMid);
-
-  // Tow hooks (front corners)
-  for (const hx of [-1.3, 1.3]) {
-    b.box(0.18, 0.24, 0.22, hx, 0.7, 3.65, P.steelMid);
-    b.box(0.06, 0.22, 0.30, hx, 0.7, 3.82, P.slotCol);
+  // Tow hooks (front corners).
+  for (const hx of [-1.25, 1.25]) {
+    b.box(0.18, 0.22, 0.22, hx, 0.52, 3.34, P.steelMid);
   }
 }
 
@@ -295,24 +338,20 @@ function _tankGlacisEra(b, P) {
   }
 }
 
-// ── One side skirt + ERA tile grid ──────────────────────────────────────────
-// sx = -1 (left) or +1 (right).
+// ── One side skirt (clean segmented panel) ───────────────────────────────────
+// sx = -1 (left) or +1 (right). NO ERA here — side ERA is added in the ERA pass.
 function _tankSideSkirt(root, P, sx) {
   const slab = _tankSlabFn();
-  const era  = _tankEraFn(P);
   const skb  = new MeshBuilder();
-  const skx  = sx * 1.9;
+  const skx  = sx * 2.0;
 
-  // Skirt panel backing strip
-  slab(skb, 0.12, 0.65, 7.0, skx, 1.18, -0.1, P.steelMid, P.steelHi, P.steelLo);
-
-  // ERA bricks — denser: 3 rows x 14 cols (was 12, smaller tiles)
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 14; col++) {
-      const ez = 2.90 - col * 0.46;
-      const ey = 0.94 + row * 0.22;
-      era(skb, 0.13, 0.18, 0.38, skx + sx * 0.08, ey, ez);
-    }
+  // Upper rigid skirt panel (covers the track top, flush under the fender).
+  slab(skb, 0.14, 0.60, 6.3, skx, 1.14, -0.15, P.olvMid, P.olvHi, P.olvLo);
+  // Lower flexible skirt flap — hangs lower, slightly darker (rubberised look).
+  slab(skb, 0.10, 0.40, 5.9, skx + sx * 0.02, 0.66, -0.10, P.steelLo, P.steelMid, P.trackSlot);
+  // Vertical segment seams (7 panels).
+  for (let c = 0; c < 7; c++) {
+    skb.box(0.16, 0.58, 0.04, skx, 1.14, 2.55 - c * 0.88, P.olvLo);
   }
   root.add(new THREE.Mesh(skb.build(), voxelMaterial()));
 }
@@ -378,21 +417,35 @@ function _tankHeadlamp(P, hx) {
   return new THREE.Mesh(b.build(), voxelMaterial());
 }
 
-// ── Main turret body: angular welded shell (front/centre/bustle/top + front ERA) ─
+// ── Main turret body: ARROWHEAD / DIAMOND welded shell (hexagonal top view) ──
+// The T-90M turret reads as a diamond from above: a narrow front (mantlet face)
+// with two BIG angled cheek plates converging back to the wide shoulders, then a
+// rectangular body and a flat rear bustle. NOT a square box. Local frame: turret
+// pivot at hull (0,1.65,-0.4); forward = +z.
 function _tankTurretShell(b, P) {
   const slab = _tankSlabFn();
-  slab(b, 2.8, 1.05, 1.4, 0, 0.52,  0.9,  P.olvMid, P.olvHi, P.olvLo); // front
-  slab(b, 2.6, 0.95, 1.6, 0, 0.47, -0.4,  P.olvMid, P.olvHi, P.olvLo); // centre
-  slab(b, 2.0, 0.72, 1.0, 0, 0.36, -1.35, P.brnMid, P.brnHi, P.brnLo); // bustle
-  b.box(2.6, 0.10, 2.8, 0, 1.02, 0.1, P.sandMid, { tint: 0.02 });       // top plate
+  const H  = 0.92;   // turret body height
+  const cy = 0.46;   // vertical centre (spans ~0..0.92)
 
-  // Turret front plate ERA (3 rows x 4 cols of Relikt bricks)
-  const era = _tankEraFn(P);
-  for (let row = 0; row < 3; row++) {
-    for (let col = -2; col <= 1; col++) {
-      era(b, 0.52, 0.24, 0.20, (col + 0.5) * 0.62, 0.18 + row * 0.30, 1.62);
-    }
+  // Rear body rectangle (shoulders -> rear).
+  slab(b, 2.70, H, 1.85, 0, cy, -0.55, P.olvMid, P.olvHi, P.olvLo);     // z: -1.475 .. 0.375
+
+  // Narrow front NOSE block — the front (mantlet) face the gun exits through.
+  slab(b, 1.10, H, 1.05, 0, cy, 0.78, P.olvMid, P.olvHi, P.olvLo);      // z: 0.255 .. 1.305
+
+  // Big angled FRONT-BEVEL cheeks — converge from wide shoulders to the nose.
+  //   left : shoulder(-1.45,0.22) -> nose corner(-0.52,1.33)   ry = +0.69
+  //   right: mirror                                            ry = -0.69
+  for (const sx of [-1, 1]) {
+    b.box(0.72, H,    1.45, sx * 0.985, cy,        0.775, P.olvMid, { tint: 0.02, ry: sx * 0.69 });
+    b.box(0.72, 0.12, 1.45, sx * 0.985, cy + 0.40, 0.775, P.olvHi,  { ry: sx * 0.69 }); // lit top strip
   }
+
+  // Rear bustle storage box (wide, flat, lower — extends behind the turret).
+  slab(b, 2.30, 0.60, 0.85, 0, 0.32, -1.92, P.sandMid, P.sandHi, P.sandLo);
+
+  // Clean welded roof plate tying body + nose together.
+  b.box(2.55, 0.10, 3.0, 0, 0.99, -0.30, P.olvHi, { tint: 0.02 });
 }
 
 // ── Turret-cheek ERA: forward chevron/arrow for one side ─────────────────────
@@ -578,7 +631,7 @@ function buildTank(camo = 'desert') {
   // Hull
   const hb = new MeshBuilder();
   _tankHull(hb, P);
-  _tankGlacisEra(hb, P);
+  // Clean glacis (no ERA) for the blockout — glacis ERA grid added in the ERA pass (M2).
   root.add(new THREE.Mesh(hb.build(), voxelMaterial()));
 
   // Side skirts (left + right)
@@ -639,8 +692,7 @@ function buildTank(camo = 'desert') {
 
   const turB = new MeshBuilder();
   _tankTurretShell(turB, P);
-  _tankCheekEra(turB, P, -1);
-  _tankCheekEra(turB, P,  1);
+  // Faceted cheeks come from the shell now; clean cheek/front ERA tiles added in the ERA pass (M2).
   _tankMantletCage(turB, P);
   _tankSmokeTubes(turB, P, -1);
   _tankSmokeTubes(turB, P,  1);
@@ -1051,6 +1103,16 @@ const ENEMY_TYPES = {
               variant: 'tank', boss: true, tank: true, armored: true, explosiveMult: 2.0 },
 };
 
+// Fortification pieces the player places (held like weapons; material comes from supply drops).
+// sandbag/wood are HARD walls (an AABB in World.boxes); wire is a non-blocking HAZARD zone (slow+DoT, breaks under trample).
+const STRUCT_CAP = 44; // perf cap — World.boxes + per-enemy collision loops are O(n) each frame
+const STRUCT_DEFS = {
+  sandbag: { hp: 900, w: 2.2, h: 1.0, d: 0.7, hard: true,  rotStep: Math.PI / 12, label: 'Sandbags' },     // tanky low cover; shoot over the top
+  wood:    { hp: 420, w: 2.4, h: 1.5, d: 0.4, hard: true,  rotStep: Math.PI / 12, label: 'Barricade' },    // full wall, blocks LoS, breaks faster
+  wire:    { hp: 260, w: 2.4, h: 0.8, d: 1.2, hard: false, rotStep: Math.PI / 12, label: 'Barbed Wire',    // hazard zone: slow + damage, trampled down under pressure
+             slow: 0.35, dot: 14, trample: 35 },
+};
+
 // ---------------------------------------------------------------------------
 // World — voxel de_dust2-flavored arena. Sandstone structures, crates,
 // chokepoints. Collision = AABBs. Also holds lootbox anchor spots & spawns.
@@ -1329,7 +1391,7 @@ class Enemy {
     this.hp = this.maxHp = hp; this.speed = speed;
     this.scale = def.scale; this.radius = 0.55 * def.scale; this.height = 2.2 * def.scale;
     this.headY = 1.18 * def.scale;
-    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0;
+    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0;
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.isTank = !!def.tank; // authoritative reset: true for tank type, false for all others
@@ -1618,11 +1680,18 @@ class EnemyManager {
       else e.stuck = Math.max(0, e.stuck - dt * 0.6);
       const beeline = e.stuck > 1.6;
       const wx = beeline ? dx : dx + sx * 0.6 + ax, wz = beeline ? dz : dz + sz * 0.6 + az, wl = Math.hypot(wx, wz) || 1;
-      const spd = e.speed * (e.squash > 0 ? 0.3 : 1);
+      const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
+      const spd = e.speed * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
+      if (_wz) {
+        _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down
+        e._wireT = (e._wireT || 0) + dt;
+        if (e._wireT >= 0.4) { e._wireT = 0; if (this.damage(e, STRUCT_DEFS.wire.dot * 0.4, 'wire')) continue; }
+      }
       e.vel.x = (wx / wl) * spd; e.vel.z = (wz / wl) * spd;
       e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt; e.pos.y = 0;
       const lim = this.world.HALF - e.radius;
       e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
+      e._blockStruct = null;
       for (const b of this.world.boxes) {
         if (b.max.y < 0.6) continue;
         if (e.pos.x + e.radius <= b.min.x || e.pos.x - e.radius >= b.max.x) continue;
@@ -1631,13 +1700,18 @@ class EnemyManager {
         const pz = Math.min(b.max.z + e.radius - e.pos.z, e.pos.z - (b.min.z - e.radius));
         if (px < pz) e.pos.x += (e.pos.x < (b.min.x + b.max.x) / 2 ? -px : px);
         else e.pos.z += (e.pos.z < (b.min.z + b.max.z) / 2 ? -pz : pz);
+        if (b.struct) e._blockStruct = b._ref; // pushing against a player-built wall
       }
+      // heavy enemies crush a blocking structure instantly (no caging the boss) — after the boxes loop so the splice is safe
+      if (e._blockStruct && (e.def.boss || e.def.tank || (e.def.scale || 1) >= 1.6)) { this.game.build.attackStructure(e._blockStruct, e._blockStruct.maxHp, e); e._blockStruct = null; }
 
       // attack
       e.attackCD -= dt;
       if (dist < e.radius + this.game.player.radius + 0.6 && e.attackCD <= 0) {
         if (e.def.charger) { this.damage(e, e.hp + 1, 'contact'); continue; } // kamikaze: detonate on contact
         e.attackCD = 1.0; e.squash = 0.18; this.game._hurtTarget(e._tgtId || 'host', e.def.dmg);
+      } else if (e._blockStruct && e.attackCD <= 0) { // can't reach a player: smash the wall in the way
+        e.attackCD = 0.8; e.squash = 0.18; this.game.build.attackStructure(e._blockStruct, e.def.dmg, e);
       }
       e.growlCD -= dt;
       if (e.growlCD <= 0) { e.growlCD = rr(3, 8); if (dist < 32) this.game.audio.enemyGrowl(); }
@@ -1645,6 +1719,7 @@ class EnemyManager {
       // anim
       e.bob += dt * (6 + spd);
       if (e.squash > 0) e.squash -= dt;
+      if (e.burnT > 0) { e.burnT -= dt; if (Math.random() < 0.16) this.game.effects.firePool(e.pos, 0.45, 0.4); }
       const sq = e.squash > 0 ? 1 - e.squash * 1.6 : 1;
       e.mesh.position.set(e.pos.x, Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
       e.mesh.rotation.y = Math.atan2(dx, dz);
@@ -2177,6 +2252,234 @@ class EnemyManager {
 }
 
 // ---------------------------------------------------------------------------
+// Fortification structure meshes (layered-shade voxel, one merged mesh each).
+// Built once; geometry shared by the ghost preview + all placed copies.
+// ---------------------------------------------------------------------------
+function buildSandbags() {
+  const b = new MeshBuilder();
+  const hi = 0xd8c79b, mid = 0xcdb887, lo = 0xb89a5e, seam = 0x96804f;
+  const bagH = 0.25, bagD = 0.66, courses = 4;
+  const bag = (x, y, z) => {
+    b.box(0.56, bagH, bagD, x, y, z, mid, { tint: 0.06, ry: rr(-0.05, 0.05) });        // body
+    b.box(0.50, bagH * 0.55, bagD * 0.9, x, y + bagH * 0.30, z, hi, { tint: 0.05 });    // lit rounded top
+    b.box(0.55, bagH * 0.3, bagD * 0.96, x, y - bagH * 0.34, z, lo);                    // shadowed underside
+    b.box(0.58, 0.02, bagD * 0.5, x, y - bagH * 0.5, z, seam);                          // seam line
+    b.box(0.06, 0.06, 0.06, x - 0.27, y, z + rr(-0.15, 0.15), seam);                    // tied-end nub
+  };
+  for (let c = 0; c < courses; c++) {
+    const y = bagH * 0.5 + c * bagH * 0.92;
+    const odd = c % 2, startX = -0.84 + (odd ? 0.21 : 0), n = odd ? 4 : 5;
+    for (let i = 0; i < n; i++) bag(startX + i * 0.42, y, 0);
+  }
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+function buildBarbedWire() {
+  const b = new MeshBuilder();
+  const wHi = 0x6e5230, wMid = 0x533d22, wLo = 0x3a2916, wire = 0x9aa0a6, barb = 0xc2c6cc;
+  const halfW = 1.1, topY = 0.82, dep = 0.42;
+  for (const sx of [-1, 1]) {                                   // wooden X-trestles at both ends
+    const x = sx * halfW;
+    _strut(b, [x, 0.02, -dep], [x, topY, dep], 0.09, wMid, { tint: 0.05 });
+    _strut(b, [x, 0.02, dep], [x, topY, -dep], 0.09, wMid, { tint: 0.05 });
+    b.box(0.07, 0.07, dep * 2.2, x, topY * 0.52, 0, wLo);                          // cross-brace
+    b.box(0.13, 0.1, 0.13, x, 0.04, -dep, wLo); b.box(0.13, 0.1, 0.13, x, 0.04, dep, wLo); // feet
+  }
+  for (const ry of [topY * 0.55, topY * 0.95]) b.box(halfW * 2, 0.06, 0.06, 0, ry, 0, wHi, { tint: 0.05 }); // rails
+  for (const ry of [topY * 0.5, topY * 0.72, topY * 0.95]) {   // zig-zag barbed strands
+    let px = -halfW, pz = -0.12, py = ry; const steps = 14;
+    for (let i = 1; i <= steps; i++) {
+      const nx = -halfW + (i / steps) * halfW * 2, nz = (i % 2 ? 0.12 : -0.12), ny = ry + (i % 2 ? 0.05 : -0.05);
+      _strut(b, [px, py, pz], [nx, ny, nz], 0.018, wire);
+      b.box(0.055, 0.02, 0.02, (px + nx) / 2, (py + ny) / 2, (pz + nz) / 2, barb, { rz: 0.6 });
+      px = nx; pz = nz; py = ny;
+    }
+  }
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+function buildBarricade() {
+  const b = new MeshBuilder();
+  const wHi = 0x9a7038, wMid = 0x7a5530, wLo = 0x5a3f22, nail = 0x2a2c30, metal = 0x6a6e74;
+  const W = 2.3, H = 1.5, t = 0.12;
+  for (let i = 0; i < 5; i++) {                                 // stacked horizontal planks
+    const y = 0.18 + i * 0.31;
+    b.box(W, 0.27, t, 0, y, 0, wMid, { tint: 0.07 });
+    b.box(W, 0.05, t * 1.05, 0, y + 0.12, 0, wHi);             // lit top edge
+    b.box(W, 0.04, t * 1.05, 0, y - 0.12, 0, wLo);             // shadow
+    b.box(0.05, 0.05, 0.05, -W * 0.45, y, t * 0.6, nail); b.box(0.05, 0.05, 0.05, W * 0.45, y, t * 0.6, nail);
+  }
+  for (const sx of [-1, 1]) b.box(0.16, H, t * 1.2, sx * W * 0.42, H * 0.5, -0.01, wLo, { tint: 0.04 }); // posts
+  _strut(b, [-W * 0.4, 0.1, 0.05], [W * 0.4, H - 0.1, 0.05], 0.13, wHi, { tint: 0.04 });                 // diagonal brace
+  b.box(W * 0.5, 0.34, 0.02, -W * 0.15, H * 0.62, t * 0.7, metal, { tint: 0.05 });                       // rusty metal strip
+  _strut(b, [W * 0.3, H * 0.7, 0], [W * 0.3, 0.02, -0.55], 0.12, wMid);                                  // prop leg
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+const STRUCT_FX_COLOR = { sandbag: 0xcdb887, wire: 0x8a8f98, wood: 0x7a5530 };
+
+// ---------------------------------------------------------------------------
+// BuildManager — fortification placement: ghost preview, validity, collision,
+// destruction, the barbed-wire hazard zone, and host-authoritative MP sync.
+// ---------------------------------------------------------------------------
+class BuildManager {
+  constructor(game) {
+    this.game = game;
+    this.scene = game.engine.scene;
+    this.structures = [];
+    this._idc = 1;
+    this.ghostYaw = 0;
+    this._valid = false;
+    this._ghostPos = null;
+    this._ghostKind = 'sandbag';
+    this._tmpO = new THREE.Vector3();
+    this._tmpF = new THREE.Vector3();
+    const sg = buildSandbags(), wg = buildBarbedWire(), dg = buildBarricade();
+    this._geos = { sandbag: sg.geometry, wire: wg.geometry, wood: dg.geometry };
+    sg.material.dispose(); wg.material.dispose(); dg.material.dispose();
+    this.ghostMat = new THREE.MeshLambertMaterial({ color: 0x35d05a, emissive: 0x0a3a14, transparent: true, opacity: 0.5, depthWrite: false });
+    this.ghost = new THREE.Mesh(this._geos.sandbag, this.ghostMat);
+    this.ghost.visible = false; this.ghost.renderOrder = 5; this.ghost.frustumCulled = false;
+    this.scene.add(this.ghost);
+  }
+
+  _curKind() { const d = WEAPONS[this.game.weapons.cur]; return (d && d.class === 'builder') ? d.buildKind : null; }
+  rotateGhost(dir) { const k = this._curKind(); if (k) this.ghostYaw += dir * (STRUCT_DEFS[k].rotStep || Math.PI / 12); }
+
+  // AABB half-extents of the footprint after yaw rotation
+  _footprint(kind, yaw) {
+    const sd = STRUCT_DEFS[kind], c = Math.abs(Math.cos(yaw)), s = Math.abs(Math.sin(yaw));
+    return { hx: (sd.w / 2) * c + (sd.d / 2) * s, hz: (sd.w / 2) * s + (sd.d / 2) * c, h: sd.h };
+  }
+
+  validateAt(pos, yaw, kind) {
+    const w = this.game.weapons;
+    if (!w.buildMats || w.buildMats[kind] <= 0) return false;
+    if (this.structures.length >= STRUCT_CAP) return false;
+    if (!pos) return false;
+    const sd = STRUCT_DEFS[kind], fp = this._footprint(kind, yaw), top = pos.y + sd.h;
+    for (const bx of this.game.world.boxes) {                            // map + placed hard structures
+      if (pos.x + fp.hx <= bx.min.x || pos.x - fp.hx >= bx.max.x) continue;
+      if (pos.z + fp.hz <= bx.min.z || pos.z - fp.hz >= bx.max.z) continue;
+      if (bx.max.y <= pos.y + 0.05 || bx.min.y >= top - 0.05) continue;  // no vertical overlap (e.g. placing ON a surface)
+      return false;
+    }
+    for (const s of this.structures) {                                  // other structures (incl. wire, not in world.boxes)
+      const d2 = this._footprint(s.kind, s.yaw);
+      if (Math.abs(pos.x - s.pos.x) < fp.hx + d2.hx && Math.abs(pos.z - s.pos.z) < fp.hz + d2.hz) return false;
+    }
+    for (const e of this.game.enemies.active) {                         // don't trap/telefrag a zombie
+      if (e.alive && Math.abs(pos.x - e.pos.x) < fp.hx + e.radius && Math.abs(pos.z - e.pos.z) < fp.hz + e.radius) return false;
+    }
+    const pp = this.game.player.pos, pr = this.game.player.radius;
+    if (Math.abs(pos.x - pp.x) < fp.hx + pr && Math.abs(pos.z - pp.z) < fp.hz + pr) return false;
+    return true;
+  }
+
+  update(dt) {
+    const onFoot = this.game.state === 'playing' && !this.game.player.inTank && !this.game.player.mountedGun && !(this.game.mp && this.game.mp.frozen);
+    const kind = onFoot ? this._curKind() : null;
+    if (!kind) { this.ghost.visible = false; return; }
+    if (kind !== this._ghostKind) { this.ghost.geometry = this._geos[kind]; this._ghostKind = kind; }
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const origin = this._tmpO.setFromMatrixPosition(cam.matrixWorld);
+    const fwd = this._tmpF.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    const hit = this.game.world.rayHit(origin, fwd, 5.5);
+    const pos = (hit && hit.point && hit.dist <= 5.0 && hit.normal.y > 0.6) ? hit.point : null;
+    this._ghostPos = pos;
+    this._valid = pos ? this.validateAt(pos, this.ghostYaw, kind) : false;
+    if (!pos) { this.ghost.visible = false; return; }
+    this.ghost.visible = true;
+    this.ghost.position.set(pos.x, pos.y, pos.z);
+    this.ghost.rotation.y = this.ghostYaw;
+    this.ghostMat.color.setHex(this._valid ? 0x35d05a : 0xd03a2a);
+    this.ghostMat.emissive.setHex(this._valid ? 0x0a3a14 : 0x3a0a08);
+  }
+
+  place() {
+    const kind = this._curKind(); if (!kind) return;
+    if (!this._valid || !this._ghostPos) { this.game.audio.noMoney && this.game.audio.noMoney(); return; }
+    const pos = this._ghostPos.clone(), yaw = this.ghostYaw, mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) {
+      mp.net.send('structreq', { kind, x: pos.x, z: pos.z, yaw });    // client → host (host validates + echoes)
+    } else {
+      const id = this._idc++;
+      this.placeStructure(kind, pos, yaw, id);
+      if (mp && mp.active && mp.isHost) mp.net.broadcast('struct', { id, kind, x: pos.x, z: pos.z, yaw });
+    }
+    this.game.weapons.consumeBuildMat(kind);
+    this.game.audio.buy && this.game.audio.buy();
+  }
+
+  placeStructure(kind, pos, yaw, id) {
+    const sd = STRUCT_DEFS[kind];
+    const mesh = new THREE.Mesh(this._geos[kind], voxelMaterial());
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.position.set(pos.x, pos.y || 0, pos.z); mesh.rotation.y = yaw;
+    this.scene.add(mesh);
+    const s = { id, kind, pos: new THREE.Vector3(pos.x, pos.y || 0, pos.z), yaw, mesh, hp: sd.hp, maxHp: sd.hp, box: null, hazard: null };
+    const fp = this._footprint(kind, yaw);
+    const aabb = (extraTag) => Object.assign({ min: new THREE.Vector3(pos.x - fp.hx, 0, pos.z - fp.hz), max: new THREE.Vector3(pos.x + fp.hx, (pos.y || 0) + sd.h, pos.z + fp.hz) }, extraTag);
+    if (sd.hard) { s.box = aabb({ struct: true, _ref: s }); this.game.world.boxes.push(s.box); }
+    else { s.hazard = aabb({ ref: s }); }
+    this.structures.push(s);
+    return s;
+  }
+
+  hazardAt(x, z) {
+    for (const s of this.structures) {
+      const h = s.hazard; if (h && x >= h.min.x && x <= h.max.x && z >= h.min.z && z <= h.max.z) return s;
+    }
+    return null;
+  }
+
+  attackStructure(s, dmg, enemy) {
+    if (!s || s.hp <= 0) return;
+    if (enemy && enemy.def && (enemy.def.boss || enemy.def.tank || (enemy.def.scale || 1) >= 1.6)) dmg = s.maxHp; // heavies crush
+    s.hp -= dmg;
+    if (s.mesh && s.mesh.material.emissive) { const f = Math.max(0, s.hp / s.maxHp); s.mesh.material.emissive.setRGB((1 - f) * 0.22, 0, 0); }
+    if (s.hp <= 0) this.destroyStructure(s, 'smash');
+  }
+
+  destroyStructure(s, cause) {
+    const i = this.structures.indexOf(s); if (i < 0) return;
+    this.structures.splice(i, 1);
+    if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
+    if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
+    const fx = this.game.effects;
+    if (fx) { fx.stuffing && fx.stuffing(s.pos, STRUCT_FX_COLOR[s.kind] || 0xcdb887, 12, 4); fx.impact && fx.impact(s.pos, new THREE.Vector3(0, 1, 0), 'dust'); }
+    if (this.game.audio && this.game.audio.noise) this.game.audio.noise(0.2, 0.5, 'lowpass', 280, 1);
+    const mp = this.game.mp;
+    if (mp && mp.active && mp.isHost) mp.net.broadcast('structdie', { id: s.id });
+  }
+
+  // ---- multiplayer (host-authoritative) ----
+  hostPlaceFromClient(d) {
+    const pos = new THREE.Vector3(d.x, 0, d.z);
+    if (!this.validateAt(pos, d.yaw, d.kind)) return;          // reject invalid placements
+    const id = this._idc++;
+    this.placeStructure(d.kind, pos, d.yaw, id);
+    this.game.mp.net.broadcast('struct', { id, kind: d.kind, x: d.x, z: d.z, yaw: d.yaw });
+  }
+  applyRemoteStruct(d) {
+    if (this.structures.some((s) => s.id === d.id)) return;
+    this.placeStructure(d.kind, new THREE.Vector3(d.x, 0, d.z), d.yaw, d.id);
+    if (d.id >= this._idc) this._idc = d.id + 1;
+  }
+  applyRemoteDestroy(id) { const s = this.structures.find((x) => x.id === id); if (s) this.destroyStructure(s, 'remote'); }
+
+  reset() {
+    for (const s of this.structures) {
+      if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
+      if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
+    }
+    this.structures.length = 0;
+    this._idc = 1; this.ghostYaw = 0; this._valid = false; this._ghostPos = null;
+    this.ghost.visible = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Viewmodels
 // ---------------------------------------------------------------------------
 function buildViewmodel(def) {
@@ -2321,6 +2624,49 @@ function buildViewmodel(def) {
     case 'mosin':   b.box(0.1, 0.15, 1.45, 0, -0.02, -0.65, c, { tint: 0.03 }); b.box(0.07, 0.07, 0.7, 0, 0.03, -1.4, a); b.box(0.11, 0.28, 0.34, 0, -0.16, 0.4, c, { tint: 0.03 }); b.box(0.13, 0.05, 0.07, 0.1, 0.03, -0.1, a); b.box(0.06, 0.1, 0.05, 0, 0.12, -0.7, a); break;
     case 'bazooka': b.box(0.22, 0.22, 1.55, 0, 0, -0.7, c, { tint: 0.02 }); b.box(0.28, 0.28, 0.16, 0, 0, 0.12, dark); b.box(0.1, 0.26, 0.12, 0, -0.22, -0.12, dark); b.box(0.08, 0.12, 0.1, 0, 0.16, -0.5, dark); break;
     case 'axe':     b.box(0.05, 0.05, 0.72, 0, 0, -0.5, a, { tint: 0.03 }); b.box(0.06, 0.3, 0.06, 0.02, 0.12, -0.86, c, { tint: 0.02 }); b.box(0.18, 0.26, 0.05, 0.12, 0.12, -0.86, c, { tint: 0.02 }); break;
+    case 'binoculars': {     // Soviet WW2 6×30 (B-6): twin green-crackle barrels, worn brass rings, leather centre hinge, focus wheel
+      const grn = 0x4a5240, grnHi = 0x5e6650, brass = 0xb08a3a, brassHi = 0xccA050, blk = 0x1a1c18, lens = 0x10141a;
+      for (const sx of [-0.14, 0.14]) {
+        let gg = new THREE.CylinderGeometry(0.11, 0.12, 0.5, 16); b.geo(gg, sx, 0, -0.45, grn, { rx: Math.PI / 2, tint: 0.06 }); gg.dispose();   // barrel (crackle via tint)
+        b.box(0.05, 0.02, 0.46, sx, 0.1, -0.45, grnHi);                                                                                          // top highlight
+        gg = new THREE.CylinderGeometry(0.118, 0.118, 0.05, 16); b.geo(gg, sx, 0, -0.68, brass, { rx: Math.PI / 2 }); gg.dispose();              // brass objective ring
+        gg = new THREE.CylinderGeometry(0.1, 0.1, 0.02, 16); b.geo(gg, sx, 0, -0.705, lens, { rx: Math.PI / 2 }); gg.dispose();                  // objective lens
+        gg = new THREE.CylinderGeometry(0.085, 0.095, 0.06, 16); b.geo(gg, sx, 0, -0.17, brass, { rx: Math.PI / 2 }); gg.dispose();              // brass eyepiece ring
+        gg = new THREE.CylinderGeometry(0.07, 0.07, 0.04, 14); b.geo(gg, sx, 0, -0.13, blk, { rx: Math.PI / 2 }); gg.dispose();                  // eyecup
+      }
+      b.box(0.18, 0.14, 0.34, 0, 0, -0.4, blk, { tint: 0.03 });                                                                                  // leather centre hinge cover
+      const fw = new THREE.CylinderGeometry(0.032, 0.032, 0.24, 12); b.geo(fw, 0, 0.04, -0.32, brassHi, { rx: Math.PI / 2 }); fw.dispose();      // focus wheel axle
+      break;
+    }
+    case 'flashlight': {     // Soviet steel torch: ribbed body, flared reflector head, red push-button (ref Michael Dronov)
+      const stHi = 0xc0c5cc, stMid = 0x8a9099, stLo = 0x5e636b, stSlot = 0x3a3e44, red = 0xc23a2a, redHi = 0xe0584a, lens = 0xe8eef5;
+      let gg = new THREE.CylinderGeometry(0.085, 0.085, 0.62, 16); b.geo(gg, 0, 0, -0.2, stMid, { rx: Math.PI / 2, tint: 0.02 }); gg.dispose(); // body
+      b.box(0.07, 0.022, 0.6, 0, 0.078, -0.2, stHi);                  // top highlight strip
+      b.box(0.08, 0.02, 0.6, 0, -0.082, -0.2, stLo);                  // bottom shadow strip
+      for (let i = 0; i < 6; i++) { gg = new THREE.CylinderGeometry(0.092, 0.092, 0.016, 16); b.geo(gg, 0, 0, -0.02 - i * 0.085, stSlot, { rx: Math.PI / 2 }); gg.dispose(); } // ribs
+      gg = new THREE.CylinderGeometry(0.155, 0.092, 0.2, 18); b.geo(gg, 0, 0, -0.62, stMid, { rx: -Math.PI / 2, tint: 0.02 }); gg.dispose(); // flared reflector head
+      gg = new THREE.CylinderGeometry(0.16, 0.16, 0.04, 18); b.geo(gg, 0, 0, -0.72, stHi, { rx: Math.PI / 2 }); gg.dispose();              // bezel ring (faces forward, not a flat horizontal disc)
+      gg = new THREE.CylinderGeometry(0.135, 0.135, 0.02, 18); b.geo(gg, 0, 0, -0.73, lens, { rx: Math.PI / 2 }); gg.dispose();            // lens
+      gg = new THREE.CylinderGeometry(0.078, 0.07, 0.09, 16); b.geo(gg, 0, 0, 0.13, stLo, { rx: Math.PI / 2 }); gg.dispose();             // knurled tail cap
+      b.box(0.07, 0.04, 0.12, 0, 0.1, -0.05, stLo);                   // switch housing on top
+      b.box(0.04, 0.04, 0.04, 0, 0.13, -0.08, red); b.box(0.03, 0.022, 0.03, 0, 0.15, -0.08, redHi); // red push-button
+      break;
+    }
+    case 'build_sandbag': {  // a single sandbag held in hand (the real preview is the world ghost)
+      const m1 = 0xcdb887, h1 = 0xd8c79b, l1 = 0xb89a5e;
+      b.box(0.36, 0.17, 0.24, 0, -0.03, -0.5, m1, { tint: 0.05 }); b.box(0.31, 0.08, 0.21, 0, 0.06, -0.5, h1); b.box(0.36, 0.05, 0.24, 0, -0.1, -0.5, l1);
+      b.box(0.06, 0.06, 0.06, -0.18, -0.03, -0.46, 0x96804f); break;
+    }
+    case 'build_wire': {     // a small coil + stakes
+      const w = 0x9aa0a6, wd = 0x533d22;
+      _strut(b, [-0.16, -0.12, -0.5], [-0.16, 0.12, -0.5], 0.04, wd); _strut(b, [0.16, -0.12, -0.5], [0.16, 0.12, -0.5], 0.04, wd);
+      for (let i = 0; i < 6; i++) { const x = -0.16 + i * 0.066; _strut(b, [x, 0.0, -0.53], [x + 0.04, -0.04, -0.46], 0.014, w); } break;
+    }
+    case 'build_wood': {     // a couple of planks held
+      const m = 0x7a5530, h = 0x9a7038;
+      b.box(0.42, 0.1, 0.05, 0, 0.07, -0.5, m, { tint: 0.05 }); b.box(0.42, 0.1, 0.05, 0, -0.05, -0.5, h, { tint: 0.05 });
+      b.box(0.05, 0.05, 0.05, -0.19, 0.01, -0.46, 0x2a2c30); break;
+    }
     default:        b.box(0.12, 0.16, 0.6, 0, 0, -0.3, c, { tint: 0.04 }); b.box(0.1, 0.26, 0.14, 0, -0.2, 0.04, dark);
   }
   const m = new THREE.Mesh(b.build(), voxelMaterial({ depthTest: false }));
@@ -2357,6 +2703,8 @@ class WeaponSystem {
     this.cur = 'luger';
     this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0;
     this.grenades = 2; this.grenadeCD = 0; this.ads = false; this.fov = 80;
+    this.molotovs = 0; this.molotovCD = 0;
+    this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; // null|'lighting'|'lit'
     this._bobT = 0; this._swing = 0;
     this.projectiles = [];
     this._tmp = new THREE.Vector3(); this._tmp2 = new THREE.Vector3();
@@ -2364,6 +2712,20 @@ class WeaponSystem {
     this.group = new THREE.Group();
     this.models = {};
     for (const k of WEAPON_ORDER) { const m = buildViewmodel(WEAPONS[k]); m.visible = false; this.group.add(m); this.models[k] = m; }
+    // --- molotov held viewmodel (NOT in this.models / WEAPON_ORDER, so select()/cycle() never touch it) ---
+    { const mb = new MeshBuilder();
+      let mg = new THREE.CylinderGeometry(0.06, 0.07, 0.26, 14); mb.geo(mg, 0, 0, 0, 0x2f6b3a, { tint: 0.03 }); mg.dispose();   // green glass body
+      mg = new THREE.CylinderGeometry(0.062, 0.062, 0.03, 14); mb.geo(mg, 0, 0.12, 0, 0x57a06a); mg.dispose();                 // lit shoulder
+      mg = new THREE.CylinderGeometry(0.03, 0.045, 0.09, 12); mb.geo(mg, 0, 0.18, 0, 0x2a5f34); mg.dispose();                  // neck
+      mb.box(0.035, 0.08, 0.035, 0, 0.25, 0, 0xcdb98a);                                                                        // cloth rag
+      this.molotovModel = new THREE.Mesh(mb.build(), voxelMaterial({ depthTest: false }));
+      this.molotovModel.renderOrder = 1000; this.molotovModel.frustumCulled = false; this.molotovModel.visible = false;
+      this.molotovModel.position.set(0.1, -0.16, -0.5); this.molotovModel.rotation.set(0.2, 0.3, -0.15);
+      this.molotovRagFlame = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffb24a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false }));
+      this.molotovRagFlame.position.set(0, 0.3, 0); this.molotovRagFlame.scale.setScalar(0); this.molotovRagFlame.renderOrder = 1001;
+      this.molotovModel.add(this.molotovRagFlame);
+      this.group.add(this.molotovModel); }
     this.magMeshes = {}; // separate spinning magazines (DP-28 pan, PPSh drum)
     for (const k of WEAPON_ORDER) { const sm = WEAPONS[k].spinMag; if (!sm) continue; const mm = buildMag(sm); mm.position.set(sm.x, sm.y, sm.z); mm.visible = false; mm._targetRot = 0; this.group.add(mm); this.magMeshes[k] = mm; }
     this.basePos = new THREE.Vector3(0.3, -0.27, -0.72);
@@ -2377,15 +2739,18 @@ class WeaponSystem {
 
   resetLoadout() {
     // clear any in-flight grenades and all transient state (survives restarts otherwise)
-    for (const g of this.projectiles) { this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose(); }
+    for (const g of this.projectiles) { this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose(); if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); } }
     this.projectiles.length = 0;
     this.reloading = 0; this.cooldown = 0; this.grenadeCD = 0; this._swing = 0; this._bobT = 0;
     this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.ads = false;
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
     for (const k of WEAPON_ORDER) { this.owned[k] = false; this.rarity[k] = null; this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
+    this.buildMats = { sandbag: 0, wire: 0, wood: 0 }; // fortification material (per-player; from supply drops)
     this.grant('luger', 'common'); this.grant('knife', 'common');
     this.cur = 'luger'; this.grenades = 2; this.flares = 0; this.flashlightOwned = false;
+    this.molotovs = 0; this.molotovCD = 0; this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
+    if (this.molotovModel) { this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0); }
     for (const k in this.models) this.models[k].visible = (k === this.cur);
     for (const k in this.magMeshes) this.magMeshes[k].visible = (k === this.cur);
   }
@@ -2401,7 +2766,7 @@ class WeaponSystem {
       // keep better rarity, just top up ammo
     } else { this.rarity[key] = rarityKey; }
     this.owned[key] = true;
-    if (!d.melee) {
+    if (!d.melee && d.class !== 'builder' && d.class !== 'tool') {
       const mult = RARITY[this.rarity[key]].mult;
       this.magMax[key] = Math.max(1, Math.round(d.mag * (1 + (mult - 1) * 0.4)));
       this.mag[key] = this.magMax[key];
@@ -2410,7 +2775,9 @@ class WeaponSystem {
     if (this.game.hud) this.game.hud.setWeapon(this);
   }
 
+  isThrowLocked() { return this.molotovState === 'lit' || this.molotovState === 'lighting'; }
   select(key) {
+    if (this.isThrowLocked()) return;
     if (!this.owned[key] || key === this.cur) return;
     this.reloading = 0; // switching weapons (incl. auto-equip of loot/shop buys) cancels an in-progress reload
     this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
@@ -2422,7 +2789,22 @@ class WeaponSystem {
   selectSlot(n) { const o = this.ownedOrder(); if (o[n - 1]) this.select(o[n - 1]); }
   quickMelee() { const m = this.ownedOrder().find((k) => WEAPONS[k].melee); if (m) this.select(m); }
   cycle(dir) { const o = this.ownedOrder(); let i = o.indexOf(this.cur); i = (i + dir + o.length) % o.length; this.select(o[i]); }
+  // Fortification material — granted by supply drops; a builder becomes selectable only while it has material.
+  grantBuildMats(amt) {
+    for (const k in amt) { if (this.buildMats[k] == null) continue; this.buildMats[k] += amt[k]; if (this.buildMats[k] > 0) this.owned['build_' + k] = true; }
+    if (this.game.hud) { this.game.hud.setBuildMats(this); this.game.hud.setWeapon(this); }
+  }
+  consumeBuildMat(kind) {
+    if (this.buildMats[kind] == null) return;
+    this.buildMats[kind] = Math.max(0, this.buildMats[kind] - 1);
+    if (this.buildMats[kind] <= 0) {
+      this.owned['build_' + kind] = false;
+      if (this.cur === 'build_' + kind) { const o = this.ownedOrder(); const g = o.find((k) => WEAPONS[k].class !== 'builder') || o[0]; if (g) this.select(g); } // ran out → back to a gun
+    }
+    if (this.game.hud) { this.game.hud.setBuildMats(this); this.game.hud.setWeapon(this); }
+  }
   toggleFireMode() {
+    if (this.isThrowLocked()) return;
     const d = this.def();
     if (d.melee || !d.auto) { this.game.audio.dryFire(); return; } // only select-fire weapons toggle
     this.semi[this.cur] = !this.semi[this.cur];
@@ -2430,6 +2812,7 @@ class WeaponSystem {
   }
 
   startReload() {
+    if (this.isThrowLocked()) return;
     const d = this.def();
     if (d.melee || this.reloading > 0 || this.mag[this.cur] >= this.magMax[this.cur] || this.reserve[this.cur] <= 0) return;
     this.reloading = d.reload * this.game.player.reloadMult; this.game.audio.reloadIn();
@@ -2442,7 +2825,9 @@ class WeaponSystem {
   }
 
   tryFire(edge) {
+    if (this.isThrowLocked()) return;
     const d = this.def();
+    if (d.class === 'tool' || d.class === 'builder') return; // held tools don't fire (flashlight; builders place via build.place)
     if (this.reloading > 0 || this.cooldown > 0) return;
     if (d.melee) { if (edge === 'press' || d.rate) this._melee(d); return; }
     const auto = d.auto && !this.semi[this.cur];
@@ -2526,6 +2911,7 @@ class WeaponSystem {
   }
 
   throwGrenade() {
+    if (this.isThrowLocked()) return;
     if (this.grenades <= 0 || this.grenadeCD > 0) return;
     this.grenades--; this.grenadeCD = 0.6; this.game.hud.setWeapon(this);
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
@@ -2536,6 +2922,58 @@ class WeaponSystem {
     this.game.engine.scene.add(mesh);
     this.projectiles.push({ mesh, vel: fwd.clone().multiplyScalar(20).add(new THREE.Vector3(0, 3, 0)), fuse: 1.6, radius: 7, dmg: 220 });
     this.game.audio.uiClick();
+  }
+
+  armMolotov() {
+    if (this.molotovState || this.molotovCD > 0 || this.reloading > 0) return;
+    if (this.game.player.inTank || this.game.player.mountedGun) return;
+    if (this.game._waveBreak > 0) return;
+    if (this.molotovs <= 0) { this.game.audio.dryFire(); this.game.hud.toast('No molotovs — buy them in the shop', 0xff8a3a); return; }
+    this.molotovState = 'lighting'; this.molotovLightT = 0; this.molotovFuseT = 0;
+    this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
+    this.molotovModel.visible = true; this.molotovRagFlame.scale.setScalar(0);
+    this.game.audio.reloadIn();
+  }
+  _unarmVisual() {
+    this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0);
+    this.models[this.cur].visible = true; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = true;
+  }
+  cancelMolotov() {
+    if (!this.molotovState) return; // safely un-commit when leaving 'playing' (shop/pause): keep the molotov, no self-damage
+    this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; this._unarmVisual(); this.game.hud.setWeapon(this);
+  }
+  throwMolotov() {
+    if (this.molotovState !== 'lit') return;
+    this.molotovs--; this.molotovCD = MOLO_THROW_CD; this.molotovState = null; this._unarmVisual(); this.game.hud.setWeapon(this);
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const clear = this.game.world.rayHit(origin, fwd, 0.8 + MOLO_PROJ_R); // wall within the spawn offset → shatter on it, don't spawn past it
+    if (clear) {
+      const hit = clear.point.clone().addScaledVector(clear.normal, OCCLUSION_INSET);
+      this.game.effects.explosion(hit.clone(), 1.2); this.game.effects.firePool(hit, 1.6, 1.4);
+      this.game.audio.explosion(); this.game._spawnMolotovPool(hit); this.game.audio.uiClick();
+      return;
+    }
+    const mb = new MeshBuilder();
+    let mg = new THREE.CylinderGeometry(0.06, 0.07, 0.26, 12); mb.geo(mg, 0, 0, 0, 0x2f6b3a, { tint: 0.03 }); mg.dispose();
+    mb.box(0.035, 0.08, 0.035, 0, 0.17, 0, 0xcdb98a);
+    const mesh = new THREE.Mesh(mb.build(), voxelMaterial());
+    mesh.castShadow = true; mesh.position.copy(origin).addScaledVector(fwd, 0.8);
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffb24a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    flame.position.set(0, 0.2, 0); mesh.add(flame);
+    this.game.engine.scene.add(mesh);
+    this.projectiles.push({ mesh, flame, molotov: true, fuse: MOLO_MAX_FLIGHT, trailT: 0,
+      vel: fwd.clone().multiplyScalar(MOLO_THROW_SPEED).add(new THREE.Vector3(0, MOLO_THROW_LIFT, 0)),
+      spin: new THREE.Vector3(rr(8, 14), rr(-3, 3), rr(4, 8)) });
+    this.game.audio.uiClick();
+  }
+  _shatterInHand() {
+    this.molotovs--; this.molotovState = null; this.molotovCD = 0.6; this._unarmVisual(); this.game.hud.setWeapon(this);
+    this.game.player.burnT = PLAYER_BURN_DUR; this.game.player._takeSurvivalDamage(20, 1);
+    this.game.effects.explosion(this.game.player.pos.clone().setY(0.5), 1.0);
+    this.game.audio.explosion(); this.game.hud.toast('🔥 The bottle shattered in your hand!', 0xff5a26);
   }
 
   refillAll() {
@@ -2550,6 +2988,7 @@ class WeaponSystem {
   update(dt) {
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.grenadeCD > 0) this.grenadeCD -= dt;
+    if (this.molotovCD > 0) this.molotovCD -= dt;
     if (this._swing > 0) this._swing -= dt;
     if (this.reloading > 0) { this.reloading -= dt; if (this.reloading <= 0) { this.reloading = 0; this._finishReload(); } }
     this.bloom = damp(this.bloom, 0, 6, dt);
@@ -2558,7 +2997,7 @@ class WeaponSystem {
 
     // ADS / scope
     const d = this.def();
-    this.ads = this.game.input.buttons[2] && !d.melee;
+    this.ads = this.game.input.buttons[2] && !d.melee && d.class !== 'builder' && (d.class !== 'tool' || d.zoom); // binoculars (zoom tool) can ADS; flashlight can't
     const baseFov = (this.game.settings && this.game.settings.data.fov) || 80;
     const targetFov = this.ads ? (d.adsFov || 60) : baseFov;
     this.fov = damp(this.fov, targetFov, 16, dt);
@@ -2585,12 +3024,33 @@ class WeaponSystem {
     const mm = this.magMeshes[this.cur];
     if (mm) { const sm = WEAPONS[this.cur].spinMag; mm.rotation[sm.axis] = damp(mm.rotation[sm.axis], mm._targetRot, 16, dt); } // eases to the per-shot target -> steps in semi, smooth in auto
 
+    // molotov ignition / committed-throw fuse
+    if (this.molotovState === 'lighting') {
+      this.molotovLightT += dt;
+      const f = clamp(this.molotovLightT / MOLO_IGNITE_T, 0, 1);
+      this.molotovRagFlame.scale.setScalar(0.2 + f * 0.9);
+      if (this.molotovLightT >= MOLO_IGNITE_T) { this.molotovState = 'lit'; this.molotovFuseT = 0; }
+    } else if (this.molotovState === 'lit') {
+      this.molotovFuseT += dt;
+      this.molotovRagFlame.scale.setScalar(1 + Math.sin(this._bobT * 4) * 0.18);
+      if (this.molotovFuseT >= MOLO_HAND_FUSE) this._shatterInHand();
+    }
+
     // grenades
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const g = this.projectiles[i];
       g.fuse -= dt;
       let boom = g.fuse <= 0;
-      if (g.rocket) { // straight, fast, detonates on contact
+      let shatterAt = null;
+      if (g.molotov) { // arcs with gravity + spins; raycasts EVERY frame so it can't tunnel walls
+        g.vel.y -= MOLO_GRAV * dt;
+        const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
+        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + MOLO_PROJ_R);
+        if (wh) { shatterAt = wh.point.clone().addScaledVector(wh.normal, OCCLUSION_INSET); boom = true; }
+        if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; const rp = g.mesh.position; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + MOLO_PROJ_R && rp.y < e.pos.y + e.height + 0.4) { shatterAt = rp.clone(); boom = true; break; } }
+        if (!boom) { g.mesh.position.addScaledVector(g.vel, dt); g.mesh.rotation.x += g.spin.x * dt; g.mesh.rotation.y += g.spin.y * dt; g.mesh.rotation.z += g.spin.z * dt; g.trailT -= dt; if (g.trailT <= 0) { g.trailT = 0.04; this.game.effects.firePool(g.mesh.position, 0.3, 0.6); } }
+        else if (!shatterAt) shatterAt = g.mesh.position.clone();
+      } else if (g.rocket) { // straight, fast, detonates on contact
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
         g.mesh.position.addScaledVector(g.vel, dt);
         const rp = g.mesh.position;
@@ -2604,9 +3064,16 @@ class WeaponSystem {
         if (g.mesh.position.y < 0.11) { g.mesh.position.y = 0.11; g.vel.y *= -0.4; g.vel.x *= 0.6; g.vel.z *= 0.6; }
       }
       if (boom) {
-        this.game.effects.explosion(g.mesh.position.clone(), g.radius);
-        this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg);
+        if (g.molotov) {
+          const mpos = shatterAt || g.mesh.position.clone();
+          this.game.effects.explosion(mpos.clone(), 1.2); this.game.effects.firePool(mpos, 1.6, 1.4);
+          this.game.audio.explosion(); this.game._spawnMolotovPool(mpos);
+        } else {
+          this.game.effects.explosion(g.mesh.position.clone(), g.radius);
+          this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg);
+        }
         this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose();
+        if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); }
         this.projectiles.splice(i, 1);
       }
     }
@@ -3054,6 +3521,30 @@ class LootManager {
       b.box(0.092, 0.03, 0.006, 0, 0.052, 0.142, redHi); b.box(0.03, 0.092, 0.006, 0, 0.052, 0.142, redHi);
       return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x241c10, emissiveIntensity: 0.42 }));
     }
+    if (kind === 'molotov') {
+      // green glass bottle + tan rag wick
+      const gl = 0x2f6b3a, glHi = 0x57a06a, rag = 0xcdb98a;
+      let bg = new THREE.CylinderGeometry(0.09, 0.1, 0.34, 12); b.geo(bg, 0, 0, 0, gl, { tint: 0.03 }); bg.dispose();
+      bg = new THREE.CylinderGeometry(0.092, 0.092, 0.04, 12); b.geo(bg, 0, 0.16, 0, glHi); bg.dispose();
+      bg = new THREE.CylinderGeometry(0.04, 0.06, 0.12, 10); b.geo(bg, 0, 0.24, 0, gl); bg.dispose();
+      b.box(0.05, 0.1, 0.05, 0, 0.33, 0, rag);
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x0a1f10, emissiveIntensity: 0.4 }));
+    }
+    if (kind === 'splint') {
+      // wooden splint board + white bandage wraps
+      const wood = 0x9a6b3a, woodHi = 0xb8854c, wrap = 0xf0ece0, wrapLo = 0xcfc9ba;
+      b.box(0.07, 0.42, 0.07, 0, 0, 0, wood); b.box(0.05, 0.42, 0.02, 0, 0, 0.045, woodHi);
+      b.box(0.10, 0.07, 0.10, 0, 0.10, 0, wrap); b.box(0.10, 0.07, 0.10, 0, -0.08, 0, wrap);
+      b.box(0.105, 0.02, 0.105, 0, 0.10, 0, wrapLo); b.box(0.105, 0.02, 0.105, 0, -0.08, 0, wrapLo);
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x140d06, emissiveIntensity: 0.4 }));
+    }
+    if (kind === 'food') {
+      // ration tin: olive can + steel lid + red label stripe
+      const tin = 0x3f5a32, tinHi = 0x536f43, lid = 0x9aa0a2, label = 0xc23a2a;
+      b.box(0.22, 0.26, 0.22, 0, 0, 0, tin); b.box(0.22, 0.03, 0.22, 0, 0.145, 0, lid);
+      b.box(0.225, 0.07, 0.225, 0, 0, 0, label); b.box(0.20, 0.02, 0.205, 0.012, 0.06, 0, tinHi);
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x101808, emissiveIntensity: 0.45 }));
+    }
     // armor plate
     b.box(0.3, 0.34, 0.16, 0, 0, 0, 0x4f8fe0); b.box(0.16, 0.16, 0.06, 0, 0.02, 0.1, 0x9fd0ff);
     return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x002040, emissiveIntensity: 0.5 }));
@@ -3073,6 +3564,9 @@ class LootManager {
     if (roll < 0.05) this._spawnPickup('medkit', pos, 35);
     else if (roll < 0.12) this._spawnPickup('ammo', pos, 1);
     else if (roll < 0.16) this._spawnPickup('armor', pos, 50);
+    else if (roll < 0.185) this._spawnPickup('splint', pos, 1);
+    else if (roll < 0.215) this._spawnPickup('food', pos, FOOD_RESTORE);
+    else if (roll < 0.235) this._spawnPickup('molotov', pos, 1);
   }
 
   _spawnPickup(kind, pos, value) {
@@ -3100,9 +3594,9 @@ class LootManager {
     const ALT = 38, R = 200, ang = rr(0, TAU), dx = Math.sin(ang), dz = Math.cos(ang);
     const mesh = buildSu24(); mesh.scale.setScalar(1.5); // bigger so the detail reads on the pass
     mesh.position.set(target.x - dx * R, ALT, target.z - dz * R);
-    mesh.rotation.y = Math.atan2(dx, dz); // model nose is -Z → face travel direction
+    mesh.rotation.y = Math.atan2(dx, dz) + Math.PI; // model nose is -Z → add PI so the NOSE (not the tail) leads the travel direction
     this.scene.add(mesh);
-    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 2, released: false, trailT: 0 };
+    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 3, released: false, trailT: 0 };
     this.game.hud.toast('📡 Radio: Su-24 inbound!', 0x6fd0e8);
     this.game.hud.bigMessage('ЗАПРОС ПОДТВЕРЖДЁН', 'a Fencer is making a pass — watch the smoke');
     this.game.audio.radioCall(); // Soviet-radio confirmation + epic WW2 sting
@@ -3138,9 +3632,11 @@ class LootManager {
     const { canopy: chute, rig: lines } = buildChuteRig();   // segmented canopy + crossed risers + carabiners
     grp.add(chute); grp.add(lines);
     this.scene.add(grp);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 130, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.26, depthWrite: false, fog: false, side: THREE.DoubleSide }));
-    beam.position.set(pos.x, 65, pos.z); this.scene.add(beam);
-    this.drops.push({ grp, crate, chute, lines, beam, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
+    // signal flare strapped to the load: a blinking strobe dot + its light, riding DOWN with the crate (no sky-beam beacon)
+    const flareDot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), new THREE.MeshBasicMaterial({ color: 0xff3b1a, fog: false }));
+    flareDot.position.set(0.5, 1.5, 0.5); grp.add(flareDot);
+    const flare = new THREE.PointLight(0xff5a2a, 3.2, 20, 2); flare.position.set(0.5, 1.6, 0.5); grp.add(flare);
+    this.drops.push({ grp, crate, chute, lines, flare, flareDot, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
     this.game.hud.toast('📦 Supply drop released!', 0xff8a3a);
   }
 
@@ -3152,16 +3648,18 @@ class LootManager {
     p.hp = p.maxHp; this.game.hud.setHealth(p.hp, p.maxHp);
     p.armor = p.armorMax; this.game.hud.setArmor(p.armor, p.armorMax);
     this.game.weapons.refillAll();
+    this.game.weapons.grantBuildMats({ sandbag: 6, wire: 4, wood: 5 }); // fortification material — supply drop is the only source
+    p.hunger = HUNGER_MAX; this.game.hud.setHunger(p.hunger); p._starveT = 0; // rations in the crate — top off hunger
     this.game.hud.toast(`📦 ${RARITY[rarity].name} ${WEAPONS[key].name} + full heal/ammo/armor!`, RARITY[rarity].color, RARITY[rarity].name);
-    this.game.hud.bigMessage('SUPPLY CLAIMED', `${WEAPONS[key].name} · health, armor & ammo topped`);
+    this.game.hud.toast('🧱 +6 sandbags  🔩 +4 wire  🪵 +5 planks  🥫 food topped', 0xcdb887);
+    this.game.hud.bigMessage('SUPPLY CLAIMED', `${WEAPONS[key].name} · health, armor, ammo & food topped`);
     this.game.audio.buy();
     this.game.effects.stuffing(d.pos.clone().setY(1.4), RARITY[rarity].color, 32, 7);
     this._disposeDrop(d); const i = this.drops.indexOf(d); if (i >= 0) this.drops.splice(i, 1);
   }
   _disposeDrop(d) {
-    this.scene.remove(d.grp); this.scene.remove(d.beam);
+    this.scene.remove(d.grp);
     d.grp.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-    if (d.beam.geometry) d.beam.geometry.dispose(); if (d.beam.material) d.beam.material.dispose();
   }
 
   openNearby() {
@@ -3199,13 +3697,14 @@ class LootManager {
     this.nearDrop = null; let ndd = 3.6;
     for (const d of this.drops) {
       d.t = (d.t || 0) + dt;
+      // blinking signal flare on the load (strobe) — works while falling AND once landed, replacing the old sky beacon
+      if (d.flare) { const on = Math.sin(d.t * 8) > 0.15; d.flare.intensity = on ? 3.4 : 0.35; if (d.flareDot) d.flareDot.visible = on; }
       if (d.state === 'falling') {
-        d.y -= dt * 7; d.sway += dt;
+        d.y -= dt * 3.4; d.sway += dt;
         if (d.y <= 0.1) { d.y = 0.1; d.state = 'landed'; d.grp.position.set(d.pos.x, 0.1, d.pos.z); d.chute.visible = false; d.lines.visible = false; this.game.hud.toast('📦 Drop landed — go grab it!', 0xff8a3a); this.game.audio.buy(); }
         else d.grp.position.set(d.pos.x + Math.sin(d.sway) * 1.0, d.y, d.pos.z + Math.cos(d.sway * 0.8) * 1.0);
       } else {
         d.crate.material.emissiveIntensity = 0.6 + Math.sin(d.t * 4) * 0.25;
-        d.beam.scale.y = 0.45; d.beam.position.y = 29; d.beam.material.opacity = 0.18;
         const dd = Math.hypot(d.pos.x - pp.x, d.pos.z - pp.z);
         if (!d.opened && dd < ndd) { ndd = dd; this.nearDrop = d; }
       }
@@ -3219,6 +3718,9 @@ class LootManager {
     else if (pu.kind === 'radio') { p.radios = (p.radios || 0) + pu.value; this.game.hud.setRadios(p.radios); this.game.audio.buy(); this.game.hud.toast('📻 +1 Radio — press T to call a drop', 0x6fd0e8); }
     else if (pu.kind === 'medkit') { p.hp = Math.min(p.maxHp, p.hp + pu.value); this.game.hud.setHealth(p.hp, p.maxHp); this.game.audio.reloadIn(); this.game.hud.toast('+' + pu.value + ' HP', 0x7fd06a); }
     else if (pu.kind === 'ammo') { this.game.weapons.refillAll(); this.game.audio.reloadClick(); this.game.hud.toast('Ammo refilled', 0xb88a3a); }
+    else if (pu.kind === 'splint') { p.splints += pu.value; this.game.hud.setSurvival(p); this.game.audio.reloadIn(); this.game.hud.toast('🩹 +' + pu.value + ' Splint (press X to apply)', 0xc9a8ff); }
+    else if (pu.kind === 'food') { if (p.eatFood(pu.value)) this.game.hud.toast('🥫 +' + pu.value + ' Food', 0xdfa050); }
+    else if (pu.kind === 'molotov') { this.game.weapons.molotovs += pu.value; this.game.hud.setWeapon(this.game.weapons); this.game.audio.buy(); this.game.hud.toast('🔥 +' + pu.value + ' Molotov (press N)', 0xff8a3a); }
     else { p.armor = Math.min(p.armorMax, p.armor + pu.value); this.game.hud.setArmor(p.armor, p.armorMax); this.game.audio.buy(); this.game.hud.toast('+' + pu.value + ' Armor', 0x6fa8e8); }
   }
 
@@ -3251,20 +3753,79 @@ class Player {
     this.armorOnWave = 0;
     this.mountedGun = null;
     this.inTank = null;
+    // --- survival mechanics ---
+    this.legBroken = false; this._splintT = 0; this.splints = 0;
+    this.hunger = HUNGER_MAX; this._starveT = 0; this._wasFrozen = false;
+    this.burnT = 0; this._burnTickT = 0;
   }
   reset() {
     this.pos.set(0, 0, 30); this.vel.set(0, 0, 0); this.yaw = Math.PI; this.pitch = 0;
     this.onGround = true; this._regenT = 0; this.resetStats();
   }
 
-  hurt(dmg) {
+  hurt(dmg, bypassArmor = 0) {
     if (!this.alive) return;
     if (this.inTank && this.inTank.shielded && this.inTank.shielded()) return; // protected by tank armor (enemy fire hits the tank instead — see captured-tank HP)
-    if (this.armor > 0) { const take = Math.min(this.armor, dmg); this.armor -= take; dmg -= take; this.game.hud.setArmor(this.armor, this.armorMax); }
+    // bypassArmor 0..1 = fraction of dmg armor cannot soak (blunt trauma). 0 = bullets, 1 = ignores armor.
+    if (this.armor > 0 && bypassArmor < 1) { const take = Math.min(this.armor, dmg * (1 - bypassArmor)); this.armor -= take; dmg -= take; this.game.hud.setArmor(this.armor, this.armorMax); }
     this.hp -= dmg; this._regenT = 0;
     this.game.audio.playerHurt(); this.game.hud.damageFlash();
     if (this.hp <= 0) { this.hp = 0; this.alive = false; this.game.onPlayerDead(); }
     else this.game.hud.setHealth(this.hp, this.maxHp);
+  }
+  breakLeg() {
+    if (this.legBroken) return;
+    this.legBroken = true;
+    this.game.audio.playerHurt(); this.game.hud.damageFlash();
+    this.game.hud.toast('🦵 LEG BROKEN — find a splint (X)!', 0xd23a2a);
+    this.game.hud.setSurvival(this);
+  }
+  applySplint() {
+    if (this._splintT > 0) return;
+    if (!this.legBroken) { this.game.hud.toast('Leg is fine.', 0x7fd06a); return; }
+    if (this.splints <= 0) { this.game.hud.toast('No splint.', 0xd23a2a); this.game.audio.noMoney(); return; }
+    if (this.inTank || this.mountedGun) { this.game.hud.toast('Dismount first.', 0xd23a2a); return; }
+    if (!this.onGround) { this.game.hud.toast("Can't splint mid-air.", 0xd23a2a); return; }
+    this.splints--; this._splintT = SPLINT_APPLY_TIME;
+    this.game.audio.reloadIn(); this.game.hud.setSurvival(this);
+  }
+  eatFood(amount) {
+    const before = this.hunger;
+    this.hunger = Math.min(HUNGER_MAX, this.hunger + amount);
+    if (this.hunger <= before) { this.game.hud.toast('Already full.', 0x7fd06a); return false; }
+    this.game.hud.setHunger(this.hunger); this.game.audio.reloadIn(); return true;
+  }
+  // Survival timers — called every frame from _updatePlaying so they keep ticking on foot, on the .50 cal, or in the tank.
+  survivalTick(dt) {
+    const mp = this.game.mp;
+    const frozen = mp.active && mp.frozen;
+    if (this._wasFrozen && !frozen) { this.game.hud.setHunger(this.hunger); this.game.hud.setSurvival(this); } // refresh HUD after an MP revive/respawn
+    this._wasFrozen = frozen;
+    if (frozen) return;
+    if (this._splintT > 0) {
+      this._splintT -= dt;
+      if (this._splintT <= 0) { this._splintT = 0; this.legBroken = false; this.game.hud.toast('🦵 Leg splinted — mobility restored', 0x7fd06a); this.game.hud.setSurvival(this); }
+    }
+    if (this.alive) {
+      const h0 = this.hunger;
+      this.hunger = Math.max(0, this.hunger - HUNGER_DRAIN_PER_SEC * dt);
+      if (Math.floor(h0) !== Math.floor(this.hunger)) this.game.hud.setHunger(this.hunger);
+      if (this.hunger <= 0) { this._starveT += dt; if (this._starveT >= STARVE_TICK_TIME) { this._starveT = 0; const starveFloor = this.maxHp * 0.5; if (this.hp > starveFloor) this._takeSurvivalDamage(Math.min(STARVE_TICK_DMG, this.hp - starveFloor), 1); } }
+      else this._starveT = 0;
+    }
+    if (this.hp < this.maxHp && this.hunger > HUNGER_LOW) { this._regenT += dt; if (this._regenT > 4) { this.hp = Math.min(this.maxHp, this.hp + 12 * dt); this.game.hud.setHealth(this.hp, this.maxHp); } }
+    // --- on fire (burnT set by molotov pools / in-hand shatter) ---
+    if (this.burnT > 0) {
+      this.burnT -= dt; this._burnTickT += dt;
+      if (!mp.active && this._burnTickT >= PLAYER_BURN_TICK) { this._burnTickT = 0; this.hurt(PLAYER_BURN_DPS * PLAYER_BURN_TICK, 1); }
+    } else this._burnTickT = 0;
+    this.game.hud.setBurn(this.burnT);
+  }
+  // Fall/starvation damage — host-authoritative in MP (the armor-bypass nuance only applies in single-player).
+  _takeSurvivalDamage(dmg, bypassArmor = 0) {
+    const mp = this.game.mp;
+    if (mp.active) this.game.mp.claimPlayerHit(mp.myId, dmg);
+    else this.hurt(dmg, bypassArmor);
   }
   addMoney(n) { this.money += Math.round(n * this.moneyMult); this.game.hud.setMoney(this.money); }
   spend(n) { if (this.money >= n) { this.money -= n; this.game.hud.setMoney(this.money); return true; } return false; }
@@ -3276,8 +3837,12 @@ class Player {
 
     const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    const sprint = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    const speed = (sprint ? 7.6 : 5.2) * this.moveSpeedMult;
+    const sprint = (input.isDown('ShiftLeft') || input.isDown('ShiftRight')) && !this.legBroken && this._splintT <= 0;
+    let survMult = 1;
+    if (this.legBroken) survMult *= LIMP_SPEED_MULT;
+    if (this.hunger < HUNGER_LOW) survMult *= HUNGER_LOW_SPEED_MULT;
+    if (this._splintT > 0) survMult = 0; // immobile while binding the splint
+    const speed = (sprint ? 7.6 : 5.2) * this.moveSpeedMult * survMult;
     const wish = new THREE.Vector3().addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
     if (wish.lengthSq() > 1) wish.normalize();
     wish.multiplyScalar(speed);
@@ -3285,17 +3850,21 @@ class Player {
     this.vel.x = damp(this.vel.x, wish.x, accel, dt);
     this.vel.z = damp(this.vel.z, wish.z, accel, dt);
 
-    if (this.onGround && input.wasPressed('Space')) { this.vel.y = 7.2; this.onGround = false; this.game.audio.jump(); }
+    if (this.onGround && input.wasPressed('Space') && !this.legBroken && this._splintT <= 0) { this.vel.y = 7.2; this.onGround = false; this.game.audio.jump(); }
     this.vel.y -= 22 * dt; this._fallVel = this.vel.y;
     const wasAir = !this.onGround;
     this.onGround = this.game.world.collide(this.pos, this.vel, this.radius, this.height, dt);
     if (this.onGround && wasAir && this._fallVel < -6) this.game.audio.land(this._fallVel < -12);
+    if (this.onGround && wasAir && this._fallVel < FALL_SAFE) {
+      let dmg = ((-this._fallVel) - (-FALL_SAFE)) * FALL_DMG_PER_VY; // HP per m/s beyond the safe threshold
+      if (this._fallVel <= FALL_LETHAL) dmg += FALL_DMG_BONUS_AT_LETHAL;
+      if (this._fallVel <= LEG_BREAK_VY && !this.legBroken) this.breakLeg();
+      this._takeSurvivalDamage(dmg, FALL_ARMOR_BYPASS); // blunt trauma; host-authoritative in MP
+    }
 
     const horiz = Math.hypot(this.vel.x, this.vel.z);
     if (this.onGround && horiz > 1.5) { this._footT -= dt; if (this._footT <= 0) { this._footT = sprint ? 0.3 : 0.42; this.game.audio.footstep(); } }
     else this._footT = 0;
-
-    if (this.hp < this.maxHp) { this._regenT += dt; if (this._regenT > 4) { this.hp = Math.min(this.maxHp, this.hp + 12 * dt); this.game.hud.setHealth(this.hp, this.maxHp); } }
 
     this._camY = damp(this._camY, this.pos.y + this.eye, 18, dt);
     const cam = this.game.engine.camera;
@@ -3498,9 +4067,13 @@ const SHOP_ITEMS = [
   { id: 'heal', name: 'Patch Kit', desc: 'Restore full health.', cost: 350, apply: (g) => { g.player.hp = g.player.maxHp; g.hud.setHealth(g.player.hp, g.player.maxHp); } },
   { id: 'armor', name: 'Armor Plate (+50)', desc: 'Add 50 armor.', cost: 400, apply: (g) => { g.player.armor = Math.min(g.player.armorMax, g.player.armor + 50); g.hud.setArmor(g.player.armor, g.player.armorMax); } },
   { id: 'nade', name: 'Grenades x2', desc: 'Two more boom-bears.', cost: 400, apply: (g) => { g.weapons.grenades += 2; g.hud.setWeapon(g.weapons); } },
+  { id: 'molotov', name: 'Molotov Cocktails x2', desc: 'Press N to light, click to throw — leaves a burning pool.', cost: 350, apply: (g) => { g.weapons.molotovs += 2; g.hud.setWeapon(g.weapons); } },
   { id: 'key', name: 'Lootbox Key', desc: 'A key to crack a lootbox.', cost: 500, apply: (g) => { g.player.keys++; g.hud.setKeys(g.player.keys); } },
+  { id: 'splint', name: 'Field Splint', desc: 'Cures a broken leg. Press X to apply (~3s, immobile).', cost: 250, apply: (g) => { g.player.splints++; g.hud.setSurvival(g.player); } },
+  { id: 'rations', name: 'Field Rations', desc: `Restore +${FOOD_RESTORE} hunger.`, cost: 150, apply: (g) => { if (!g.player.eatFood(FOOD_RESTORE)) { g.player.money += 150; g.hud.setMoney(g.player.money); } } },
   // THE LONG NIGHT only:
-  { id: 'flashlight', name: 'Flashlight', desc: 'Cuts the dark. Toggle with L. Kept for the whole run.', cost: 600, longnight: true, owned: (g) => g.weapons.flashlightOwned, apply: (g) => { g.weapons.flashlightOwned = true; g.dayNight.setFlashlight(true); g.hud.setNightGear(g); } },
+  { id: 'flashlight', name: 'Flashlight', desc: 'Steel torch — switch to it to light the way (can\'t shoot while held). Co-op: others see your beam.', cost: 600, owned: (g) => g.weapons.flashlightOwned, apply: (g) => { g.weapons.flashlightOwned = true; g.weapons.owned['flashlight'] = true; g.dayNight.flashOn = true; g.hud.setNightGear(g); g.hud.setWeapon(g.weapons); } }, // owned + selectable (switch to it); not auto-equipped so you don't start a wave unable to shoot
+  { id: 'binoculars', name: 'Binoculars (6×30)', desc: 'Soviet B-6 field glasses — switch to them, hold RMB to glass the horizon at a realistic 6× zoom.', cost: 450, owned: (g) => !!g.weapons.owned['binoculars'], apply: (g) => { g.weapons.owned['binoculars'] = true; g.hud.setWeapon(g.weapons); } },
   { id: 'flares', name: 'Flares x3', desc: 'Throw a glowing flare (C) to light up an area.', cost: 250, longnight: true, apply: (g) => { g.weapons.flares += 3; g.hud.setNightGear(g); } },
 ];
 
@@ -3590,25 +4163,45 @@ class HUD {
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
       clock: $('clock'), nightgear: $('nightgear'),
       tankhp: $('tankhp'), tankhpfill: $('tankhpfill'),
+      hungerfill: $('hungerfill'), survival: $('survival'),
+      firevig: $('firevig'), firepov: $('firepov'), molotov: $('molotovhud'),
+      buildmats: $('buildmats'),
     };
     this._hitT = 0; this._msgT = 0;
   }
   show(on) { this.el.hud.classList.toggle('show', on); }
   setHealth(hp, max) { const f = clamp(hp / max, 0, 1); this.el.hpfill.style.width = (f * 100) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.el.vignette.style.boxShadow = `inset 0 0 200px 40px rgba(200,30,20,${(1 - f) * 0.5})`; }
   setArmor(a, max) { this.el.armorfill.style.width = clamp(a / max, 0, 1) * 100 + '%'; }
+  setHunger(h) { if (!this.el.hungerfill) return; this.el.hungerfill.style.width = clamp(h / HUNGER_MAX, 0, 1) * 100 + '%'; this.el.hungerfill.style.filter = h < HUNGER_LOW ? 'saturate(1.7) brightness(1.2)' : 'none'; }
+  setSurvival(p) { if (!this.el.survival) return; let s = ''; if (p.legBroken) s += '<span class="leg">🦵 LEG BROKEN — X to splint</span> '; if (p.splints > 0) s += `<span class="spl">🩹 ×${p.splints}</span>`; this.el.survival.innerHTML = s; }
   setWeapon(w) {
     const key = w.cur, d = WEAPONS[key], rarity = w.rarity[key] || 'common';
     this.el.wepname.textContent = d.name.toUpperCase();
     this.el.wepname.style.color = `var(--c-${rarity})`;
+    if (d.class === 'tool') { // flashlight / binoculars: no ammo
+      if (d.zoom) { this.el.wepclass.textContent = 'optics · RMB to zoom'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔭 6×</span>`; }
+      else { const on = this.game.dayNight && this.game.dayNight.flashOn; this.el.wepclass.textContent = 'tool · L: toggle beam'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔦 ${on ? 'ON' : 'off'}</span>`; }
+      if (this.el.molotov) this.el.molotov.innerHTML = '';
+      return;
+    }
+    if (d.class === 'builder') { // builders show material count instead of ammo
+      const n = (w.buildMats && w.buildMats[d.buildKind]) || 0;
+      this.el.wepclass.textContent = 'build · LMB place · Shift+wheel rotate';
+      this.el.ammonum.innerHTML = `${n}<span class="res"> left</span>`;
+      if (this.el.molotov) this.el.molotov.innerHTML = '';
+      return;
+    }
     const slot = w.ownedOrder().indexOf(key) + 1;
     const mode = d.melee ? '' : (d.auto ? (w.semi[key] ? ' · SEMI' : ' · AUTO') : ' · SEMI');
     this.el.wepclass.textContent = `${d.class} · ${RARITY[rarity].name}${slot ? ' · slot ' + slot : ''}${mode}`;
     if (d.melee) this.el.ammonum.innerHTML = `<span style="font-size:22px">MELEE</span>`;
     else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
+    if (this.el.molotov) this.el.molotov.innerHTML = w.molotovs > 0 ? `🔥 ×${w.molotovs}` : '';
   }
   setMoney(m) { this.el.money.textContent = '$' + m; }
   setKeys(k) { this.el.keys.textContent = '🔑 ' + k; }
   setRadios(n) { if (this.el.radios) this.el.radios.textContent = n > 0 ? '📻 ' + n : ''; }
+  setBuildMats(w) { if (!this.el.buildmats) return; const m = w.buildMats || {}; const p = []; if (m.sandbag) p.push('🧱' + m.sandbag); if (m.wire) p.push('🔩' + m.wire); if (m.wood) p.push('🪵' + m.wood); this.el.buildmats.textContent = p.join('  '); }
   setWaveTag(tags) {
     const el = this.el.wavetag; if (!el) return;
     if (!tags || !tags.length) { el.classList.remove('show'); el.innerHTML = ''; return; }
@@ -3655,6 +4248,13 @@ class HUD {
   }
   hitmarker(kill) { const h = this.el.hitmarker; h.classList.toggle('kill', !!kill); h.style.transition = 'none'; h.style.opacity = '1'; this._hitT = 0.12; }
   damageFlash() { this.el.vignette.style.transition = 'box-shadow .05s'; this.el.vignette.style.boxShadow = 'inset 0 0 220px 60px rgba(220,30,20,0.55)'; setTimeout(() => { this.el.vignette.style.transition = 'box-shadow .4s'; this.setHealth(this.game.player.hp, this.game.player.maxHp); }, 60); }
+  setBurn(burnT) {
+    if (!this.el.firevig) return;
+    if (burnT <= 0) { this.el.firevig.style.boxShadow = 'inset 0 0 220px 80px rgba(255,90,20,0)'; if (this.el.firepov) this.el.firepov.classList.remove('on'); return; }
+    const it = clamp(burnT / PLAYER_BURN_DUR, 0, 1), flick = 0.6 + Math.sin(performance.now() * 0.02) * 0.2;
+    this.el.firevig.style.boxShadow = `inset 0 0 220px 80px rgba(255,90,20,${(0.45 * it * flick).toFixed(3)})`;
+    if (this.el.firepov) this.el.firepov.classList.add('on');
+  }
   bigMessage(text, sub = '') { this.el.msg.innerHTML = text + (sub ? `<small>${sub}</small>` : ''); this.el.msg.classList.add('show'); this._msgT = 2.2; }
   kill(name) { const d = document.createElement('div'); d.textContent = '☠ ' + name; this.el.killfeed.appendChild(d); setTimeout(() => d.remove(), 2400); }
   toast(text, color = 0xffffff, tag = '') {
@@ -3811,7 +4411,8 @@ class AssetViewer {
       const box = new THREE.Box3().setFromObject(obj);
       const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
       obj.position.sub(ctr);
-      this.dist = Math.max(size.x, size.y, size.z, 0.5) * 1.6 + 0.4;
+      this.dist = Math.max(size.x, size.y, size.z, 0.5) * 1.6 * (obj.userData.viewerDistMult || 1) + 0.4;
+      if (typeof obj.userData.viewerSpin === 'number') this.spin = obj.userData.viewerSpin;
     }
   }
   render(dt) {
@@ -3865,6 +4466,10 @@ class Admin {
       list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
       list.push({ name: 'T-90M «MITRI»', sub: 'tank boss', make: () => buildTank('desert') });
       list.push({ name: 'T-90M (wreck)', sub: 'destroyed', make: () => buildTankWreck() });
+      list.push({ name: 'T-34/76 1942', sub: 'asset-only model', make: () => buildT34Model() });
+      list.push({ name: 'T-34/76 tracks', sub: 'rig part', make: () => buildT34Tracks() });
+      list.push({ name: 'T-34/76 hull', sub: 'rig part', make: () => buildT34Hull() });
+      list.push({ name: 'T-34/76 turret', sub: 'rig part', make: () => buildT34Turret() });
       return list;
     }
     if (this.tab === 'props') return [
@@ -3876,7 +4481,13 @@ class Admin {
       { name: 'Medkit', sub: 'pickup', make: () => g.loot._pickupMesh('medkit') },
       { name: 'Ammo box', sub: 'pickup', make: () => g.loot._pickupMesh('ammo') },
       { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
+      { name: 'Field splint', sub: 'pickup', make: () => g.loot._pickupMesh('splint') },
+      { name: 'Ration tin', sub: 'pickup', make: () => g.loot._pickupMesh('food') },
+      { name: 'Molotov bottle', sub: 'pickup', make: () => g.loot._pickupMesh('molotov') },
       { name: 'Flare', sub: 'thrown light', make: () => buildFlare() },
+      { name: 'Sandbags', sub: 'fortification', make: () => buildSandbags() },
+      { name: 'Barbed wire', sub: 'fortification', make: () => buildBarbedWire() },
+      { name: 'Barricade', sub: 'fortification', make: () => buildBarricade() },
     ];
     return [];
   }
@@ -4549,12 +5160,12 @@ class DayNight {
   reset(active) {
     this.active = active; this.t = 0; this.nightCount = 0; this.bloodMoon = false; this._wasNight = false;
     this.cel.visible = active;
-    this.setFlashlight(false);
+    this.flashOn = true; this.flash.intensity = 0; // beam preference on; only emits while the flashlight item is held
     // hold bright noon for PURGE; start LONG NIGHT at dawn
     this._apply(active ? 0.0 : 1.0, Math.PI / 2, true);
   }
   setFlashlight(on) { this.flashOn = on; this.flash.intensity = on ? 7 : 0; }
-  toggleFlashlight() { if (this.game.weapons.flashlightOwned) { this.setFlashlight(!this.flashOn); this.game.audio.uiClick(); this.game.hud.setNightGear(this.game); } else this.game.hud.bigMessage('NO FLASHLIGHT', 'buy one in the armory (key L)'); }
+  toggleFlashlight() { if (this.game.weapons.flashlightOwned) { this.flashOn = !this.flashOn; this.game.audio.uiClick(); this.game.hud.setNightGear(this.game); this.game.hud.setWeapon(this.game.weapons); } else this.game.hud.bigMessage('NO FLASHLIGHT', 'buy one in the armory (key L)'); }
 
   info() { const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE; const night = c >= DAY_FRAC; return { night, n: this.nightCount, blood: this.bloodMoon && night }; }
 
@@ -4624,6 +5235,10 @@ class RemotePlayer {
     game.engine.scene.add(this.obj);
     this.parts = this.obj.userData.parts;
     this.gunAnchor = new THREE.Group(); this.gunAnchor.position.set(0.42, 0.95, 0.34); this.obj.add(this.gunAnchor); this._wep = null;
+    // flashlight beam — a spotlight in world space, on when this player holds the flashlight (so everyone sees their cone)
+    this.flashLight = new THREE.SpotLight(0xfff0d0, 0, 60, 0.62, 0.4, 0.0); this.flashTarget = new THREE.Object3D();
+    this.flashLight.target = this.flashTarget; game.engine.scene.add(this.flashLight); game.engine.scene.add(this.flashTarget);
+    this._hasFlash = false; this._fwd = new THREE.Vector3(); this._fe = new THREE.Euler();
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
     this.hp = 100; this.maxHp = 100; this.down = false; this.dead = false;
@@ -4660,6 +5275,13 @@ class RemotePlayer {
       o.position.y = this.pos.y + (moving ? Math.abs(Math.sin(this._animT)) * 0.06 : 0);
       if (this.gunAnchor) this.gunAnchor.visible = true;
     }
+    if (this._hasFlash && !this.down && !this.dead) { // beam from this player's flashlight, aimed where they look
+      const f = this._fwd.set(0, 0, -1).applyEuler(this._fe.set(this.pitch, this.yaw, 0, 'XYZ'));
+      const hx = this.pos.x, hy = this.pos.y + 1.6, hz = this.pos.z;
+      this.flashLight.position.set(hx, hy, hz);
+      this.flashTarget.position.set(hx + f.x * 10, hy + f.y * 10, hz + f.z * 10);
+      this.flashLight.intensity = 7;
+    } else this.flashLight.intensity = 0;
     const hp = _v3a.set(this.pos.x, this.pos.y + 2.5, this.pos.z).project(cam);
     if (hp.z > 1 || hp.z < -1) { this.label.style.display = 'none'; return; }
     this.label.style.display = 'block';
@@ -4670,6 +5292,7 @@ class RemotePlayer {
   }
   setWeapon(key) {
     while (this.gunAnchor.children.length) { const c = this.gunAnchor.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
+    this._hasFlash = (key === 'flashlight');
     const def = WEAPONS[key]; if (!def) return;
     const m = buildViewmodel(def); if (m.material) { m.material.depthTest = true; m.renderOrder = 0; }
     m.scale.setScalar(0.5); m.rotation.set(0, Math.PI, 0); m.position.set(0, 0, 0);
@@ -4678,6 +5301,7 @@ class RemotePlayer {
   dispose() {
     this.game.engine.scene.remove(this.obj);
     this.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    this.game.engine.scene.remove(this.flashLight); this.game.engine.scene.remove(this.flashTarget);
     if (this.label) this.label.remove();
   }
 }
@@ -4747,13 +5371,19 @@ class MP {
     n.on('xf', (d) => { const rp = this._remote(d.id); if (rp) rp.setTransform(d); });
     n.on('espawn', (d) => this._clientSpawnEnemy(d));
     n.on('esnap', (arr) => this._clientSnap(arr));
+    n.on('struct', (d) => g.build.applyRemoteStruct(d));                       // a structure was placed (host-authoritative)
+    n.on('structreq', (d) => { if (this.isHost) g.build.hostPlaceFromClient(d); }); // client asks host to place
+    n.on('structdie', (d) => g.build.applyRemoteDestroy(d.id));                // a structure was destroyed
     n.on('edie', (d) => this._clientEnemyDie(d));
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else g.hud.setBoss(d.frac, d.name); });
     n.on('wave', (d) => { if (g.state === 'shop') { g.ui.hideAll(); g.state = 'playing'; g.input.requestLock(); } g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); });
     n.on('waveclear', (d) => { if (g.state === 'playing') { g.hud.bigMessage('WAVE CLEAR', 'visit the armory'); g._mpOpenShop(d.n); } });
     n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from); });
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
+    n.on('molotov', (d) => { if (this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
+    n.on('firepool', (d) => { if (!this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('kill', (d) => this._clientKill(d));
+    n.on('burn', () => { this.game.player.burnT = PLAYER_BURN_DUR; });
     n.on('pstate', (d) => this._applyPState(d));
     n.on('revive', (d, from) => { if (this.isHost) this.hostRevive(d.tid, from); });
     n.on('ping', (d, from) => { if (this.isHost) this.net.sendTo(from, 'pong', d); });
@@ -4906,6 +5536,7 @@ class MP {
   _sendWorldTo(pid) {
     this.net.sendTo(pid, 'start', { mode: this.game.mode || 'purge' });
     for (const e of this.game.enemies.active) if (e.alive) this.net.sendTo(pid, 'espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale });
+    for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
   }
   _hostGone() { if (!this.active) return; this.active = false; try { this.game.hud.bigMessage('HOST LEFT', 'returning to menu…'); } catch (e) {} this.leave(); this.game.toMenu(); }
@@ -4940,6 +5571,7 @@ class Game {
     this.enemies = new EnemyManager(this);
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
+    this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
     this.mountedGun = new MountedGun(this, new THREE.Vector3(0, 3.4, 46), 0); // .50 cal on the bunker roof
     this.capturedTank = null; // set by _tankCaptured; cleared on reset
     this.waves = new WaveManager(this);
@@ -4952,7 +5584,8 @@ class Game {
     this.meta = this._loadMeta(); // persistent best-wave / lifetime stats
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
     this.mp = new MP(this); // multiplayer co-op (dormant until host/join)
-    this.mode = 'purge'; this.flares = []; this._surviveTime = 0;
+    this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
+    this._molTmp = new THREE.Vector3(); this._molTmp2 = new THREE.Vector3(); this._molTmp3 = new THREE.Vector3();
 
     this.state = 'menu'; this.score = 0; this.kills = 0;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
@@ -5000,8 +5633,10 @@ class Game {
   _wireInput() {
     this.input.on('key', (code) => {
       if (this.state !== 'playing') return;
+      if (this.weapons.isThrowLocked() && code !== 'KeyM') return; // committed molotov: only the LMB throw (and mute) work
       if (code === 'KeyR') this.weapons.startReload();
       else if (code === 'KeyG') this.weapons.throwGrenade();
+      else if (code === 'KeyN') this.weapons.armMolotov();
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
         // ---- CapturedTank: exit when aboard ----
@@ -5034,6 +5669,7 @@ class Game {
         this.useRadio();
       }
       else if (code === 'KeyB') this.weapons.toggleFireMode();
+      else if (code === 'KeyX') this.player.applySplint();
       else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
       else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.weapons.selectSlot(n); }
     });
@@ -5064,15 +5700,19 @@ class Game {
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.world.clearWrecks && this.world.clearWrecks();
+    this.build.reset();
     this.weapons.resetLoadout();
     this.waves.reset();
     this._clearFlares();
+    if (this._clearMolotovPools) this._clearMolotovPools();
     this.dayNight.reset(this.mode === 'longnight'); // bright noon for PURGE, dawn-into-night for LONG NIGHT
     this._surviveTime = 0;
     this.score = 0; this.kills = 0;
     this.hud.setHealth(this.player.hp, this.player.maxHp);
     this.hud.setArmor(this.player.armor, this.player.armorMax);
     this.hud.setMoney(this.player.money); this.hud.setKeys(this.player.keys); this.hud.setRadios(this.player.radios);
+    this.hud.setBuildMats(this.weapons);
+    this.hud.setHunger(this.player.hunger); this.hud.setSurvival(this.player);
     this.hud.setScore(0); this.hud.setWeapon(this.weapons);
     this.hud.setNightMode(this.mode === 'longnight'); // shows/hides the clock + gear readout
     this._startCountdown = 0.6; this._waveBreak = 0;
@@ -5136,6 +5776,58 @@ class Game {
       if (f.life <= 0) { f.out = true; f.light.intensity = 0; this.engine.scene.remove(f.light); f.flame.visible = false; }
     }
   }
+  // Line-of-sight test so molotov fire cannot reach through a wall into the next room.
+  raySegBlocked(from, to) {
+    const dir = this._molTmp3.copy(to).sub(from); const dist = dir.length();
+    if (dist < 0.9) return false; dir.multiplyScalar(1 / dist);
+    const start = from.clone().addScaledVector(dir, OCCLUSION_INSET);
+    return this.world.rayHit(start, dir, dist - OCCLUSION_INSET * 2) !== null;
+  }
+  _spawnMolotovPool(pos, fromNet = false) {
+    if (this.mp.active && !this.mp.isHost && !fromNet) { this.mp.net.send('molotov', { x: pos.x, y: pos.y, z: pos.z }); return; }
+    if (!this.molotovPools) this.molotovPools = [];
+    if (this.molotovPools.length >= FIRE_POOL_MAX) this._disposeMolotovPool(this.molotovPools.shift());
+    this._downV = this._downV || new THREE.Vector3(0, -1, 0); // drop the burning liquid onto the floor under the impact so the fire never floats
+    const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200);
+    const py = gh ? gh.point.y + 0.02 : 0.05;
+    const light = new THREE.PointLight(0xff5a26, 7, 14, 1.4); light.position.set(pos.x, py + 0.45, pos.z); this.engine.scene.add(light);
+    this.molotovPools.push({ pos: new THREE.Vector3(pos.x, py, pos.z), light, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 });
+    if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
+  }
+  _disposeMolotovPool(p) { if (p && p.light) this.engine.scene.remove(p.light); }
+  _clearMolotovPools() { if (this.molotovPools) { for (const p of this.molotovPools) this._disposeMolotovPool(p); this.molotovPools.length = 0; } }
+  _updateMolotovPools(dt) {
+    if (!this.molotovPools || !this.molotovPools.length) return;
+    const hostSim = !this.mp.active || this.mp.isHost;
+    const t = performance.now() * 0.001;
+    for (let i = this.molotovPools.length - 1; i >= 0; i--) {
+      const p = this.molotovPools[i];
+      p.life -= dt;
+      const fade = p.life < 2.0 ? Math.max(0, p.life / 2.0) : 1;
+      p.emitT -= dt; if (p.emitT <= 0) { p.emitT = 0.05; this.effects.firePool(p.pos, p.radius, fade); }
+      if (p.light) { const flick = 0.8 + Math.sin(t * 24 + i) * 0.15; p.light.intensity += (7 * fade * flick - p.light.intensity) * Math.min(1, dt * 6); }
+      p.tickT -= dt;
+      if (hostSim && p.tickT <= 0 && p.life > 0) {
+        p.tickT = FIRE_BURN_TICK;
+        const center = this._molTmp.set(p.pos.x, p.pos.y + 0.5, p.pos.z);
+        for (const e of this.enemies.active) {
+          if (!e.alive || e.isTank) continue;
+          if (Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) > p.radius) continue;
+          if (this.raySegBlocked(center, this._molTmp2.set(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z))) continue;
+          e.burnT = ENEMY_BURN_DUR; this.enemies.damage(e, FIRE_DOT_ENEMY * FIRE_BURN_TICK, 'fire', e.pos.clone());
+        }
+        const tryBurn = (px, py, pz, id, isLocal) => {
+          if (Math.hypot(px - p.pos.x, pz - p.pos.z) > p.radius) return;
+          if (this.raySegBlocked(center, this._molTmp2.set(px, py + 0.9, pz))) return;
+          if (this.mp.active) { this.mp.hostHurt(id, PLAYER_BURN_DPS * FIRE_BURN_TICK); if (isLocal) this.player.burnT = PLAYER_BURN_DUR; else this.mp.net.sendTo(id, 'burn', {}); }
+          else this.player.burnT = PLAYER_BURN_DUR;
+        };
+        if (this.mp.active && this.mp.isHost) { tryBurn(this.player.pos.x, this.player.pos.y, this.player.pos.z, 'host', true); for (const [id, rp] of this.mp.remotes) tryBurn(rp.pos.x, rp.pos.y, rp.pos.z, id, false); }
+        else if (!this.mp.active) tryBurn(this.player.pos.x, this.player.pos.y, this.player.pos.z, null, true);
+      }
+      if (p.life <= 0) { this._disposeMolotovPool(p); this.molotovPools.splice(i, 1); }
+    }
+  }
   onNightStart(n, blood) {
     if (this.mode !== 'longnight') return;
     if (blood) this.hud.bigMessage('🔴 BLOOD MOON', 'the horde swells — survive it');
@@ -5150,7 +5842,7 @@ class Game {
     this.loot.callSupplyDrop();
   }
 
-  pause() { if (this.state !== 'playing') return; this.state = 'paused'; this.ui.show('pause'); }
+  pause() { if (this.state !== 'playing') return; this.weapons.cancelMolotov(); this.state = 'paused'; this.ui.show('pause'); }
   resume() {
     if (this.state !== 'paused') return;
     // Re-enter fullscreen (Esc may have dropped it) then re-grab the pointer; 'lock' handler hides the overlay once granted.
@@ -5238,7 +5930,7 @@ class Game {
     const gk = document.getElementById('goKills'); if (gk) gk.textContent = this.kills;
     this.ui.show('gameover');
   }
-  _mpOpenShop(n) { this._intentionalUnlock = true; this.input.exitLock(); this.state = 'shop'; this.hud.setInteract(null); this.shop.open((n || this.waves.wave) + 1); }
+  _mpOpenShop(n) { this.weapons.cancelMolotov(); this._intentionalUnlock = true; this.input.exitLock(); this.state = 'shop'; this.hud.setInteract(null); this.shop.open((n || this.waves.wave) + 1); }
   _hurtTarget(id, dmg) { if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dmg); else this.player.hurt(dmg); }
   _explodeHurt(pos, radius, dmg) {
     const hurt = (px, pz, id) => { const d = Math.hypot(px - pos.x, pz - pos.z); if (d < radius) { const dd = dmg * (1 - d / radius); if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dd); else this.player.hurt(dd); } };
@@ -5299,26 +5991,33 @@ class Game {
   _updatePlaying(dt) {
     const hostSim = !this.mp.active || this.mp.isHost; // clients don't simulate enemies/waves
     if (hostSim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
-    if (hostSim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._intentionalUnlock = true; this.input.exitLock(); this.state = 'shop'; this.hud.setInteract(null); this.shop.open(this.waves.wave + 1); return; } }
+    if (hostSim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this.weapons.cancelMolotov(); this._intentionalUnlock = true; this.input.exitLock(); this.state = 'shop'; this.hud.setInteract(null); this.shop.open(this.waves.wave + 1); return; } }
 
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
     } else if (this.player.inTank) {
       this.player.inTank.controlUpdate(dt); // tank camera + controls handled here
     } else {
+      const _isBuilder = WEAPONS[this.weapons.cur].class === 'builder';
       if (!this.mp.frozen) {
-        if (this.input.buttonsPressed[0]) this.weapons.tryFire('press');
+        if (_isBuilder) { if (this.input.buttonsPressed[0]) this.build.place(); } // holding a builder: LMB places instead of firing
+        else if (this.weapons.molotovState === 'lit') { if (this.input.buttonsPressed[0]) this.weapons.throwMolotov(); }
+        else if (this.input.buttonsPressed[0]) this.weapons.tryFire('press');
         else if (this.input.buttons[0]) this.weapons.tryFire('hold');
       }
-      if (this.input.wheel !== 0) this.weapons.cycle(this.input.wheel > 0 ? 1 : -1);
+      if (this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (_isBuilder && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates the ghost; plain wheel always cycles weapons
       this.player.update(dt);
       this.weapons.update(dt);
     }
+    this.player.survivalTick(dt); // survival timers tick in every seat (on foot, .50 cal, tank)
+    this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
+    this.dayNight.flash.intensity = (!this.player.inTank && !this.player.mountedGun && this.weapons.cur === 'flashlight' && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = held + toggled on
     if (hostSim) this.enemies.update(dt);
     this.loot.update(dt);
     if (hostSim) this.waves.update(dt);
     this.mp.update(dt);
     if (this.mode === 'longnight') { this._surviveTime += dt; this.dayNight.update(dt); this._updateFlares(dt); this.hud.setClock(this.dayNight.info(), this._surviveTime); }
+    this._updateMolotovPools(dt);
     this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount);
     this.effects.update(dt);
     this.hud.update(dt);
@@ -5333,6 +6032,8 @@ class Game {
       this.hud.setInteract('Press <b>E</b> to commandeer the T-90M');
     } else if (this.mountedGun.near(this.player.pos)) {
       this.hud.setInteract('Press <b>E</b> to man the .50 cal — ∞ ammo, overheats');
+    } else if (this.player._splintT > 0) {
+      this.hud.setInteract(`Applying splint… ${this.player._splintT.toFixed(1)}s`);
     } else {
       this.hud.setInteract(this.loot.prompt);
     }
