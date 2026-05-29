@@ -197,6 +197,51 @@ function buildEngendro(col, variant = 'normal') {
 }
 
 // ---------------------------------------------------------------------------
+// Tank boss mesh — blocky voxel stand-in for T-90M "MITRI".
+// Returns a THREE.Group with named rig nodes on root.userData (and nested):
+//   turret, gunMantlet, recoilNode, muzzle, mgMuzzle, hatch, mitri
+// ---------------------------------------------------------------------------
+function buildTank(camo = 'desert') {
+  const sand = 0xc9b48a, brown = 0x8a6a45, olive = 0x6e6f4a, steel = 0x55585a;
+  const root = new THREE.Group(); root.name = 'tank';
+
+  // hull
+  const hb = new MeshBuilder();
+  hb.box(3.6, 1.0, 7.2, 0, 0.9, 0, sand, { tint: 0.04 });
+  hb.box(3.6, 0.5, 2.0, 0, 1.45, 2.4, brown);
+  root.add(new THREE.Mesh(hb.build(), voxelMaterial()));
+
+  // turret group
+  const turret = new THREE.Group(); turret.position.set(0, 1.9, -0.4); root.add(turret); root.userData.turret = turret;
+  const tb = new MeshBuilder(); tb.box(2.6, 0.9, 2.8, 0, 0.45, 0, olive, { tint: 0.03 });
+  turret.add(new THREE.Mesh(tb.build(), voxelMaterial()));
+
+  // gun mantlet + recoil node
+  const gunMantlet = new THREE.Group(); gunMantlet.position.set(0, 0.5, 1.3); turret.add(gunMantlet);
+  turret.userData.gunMantlet = gunMantlet; root.userData.gunMantlet = gunMantlet;
+  const recoilNode = new THREE.Group(); gunMantlet.add(recoilNode);
+  gunMantlet.userData.recoilNode = recoilNode; root.userData.recoilNode = recoilNode;
+  const bb = new MeshBuilder(); bb.box(0.34, 0.34, 5.0, 0, 0, 2.6, steel);
+  recoilNode.add(new THREE.Mesh(bb.build(), voxelMaterial()));
+
+  // muzzle marker
+  const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, 5.1); recoilNode.add(muzzle); root.userData.muzzle = muzzle;
+
+  // coaxial MG muzzle marker
+  const mgMuzzle = new THREE.Object3D(); mgMuzzle.position.set(0.7, 1.1, 0.6); turret.add(mgMuzzle); root.userData.mgMuzzle = mgMuzzle;
+
+  // commander hatch + Mitri head
+  const hatch = new THREE.Group(); hatch.position.set(0.7, 1.0, 0.2); turret.add(hatch); root.userData.hatch = hatch;
+  const mb = new MeshBuilder(); mb.box(0.7, 0.8, 0.7, 0, 0.4, 0, 0xf2c200);
+  const mitri = new THREE.Mesh(mb.build(), voxelMaterial()); hatch.add(mitri); root.userData.mitri = mitri;
+
+  // placeholders for future tasks
+  root.userData.roadWheels = []; root.userData.trackL = null; root.userData.trackR = null; root.userData.headlamps = [];
+
+  return root;
+}
+
+// ---------------------------------------------------------------------------
 // Player avatar — an "Engendro" plush in a WW2 Soviet-officer uniform:
 // cyan plush ball head + big pink fur side-puffs & collar, button eye w/ pink X,
 // stitched smile, olive tunic w/ shoulder boards + medals + sash + belt + holster,
@@ -723,8 +768,14 @@ class EnemyManager {
     else if (typeKey === 'minitolo') { col = { body: 0xede7df, name: 'mini Tolo' }; geoKey = 'tolomini'; name = 'mini Tolo'; }
     else if (typeKey === 'exploder') { col = ENGENDRO_COLORS[5]; geoKey = 'exploder'; name = 'Mitri'; }
     else if (typeKey === 'charger') { col = { body: 0x8a2b2b, name: 'Boomer' }; geoKey = 'charger'; name = 'Boomer'; }
+    else if (typeKey === 'tank') { col = { body: 0xc9b48a, name: 'Mitri' }; geoKey = 'tank'; name = 'T-90M «MITRI»'; }
     else { col = pick(ENGENDRO_COLORS); geoKey = 'c' + col.body; name = col.name; }
     const e = this._get(geoKey, col, variant);
+    if (typeKey === 'tank') {
+      if (e.mesh) e.mesh.visible = false;
+      if (!e.tankGroup) { e.tankGroup = buildTank('desert'); this.game.engine.scene.add(e.tankGroup); }
+      e.mesh = e.tankGroup; e.isTank = true;
+    }
     e.spawn(typeKey, def, col, name, pos, hp, speed);
     e.id = ++this._idc;
     this.active.push(e);
@@ -2808,6 +2859,9 @@ class Game {
     this._wireUI(); this._wireInput(); this._showMenuBest();
     this.player.update(0.0001); this.engine.render();
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
+
+    const DEBUG = true; // TODO remove in final task
+    if (DEBUG) { window.__dbg = () => this; window.__dbgTank = () => this.waves._forceTankWave(); }
   }
 
   _wireUI() {
