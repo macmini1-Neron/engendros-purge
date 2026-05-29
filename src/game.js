@@ -1204,8 +1204,27 @@ class EnemyManager {
   _armorPing(e, hp) { this.game.audio.tone(220, 0.04, 'square', 0.18); if (hp && this.game.effects.impact) this.game.effects.impact(hp, new THREE.Vector3(0, 1, 0), 'spark'); }
   _mitriHurt(e) { this.game.effects.stuffing(new THREE.Vector3(e.pos.x, e.pos.y + 2.5, e.pos.z), 0xf2c200, 5, 4); this.game.audio.enemyHurt(); }
   _armorHurt(e) { this.game.audio.tone(90, 0.06, 'sawtooth', 0.25); }
-  _tankHitZone(e, hp) { return { era: false, id: 'weak' }; } // STUB — real zone classification in a later task
-  _eraReact(e, zone) { e.eraSpent[zone.id] = true; this.game.audio.tone(420, 0.05, 'square', 0.3); } // STUB — real FX later
+  _tankHitZone(e, hp) {
+    if (!hp) return { era: false, id: 'weak' };
+    const dx = hp.x - e.pos.x, dz = hp.z - e.pos.z;              // world offset from hull center
+    const c = Math.cos(-e.hullYaw), s = Math.sin(-e.hullYaw);
+    const lx = dx * c - dz * s, lz = dx * s + dz * c;            // local frame (forward = +z)
+    const top = hp.y > e.pos.y + 2.2;                            // roof / engine deck = weak
+    const low = hp.y < e.pos.y + 0.9;                            // tracks / running gear = weak
+    if (top || low) return { era: false, id: 'weak' };
+    const front = lz > 0.6, side = Math.abs(lx) > Math.abs(lz);
+    // ERA covers the upper front glacis + forward side cheeks; rear is bare
+    if (front || (side && lz > -1.5)) return { era: true, id: front ? 'glacisF' : (lx < 0 ? 'sideL' : 'sideR') };
+    return { era: false, id: 'weak' };                           // rear / between = weak
+  }
+  _eraReact(e, zone) {
+    e.eraSpent[zone.id] = true;
+    const c = new THREE.Vector3(e.pos.x, e.pos.y + 1.6, e.pos.z);
+    this.game.effects.explosion(c, 1.6);
+    this.game.audio.tone(420, 0.05, 'square', 0.3);
+    this.game.hud.bigMessage('ERA — NO EFFECT', 'hit the REAR, ROOF or TRACKS');
+    // Phase 3 (art task): hide the matching ERA brick mesh on the model.
+  }
   _tankDestroyed(e, attacker = 'host') {
     e.alive = false;
     const c = new THREE.Vector3(e.pos.x, e.pos.y + 1.4, e.pos.z);
