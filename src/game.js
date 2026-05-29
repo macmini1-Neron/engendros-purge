@@ -899,6 +899,21 @@ class EnemyManager {
       if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);
       if (e.def.boss) this._bossTolo(e, dt);
     }
+    if (this._aimRing && this._aimRingT > 0) { this._aimRingT -= dt; this._aimRing.material.opacity = Math.max(0, this._aimRingT) * 1.05; }
+    if (this.shells) for (let i = this.shells.length - 1; i >= 0; i--) {
+      const s = this.shells[i]; s.fuse -= dt; s.vel.y -= s.grav * dt;
+      s.mesh.position.addScaledVector(s.vel, dt);
+      const p = s.mesh.position; let boom = p.y < 0.2 || s.fuse <= 0;
+      if (!boom) { const dp = Math.hypot(p.x - this.game.player.pos.x, p.z - this.game.player.pos.z); if (dp < 1.5) boom = true; }
+      if (!boom) { const wh = this.world.rayHit(p, this._downV || (this._downV = new THREE.Vector3(0, -1, 0)), 0.4); if (wh) boom = true; }
+      if (boom) {
+        this.game.effects.explosion(p.clone(), s.radius);
+        const pl = this.game.player, dp = Math.hypot(p.x - pl.pos.x, p.z - pl.pos.z);
+        if (dp < s.radius) pl.hurt(s.dmg * (1 - dp / s.radius));
+        if (this.game.engine.shake) this.game.engine.shake(0.4);
+        this.game.engine.scene.remove(s.mesh); this.shells.splice(i, 1);
+      } else if (p.y < -5) { this.game.engine.scene.remove(s.mesh); this.shells.splice(i, 1); }
+    }
   }
 
   // Boss laser: a thick red beam from the belly target along the locked aim; hits the player if near the line.
@@ -1003,7 +1018,74 @@ class EnemyManager {
     this.game.hud.setBoss(e.armorHP / e.armorHPmax, e.name);
     this._tankCombat(e, dt, pp, dist); // attacks added in later tasks
   }
-  _tankCombat(e, dt, pp, dist) { /* cannon/MG/ram/window — added in later tasks */ }
+  _tankCombat(e, dt, pp, dist) {
+    const enraged = e.armorHP <= e.armorHPmax * 0.4;
+    // turret slowly tracks the player (independent of hull)
+    const want = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z);
+    let dT = ((want - e.turYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    e.turYaw += Math.min(Math.abs(dT), (enraged ? 40 : 28) * Math.PI / 180 * dt) * Math.sign(dT);
+    if (e.mesh.userData.turret) e.mesh.userData.turret.rotation.y = e.turYaw - e.hullYaw; // turret is child of hull-rotated root
+    // gun elevation toward player height
+    const muzzleY = e.pos.y + 2.4, wantPitch = Math.atan2((pp.y + 1) - muzzleY, dist);
+    e.gunPitch += clamp(wantPitch - e.gunPitch, -30 * Math.PI / 180 * dt, 30 * Math.PI / 180 * dt);
+    if (e.mesh.userData.gunMantlet) e.mesh.userData.gunMantlet.rotation.x = -e.gunPitch;
+    // recoil recover (anim driven by e.recoil; full rig anim in a later task)
+    if (e.recoil > 0) { e.recoil = Math.max(0, e.recoil - dt * 2); if (e.mesh.userData.recoilNode) e.mesh.userData.recoilNode.position.z = -e.recoil; }
+
+    // cannon: only with LOS + roughly on target
+    e.cannonCD -= dt;
+    const muzzle = this._tankMuzzle(e);
+    const aimErr = Math.abs(dT);
+    const losClear = !this._blocked(muzzle, pp, dist);
+    if (e.charge > 0) {
+      e.charge -= dt;
+      if (e.charge <= 0) this._tankFireCannon(e, muzzle, pp);
+    } else if (e.cannonCD <= 0 && aimErr < 0.12 && losClear && dist < 90 && !e.entering) {
+      e.cannonCD = enraged ? 5 : 7;          // reload
+      e.charge = 0.8;                          // telegraph
+      this._tankAimMarker(e, pp.clone());      // ground marker ~0.8s before impact
+      this.game.audio.tone(60, 0.2, 'sawtooth', 0.2);
+    }
+    this._tankMG(e, dt, pp, dist, losClear);   // Task 9
+    this._tankRam(e, dt, pp, dist);            // Task 10
+    this._tankWindow(e, dt);                   // Task 11
+    // proximity rumble
+    if (dist < 18 && this.game.engine.shake) this.game.engine.shake((18 - dist) / 18 * 0.12);
+  }
+  _tankMuzzle(e) {
+    const m = e.mesh.userData.muzzle;
+    if (m) { e.mesh.updateMatrixWorld(); return m.getWorldPosition(new THREE.Vector3()); }
+    return new THREE.Vector3(e.pos.x, 2.4, e.pos.z);
+  }
+  _blocked(a, b, dist) {
+    const d = new THREE.Vector3(b.x - a.x, (b.y + 1) - a.y, b.z - a.z).normalize();
+    const h = this.world.rayHit(a, d, dist);
+    return !!h;
+  }
+  _tankFireCannon(e, muzzle, pp) {
+    const fdir = new THREE.Vector3(Math.sin(e.turYaw), 0, Math.cos(e.turYaw));
+    if (this.world.rayHit(muzzle, fdir, 3)) { e.cannonCD = 1.0; return; }   // muzzle jammed → retry soon
+    const dir = new THREE.Vector3(pp.x - muzzle.x, (pp.y + 0.6) - muzzle.y, pp.z - muzzle.z).normalize();
+    this.shells = this.shells || [];
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.7), new THREE.MeshBasicMaterial({ color: 0xffd070 }));
+    mesh.position.copy(muzzle); this.game.engine.scene.add(mesh);
+    this.shells.push({ mesh, vel: dir.multiplyScalar(48), grav: 9, fuse: 4, dmg: 48, radius: 6 });
+    e.recoil = 0.5;
+    this.game.effects.muzzleFlash(muzzle, dir, 2.4);
+    this.game.audio.gunshot({ body: 55, crack: 0.3, vol: 1.0, hp: 400, bp: 120 });
+  }
+  _tankAimMarker(e, target) {
+    if (!this._aimRing) {
+      const g = new THREE.RingGeometry(1.2, 1.7, 20);
+      this._aimRing = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.0, depthWrite: false, fog: false }));
+      this._aimRing.rotation.x = -Math.PI / 2; this._aimRing.renderOrder = 990; this.game.engine.scene.add(this._aimRing);
+    }
+    this._aimRing.position.set(target.x, 0.06, target.z); this._aimRing.material.opacity = 0.85; this._aimRingT = 0.8;
+  }
+  // empty stubs (filled by later tasks) so _tankCombat doesn't throw:
+  _tankMG(e, dt, pp, dist, losClear) {}
+  _tankRam(e, dt, pp, dist) {}
+  _tankWindow(e, dt) {}
 
   rayHit(origin, dir, maxDist) {
     let best = maxDist, hitE = null, hp = null;
@@ -2270,6 +2352,7 @@ class UI {
       menu: document.getElementById('menu'), pause: document.getElementById('pause'),
       shop: document.getElementById('shop'), gameover: document.getElementById('gameover'),
       settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
+      admin: document.getElementById('admin'),
     };
     this.hint = document.getElementById('hint');
   }

@@ -131,7 +131,20 @@ export class Engine {
     this.sky.position.copy(this.camera.position);
   }
 
+  shake(a) { this._shake = Math.min(0.6, (this._shake || 0) + a); }
+
   render() {
+    // Apply camera shake as a transient per-frame offset.
+    // The player/controller re-sets camera.position authoritatively every frame
+    // before render() is called, so this offset is safely discarded next frame.
+    if (this._shake > 0) {
+      const s = this._shake * 0.3;
+      this.camera.position.x += (Math.random() - 0.5) * 2 * s;
+      this.camera.position.y += (Math.random() - 0.5) * 2 * s;
+      this.camera.position.z += (Math.random() - 0.5) * 2 * s;
+      this._shake *= 0.85;
+      if (this._shake < 0.005) this._shake = 0;
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
