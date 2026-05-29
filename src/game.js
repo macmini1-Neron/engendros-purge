@@ -934,6 +934,13 @@ class EnemyManager {
     const t = clamp((p.x - belly.x) * dir.x + (p.y + 1.0 - belly.y) * dir.y + (p.z - belly.z) * dir.z, 0, len);
     const dl = Math.hypot(p.x - (belly.x + dir.x * t), p.y + 1.0 - (belly.y + dir.y * t), p.z - (belly.z + dir.z * t));
     if (dl < 1.7) this.game.player.hurt(e.phase === 2 ? 26 : 18);
+    // Route laser damage to captured tank
+    const ct = this.game.capturedTank;
+    if (ct && ct.hp > 0) {
+      const t2 = clamp((ct.pos.x - belly.x) * dir.x + (1.0) * dir.y + (ct.pos.z - belly.z) * dir.z, 0, len);
+      const dl2 = Math.hypot(ct.pos.x - (belly.x + dir.x * t2), (belly.y + dir.y * t2) - 1.5, ct.pos.z - (belly.z + dir.z * t2));
+      if (dl2 < 2.2) ct.hurt(e.phase === 2 ? 40 : 28);
+    }
   }
 
   _bossTolo(e, dt) {
@@ -1196,6 +1203,12 @@ class EnemyManager {
         this.damageInRadius(e.pos, e.def.explodeRadius, e.def.explodeDmg * 1.2, e);
         // Only the triggering kill harms the player; chained (explosion-killed) exploders don't double-dip.
         if (source !== 'explosion') this.game._explodeHurt(e.pos, e.def.explodeRadius, e.def.explodeDmg);
+        // Route explosion damage to captured tank (explosives are extra-effective vs armor)
+        const ct = this.game.capturedTank;
+        if (ct && ct.hp > 0) {
+          const cd = Math.hypot(ct.pos.x - e.pos.x, ct.pos.z - e.pos.z);
+          if (cd < e.def.explodeRadius) ct.hurt(e.def.explodeDmg * (1 - cd / e.def.explodeRadius) * 2.0);
+        }
       }
       if (e.def.boss || e.isElite) this.game.hud.hideBoss();
       if (e.def.boss && e._beam) e._beam.visible = false;
@@ -2369,6 +2382,7 @@ class HUD {
       bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), bosspip: $('bosspip'), left: $('left'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
       clock: $('clock'), nightgear: $('nightgear'),
+      tankhp: $('tankhp'), tankhpfill: $('tankhpfill'),
     };
     this._hitT = 0; this._msgT = 0;
   }
@@ -2425,6 +2439,13 @@ class HUD {
   hideBoss() { this.el.bossbar.classList.remove('show'); }
   setHeat(frac, over) { this.el.heatbar.classList.add('show'); this.el.heatfill.style.width = clamp(frac, 0, 1) * 100 + '%'; this.el.heatbar.classList.toggle('over', !!over); this.el.heatlabel.textContent = over ? 'OVERHEATED — COOLING' : 'BARREL HEAT'; }
   hideHeat() { this.el.heatbar.classList.remove('show'); }
+  setTankHp(frac) {
+    const el = this.el.tankhp; if (!el) return;
+    if (frac < 0) { el.classList.remove('show'); return; }
+    el.classList.add('show');
+    const f = clamp(frac, 0, 1); this.el.tankhpfill.style.width = f * 100 + '%';
+    this.el.tankhpfill.style.background = f > 0.5 ? 'linear-gradient(90deg,#4caf50,#cddc39)' : (f > 0.25 ? 'linear-gradient(90deg,#ffb300,#ffd54f)' : 'linear-gradient(90deg,#e53935,#ff7043)');
+  }
   hitmarker(kill) { const h = this.el.hitmarker; h.classList.toggle('kill', !!kill); h.style.transition = 'none'; h.style.opacity = '1'; this._hitT = 0.12; }
   damageFlash() { this.el.vignette.style.transition = 'box-shadow .05s'; this.el.vignette.style.boxShadow = 'inset 0 0 220px 60px rgba(220,30,20,0.55)'; setTimeout(() => { this.el.vignette.style.transition = 'box-shadow .4s'; this.setHealth(this.game.player.hp, this.game.player.maxHp); }, 60); }
   bigMessage(text, sub = '') { this.el.msg.innerHTML = text + (sub ? `<small>${sub}</small>` : ''); this.el.msg.classList.add('show'); this._msgT = 2.2; }
@@ -2912,6 +2933,29 @@ class CapturedTank {
     const bx = Math.sin(this.hullYaw + 1.6), bz = Math.cos(this.hullYaw + 1.6);
     this.game.player.pos.set(this.pos.x + bx * 3, 0, this.pos.z + bz * 3);
     if (this.game.player.vel) this.game.player.vel.set(0, 0, 0);
+    if (this.game.hud.setTankHp) this.game.hud.setTankHp(-1);
+  }
+
+  hurt(d) {
+    if (!this.group || this.hp <= 0) return;
+    this.hp -= d;
+    if (this.game.engine.shake) this.game.engine.shake(0.15);
+    if (this.hp <= 0) this.destroy();
+  }
+
+  destroy() {
+    if (this._dead) return; this._dead = true;
+    const c = new THREE.Vector3(this.pos.x, 1.4, this.pos.z);
+    for (let k = 0; k < 4; k++) this.game.effects.explosion(c.clone().add(new THREE.Vector3(rr(-1.5, 1.5), rr(0, 1.5), rr(-1.5, 1.5))), 4);
+    if (this.game.audio.enemyDie) this.game.audio.enemyDie();
+    if (this.game.engine.shake) this.game.engine.shake(0.5);
+    const wasAboard = this.active != null;
+    this.leave();                                   // clears player.inTank (so the next hurt isn't shielded) + restores weapons + ejects beside tank
+    if (wasAboard) this.game.player.hurt(35);        // ejection damage (now unshielded since leave() cleared inTank)
+    if (this.group) this.group.visible = false;
+    if (this.game.world.addWreckObstacle) this.game.world.addWreckObstacle(this.pos.clone(), this.hullYaw);
+    if (this.game.hud.setTankHp) this.game.hud.setTankHp(-1);  // hide HP bar
+    this.game.capturedTank = null;
   }
 
   controlUpdate(dt) {
@@ -2920,6 +2964,7 @@ class CapturedTank {
     else if (this.active === 'gunner') (this._gunner ? this._gunner(dt) : this._followCam());
     else this._followCam();
     this._tickShells(dt);   // shells fly regardless of seat
+    if (this.game.hud.setTankHp) this.game.hud.setTankHp(this.hp / this.hpMax); // show + update HP bar while crewing
   }
 
   _followCam() {

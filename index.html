@@ -205,6 +205,10 @@
     #nightgear .ng { padding: 2px 9px; border-radius: 7px; background: rgba(6,8,18,.55); border: 1px solid rgba(160,180,230,.25); }
     #nightgear .ng.on { color: #ffe08a; border-color: rgba(255,207,92,.55); }
     #nightgear .ng.off { opacity: .55; }
+    #tankhp { position:fixed; left:50%; bottom:84px; transform:translateX(-50%); width:240px; height:10px; background:rgba(0,0,0,.5); border:1px solid #2a2a2a; border-radius:5px; opacity:0; transition:opacity .2s; z-index:40; }
+    #tankhp.show { opacity:1; }
+    #tankhpfill { height:100%; width:100%; background:linear-gradient(90deg,#4caf50,#cddc39); border-radius:4px; transition:width .12s; }
+    #tankhp::after { content:'ТАНК'; position:absolute; left:6px; top:-16px; font:600 11px monospace; color:#9effc2; }
     #heatbar { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); width: 240px; text-align: center; opacity: 0; transition: opacity .2s; }
     #heatbar.show { opacity: 1; }
     #heatbar .hl { font-size: 11px; letter-spacing: 2px; opacity: .85; margin-bottom: 3px; text-shadow: 0 2px 0 rgba(0,0,0,.55); }
@@ -297,6 +301,7 @@
     </div>
 
     <div id="interact"></div>
+    <div id="tankhp"><div id="tankhpfill"></div></div>
     <div id="heatbar"><div class="hl" id="heatlabel">BARREL HEAT</div><div class="hb"><div id="heatfill"></div></div></div>
     <div id="msg"></div>
   </div>
@@ -441,6 +446,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=65"></script>
+  <script type="module" src="./src/game.js?v=66"></script>
 </body>
 </html>
