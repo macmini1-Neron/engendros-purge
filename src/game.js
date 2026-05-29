@@ -713,6 +713,11 @@ class World {
     }
     return { dist: best, point, normal };
   }
+
+  addWreckObstacle(pos, yaw) {
+    const hw = 2.0, hl = 3.6, h = 1.6;
+    this.boxes.push({ min: new THREE.Vector3(pos.x - hw, 0, pos.z - hl), max: new THREE.Vector3(pos.x + hw, h, pos.z + hl), wreck: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -962,14 +967,14 @@ class EnemyManager {
       if (source === 'gun') {
         if (!e.vulnerable) { this._armorPing(e, hitPoint); return false; }   // bullets bounce off armor
         e.mitriHP -= amount; this._mitriHurt(e);                              // exposed: chip the COMMANDER
-        if (e.mitriHP <= 0) return this._tankCaptured(e);                     // → capture path
+        if (e.mitriHP <= 0) return this._tankCaptured(e, attacker);            // → capture path
         return false;
       }
       if (source === 'explosion') {
         const zone = this._tankHitZone(e, hitPoint);                         // stub now; real later
         if (zone.era && !e.eraSpent[zone.id]) { this._eraReact(e, zone); return false; }
         e.armorHP -= amount * (e.def.explosiveMult || 2.0); this._armorHurt(e);
-        if (e.armorHP <= 0) return this._tankDestroyed(e);                    // → wreck path
+        if (e.armorHP <= 0) return this._tankDestroyed(e, attacker);           // → wreck path
         return false;
       }
       return false; // 'contact' n/a for the tank
@@ -1011,9 +1016,29 @@ class EnemyManager {
   _armorHurt(e) { this.game.audio.tone(90, 0.06, 'sawtooth', 0.25); }
   _tankHitZone(e, hp) { return { era: false, id: 'weak' }; } // STUB — real zone classification in a later task
   _eraReact(e, zone) { e.eraSpent[zone.id] = true; this.game.audio.tone(420, 0.05, 'square', 0.3); } // STUB — real FX later
-  _tankDestroyed(e) { e.alive = false; if (e.tankGroup) e.tankGroup.visible = false; this.game.hud.hideBoss(); this.game.onEnemyKilled(e); return true; }
-  _tankCaptured(e) { e.alive = false; e.captured = true; this.game.hud.hideBoss(); this.game.onEnemyKilled(e); return true; }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); }
+  _tankDestroyed(e, attacker = 'host') {
+    e.alive = false;
+    const c = new THREE.Vector3(e.pos.x, e.pos.y + 1.4, e.pos.z);
+    for (let k = 0; k < 4; k++) this.game.effects.explosion(c.clone().add(new THREE.Vector3(rr(-1.5, 1.5), rr(0, 1.5), rr(-1.5, 1.5))), 4);
+    this.game.effects.stuffing(c, 0x222222, 50, 9);
+    this.game.audio.enemyDie();
+    if (e.tankGroup) e.tankGroup.visible = false;            // Phase 3 swaps in buildTankWreck()
+    if (this.game.world.addWreckObstacle) this.game.world.addWreckObstacle(e.pos.clone(), e.hullYaw || 0);
+    this.game.hud.hideBoss();
+    this.game.hud.bigMessage('T-90M DESTROYED', '+bounty +keys');
+    this.game.onEnemyKilled(e, attacker);
+    return true;
+  }
+  _tankCaptured(e, attacker = 'host') {
+    e.alive = false; e.captured = true;
+    if (e.tankGroup && e.tankGroup.userData && e.tankGroup.userData.mitri) e.tankGroup.userData.mitri.visible = false; // commander dead
+    this.game.hud.hideBoss();
+    this.game.hud.bigMessage('TANK COMMANDEERED!', 'press E to board (coming soon)');
+    this.game.onEnemyKilled(e, attacker);
+    // Phase 2 (later task): this.game.captureTank(e.tankGroup, e.pos.clone(), e.hullYaw);
+    return true;
+  }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
@@ -2663,6 +2688,7 @@ class MP {
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false;
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
+    this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
   }
   // ---- lobby ----
   startHost(name) {
@@ -2677,7 +2703,7 @@ class MP {
     if (!code) { this._lobbyMsg('Enter a room code.'); return; }
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
     this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + code + '…');
-    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0 }); this._lobbyMsg('Connected! Waiting for host to start…'); };
+    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.lastRecv = performance.now(); this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0 }); this._lobbyMsg('Connected! Waiting for host to start…'); };
     this.net.onError = (t) => this._lobbyMsg(t === 'peer-unavailable' ? 'No room with that code.' : 'Network error: ' + t);
     this.net.join(code.trim().toUpperCase());
   }
@@ -2713,7 +2739,7 @@ class MP {
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
     n.on('roster', (arr) => { this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin }); this._renderRoster(); this._syncRemoteObjs(); });
-    n.on('start', (d) => { this.active = true; this.game._enterMP(d.mode || 'purge'); this._syncRemoteObjs(); });
+    n.on('start', (d) => { this.active = true; this.net.lastRecv = performance.now(); this.game._enterMP(d.mode || 'purge'); this._syncRemoteObjs(); });
     n.on('xf', (d) => { const rp = this._remote(d.id); if (rp) rp.setTransform(d); });
     n.on('espawn', (d) => this._clientSpawnEnemy(d));
     n.on('esnap', (arr) => this._clientSnap(arr));
@@ -2949,6 +2975,10 @@ class Game {
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
     click('mpStartBtn', () => this.mp.hostStart());
     click('mpBackBtn', () => { this.mp.leave(); this.toMenu(); });
+    document.querySelectorAll('.mp-skinpick').forEach(b => b.addEventListener('click', () => {
+      this.mp.chosenSkin = +b.dataset.skin;
+      document.querySelectorAll('.mp-skinpick').forEach(x => x.classList.toggle('sel', x === b));
+    }));
     click('pauseSettingsBtn', () => this.settings.open('pause'));
     this.canvas.addEventListener('click', () => {
       if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop') return;

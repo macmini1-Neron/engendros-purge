@@ -125,6 +125,9 @@
     #mp-scoreboard .sb-money { color: var(--gold); font-size: 14px; text-align: right; }
     #mp-scoreboard .sb-ping { font-size: 13px; text-align: right; }
     #mp-scoreboard .sb-hint { text-align: center; font-size: 11px; opacity: .45; margin-top: 8px; letter-spacing: 1px; }
+    .mp-skins { display: flex; gap: 10px; justify-content: center; margin: 4px 0 8px; }
+    .mp-skinpick { width: 30px; height: 30px; border-radius: 50%; border: 5px solid #e85ba0; box-sizing: border-box; cursor: pointer; opacity: .55; transition: transform .12s, opacity .12s, box-shadow .12s; padding: 0; }
+    .mp-skinpick.sel { opacity: 1; transform: scale(1.18); box-shadow: 0 0 0 2px var(--gold); }
 
     /* ---------- overlays ---------- */
     .overlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(20,14,8,.72), rgba(8,6,4,.92)); pointer-events: auto; }
@@ -210,6 +213,26 @@
     .srow input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: none; border-radius: 50%; background: #e29a2c; cursor: pointer; }
 
     .hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .45; z-index: 8; }
+
+    /* ---------- ADMIN asset viewer ---------- */
+    .admincard { width: min(96vw, 1100px); max-width: 1100px; max-height: 94vh; display: flex; flex-direction: column; overflow: hidden; }
+    .adminbody { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; margin: 8px 0; }
+    .adminview { flex: 1 1 60%; display: flex; flex-direction: column; min-width: 0; }
+    #adminCanvas { width: 100%; height: 380px; flex: 0 0 auto; display: block; image-rendering: auto; border: 2px solid rgba(255,207,92,.3); border-radius: 12px; background: radial-gradient(ellipse at center, rgba(255,255,255,.06), rgba(0,0,0,.45)); cursor: grab; }
+    #adminCanvas:active { cursor: grabbing; }
+    #adminName { margin-top: 8px; font-size: 19px; font-weight: 800; color: var(--gold); letter-spacing: 1px; }
+    .adminctrls { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 6px; }
+    .adminctrls .tab.on { border-color: var(--gold); color: var(--gold); }
+    #adminHint { font-size: 11px; opacity: .5; }
+    #adminList { flex: 1 1 40%; min-width: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 6px;
+      scrollbar-width: thin; scrollbar-color: rgba(255,207,92,.5) rgba(0,0,0,.25); }
+    #adminList::-webkit-scrollbar { width: 9px; }
+    #adminList::-webkit-scrollbar-thumb { background: rgba(255,207,92,.5); border-radius: 5px; }
+    .arow { text-align: left; cursor: pointer; pointer-events: auto; background: rgba(255,255,255,.05); border: 2px solid rgba(255,207,92,.2); border-radius: 9px; padding: 9px 13px; font-size: 14px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .arow:hover { transform: translateY(-1px); border-color: rgba(255,207,92,.5); }
+    .arow.on { border-color: var(--gold); color: var(--gold); background: rgba(255,207,92,.1); }
+    .arow small { font-weight: 600; opacity: .55; font-size: 11px; }
+    .arow.snd::after { content: '▶'; color: var(--green); font-size: 12px; }
   </style>
 </head>
 <body>
@@ -271,6 +294,7 @@
       </div>
       <button class="btn" id="multiplayerBtn">👥 MULTIPLAYER<small>co-op for 2–4 · host or join with a room code</small></button>
       <button class="btn sec" id="settingsBtn">⚙ SETTINGS</button>
+      <button class="btn sec" id="adminBtn">🛠 ADMIN — ASSET VIEWER</button>
       <div class="controls">
         <span><b>WASD</b> move</span><span><b>Mouse</b> look</span><span><b>LMB</b> attack</span>
         <span><b>RMB</b> aim/scope</span><span><b>R</b> reload</span><span><b>Space</b> jump</span>
@@ -329,6 +353,12 @@
         <input id="mp-code" class="mp-input" maxlength="5" placeholder="CODE" style="text-transform:uppercase;width:120px;margin:0;" />
         <button class="btn" id="mpJoinBtn">👥 JOIN</button>
       </div>
+      <div class="mp-skins" id="mp-skins">
+        <button class="mp-skinpick sel" data-skin="0" style="background:#49c6df;border-color:#e85ba0"></button>
+        <button class="mp-skinpick" data-skin="1" style="background:#e8a23a;border-color:#6fcf4f"></button>
+        <button class="mp-skinpick" data-skin="2" style="background:#9b6fe0;border-color:#ffd24a"></button>
+        <button class="mp-skinpick" data-skin="3" style="background:#5fd0a0;border-color:#e8533a"></button>
+      </div>
       <div id="mp-status" class="mp-status">Host a room, or enter a friend's code and Join.</div>
       <div id="mp-roster" class="mp-roster"></div>
       <button class="btn" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
@@ -351,12 +381,31 @@
     </div>
   </div>
 
+  <div id="admin" class="overlay">
+    <div class="card admincard">
+      <div class="title" style="font-size:32px;">🛠 ASSET VIEWER</div>
+      <div class="shoptabs" id="adminTabs"></div>
+      <div class="adminbody">
+        <div class="adminview">
+          <canvas id="adminCanvas"></canvas>
+          <div id="adminName">—</div>
+          <div class="adminctrls">
+            <button class="tab" id="adminPovBtn">👁 POV view</button>
+            <span id="adminHint">drag to rotate · scroll list →</span>
+          </div>
+        </div>
+        <div id="adminList"></div>
+      </div>
+      <button class="btn" id="adminBack">← BACK TO MENU</button>
+    </div>
+  </div>
+
   <div class="hint" id="hint">Click the canvas to lock the mouse · Esc to pause</div>
 
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=48"></script>
+  <script type="module" src="./src/game.js?v=51"></script>
 </body>
 </html>
