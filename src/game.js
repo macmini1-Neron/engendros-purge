@@ -3468,6 +3468,26 @@ class Game {
   onEnemyKilled(e, attacker = 'host') {
     if (this.mp.active && this.mp.isHost && attacker !== 'host') { this.mp.creditKill(attacker, e); return; }
     this.kills++;
+    // --- Task 12: asymmetric tank rewards (replaces generic boss payout for the tank) ---
+    if (e.def.tank) {
+      const bounty = this.waves.bountyMul || 1;
+      if (e.captured) {
+        // Captured — tank itself is the prize: smaller cash, 1 key, base score only
+        this.player.addMoney(Math.round(e.def.reward * 0.4) * bounty);
+        this.score += e.def.reward; this.hud.setScore(this.score);
+        this.loot._spawnPickup('key', e.pos, 1);
+      } else {
+        // Destroyed — walked away with loot: full cash, 3 keys, +800 score bonus
+        this.player.addMoney(e.def.reward * bounty);
+        this.score += e.def.reward + 800; this.hud.setScore(this.score);
+        for (let i = 0; i < 3; i++) this.loot._spawnPickup('key', e.pos, 1);
+      }
+      if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
+      // loot.drop with boss flag cleared so it doesn't auto-spawn boss keys again
+      this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false }));
+      return; // skip generic boss payout below — no double-pay
+    }
+    // --- generic path (non-tank enemies) ---
     const bounty = (this.waves.bountyMul || 1) * (e.isElite ? 2.4 : 1); // payday modifier + elite bonus
     this.player.addMoney(e.def.reward * bounty);
     this.score += e.def.reward + (e.def.boss ? 1500 : 0) + (e.isElite ? 600 : 0); this.hud.setScore(this.score);
