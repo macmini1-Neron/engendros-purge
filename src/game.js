@@ -1083,7 +1083,28 @@ class EnemyManager {
     this._aimRing.position.set(target.x, 0.06, target.z); this._aimRing.material.opacity = 0.85; this._aimRingT = 0.8;
   }
   // empty stubs (filled by later tasks) so _tankCombat doesn't throw:
-  _tankMG(e, dt, pp, dist, losClear) {}
+  _tankMG(e, dt, pp, dist, losClear) {
+    if (e.mgReload > 0) { e.mgReload -= dt; return; }
+    e._mgCD = (e._mgCD || 0) - dt;
+    const arc = Math.abs(((Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z) - e.turYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    if (dist < 22 && losClear && arc < 0.4) {
+      if (e._mgCD <= 0) {
+        e._mgCD = 0.09; e.mgAmmo--;
+        const o = e.mesh.userData.mgMuzzle ? e.mesh.userData.mgMuzzle.getWorldPosition(new THREE.Vector3()) : this._tankMuzzle(e);
+        const jit = 0.04;
+        const dir = new THREE.Vector3(pp.x - o.x + rr(-jit, jit), (pp.y + 1) - o.y, pp.z - o.z + rr(-jit, jit)).normalize();
+        const wHit = this.world.rayHit(o, dir, 30);
+        const end = o.clone().addScaledVector(dir, wHit ? wHit.dist : 30);
+        this.game.effects.tracer(o, end, 0xfff1a0);
+        const pl = this.game.player;
+        const t = clamp((pl.pos.x - o.x) * dir.x + (pl.pos.y + 1 - o.y) * dir.y + (pl.pos.z - o.z) * dir.z, 0, 30);
+        const dl = Math.hypot(pl.pos.x - (o.x + dir.x * t), pl.pos.y + 1 - (o.y + dir.y * t), pl.pos.z - (o.z + dir.z * t));
+        if (dl < 1.0 && (!wHit || t < wHit.dist)) pl.hurt(6);
+        this.game.audio.tone(180, 0.03, 'square', 0.12);
+        if (e.mgAmmo <= 0) { e.mgReload = 3.5; e.mgAmmo = 250; this.game.audio.tone(80, 0.2, 'square', 0.2); }
+      }
+    }
+  }
   _tankRam(e, dt, pp, dist) {}
   _tankWindow(e, dt) {}
 
