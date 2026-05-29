@@ -699,6 +699,123 @@ function buildTank(camo = 'desert') {
 }
 
 // ---------------------------------------------------------------------------
+// Destroyed-tank wreck — scorched T-90M shell (Task 26).
+// Module-level array tracks active wrecks for lingering smoke ticks.
+// ---------------------------------------------------------------------------
+const _tankWrecks = []; // { mesh, pos:{x,y,z}, t, _smokeAccum }
+
+// Scorched palette — everything charred, no camo.
+function _wreckPalette() {
+  return {
+    sandHi:   0x2a2a2a, sandMid:  0x1e1e1e, sandLo:   0x141414,
+    brnHi:    0x33281e, brnMid:   0x261c12, brnLo:    0x1a1008,
+    olvHi:    0x222218, olvMid:   0x1a1a10, olvLo:    0x111108,
+    steelHi:  0x303030, steelMid: 0x222222, steelLo:  0x141414,
+    slotCol:  0x0a0a0a,
+    rubbCol:  0x111111,
+    wheelHi:  0x282828, wheelMid: 0x1c1c1c, wheelLo:  0x101010,
+    trackCol: 0x181818, trackSlot:0x0c0c0c,
+    mangalCol:0x1e1e1e,
+    lensCol:  0x080808,
+  };
+}
+
+// Build a static burnt-out wreck group.  No rig userData needed.
+function buildTankWreck() {
+  const P    = _wreckPalette();
+  const root = new THREE.Group(); root.name = 'tankWreck';
+  const slab = _tankSlabFn();
+
+  // ── Scorched hull ───────────────────────────────────────────────────────────
+  const hb = new MeshBuilder();
+  // Main hull box (same proportions as live tank)
+  slab(hb, 3.6, 1.8, 7.2, 0, 0.9, 0, P.sandMid, P.sandHi, P.sandLo);
+  // Glacis plate (charred, slightly tilted same as original)
+  hb.box(3.5, 1.1, 1.8, 0, 1.65, 3.10, P.sandMid, { rx: -0.55 });
+  // Rear engine deck — gutted
+  slab(hb, 3.6, 0.5, 1.4, 0, 1.95, -2.8, P.brnMid, P.brnHi, P.brnLo);
+  // A few engine grille slits (darker than usual)
+  for (let i = 0; i < 5; i++) {
+    hb.box(0.55, 0.06, 0.08, -1.1 + i * 0.55, 2.22, -3.1, P.slotCol);
+  }
+  // Front mudguard stubs
+  hb.box(0.55, 0.12, 1.5, -1.93, 1.84, 2.2, P.sandMid);
+  hb.box(0.55, 0.12, 1.5,  1.93, 1.84, 2.2, P.sandMid);
+  // Tow hooks (chars, still present)
+  for (const hx of [-1.3, 1.3]) {
+    hb.box(0.18, 0.24, 0.22, hx, 0.7, 3.65, P.steelMid);
+  }
+  root.add(new THREE.Mesh(hb.build(), voxelMaterial()));
+
+  // ── Bare scorched skirt panels (no ERA) ────────────────────────────────────
+  for (const sx of [-1, 1]) {
+    const skb = new MeshBuilder();
+    slab(skb, 0.12, 0.65, 7.0, sx * 1.9, 1.18, -0.1, P.steelMid, P.steelHi, P.steelLo);
+    root.add(new THREE.Mesh(skb.build(), voxelMaterial()));
+  }
+
+  // ── Running gear — darkened wheels + tracks ─────────────────────────────────
+  for (const sx of [-1, 1]) {
+    const wx = sx * 1.85;
+    for (let i = 0; i < 6; i++) {
+      root.add(_tankRoadWheel(P, wx, 2.6 - i * 0.97));
+    }
+    // Idler + sprocket (simplified)
+    const idb = new MeshBuilder();
+    const idg = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10);
+    idb.geo(idg, wx, 0.44, 3.3, P.wheelMid, { rx: Math.PI / 2 }); idg.dispose();
+    root.add(new THREE.Mesh(idb.build(), voxelMaterial()));
+
+    const spb = new MeshBuilder();
+    const spg = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 10);
+    spb.geo(spg, wx, 0.46, -3.3, P.steelMid, { rx: Math.PI / 2 }); spg.dispose();
+    root.add(new THREE.Mesh(spb.build(), voxelMaterial()));
+  }
+
+  // Track bands (both sides — darkened)
+  const trackL = _tankTrackBand(P, -1); trackL.name = 'wreckTrackL';
+  const trackR = _tankTrackBand(P,  1); trackR.name = 'wreckTrackR';
+  root.add(trackL); root.add(trackR);
+
+  // ── Askew / "popped" turret ─────────────────────────────────────────────────
+  const turret = new THREE.Group();
+  // Sit it slightly off-centre and rotated ~30° off the hull axis; tilt it a
+  // touch so it reads as "blown off" rather than just pivoted.
+  turret.position.set(0.3, 1.65, -0.4);
+  turret.rotation.set(0.08, 0.52, -0.06);   // askew: tilt + yaw ~30°
+  root.add(turret);
+
+  const turB = new MeshBuilder();
+  _tankTurretShell(turB, P);
+  // Minimal charred cage remnant (skip cheek ERA, no smoke tubes)
+  for (let bz = 0; bz < 2; bz++) {
+    turB.box(2.1, 0.06, 0.06, 0, 0.55, -1.70 - bz * 0.18, P.mangalCol);
+  }
+  // Cupola stub (no vision blocks)
+  turB.box(0.72, 0.38, 0.72, 0.7, 1.08, 0.18, P.brnMid);
+  turB.box(0.72, 0.08, 0.72, 0.7, 1.28, 0.18, P.brnHi);
+  turret.add(new THREE.Mesh(turB.build(), voxelMaterial()));
+
+  // ── Drooping barrel (child of turret) ──────────────────────────────────────
+  const gunGroup = new THREE.Group();
+  gunGroup.position.set(0, 0.5, 1.3);
+  gunGroup.rotation.x = 0.30;   // pitched down ~17° — droops from heat warp
+  turret.add(gunGroup);
+
+  const gb = new MeshBuilder();
+  const gslab = _tankSlabFn();
+  gslab(gb, 0.30, 0.30, 2.20, 0, 0, 1.20, P.steelMid, P.steelHi, P.steelLo);
+  gslab(gb, 0.26, 0.26, 2.00, 0, 0, 3.40, P.steelMid, P.steelHi, P.steelLo);
+  gslab(gb, 0.22, 0.22, 1.60, 0, 0, 5.05, P.steelMid, P.steelHi, P.steelLo); // shorter — tip blown
+  gb.box(0.42, 0.42, 0.55, 0, 0, 3.82, P.steelMid);  // evacuator
+  // Mantlet stub
+  gb.box(0.72, 0.62, 0.22, 0, 0, 0.12, P.olvMid);
+  gunGroup.add(new THREE.Mesh(gb.build(), voxelMaterial()));
+
+  return root;
+}
+
+// ---------------------------------------------------------------------------
 // Player avatar — an "Engendro" plush in a WW2 Soviet-officer uniform:
 // cyan plush ball head + big pink fur side-puffs & collar, button eye w/ pink X,
 // stitched smile, olive tunic w/ shoulder boards + medals + sash + belt + holster,
@@ -1555,6 +1672,41 @@ class EnemyManager {
         this.game.engine.scene.remove(s.mesh); this.shells.splice(i, 1);
       } else if (p.y < -5) { this.game.engine.scene.remove(s.mesh); this.shells.splice(i, 1); }
     }
+    // ── Lingering wreck smoke (Task 26) ────────────────────────────────────────
+    const _eff = this.game.effects;
+    for (let wi = _tankWrecks.length - 1; wi >= 0; wi--) {
+      const wr = _tankWrecks[wi];
+      wr.t += dt;
+      if (wr.t >= 18) continue; // stop emitting; wreck mesh stays as permanent scenery
+      // Thinning: full rate for first 6 s, then linear taper to 0 at 18 s
+      const intensity = wr.t < 6 ? 1.0 : Math.max(0, 1 - (wr.t - 6) / 12);
+      const interval  = 0.4 + (1 - intensity) * 0.8; // 0.4 s dense → 1.2 s sparse
+      wr._smokeAccum += dt;
+      if (wr._smokeAccum >= interval) {
+        wr._smokeAccum -= interval;
+        // Emit one grey smoke puff using effects._spawn (same API as engine smoke)
+        _eff._spawn({
+          pos: new THREE.Vector3(
+            wr.pos.x + (Math.random() - 0.5) * 1.2,
+            1.8 + Math.random() * 0.6,
+            wr.pos.z + (Math.random() - 0.5) * 1.2,
+          ),
+          vel: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.4,
+            0.9 + Math.random() * 0.6,
+            (Math.random() - 0.5) * 0.4,
+          ),
+          life:  (1.4 + Math.random() * 1.0) * (0.5 + 0.5 * intensity),
+          size:  (0.35 + Math.random() * 0.25) * (0.4 + 0.6 * intensity),
+          grav:  0.2,
+          drag:  0.6,
+          color: new THREE.Color(0x444038),
+          bounce: 0,
+          floorY: -999,
+          bloom: true,
+        });
+      }
+    }
   }
 
   // Boss laser: a thick red beam from the belly target along the locked aim; hits the player if near the line.
@@ -1981,8 +2133,19 @@ class EnemyManager {
     for (let k = 0; k < 4; k++) this.game.effects.explosion(c.clone().add(new THREE.Vector3(rr(-1.5, 1.5), rr(0, 1.5), rr(-1.5, 1.5))), 4);
     this.game.effects.stuffing(c, 0x222222, 50, 9);
     this.game.audio.enemyDie();
-    if (e.tankGroup) e.tankGroup.visible = false;            // Phase 3 swaps in buildTankWreck()
+    if (e.tankGroup) e.tankGroup.visible = false;
     if (this.game.world.addWreckObstacle) this.game.world.addWreckObstacle(e.pos.clone(), e.hullYaw || 0);
+    { // Place visible wreck mesh + register for lingering smoke
+      const wreckMesh = buildTankWreck();
+      wreckMesh.position.set(e.pos.x, 0, e.pos.z);
+      wreckMesh.rotation.y = e.hullYaw || 0;
+      this.game.engine.scene.add(wreckMesh);
+      if (_tankWrecks.length >= 6) {
+        const oldest = _tankWrecks.shift();
+        if (oldest.mesh.parent) oldest.mesh.parent.remove(oldest.mesh);
+      }
+      _tankWrecks.push({ mesh: wreckMesh, pos: { x: e.pos.x, y: 0, z: e.pos.z }, t: 0, _smokeAccum: 0 });
+    }
     this.game.hud.hideBoss();
     this.game.hud.bigMessage('T-90M DESTROYED', '+bounty +keys');
     this.game.onEnemyKilled(e, attacker);
@@ -3985,6 +4148,17 @@ class CapturedTank {
     if (wasAboard) this.game.player.hurt(35);        // ejection damage (now unshielded since leave() cleared inTank)
     if (this.group) this.group.visible = false;
     if (this.game.world.addWreckObstacle) this.game.world.addWreckObstacle(this.pos.clone(), this.hullYaw);
+    { // Place visible wreck mesh + register for lingering smoke
+      const wreckMesh = buildTankWreck();
+      wreckMesh.position.set(this.pos.x, 0, this.pos.z);
+      wreckMesh.rotation.y = this.hullYaw;
+      this.game.engine.scene.add(wreckMesh);
+      if (_tankWrecks.length >= 6) {
+        const oldest = _tankWrecks.shift();
+        if (oldest.mesh.parent) oldest.mesh.parent.remove(oldest.mesh);
+      }
+      _tankWrecks.push({ mesh: wreckMesh, pos: { x: this.pos.x, y: 0, z: this.pos.z }, t: 0, _smokeAccum: 0 });
+    }
     if (this.game.hud.setTankHp) this.game.hud.setTankHp(-1);  // hide HP bar
     this.game.capturedTank = null;
   }
