@@ -1258,9 +1258,10 @@ class EnemyManager {
     e.alive = false; e.captured = true;
     if (e.tankGroup && e.tankGroup.userData && e.tankGroup.userData.mitri) e.tankGroup.userData.mitri.visible = false; // commander dead
     this.game.hud.hideBoss();
-    this.game.hud.bigMessage('TANK COMMANDEERED!', 'press E to board (coming soon)');
+    this.game.hud.bigMessage('TANK COMMANDEERED!', 'press E to board');
     this.game.onEnemyKilled(e, attacker);
-    // Phase 2 (later task): this.game.captureTank(e.tankGroup, e.pos.clone(), e.hullYaw);
+    this.game.capturedTank = new CapturedTank(this.game, e.tankGroup, e.pos.clone(), e.hullYaw || 0);
+    e.tankGroup = null; // ownership transferred — clearAll/pool won't touch it; next tank spawn builds fresh
     return true;
   }
   clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); }
@@ -2036,6 +2037,7 @@ class Player {
     this.moveSpeedMult = 1; this.damageMult = 1; this.reloadMult = 1; this.keyDropMult = 1; this.moneyMult = 1;
     this.armorOnWave = 0;
     this.mountedGun = null;
+    this.inTank = null;
   }
   reset() {
     this.pos.set(0, 0, 30); this.vel.set(0, 0, 0); this.yaw = Math.PI; this.pitch = 0;
@@ -2856,6 +2858,90 @@ class MountedGun {
 }
 
 // ---------------------------------------------------------------------------
+// CapturedTank — boardable T-90M after Mitri is killed.
+// Mirrors the MountedGun mount/dismount/controlUpdate pattern.
+// Architected 2-player-ready: each seat is an independent station;
+// co-op can later fill the other seat remotely.
+// Driver/gunner views + firing are implemented in later tasks.
+// ---------------------------------------------------------------------------
+class CapturedTank {
+  constructor(game, group, pos, yaw) {
+    this.game = game;
+    this.group = group;
+    this.pos = pos.clone();
+    this.hullYaw = yaw || 0;
+    this.turYaw = yaw || 0;
+    this.gunPitch = 0;
+    this.hp = this.hpMax = 2200;
+    this.cannonAmmo = 16; this.cannonCD = 0;
+    this.mgAmmo = 250; this.mgReload = 0;
+    this.seats = { driver: { occupant: null }, gunner: { occupant: null } };
+    this.active = null;             // 'driver' | 'gunner' | null (local seat)
+    this.thermal = true;
+    this.stance = 'sight';          // gunner: 'sight' | 'peek'
+    this.group.visible = true;
+    this.group.position.copy(this.pos);
+    this.group.rotation.y = this.hullYaw;
+  }
+
+  near(p) { return Math.hypot(p.x - this.pos.x, p.z - this.pos.z) < 4.5; }
+
+  enter(seat) {
+    this.seats[seat].occupant = 'local';
+    this.active = seat;
+    this.game.player.inTank = this;
+    this.game.weapons.group.visible = false;
+    if (this.game.audio.reloadIn) this.game.audio.reloadIn();
+  }
+
+  switchSeat() {
+    this.active = this.active === 'driver' ? 'gunner' : 'driver';
+    this.stance = 'sight';
+    if (this.game.audio.uiClick) this.game.audio.uiClick();
+  }
+
+  leave() {
+    if (this.active) this.seats[this.active].occupant = null;
+    this.active = null;
+    this.game.player.inTank = null;
+    this.game.weapons.group.visible = true;
+    const bx = Math.sin(this.hullYaw + 1.6), bz = Math.cos(this.hullYaw + 1.6);
+    this.game.player.pos.set(this.pos.x + bx * 3, 0, this.pos.z + bz * 3);
+    if (this.game.player.vel) this.game.player.vel.set(0, 0, 0);
+  }
+
+  controlUpdate(dt) {
+    // STUB camera-follow so boarding is testable; driver/gunner views + firing in later tasks.
+    if (this.active === 'driver' && this._driver) this._driver(dt);
+    else if (this.active === 'gunner' && this._gunner) this._gunner(dt);
+    else this._followCam();
+    if (!this._driver && !this._gunner) this._followCam(); // basic chase cam until per-seat tasks arrive
+  }
+
+  _followCam() {
+    const cam = this.game.engine.camera;
+    cam.rotation.order = 'YXZ';
+    const back = 8, up = 4;
+    cam.position.set(
+      this.pos.x - Math.sin(this.hullYaw) * back,
+      up,
+      this.pos.z - Math.cos(this.hullYaw) * back
+    );
+    cam.lookAt(this.pos.x, 1.5, this.pos.z);
+  }
+
+  forceReset() {
+    if (this.game.player && this.game.player.inTank === this) {
+      this.game.player.inTank = null;
+      this.game.weapons.group.visible = true;
+    }
+    this.active = null;
+    this.seats.driver.occupant = null;
+    this.seats.gunner.occupant = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Day/Night cycle + celestial sky for THE LONG NIGHT. Drives every light, the
 // fog, the sky-shader colours, an arcing sun & moon, a real-constellation
 // starfield, a blood-moon variant and the player flashlight. In PURGE mode it
@@ -3319,6 +3405,7 @@ class Game {
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.mountedGun = new MountedGun(this, new THREE.Vector3(0, 3.4, 46), 0); // .50 cal on the bunker roof
+    this.capturedTank = null; // set by _tankCaptured; cleared on reset
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
     this.shop = new Shop(this);
@@ -3381,14 +3468,35 @@ class Game {
       else if (code === 'KeyG') this.weapons.throwGrenade();
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
+        // ---- CapturedTank: exit when aboard ----
+        const _ct = this.capturedTank;
+        if (_ct && this.player.inTank === _ct) { _ct.leave(); return; }
+        // ---- .50 cal + loot ----
         if (this.player.mountedGun) this.player.mountedGun.dismount();
         else if (this.mountedGun.near(this.player.pos)) this.mountedGun.mount();
+        // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
+        else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
         else this.loot.openNearby();
+      }
+      else if (code === 'KeyQ') {
+        // CapturedTank: switch driver ↔ gunner seat
+        const _ct = this.capturedTank;
+        if (_ct && this.player.inTank === _ct) { _ct.switchSeat(); return; }
       }
       else if (code === 'KeyF') this.toggleFullscreen();
       else if (code === 'KeyL') this.dayNight.toggleFlashlight();
-      else if (code === 'KeyC') this.throwFlare();
-      else if (code === 'KeyT') this.useRadio();
+      else if (code === 'KeyC') {
+        // CapturedTank: gunner peek stance (when in tank); else flare
+        const _ct = this.capturedTank;
+        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.stance = _ct.stance === 'sight' ? 'peek' : 'sight'; return; }
+        this.throwFlare();
+      }
+      else if (code === 'KeyT') {
+        // CapturedTank: thermal toggle (gunner only); else radio
+        const _ct = this.capturedTank;
+        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.thermal = !_ct.thermal; return; }
+        this.useRadio();
+      }
       else if (code === 'KeyB') this.weapons.toggleFireMode();
       else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
       else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.weapons.selectSlot(n); }
@@ -3418,6 +3526,7 @@ class Game {
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
     this.mountedGun.forceReset();
+    if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.weapons.resetLoadout();
     this.waves.reset();
     this._clearFlares();
@@ -3621,6 +3730,8 @@ class Game {
 
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
+    } else if (this.player.inTank) {
+      this.player.inTank.controlUpdate(dt); // tank camera + controls handled here
     } else {
       if (!this.mp.frozen) {
         if (this.input.buttonsPressed[0]) this.weapons.tryFire('press');
@@ -3638,9 +3749,20 @@ class Game {
     this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount);
     this.effects.update(dt);
     this.hud.update(dt);
-    if (this.player.mountedGun) this.hud.setInteract('Press <b>E</b> to leave the .50 cal');
-    else if (this.mountedGun.near(this.player.pos)) this.hud.setInteract('Press <b>E</b> to man the .50 cal — ∞ ammo, overheats');
-    else this.hud.setInteract(this.loot.prompt);
+    // ---- Interact prompt priority: tank crew > .50 cal > loot ----
+    const _ct = this.capturedTank;
+    if (this.player.mountedGun) {
+      this.hud.setInteract('Press <b>E</b> to leave the .50 cal');
+    } else if (_ct && this.player.inTank === _ct) {
+      const seatHint = _ct.active === 'gunner' ? ' · T thermal · C peek' : '';
+      this.hud.setInteract('E exit · Q seat' + seatHint);
+    } else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) {
+      this.hud.setInteract('Press <b>E</b> to commandeer the T-90M');
+    } else if (this.mountedGun.near(this.player.pos)) {
+      this.hud.setInteract('Press <b>E</b> to man the .50 cal — ∞ ammo, overheats');
+    } else {
+      this.hud.setInteract(this.loot.prompt);
+    }
   }
 }
 
