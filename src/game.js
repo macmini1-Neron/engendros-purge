@@ -428,7 +428,7 @@ const ENEMY_TYPES = {
   titan:    { hp: 640, speed: 1.1,  dmg: 30, reward: 260, scale: 2.05, variant: 'normal' },
   minitolo: { hp: 45,  speed: 3.9,  dmg: 14, reward: 25,  scale: 0.6,  variant: 'normal' },
   boss:     { hp: 3200, speed: 1.0, dmg: 32, reward: 1200, scale: 2.85, variant: 'boss', boss: true, laser: true },
-  tank:     { armorHP: 3600, mitriHP: 750, speed: 1.2, dmg: 40, reward: 1500, scale: 1,
+  tank:     { hp: 3600, armorHP: 3600, mitriHP: 750, speed: 1.2, dmg: 40, reward: 1500, scale: 1, // scale 1 = placeholder; real model later
               variant: 'tank', boss: true, tank: true, armored: true, explosiveMult: 2.0 },
 };
 
@@ -1480,11 +1480,27 @@ class LootManager {
   _pickupMesh(kind) {
     const b = new MeshBuilder();
     if (kind === 'key') return this._keyMesh();
-    if (kind === 'radio') { // field radio: body + antenna + dial
-      b.box(0.32, 0.26, 0.2, 0, 0, 0, 0x2b3026); b.box(0.28, 0.06, 0.16, 0, 0.14, 0, 0x444b3a);
-      b.box(0.04, 0.34, 0.04, 0.11, 0.26, 0, 0x9aa0a8); b.box(0.07, 0.07, 0.03, 0.11, 0.46, 0, 0xffcf5c);
-      b.box(0.09, 0.09, 0.03, -0.06, 0.02, 0.1, 0x6fd0e8);
-      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x103840, emissiveIntensity: 0.7 }));
+    if (kind === 'radio') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
+      const olive = 0x3f4a2c, oHi = 0x515c39, oLo = 0x2c331d, blk = 0x16160f, metal = 0x8a8f86, scr = 0x9be86a, btn = 0x202018;
+      b.box(0.34, 0.66, 0.16, 0, 0.05, 0, olive, { tint: 0.03 });            // body
+      b.box(0.32, 0.07, 0.14, 0, 0.37, 0, oHi);                              // top bevel (lit)
+      b.box(0.3, 0.62, 0.03, 0, 0.05, 0.085, oHi, { tint: 0.02 });           // front face panel
+      b.box(0.36, 0.2, 0.18, 0, -0.42, 0, oLo, { tint: 0.03 });              // battery pack (bottom)
+      b.box(0.37, 0.02, 0.19, 0, -0.31, 0, blk);                             // battery seam
+      // top: main whip antenna + collar, left bent connector, middle round connector
+      b.box(0.045, 0.5, 0.045, 0.1, 0.62, 0, blk); b.box(0.07, 0.05, 0.07, 0.1, 0.36, 0, metal);
+      b.box(0.06, 0.05, 0.06, -0.1, 0.34, 0, metal); b.box(0.06, 0.15, 0.06, -0.1, 0.44, 0, blk); b.box(0.13, 0.05, 0.05, -0.05, 0.52, 0, blk);
+      b.box(0.075, 0.17, 0.075, 0.0, 0.42, 0, blk);
+      // speaker grille (front upper, dot grid)
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) b.box(0.022, 0.022, 0.02, -0.05 + c * 0.05, 0.27 - r * 0.04, 0.1, blk);
+      // green LCD screen + dark bezel
+      b.box(0.28, 0.13, 0.015, 0, 0.07, 0.1, blk); b.box(0.25, 0.095, 0.02, 0, 0.07, 0.105, scr);
+      // keypad: grid of black buttons
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) b.box(0.045, 0.032, 0.02, -0.105 + c * 0.07, -0.09 - r * 0.05, 0.1, btn);
+      // left-edge channel knob + switch
+      const kn = new THREE.CylinderGeometry(0.05, 0.05, 0.06, 10); b.geo(kn, -0.18, 0.16, 0, blk, { rz: Math.PI / 2 }); kn.dispose();
+      b.box(0.04, 0.07, 0.05, -0.18, 0.3, 0, blk);
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x243016, emissiveIntensity: 0.45 }));
     }
     if (kind === 'medkit') { b.box(0.34, 0.24, 0.34, 0, 0, 0, 0xe8463a); b.box(0.14, 0.05, 0.05, 0, 0.13, 0, 0xffffff); b.box(0.05, 0.14, 0.05, 0, 0.13, 0, 0xffffff); }
     else if (kind === 'ammo') { b.box(0.3, 0.18, 0.3, 0, 0, 0, 0x6a5a2a); b.box(0.34, 0.05, 0.34, 0, 0.1, 0, 0xb88a3a); }
@@ -1767,6 +1783,7 @@ class WaveManager {
     this.wave = n; this.active = true; this.spawned = 0;
     this.isBossWave = (n % 5 === 0);
     if (this.isBossWave) this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0];
+    if (this._forceBoss) { this.isBossWave = true; this.bossPick = this._forceBoss; this._forceBoss = null; }
     // pick a wave archetype (specials only from wave 3) + an optional modifier (from wave 4)
     let typeKey = 'normal';
     if (!this.isBossWave && n >= 3 && chc(0.5)) typeKey = pick(['horde', 'stampede', 'volatile', 'elite']);
@@ -1803,6 +1820,7 @@ class WaveManager {
     this.wave = n; this.active = true; this.spawned = 0;
     this.isBossWave = (n % 5 === 0); this.minibossPending = false; this.mod = null; this.typeKey = 'normal';
     if (this.isBossWave) this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0];
+    if (this._forceBoss) { this.isBossWave = true; this.bossPick = this._forceBoss; this._forceBoss = null; }
     const blood = this.game.dayNight && this.game.dayNight.bloodMoon;
     this.speedMul = 1 + Math.min(n * 0.012, 0.45);
     this.hpMul = (1 + (n - 1) * 0.06) * (blood ? 1.2 : 1);
@@ -1891,7 +1909,7 @@ class WaveManager {
       this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
     }
   }
-  _forceTankWave() { this.startWave(this.wave + 1); this.isBossWave = true; this.bossPick = 'tank'; this.spawned = 0; this.total = 1; } // DEBUG
+  _forceTankWave() { this._forceBoss = 'tank'; this.startWave(this.wave + 1); } // DEBUG: forces next wave to be a tank boss
   // A named elite that hijacks the boss bar (no laser/phase-2) and pays out big.
   _spawnMiniboss(pos, n) {
     const baseType = chc(0.5) ? 'titan' : 'brute', def = ENEMY_TYPES[baseType];
@@ -2078,7 +2096,7 @@ class UI {
     this.overlays = {
       menu: document.getElementById('menu'), pause: document.getElementById('pause'),
       shop: document.getElementById('shop'), gameover: document.getElementById('gameover'),
-      settings: document.getElementById('settings'),
+      settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
     };
     this.hint = document.getElementById('hint');
   }
@@ -2479,6 +2497,7 @@ const MP_SKINS = [
 ];
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
+function mpEscape(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
 
 class RemotePlayer {
   constructor(game, id, name, skinIdx) {
@@ -2542,7 +2561,8 @@ class MP {
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
     this._xfT = 0; this._snapT = 0; this._reviveT = 0;
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false;
-    this._wireNet();
+    this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
+    this._wireNet(); this._wireScoreboard();
   }
   // ---- lobby ----
   startHost(name) {
@@ -2604,6 +2624,9 @@ class MP {
     n.on('kill', (d) => this._clientKill(d));
     n.on('pstate', (d) => this._applyPState(d));
     n.on('revive', (d, from) => { if (this.isHost) this.hostRevive(d.tid, from); });
+    n.on('ping', (d, from) => { if (this.isHost) this.net.sendTo(from, 'pong', d); });
+    n.on('pong', (d) => { this.myPing = Math.round(performance.now() - d.t); });
+    n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
   }
   _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin })); }
   _remote(id) {
@@ -2637,6 +2660,8 @@ class MP {
         e.mesh.rotation.y = damp(e.mesh.rotation.y, e._try, 12, dt);
       }
     }
+    this._pingT -= dt; if (this._pingT <= 0) { this._pingT = 2; if (!this.isHost) this.net.send('ping', { t: performance.now() }); }
+    this._pstatT -= dt; if (this._pstatT <= 0) { this._pstatT = 1; const myPing = this.isHost ? 0 : this.myPing, myMoney = g.player.money; const me = this.roster.get(this.myId); if (me) { me.ping = myPing; me.money = myMoney; } this.net.broadcast('pstat', { id: this.myId, ping: myPing, money: myMoney }); if (this._sbOpen) this.renderScoreboard(); }
     this._updateRevive(dt);
   }
   // ---- enemy sync (host → clients) ----
@@ -2717,6 +2742,29 @@ class MP {
   }
   // ---- revive interaction ----
   _downedRemoteNear() { const p = this.game.player.pos; for (const [, rp] of this.remotes) if (rp.down && !rp.dead && Math.hypot(rp.pos.x - p.x, rp.pos.z - p.z) < 2.4) return rp; return null; }
+  // ---- Tab scoreboard ----
+  _wireScoreboard() {
+    const toggle = (down) => (e) => {
+      if (e.code !== 'Tab' || !this.active) return; e.preventDefault();
+      this._sbOpen = down; const el = document.getElementById('mp-scoreboard'); if (el) el.classList.toggle('show', down); if (down) this.renderScoreboard();
+    };
+    window.addEventListener('keydown', toggle(true)); window.addEventListener('keyup', toggle(false));
+  }
+  renderScoreboard() {
+    const rows = document.getElementById('sb-rows'); if (!rows) return;
+    const list = [...this.roster.entries()].map(([id, r]) => ({ id, name: r.name, skin: r.skin || 0, ping: r.ping, money: r.money }));
+    list.sort((a, b) => (b.money || 0) - (a.money || 0));
+    rows.innerHTML = list.map(e => {
+      const sk = MP_SKINS[e.skin % MP_SKINS.length];
+      const skinCss = '#' + sk.skin.toString(16).padStart(6, '0'), petalCss = '#' + sk.petal.toString(16).padStart(6, '0');
+      const isHostRow = (e.id === 'host');
+      const ping = isHostRow ? 'host' : (e.ping == null ? '\u2014' : e.ping + 'ms');
+      const pc = isHostRow ? '#9fd0ff' : (e.ping == null ? '#888' : e.ping < 80 ? '#7fd06a' : e.ping < 180 ? '#ffcf5c' : '#e8533a');
+      const money = e.money == null ? '' : '$' + e.money;
+      const you = e.id === this.myId ? ' <span style="opacity:.55;font-weight:400">(you)</span>' : '';
+      return '<div class="sb-row"><span class="sb-skin" style="background:' + skinCss + ';border-color:' + petalCss + '"></span><span class="sb-name">' + mpEscape(e.name) + you + '</span><span class="sb-money">' + money + '</span><span class="sb-ping" style="color:' + pc + '">' + ping + '</span></div>';
+    }).join('');
+  }
   _updateRevive(dt) {
     if (!this.active || this.frozen) { this._reviveT = 0; return; }
     const rp = this._downedRemoteNear();
