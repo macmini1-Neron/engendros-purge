@@ -3863,6 +3863,8 @@ class Admin {
       list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'mini' }, 'normal'), voxelMaterial()) });
       list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: () => new THREE.Mesh(buildEngendro(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length], 'exploder'), voxelMaterial()) });
       list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
+      list.push({ name: 'T-90M «MITRI»', sub: 'tank boss', make: () => buildTank('desert') });
+      list.push({ name: 'T-90M (wreck)', sub: 'destroyed', make: () => buildTankWreck() });
       return list;
     }
     if (this.tab === 'props') return [
