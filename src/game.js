@@ -2046,6 +2046,7 @@ class Player {
 
   hurt(dmg) {
     if (!this.alive) return;
+    if (this.inTank && this.inTank.shielded && this.inTank.shielded()) return; // protected by tank armor (enemy fire hits the tank instead — see captured-tank HP)
     if (this.armor > 0) { const take = Math.min(this.armor, dmg); this.armor -= take; dmg -= take; this.game.hud.setArmor(this.armor, this.armorMax); }
     this.hp -= dmg; this._regenT = 0;
     this.game.audio.playerHurt(); this.game.hud.damageFlash();
@@ -2886,6 +2887,8 @@ class CapturedTank {
 
   near(p) { return Math.hypot(p.x - this.pos.x, p.z - this.pos.z) < 4.5; }
 
+  shielded() { return this.active != null && this.stance !== 'peek'; } // buttoned-up in any seat = armor protects the player
+
   enter(seat) {
     this.seats[seat].occupant = 'local';
     this.active = seat;
@@ -2896,7 +2899,7 @@ class CapturedTank {
 
   switchSeat() {
     this.active = this.active === 'driver' ? 'gunner' : 'driver';
-    this.stance = 'sight';
+    this.stance = 'sight'; this.peekYaw = null; this.peekPitch = null;
     if (this.game.audio.uiClick) this.game.audio.uiClick();
   }
 
@@ -2912,6 +2915,7 @@ class CapturedTank {
   }
 
   controlUpdate(dt) {
+    this.game.player.pos.set(this.pos.x, 0, this.pos.z); // player rides inside the tank
     if (this.active === 'driver') this._driver(dt);
     else if (this.active === 'gunner') (this._gunner ? this._gunner(dt) : this._followCam());
     else this._followCam();
@@ -2960,8 +2964,22 @@ class CapturedTank {
   // ---- Task 17: gunner station ------------------------------------------------
 
   _gunner(dt) {
-    // Task 19 peek stance: just follow-cam until implemented
-    if (this.stance === 'peek') { this._followCam(); this._showOverlay('none'); return; }
+    // ---- Task 19: commander peek stance (wide free-look, exposed, no firing) ----
+    if (this.stance === 'peek') {
+      const input = this.game.input, sens = this.game.player.sens || 0.0022;
+      this.peekYaw   = (this.peekYaw   == null ? this.turYaw : this.peekYaw) - input.mouseDX * sens;
+      this.peekPitch = clamp((this.peekPitch == null ? 0 : this.peekPitch) - input.mouseDY * sens, -0.8, 0.5);
+      if (this.group.userData.hatch) this.group.userData.hatch.position.y = 1.6; // hatch up, commander exposed
+      const cam = this.game.engine.camera; cam.rotation.order = 'YXZ';
+      cam.position.set(this.pos.x, 3.4, this.pos.z);                              // head out of the cupola
+      cam.rotation.set(this.peekPitch, this.peekYaw, 0);
+      if (this.game.engine.setFov) this.game.engine.setFov((this.game.settings && this.game.settings.data && this.game.settings.data.fov) || 80);
+      this._showOverlay('none');
+      return; // no firing while peeking
+    }
+
+    // ---- sight stance ----
+    if (this.group.userData.hatch) this.group.userData.hatch.position.y = 1.0; // hatch down, buttoned-up
 
     const input = this.game.input;
     const cam   = this.game.engine.camera;
@@ -3733,7 +3751,7 @@ class Game {
       else if (code === 'KeyC') {
         // CapturedTank: gunner peek stance (when in tank); else flare
         const _ct = this.capturedTank;
-        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.stance = _ct.stance === 'sight' ? 'peek' : 'sight'; return; }
+        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.stance = _ct.stance === 'sight' ? 'peek' : 'sight'; if (_ct.stance === 'sight') { _ct.peekYaw = null; _ct.peekPitch = null; } return; }
         this.throwFlare();
       }
       else if (code === 'KeyT') {
