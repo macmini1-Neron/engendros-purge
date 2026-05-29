@@ -203,356 +203,414 @@ function buildEngendro(col, variant = 'normal') {
 // Returns a THREE.Group with ALL rig nodes on root.userData:
 //   turret, gunMantlet, recoilNode, muzzle, mgMuzzle, hatch,
 //   roadWheels[], trackL, trackR, headlamps[]
+//
+// Architecture: buildTank() composes small single-responsibility helpers
+// defined immediately above it (all prefixed _tank* or buildTank*).
 // ---------------------------------------------------------------------------
-function buildTank(camo = 'desert') {
-  // ── Desert palette (layered shading: Hi / Mid / Lo / Slot / accent) ──────
-  const sandHi  = 0xd8c49a, sandMid = 0xc9b48a, sandLo  = 0xb09468;
-  const brnHi   = 0x9a7a55, brnMid  = 0x8a6a45, brnLo   = 0x70512e;
-  const olvHi   = 0x7e7f5a, olvMid  = 0x6e6f4a, olvLo   = 0x575835;
-  const steelHi = 0x666b72, steelMid= 0x44474d, steelLo = 0x2e3035;
-  const slotCol = 0x222428;   // near-black recesses
-  const rubbCol = 0x2a2c2e;   // rubber road-wheel rim
-  const wheelHi = 0x565a60, wheelMid= 0x3e4147, wheelLo = 0x282b2f;
-  const trackCol= 0x333538, trackSlot= 0x1a1c1e;
-  const ERA_col  = brnMid;    // ERA block face
-  const ERA_hi   = brnHi;
-  const ERA_lo   = brnLo;
-  const mangalCol= steelMid;  // slat cage
-  const lensCol  = 0x1a2a3a;  // sight lens
 
-  const root = new THREE.Group(); root.name = 'tank';
-
-  // Helper: layered slab — mid body + thin hi top strip + thin lo bottom strip
-  // (bakes directly into a MeshBuilder)
-  const slab = (b, w, h, d, x, y, z, mid, hi, lo, opts = {}) => {
-    b.box(w, h,        d, x, y,           z, mid, { tint: 0.025, ...opts });
-    b.box(w, h * 0.14, d, x, y + h * 0.44, z, hi,  { ...opts });
-    b.box(w, h * 0.10, d, x, y - h * 0.46, z, lo,  { ...opts });
+// ── Shared colour palette ────────────────────────────────────────────────────
+function _tankPalette() {
+  return {
+    sandHi:   0xd8c49a, sandMid:  0xc9b48a, sandLo:   0xb09468,
+    brnHi:    0x9a7a55, brnMid:   0x8a6a45, brnLo:    0x70512e,
+    olvHi:    0x7e7f5a, olvMid:   0x6e6f4a, olvLo:    0x575835,
+    steelHi:  0x666b72, steelMid: 0x44474d, steelLo:  0x2e3035,
+    slotCol:  0x222428,   // near-black recesses
+    rubbCol:  0x2a2c2e,   // rubber road-wheel rim
+    wheelHi:  0x565a60, wheelMid: 0x3e4147, wheelLo:  0x282b2f,
+    trackCol: 0x333538, trackSlot:0x1a1c1e,
+    mangalCol:0x44474d,   // slat cage (= steelMid)
+    lensCol:  0x1a2a3a,   // sight lens
   };
-  // Helper: ERA brick — a protruding rectangular tile with layered shading
-  const era = (b, w, h, d, x, y, z, opts = {}) => {
-    b.box(w, h, d, x, y, z, ERA_col, { tint: 0.03, ...opts });
-    b.box(w * 0.7, h * 0.12, d * 0.95, x, y + h * 0.42, z + 0.005, ERA_hi, { ...opts });
-    b.box(w * 0.7, h * 0.10, d * 0.95, x, y - h * 0.44, z + 0.005, ERA_lo, { ...opts });
+}
+
+// ── Layered-slab helper factory ──────────────────────────────────────────────
+// Returns slab(b, w,h,d, x,y,z, mid,hi,lo, opts={})
+// mid body + thin hi top strip + thin lo bottom strip.
+function _tankSlabFn() {
+  return (b, w, h, d, x, y, z, mid, hi, lo, opts = {}) => {
+    b.box(w, h,         d, x, y,            z, mid, { tint: 0.025, ...opts });
+    b.box(w, h * 0.14,  d, x, y + h * 0.44, z, hi,  { ...opts });
+    b.box(w, h * 0.10,  d, x, y - h * 0.46, z, lo,  { ...opts });
   };
+}
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  HULL
-  // ══════════════════════════════════════════════════════════════════════════
-  const hb = new MeshBuilder();
+// ── ERA-brick helper factory ─────────────────────────────────────────────────
+// Returns era(b, w,h,d, x,y,z, opts={}) — one protruding tile with shading.
+function _tankEraFn(P) {
+  return (b, w, h, d, x, y, z, opts = {}) => {
+    b.box(w,        h,         d,        x, y,            z,         P.brnMid, { tint: 0.03,  ...opts });
+    b.box(w * 0.7,  h * 0.12,  d * 0.95, x, y + h * 0.42, z + 0.005, P.brnHi,  { ...opts });
+    b.box(w * 0.7,  h * 0.10,  d * 0.95, x, y - h * 0.44, z + 0.005, P.brnLo,  { ...opts });
+  };
+}
 
-  // Main hull box — low/squat T-90 profile (3.6 wide × 7.2 long, center y=0.9)
-  slab(hb, 3.6, 1.8, 7.2, 0, 0.9, 0, sandMid, sandHi, sandLo);
+// ── Hull: main box + sloped glacis + rear deck/grilles + mudguards + tow hooks ──
+function _tankHull(b, P) {
+  const slab = _tankSlabFn();
+  // Main hull box — low/squat T-90 profile (3.6 wide x 7.2 long, centre y=0.9)
+  slab(b, 3.6, 1.8, 7.2, 0, 0.9, 0, P.sandMid, P.sandHi, P.sandLo);
 
-  // Sloped glacis plate (front upper hull, tilted)
-  hb.box(3.5, 1.1, 1.8, 0, 1.65, 3.1, sandMid, { tint: 0.03, rx: -0.55 });
-  hb.box(3.5, 0.14, 1.8, 0, 2.15, 3.05, sandHi, { rx: -0.55 }); // top lit strip
-
-  // Glacis ERA tiles — split-V rows (3 rows × 4 cols each side of center seam)
-  for (let row = 0; row < 3; row++) {
-    for (let col = -2; col <= 1; col++) {
-      const ex = (col + 0.5) * 0.8;
-      const ey = 1.3 + row * 0.32;
-      const ez = 3.45 - row * 0.18;
-      era(hb, 0.68, 0.26, 0.18, ex, ey, ez, { rx: -0.55 });
-    }
-  }
+  // Sloped glacis plate (front upper hull, tilted ~31 deg)
+  b.box(3.5, 1.1,  1.8, 0, 1.65, 3.10, P.sandMid, { tint: 0.03, rx: -0.55 });
+  b.box(3.5, 0.14, 1.8, 0, 2.15, 3.05, P.sandHi,  { rx: -0.55 }); // top lit strip
 
   // Rear hull — boxy engine deck
-  slab(hb, 3.6, 0.5, 1.4, 0, 1.95, -2.8, brnMid, brnHi, brnLo);
-  // Engine deck grilles (dark slots)
+  slab(b, 3.6, 0.5, 1.4, 0, 1.95, -2.8, P.brnMid, P.brnHi, P.brnLo);
+  // Engine deck grilles (dark slots x 5)
   for (let i = 0; i < 5; i++) {
-    hb.box(0.55, 0.06, 0.08, -1.1 + i * 0.55, 2.22, -3.1, slotCol);
+    b.box(0.55, 0.06, 0.08, -1.1 + i * 0.55, 2.22, -3.1, P.slotCol);
   }
-  hb.box(3.5, 0.05, 0.1, 0, 2.22, -2.5, slotCol);   // rear vent strip
-  hb.box(3.5, 0.05, 0.1, 0, 2.22, -3.5, slotCol);
+  b.box(3.5, 0.05, 0.1, 0, 2.22, -2.5, P.slotCol); // rear vent strip 1
+  b.box(3.5, 0.05, 0.1, 0, 2.22, -3.5, P.slotCol); // rear vent strip 2
 
   // Rear tool box / storage
-  hb.box(1.4, 0.38, 0.5, -1.0, 2.12, -3.65, olvMid, { tint: 0.03 });
-  hb.box(1.4, 0.05, 0.5, -1.0, 2.32, -3.65, olvHi);
-  hb.box(0.8, 0.32, 0.48, 0.9, 2.12, -3.65, brnMid, { tint: 0.03 });
+  b.box(1.4, 0.38, 0.5,  -1.0, 2.12, -3.65, P.olvMid, { tint: 0.03 });
+  b.box(1.4, 0.05, 0.5,  -1.0, 2.32, -3.65, P.olvHi);
+  b.box(0.8, 0.32, 0.48,  0.9, 2.12, -3.65, P.brnMid, { tint: 0.03 });
 
-  // Front mudguard plates
-  hb.box(0.55, 0.12, 1.5, -1.93, 1.84, 2.2, sandMid);
-  hb.box(0.55, 0.12, 1.5,  1.93, 1.84, 2.2, sandMid);
+  // Front mudguard plates (left + right)
+  b.box(0.55, 0.12, 1.5, -1.93, 1.84, 2.2, P.sandMid);
+  b.box(0.55, 0.12, 1.5,  1.93, 1.84, 2.2, P.sandMid);
 
-  // Tow hooks (front)
-  for (const sx of [-1.3, 1.3]) {
-    hb.box(0.18, 0.24, 0.22, sx, 0.7, 3.65, steelMid);
-    hb.box(0.06, 0.22, 0.3,  sx, 0.7, 3.82, slotCol);
+  // Tow hooks (front corners)
+  for (const hx of [-1.3, 1.3]) {
+    b.box(0.18, 0.24, 0.22, hx, 0.7, 3.65, P.steelMid);
+    b.box(0.06, 0.22, 0.30, hx, 0.7, 3.82, P.slotCol);
   }
+}
 
+// ── Glacis ERA: split-V herringbone (4 rows x 5 cols per side, denser) ───────
+// Each side's bricks angle sharply toward the centreline — clear V from front view.
+function _tankGlacisEra(b, P) {
+  const era = _tankEraFn(P);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 5; col++) {
+      const exL = -0.22 - col * 0.44;
+      const ey  =  1.22 + row * 0.26;
+      const ez  =  3.52 - row * 0.14;
+      era(b, 0.40, 0.19, 0.14, exL,  ey, ez, { rx: -0.55, ry:  0.52 }); // left leg of V
+      era(b, 0.40, 0.19, 0.14, -exL, ey, ez, { rx: -0.55, ry: -0.52 }); // right leg of V
+    }
+  }
+}
+
+// ── One side skirt + ERA tile grid ──────────────────────────────────────────
+// sx = -1 (left) or +1 (right).
+function _tankSideSkirt(root, P, sx) {
+  const slab = _tankSlabFn();
+  const era  = _tankEraFn(P);
+  const skb  = new MeshBuilder();
+  const skx  = sx * 1.9;
+
+  // Skirt panel backing strip
+  slab(skb, 0.12, 0.65, 7.0, skx, 1.18, -0.1, P.steelMid, P.steelHi, P.steelLo);
+
+  // ERA bricks — denser: 3 rows x 14 cols (was 12, smaller tiles)
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 14; col++) {
+      const ez = 2.90 - col * 0.46;
+      const ey = 0.94 + row * 0.22;
+      era(skb, 0.13, 0.18, 0.38, skx + sx * 0.08, ey, ez);
+    }
+  }
+  root.add(new THREE.Mesh(skb.build(), voxelMaterial()));
+}
+
+// ── One road wheel: rubber rim + steel hub + hub highlight ──────────────────
+function _tankRoadWheel(P, wx, wz) {
+  const b      = new MeshBuilder();
+  const rimGeo = new THREE.CylinderGeometry(0.44, 0.44, 0.26, 12);
+  b.geo(rimGeo, wx, 0.46, wz, P.rubbCol, { rx: Math.PI / 2 }); rimGeo.dispose();
+  const hubGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.32, 8);
+  b.geo(hubGeo, wx, 0.46, wz, P.wheelMid, { rx: Math.PI / 2 }); hubGeo.dispose();
+  b.box(0.08, 0.08, 0.34, wx, 0.46, wz, P.wheelHi); // hub catch-light
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+// ── Front idler wheel ────────────────────────────────────────────────────────
+function _tankIdler(P, wx) {
+  const b = new MeshBuilder();
+  const g = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10);
+  b.geo(g, wx, 0.44, 3.3, P.wheelMid, { rx: Math.PI / 2 }); g.dispose();
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+// ── Rear drive sprocket (toothed approximation) ──────────────────────────────
+function _tankSprocket(P, wx) {
+  const b = new MeshBuilder();
+  const g = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 10);
+  b.geo(g, wx, 0.46, -3.3, P.steelMid, { rx: Math.PI / 2 }); g.dispose();
+  for (let t = 0; t < 8; t++) {
+    const a = (t / 8) * Math.PI * 2;
+    b.box(0.10, 0.10, 0.30, wx + Math.cos(a) * 0.38, 0.46 + Math.sin(a) * 0.38, -3.3, P.steelHi);
+  }
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+// ── One return roller ────────────────────────────────────────────────────────
+function _tankReturnRoller(P, wx, wz) {
+  const b = new MeshBuilder();
+  const g = new THREE.CylinderGeometry(0.18, 0.18, 0.22, 8);
+  b.geo(g, wx, 1.05, wz, P.wheelMid, { rx: Math.PI / 2 }); g.dispose();
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+// ── One track band: lower run + upper run + link slots ───────────────────────
+function _tankTrackBand(P, sx) {
+  const slab = _tankSlabFn();
+  const b    = new MeshBuilder();
+  const tx   = sx * 1.85;
+  slab(b, 0.38, 0.26, 7.2, tx, 0.14,  -0.10, P.trackCol, P.steelMid, P.trackSlot); // lower run
+  slab(b, 0.38, 0.14, 6.8, tx, 0.92,  -0.05, P.trackCol, P.steelMid, P.trackSlot); // upper run
+  for (let i = 0; i < 14; i++) {
+    b.box(0.34, 0.06, 0.06, tx, 0.14, 3.3 - i * 0.52, P.trackSlot); // link slots
+  }
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+// ── One headlamp: housing + lens glass + bright centre ───────────────────────
+function _tankHeadlamp(P, hx) {
+  const b = new MeshBuilder();
+  b.box(0.32, 0.22, 0.14, hx, 1.28, 3.62, P.steelMid);   // housing
+  b.box(0.22, 0.15, 0.06, hx, 1.28, 3.72, 0xd0d8e0);     // lens glass
+  b.box(0.20, 0.12, 0.06, hx, 1.28, 3.73, 0xeef2ff);     // bright centre
+  return new THREE.Mesh(b.build(), voxelMaterial());
+}
+
+// ── Main turret body: angular welded shell (front/centre/bustle/top + front ERA) ─
+function _tankTurretShell(b, P) {
+  const slab = _tankSlabFn();
+  slab(b, 2.8, 1.05, 1.4, 0, 0.52,  0.9,  P.olvMid, P.olvHi, P.olvLo); // front
+  slab(b, 2.6, 0.95, 1.6, 0, 0.47, -0.4,  P.olvMid, P.olvHi, P.olvLo); // centre
+  slab(b, 2.0, 0.72, 1.0, 0, 0.36, -1.35, P.brnMid, P.brnHi, P.brnLo); // bustle
+  b.box(2.6, 0.10, 2.8, 0, 1.02, 0.1, P.sandMid, { tint: 0.02 });       // top plate
+
+  // Turret front plate ERA (3 rows x 4 cols of Relikt bricks)
+  const era = _tankEraFn(P);
+  for (let row = 0; row < 3; row++) {
+    for (let col = -2; col <= 1; col++) {
+      era(b, 0.52, 0.24, 0.20, (col + 0.5) * 0.62, 0.18 + row * 0.30, 1.62);
+    }
+  }
+}
+
+// ── Turret-cheek ERA: forward chevron/arrow for one side ─────────────────────
+// sx = -1 (left) or +1 (right). 3 stacked chevron rows per cheek.
+function _tankCheekEra(b, P, sx) {
+  const era = _tankEraFn(P);
+  for (let row = 0; row < 3; row++) {
+    const cy = 0.10 + row * 0.30;
+    era(b, 0.52, 0.22, 0.20, sx * 1.38, cy + 0.12, 0.68, { ry: sx * -0.75, rx:  0.28 }); // upper wing
+    era(b, 0.52, 0.22, 0.20, sx * 1.38, cy - 0.12, 0.65, { ry: sx * -0.75, rx: -0.28 }); // lower wing
+    era(b, 0.30, 0.18, 0.18, sx * 1.28, cy,         0.96, { ry: sx * -0.30 });             // apex cap
+    era(b, 0.48, 0.20, 0.18, sx * 1.40, cy + 0.06,  0.44, { ry: sx * -0.70, rx:  0.18 }); // layer 2 hi
+    era(b, 0.48, 0.20, 0.18, sx * 1.40, cy - 0.06,  0.42, { ry: sx * -0.70, rx: -0.18 }); // layer 2 lo
+  }
+}
+
+// ── Rear slat/mangal cage + bustle seam lines ────────────────────────────────
+function _tankMantletCage(b, P) {
+  for (let bz = 0; bz < 3; bz++) {
+    b.box(2.1, 0.06, 0.06, 0, 0.55, -1.70 - bz * 0.18, P.mangalCol); // horizontal bars
+  }
+  for (let bx = -2; bx <= 2; bx++) {
+    b.box(0.06, 0.55, 0.52, bx * 0.52, 0.55, -1.84, P.mangalCol);    // vertical bars
+  }
+  b.box(0.06, 0.68, 0.94, -0.97, 0.36, -1.35, P.steelLo); // seam left
+  b.box(0.06, 0.68, 0.94,  0.97, 0.36, -1.35, P.steelLo); // seam right
+}
+
+// ── Smoke-grenade launcher cluster for one side ──────────────────────────────
+// sx = -1 (left) or +1 (right). 5 angled cylinders + mounting plate.
+function _tankSmokeTubes(b, P, sx) {
+  for (let t = 0; t < 5; t++) {
+    const ty = 0.25 + t * 0.18;
+    const tz = 0.40 + t * 0.08;
+    const g  = new THREE.CylinderGeometry(0.07, 0.07, 0.55, 6);
+    b.geo(g, sx * 1.42, ty, tz, P.steelMid, { rz: sx * 1.18, tint: 0.02 }); g.dispose();
+  }
+  b.box(0.14, 0.92, 0.58, sx * 1.36, 0.5, 0.55, P.steelLo);
+}
+
+// ── Commander cupola housing + vision-block slits ────────────────────────────
+function _tankCupola(b, P) {
+  b.box(0.72, 0.38, 0.72, 0.7, 1.08, 0.18, P.brnMid, { tint: 0.03 });
+  b.box(0.72, 0.08, 0.72, 0.7, 1.28, 0.18, P.brnHi);
+  for (let s = 0; s < 4; s++) {
+    const a = (s / 4) * Math.PI * 2;
+    b.box(0.24, 0.06, 0.04, 0.7 + Math.cos(a) * 0.38, 1.1, 0.18 + Math.sin(a) * 0.38, P.slotCol, { ry: a });
+  }
+}
+
+// ── Panoramic sight drum + gunner sight housing ──────────────────────────────
+function _tankSights(b, P) {
+  const psGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.38, 8);
+  b.geo(psGeo, -0.55, 1.12, 0.30, P.steelMid, { tint: 0.02 }); psGeo.dispose();
+  b.box(0.12, 0.16, 0.12, -0.55, 1.35, 0.28, P.lensCol);
+  b.box(0.32, 0.28, 0.48, -0.72, 1.06, 0.75, P.steelMid, { tint: 0.02 });
+  b.box(0.22, 0.12, 0.10, -0.72, 1.06, 1.02, P.lensCol);
+}
+
+// ── RWS / MG mount stub ──────────────────────────────────────────────────────
+function _tankRws(b, P) {
+  b.box(0.28, 0.30, 0.38, 0.7, 1.22, -0.50, P.steelMid, { tint: 0.02 });
+  b.box(0.10, 0.10, 0.55, 0.7, 1.26, -0.28, P.steelHi);
+}
+
+// ── Radio antenna ─────────────────────────────────────────────────────────────
+function _tankAntenna(b, P) {
+  b.box(0.05, 1.10, 0.05, 0.75, 1.55, -0.9, P.steelMid);
+  b.box(0.05, 0.06, 0.05, 0.75, 2.12, -0.9, P.steelHi);
+}
+
+// ── 125 mm gun group: barrel + thermal sleeve + evacuator + coax + mantlet ───
+// Returns a MeshBuilder ready to be built and added to recoilNode.
+function buildTankGun(P) {
+  const gb   = new MeshBuilder();
+  const slab = _tankSlabFn();
+
+  // Three tapered barrel sections (muzzle z = 6.45 in recoilNode space)
+  slab(gb, 0.30, 0.30, 2.20, 0, 0, 1.20, P.steelMid, P.steelHi, P.steelLo); // base
+  slab(gb, 0.26, 0.26, 2.00, 0, 0, 3.40, P.steelMid, P.steelHi, P.steelLo); // mid
+  slab(gb, 0.22, 0.22, 2.40, 0, 0, 5.25, P.steelMid, P.steelHi, P.steelLo); // tip (extended)
+
+  // Thermal sleeve — 9 band rings + bulk body
+  for (let s = 0; s < 9; s++) {
+    gb.box(0.34, 0.34, 0.08, 0, 0,    0.50 + s * 0.36, P.brnMid, { tint: 0.02 });
+    gb.box(0.34, 0.04, 0.08, 0, 0.18, 0.50 + s * 0.36, P.brnHi);
+  }
+  gb.box(0.32, 0.30, 2.80, 0, 0, 1.65, P.brnLo, { tint: 0.02 });
+
+  // Bore evacuator bulge
+  gb.box(0.42, 0.42, 0.55, 0,  0,    3.82, P.steelMid, { tint: 0.02 });
+  gb.box(0.42, 0.06, 0.55, 0,  0.22, 3.82, P.steelHi);
+  gb.box(0.42, 0.05, 0.55, 0, -0.22, 3.82, P.steelLo);
+  gb.box(0.44, 0.08, 0.06, 0,  0,    3.54, P.steelLo); // collar forward
+  gb.box(0.44, 0.08, 0.06, 0,  0,    4.10, P.steelLo); // collar rear
+
+  // Coaxial MG barrel
+  gb.box(0.10, 0.10, 1.80, 0.28, -0.06, 1.00, P.steelLo, { tint: 0.02 });
+  gb.box(0.12, 0.05, 0.08, 0.28, -0.06, 1.92, P.slotCol);
+
+  // Mantlet cover plate
+  gb.box(0.72, 0.62, 0.22, 0,  0,    0.12, P.olvMid, { tint: 0.03 });
+  gb.box(0.72, 0.08, 0.22, 0,  0.32, 0.12, P.olvHi);
+
+  return gb;
+}
+
+// ── Main assembly ─────────────────────────────────────────────────────────────
+function buildTank(camo = 'desert') {
+  const P    = _tankPalette();
+  const root = new THREE.Group(); root.name = 'tank';
+
+  // Hull
+  const hb = new MeshBuilder();
+  _tankHull(hb, P);
+  _tankGlacisEra(hb, P);
   root.add(new THREE.Mesh(hb.build(), voxelMaterial()));
 
-  // ── Side skirt panels (ERA rows) ─────────────────────────────────────────
-  // Left skirts (x = -1.9), Right skirts (x = +1.9)
-  for (const sx of [-1, 1]) {
-    const skb = new MeshBuilder();
-    const skx = sx * 1.9;
-    // Skirt panel backing strip
-    slab(skb, 0.12, 0.65, 7.0, skx, 1.18, -0.1, steelMid, steelHi, steelLo);
-    // ERA bricks on skirts — 6 sections matching 6 wheels
-    for (let i = 0; i < 6; i++) {
-      const ez = 2.6 - i * 1.05;
-      era(skb, 0.16, 0.5, 0.85, skx + sx * 0.08, 1.22, ez);
-    }
-    root.add(new THREE.Mesh(skb.build(), voxelMaterial()));
-  }
+  // Side skirts (left + right)
+  _tankSideSkirt(root, P, -1);
+  _tankSideSkirt(root, P,  1);
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  RUNNING GEAR — 6 road wheels + idler + sprocket + return rollers
-  // ══════════════════════════════════════════════════════════════════════════
+  // Running gear
   root.userData.roadWheels = [];
-
   for (const sx of [-1, 1]) {
     const wx = sx * 1.85;
-    // 6 road wheels, evenly spaced front→rear along z axis
     for (let i = 0; i < 6; i++) {
-      const wz = 2.6 - i * 0.97;
-      const wb = new MeshBuilder();
-      // Outer rubber rim (dark)
-      const rimGeo = new THREE.CylinderGeometry(0.44, 0.44, 0.26, 12);
-      wb.geo(rimGeo, wx, 0.46, wz, rubbCol, { rx: Math.PI / 2 }); rimGeo.dispose();
-      // Inner steel hub
-      const hubGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.32, 8);
-      wb.geo(hubGeo, wx, 0.46, wz, wheelMid, { rx: Math.PI / 2 }); hubGeo.dispose();
-      wb.box(0.08, 0.08, 0.34, wx, 0.46, wz, wheelHi);   // hub highlight
-      const wm = new THREE.Mesh(wb.build(), voxelMaterial());
+      const wm = _tankRoadWheel(P, wx, 2.6 - i * 0.97);
       wm.name = `roadWheel_${sx > 0 ? 'R' : 'L'}_${i}`;
       root.add(wm);
       root.userData.roadWheels.push(wm);
     }
-
-    // Front idler (smaller, no rubber)
-    const idlB = new MeshBuilder();
-    const idlGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10);
-    idlB.geo(idlGeo, wx, 0.44, 3.3, wheelMid, { rx: Math.PI / 2 }); idlGeo.dispose();
-    root.add(new THREE.Mesh(idlB.build(), voxelMaterial()));
-
-    // Rear drive sprocket (toothed — approximated with box + radial nubs)
-    const sprB = new MeshBuilder();
-    const sprGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 10);
-    sprB.geo(sprGeo, wx, 0.46, -3.3, steelMid, { rx: Math.PI / 2 }); sprGeo.dispose();
-    for (let t = 0; t < 8; t++) {
-      const ta = (t / 8) * Math.PI * 2;
-      sprB.box(0.1, 0.1, 0.3, wx + Math.cos(ta) * 0.38, 0.46 + Math.sin(ta) * 0.38, -3.3, steelHi);
-    }
-    root.add(new THREE.Mesh(sprB.build(), voxelMaterial()));
-
-    // Return rollers (2 per side, top of track run)
-    for (let r = 0; r < 2; r++) {
-      const rrB = new MeshBuilder();
-      const rrGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.22, 8);
-      rrB.geo(rrGeo, wx, 1.05, 1.6 - r * 2.2, wheelMid, { rx: Math.PI / 2 }); rrGeo.dispose();
-      root.add(new THREE.Mesh(rrB.build(), voxelMaterial()));
-    }
+    root.add(_tankIdler(P, wx));
+    root.add(_tankSprocket(P, wx));
+    root.add(_tankReturnRoller(P, wx,  1.60));
+    root.add(_tankReturnRoller(P, wx, -0.60));
   }
 
-  // ── Track bands (L / R) ──────────────────────────────────────────────────
-  const makeTread = (sx) => {
-    const tb2 = new MeshBuilder();
-    const tx = sx * 1.85;
-    // Lower run (ground contact)
-    slab(tb2, 0.38, 0.26, 7.2, tx, 0.14, -0.1, trackCol, steelMid, trackSlot);
-    // Upper run (over the wheels)
-    slab(tb2, 0.38, 0.14, 6.8, tx, 0.92, -0.05, trackCol, steelMid, trackSlot);
-    // Dark link slots on lower run (reads as track links)
-    for (let i = 0; i < 14; i++) {
-      tb2.box(0.34, 0.06, 0.06, tx, 0.14, 3.3 - i * 0.52, trackSlot);
-    }
-    return new THREE.Mesh(tb2.build(), voxelMaterial());
-  };
-  const trackL = makeTread(-1); trackL.name = 'trackL'; root.add(trackL); root.userData.trackL = trackL;
-  const trackR = makeTread( 1); trackR.name = 'trackR'; root.add(trackR); root.userData.trackR = trackR;
+  // Track bands
+  const trackL = _tankTrackBand(P, -1); trackL.name = 'trackL';
+  const trackR = _tankTrackBand(P,  1); trackR.name = 'trackR';
+  root.add(trackL); root.userData.trackL = trackL;
+  root.add(trackR); root.userData.trackR = trackR;
 
-  // ── Headlamps (mesh only — SpotLights added Task 23) ────────────────────
+  // Headlamps
   root.userData.headlamps = [];
   for (const hx of [-1.1, 1.1]) {
-    const lb = new MeshBuilder();
-    lb.box(0.32, 0.22, 0.14, hx, 1.28, 3.62, steelMid);   // housing
-    lb.box(0.22, 0.15, 0.06, hx, 1.28, 3.72, 0xd0d8e0);   // lens glass
-    lb.box(0.20, 0.12, 0.06, hx, 1.28, 3.73, 0xeef2ff);   // lens bright centre
-    const lm = new THREE.Mesh(lb.build(), voxelMaterial());
+    const lm = _tankHeadlamp(P, hx);
     lm.name = `headlamp_${hx < 0 ? 'L' : 'R'}`;
     root.add(lm);
     root.userData.headlamps.push(lm);
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  TURRET (yaws as Group, positioned above hull)
-  // ══════════════════════════════════════════════════════════════════════════
+  // Turret group (yaws independently)
   const turret = new THREE.Group();
-  turret.position.set(0, 1.9, -0.4);   // same as placeholder
+  turret.position.set(0, 1.65, -0.4);
   root.add(turret);
   root.userData.turret = turret;
 
   const turB = new MeshBuilder();
-
-  // Main turret body — angular welded shape, wide-front narrow-rear
-  // Front slab (wider, tallest)
-  slab(turB, 2.8, 1.05, 1.4,  0,  0.52, 0.9, olvMid, olvHi, olvLo);
-  // Centre body
-  slab(turB, 2.6, 0.95, 1.6,  0,  0.47, -0.4, olvMid, olvHi, olvLo);
-  // Rear narrower bustle/box
-  slab(turB, 2.0, 0.72, 1.0,  0,  0.36, -1.35, brnMid, brnHi, brnLo);
-  // Slightly sloped turret top (extra flat box)
-  turB.box(2.6, 0.1, 2.8, 0, 1.02, 0.1, sandMid, { tint: 0.02 });
-
-  // Turret front plate ERA — Relikt bricks (3 rows)
-  for (let row = 0; row < 3; row++) {
-    for (let col = -2; col <= 1; col++) {
-      const ex = (col + 0.5) * 0.62;
-      const ey = 0.18 + row * 0.3;
-      era(turB, 0.52, 0.24, 0.2, ex, ey, 1.62);
-    }
-  }
-  // Turret cheek ERA (left and right angled sides)
-  for (const sx of [-1, 1]) {
-    for (let row = 0; row < 3; row++) {
-      era(turB, 0.26, 0.24, 0.55, sx * 1.38, 0.22 + row * 0.3, 0.55, { ry: sx * -0.45 });
-    }
-  }
-
-  // Slat/mangal cage at turret rear (rigid metal grid approximation)
-  for (let bz = 0; bz < 3; bz++) {
-    turB.box(2.1, 0.06, 0.06, 0, 0.55, -1.7 - bz * 0.18, mangalCol);   // horizontal bars
-  }
-  for (let bx = -2; bx <= 2; bx++) {
-    turB.box(0.06, 0.55, 0.52, bx * 0.52, 0.55, -1.84, mangalCol);     // vertical bars
-  }
-  // Rear bustle storage box detail
-  turB.box(0.06, 0.68, 0.94, -0.97, 0.36, -1.35, steelLo);   // seam line left
-  turB.box(0.06, 0.68, 0.94,  0.97, 0.36, -1.35, steelLo);   // seam line right
-
-  // Smoke grenade launcher clusters (left & right sides of turret)
-  for (const sx of [-1, 1]) {
-    for (let t = 0; t < 5; t++) {
-      const ty = 0.25 + t * 0.18;
-      const tz = 0.4 + t * 0.08;
-      const tubeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.55, 6);
-      turB.geo(tubeGeo, sx * 1.42, ty, tz, steelMid, { rz: sx * 1.18, tint: 0.02 }); tubeGeo.dispose();
-    }
-    // Launcher mounting plate
-    turB.box(0.14, 0.92, 0.58, sx * 1.36, 0.5, 0.55, steelLo);
-  }
-
-  // Antenna (rear-right of turret)
-  turB.box(0.05, 1.1, 0.05, 0.75, 1.55, -0.9, steelMid);
-  turB.box(0.05, 0.06, 0.05, 0.75, 2.12, -0.9, steelHi);  // tip
-
-  // Commander cupola housing (left/offset from centre — Task 23 adds full detail)
-  turB.box(0.72, 0.38, 0.72, 0.7, 1.08, 0.18, brnMid, { tint: 0.03 });
-  turB.box(0.72, 0.08, 0.72, 0.7, 1.28, 0.18, brnHi);     // top rim lit
-  // Cupola vision block slits
-  for (let s = 0; s < 4; s++) {
-    const a = (s / 4) * Math.PI * 2;
-    turB.box(0.24, 0.06, 0.04, 0.7 + Math.cos(a) * 0.38, 1.1, 0.18 + Math.sin(a) * 0.38, slotCol, { ry: a });
-  }
-
-  // Panoramic sight drum (Panoramic sight head — right side of roof)
-  const psGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.38, 8);
-  turB.geo(psGeo, -0.55, 1.12, 0.3, steelMid, { tint: 0.02 }); psGeo.dispose();
-  turB.box(0.12, 0.16, 0.12, -0.55, 1.35, 0.28, lensCol);    // lens
-
-  // Gunner sight housing (right front of turret roof)
-  turB.box(0.32, 0.28, 0.48, -0.72, 1.06, 0.75, steelMid, { tint: 0.02 });
-  turB.box(0.22, 0.12, 0.1, -0.72, 1.06, 1.02, lensCol);     // lens
-
-  // RWS / MG mount (right rear of turret roof) — mgMuzzle goes here
-  turB.box(0.28, 0.3, 0.38, 0.7, 1.22, -0.5, steelMid, { tint: 0.02 });
-  turB.box(0.1, 0.1, 0.55, 0.7, 1.26, -0.28, steelHi);   // MG barrel stub
-
+  _tankTurretShell(turB, P);
+  _tankCheekEra(turB, P, -1);
+  _tankCheekEra(turB, P,  1);
+  _tankMantletCage(turB, P);
+  _tankSmokeTubes(turB, P, -1);
+  _tankSmokeTubes(turB, P,  1);
+  _tankCupola(turB, P);
+  _tankSights(turB, P);
+  _tankRws(turB, P);
+  _tankAntenna(turB, P);
   turret.add(new THREE.Mesh(turB.build(), voxelMaterial()));
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  GUN MANTLET (pitches, child of turret)
-  // ══════════════════════════════════════════════════════════════════════════
+  // Gun mantlet (pitches, child of turret)
   const gunMantlet = new THREE.Group();
   gunMantlet.position.set(0, 0.5, 1.3);
   turret.add(gunMantlet);
   turret.userData.gunMantlet = gunMantlet;
-  root.userData.gunMantlet = gunMantlet;
+  root.userData.gunMantlet   = gunMantlet;
 
   const recoilNode = new THREE.Group();
   gunMantlet.add(recoilNode);
   gunMantlet.userData.recoilNode = recoilNode;
-  root.userData.recoilNode = recoilNode;
+  root.userData.recoilNode       = recoilNode;
 
-  // ── 125 mm gun barrel on recoilNode ──────────────────────────────────────
-  const gb = new MeshBuilder();
-
-  // Main barrel tube — three slightly-tapered sections
-  slab(gb, 0.30, 0.30, 2.2, 0, 0, 1.2, steelMid, steelHi, steelLo);   // base section
-  slab(gb, 0.26, 0.26, 1.8, 0, 0, 3.3, steelMid, steelHi, steelLo);   // mid section
-  slab(gb, 0.23, 0.23, 1.4, 0, 0, 4.6, steelMid, steelHi, steelLo);   // muzzle section
-
-  // Thermal sleeve — segmented bands along mid section
-  for (let s = 0; s < 7; s++) {
-    gb.box(0.34, 0.34, 0.08, 0, 0, 0.5 + s * 0.36, brnMid, { tint: 0.02 });
-    gb.box(0.34, 0.04, 0.08, 0, 0.18, 0.5 + s * 0.36, brnHi);  // top lit strip
-  }
-  // Thermal sleeve body (bulk between bands)
-  gb.box(0.32, 0.30, 2.3, 0, 0, 1.55, brnLo, { tint: 0.02 });
-
-  // Bore evacuator bulge (~⅓ from muzzle ≈ z=3.5)
-  gb.box(0.42, 0.42, 0.52, 0, 0, 3.52, steelMid, { tint: 0.02 });
-  gb.box(0.42, 0.06, 0.52, 0, 0.22, 3.52, steelHi);   // top lit
-  gb.box(0.42, 0.05, 0.52, 0, -0.22, 3.52, steelLo);  // bottom shadow
-  // Evacuator collar rings
-  gb.box(0.44, 0.08, 0.06, 0, 0, 3.26, steelLo);
-  gb.box(0.44, 0.08, 0.06, 0, 0, 3.78, steelLo);
-
-  // Coaxial MG barrel (to the right of main gun)
-  gb.box(0.1, 0.1, 1.8, 0.28, -0.06, 1.0, steelLo, { tint: 0.02 });
-  gb.box(0.12, 0.05, 0.08, 0.28, -0.06, 1.92, slotCol);  // muzzle port
-
-  // Mantlet cover plate
-  gb.box(0.72, 0.62, 0.22, 0, 0, 0.12, olvMid, { tint: 0.03 });
-  gb.box(0.72, 0.08, 0.22, 0, 0.32, 0.12, olvHi);
-
+  // 125 mm gun mesh on recoilNode
+  const gb = buildTankGun(P);
   recoilNode.add(new THREE.Mesh(gb.build(), voxelMaterial()));
 
-  // Muzzle marker (world-space fire origin at barrel tip)
+  // Muzzle marker (z=6.45 in recoilNode space; world r~5.15 from turret pivot)
   const muzzle = new THREE.Object3D();
-  muzzle.position.set(0, 0, 5.1);
+  muzzle.position.set(0, 0, 6.45);
   recoilNode.add(muzzle);
   root.userData.muzzle = muzzle;
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  RIG MARKERS (invisible anchor points)
-  // ══════════════════════════════════════════════════════════════════════════
-
-  // Coaxial MG muzzle (on turret, RWS position)
+  // Coaxial MG muzzle anchor (on turret)
   const mgMuzzle = new THREE.Object3D();
   mgMuzzle.position.set(0.7, 1.3, -0.1);
   turret.add(mgMuzzle);
   root.userData.mgMuzzle = mgMuzzle;
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  COMMANDER HATCH (lifts to expose Mitri — Task 23 adds full commander)
-  // ══════════════════════════════════════════════════════════════════════════
+  // Commander hatch (lifts to expose Mitri — Task 23)
   const hatch = new THREE.Group();
-  hatch.position.set(0.7, 1.0, 0.18);   // on top of cupola, same semantics as placeholder
+  hatch.position.set(0.7, 1.0, 0.18);
   turret.add(hatch);
   root.userData.hatch = hatch;
 
-  // Hatch cover (small flat plate, lifts upward)
   const hatchB = new MeshBuilder();
-  hatchB.box(0.62, 0.07, 0.62, 0, 0.04, 0, steelMid, { tint: 0.02 });
-  hatchB.box(0.62, 0.02, 0.62, 0, 0.08, 0, steelHi);
+  hatchB.box(0.62, 0.07, 0.62, 0, 0.04, 0, P.steelMid, { tint: 0.02 });
+  hatchB.box(0.62, 0.02, 0.62, 0, 0.08, 0, P.steelHi);
   hatch.add(new THREE.Mesh(hatchB.build(), voxelMaterial()));
 
-  // Placeholder Mitri head (yellow cube — Task 23 replaces with full commander)
+  // Placeholder Mitri (yellow cube, hidden until Task 23)
   const mb = new MeshBuilder();
   mb.box(0.38, 0.38, 0.38, 0, 0.28, 0, 0xf2c200, { tint: 0.03 });
   const mitri = new THREE.Mesh(mb.build(), voxelMaterial());
-  mitri.visible = false;   // hidden until hatch lifts (Task 23 will show/animate)
+  mitri.visible = false;
   hatch.add(mitri);
   root.userData.mitri = mitri;
-
-  // ── Final rig refs ────────────────────────────────────────────────────────
-  // (already set above; re-confirm headlamps init)
-  if (!root.userData.headlamps) root.userData.headlamps = [];
 
   return root;
 }
@@ -2066,23 +2124,33 @@ function buildSu24() {
   b.box(1.46, 0.4, 8.8, 0, -0.55, -0.4, gLo);
   for (const z of [-3.2, -1.0, 1.0, 2.8]) b.box(1.5, 0.02, 0.05, 0, 0.62, z, gSeam);
   b.box(0.05, 0.02, 7.0, 0.55, 0.55, -0.4, gSeam); b.box(0.05, 0.02, 7.0, -0.55, 0.55, -0.4, gSeam);
-  // ---- long pointed nose ----
-  b.box(1.3, 1.0, 1.6, 0, 0.02, -5.3, gMid);
-  b.box(1.0, 0.78, 1.6, 0, -0.02, -6.5, gHi);
-  b.box(0.66, 0.54, 1.5, 0, -0.06, -7.55, gMid);
-  b.box(0.36, 0.32, 1.4, 0, -0.1, -8.45, gLo);
-  b.box(0.15, 0.15, 1.0, 0, -0.12, -9.2, gDark);
-  b.box(0.05, 0.05, 0.8, 0, -0.12, -9.8, gDark);
-  b.box(0.95, 0.02, 0.05, 0, 0.3, -6.4, gSeam);
-  b.box(0.05, 0.26, 0.05, -0.5, 0.34, -4.7, gDark);
-  // ---- wide side-by-side cockpit (framed dark glass + two seats) ----
-  b.box(1.4, 0.55, 2.0, 0, 0.55, -4.2, gMid);
-  b.box(1.2, 0.46, 1.8, 0, 0.78, -4.2, glass);
-  b.box(0.07, 0.5, 1.84, 0, 0.8, -4.2, gMid);
-  b.box(1.42, 0.1, 0.14, 0, 0.84, -5.15, gMid);
-  b.box(1.42, 0.1, 0.14, 0, 0.84, -3.25, gMid);
-  b.box(0.09, 0.5, 1.86, 0.66, 0.78, -4.2, gMid); b.box(0.09, 0.5, 1.86, -0.66, 0.78, -4.2, gMid);
-  b.box(0.42, 0.3, 0.5, 0.3, 0.62, -3.9, 0x14140f); b.box(0.42, 0.3, 0.5, -0.3, 0.62, -3.9, 0x14140f);
+  // ---- smooth tapered radome: frustum → cone (no block staircase), flattened to match the fuselage, slight droop ----
+  const FL = 0.82; // vertical flatten — the radome is wider than tall, like the fuselage cross-section
+  const nFrust = new THREE.CylinderGeometry(0.5, 0.72, 2.4, 14, 1); nFrust.scale(1, 1, FL);
+  b.geo(nFrust, 0, 0.0, -6.1, gMid, { rx: -Math.PI / 2, tint: 0.02 }); nFrust.dispose();   // fuselage → radome blend
+  const nCone = new THREE.ConeGeometry(0.5, 2.6, 14, 1); nCone.scale(1, 1, FL);
+  b.geo(nCone, 0, -0.06, -8.6, gMid, { rx: -Math.PI / 2, tint: 0.02 }); nCone.dispose();    // pointed radome (smooth-shaded)
+  // pitot air-data boom + tip at the very nose
+  const boom = new THREE.CylinderGeometry(0.045, 0.06, 0.8, 8); b.geo(boom, 0, -0.1, -10.2, gDark, { rx: Math.PI / 2 }); boom.dispose();
+  const bTip = new THREE.ConeGeometry(0.04, 0.22, 8); b.geo(bTip, 0, -0.1, -10.7, gDark, { rx: -Math.PI / 2 }); bTip.dispose();
+  // side air-data probes + a small under-nose sensor window
+  for (const s of [-1, 1]) b.box(0.34, 0.03, 0.03, s * 0.4, 0.04, -8.0, gDark);
+  b.box(0.34, 0.16, 0.5, 0, -0.42, -7.5, glass);
+  // ---- side-by-side 2-seat cockpit: raked windscreen, faceted reflective canopy, metal frames ----
+  const refl = 0x4a7088, reflHi = 0x6f9bb2; // cool glass reflections (so the canopy reads as glass, not a black box)
+  b.box(1.5, 0.5, 2.0, 0, 0.5, -4.2, gMid, { tint: 0.02 });          // cockpit tub
+  b.box(1.3, 0.12, 0.36, 0, 0.66, -5.05, 0x14161a);                  // glareshield / coaming
+  b.box(1.26, 0.52, 0.1, 0, 0.86, -5.0, glass, { rx: -0.55 });       // raked windscreen glass
+  b.box(1.34, 0.5, 0.05, 0, 0.86, -5.07, gMid, { rx: -0.55 });       // windscreen frame
+  b.box(0.62, 0.06, 0.04, 0, 1.06, -4.83, reflHi, { rx: -0.55 });    // windscreen glare-line (lit)
+  b.box(1.16, 0.34, 1.55, 0, 0.84, -4.0, glass, { tint: 0.02 });     // canopy (wide lower)
+  b.box(0.86, 0.22, 1.5, 0, 1.08, -4.0, glass);                      // canopy crown (narrow → tumblehome)
+  b.box(0.5, 0.05, 1.34, -0.05, 1.205, -4.0, refl, { tint: 0.04 });  // top reflection sheen (proud)
+  b.box(0.06, 0.3, 1.34, 0.59, 0.84, -4.0, reflHi);                  // side glint (proud)
+  b.box(0.12, 0.14, 1.7, 0.585, 0.72, -4.0, gMid); b.box(0.12, 0.14, 1.7, -0.585, 0.72, -4.0, gMid); // canopy sills
+  b.box(0.07, 0.62, 1.55, 0, 0.86, -4.0, gMid);                      // fore-aft centre divider (between the 2 seats)
+  b.box(1.2, 0.12, 0.16, 0, 1.04, -3.22, gMid, { rx: 0.45 });        // rear canopy bow
+  b.box(1.1, 0.34, 0.6, 0, 0.66, -2.95, gMid, { tint: 0.02 });       // turtle-deck fairing into the spine
   // ---- rectangular side intakes (flush, splitter, lit lip) ----
   for (const s of [-1, 1]) {
     b.box(0.62, 1.02, 2.9, s * 1.0, -0.05, -2.1, gMid, { tint: 0.02 });
@@ -2098,8 +2166,8 @@ function buildSu24() {
     b.box(5.2, 0.04, 0.2, s * 4.4, 0.31, 1.6, gSeam, { ry: -s * 0.7 });
     const pc = new THREE.CylinderGeometry(0.42, 0.42, 0.55, 14); b.geo(pc, s * 2.5, 0.4, 0.25, gLo, { rz: Math.PI / 2 }); pc.dispose();
     b.box(0.05, 0.22, 1.0, s * 3.6, 0.5, 0.95, gLo, { ry: -s * 0.7 });
-    star(s * 3.7, 0.49, 1.0, 0.5, { rx: -Math.PI / 2, ry: -s * 0.7 });
-    star(s * 3.7, 0.27, 1.0, 0.42, { rx: Math.PI / 2, ry: -s * 0.7 });
+    star(s * 3.7, 0.49, 1.0, 0.5, { rx: -Math.PI / 2 });   // top: lie FLAT on the wing (no ry — Euler XYZ would tilt it ~40°)
+    star(s * 3.7, 0.27, 1.0, 0.42, { rx: Math.PI / 2 });   // underside: faces straight down
     b.box(0.22, 0.28, 0.66, s * 3.0, 0.16, 0.6, gDark, { ry: -s * 0.7 });
     b.box(0.34, 0.34, 2.0, s * 3.0, -0.08, 0.6, gLo, { ry: -s * 0.7, tint: 0.03 });
   }
@@ -2130,6 +2198,175 @@ function buildSu24() {
   return m;
 }
 
+// Bake a thin "strut" box spanning a→c into builder b (risers / shroud lines / sling legs).
+function _strut(b, a, c, w, color, opts = {}) {
+  const dx = c[0] - a[0], dy = c[1] - a[1], dz = c[2] - a[2];
+  const len = Math.hypot(dx, dy, dz) || 0.001;
+  const g = new THREE.BoxGeometry(w, len, w);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / len, dy / len, dz / len)));
+  g.translate((a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2);
+  b.geo(g, 0, 0, 0, color, opts); g.dispose();
+  return b;
+}
+
+// A small steel carabiner / lifting link at (x,y,z): an oval ring + a gate bar.
+// `face` (radians) yaws the ring so it faces outward along a chosen direction.
+function _carabiner(b, x, y, z, r, face, mHi, mMid, mLo) {
+  const ring = new THREE.TorusGeometry(r, r * 0.28, 7, 14);
+  b.geo(ring, x, y, z, mMid, { ry: face, tint: 0.02 }); ring.dispose();
+  const top = new THREE.TorusGeometry(r, r * 0.28, 7, 14);   // lit upper arc
+  b.geo(top, x, y + r * 0.05, z, mHi, { ry: face, sx: 0.96, sy: 0.5, sz: 0.96 }); top.dispose();
+  b.box(r * 1.7, r * 0.34, r * 0.34, x, y, z, mLo, { ry: face });   // spring gate bar across the link
+}
+
+// ---------------------------------------------------------------------------
+// Supply drop — a palletised crate under a strapped olive tarp, slung beneath a
+// segmented parachute by crossed risers + steel carabiners. Shared by the shop
+// preview (_crate) and the air-dropped version (_spawnDropCrate).
+// ---------------------------------------------------------------------------
+function buildSupplyCrate() {
+  const b = new MeshBuilder();
+  // layered-shading palette
+  const tHi = 0x6f8c4c, tMid = 0x52702f, tLo = 0x3b5021, tSlot = 0x2a3a18;   // olive tarp canvas
+  const wHi = 0x9c7240, wMid = 0x7b5530, wLo = 0x573a20, wSlot = 0x3a2613;   // weathered pallet wood
+  const cMid = 0x37461f, cHi = 0x47592a;                                      // dark cargo container
+  const sMid = 0x26281d, sHi = 0x363a2b, sLo = 0x16170f;                      // nylon cargo strap
+  const mHi = 0x9aa0aa, mMid = 0x646a73, mLo = 0x43474e;                      // steel hardware
+  const tan = 0xb7a76a;                                                        // stencil marking
+
+  // ---- wooden pallet base: 3 stringer feet + slatted top deck with gaps ----
+  for (const sx of [-0.56, 0, 0.56]) b.box(0.2, 0.18, 1.5, sx, 0.09, 0, wLo, { tint: 0.04 });
+  b.box(1.54, 0.02, 1.54, 0, 0.14, 0, wSlot);                                  // shadow plane → reads as deck gaps
+  for (let i = 0; i < 5; i++) {
+    const z = -0.6 + i * 0.3;
+    b.box(1.52, 0.07, 0.2, 0, 0.215, z, wMid, { tint: 0.05 });
+    b.box(1.52, 0.014, 0.2, 0, 0.255, z, wHi);                                 // lit board top
+  }
+
+  // ---- cargo container on the pallet (mostly hidden under the tarp) ----
+  b.box(1.34, 0.86, 1.34, 0, 0.7, 0, cMid, { tint: 0.03 });
+  b.box(1.4, 0.18, 1.4, 0, 0.36, 0, wMid, { tint: 0.04 });                     // wooden base band peeking below the hem
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.08, 0.46, 0.08, sx * 0.67, 0.47, sz * 0.67, wHi); // corner posts
+  b.box(1.22, 0.05, 1.22, 0, 1.12, 0, cHi);                                    // lid just under the tarp
+
+  // ---- olive tarp: lit top panel + wrinkle ridges ----
+  b.box(1.58, 0.12, 1.58, 0, 1.2, 0, tHi, { tint: 0.03 });
+  b.box(0.16, 0.07, 1.42, -0.2, 1.27, 0.04, tMid);
+  b.box(0.12, 0.06, 1.2, 0.28, 1.27, -0.12, tHi);
+  b.box(1.3, 0.06, 0.13, 0.06, 1.27, 0.3, tMid);
+  // ---- tarp drape down all four sides (ragged hem heights) ----
+  const hemY = { '+z': 0.5, '-z': 0.44, '+x': 0.54, '-x': 0.47 };
+  const drape = (face, sx, sz) => {
+    const long = 1.6, hY = hemY[face], topY = 1.24, h = topY - hY, cy = (topY + hY) / 2;
+    const fx = sx * 0.8, fz = sz * 0.8;
+    const dims = sx ? [0.1, h, long] : [long, h, 0.1];
+    b.box(dims[0], dims[1], dims[2], fx, cy, fz, tMid, { tint: 0.02 });            // main drape panel
+    const lip = sx ? [0.12, 0.13, long] : [long, 0.13, 0.12];
+    b.box(lip[0], lip[1], lip[2], fx + sx * 0.005, hY + 0.02, fz + sz * 0.005, tLo); // shadowed hem fold
+    // two ragged hem tongues hanging a touch lower — kept flush ON the face so nothing floats
+    for (const o of [-0.38, 0.32]) {
+      const ox = sx ? 0 : o, oz = sx ? o : 0;
+      b.box(sx ? 0.12 : 0.22, 0.16, sx ? 0.22 : 0.12, fx + ox, hY - 0.03, fz + oz, tLo);
+    }
+  };
+  drape('+z', 0, 1); drape('-z', 0, -1); drape('+x', 1, 0); drape('-x', -1, 0);
+
+  // ---- "SUPPLIES" stencil patch on the front (+z) drape ----
+  b.box(0.66, 0.2, 0.02, -0.05, 0.74, 0.86, tan, { tint: 0.03 });
+  for (let i = 0; i < 5; i++) b.box(0.03, 0.13, 0.02, -0.28 + i * 0.11, 0.74, 0.875, tSlot); // faux stencil bars
+
+  // ---- dark nylon cargo straps wrapping over the top + down the sides ----
+  const strapW = 0.12;
+  for (const x of [-0.3, 0.3]) {                                                  // straps running front↔back (over top in z)
+    b.box(strapW, 0.05, 1.66, x, 1.27, 0, sMid, { tint: 0.02 });
+    b.box(strapW, 0.018, 1.66, x, 1.3, 0, sHi);
+    for (const sz of [-1, 1]) b.box(strapW, 1.0, 0.06, x, 0.74, sz * 0.83, sMid, { tint: 0.02 });
+  }
+  for (const z of [-0.3, 0.3]) {                                                  // straps running left↔right (cross over the top)
+    b.box(1.66, 0.05, strapW, 0, 1.31, z, sMid, { tint: 0.02 });
+    b.box(1.66, 0.018, strapW, 0, 1.34, z, sHi);
+    for (const sx of [-1, 1]) b.box(0.06, 1.0, strapW, sx * 0.83, 0.74, z, sMid, { tint: 0.02 });
+  }
+  // ---- cam buckles (steel) — one on each side's strap ----
+  const buckle = (x, y, z, ry) => {
+    b.box(0.18, 0.22, 0.07, x, y, z, mMid, { ry, tint: 0.02 });
+    b.box(0.2, 0.06, 0.08, x, y + 0.08, z, mHi, { ry });
+    b.box(0.13, 0.04, 0.09, x, y - 0.02, z, mLo, { ry });
+  };
+  buckle(0.3, 0.6, 0.85, 0); buckle(-0.3, 0.6, -0.85, 0);
+  buckle(0.85, 0.6, -0.3, Math.PI / 2); buckle(-0.85, 0.6, 0.3, Math.PI / 2);
+
+  // ---- four steel lifting carabiners at the top corners (stay on after landing) ----
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    b.box(0.1, 0.14, 0.1, sx * 0.58, 1.3, sz * 0.58, mLo);                       // welded D-ring base
+    _carabiner(b, sx * 0.58, 1.42, sz * 0.58, 0.1, Math.atan2(sx, sz), mHi, mMid, mLo);
+  }
+
+  return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x000000, emissiveIntensity: 0 }));
+}
+
+// The airborne rigging: segmented olive canopy + crossed risers/shrouds + apex
+// carabiner. Returns { canopy, rig } so the falling drop can hide both on landing.
+function buildChuteRig() {
+  const tHi = 0x6f8c4c, tMid = 0x52702f;
+  const sMid = 0x26281d, mHi = 0x9aa0aa, mMid = 0x646a73, mLo = 0x43474e;
+  const R = 2.5, SEGS = 10, FLAT = 0.6, hubY = 2.98, apexY = 2.62;
+
+  // ---- segmented parachute canopy (alternating panel shades) ----
+  const cb = new MeshBuilder();
+  for (let i = 0; i < SEGS; i++) {
+    const wedge = new THREE.SphereGeometry(R, 5, 4, (i / SEGS) * TAU, TAU / SEGS, 0, Math.PI * 0.47);
+    cb.geo(wedge, 0, 0, 0, i % 2 ? tMid : tHi, { sy: FLAT, tint: 0.015 }); wedge.dispose();
+  }
+  const canopy = new THREE.Mesh(cb.build(), voxelMaterial({ side: THREE.DoubleSide, emissive: 0x192510, emissiveIntensity: 0.22 }));
+  canopy.position.y = hubY;
+
+  // ---- shroud lines (canopy hem → apex) + risers (apex → corner carabiners) + apex hardware ----
+  const rb = new MeshBuilder();
+  const hemR = R * 0.86, hemY = hubY + R * Math.cos(Math.PI * 0.47) * FLAT - 0.05;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU;
+    _strut(rb, [Math.cos(a) * hemR, hemY, Math.sin(a) * hemR], [0, apexY, 0], 0.03, sMid);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])                            // 4 crossing sling legs
+    _strut(rb, [0, apexY, 0], [sx * 0.58, 1.46, sz * 0.58], 0.06, sMid, { tint: 0.02 });
+  // apex confluence: main carabiner + swivel block linking up to the canopy
+  _carabiner(rb, 0, apexY, 0, 0.17, Math.PI / 4, mHi, mMid, mLo);
+  rb.box(0.16, 0.2, 0.16, 0, apexY + 0.24, 0, mMid, { tint: 0.02 });             // swivel body
+  rb.box(0.22, 0.06, 0.22, 0, apexY + 0.36, 0, mHi);                             // swivel cap
+  _strut(rb, [0, apexY + 0.34, 0], [0, hemY - 0.1, 0], 0.035, mLo);             // line up to the canopy
+
+  return { canopy, rig: new THREE.Mesh(rb.build(), voxelMaterial()) };
+}
+
+// Marine red hand-flare: orange plastic body, white printed label, red striker
+// cap (ignites at the top), and a fluted orange grip. Long axis is +Y.
+function buildFlare() {
+  const b = new MeshBuilder();
+  const oHi = 0xff8a3a, oMid = 0xf2671c, oLo = 0xc44f12;          // orange plastic
+  const rHi = 0xf0492c, rMid = 0xd6321a;                          // red cap
+  const wMid = 0xe8e4d8, ink = 0x33312c, blu = 0x2f6fd0;          // white label + print
+  let g = new THREE.CylinderGeometry(0.05, 0.05, 0.25, 16); b.geo(g, 0, 0.055, 0, oMid, { tint: 0.02 }); g.dispose();   // body tube
+  g = new THREE.CylinderGeometry(0.051, 0.051, 0.02, 16); b.geo(g, 0, 0.175, 0, oHi); g.dispose();                       // lit body rim
+  // white label band + print
+  g = new THREE.CylinderGeometry(0.053, 0.053, 0.12, 16); b.geo(g, 0, 0.12, 0, wMid, { tint: 0.01 }); g.dispose();
+  for (const yy of [0.155, 0.12, 0.085]) b.box(0.085, 0.012, 0.006, 0, yy, 0.055, ink);
+  b.box(0.018, 0.028, 0.006, -0.035, 0.105, 0.055, blu); b.box(0.018, 0.028, 0.006, 0.04, 0.135, 0.055, blu);
+  // red cap + striker collar + top notches
+  g = new THREE.CylinderGeometry(0.051, 0.051, 0.08, 16); b.geo(g, 0, 0.22, 0, rMid, { tint: 0.02 }); g.dispose();
+  g = new THREE.CylinderGeometry(0.057, 0.052, 0.04, 16); b.geo(g, 0, 0.28, 0, rMid); g.dispose();
+  for (let i = 0; i < 7; i++) { const a = (i / 7) * TAU; b.box(0.013, 0.024, 0.013, Math.cos(a) * 0.04, 0.3, Math.sin(a) * 0.04, rHi); }
+  // fluted orange grip (3 bulges) + base cap
+  for (let i = 0; i < 3; i++) {
+    const yy = -0.085 - i * 0.062;
+    g = new THREE.CylinderGeometry(0.06, 0.06, 0.05, 16); b.geo(g, 0, yy, 0, oMid, { tint: 0.025 }); g.dispose();
+    g = new THREE.CylinderGeometry(0.048, 0.048, 0.014, 16); b.geo(g, 0, yy + 0.031, 0, oLo); g.dispose();   // groove
+  }
+  g = new THREE.CylinderGeometry(0.05, 0.042, 0.03, 16); b.geo(g, 0, -0.285, 0, oLo); g.dispose();           // base cap
+  return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x160b04, emissiveIntensity: 0.12 }));
+}
+
 // ---------------------------------------------------------------------------
 // LootManager — pickups, the radio→Su-24 supply-drop, and OP loot crates.
 // ---------------------------------------------------------------------------
@@ -2150,13 +2387,45 @@ class LootManager {
   }
 
   _keyMesh() {
+    // Soviet nuclear-launch key: steel tubular key (hollow round bow, long shaft,
+    // cross-drilled hole near the pointed tip) on a ball-chain necklace with a
+    // stamped «ВС СССР Д-790815» dog tag.
     const b = new MeshBuilder();
-    const ring = new THREE.TorusGeometry(0.1, 0.04, 6, 10);
-    b.geo(ring, 0, 0.08, 0, 0xffd24a);
-    ring.dispose();
-    b.box(0.05, 0.22, 0.05, 0, -0.08, 0, 0xffd24a);
-    b.box(0.1, 0.05, 0.05, 0.06, -0.16, 0, 0xffd24a);
-    return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x6a4a00, emissiveIntensity: 0.6 }));
+    const stHi = 0xc8ccd2, stMid = 0x9aa0a8, stLo = 0x70757d, stSlot = 0x35393f; // steel
+    const tagHi = 0xd6d9dd, tagMid = 0xb7babf, tagLo = 0x8c8f95, stamp = 0x4a4d52; // dog tag
+    const BX = -0.20; // bow centre x
+
+    // ---- bow (hollow round head) ----
+    const bow = new THREE.TorusGeometry(0.13, 0.038, 8, 22); b.geo(bow, BX, 0, 0, stMid, { tint: 0.02 }); bow.dispose();
+    const bowHi = new THREE.TorusGeometry(0.13, 0.02, 6, 22); b.geo(bowHi, BX, 0.004, 0.024, stHi); bowHi.dispose();   // lit front arc
+    // ---- neck → shaft → cross-hole → pointed tip ----
+    b.box(0.09, 0.082, 0.082, BX + 0.115, 0, 0, stMid, { tint: 0.02 });                                   // neck
+    const shaft = new THREE.CylinderGeometry(0.046, 0.046, 0.32, 14); b.geo(shaft, 0.11, 0, 0, stMid, { rz: Math.PI / 2, tint: 0.02 }); shaft.dispose();
+    b.box(0.30, 0.012, 0.05, 0.11, 0.045, 0, stHi);                                                        // lit crown strip
+    b.box(0.30, 0.012, 0.05, 0.11, -0.045, 0, stLo);                                                       // shadow underside
+    const collar = new THREE.CylinderGeometry(0.052, 0.052, 0.03, 14); b.geo(collar, 0.18, 0, 0, stHi, { rz: Math.PI / 2 }); collar.dispose(); // raised collar around the hole
+    const hole = new THREE.CylinderGeometry(0.02, 0.02, 0.12, 10); b.geo(hole, 0.18, 0, 0, stSlot, { rx: Math.PI / 2 }); hole.dispose();        // cross-drilled hole
+    const tip = new THREE.CylinderGeometry(0.0, 0.046, 0.1, 12); b.geo(tip, 0.32, 0, 0, stMid, { rz: -Math.PI / 2, tint: 0.02 }); tip.dispose(); // pointed tip
+
+    // ---- ball-chain necklace loop threaded through the bow (YZ-plane oval) ----
+    const NB = 16, RY = 0.19, RZ = 0.062;
+    for (let i = 0; i < NB; i++) {
+      const t = (i / NB) * TAU, sp = new THREE.SphereGeometry(0.017, 6, 6);
+      b.geo(sp, BX, RY * Math.cos(t), RZ * Math.sin(t), i % 2 ? stMid : stHi); sp.dispose();
+    }
+    // ---- short link chain (loop bottom → dog tag) ----
+    for (let i = 0; i < 3; i++) { const sp = new THREE.SphereGeometry(0.016, 6, 6); b.geo(sp, BX, -0.19 - i * 0.036, 0, stHi); sp.dispose(); }
+    // ---- stamped dog tag ----
+    const TY = -0.36;
+    b.box(0.22, 0.12, 0.022, BX, TY, 0, tagMid, { tint: 0.02 });
+    b.box(0.18, 0.12, 0.024, BX, TY, 0, tagMid);                          // (rounded look: narrower overlay)
+    b.box(0.22, 0.022, 0.026, BX, TY + 0.049, 0, tagHi);                  // lit top edge
+    b.box(0.22, 0.022, 0.026, BX, TY - 0.049, 0, tagLo);                  // shadow bottom edge
+    const th = new THREE.CylinderGeometry(0.013, 0.013, 0.03, 8); b.geo(th, BX - 0.088, TY + 0.038, 0, stSlot, { rx: Math.PI / 2 }); th.dispose(); // string hole
+    for (let i = 0; i < 6; i++) b.box(0.013, 0.02, 0.006, BX - 0.06 + i * 0.026, TY + 0.022, 0.013, stamp);  // row 1 «ВС СССР»
+    for (let i = 0; i < 7; i++) b.box(0.013, 0.018, 0.006, BX - 0.07 + i * 0.024, TY - 0.024, 0.013, stamp); // row 2 «Д-790815»
+
+    return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x222a32, emissiveIntensity: 0.45 }));
   }
 
   _pickupMesh(kind) {
@@ -2184,11 +2453,106 @@ class LootManager {
       b.box(0.04, 0.07, 0.05, -0.18, 0.3, 0, blk);
       return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x243016, emissiveIntensity: 0.45 }));
     }
-    if (kind === 'medkit') { b.box(0.34, 0.24, 0.34, 0, 0, 0, 0xe8463a); b.box(0.14, 0.05, 0.05, 0, 0.13, 0, 0xffffff); b.box(0.05, 0.14, 0.05, 0, 0.13, 0, 0xffffff); }
-    else if (kind === 'ammo') { b.box(0.3, 0.18, 0.3, 0, 0, 0, 0x6a5a2a); b.box(0.34, 0.05, 0.34, 0, 0.1, 0, 0xb88a3a); }
-    else { b.box(0.3, 0.34, 0.16, 0, 0, 0, 0x4f8fe0); b.box(0.16, 0.16, 0.06, 0, 0.02, 0.1, 0x9fd0ff); } // armor
-    const em = kind === 'medkit' ? 0x5a0000 : kind === 'ammo' ? 0x3a2a00 : 0x002040;
-    return new THREE.Mesh(b.build(), voxelMaterial({ emissive: em, emissiveIntensity: 0.5 }));
+    if (kind === 'ammo') { // Soviet WW2 ammo box: ribbed olive steel, canvas carry handle, embossed star, side toggle-latch, draped brass belt
+      const ol = 0x4e5a2c, olHi = 0x6a773d, olLo = 0x363f1d, olSlot = 0x1f250e, olEdge = 0x808d4c; // olive steel
+      const cv = 0xb6985a, cvHi = 0xd0b478, cvLo = 0x8a7040;                                        // canvas webbing
+      const mt = 0x6f7563, mtHi = 0x8b9080, mtDk = 0x383b2f;                                        // bare steel fittings
+      const brass = 0xc8a23c, copper = 0xb5763a, link = 0x2b2b24;                                   // cartridge belt
+      const starGeo = (R) => { const sh = new THREE.Shape(); const ri = R * 0.42; for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU - Math.PI / 2, r = (i % 2 === 0) ? R : ri; const x = Math.cos(a) * r, y = Math.sin(a) * r; if (i === 0) sh.moveTo(x, y); else sh.lineTo(x, y); } sh.closePath(); return new THREE.ShapeGeometry(sh); };
+      // shell
+      b.box(0.44, 0.34, 0.22, 0, 0, 0, ol, { tint: 0.025 });            // main body
+      b.box(0.45, 0.045, 0.232, 0, 0.168, 0, olHi);                     // lit top cap
+      b.box(0.452, 0.035, 0.234, 0, -0.165, 0, olLo);                   // shadow base
+      b.box(0.454, 0.016, 0.236, 0, 0.085, 0, olSlot);                  // lid seam (recess)
+      b.box(0.45, 0.02, 0.234, 0, 0.118, 0, olHi);                      // lid lip (lit)
+      b.box(0.018, 0.30, 0.022, -0.215, 0, 0.105, olHi);                // front-left edge highlight
+      b.box(0.018, 0.30, 0.022, 0.215, 0, 0.105, olHi);                 // front-right edge highlight
+      // ribbed front face + embossed star
+      b.box(0.40, 0.022, 0.014, 0, 0.05, 0.116, olHi);                  // top rib
+      b.box(0.12, 0.022, 0.014, -0.135, -0.06, 0.116, olHi);            // mid rib (left of star)
+      b.box(0.12, 0.022, 0.014, 0.135, -0.06, 0.116, olHi);             // mid rib (right of star)
+      b.box(0.40, 0.022, 0.014, 0, -0.135, 0.116, olHi);                // bottom rib
+      const sSh = starGeo(0.058); b.geo(sSh, 0, -0.06, 0.114, olSlot, {}); sSh.dispose();  // star shadow
+      const sSt = starGeo(0.05); b.geo(sSt, 0, -0.06, 0.119, olEdge, {}); sSt.dispose();   // embossed star
+      // canvas carry handle (arch front-to-back) + metal keepers
+      b.box(0.085, 0.02, 0.05, 0, 0.178, 0.075, mt);                    // front keeper plate
+      b.box(0.085, 0.02, 0.05, 0, 0.178, -0.075, mt);                   // back keeper plate
+      b.box(0.07, 0.06, 0.045, 0, 0.205, 0.075, cv, { tint: 0.02 });    // front canvas tab
+      b.box(0.07, 0.06, 0.045, 0, 0.205, -0.075, cv, { tint: 0.02 });   // back canvas tab
+      b.box(0.058, 0.12, 0.03, 0, 0.27, 0.058, cvHi, { rx: 0.55 });     // front leg
+      b.box(0.058, 0.12, 0.03, 0, 0.27, -0.058, cvHi, { rx: -0.55 });   // back leg
+      b.box(0.058, 0.028, 0.13, 0, 0.318, 0, cv);                       // top span
+      b.box(0.05, 0.012, 0.12, 0, 0.302, 0, cvLo);                      // top span underside
+      // side toggle-latch (right face)
+      b.box(0.022, 0.17, 0.10, 0.226, -0.01, 0, mt);                    // latch backplate
+      b.box(0.03, 0.05, 0.07, 0.236, 0.06, 0, mtHi);                    // upper catch
+      b.box(0.028, 0.11, 0.045, 0.24, -0.06, 0, mtDk, { rz: 0.12 });    // toggle lever
+      b.box(0.022, 0.03, 0.05, 0.236, -0.13, 0, mtHi);                  // hook tip
+      // back hinge bar + knuckles
+      const hg = new THREE.CylinderGeometry(0.013, 0.013, 0.42, 8); b.geo(hg, 0, 0.10, -0.112, mt, { rz: Math.PI / 2 }); hg.dispose();
+      for (const hx of [-0.13, 0, 0.13]) b.box(0.04, 0.04, 0.03, hx, 0.10, -0.108, mtDk);
+      // draped brass cartridge belt (emerges from lid seam, hangs down front-right)
+      for (let i = 0; i < 5; i++) {
+        const yy = 0.10 - i * 0.05, zz = 0.118 + Math.sin(i * 0.9) * 0.004, bx = 0.12;
+        b.box(0.05, 0.034, 0.03, bx - 0.03, yy, zz - 0.004, link);                                              // belt link
+        const cs = new THREE.CylinderGeometry(0.017, 0.018, 0.085, 8); b.geo(cs, bx + 0.03, yy, zz, brass, { rz: Math.PI / 2, tint: 0.03 }); cs.dispose();  // brass case
+        const tp = new THREE.CylinderGeometry(0.006, 0.016, 0.03, 8); b.geo(tp, bx + 0.088, yy, zz, copper, { rz: -Math.PI / 2 }); tp.dispose();            // bullet tip
+      }
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x1b2410, emissiveIntensity: 0.5 }));
+    }
+    if (kind === 'medkit') { // WW2 olive-canvas medic shoulder bag: weathered canvas, leather buckle straps, shoulder strap, red-cross patch
+      const cv = 0x615f3a, cvHi = 0x7c7a4e, cvLo = 0x474628, cvSlot = 0x32311a;   // weathered olive canvas
+      const le = 0x9a6b35, leHi = 0xb98a4e, leLo = 0x6f4c22;                       // tan leather strap
+      const web = 0xa98a52, webHi = 0xc2a368;                                      // shoulder-strap webbing
+      const mt = 0x8a8a7c, mtHi = 0xb4b4a4;                                        // steel buckles
+      const wht = 0xe9e5d8, whtLo = 0xc6c2b4, red = 0xc23528, redHi = 0xdd4636;    // red-cross patch
+      // ---- canvas body + soft rounded ends + weathering ----
+      b.box(0.46, 0.30, 0.20, 0, 0, 0, cv, { tint: 0.03 });
+      b.box(0.47, 0.05, 0.21, 0, 0.155, 0, cvHi, { tint: 0.02 });        // lit top
+      b.box(0.47, 0.035, 0.21, 0, -0.15, 0, cvLo);                       // shadow base
+      b.box(0.03, 0.30, 0.20, -0.235, -0.01, 0, cvLo, { tint: 0.02 });   // side gusset L
+      b.box(0.03, 0.30, 0.20, 0.235, -0.01, 0, cvLo, { tint: 0.02 });    // side gusset R
+      b.box(0.14, 0.10, 0.012, -0.12, 0.06, 0.103, cvHi, { tint: 0.05 }); // worn patch
+      b.box(0.10, 0.07, 0.012, 0.14, -0.05, 0.103, cvHi, { tint: 0.05 }); // worn patch
+      b.box(0.012, 0.24, 0.012, 0.055, -0.02, 0.103, cvSlot);            // crease
+      // ---- front flap (covers top ⅔ + fold over the top) ----
+      b.box(0.47, 0.05, 0.22, 0, 0.16, 0, cvHi, { tint: 0.02 });         // fold over the top
+      b.box(0.47, 0.20, 0.025, 0, 0.055, 0.11, cv, { tint: 0.03 });      // flap face
+      b.box(0.47, 0.04, 0.03, 0, 0.16, 0.112, cvHi);                     // flap top edge (lit)
+      b.box(0.47, 0.03, 0.035, 0, -0.045, 0.115, cvLo);                  // flap bottom hem (shadow)
+      b.box(0.46, 0.008, 0.005, 0, -0.035, 0.13, cvSlot);               // stitch line
+      // ---- two leather buckle straps ----
+      for (const sx of [-0.135, 0.135]) {
+        b.box(0.055, 0.40, 0.02, sx, 0.0, 0.118, le, { tint: 0.02 });    // strap over the flap
+        b.box(0.055, 0.012, 0.022, sx, 0.18, 0.119, leHi);               // lit top
+        b.box(0.055, 0.04, 0.022, sx, -0.2, 0.119, leLo);                // tail tip below the bag
+        b.box(0.075, 0.06, 0.03, sx, -0.07, 0.128, mt);                  // buckle frame
+        b.box(0.078, 0.016, 0.032, sx, -0.045, 0.131, mtHi);             // lit top bar
+        b.box(0.05, 0.03, 0.034, sx, -0.07, 0.134, cvSlot);              // buckle gap (dark)
+        b.box(0.012, 0.06, 0.02, sx, -0.07, 0.14, mtHi);                 // prong
+        b.box(0.06, 0.018, 0.026, sx, -0.13, 0.126, leLo);               // keeper loop
+      }
+      // ---- shoulder strap: side D-rings + webbing arch over the top ----
+      for (const sx of [-1, 1]) {
+        b.box(0.03, 0.05, 0.05, sx * 0.235, 0.12, 0, mt);
+        const ring = new THREE.TorusGeometry(0.035, 0.012, 6, 12); b.geo(ring, sx * 0.255, 0.14, 0, mtHi, { ry: Math.PI / 2 }); ring.dispose();
+      }
+      const apex = [0, 0.5, 0], Lm = [-0.17, 0.42, 0], Rm = [0.17, 0.42, 0];
+      _strut(b, [-0.255, 0.15, 0], Lm, 0.045, web, { tint: 0.02 });
+      _strut(b, Lm, apex, 0.045, web, { tint: 0.02 });
+      _strut(b, apex, Rm, 0.045, web, { tint: 0.02 });
+      _strut(b, Rm, [0.255, 0.15, 0], 0.045, web, { tint: 0.02 });
+      _strut(b, Lm, apex, 0.02, webHi); _strut(b, apex, Rm, 0.02, webHi);          // lit top edge
+      // ---- white red-cross patch on the flap ----
+      const disc = new THREE.CylinderGeometry(0.085, 0.085, 0.02, 18); b.geo(disc, 0, 0.05, 0.128, wht, { rx: Math.PI / 2 }); disc.dispose();
+      const rim = new THREE.CylinderGeometry(0.088, 0.088, 0.012, 18); b.geo(rim, 0, 0.05, 0.123, whtLo, { rx: Math.PI / 2 }); rim.dispose();
+      b.box(0.092, 0.032, 0.01, 0, 0.05, 0.139, red); b.box(0.032, 0.092, 0.01, 0, 0.05, 0.139, red);
+      b.box(0.092, 0.03, 0.006, 0, 0.052, 0.142, redHi); b.box(0.03, 0.092, 0.006, 0, 0.052, 0.142, redHi);
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x241c10, emissiveIntensity: 0.42 }));
+    }
+    // armor plate
+    b.box(0.3, 0.34, 0.16, 0, 0, 0, 0x4f8fe0); b.box(0.16, 0.16, 0.06, 0, 0.02, 0.1, 0x9fd0ff);
+    return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x002040, emissiveIntensity: 0.5 }));
   }
 
   drop(pos, def) {
@@ -2234,7 +2598,7 @@ class LootManager {
     mesh.position.set(target.x - dx * R, ALT, target.z - dz * R);
     mesh.rotation.y = Math.atan2(dx, dz); // model nose is -Z → face travel direction
     this.scene.add(mesh);
-    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 2, released: false };
+    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 2, released: false, trailT: 0 };
     this.game.hud.toast('📡 Radio: Su-24 inbound!', 0x6fd0e8);
     this.game.hud.bigMessage('ЗАПРОС ПОДТВЕРЖДЁН', 'a Fencer is making a pass — watch the smoke');
     this.game.audio.radioCall(); // Soviet-radio confirmation + epic WW2 sting
@@ -2246,6 +2610,13 @@ class LootManager {
     const step = pl.speed * dt; pl.travelled += step;
     pl.mesh.position.addScaledVector(pl.dir, step);
     pl.mesh.position.y = pl.alt + Math.sin(pl.travelled * 0.04) * 0.6; // gentle bob
+    // twin engine contrails — blooming vapour puffs from both exhaust nozzles
+    pl.trailT -= dt;
+    if (pl.trailT <= 0) {
+      pl.trailT = 0.05;
+      pl.mesh.updateMatrixWorld();
+      for (const cx of [-0.48, 0.48]) this.game.effects.contrailPuff(pl.mesh.localToWorld(new THREE.Vector3(cx, -0.05, 6.3)), { size: 2.1, life: 3.4 });
+    }
     if (pl.jet && pl.jet.set) { const pp = this.game.player.pos, mp = pl.mesh.position; const dist = Math.hypot(mp.x - pp.x, mp.y - pp.y, mp.z - pp.z); const near = clamp(1 - (dist - 30) / 170, 0, 1); pl.jet.set(0.25 + near * 0.75, near); }
     // release the crate at closest approach to the target
     if (!pl.released) {
@@ -2257,17 +2628,11 @@ class LootManager {
 
   _spawnDropCrate(pos, fromY) {
     const grp = new THREE.Group(); grp.position.set(pos.x, fromY, pos.z);
-    const cb = new MeshBuilder();
-    cb.box(1.4, 1.2, 1.4, 0, 0.6, 0, 0x4a5a32, { tint: 0.04 });
-    cb.box(1.5, 0.16, 1.5, 0, 1.18, 0, 0x6a3a1a); cb.box(1.5, 0.16, 1.5, 0, 0.04, 0, 0x6a3a1a);
-    cb.box(0.16, 1.3, 0.16, 0.62, 0.6, 0.62, 0xffcf5c); cb.box(0.16, 1.3, 0.16, -0.62, 0.6, -0.62, 0xffcf5c);
-    const crate = new THREE.Mesh(cb.build(), voxelMaterial({ emissive: 0x3a2a00, emissiveIntensity: 0.7 }));
+    const crate = buildSupplyCrate();
+    crate.material.emissive.setHex(0x3a2a00); crate.material.emissiveIntensity = 0.7; // glows once landed
     crate.castShadow = true; grp.add(crate);
-    const chuteGeo = new THREE.SphereGeometry(2.6, 16, 8, 0, TAU, 0, Math.PI / 2);
-    const chute = new THREE.Mesh(chuteGeo, new THREE.MeshLambertMaterial({ color: 0xe8533a, side: THREE.DoubleSide, emissive: 0x3a0e08, emissiveIntensity: 0.3 }));
-    chute.position.y = 3.9; grp.add(chute);
-    const lg = new MeshBuilder(); for (const sx of [-1, 1]) for (const sz of [-1, 1]) lg.box(0.04, 2.7, 0.04, sx * 0.6, 2.35, sz * 0.6, 0x1a1814);
-    const lines = new THREE.Mesh(lg.build(), voxelMaterial()); grp.add(lines);
+    const { canopy: chute, rig: lines } = buildChuteRig();   // segmented canopy + crossed risers + carabiners
+    grp.add(chute); grp.add(lines);
     this.scene.add(grp);
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 130, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.26, depthWrite: false, fog: false, side: THREE.DoubleSide }));
     beam.position.set(pos.x, 65, pos.z); this.scene.add(beam);
@@ -2971,12 +3336,12 @@ class Admin {
     }
   }
   open() { this.game.audio.init(); this.game.ui.show('admin'); this.viewer.setSize(); this._render(); }
-  _crate() {
-    const cb = new MeshBuilder();
-    cb.box(1.4, 1.2, 1.4, 0, 0.6, 0, 0x4a5a32, { tint: 0.04 });
-    cb.box(1.5, 0.16, 1.5, 0, 1.18, 0, 0x6a3a1a); cb.box(1.5, 0.16, 1.5, 0, 0.04, 0, 0x6a3a1a);
-    cb.box(0.16, 1.3, 0.16, 0.62, 0.6, 0.62, 0xffcf5c); cb.box(0.16, 1.3, 0.16, -0.62, 0.6, -0.62, 0xffcf5c);
-    return new THREE.Mesh(cb.build(), voxelMaterial({ emissive: 0x3a2a00, emissiveIntensity: 0.3 }));
+  _crate() { return buildSupplyCrate(); }
+  _chuteRig() {   // crate + full parachute rigging (canopy, crossed risers, carabiners)
+    const grp = new THREE.Group();
+    const crate = buildSupplyCrate(); grp.add(crate);
+    const { canopy, rig } = buildChuteRig(); grp.add(canopy); grp.add(rig);
+    return grp;
   }
   _items() {
     const g = this.game;
@@ -2993,11 +3358,12 @@ class Admin {
       { name: 'Su-24M Fencer', sub: 'supply plane', make: () => buildSu24() },
       { name: 'Radio (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('radio') },
       { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
+      { name: 'Parachute rig', sub: 'air drop', make: () => this._chuteRig() },
       { name: 'Lootbox Key', sub: 'pickup', make: () => g.loot._keyMesh() },
       { name: 'Medkit', sub: 'pickup', make: () => g.loot._pickupMesh('medkit') },
       { name: 'Ammo box', sub: 'pickup', make: () => g.loot._pickupMesh('ammo') },
       { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
-      { name: 'Flare', sub: 'thrown light', make: () => new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff6a2a })) },
+      { name: 'Flare', sub: 'thrown light', make: () => buildFlare() },
     ];
     return [];
   }
@@ -3723,6 +4089,7 @@ const MP_SKINS = [
 ];
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
+const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
 function mpEscape(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
 
 class RemotePlayer {
@@ -4185,8 +4552,13 @@ class Game {
     this.hud.setNightMode(this.mode === 'longnight'); // shows/hides the clock + gear readout
     this._startCountdown = 0.6; this._waveBreak = 0;
   }
+  _disposeFlare(f) {
+    this.engine.scene.remove(f.mesh); this.engine.scene.remove(f.light);
+    f.mesh.geometry.dispose(); f.mesh.material.dispose();
+    if (f.flame) { f.flame.geometry.dispose(); f.flame.material.dispose(); }
+  }
   _clearFlares() {
-    for (const f of this.flares) { this.engine.scene.remove(f.mesh); this.engine.scene.remove(f.light); f.mesh.geometry.dispose(); f.mesh.material.dispose(); }
+    for (const f of this.flares) this._disposeFlare(f);
     this.flares.length = 0;
   }
   throwFlare() {
@@ -4195,21 +4567,47 @@ class Game {
     const cam = this.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff6a2a, fog: false }));
+    const mesh = buildFlare();
     mesh.position.copy(origin).addScaledVector(fwd, 0.8);
-    const light = new THREE.PointLight(0xff7a3a, 9, 30, 1.1); light.position.copy(mesh.position);
+    mesh.rotation.set(randRange(0, TAU), randRange(0, TAU), randRange(0, TAU));
+    // burning flame nub at the cap end (local +Y), additive glow
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    flame.position.set(0, 0.34, 0); flame.renderOrder = 998; mesh.add(flame);
+    const light = new THREE.PointLight(0xff5a26, 18, 28, 1.2); // starts hot → eases down (ignite flash)
+    light.position.copy(mesh.position);
     this.engine.scene.add(mesh); this.engine.scene.add(light);
-    this.flares.push({ mesh, light, vel: fwd.clone().multiplyScalar(16).add(new THREE.Vector3(0, 4, 0)), life: 28, grounded: false });
+    this.effects.muzzleFlash(mesh.position.clone(), fwd, 0.6); // small ignite flash
+    this.flares.push({ mesh, light, flame, flameMat: flame.material,
+      vel: fwd.clone().multiplyScalar(15).add(new THREE.Vector3(0, 4.5, 0)),
+      spin: new THREE.Vector3(randRange(-7, 7), randRange(-4, 4), randRange(-7, 7)),
+      life: 22, grounded: false, out: false, smokeT: 0 });
+    // keep spent sticks on the ground, but cap how many linger
+    const spent = this.flares.filter((x) => x.out);
+    while (spent.length > 6) { const old = spent.shift(); this._disposeFlare(old); this.flares.splice(this.flares.indexOf(old), 1); }
     this.audio.uiClick();
   }
   _updateFlares(dt) {
+    const t = this._surviveTime;
     for (let i = this.flares.length - 1; i >= 0; i--) {
-      const f = this.flares[i]; f.life -= dt;
-      if (!f.grounded) { f.vel.y -= 20 * dt; f.mesh.position.addScaledVector(f.vel, dt); if (f.mesh.position.y < 0.13) { f.mesh.position.y = 0.13; f.grounded = true; f.vel.set(0, 0, 0); } }
-      f.light.position.copy(f.mesh.position); f.light.position.y += 0.3;
-      const fade = f.life < 3 ? f.life / 3 : 1;
-      f.light.intensity = fade * (8 + Math.sin(this._surviveTime * 22 + i) * 1.2); // gentle flicker
-      if (f.life <= 0) { this.engine.scene.remove(f.mesh); this.engine.scene.remove(f.light); f.mesh.geometry.dispose(); f.mesh.material.dispose(); this.flares.splice(i, 1); }
+      const f = this.flares[i];
+      if (!f.grounded) {
+        f.vel.y -= 20 * dt; f.mesh.position.addScaledVector(f.vel, dt);
+        f.mesh.rotation.x += f.spin.x * dt; f.mesh.rotation.y += f.spin.y * dt; f.mesh.rotation.z += f.spin.z * dt;
+        if (f.mesh.position.y <= 0.06) { f.mesh.position.y = 0.06; f.grounded = true; f.vel.set(0, 0, 0); f.mesh.rotation.set(Math.PI / 2, f.mesh.rotation.y, 0); } // settle lying down
+      }
+      if (f.out) continue;                               // spent: just a dark stick on the ground
+      f.life -= dt;
+      f.flame.getWorldPosition(_flareWP); f.light.position.copy(_flareWP);
+      const fade = f.life < 3.5 ? Math.max(0, f.life / 3.5) : 1;          // gradual burn-out over the last 3.5s
+      const flick = 0.82 + Math.sin(t * 22 + i) * 0.12 + Math.sin(t * 57 + i) * 0.05;
+      f.light.intensity += (9 * fade * flick - f.light.intensity) * Math.min(1, dt * 6); // eases the ignite spike down, then fades out
+      f.light.color.setHSL(0.035, 1, 0.5 + 0.05 * Math.sin(t * 30 + i));
+      f.flame.scale.setScalar((0.8 + Math.sin(t * 26 + i) * 0.2) * (0.35 + 0.65 * fade));
+      f.flameMat.opacity = 0.95 * fade;
+      f.smokeT -= dt;
+      if (f.smokeT <= 0) { f.smokeT = 0.07; this.effects.flareSmoke(_flareWP.clone().setY(_flareWP.y + 0.05), fade); }
+      if (f.life <= 0) { f.out = true; f.light.intensity = 0; this.engine.scene.remove(f.light); f.flame.visible = false; }
     }
   }
   onNightStart(n, blood) {
