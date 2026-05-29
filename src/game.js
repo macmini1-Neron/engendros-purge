@@ -596,7 +596,9 @@ function buildTank(camo = 'desert') {
       root.userData.roadWheels.push(wm);
     }
     root.add(_tankIdler(P, wx));
-    root.add(_tankSprocket(P, wx));
+    const spr = _tankSprocket(P, wx);
+    root.add(spr);
+    if (sx < 0) root.userData.sprocketL = spr; else root.userData.sprocketR = spr;
     root.add(_tankReturnRoller(P, wx,  1.60));
     root.add(_tankReturnRoller(P, wx, -0.60));
   }
@@ -1233,6 +1235,28 @@ class Enemy {
   }
 }
 
+// ── Tank rig animator — call every frame for boss and captured tank ───────────
+// Spins road wheels + sprockets proportional to speed, adds subtle suspension
+// bob (rotation.x / rotation.z only — never touches rotation.y which is hull yaw),
+// and applies barrel recoil display.
+// Wheel spin axis: CylinderGeometry default axis = Y; after rx:PI/2 in MeshBuilder
+// the cylinder lies flat, so its rolling axis in local space becomes Z.
+function animateTank(group, dt, speed, recoil) {
+  const ud = group && group.userData; if (!ud) return;
+  // wheel radius ~0.44 → angularVel = speed / radius
+  const spin = (speed || 0) * dt / 0.44;
+  if (ud.roadWheels) for (const w of ud.roadWheels) w.rotation.z += spin;
+  if (ud.sprocketL) ud.sprocketL.rotation.z += spin;
+  if (ud.sprocketR) ud.sprocketR.rotation.z += spin;
+  // subtle suspension bob + idle hull sway (additive on rotation.x/z only)
+  ud._bob = (ud._bob || 0) + dt * (2 + Math.abs(speed || 0) * 3);
+  const moving = Math.abs(speed || 0) > 0.05;
+  group.rotation.x = Math.sin(ud._bob) * (moving ? 0.012 : 0.004);   // gentle pitch bob
+  group.rotation.z = Math.cos(ud._bob * 0.7) * (moving ? 0.010 : 0.003); // gentle roll
+  // barrel recoil (display only — recoil decay is done by caller)
+  if (ud.recoilNode) ud.recoilNode.position.z = -(recoil || 0);
+}
+
 // ── Tank headlight updater — call every frame for boss and captured tank ──────
 // Reads scene brightness via engine.hemi.intensity (0.05 night … 0.95 noon).
 // Full beam in the dark, off in full daylight.  No shadow maps — perf-safe.
@@ -1531,8 +1555,10 @@ class EnemyManager {
     // apply transform + boss bar
     e.mesh.position.set(e.pos.x, 0, e.pos.z);
     e.mesh.rotation.y = e.hullYaw;
+    e._lastSpd = spd;
     this.game.hud.setBoss(e.armorHP / e.armorHPmax, e.name);
     this._tankCombat(e, dt, pp, dist); // attacks added in later tasks
+    animateTank(e.mesh, dt, e._lastSpd, e.recoil || 0);
   }
   _tankCombat(e, dt, pp, dist) {
     const enraged = e.armorHP <= e.armorHPmax * 0.4;
@@ -1548,8 +1574,8 @@ class EnemyManager {
     const muzzleY = e.pos.y + 2.4, wantPitch = Math.atan2((pp.y + 1) - muzzleY, dist);
     e.gunPitch += clamp(wantPitch - e.gunPitch, -30 * Math.PI / 180 * dt, 30 * Math.PI / 180 * dt);
     if (e.mesh.userData.gunMantlet) e.mesh.userData.gunMantlet.rotation.x = -e.gunPitch;
-    // recoil recover (anim driven by e.recoil; full rig anim in a later task)
-    if (e.recoil > 0) { e.recoil = Math.max(0, e.recoil - dt * 2); if (e.mesh.userData.recoilNode) e.mesh.userData.recoilNode.position.z = -e.recoil; }
+    // recoil recover (node position set by animateTank each frame)
+    if (e.recoil > 0) e.recoil = Math.max(0, e.recoil - dt * 2);
 
     // cannon: only with LOS + roughly on target
     e.cannonCD -= dt;
@@ -3773,6 +3799,8 @@ class CapturedTank {
     this._tickShells(dt);   // shells fly regardless of seat
     if (this.game.hud.setTankHp) this.game.hud.setTankHp(this.hp / this.hpMax); // show + update HP bar while crewing
     updateTankLights(this.group, this.game);
+    this.recoil = Math.max(0, (this.recoil || 0) - dt * 2); // decay recoil (all seats)
+    animateTank(this.group, dt, this._lastSpd || 0, this.recoil);
   }
 
   _followCam() {
@@ -3796,6 +3824,7 @@ class CapturedTank {
     let spd = 0; const max = 1.6;
     if (input.isDown('KeyW')) spd = max;
     else if (input.isDown('KeyS')) spd = -max * 0.6;
+    this._lastSpd = spd;
     const fwd = new THREE.Vector3(Math.sin(this.hullYaw), 0, Math.cos(this.hullYaw));
     this.pos.x += fwd.x * spd * dt; this.pos.z += fwd.z * spd * dt;
     if (spd !== 0) this._runOver();
@@ -3873,10 +3902,6 @@ class CapturedTank {
       this._gunFireMG(dt);
     }
 
-    // recoil decay (cosmetic — nudges gunPitch back)
-    if (this.recoil > 0) {
-      this.recoil = Math.max(0, this.recoil - dt * 2);
-    }
   }
 
   _gunFireCannon() {
