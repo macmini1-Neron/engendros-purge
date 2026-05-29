@@ -2987,6 +2987,7 @@ class CapturedTank {
     cam.rotation.set(this.gunPitch, this.turYaw, 0);
     if (this.game.engine.setFov) this.game.engine.setFov(this.thermal ? 40 : 45);
     this._showOverlay('sight');
+    this._updateSight();
 
     // 4. Fire timers
     this.cannonCD -= dt;
@@ -3146,10 +3147,32 @@ class CapturedTank {
     }
   }
 
+  _updateSight() {
+    const c = this.game.canvas || document.getElementById('game');
+    if (c) c.classList.toggle('thermal-cam', !!this.thermal);
+    const id = (x) => document.getElementById(x);
+    const mode = id('ts-mode'); if (mode) mode.textContent = this.thermal ? 'ТЕПЛО' : 'ДЕНЬ';
+    const ammo = id('ts-ammo'); if (ammo) ammo.textContent = String(this.cannonAmmo);
+    const st = id('ts-state'); if (st) st.textContent = this.cannonAmmo <= 0 ? 'ПУСТО' : (this.cannonCD > 0 ? 'ЗАРЯД' : 'ГОТОВ');
+    // range readout: cast forward ray vs enemies + world, show nearer distance
+    const cam = this.game.engine.camera;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    const o = cam.position.clone();
+    const eH = this.game.enemies.rayHit(o, fwd, 400);
+    const wH = this.game.world.rayHit(o, fwd, 400);
+    let d = eH && (!wH || eH.dist <= wH.dist) ? eH.dist : (wH ? wH.dist : null);
+    const rng = id('ts-range'); if (rng) rng.textContent = d != null ? String(Math.round(d * 4)) : '----';
+  }
+
   _showOverlay(which) {
     const ps = document.getElementById('periscope'), ts = document.getElementById('tanksight');
     if (ps) ps.classList.toggle('show', which === 'periscope');
     if (ts) ts.classList.toggle('show', which === 'sight');
+    // clear thermal canvas filter whenever we leave the sight stance
+    if (which !== 'sight') {
+      const c = this.game.canvas || document.getElementById('game');
+      if (c) c.classList.remove('thermal-cam');
+    }
   }
 
   forceReset() {
