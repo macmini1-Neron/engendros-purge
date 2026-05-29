@@ -2901,6 +2901,7 @@ class CapturedTank {
   }
 
   leave() {
+    this._showOverlay('none');
     if (this.active) this.seats[this.active].occupant = null;
     this.active = null;
     this.game.player.inTank = null;
@@ -2911,14 +2912,13 @@ class CapturedTank {
   }
 
   controlUpdate(dt) {
-    // STUB camera-follow so boarding is testable; driver/gunner views + firing in later tasks.
-    if (this.active === 'driver' && this._driver) this._driver(dt);
-    else if (this.active === 'gunner' && this._gunner) this._gunner(dt);
+    if (this.active === 'driver') this._driver(dt);
+    else if (this.active === 'gunner') (this._gunner ? this._gunner(dt) : this._followCam());
     else this._followCam();
-    if (!this._driver && !this._gunner) this._followCam(); // basic chase cam until per-seat tasks arrive
   }
 
   _followCam() {
+    this._showOverlay('none');
     const cam = this.game.engine.camera;
     cam.rotation.order = 'YXZ';
     const back = 8, up = 4;
@@ -2928,6 +2928,50 @@ class CapturedTank {
       this.pos.z - Math.cos(this.hullYaw) * back
     );
     cam.lookAt(this.pos.x, 1.5, this.pos.z);
+  }
+
+  _driver(dt) {
+    const input = this.game.input;
+    const turnRate = 1.1;                                  // rad/s, heavy
+    if (input.isDown('KeyA')) this.hullYaw += turnRate * dt;
+    if (input.isDown('KeyD')) this.hullYaw -= turnRate * dt;
+    let spd = 0; const max = 1.6;
+    if (input.isDown('KeyW')) spd = max;
+    else if (input.isDown('KeyS')) spd = -max * 0.6;
+    const fwd = new THREE.Vector3(Math.sin(this.hullYaw), 0, Math.cos(this.hullYaw));
+    this.pos.x += fwd.x * spd * dt; this.pos.z += fwd.z * spd * dt;
+    this._collide();
+    const lim = this.game.world.HALF - 2.6;
+    this.pos.x = clamp(this.pos.x, -lim, lim); this.pos.z = clamp(this.pos.z, -lim, lim);
+    this.group.position.set(this.pos.x, 0, this.pos.z); this.group.rotation.y = this.hullYaw;
+    // periscope camera: first-person at the driver hatch, looking forward along the hull
+    const cam = this.game.engine.camera; cam.rotation.order = 'YXZ';
+    cam.position.set(this.pos.x + fwd.x * 1.9, 1.5, this.pos.z + fwd.z * 1.9);
+    cam.rotation.set(0, this.hullYaw, 0);
+    if (this.game.engine.setFov) this.game.engine.setFov(72);
+    this._showOverlay('periscope');
+    // crude engine rumble while driving (optional, low vol)
+    this._engT = (this._engT || 0) - dt;
+    if (this._engT <= 0 && this.game.audio.tone) { this._engT = 0.28; this.game.audio.tone(42, 0.26, 'sawtooth', 0.05 + (spd !== 0 ? 0.04 : 0)); }
+  }
+
+  _collide() {
+    const r = 2.6;
+    for (const b of this.game.world.boxes) {
+      if (b.max.y < 0.6) continue;
+      if (this.pos.x + r <= b.min.x || this.pos.x - r >= b.max.x) continue;
+      if (this.pos.z + r <= b.min.z || this.pos.z - r >= b.max.z) continue;
+      const px = Math.min(b.max.x + r - this.pos.x, this.pos.x - (b.min.x - r));
+      const pz = Math.min(b.max.z + r - this.pos.z, this.pos.z - (b.min.z - r));
+      if (px < pz) this.pos.x += (this.pos.x < (b.min.x + b.max.x) / 2 ? -px : px);
+      else this.pos.z += (this.pos.z < (b.min.z + b.max.z) / 2 ? -pz : pz);
+    }
+  }
+
+  _showOverlay(which) {
+    const ps = document.getElementById('periscope'), ts = document.getElementById('tanksight');
+    if (ps) ps.classList.toggle('show', which === 'periscope');
+    if (ts) ts.classList.toggle('show', which === 'sight');
   }
 
   forceReset() {
