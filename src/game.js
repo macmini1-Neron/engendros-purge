@@ -737,11 +737,12 @@ class Enemy {
     this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0;
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
+    this.isTank = !!def.tank; // authoritative reset: true for tank type, false for all others
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
     // boss state
     this.phase = 1; this.laserCD = 3.2; this.charging = 0; this.addCD = 0; this.beamLife = 0;
     this.aim = new THREE.Vector3();
-    if (this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
+    if (this.mesh.material && this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
     this.mesh.visible = true; this.mesh.scale.setScalar(def.scale); this.mesh.position.copy(pos);
   }
 }
@@ -772,8 +773,10 @@ class EnemyManager {
     else { col = pick(ENGENDRO_COLORS); geoKey = 'c' + col.body; name = col.name; }
     const e = this._get(geoKey, col, variant);
     if (typeKey === 'tank') {
-      if (e.mesh) e.mesh.visible = false;
-      if (!e.tankGroup) { e.tankGroup = buildTank('desert'); this.game.engine.scene.add(e.tankGroup); }
+      if (!e.tankGroup) {
+        if (e.mesh && e.mesh.parent) e.mesh.parent.remove(e.mesh); // drop the unused engendro mesh from the scene
+        e.tankGroup = buildTank('desert'); this.game.engine.scene.add(e.tankGroup);
+      }
       e.mesh = e.tankGroup; e.isTank = true;
     }
     e.spawn(typeKey, def, col, name, pos, hp, speed);
