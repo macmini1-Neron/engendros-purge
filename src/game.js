@@ -954,10 +954,26 @@ class EnemyManager {
     return { enemy: hitE, dist: best, point: hp, head: hp.y >= hitE.pos.y + hitE.headY };
   }
 
-  damage(e, amount, source = 'gun', attacker = 'host') {
+  damage(e, amount, source = 'gun', hitPoint = null, attacker = 'host') {
     if (!e.alive) return false;
     const _mp = this.game.mp;
     if (_mp && _mp.active && !_mp.isHost) { _mp.claimHit(e, amount, source); return false; }
+    if (e.def.armored && !e.captured) {
+      if (source === 'gun') {
+        if (!e.vulnerable) { this._armorPing(e, hitPoint); return false; }   // bullets bounce off armor
+        e.mitriHP -= amount; this._mitriHurt(e);                              // exposed: chip the COMMANDER
+        if (e.mitriHP <= 0) return this._tankCaptured(e);                     // → capture path
+        return false;
+      }
+      if (source === 'explosion') {
+        const zone = this._tankHitZone(e, hitPoint);                         // stub now; real later
+        if (zone.era && !e.eraSpent[zone.id]) { this._eraReact(e, zone); return false; }
+        e.armorHP -= amount * (e.def.explosiveMult || 2.0); this._armorHurt(e);
+        if (e.armorHP <= 0) return this._tankDestroyed(e);                    // → wreck path
+        return false;
+      }
+      return false; // 'contact' n/a for the tank
+    }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
     if (e.hp <= 0) {
       e.alive = false; e.mesh.visible = false;
@@ -986,9 +1002,17 @@ class EnemyManager {
     for (const e of [...this.active]) {
       if (!e.alive || e === except) continue;
       const d = Math.hypot(e.pos.x - center.x, e.pos.z - center.z);
-      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), 'explosion');
+      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), 'explosion', center.clone ? center.clone() : center);
     }
   }
+  // --- Tank damage helpers (Task 4) ---
+  _armorPing(e, hp) { this.game.audio.tone(220, 0.04, 'square', 0.18); if (hp && this.game.effects.impact) this.game.effects.impact(hp, new THREE.Vector3(0, 1, 0), 'spark'); }
+  _mitriHurt(e) { this.game.effects.stuffing(new THREE.Vector3(e.pos.x, e.pos.y + 2.5, e.pos.z), 0xf2c200, 5, 4); this.game.audio.enemyHurt(); }
+  _armorHurt(e) { this.game.audio.tone(90, 0.06, 'sawtooth', 0.25); }
+  _tankHitZone(e, hp) { return { era: false, id: 'weak' }; } // STUB — real zone classification in a later task
+  _eraReact(e, zone) { e.eraSpent[zone.id] = true; this.game.audio.tone(420, 0.05, 'square', 0.3); } // STUB — real FX later
+  _tankDestroyed(e) { e.alive = false; if (e.tankGroup) e.tankGroup.visible = false; this.game.hud.hideBoss(); this.game.onEnemyKilled(e); return true; }
+  _tankCaptured(e) { e.alive = false; e.captured = true; this.game.hud.hideBoss(); this.game.onEnemyKilled(e); return true; }
   clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
@@ -1326,7 +1350,7 @@ class WeaponSystem {
         this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
       } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
         const dmg = d.dmg * mult * (eHit.head ? 2.0 : 1.0);
-        const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun');
+        const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
         this.game.effects.tracer(muzzle, eHit.point, d.accent);
         if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
         else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
@@ -2398,7 +2422,7 @@ class MountedGun {
     const wHit = this.game.world.rayHit(muzzle, dir, this.range);
     if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
       const dmg = this.dmg * (eHit.head ? 1.6 : 1) * this.game.player.damageMult;
-      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun');
+      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
       this.game.effects.tracer(muzzle, eHit.point, 0xffe08a);
       if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
     } else if (wHit) { this.game.effects.tracer(muzzle, wHit.point, 0xffe08a); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
@@ -2570,6 +2594,7 @@ class RemotePlayer {
     this.obj = buildFlopo(MP_SKINS[skinIdx % MP_SKINS.length]);
     game.engine.scene.add(this.obj);
     this.parts = this.obj.userData.parts;
+    this.gunAnchor = new THREE.Group(); this.gunAnchor.position.set(0.42, 0.95, 0.34); this.obj.add(this.gunAnchor); this._wep = null;
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
     this.hp = 100; this.maxHp = 100; this.down = false; this.dead = false;
@@ -2581,7 +2606,7 @@ class RemotePlayer {
     this._hpEl = this.label.querySelector('.mp-hp');
     if (wrap) wrap.appendChild(this.label);
   }
-  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; this.down = !!s.down; this.dead = !!s.dead; }
+  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; this.down = !!s.down; this.dead = !!s.dead; if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } }
   setHP(hp, maxHp) { this.hp = hp; if (maxHp) this.maxHp = maxHp; }
   update(dt, cam) {
     const k = 1 - Math.exp(-15 * dt);
@@ -2594,6 +2619,7 @@ class RemotePlayer {
     if (this.dead || this.down) {
       o.rotation.set(-Math.PI * 0.46, this.yaw, 0); o.position.y = this.pos.y + 0.35;
       p.legL.rotation.x = p.legR.rotation.x = p.armL.rotation.x = p.armR.rotation.x = 0;
+      if (this.gunAnchor) this.gunAnchor.visible = false;
     } else {
       o.rotation.set(0, this.yaw, 0);
       const moving = this._spd > 0.7;
@@ -2603,6 +2629,7 @@ class RemotePlayer {
       p.armL.rotation.x = -sw * 0.7; p.armR.rotation.x = sw * 0.7;
       p.head.rotation.x = clamp(this.pitch, -0.5, 0.5) * 0.5;
       o.position.y = this.pos.y + (moving ? Math.abs(Math.sin(this._animT)) * 0.06 : 0);
+      if (this.gunAnchor) this.gunAnchor.visible = true;
     }
     const hp = _v3a.set(this.pos.x, this.pos.y + 2.5, this.pos.z).project(cam);
     if (hp.z > 1 || hp.z < -1) { this.label.style.display = 'none'; return; }
@@ -2611,6 +2638,13 @@ class RemotePlayer {
     this.label.style.top = ((-hp.y * 0.5 + 0.5) * window.innerHeight) + 'px';
     this._hpEl.style.width = clamp((this.hp / this.maxHp) * 100, 0, 100) + '%';
     this.label.classList.toggle('down', this.down || this.dead);
+  }
+  setWeapon(key) {
+    while (this.gunAnchor.children.length) { const c = this.gunAnchor.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
+    const def = WEAPONS[key]; if (!def) return;
+    const m = buildViewmodel(def); if (m.material) { m.material.depthTest = true; m.renderOrder = 0; }
+    m.scale.setScalar(0.5); m.rotation.set(0, Math.PI, 0); m.position.set(0, 0, 0);
+    this.gunAnchor.add(m);
   }
   dispose() {
     this.game.engine.scene.remove(this.obj);
@@ -2624,6 +2658,7 @@ class MP {
     this.game = game; this.net = new Net();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
+    this.chosenSkin = 0; this._hadBoss = false;
     this._xfT = 0; this._snapT = 0; this._reviveT = 0;
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false;
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
@@ -2632,7 +2667,7 @@ class MP {
   // ---- lobby ----
   startHost(name) {
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
-    this.roster.set('host', { name: this.name, skin: 0 });
+    this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0 });
     const code = makeRoomCode();
     this.net.onPeerOpen = (c) => this._lobbyMsg(`Room code: <b>${c}</b> — share it. Waiting for players…`, c);
     this.net.onError = (t) => this._lobbyMsg(t === 'unavailable-id' ? 'Code taken — retry.' : 'Network error: ' + t);
@@ -2642,7 +2677,7 @@ class MP {
     if (!code) { this._lobbyMsg('Enter a room code.'); return; }
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
     this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + code + '…');
-    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.send('hello', { name: this.name }); this._lobbyMsg('Connected! Waiting for host to start…'); };
+    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0 }); this._lobbyMsg('Connected! Waiting for host to start…'); };
     this.net.onError = (t) => this._lobbyMsg(t === 'peer-unavailable' ? 'No room with that code.' : 'Network error: ' + t);
     this.net.join(code.trim().toUpperCase());
   }
@@ -2667,13 +2702,15 @@ class MP {
     n.onDisconnect = (pid) => {
       if (this.remotes.has(pid)) { this.remotes.get(pid).dispose(); this.remotes.delete(pid); }
       this.roster.delete(pid); this.pstate.delete(pid);
-      if (this.isHost) { this.net.send('roster', this._rosterArr()); this._renderRoster(); }
+      if (this.isHost) { this.net.send('roster', this._rosterArr()); this._renderRoster(); this._checkGameOver(); }
+      else if (this.active) { this._hostGone(); }
     };
     n.on('hello', (d, from) => {
       if (!this.isHost) return;
-      this.roster.set(from, { name: d.name || 'Player', skin: this.roster.size });
-      if (this.active) this.pstate.set(from, this._freshState(this.roster.get(from)));
+      const skin = (d.skin != null) ? d.skin : this.roster.size;
+      this.roster.set(from, { name: (d.name || 'Player').slice(0, 14), skin });
       this.net.send('roster', this._rosterArr()); this._renderRoster();
+      if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
     n.on('roster', (arr) => { this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('start', (d) => { this.active = true; this.game._enterMP(d.mode || 'purge'); this._syncRemoteObjs(); });
@@ -2684,7 +2721,7 @@ class MP {
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else g.hud.setBoss(d.frac, d.name); });
     n.on('wave', (d) => { if (g.state === 'shop') { g.ui.hideAll(); g.state = 'playing'; g.input.requestLock(); } g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); });
     n.on('waveclear', (d) => { if (g.state === 'playing') { g.hud.bigMessage('WAVE CLEAR', 'visit the armory'); g._mpOpenShop(d.n); } });
-    n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', from); });
+    n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from); });
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
     n.on('kill', (d) => this._clientKill(d));
     n.on('pstate', (d) => this._applyPState(d));
@@ -2692,6 +2729,8 @@ class MP {
     n.on('ping', (d, from) => { if (this.isHost) this.net.sendTo(from, 'pong', d); });
     n.on('pong', (d) => { this.myPing = Math.round(performance.now() - d.t); });
     n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
+    n.on('feed', (d) => this.game.hud.kill(d.who + ' \u27a4 ' + d.what));
+    n.on('gameover', () => this.game._mpGameOver());
   }
   _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin })); }
   _remote(id) {
@@ -2707,7 +2746,7 @@ class MP {
     this._xfT -= dt;
     if (this._xfT <= 0) {
       this._xfT = 0.066; const p = g.player;
-      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead });
+      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, wep: g.weapons.cur });
     }
     for (const [, rp] of this.remotes) rp.update(dt, cam);
     if (this.isHost) {
@@ -2716,6 +2755,9 @@ class MP {
         this._snapT = 0.08; const arr = [];
         for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100) });
         this.net.send('esnap', arr); this._tickDowns();
+        let boss = null; for (const e of g.enemies.active) if (e.alive && (e.def.boss || e.isElite)) { boss = e; break; }
+        if (boss) { this.net.send('boss', { frac: boss.hp / boss.maxHp, name: boss.name }); this._hadBoss = true; }
+        else if (this._hadBoss) { this.net.send('boss', { hide: true }); this._hadBoss = false; }
       }
     } else {
       for (const [, e] of this.ghosts) {
@@ -2754,7 +2796,7 @@ class MP {
   creditKill(killerId, e) {
     const reward = Math.round(e.def.reward * ((this.game.waves.bountyMul || 1) * (e.isElite ? 2.4 : 1)));
     this.net.sendTo(killerId, 'kill', { reward, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0) + (e.isElite ? 600 : 0) });
-    this.game.hud.kill(e.name);
+    this.feed(((this.roster.get(killerId) || {}).name) || 'Player', e.name);
   }
   _clientKill(d) {
     const g = this.game; g.kills++; g.player.addMoney(d.reward); g.score += d.score; g.hud.setScore(g.score); g.hud.kill(d.name);
@@ -2781,6 +2823,7 @@ class MP {
     s.hp -= dmg;
     if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 4) s.dead = true; else { s.down = true; s.downT = 20; } }
     this._broadcastPState(id);
+    if (s.dead) this._checkGameOver();
   }
   hostRevive(tid) { if (!this.isHost) return; const s = this.pstate.get(tid); if (!s || !s.down) return; s.down = false; s.downT = 0; s.hp = Math.round(s.maxHp * 0.5); this._broadcastPState(tid); }
   _tickDowns() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); } } } }
@@ -2830,6 +2873,19 @@ class MP {
       return '<div class="sb-row"><span class="sb-skin" style="background:' + skinCss + ';border-color:' + petalCss + '"></span><span class="sb-name">' + mpEscape(e.name) + you + '</span><span class="sb-money">' + money + '</span><span class="sb-ping" style="color:' + pc + '">' + ping + '</span></div>';
     }).join('');
   }
+  _sendWorldTo(pid) {
+    this.net.sendTo(pid, 'start', { mode: this.game.mode || 'purge' });
+    for (const e of this.game.enemies.active) if (e.alive) this.net.sendTo(pid, 'espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale });
+    this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
+  }
+  _hostGone() { if (!this.active) return; this.active = false; try { this.game.hud.bigMessage('HOST LEFT', 'returning to menu…'); } catch (e) {} this.leave(); this.game.toMenu(); }
+  _checkGameOver() {
+    if (!this.isHost || !this.active) return;
+    let any = false, allDead = true;
+    for (const [, s] of this.pstate) { any = true; if (!s.dead) allDead = false; }
+    if (any && allDead) { this.net.send('gameover', {}); this.game._mpGameOver(); }
+  }
+  feed(who, what) { this.game.hud.kill(who + ' \u27a4 ' + what); this.net.broadcast('feed', { who, what }); }
   _updateRevive(dt) {
     if (!this.active || this.frozen) { this._reviveT = 0; return; }
     const rp = this._downedRemoteNear();
@@ -3011,6 +3067,8 @@ class Game {
     else after();
   }
   toMenu() {
+    if (this.mp && this.mp.active) this.mp.leave();
+    const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.mountedGun.forceReset();
     this.enemies.clearAll(); this.audio.stopMusic(); this.hud.show(false);
@@ -3026,6 +3084,7 @@ class Game {
 
   beginNextWave() {
     if (this.state !== 'shop') return;
+    if (this.mp.active && !this.mp.isHost) { this.ui.hideAll(); this.hud.bigMessage('READY', 'waiting for the host…'); return; }
     this.ui.hideAll(); this.state = 'playing'; this.input.requestLock();
     this.waves.startWave(this.waves.wave + 1);
   }
@@ -3036,7 +3095,7 @@ class Game {
     const bounty = (this.waves.bountyMul || 1) * (e.isElite ? 2.4 : 1); // payday modifier + elite bonus
     this.player.addMoney(e.def.reward * bounty);
     this.score += e.def.reward + (e.def.boss ? 1500 : 0) + (e.isElite ? 600 : 0); this.hud.setScore(this.score);
-    this.hud.kill(e.name);
+    if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
     this.loot.drop(e.pos, e.def);
     if (e.isElite) for (let i = 0; i < 2; i++) this.loot._spawnPickup('key', e.pos, 1); // elites guarantee a couple of keys
     if (e.courier) this.loot.dropCourier(e.pos); // backpack courier → a radio + a bonus
@@ -3050,6 +3109,17 @@ class Game {
     this.state = 'playing'; this._startCountdown = this.mp.isHost ? 0.6 : 0;
     const root = document.documentElement; const after = () => { this.engine.resize(); this.input.requestLock(); };
     if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().then(after, after); else after();
+  }
+  _mpGameOver() {
+    if (this.state === 'dead') return;
+    this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.gameOver(); this.audio.stopMusic(); this.hud.show(false);
+    const lab = document.getElementById('mp-labels'); if (lab) lab.style.display = 'none';
+    const rec = document.getElementById('goRecord'); if (rec) rec.innerHTML = 'the whole squad got unstuffed';
+    const gw = document.getElementById('goWave'); if (gw) gw.textContent = 'wave ' + this.waves.wave;
+    const gs = document.getElementById('goScore'); if (gs) gs.textContent = this.score;
+    const gk = document.getElementById('goKills'); if (gk) gk.textContent = this.kills;
+    this.ui.show('gameover');
   }
   _mpOpenShop(n) { this._intentionalUnlock = true; this.input.exitLock(); this.state = 'shop'; this.hud.setInteract(null); this.shop.open((n || this.waves.wave) + 1); }
   _hurtTarget(id, dmg) { if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dmg); else this.player.hurt(dmg); }
