@@ -744,6 +744,16 @@ class Enemy {
     this.aim = new THREE.Vector3();
     if (this.mesh.material && this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
     this.mesh.visible = true; this.mesh.scale.setScalar(def.scale); this.mesh.position.copy(pos);
+    if (def.tank) {
+      this.radius = 2.6; this.height = 3.0; this.headY = 2.4;       // big hull; cupola = head zone
+      this.armorHP = this.armorHPmax = hp;                          // hp arg = armorHP; _spawnBoss rescales after
+      this.mitriHP = this.mitriHPmax = def.mitriHP;
+      this.vulnerable = false; this.windowT = 6; this.exposeT = 0;  // Mitri pop-out window cycle (Task 11)
+      this.hullYaw = 0; this.turYaw = 0; this.gunPitch = 0;          // rig angles (Tasks 7/8)
+      this.cannonCD = 4; this.charge = 0; this.mgAmmo = 250; this.mgReload = 0; this.recoil = 0;
+      this.ramCD = 0; this.stuckRecover = 0; this.stuck = 0; this.eraSpent = {}; // ERA per-zone consumed flags (Task 13)
+      this.captured = false; this.entering = false;
+    }
   }
 }
 
@@ -1608,8 +1618,9 @@ class LootManager {
     this.scene.add(mesh);
     this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 2, released: false };
     this.game.hud.toast('📡 Radio: Su-24 inbound!', 0x6fd0e8);
-    this.game.hud.bigMessage('SUPPLY INBOUND', 'a Fencer is making a pass — watch the smoke');
-    this.game.audio.tone(70, 1.6, 'sawtooth', 0.16); this.game.audio.noise(1.4, 0.16, 'lowpass', 480, 0.6);
+    this.game.hud.bigMessage('ЗАПРОС ПОДТВЕРЖДЁН', 'a Fencer is making a pass — watch the smoke');
+    this.game.audio.radioCall(); // Soviet-radio confirmation + epic WW2 sting
+    this.game.audio.tone(70, 1.8, 'sawtooth', 0.12); this.game.audio.noise(1.6, 0.12, 'lowpass', 460, 0.6); // jet rumble
   }
 
   _updatePlane(dt) {
