@@ -1117,7 +1117,24 @@ class EnemyManager {
       this.game.audio.tone(70, 0.15, 'sawtooth', 0.3);
     }
   }
-  _tankWindow(e, dt) {}
+  _tankWindow(e, dt) {
+    const enraged = e.armorHP <= e.armorHPmax * 0.4;
+    const cycle = enraged ? 9 : 12, expose = 4;
+    e.windowT -= dt;
+    if (!e.vulnerable && e.windowT <= 0) {
+      e.vulnerable = true; e.exposeT = expose;
+      this.game.audio.tone(300, 0.08, 'square', 0.25);
+      this.game.hud.bigMessage('COMMANDER EXPOSED', 'shoot Mitri!');
+    }
+    if (e.vulnerable) {
+      e.exposeT -= dt;
+      const rise = Math.min(1, (expose - Math.max(0, e.exposeT)) * 3) * 0.5;
+      if (e.mesh.userData.hatch) e.mesh.userData.hatch.position.y = 1.0 + rise; // cupola lifts (placeholder)
+      if (e.exposeT <= 0) { e.vulnerable = false; e.windowT = cycle; if (e.mesh.userData.hatch) e.mesh.userData.hatch.position.y = 1.0; }
+    }
+    if (!e._enraged && enraged) { e._enraged = true; this.game.hud.bigMessage('MITRI ENRAGED', 'the T-90M floors it!'); }
+    this.game.hud.setBossPip(e.vulnerable ? e.mitriHP / e.mitriHPmax : -1);
+  }
 
   rayHit(origin, dir, maxDist) {
     let best = maxDist, hitE = null, hp = null;
@@ -2306,7 +2323,7 @@ class HUD {
       wave: $('wave'), money: $('money'), keys: $('keys'), radios: $('radios'), score: $('score'),
       msg: $('msg'), vignette: $('vignette'), hitmarker: $('hitmarker'), killfeed: $('killfeed'),
       cross: $('cross'), toast: $('toast'), interact: $('interact'), scope: $('scope'),
-      bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), left: $('left'),
+      bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), bosspip: $('bosspip'), left: $('left'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
       clock: $('clock'), nightgear: $('nightgear'),
     };
@@ -2357,6 +2374,11 @@ class HUD {
   setEnemiesLeft(n) { this.el.left.textContent = n > 0 ? '· ' + n + ' left' : ''; }
   setScope(on) { this.el.scope.classList.toggle('show', !!on); }
   setBoss(frac, name) { this.el.bossbar.classList.add('show'); this.el.bossfill.style.width = clamp(frac, 0, 1) * 100 + '%'; if (name) this.el.bossname.textContent = name; }
+  setBossPip(frac) {
+    const el = this.el.bosspip; if (!el) return;
+    if (frac < 0) { el.classList.remove('show'); if (this.el.bossbar) this.el.bossbar.classList.remove('exposed'); }
+    else { el.classList.add('show'); if (this.el.bossbar) this.el.bossbar.classList.add('exposed'); el.style.width = (clamp(frac, 0, 1) * 100) + '%'; }
+  }
   hideBoss() { this.el.bossbar.classList.remove('show'); }
   setHeat(frac, over) { this.el.heatbar.classList.add('show'); this.el.heatfill.style.width = clamp(frac, 0, 1) * 100 + '%'; this.el.heatbar.classList.toggle('over', !!over); this.el.heatlabel.textContent = over ? 'OVERHEATED — COOLING' : 'BARREL HEAT'; }
   hideHeat() { this.el.heatbar.classList.remove('show'); }
