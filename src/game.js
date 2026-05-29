@@ -197,46 +197,362 @@ function buildEngendro(col, variant = 'normal') {
 }
 
 // ---------------------------------------------------------------------------
-// Tank boss mesh — blocky voxel stand-in for T-90M "MITRI".
-// Returns a THREE.Group with named rig nodes on root.userData (and nested):
-//   turret, gunMantlet, recoilNode, muzzle, mgMuzzle, hatch, mitri
+// Tank boss mesh — detailed voxel T-90M «Proryv» (Task 22).
+// Desert 3-tone palette, layered shading (hi/mid/lo faces), ERA blocks,
+// 6 road wheels per side, track bands, angular turret, long 125 mm gun.
+// Returns a THREE.Group with ALL rig nodes on root.userData:
+//   turret, gunMantlet, recoilNode, muzzle, mgMuzzle, hatch,
+//   roadWheels[], trackL, trackR, headlamps[]
 // ---------------------------------------------------------------------------
 function buildTank(camo = 'desert') {
-  const sand = 0xc9b48a, brown = 0x8a6a45, olive = 0x6e6f4a, steel = 0x55585a;
+  // ── Desert palette (layered shading: Hi / Mid / Lo / Slot / accent) ──────
+  const sandHi  = 0xd8c49a, sandMid = 0xc9b48a, sandLo  = 0xb09468;
+  const brnHi   = 0x9a7a55, brnMid  = 0x8a6a45, brnLo   = 0x70512e;
+  const olvHi   = 0x7e7f5a, olvMid  = 0x6e6f4a, olvLo   = 0x575835;
+  const steelHi = 0x666b72, steelMid= 0x44474d, steelLo = 0x2e3035;
+  const slotCol = 0x222428;   // near-black recesses
+  const rubbCol = 0x2a2c2e;   // rubber road-wheel rim
+  const wheelHi = 0x565a60, wheelMid= 0x3e4147, wheelLo = 0x282b2f;
+  const trackCol= 0x333538, trackSlot= 0x1a1c1e;
+  const ERA_col  = brnMid;    // ERA block face
+  const ERA_hi   = brnHi;
+  const ERA_lo   = brnLo;
+  const mangalCol= steelMid;  // slat cage
+  const lensCol  = 0x1a2a3a;  // sight lens
+
   const root = new THREE.Group(); root.name = 'tank';
 
-  // hull
+  // Helper: layered slab — mid body + thin hi top strip + thin lo bottom strip
+  // (bakes directly into a MeshBuilder)
+  const slab = (b, w, h, d, x, y, z, mid, hi, lo, opts = {}) => {
+    b.box(w, h,        d, x, y,           z, mid, { tint: 0.025, ...opts });
+    b.box(w, h * 0.14, d, x, y + h * 0.44, z, hi,  { ...opts });
+    b.box(w, h * 0.10, d, x, y - h * 0.46, z, lo,  { ...opts });
+  };
+  // Helper: ERA brick — a protruding rectangular tile with layered shading
+  const era = (b, w, h, d, x, y, z, opts = {}) => {
+    b.box(w, h, d, x, y, z, ERA_col, { tint: 0.03, ...opts });
+    b.box(w * 0.7, h * 0.12, d * 0.95, x, y + h * 0.42, z + 0.005, ERA_hi, { ...opts });
+    b.box(w * 0.7, h * 0.10, d * 0.95, x, y - h * 0.44, z + 0.005, ERA_lo, { ...opts });
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  HULL
+  // ══════════════════════════════════════════════════════════════════════════
   const hb = new MeshBuilder();
-  hb.box(3.6, 1.0, 7.2, 0, 0.9, 0, sand, { tint: 0.04 });
-  hb.box(3.6, 0.5, 2.0, 0, 1.45, 2.4, brown);
+
+  // Main hull box — low/squat T-90 profile (3.6 wide × 7.2 long, center y=0.9)
+  slab(hb, 3.6, 1.8, 7.2, 0, 0.9, 0, sandMid, sandHi, sandLo);
+
+  // Sloped glacis plate (front upper hull, tilted)
+  hb.box(3.5, 1.1, 1.8, 0, 1.65, 3.1, sandMid, { tint: 0.03, rx: -0.55 });
+  hb.box(3.5, 0.14, 1.8, 0, 2.15, 3.05, sandHi, { rx: -0.55 }); // top lit strip
+
+  // Glacis ERA tiles — split-V rows (3 rows × 4 cols each side of center seam)
+  for (let row = 0; row < 3; row++) {
+    for (let col = -2; col <= 1; col++) {
+      const ex = (col + 0.5) * 0.8;
+      const ey = 1.3 + row * 0.32;
+      const ez = 3.45 - row * 0.18;
+      era(hb, 0.68, 0.26, 0.18, ex, ey, ez, { rx: -0.55 });
+    }
+  }
+
+  // Rear hull — boxy engine deck
+  slab(hb, 3.6, 0.5, 1.4, 0, 1.95, -2.8, brnMid, brnHi, brnLo);
+  // Engine deck grilles (dark slots)
+  for (let i = 0; i < 5; i++) {
+    hb.box(0.55, 0.06, 0.08, -1.1 + i * 0.55, 2.22, -3.1, slotCol);
+  }
+  hb.box(3.5, 0.05, 0.1, 0, 2.22, -2.5, slotCol);   // rear vent strip
+  hb.box(3.5, 0.05, 0.1, 0, 2.22, -3.5, slotCol);
+
+  // Rear tool box / storage
+  hb.box(1.4, 0.38, 0.5, -1.0, 2.12, -3.65, olvMid, { tint: 0.03 });
+  hb.box(1.4, 0.05, 0.5, -1.0, 2.32, -3.65, olvHi);
+  hb.box(0.8, 0.32, 0.48, 0.9, 2.12, -3.65, brnMid, { tint: 0.03 });
+
+  // Front mudguard plates
+  hb.box(0.55, 0.12, 1.5, -1.93, 1.84, 2.2, sandMid);
+  hb.box(0.55, 0.12, 1.5,  1.93, 1.84, 2.2, sandMid);
+
+  // Tow hooks (front)
+  for (const sx of [-1.3, 1.3]) {
+    hb.box(0.18, 0.24, 0.22, sx, 0.7, 3.65, steelMid);
+    hb.box(0.06, 0.22, 0.3,  sx, 0.7, 3.82, slotCol);
+  }
+
   root.add(new THREE.Mesh(hb.build(), voxelMaterial()));
 
-  // turret group
-  const turret = new THREE.Group(); turret.position.set(0, 1.9, -0.4); root.add(turret); root.userData.turret = turret;
-  const tb = new MeshBuilder(); tb.box(2.6, 0.9, 2.8, 0, 0.45, 0, olive, { tint: 0.03 });
-  turret.add(new THREE.Mesh(tb.build(), voxelMaterial()));
+  // ── Side skirt panels (ERA rows) ─────────────────────────────────────────
+  // Left skirts (x = -1.9), Right skirts (x = +1.9)
+  for (const sx of [-1, 1]) {
+    const skb = new MeshBuilder();
+    const skx = sx * 1.9;
+    // Skirt panel backing strip
+    slab(skb, 0.12, 0.65, 7.0, skx, 1.18, -0.1, steelMid, steelHi, steelLo);
+    // ERA bricks on skirts — 6 sections matching 6 wheels
+    for (let i = 0; i < 6; i++) {
+      const ez = 2.6 - i * 1.05;
+      era(skb, 0.16, 0.5, 0.85, skx + sx * 0.08, 1.22, ez);
+    }
+    root.add(new THREE.Mesh(skb.build(), voxelMaterial()));
+  }
 
-  // gun mantlet + recoil node
-  const gunMantlet = new THREE.Group(); gunMantlet.position.set(0, 0.5, 1.3); turret.add(gunMantlet);
-  turret.userData.gunMantlet = gunMantlet; root.userData.gunMantlet = gunMantlet;
-  const recoilNode = new THREE.Group(); gunMantlet.add(recoilNode);
-  gunMantlet.userData.recoilNode = recoilNode; root.userData.recoilNode = recoilNode;
-  const bb = new MeshBuilder(); bb.box(0.34, 0.34, 5.0, 0, 0, 2.6, steel);
-  recoilNode.add(new THREE.Mesh(bb.build(), voxelMaterial()));
+  // ══════════════════════════════════════════════════════════════════════════
+  //  RUNNING GEAR — 6 road wheels + idler + sprocket + return rollers
+  // ══════════════════════════════════════════════════════════════════════════
+  root.userData.roadWheels = [];
 
-  // muzzle marker
-  const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, 5.1); recoilNode.add(muzzle); root.userData.muzzle = muzzle;
+  for (const sx of [-1, 1]) {
+    const wx = sx * 1.85;
+    // 6 road wheels, evenly spaced front→rear along z axis
+    for (let i = 0; i < 6; i++) {
+      const wz = 2.6 - i * 0.97;
+      const wb = new MeshBuilder();
+      // Outer rubber rim (dark)
+      const rimGeo = new THREE.CylinderGeometry(0.44, 0.44, 0.26, 12);
+      wb.geo(rimGeo, wx, 0.46, wz, rubbCol, { rx: Math.PI / 2 }); rimGeo.dispose();
+      // Inner steel hub
+      const hubGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.32, 8);
+      wb.geo(hubGeo, wx, 0.46, wz, wheelMid, { rx: Math.PI / 2 }); hubGeo.dispose();
+      wb.box(0.08, 0.08, 0.34, wx, 0.46, wz, wheelHi);   // hub highlight
+      const wm = new THREE.Mesh(wb.build(), voxelMaterial());
+      wm.name = `roadWheel_${sx > 0 ? 'R' : 'L'}_${i}`;
+      root.add(wm);
+      root.userData.roadWheels.push(wm);
+    }
 
-  // coaxial MG muzzle marker
-  const mgMuzzle = new THREE.Object3D(); mgMuzzle.position.set(0.7, 1.1, 0.6); turret.add(mgMuzzle); root.userData.mgMuzzle = mgMuzzle;
+    // Front idler (smaller, no rubber)
+    const idlB = new MeshBuilder();
+    const idlGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10);
+    idlB.geo(idlGeo, wx, 0.44, 3.3, wheelMid, { rx: Math.PI / 2 }); idlGeo.dispose();
+    root.add(new THREE.Mesh(idlB.build(), voxelMaterial()));
 
-  // commander hatch + Mitri head
-  const hatch = new THREE.Group(); hatch.position.set(0.7, 1.0, 0.2); turret.add(hatch); root.userData.hatch = hatch;
-  const mb = new MeshBuilder(); mb.box(0.7, 0.8, 0.7, 0, 0.4, 0, 0xf2c200);
-  const mitri = new THREE.Mesh(mb.build(), voxelMaterial()); hatch.add(mitri); root.userData.mitri = mitri;
+    // Rear drive sprocket (toothed — approximated with box + radial nubs)
+    const sprB = new MeshBuilder();
+    const sprGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 10);
+    sprB.geo(sprGeo, wx, 0.46, -3.3, steelMid, { rx: Math.PI / 2 }); sprGeo.dispose();
+    for (let t = 0; t < 8; t++) {
+      const ta = (t / 8) * Math.PI * 2;
+      sprB.box(0.1, 0.1, 0.3, wx + Math.cos(ta) * 0.38, 0.46 + Math.sin(ta) * 0.38, -3.3, steelHi);
+    }
+    root.add(new THREE.Mesh(sprB.build(), voxelMaterial()));
 
-  // placeholders for future tasks
-  root.userData.roadWheels = []; root.userData.trackL = null; root.userData.trackR = null; root.userData.headlamps = [];
+    // Return rollers (2 per side, top of track run)
+    for (let r = 0; r < 2; r++) {
+      const rrB = new MeshBuilder();
+      const rrGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.22, 8);
+      rrB.geo(rrGeo, wx, 1.05, 1.6 - r * 2.2, wheelMid, { rx: Math.PI / 2 }); rrGeo.dispose();
+      root.add(new THREE.Mesh(rrB.build(), voxelMaterial()));
+    }
+  }
+
+  // ── Track bands (L / R) ──────────────────────────────────────────────────
+  const makeTread = (sx) => {
+    const tb2 = new MeshBuilder();
+    const tx = sx * 1.85;
+    // Lower run (ground contact)
+    slab(tb2, 0.38, 0.26, 7.2, tx, 0.14, -0.1, trackCol, steelMid, trackSlot);
+    // Upper run (over the wheels)
+    slab(tb2, 0.38, 0.14, 6.8, tx, 0.92, -0.05, trackCol, steelMid, trackSlot);
+    // Dark link slots on lower run (reads as track links)
+    for (let i = 0; i < 14; i++) {
+      tb2.box(0.34, 0.06, 0.06, tx, 0.14, 3.3 - i * 0.52, trackSlot);
+    }
+    return new THREE.Mesh(tb2.build(), voxelMaterial());
+  };
+  const trackL = makeTread(-1); trackL.name = 'trackL'; root.add(trackL); root.userData.trackL = trackL;
+  const trackR = makeTread( 1); trackR.name = 'trackR'; root.add(trackR); root.userData.trackR = trackR;
+
+  // ── Headlamps (mesh only — SpotLights added Task 23) ────────────────────
+  root.userData.headlamps = [];
+  for (const hx of [-1.1, 1.1]) {
+    const lb = new MeshBuilder();
+    lb.box(0.32, 0.22, 0.14, hx, 1.28, 3.62, steelMid);   // housing
+    lb.box(0.22, 0.15, 0.06, hx, 1.28, 3.72, 0xd0d8e0);   // lens glass
+    lb.box(0.20, 0.12, 0.06, hx, 1.28, 3.73, 0xeef2ff);   // lens bright centre
+    const lm = new THREE.Mesh(lb.build(), voxelMaterial());
+    lm.name = `headlamp_${hx < 0 ? 'L' : 'R'}`;
+    root.add(lm);
+    root.userData.headlamps.push(lm);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TURRET (yaws as Group, positioned above hull)
+  // ══════════════════════════════════════════════════════════════════════════
+  const turret = new THREE.Group();
+  turret.position.set(0, 1.9, -0.4);   // same as placeholder
+  root.add(turret);
+  root.userData.turret = turret;
+
+  const turB = new MeshBuilder();
+
+  // Main turret body — angular welded shape, wide-front narrow-rear
+  // Front slab (wider, tallest)
+  slab(turB, 2.8, 1.05, 1.4,  0,  0.52, 0.9, olvMid, olvHi, olvLo);
+  // Centre body
+  slab(turB, 2.6, 0.95, 1.6,  0,  0.47, -0.4, olvMid, olvHi, olvLo);
+  // Rear narrower bustle/box
+  slab(turB, 2.0, 0.72, 1.0,  0,  0.36, -1.35, brnMid, brnHi, brnLo);
+  // Slightly sloped turret top (extra flat box)
+  turB.box(2.6, 0.1, 2.8, 0, 1.02, 0.1, sandMid, { tint: 0.02 });
+
+  // Turret front plate ERA — Relikt bricks (3 rows)
+  for (let row = 0; row < 3; row++) {
+    for (let col = -2; col <= 1; col++) {
+      const ex = (col + 0.5) * 0.62;
+      const ey = 0.18 + row * 0.3;
+      era(turB, 0.52, 0.24, 0.2, ex, ey, 1.62);
+    }
+  }
+  // Turret cheek ERA (left and right angled sides)
+  for (const sx of [-1, 1]) {
+    for (let row = 0; row < 3; row++) {
+      era(turB, 0.26, 0.24, 0.55, sx * 1.38, 0.22 + row * 0.3, 0.55, { ry: sx * -0.45 });
+    }
+  }
+
+  // Slat/mangal cage at turret rear (rigid metal grid approximation)
+  for (let bz = 0; bz < 3; bz++) {
+    turB.box(2.1, 0.06, 0.06, 0, 0.55, -1.7 - bz * 0.18, mangalCol);   // horizontal bars
+  }
+  for (let bx = -2; bx <= 2; bx++) {
+    turB.box(0.06, 0.55, 0.52, bx * 0.52, 0.55, -1.84, mangalCol);     // vertical bars
+  }
+  // Rear bustle storage box detail
+  turB.box(0.06, 0.68, 0.94, -0.97, 0.36, -1.35, steelLo);   // seam line left
+  turB.box(0.06, 0.68, 0.94,  0.97, 0.36, -1.35, steelLo);   // seam line right
+
+  // Smoke grenade launcher clusters (left & right sides of turret)
+  for (const sx of [-1, 1]) {
+    for (let t = 0; t < 5; t++) {
+      const ty = 0.25 + t * 0.18;
+      const tz = 0.4 + t * 0.08;
+      const tubeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.55, 6);
+      turB.geo(tubeGeo, sx * 1.42, ty, tz, steelMid, { rz: sx * 1.18, tint: 0.02 }); tubeGeo.dispose();
+    }
+    // Launcher mounting plate
+    turB.box(0.14, 0.92, 0.58, sx * 1.36, 0.5, 0.55, steelLo);
+  }
+
+  // Antenna (rear-right of turret)
+  turB.box(0.05, 1.1, 0.05, 0.75, 1.55, -0.9, steelMid);
+  turB.box(0.05, 0.06, 0.05, 0.75, 2.12, -0.9, steelHi);  // tip
+
+  // Commander cupola housing (left/offset from centre — Task 23 adds full detail)
+  turB.box(0.72, 0.38, 0.72, 0.7, 1.08, 0.18, brnMid, { tint: 0.03 });
+  turB.box(0.72, 0.08, 0.72, 0.7, 1.28, 0.18, brnHi);     // top rim lit
+  // Cupola vision block slits
+  for (let s = 0; s < 4; s++) {
+    const a = (s / 4) * Math.PI * 2;
+    turB.box(0.24, 0.06, 0.04, 0.7 + Math.cos(a) * 0.38, 1.1, 0.18 + Math.sin(a) * 0.38, slotCol, { ry: a });
+  }
+
+  // Panoramic sight drum (Panoramic sight head — right side of roof)
+  const psGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.38, 8);
+  turB.geo(psGeo, -0.55, 1.12, 0.3, steelMid, { tint: 0.02 }); psGeo.dispose();
+  turB.box(0.12, 0.16, 0.12, -0.55, 1.35, 0.28, lensCol);    // lens
+
+  // Gunner sight housing (right front of turret roof)
+  turB.box(0.32, 0.28, 0.48, -0.72, 1.06, 0.75, steelMid, { tint: 0.02 });
+  turB.box(0.22, 0.12, 0.1, -0.72, 1.06, 1.02, lensCol);     // lens
+
+  // RWS / MG mount (right rear of turret roof) — mgMuzzle goes here
+  turB.box(0.28, 0.3, 0.38, 0.7, 1.22, -0.5, steelMid, { tint: 0.02 });
+  turB.box(0.1, 0.1, 0.55, 0.7, 1.26, -0.28, steelHi);   // MG barrel stub
+
+  turret.add(new THREE.Mesh(turB.build(), voxelMaterial()));
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  GUN MANTLET (pitches, child of turret)
+  // ══════════════════════════════════════════════════════════════════════════
+  const gunMantlet = new THREE.Group();
+  gunMantlet.position.set(0, 0.5, 1.3);
+  turret.add(gunMantlet);
+  turret.userData.gunMantlet = gunMantlet;
+  root.userData.gunMantlet = gunMantlet;
+
+  const recoilNode = new THREE.Group();
+  gunMantlet.add(recoilNode);
+  gunMantlet.userData.recoilNode = recoilNode;
+  root.userData.recoilNode = recoilNode;
+
+  // ── 125 mm gun barrel on recoilNode ──────────────────────────────────────
+  const gb = new MeshBuilder();
+
+  // Main barrel tube — three slightly-tapered sections
+  slab(gb, 0.30, 0.30, 2.2, 0, 0, 1.2, steelMid, steelHi, steelLo);   // base section
+  slab(gb, 0.26, 0.26, 1.8, 0, 0, 3.3, steelMid, steelHi, steelLo);   // mid section
+  slab(gb, 0.23, 0.23, 1.4, 0, 0, 4.6, steelMid, steelHi, steelLo);   // muzzle section
+
+  // Thermal sleeve — segmented bands along mid section
+  for (let s = 0; s < 7; s++) {
+    gb.box(0.34, 0.34, 0.08, 0, 0, 0.5 + s * 0.36, brnMid, { tint: 0.02 });
+    gb.box(0.34, 0.04, 0.08, 0, 0.18, 0.5 + s * 0.36, brnHi);  // top lit strip
+  }
+  // Thermal sleeve body (bulk between bands)
+  gb.box(0.32, 0.30, 2.3, 0, 0, 1.55, brnLo, { tint: 0.02 });
+
+  // Bore evacuator bulge (~⅓ from muzzle ≈ z=3.5)
+  gb.box(0.42, 0.42, 0.52, 0, 0, 3.52, steelMid, { tint: 0.02 });
+  gb.box(0.42, 0.06, 0.52, 0, 0.22, 3.52, steelHi);   // top lit
+  gb.box(0.42, 0.05, 0.52, 0, -0.22, 3.52, steelLo);  // bottom shadow
+  // Evacuator collar rings
+  gb.box(0.44, 0.08, 0.06, 0, 0, 3.26, steelLo);
+  gb.box(0.44, 0.08, 0.06, 0, 0, 3.78, steelLo);
+
+  // Coaxial MG barrel (to the right of main gun)
+  gb.box(0.1, 0.1, 1.8, 0.28, -0.06, 1.0, steelLo, { tint: 0.02 });
+  gb.box(0.12, 0.05, 0.08, 0.28, -0.06, 1.92, slotCol);  // muzzle port
+
+  // Mantlet cover plate
+  gb.box(0.72, 0.62, 0.22, 0, 0, 0.12, olvMid, { tint: 0.03 });
+  gb.box(0.72, 0.08, 0.22, 0, 0.32, 0.12, olvHi);
+
+  recoilNode.add(new THREE.Mesh(gb.build(), voxelMaterial()));
+
+  // Muzzle marker (world-space fire origin at barrel tip)
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0, 5.1);
+  recoilNode.add(muzzle);
+  root.userData.muzzle = muzzle;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  RIG MARKERS (invisible anchor points)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Coaxial MG muzzle (on turret, RWS position)
+  const mgMuzzle = new THREE.Object3D();
+  mgMuzzle.position.set(0.7, 1.3, -0.1);
+  turret.add(mgMuzzle);
+  root.userData.mgMuzzle = mgMuzzle;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  COMMANDER HATCH (lifts to expose Mitri — Task 23 adds full commander)
+  // ══════════════════════════════════════════════════════════════════════════
+  const hatch = new THREE.Group();
+  hatch.position.set(0.7, 1.0, 0.18);   // on top of cupola, same semantics as placeholder
+  turret.add(hatch);
+  root.userData.hatch = hatch;
+
+  // Hatch cover (small flat plate, lifts upward)
+  const hatchB = new MeshBuilder();
+  hatchB.box(0.62, 0.07, 0.62, 0, 0.04, 0, steelMid, { tint: 0.02 });
+  hatchB.box(0.62, 0.02, 0.62, 0, 0.08, 0, steelHi);
+  hatch.add(new THREE.Mesh(hatchB.build(), voxelMaterial()));
+
+  // Placeholder Mitri head (yellow cube — Task 23 replaces with full commander)
+  const mb = new MeshBuilder();
+  mb.box(0.38, 0.38, 0.38, 0, 0.28, 0, 0xf2c200, { tint: 0.03 });
+  const mitri = new THREE.Mesh(mb.build(), voxelMaterial());
+  mitri.visible = false;   // hidden until hatch lifts (Task 23 will show/animate)
+  hatch.add(mitri);
+  root.userData.mitri = mitri;
+
+  // ── Final rig refs ────────────────────────────────────────────────────────
+  // (already set above; re-confirm headlamps init)
+  if (!root.userData.headlamps) root.userData.headlamps = [];
 
   return root;
 }
@@ -624,6 +940,18 @@ class World {
     }
 
     this.scene.add(this._mesh(wb)); this.scene.add(this._mesh(cb));
+
+    // === intel poster on the Barracks east wall (T-90M weak-points), facing the plaza ===
+    const posterTex = new THREE.TextureLoader().load('assets/poster-t90m-weakpoints.png');
+    posterTex.colorSpace = THREE.SRGBColorSpace; posterTex.anisotropy = 4;
+    const posterH = 1.44, posterW = posterH * (687 / 1024);   // image is 687×1024 (portrait); 40% of original (−60%)
+    // alphaTest (not transparent) keeps it in the OPAQUE pass so the depthTest:false viewmodel
+    // weapon (renderOrder 1000) still draws on top of it — and clips the PNG's transparent edges.
+    const poster = new THREE.Mesh(new THREE.PlaneGeometry(posterW, posterH),
+      new THREE.MeshBasicMaterial({ map: posterTex, alphaTest: 0.5 }));
+    poster.position.set(-32.65, 2.4, 32);   // just off the barracks east face (x=-33, ±0.3 thick)
+    poster.rotation.y = Math.PI / 2;          // normal → +x (toward map centre)
+    this.scene.add(poster);
 
     // outer spawn ring
     for (let i = 0; i < 26; i++) {
@@ -1728,78 +2056,76 @@ class WeaponSystem {
 // rectangular side intakes, high swing wings, single swept fin + tailplanes, twin exhausts.
 function buildSu24() {
   const b = new MeshBuilder();
-  const gHi = 0xb8c2cc, gMid = 0x97a2ad, gLo = 0x6e7882, gDark = 0x3a4048, gSeam = 0x5a636d, glass = 0x0e1118, accent = 0xc23a2a, brass = 0x4a3a2e;
-  // red Soviet star (8-ray asterisk) lying flat in XZ — for the undersides the player sees from below
-  const star = (x, y, z, s) => {
-    b.box(s, 0.05, s * 0.32, x, y, z, accent); b.box(s * 0.32, 0.05, s, x, y, z, accent);
-    b.box(s * 0.82, 0.05, s * 0.26, x, y, z, accent, { ry: 0.79 }); b.box(s * 0.82, 0.05, s * 0.26, x, y, z, accent, { ry: -0.79 });
-  };
-  // fuselage core + lit spine + shadow belly
-  b.box(1.5, 1.2, 9, 0, 0, -0.5, gMid, { tint: 0.02 });
-  b.box(1.18, 0.42, 7.2, 0, 0.5, -0.6, gHi, { tint: 0.02 });
-  b.box(1.42, 0.34, 8.2, 0, -0.56, -0.5, gLo);
-  // fuselage panel seams (top + longitudinal)
-  for (const z of [-2.6, -0.4, 1.6, 3.2]) b.box(1.46, 0.02, 0.05, 0, 0.61, z, gSeam);
-  b.box(0.05, 0.02, 6.4, 0.5, 0.61, -0.5, gSeam); b.box(0.05, 0.02, 6.4, -0.5, 0.61, -0.5, gSeam);
-  // pointed nose (tapering toward -Z): radome + seam + antennas + IFR/pitot probe
-  b.box(1.2, 0.9, 1.4, 0, 0.0, -4.5, gMid);
-  b.box(0.85, 0.66, 1.5, 0, -0.04, -5.7, gHi);
-  b.box(0.5, 0.42, 1.4, 0, -0.07, -6.9, gMid);
-  b.box(0.2, 0.2, 1.0, 0, -0.08, -7.7, gLo);
-  b.box(0.9, 0.02, 0.05, 0, 0.3, -5.5, gSeam);            // radar access seam
-  b.box(0.05, 0.05, 0.7, 0, -0.08, -8.25, gDark);         // pitot
-  b.box(0.04, 0.22, 0.04, -0.45, 0.32, -3.0, gDark);      // refuel-probe nub / AoA vane
-  b.box(0.06, 0.04, 0.18, 0.4, 0.18, -4.6, gDark);        // nose antenna
-  // wide side-by-side cockpit (raised) + framed dark glass + centre divider + frames
-  b.box(1.34, 0.5, 1.9, 0, 0.55, -3.5, gMid);
-  b.box(1.16, 0.42, 1.74, 0, 0.74, -3.5, glass);
-  b.box(0.06, 0.46, 1.78, 0, 0.76, -3.5, gMid);           // centre divider
-  b.box(1.36, 0.08, 0.12, 0, 0.8, -4.42, gMid);           // windshield top frame
-  b.box(1.36, 0.08, 0.12, 0, 0.8, -2.55, gMid);           // rear canopy frame
-  for (const s of [-1, 1]) b.box(0.08, 0.46, 1.8, s * 0.66, 0.76, -3.5, gMid); // side frames
-  // rectangular side intakes (behind cockpit) + dark mouths + splitter + lit lip + panel seam
+  const gHi = 0xb8c2cc, gMid = 0x97a2ad, gLo = 0x6e7882, gDark = 0x3a4048, gSeam = 0x5a636d, glass = 0x0e1118, accent = 0xc6332a, brass = 0x4a3a2e;
+  // filled 5-point Soviet red star via ShapeGeometry (no gaps between rays)
+  const starShape = (R) => { const sh = new THREE.Shape(); const n = 5, ri = R * 0.42; for (let i = 0; i < n * 2; i++) { const a = (i / (n * 2)) * TAU - Math.PI / 2, r = (i % 2 === 0) ? R : ri, x = Math.cos(a) * r, y = Math.sin(a) * r; if (i === 0) sh.moveTo(x, y); else sh.lineTo(x, y); } sh.closePath(); return sh; };
+  const star = (x, y, z, R, opts = {}) => { const sg = new THREE.ShapeGeometry(starShape(R)); b.geo(sg, x, y, z, accent, opts); sg.dispose(); };
+  // ---- fuselage (solid, overlapping boxes) ----
+  b.box(1.55, 1.25, 9.5, 0, 0, -0.3, gMid, { tint: 0.02 });
+  b.box(1.2, 0.5, 8.6, 0, 0.5, -0.4, gHi, { tint: 0.02 });
+  b.box(1.46, 0.4, 8.8, 0, -0.55, -0.4, gLo);
+  for (const z of [-3.2, -1.0, 1.0, 2.8]) b.box(1.5, 0.02, 0.05, 0, 0.62, z, gSeam);
+  b.box(0.05, 0.02, 7.0, 0.55, 0.55, -0.4, gSeam); b.box(0.05, 0.02, 7.0, -0.55, 0.55, -0.4, gSeam);
+  // ---- long pointed nose ----
+  b.box(1.3, 1.0, 1.6, 0, 0.02, -5.3, gMid);
+  b.box(1.0, 0.78, 1.6, 0, -0.02, -6.5, gHi);
+  b.box(0.66, 0.54, 1.5, 0, -0.06, -7.55, gMid);
+  b.box(0.36, 0.32, 1.4, 0, -0.1, -8.45, gLo);
+  b.box(0.15, 0.15, 1.0, 0, -0.12, -9.2, gDark);
+  b.box(0.05, 0.05, 0.8, 0, -0.12, -9.8, gDark);
+  b.box(0.95, 0.02, 0.05, 0, 0.3, -6.4, gSeam);
+  b.box(0.05, 0.26, 0.05, -0.5, 0.34, -4.7, gDark);
+  // ---- wide side-by-side cockpit (framed dark glass + two seats) ----
+  b.box(1.4, 0.55, 2.0, 0, 0.55, -4.2, gMid);
+  b.box(1.2, 0.46, 1.8, 0, 0.78, -4.2, glass);
+  b.box(0.07, 0.5, 1.84, 0, 0.8, -4.2, gMid);
+  b.box(1.42, 0.1, 0.14, 0, 0.84, -5.15, gMid);
+  b.box(1.42, 0.1, 0.14, 0, 0.84, -3.25, gMid);
+  b.box(0.09, 0.5, 1.86, 0.66, 0.78, -4.2, gMid); b.box(0.09, 0.5, 1.86, -0.66, 0.78, -4.2, gMid);
+  b.box(0.42, 0.3, 0.5, 0.3, 0.62, -3.9, 0x14140f); b.box(0.42, 0.3, 0.5, -0.3, 0.62, -3.9, 0x14140f);
+  // ---- rectangular side intakes (flush, splitter, lit lip) ----
   for (const s of [-1, 1]) {
-    b.box(0.5, 0.92, 2.6, s * 0.98, -0.08, -1.6, gMid, { tint: 0.02 });
-    b.box(0.34, 0.74, 0.22, s * 1.06, -0.08, -2.95, gDark);   // intake mouth (dark)
-    b.box(0.54, 0.1, 2.0, s * 0.98, 0.4, -1.6, gHi);          // upper lip (lit)
-    b.box(0.08, 0.8, 2.2, s * 0.74, -0.06, -1.6, gLo);        // splitter plate
-    b.box(0.52, 0.02, 1.4, s * 0.98, -0.06, -1.6, gSeam);     // side panel seam
+    b.box(0.62, 1.02, 2.9, s * 1.0, -0.05, -2.1, gMid, { tint: 0.02 });
+    b.box(0.44, 0.84, 0.26, s * 1.08, -0.05, -3.6, gDark);
+    b.box(0.66, 0.12, 2.5, s * 1.0, 0.47, -2.1, gHi);
+    b.box(0.1, 0.86, 2.5, s * 0.72, -0.02, -2.1, gLo);
+    b.box(0.64, 0.02, 1.7, s * 1.0, -0.02, -2.1, gSeam);
   }
-  // high-mounted variable-sweep wings: glove + swept outer panel + fence + pylon + tank + underside star
+  // ---- high variable-sweep wings: fixed glove (~69°) + movable outer panel (45°) + pivot cover ----
   for (const s of [-1, 1]) {
-    b.box(2.4, 0.3, 2.8, s * 1.5, 0.32, -0.2, gMid, { tint: 0.02 });               // fixed glove (shoulder)
-    b.box(5.4, 0.16, 1.5, s * 4.6, 0.34, 0.7, gHi, { ry: s * 0.62, tint: 0.02 });  // swept outer panel
-    b.box(5.4, 0.04, 0.18, s * 4.6, 0.27, 1.35, gSeam, { ry: s * 0.62 });          // trailing-edge flap seam
-    b.box(0.5, 0.2, 0.7, s * 2.7, 0.33, -0.6, gLo);                                // pivot housing
-    b.box(0.05, 0.2, 1.0, s * 3.7, 0.46, 0.7, gLo, { ry: s * 0.62 });              // wing fence
-    b.box(0.2, 0.26, 0.6, s * 3.0, 0.12, 0.4, gDark, { ry: s * 0.62 });            // pylon
-    b.box(0.34, 0.34, 2.0, s * 3.0, -0.12, 0.4, gLo, { ry: s * 0.62, tint: 0.03 });// underwing tank/pod
-    star(s * 3.9, 0.24, 0.9, 0.7);                                                  // red star (wing underside)
+    b.box(2.8, 0.34, 3.2, s * 1.35, 0.37, 0.1, gMid, { ry: -s * 1.0, tint: 0.02 });
+    b.box(5.2, 0.18, 1.5, s * 4.4, 0.38, 0.95, gHi, { ry: -s * 0.7, tint: 0.02 });
+    b.box(5.2, 0.04, 0.2, s * 4.4, 0.31, 1.6, gSeam, { ry: -s * 0.7 });
+    const pc = new THREE.CylinderGeometry(0.42, 0.42, 0.55, 14); b.geo(pc, s * 2.5, 0.4, 0.25, gLo, { rz: Math.PI / 2 }); pc.dispose();
+    b.box(0.05, 0.22, 1.0, s * 3.6, 0.5, 0.95, gLo, { ry: -s * 0.7 });
+    star(s * 3.7, 0.49, 1.0, 0.5, { rx: -Math.PI / 2, ry: -s * 0.7 });
+    star(s * 3.7, 0.27, 1.0, 0.42, { rx: Math.PI / 2, ry: -s * 0.7 });
+    b.box(0.22, 0.28, 0.66, s * 3.0, 0.16, 0.6, gDark, { ry: -s * 0.7 });
+    b.box(0.34, 0.34, 2.0, s * 3.0, -0.08, 0.6, gLo, { ry: -s * 0.7, tint: 0.03 });
   }
-  // single swept vertical fin + rudder seam + tip antenna + tail flash
-  b.box(0.2, 1.7, 1.5, 0, 1.35, 4.0, gMid, { tint: 0.02 });
-  b.box(0.16, 0.7, 1.7, 0, 1.0, 4.3, gHi, { rx: -0.5 });   // swept leading edge
-  b.box(0.22, 0.4, 0.7, 0, 2.1, 4.5, gLo);                  // fin-tip fairing/antenna
-  b.box(0.05, 1.3, 0.05, 0, 1.4, 4.55, gSeam);             // rudder hinge seam
-  b.box(0.06, 0.5, 0.5, 0, 1.5, 3.3, accent, { rx: 0.3 }); // tail flash (red)
-  // all-moving swept horizontal stabilizers
-  for (const s of [-1, 1]) b.box(3.4, 0.14, 1.3, s * 1.9, 0.05, 4.7, gMid, { ry: s * 0.5, tint: 0.02 });
-  // twin exhausts: petaled afterburner nozzles + heat stain + dark core
+  // ---- single swept vertical tail ----
+  b.box(0.22, 2.0, 1.7, 0, 1.45, 3.6, gMid, { tint: 0.02 });
+  b.box(0.18, 0.95, 1.6, 0, 1.05, 4.05, gHi, { rx: -0.5 });
+  b.box(0.28, 0.42, 0.7, 0, 2.32, 4.25, gLo);
+  b.box(0.05, 1.5, 0.05, 0, 1.5, 4.4, gSeam);
+  star(0.12, 1.55, 3.85, 0.34, { ry: Math.PI / 2 }); star(-0.12, 1.55, 3.85, 0.34, { ry: -Math.PI / 2 });
+  // ---- twin all-moving horizontal stabilizers ----
+  for (const s of [-1, 1]) b.box(3.6, 0.16, 1.4, s * 2.0, 0.1, 4.4, gMid, { ry: -s * 0.6, tint: 0.02 });
+  // ---- twin round exhausts: solid rear block + nozzles + heat-stain + petals + dark core ----
+  b.box(1.6, 1.05, 1.4, 0, -0.05, 4.7, gLo, { tint: 0.02 });
   for (const s of [-1, 1]) {
-    const cx = s * 0.46;
-    const noz = new THREE.CylinderGeometry(0.4, 0.5, 1.3, 14); b.geo(noz, cx, -0.05, 5.7, gDark, { rx: Math.PI / 2 }); noz.dispose();
-    const stain = new THREE.CylinderGeometry(0.52, 0.52, 0.4, 14); b.geo(stain, cx, -0.05, 5.15, brass, { rx: Math.PI / 2 }); stain.dispose();
-    for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU; b.box(0.08, 0.13, 0.3, cx + Math.cos(a) * 0.42, -0.05 + Math.sin(a) * 0.42, 6.3, 0x2a2e34, { rz: a }); } // petals
-    const core = new THREE.CylinderGeometry(0.3, 0.3, 0.22, 12); b.geo(core, cx, -0.05, 6.36, 0x0c0e12, { rx: Math.PI / 2 }); core.dispose();
+    const cx = s * 0.48;
+    const noz = new THREE.CylinderGeometry(0.45, 0.52, 1.5, 16); b.geo(noz, cx, -0.05, 5.6, gDark, { rx: Math.PI / 2 }); noz.dispose();
+    const stain = new THREE.CylinderGeometry(0.55, 0.55, 0.45, 16); b.geo(stain, cx, -0.05, 5.0, brass, { rx: Math.PI / 2 }); stain.dispose();
+    const core = new THREE.CylinderGeometry(0.34, 0.34, 0.3, 14); b.geo(core, cx, -0.05, 6.25, 0x0c0e12, { rx: Math.PI / 2 }); core.dispose();
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; b.box(0.08, 0.14, 0.32, cx + Math.cos(a) * 0.45, -0.05 + Math.sin(a) * 0.45, 6.25, 0x2a2e34, { rz: a }); }
   }
-  // belly: cannon/sensor fairing + gear-door seams + centreline tank + underside star
-  b.box(0.42, 0.3, 1.5, 0.2, -0.66, -3.1, gDark);          // cannon/sensor fairing (forward)
-  b.box(1.0, 0.02, 0.05, 0, -0.72, -1.2, gSeam);
-  b.box(0.05, 0.02, 2.2, 0.36, -0.72, -1.2, gSeam); b.box(0.05, 0.02, 2.2, -0.36, -0.72, -1.2, gSeam);
-  b.box(0.62, 0.5, 3.2, 0, -0.82, -0.6, gLo, { tint: 0.03 }); // centreline tank
-  star(-0.55, -0.74, -2.4, 0.62);
-  // faint self-illumination so the fly-by reads against a bright sky AND a pitch-black night
-  const m = new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x222831, emissiveIntensity: 0.55 }));
+  // ---- belly: cannon fairing + centreline tank + gear-door seams + underside star ----
+  b.box(0.7, 0.55, 3.4, 0, -0.86, -0.4, gLo, { tint: 0.03 });
+  b.box(0.45, 0.32, 1.6, 0.26, -0.68, -3.2, gDark);
+  b.box(1.0, 0.02, 0.05, 0, -0.74, -1.4, gSeam); b.box(0.05, 0.02, 2.4, 0.4, -0.74, -1.4, gSeam); b.box(0.05, 0.02, 2.4, -0.4, -0.74, -1.4, gSeam);
+  star(0, -0.78, -1.7, 0.5, { rx: Math.PI / 2 });
+  const m = new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x222831, emissiveIntensity: 0.5 }));
   m.castShadow = false; m.frustumCulled = false;
   return m;
 }
@@ -1912,7 +2238,7 @@ class LootManager {
     this.game.hud.toast('📡 Radio: Su-24 inbound!', 0x6fd0e8);
     this.game.hud.bigMessage('ЗАПРОС ПОДТВЕРЖДЁН', 'a Fencer is making a pass — watch the smoke');
     this.game.audio.radioCall(); // Soviet-radio confirmation + epic WW2 sting
-    this.game.audio.tone(70, 1.8, 'sawtooth', 0.12); this.game.audio.noise(1.6, 0.12, 'lowpass', 460, 0.6); // jet rumble
+    this.plane.jet = this.game.audio.startJetClip() || this.game.audio.startJet(); // real SU-57 clip (fade in/out), else procedural
   }
 
   _updatePlane(dt) {
@@ -1920,12 +2246,13 @@ class LootManager {
     const step = pl.speed * dt; pl.travelled += step;
     pl.mesh.position.addScaledVector(pl.dir, step);
     pl.mesh.position.y = pl.alt + Math.sin(pl.travelled * 0.04) * 0.6; // gentle bob
+    if (pl.jet && pl.jet.set) { const pp = this.game.player.pos, mp = pl.mesh.position; const dist = Math.hypot(mp.x - pp.x, mp.y - pp.y, mp.z - pp.z); const near = clamp(1 - (dist - 30) / 170, 0, 1); pl.jet.set(0.25 + near * 0.75, near); }
     // release the crate at closest approach to the target
     if (!pl.released) {
       const ahead = (pl.target.x - pl.mesh.position.x) * pl.dir.x + (pl.target.z - pl.mesh.position.z) * pl.dir.z;
       if (ahead <= 0) { pl.released = true; this._spawnDropCrate(pl.target, pl.mesh.position.y - 2); this.game.audio.uiClick(); }
     }
-    if (pl.travelled >= pl.total) { this.scene.remove(pl.mesh); pl.mesh.geometry.dispose(); pl.mesh.material.dispose(); this.plane = null; }
+    if (pl.travelled >= pl.total) { if (pl.jet) pl.jet.stop(); this.scene.remove(pl.mesh); pl.mesh.geometry.dispose(); pl.mesh.material.dispose(); this.plane = null; }
   }
 
   _spawnDropCrate(pos, fromY) {
@@ -2031,7 +2358,7 @@ class LootManager {
     this.pickups.length = 0;
     for (const d of this.drops) this._disposeDrop(d);
     this.drops.length = 0; this.nearDrop = null;
-    if (this.plane) { this.scene.remove(this.plane.mesh); this.plane.mesh.geometry.dispose(); this.plane.mesh.material.dispose(); this.plane = null; }
+    if (this.plane) { if (this.plane.jet) this.plane.jet.stop(); this.scene.remove(this.plane.mesh); this.plane.mesh.geometry.dispose(); this.plane.mesh.material.dispose(); this.plane = null; }
   }
 }
 
@@ -2677,7 +3004,9 @@ class Admin {
   _sounds() {
     const a = this.game.audio;
     return [
-      ['📻 Radio call (Su-24)', () => a.radioCall()], ['Gunshot', () => a.gunshot({})], ['Explosion', () => a.explosion()],
+      ['📻 Radio call (Su-24)', () => a.radioCall()],
+      ['✈ Jet pass (demo)', () => { const j = a.startJetClip() || a.startJet(); if (!j) return; if (j.set) { let t = 0; const id = setInterval(() => { t += 0.1; const near = Math.max(0, 1 - Math.abs(t - 1.6) / 1.6); j.set(0.3 + near * 0.7, near); if (t >= 3.3) { clearInterval(id); j.stop(); } }, 100); } else { setTimeout(() => j.stop(1.4), 3800); } }],
+      ['Gunshot', () => a.gunshot({})], ['Explosion', () => a.explosion()],
       ['Reload click', () => a.reloadClick()], ['Reload in', () => a.reloadIn()], ['Dry fire', () => a.dryFire()],
       ['Hit marker', () => a.hitMarker()], ['Headshot', () => a.headshot()], ['Enemy hurt', () => a.enemyHurt()],
       ['Enemy die', () => a.enemyDie()], ['Enemy growl', () => a.enemyGrowl()], ['Player hurt', () => a.playerHurt()],
