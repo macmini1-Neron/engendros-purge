@@ -950,9 +950,60 @@ class EnemyManager {
   }
 
   _bossTank(e, dt) {
+    const pp = this.game.player.pos;
+    const toP = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z);
+    const dist = toP.length() || 1; toP.multiplyScalar(1 / dist);
+    let desired = Math.atan2(toP.x, toP.z);                 // heading toward player
+
+    // whisker rays for obstacle avoidance (around buildings)
+    const probe = (ang) => {
+      const d = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
+      const o = new THREE.Vector3(e.pos.x, 0.8, e.pos.z);
+      const h = this.world.rayHit(o, d, e.radius + 4.5);    // hull + standoff (incl. barrel reach)
+      return h ? h.dist : 999;
+    };
+    const cF = probe(e.hullYaw), cL = probe(e.hullYaw - 0.6), cR = probe(e.hullYaw + 0.6);
+    if (cF < e.radius + 3) desired = e.hullYaw + (cL >= cR ? -0.9 : 0.9); // steer to clearer flank
+
+    // stuck detection + reverse recovery
+    const moved = Math.hypot(e.pos.x - e._px, e.pos.z - e._pz); e._px = e.pos.x; e._pz = e.pos.z;
+    if (e.stuckRecover > 0) { e.stuckRecover -= dt; desired = e.hullYaw + Math.PI; } // back out
+    else {
+      if (moved < 0.4 * 1.2 * dt && dist > e.radius + 2) e.stuck += dt; else e.stuck = Math.max(0, e.stuck - dt);
+      if (e.stuck > 1.2) { e.stuckRecover = 0.8; e.stuck = 0; }
+    }
+
+    // slow hull turn toward desired (tank-like)
+    let dY = ((desired - e.hullYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    const turn = Math.min(Math.abs(dY), (45 * Math.PI / 180) * dt) * Math.sign(dY);
+    e.hullYaw += turn;
+
+    // forward drive (slower while turning hard; reverse during recovery)
+    const enraged = e.armorHP <= e.armorHPmax * 0.4;
+    const baseSpd = enraged ? 1.5 : 1.2;
+    const spd = (Math.abs(dY) > 1.0 ? 0 : baseSpd) * (e.stuckRecover > 0 ? -1 : 1);
+    const fwd = new THREE.Vector3(Math.sin(e.hullYaw), 0, Math.cos(e.hullYaw));
+    e.pos.x += fwd.x * spd * dt; e.pos.z += fwd.z * spd * dt; e.pos.y = 0;
+    const lim = this.world.HALF - e.radius; e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
+
+    // hard collide vs building boxes (large circle, ground-only — no step-up)
+    for (const b of this.world.boxes) {
+      if (b.max.y < 0.6) continue;
+      if (e.pos.x + e.radius <= b.min.x || e.pos.x - e.radius >= b.max.x) continue;
+      if (e.pos.z + e.radius <= b.min.z || e.pos.z - e.radius >= b.max.z) continue;
+      const px = Math.min(b.max.x + e.radius - e.pos.x, e.pos.x - (b.min.x - e.radius));
+      const pz = Math.min(b.max.z + e.radius - e.pos.z, e.pos.z - (b.min.z - e.radius));
+      if (px < pz) e.pos.x += (e.pos.x < (b.min.x + b.max.x) / 2 ? -px : px);
+      else e.pos.z += (e.pos.z < (b.min.z + b.max.z) / 2 ? -pz : pz);
+    }
+
+    // apply transform + boss bar
+    e.mesh.position.set(e.pos.x, 0, e.pos.z);
+    e.mesh.rotation.y = e.hullYaw;
     this.game.hud.setBoss(e.armorHP / e.armorHPmax, e.name);
-    // movement + attacks added in the next task
+    this._tankCombat(e, dt, pp, dist); // attacks added in later tasks
   }
+  _tankCombat(e, dt, pp, dist) { /* cannon/MG/ram/window — added in later tasks */ }
 
   rayHit(origin, dir, maxDist) {
     let best = maxDist, hitE = null, hp = null;
@@ -3096,6 +3147,7 @@ class Game {
     this.shop = new Shop(this);
     const _pc = document.getElementById('previewCanvas'); this.preview = _pc ? new WeaponPreview(_pc) : null;
     this.ui = new UI();
+    const _ac = document.getElementById('adminCanvas'); this.admin = _ac ? new Admin(this) : null;
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov
     this.meta = this._loadMeta(); // persistent best-wave / lifetime stats
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
@@ -3124,6 +3176,8 @@ class Game {
     click('restartBtn', () => this.startGame(this.mode)); // try again in the same mode
     click('nextWaveBtn', () => this.beginNextWave());
     click('settingsBtn', () => this.settings.open('menu'));
+    click('adminBtn', () => this.openAdmin());
+    click('adminBack', () => this.toMenu());
     click('multiplayerBtn', () => this.toLobby());
     click('mpHostBtn', () => this.mp.startHost((document.getElementById('mp-name') || {}).value || 'Host'));
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
@@ -3135,7 +3189,7 @@ class Game {
     }));
     click('pauseSettingsBtn', () => this.settings.open('pause'));
     this.canvas.addEventListener('click', () => {
-      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop') return;
+      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin') return;
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
     this.input.on('lock', () => { if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
@@ -3266,6 +3320,7 @@ class Game {
     return o;
   }
 
+  openAdmin() { this.state = 'admin'; if (this.admin) this.admin.open(); }
   beginNextWave() {
     if (this.state !== 'shop') return;
     if (this.mp.active && !this.mp.isHost) { this.ui.hideAll(); this.hud.bigMessage('READY', 'waiting for the host…'); return; }
@@ -3358,6 +3413,7 @@ class Game {
     if (this.state === 'playing') this._updatePlaying(dt);
     this.engine.update(dt); this.engine.render();
     if (this.state === 'shop' && this.preview && this.shop.tab === 'weapons') this.preview.render(dt);
+    if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
     this.input.endFrame();
   }
 
