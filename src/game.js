@@ -1105,7 +1105,18 @@ class EnemyManager {
       }
     }
   }
-  _tankRam(e, dt, pp, dist) {}
+  _tankRam(e, dt, pp, dist) {
+    e.ramCD -= dt;
+    const fwd = new THREE.Vector3(Math.sin(e.hullYaw), 0, Math.cos(e.hullYaw));
+    const toP = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z); const L = toP.length() || 1; toP.multiplyScalar(1 / L);
+    if (dist < 4 && fwd.dot(toP) > 0.6 && e.ramCD <= 0) {
+      e.ramCD = 2.5;
+      this.game.player.hurt(40);
+      if (this.game.player.vel) { this.game.player.vel.x += toP.x * 6; this.game.player.vel.z += toP.z * 6; } // knockback
+      if (this.game.engine.shake) this.game.engine.shake(0.35);
+      this.game.audio.tone(70, 0.15, 'sawtooth', 0.3);
+    }
+  }
   _tankWindow(e, dt) {}
 
   rayHit(origin, dir, maxDist) {
