@@ -1257,6 +1257,127 @@ function animateTank(group, dt, speed, recoil) {
   if (ud.recoilNode) ud.recoilNode.position.z = -(recoil || 0);
 }
 
+// ── Tank ground FX — track marks (pooled decals) + dust + engine smoke ────────
+// Call every frame for boss and captured tank right after animateTank().
+// `enraged` enables thicker smoke + occasional orange flame flecks (boss phase-2).
+const _DECAL_POOL_SIZE = 40;
+const _decalColor = new THREE.Color(0x2a2118);
+let   _tankDecalPool = null; // array of { mesh, spawnT } — created lazily, persists
+
+function _ensureDecalPool(scene) {
+  if (_tankDecalPool) return;
+  _tankDecalPool = [];
+  const geo = new THREE.PlaneGeometry(2.8, 0.55);
+  const mat = new THREE.MeshBasicMaterial({
+    color: _decalColor, transparent: true, opacity: 0.55,
+    depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1,
+  });
+  for (let i = 0; i < _DECAL_POOL_SIZE; i++) {
+    const m = new THREE.Mesh(geo, mat.clone());
+    m.rotation.x = -Math.PI / 2;
+    m.renderOrder = 2;
+    m.visible = false;
+    scene.add(m);
+    _tankDecalPool.push({ mesh: m, spawnT: -999 });
+  }
+  _tankDecalPool._cursor = 0;
+}
+
+function tankGroundFX(group, game, dt, speed, enraged) {
+  if (!group || !game || !game.effects) return;
+  const efx = game.effects;
+  const scene = efx.scene;
+
+  // ── 1. Track-mark decals ────────────────────────────────────────────────
+  _ensureDecalPool(scene);
+  const pool = _tankDecalPool;
+  const now = (game.engine && game.engine.clock) ? game.engine.clock.getElapsedTime() : (pool._t = (pool._t || 0) + dt);
+  pool._t = pool._t !== undefined ? pool._t + dt : 0;
+  const curT = pool._t;
+
+  // fade existing decals
+  for (const d of pool) {
+    if (!d.mesh.visible) continue;
+    const age = curT - d.spawnT;
+    if (age > 6) { d.mesh.visible = false; continue; }
+    d.mesh.material.opacity = 0.55 * Math.max(0, 1 - age / 6);
+  }
+
+  // place new decals while moving
+  pool._dist = (pool._dist || 0) + Math.abs(speed) * dt;
+  if (Math.abs(speed) > 0.1 && pool._dist > 0.35) {
+    pool._dist = 0;
+    // hull right vector
+    const hullYaw = group.rotation.y;
+    const rx = Math.cos(hullYaw), rz = -Math.sin(hullYaw);
+    // rear contact point (hull rear offset ~2.6 m back)
+    const bx = group.position.x - Math.sin(hullYaw) * 2.6;
+    const bz = group.position.z - Math.cos(hullYaw) * 2.6;
+
+    for (const side of [-1, 1]) {
+      const d = pool[pool._cursor % _DECAL_POOL_SIZE];
+      pool._cursor = (pool._cursor + 1) % _DECAL_POOL_SIZE;
+      d.mesh.position.set(bx + rx * side * 1.5, 0.03, bz + rz * side * 1.5);
+      d.mesh.rotation.set(-Math.PI / 2, 0, hullYaw);
+      d.mesh.material.opacity = 0.55;
+      d.mesh.visible = true;
+      d.spawnT = curT;
+    }
+  }
+
+  // ── 2. Dust while moving ─────────────────────────────────────────────────
+  pool._dustT = (pool._dustT || 0) - dt;
+  if (Math.abs(speed) > 0.1 && pool._dustT <= 0) {
+    pool._dustT = 0.08;
+    const hullYaw = group.rotation.y;
+    const bx = group.position.x - Math.sin(hullYaw) * 2.4;
+    const bz = group.position.z - Math.cos(hullYaw) * 2.4;
+    const dustPos = new THREE.Vector3(bx, 0.15, bz);
+    const dustC = new THREE.Color(Math.random() < 0.5 ? 0xc8b89a : 0xa89880);
+    for (let i = 0; i < 3; i++) {
+      efx._spawn({
+        pos: dustPos.clone().add(new THREE.Vector3(randRange(-0.8, 0.8), 0, randRange(-0.8, 0.8))),
+        vel: new THREE.Vector3(randRange(-0.4, 0.4), randRange(0.3, 0.9), randRange(-0.4, 0.4)),
+        life: randRange(0.6, 1.0), size: randRange(0.12, 0.22),
+        grav: -0.5, drag: 1.8, color: dustC,
+        bounce: 0, floorY: -999, shrink: true,
+      });
+    }
+  }
+
+  // ── 3. Engine exhaust smoke ───────────────────────────────────────────────
+  pool._smokeT = (pool._smokeT || 0) - dt;
+  const smokeRate = enraged ? 0.07 : 0.12;
+  if (pool._smokeT <= 0) {
+    pool._smokeT = smokeRate;
+    const hullYaw = group.rotation.y;
+    // exhaust on rear engine deck
+    const ex = group.position.x - Math.sin(hullYaw) * 3.0;
+    const ez = group.position.z - Math.cos(hullYaw) * 3.0;
+    const exhaustPos = new THREE.Vector3(ex + randRange(-0.3, 0.3), 1.5, ez + randRange(-0.3, 0.3));
+    const smokeC = enraged
+      ? new THREE.Color(Math.random() < 0.7 ? 0x3a3530 : 0x504540)
+      : new THREE.Color(Math.random() < 0.6 ? 0x8a8480 : 0x6a6460);
+    efx._spawn({
+      pos: exhaustPos,
+      vel: new THREE.Vector3(randRange(-0.15, 0.15), randRange(0.6, 1.2), randRange(-0.15, 0.15)),
+      life: randRange(1.2, 2.2), size: enraged ? randRange(0.25, 0.45) : randRange(0.14, 0.26),
+      grav: 0.3, drag: 0.6, color: smokeC,
+      bounce: 0, floorY: -999, bloom: true,
+    });
+    // phase-2 occasional orange flame fleck
+    if (enraged && Math.random() < 0.35) {
+      efx._spawn({
+        pos: exhaustPos.clone().add(new THREE.Vector3(0, 0.2, 0)),
+        vel: new THREE.Vector3(randRange(-0.2, 0.2), randRange(1.0, 2.0), randRange(-0.2, 0.2)),
+        life: randRange(0.2, 0.45), size: randRange(0.07, 0.14),
+        grav: 1.5, drag: 1.2, color: new THREE.Color(Math.random() < 0.5 ? 0xff7020 : 0xffb040),
+        bounce: 0, floorY: -999, shrink: true,
+      });
+    }
+  }
+}
+
 // ── Tank headlight updater — call every frame for boss and captured tank ──────
 // Reads scene brightness via engine.hemi.intensity (0.05 night … 0.95 noon).
 // Full beam in the dark, off in full daylight.  No shadow maps — perf-safe.
@@ -1559,6 +1680,8 @@ class EnemyManager {
     this.game.hud.setBoss(e.armorHP / e.armorHPmax, e.name);
     this._tankCombat(e, dt, pp, dist); // attacks added in later tasks
     animateTank(e.mesh, dt, e._lastSpd, e.recoil || 0);
+    const _bossEnraged = e.armorHP <= e.armorHPmax * 0.4;
+    tankGroundFX(e.mesh, this.game, dt, e._lastSpd, _bossEnraged);
   }
   _tankCombat(e, dt, pp, dist) {
     const enraged = e.armorHP <= e.armorHPmax * 0.4;
@@ -1594,8 +1717,48 @@ class EnemyManager {
     this._tankMG(e, dt, pp, dist, losClear);   // Task 9
     this._tankRam(e, dt, pp, dist);            // Task 10
     this._tankWindow(e, dt);                   // Task 11
+    if (enraged) this._tankSmokeScreen(e, dt); // Task 25: phase-2 smoke screen
     // proximity rumble
     if (dist < 18 && this.game.engine.shake) this.game.engine.shake((18 - dist) / 18 * 0.12);
+  }
+  _tankSmokeScreen(e, dt) {
+    e.smokeCD = (e.smokeCD == null ? 0 : e.smokeCD) - dt;
+    if (e.smokeCD > 0) return;
+    e.smokeCD = 12; // fire smoke launchers every 12 s in phase 2
+
+    // subtle hiss tone
+    this.game.audio.tone(900, 0.12, 'sine', 0.08);
+
+    const hullYaw = e.hullYaw || 0;
+    const fwd = new THREE.Vector3(Math.sin(hullYaw), 0, Math.cos(hullYaw));
+    const right = new THREE.Vector3(Math.cos(hullYaw), 0, -Math.sin(hullYaw));
+    const efx = this.game.effects;
+    const smokeC1 = new THREE.Color(0x8a8a82);
+    const smokeC2 = new THREE.Color(0x6a6a62);
+
+    // arc of ~25 dense smoke puffs in a fan forward of the tank
+    const puffCount = 25;
+    for (let i = 0; i < puffCount; i++) {
+      const t = (i / (puffCount - 1)) - 0.5; // -0.5 .. 0.5
+      // spread the puffs across a ~70° arc and 4-10 m forward
+      const angle = t * (Math.PI / 2.6); // ±35°
+      const dist2 = randRange(3, 10);
+      const dx = (fwd.x * Math.cos(angle) + right.x * Math.sin(angle)) * dist2;
+      const dz = (fwd.z * Math.cos(angle) + right.z * Math.sin(angle)) * dist2;
+      const puffPos = new THREE.Vector3(
+        e.pos.x + dx + randRange(-0.4, 0.4),
+        randRange(0.3, 1.4),
+        e.pos.z + dz + randRange(-0.4, 0.4)
+      );
+      efx._spawn({
+        pos: puffPos,
+        vel: new THREE.Vector3(randRange(-0.3, 0.3), randRange(0.2, 0.6), randRange(-0.3, 0.3)),
+        life: randRange(5, 9), size: randRange(1.2, 2.2),
+        grav: 0.15, drag: 0.35,
+        color: (Math.random() < 0.5 ? smokeC1 : smokeC2).clone(),
+        bounce: 0, floorY: -999, bloom: true,
+      });
+    }
   }
   _tankMuzzle(e) {
     const m = e.mesh.userData.muzzle;
@@ -1771,9 +1934,44 @@ class EnemyManager {
   }
   _eraReact(e, zone) {
     e.eraSpent[zone.id] = true;
-    const c = new THREE.Vector3(e.pos.x, e.pos.y + 1.6, e.pos.z);
-    this.game.effects.explosion(c, 1.6);
+    // Compute ERA pop position based on which zone was hit
+    const hullYaw = e.hullYaw || 0;
+    const fwd = new THREE.Vector3(Math.sin(hullYaw), 0, Math.cos(hullYaw));
+    const right = new THREE.Vector3(Math.cos(hullYaw), 0, -Math.sin(hullYaw));
+    // zone offsets: glacisF = front-center, sideL/sideR = side cheeks
+    let ox = 0, oy = 1.6, oz = 0;
+    if (zone.id === 'glacisF') { ox = fwd.x * 2.2; oz = fwd.z * 2.2; oy = 1.4; }
+    else if (zone.id === 'sideL') { ox = right.x * -2.0 + fwd.x * 0.8; oz = right.z * -2.0 + fwd.z * 0.8; oy = 1.5; }
+    else if (zone.id === 'sideR') { ox = right.x *  2.0 + fwd.x * 0.8; oz = right.z *  2.0 + fwd.z * 0.8; oy = 1.5; }
+    const popPos = new THREE.Vector3(e.pos.x + ox, e.pos.y + oy, e.pos.z + oz);
+
+    // ERA pop flash + small explosion
+    this.game.effects.explosion(popPos, 1.6);
     this.game.audio.tone(420, 0.05, 'square', 0.3);
+
+    // Spark/debris burst from the ERA plate
+    const sparkC  = new THREE.Color(0xffcc30);
+    const debrisC = new THREE.Color(0x888070);
+    const efx = this.game.effects;
+    for (let i = 0; i < 12; i++) {
+      // outward spark
+      const sv = new THREE.Vector3(randRange(-1, 1), randRange(0.2, 1.2), randRange(-1, 1)).normalize().multiplyScalar(randRange(4, 9));
+      efx._spawn({
+        pos: popPos.clone(), vel: sv,
+        life: randRange(0.18, 0.38), size: randRange(0.04, 0.09),
+        grav: -14, drag: 1.0, color: sparkC, bounce: 0, floorY: -999, shrink: true,
+      });
+    }
+    for (let i = 0; i < 8; i++) {
+      // ERA plate debris chunks
+      const dv = new THREE.Vector3(randRange(-1, 1), randRange(0.5, 1.5), randRange(-1, 1)).normalize().multiplyScalar(randRange(2, 6));
+      efx._spawn({
+        pos: popPos.clone(), vel: dv,
+        life: randRange(0.4, 0.8), size: randRange(0.06, 0.14),
+        grav: -12, drag: 1.5, color: debrisC, bounce: 0.2, floorY: e.pos.y, shrink: false,
+      });
+    }
+
     this.game.hud.bigMessage('ERA — NO EFFECT', 'hit the REAR, ROOF or TRACKS');
     // Phase 3 (art task): hide the matching ERA brick mesh on the model.
   }
@@ -3801,6 +3999,7 @@ class CapturedTank {
     updateTankLights(this.group, this.game);
     this.recoil = Math.max(0, (this.recoil || 0) - dt * 2); // decay recoil (all seats)
     animateTank(this.group, dt, this._lastSpd || 0, this.recoil);
+    tankGroundFX(this.group, this.game, dt, this._lastSpd || 0, false); // captured tank: base smoke only
   }
 
   _followCam() {
