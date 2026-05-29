@@ -500,6 +500,76 @@ function buildTankGun(P) {
   return gb;
 }
 
+// ── Mitri commander bust — yellow Engendros plush, sits in the cupola hatch ──
+// Returns a THREE.Group. Head centre is at y≈0.48 so it shows above the hatch rim
+// (hatch itself is at turret-local y=1.0; Mitri group goes on hatch at y=0).
+function _tankMitri() {
+  const g     = new THREE.Group();
+  const b     = new MeshBuilder();
+  const dark  = 0x1a1208;   // dark cross-stitch / hair
+  const gold  = 0xe8b430;   // button-eye brass
+  const yHi   = 0xf5d050;   // bright yellow top-lit
+  const yMid  = 0xedc028;   // yellow mid
+  const yLo   = 0xc89810;   // yellow shadow
+
+  // ── Torso (boxy, below the hatch rim) ──────────────────────────────────────
+  b.box(0.60, 0.32, 0.44, 0,  0.12, 0,   yMid,  { tint: 0.03 });
+  b.box(0.60, 0.05, 0.44, 0,  0.27, 0,   yHi);   // top lit strip
+  b.box(0.60, 0.05, 0.44, 0, -0.03, 0,   yLo);   // bottom shadow strip
+
+  // ── Neck stub ──────────────────────────────────────────────────────────────
+  b.box(0.22, 0.14, 0.22, 0, 0.34, 0,  yMid);
+
+  // ── Round-ish head (stacked slabs = voxel "sphere") ────────────────────────
+  // Core
+  b.box(0.62, 0.50, 0.60, 0,  0.69, 0,   yMid,  { tint: 0.02 });
+  b.box(0.62, 0.07, 0.60, 0,  0.95, 0,   yHi);   // crown lit
+  b.box(0.62, 0.07, 0.60, 0,  0.45, 0,   yLo);   // chin shadow
+  // Side bulge (plush softness)
+  b.box(0.12, 0.40, 0.50, -0.37, 0.70, 0, yLo);
+  b.box(0.12, 0.40, 0.50,  0.37, 0.70, 0, yLo);
+  // Face forward slab (slightly lighter — front face in light)
+  b.box(0.58, 0.44, 0.06,  0,  0.70, 0.31, yHi, { tint: 0.01 });
+
+  // ── Three brass button eyes in a row (CylinderGeometry discs, face +Z) ─────
+  for (let i = -1; i <= 1; i++) {
+    const ex = i * 0.17;
+    const ey = 0.76;
+    const ez = 0.34;
+    // Brass disc
+    const discGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.04, 10);
+    // rotate 90° so the flat face points forward (+Z)
+    discGeo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+    b.geo(discGeo, ex, ey, ez, gold, { tint: 0.04 }); discGeo.dispose();
+    // Dark X cross-stitch through each eye (two thin crossed boxes)
+    b.box(0.11, 0.025, 0.025, ex, ey,  ez + 0.025, dark);  // horizontal bar
+    b.box(0.025, 0.11, 0.025, ex, ey,  ez + 0.025, dark);  // vertical bar
+  }
+
+  // ── X-stitch smile — 4 small "x" marks in a gentle arc below the eyes ──────
+  const smileXs = [
+    [-0.22, 0.595], [-0.08, 0.565], [0.08, 0.565], [0.22, 0.595],
+  ];
+  for (const [sx, sy] of smileXs) {
+    const sz = 0.34;
+    b.box(0.07, 0.025, 0.025, sx, sy, sz + 0.025, dark);   // \ half (horiz)
+    b.box(0.025, 0.07, 0.025, sx, sy, sz + 0.025, dark);   // | half (vert)
+  }
+
+  // ── 2 short black hair tufts on top ────────────────────────────────────────
+  // Left tuft — slight leftward lean
+  b.box(0.06, 0.20, 0.06, -0.14, 1.07, 0.04, dark, { rx:  0.28, rz:  0.22 });
+  b.box(0.05, 0.13, 0.05, -0.14, 1.21, 0.04, dark, { rx:  0.18, rz:  0.32 }); // tip
+  // Right tuft — slight rightward lean
+  b.box(0.06, 0.20, 0.06,  0.14, 1.07, 0.04, dark, { rx:  0.28, rz: -0.22 });
+  b.box(0.05, 0.13, 0.05,  0.14, 1.21, 0.04, dark, { rx:  0.18, rz: -0.32 }); // tip
+
+  g.add(new THREE.Mesh(b.build(), voxelMaterial()));
+  // Shift so head shows nicely above the hatch rim
+  g.position.set(0, 0.10, 0);
+  return g;
+}
+
 // ── Main assembly ─────────────────────────────────────────────────────────────
 function buildTank(camo = 'desert') {
   const P    = _tankPalette();
@@ -537,13 +607,26 @@ function buildTank(camo = 'desert') {
   root.add(trackL); root.userData.trackL = trackL;
   root.add(trackR); root.userData.trackR = trackR;
 
-  // Headlamps
+  // Headlamps — lens/housing meshes + real SpotLights (intensity 0; auto-on at night)
   root.userData.headlamps = [];
+  root.userData.headlampLights = [];
   for (const hx of [-1.1, 1.1]) {
     const lm = _tankHeadlamp(P, hx);
     lm.name = `headlamp_${hx < 0 ? 'L' : 'R'}`;
     root.add(lm);
     root.userData.headlamps.push(lm);
+
+    // SpotLight parented to the hull at lamp position, pointing forward (+Z local)
+    const sl = new THREE.SpotLight(0xfff0c0, 0, 34, 0.5, 0.4, 1.5);
+    sl.castShadow = false;
+    sl.position.set(hx, 1.28, 3.72);          // same as lens-glass centre in _tankHeadlamp
+    // Target placed well forward so the beam points +Z in hull space
+    const slTarget = new THREE.Object3D();
+    slTarget.position.set(hx, 1.28, 30.0);
+    root.add(sl);
+    root.add(slTarget);
+    sl.target = slTarget;
+    root.userData.headlampLights.push(sl);
   }
 
   // Turret group (yaws independently)
@@ -604,11 +687,9 @@ function buildTank(camo = 'desert') {
   hatchB.box(0.62, 0.02, 0.62, 0, 0.08, 0, P.steelHi);
   hatch.add(new THREE.Mesh(hatchB.build(), voxelMaterial()));
 
-  // Placeholder Mitri (yellow cube, hidden until Task 23)
-  const mb = new MeshBuilder();
-  mb.box(0.38, 0.38, 0.38, 0, 0.28, 0, 0xf2c200, { tint: 0.03 });
-  const mitri = new THREE.Mesh(mb.build(), voxelMaterial());
-  mitri.visible = false;
+  // Mitri commander bust (Task 23) — visible by default (boss rides exposed)
+  const mitri = _tankMitri();
+  mitri.visible = true;
   hatch.add(mitri);
   root.userData.mitri = mitri;
 
@@ -1003,12 +1084,15 @@ class World {
     const posterTex = new THREE.TextureLoader().load('assets/poster-t90m-weakpoints.png');
     posterTex.colorSpace = THREE.SRGBColorSpace; posterTex.anisotropy = 4;
     const posterH = 1.44, posterW = posterH * (687 / 1024);   // image is 687×1024 (portrait); 40% of original (−60%)
-    // alphaTest (not transparent) keeps it in the OPAQUE pass so the depthTest:false viewmodel
-    // weapon (renderOrder 1000) still draws on top of it — and clips the PNG's transparent edges.
+    // Lambert (not Basic) so the poster is lit by the scene — bright in sun, dim/shaded
+    // at dusk & night — and can receive shadows. alphaTest keeps it in the OPAQUE pass so
+    // the depthTest:false viewmodel weapon (renderOrder 1000) still draws on top, and clips
+    // the PNG's transparent edges. A faint emissive keeps it just-readable in deep dark.
     const poster = new THREE.Mesh(new THREE.PlaneGeometry(posterW, posterH),
-      new THREE.MeshBasicMaterial({ map: posterTex, alphaTest: 0.5 }));
+      new THREE.MeshLambertMaterial({ map: posterTex, alphaTest: 0.5, emissive: 0x0a0a0c, emissiveIntensity: 1 }));
     poster.position.set(-32.65, 2.4, 32);   // just off the barracks east face (x=-33, ±0.3 thick)
     poster.rotation.y = Math.PI / 2;          // normal → +x (toward map centre)
+    poster.receiveShadow = true;
     this.scene.add(poster);
 
     // outer spawn ring
@@ -1145,6 +1229,29 @@ class Enemy {
       this.cannonCD = 4; this.charge = 0; this.mgAmmo = 250; this.mgReload = 0; this.recoil = 0;
       this.ramCD = 0; this.stuckRecover = 0; this.stuck = 0; this.eraSpent = {}; // ERA per-zone consumed flags (Task 13)
       this.captured = false; this.entering = false;
+    }
+  }
+}
+
+// ── Tank headlight updater — call every frame for boss and captured tank ──────
+// Reads scene brightness via engine.hemi.intensity (0.05 night … 0.95 noon).
+// Full beam in the dark, off in full daylight.  No shadow maps — perf-safe.
+function updateTankLights(group, game) {
+  const lights = group && group.userData && group.userData.headlampLights;
+  if (!lights) return;
+  const hemi = (game.engine && game.engine.hemi) ? game.engine.hemi.intensity : 1;
+  // hemi ~0.95 at noon → dark=0; hemi ~0.05 at midnight → dark≈1
+  const dark = Math.max(0, Math.min(1, (0.7 - hemi) / 0.65));
+  const inten = dark * 2.2;
+  for (const L of lights) L.intensity = inten;
+  // glow the lens meshes proportionally
+  const lens = group.userData.headlamps;
+  if (lens) {
+    for (const m of lens) {
+      if (m.material && m.material.emissive) {
+        m.material.emissive.setHex(0xfff0c0);
+        m.material.emissiveIntensity = dark;
+      }
     }
   }
 }
@@ -1546,6 +1653,7 @@ class EnemyManager {
     }
     if (!e._enraged && enraged) { e._enraged = true; this.game.hud.bigMessage('MITRI ENRAGED', 'the T-90M floors it!'); }
     this.game.hud.setBossPip(e.vulnerable ? e.mitriHP / e.mitriHPmax : -1);
+    updateTankLights(e.mesh, this.game);
   }
 
   rayHit(origin, dir, maxDist) {
@@ -2140,9 +2248,9 @@ function buildSu24() {
   const refl = 0x4a7088, reflHi = 0x6f9bb2; // cool glass reflections (so the canopy reads as glass, not a black box)
   b.box(1.5, 0.5, 2.0, 0, 0.5, -4.2, gMid, { tint: 0.02 });          // cockpit tub
   b.box(1.3, 0.12, 0.36, 0, 0.66, -5.05, 0x14161a);                  // glareshield / coaming
-  b.box(1.26, 0.52, 0.1, 0, 0.86, -5.0, glass, { rx: -0.55 });       // raked windscreen glass
-  b.box(1.34, 0.5, 0.05, 0, 0.86, -5.07, gMid, { rx: -0.55 });       // windscreen frame
-  b.box(0.62, 0.06, 0.04, 0, 1.06, -4.83, reflHi, { rx: -0.55 });    // windscreen glare-line (lit)
+  b.box(1.26, 0.5, 0.08, 0, 0.86, -5.0, glass, { rx: 0.55 });        // raked windscreen glass (leans up-and-back)
+  b.box(1.3, 0.08, 0.1, 0, 1.04, -4.84, gMid, { rx: 0.55 });         // windscreen top frame bow
+  b.box(0.6, 0.05, 0.03, 0, 1.0, -4.8, reflHi, { rx: 0.55 });        // glare reflection on the glass
   b.box(1.16, 0.34, 1.55, 0, 0.84, -4.0, glass, { tint: 0.02 });     // canopy (wide lower)
   b.box(0.86, 0.22, 1.5, 0, 1.08, -4.0, glass);                      // canopy crown (narrow → tumblehome)
   b.box(0.5, 0.05, 1.34, -0.05, 1.205, -4.0, refl, { tint: 0.04 });  // top reflection sheen (proud)
@@ -3664,6 +3772,7 @@ class CapturedTank {
     else this._followCam();
     this._tickShells(dt);   // shells fly regardless of seat
     if (this.game.hud.setTankHp) this.game.hud.setTankHp(this.hp / this.hpMax); // show + update HP bar while crewing
+    updateTankLights(this.group, this.game);
   }
 
   _followCam() {
