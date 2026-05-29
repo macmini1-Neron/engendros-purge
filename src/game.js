@@ -2915,6 +2915,7 @@ class CapturedTank {
     if (this.active === 'driver') this._driver(dt);
     else if (this.active === 'gunner') (this._gunner ? this._gunner(dt) : this._followCam());
     else this._followCam();
+    this._tickShells(dt);   // shells fly regardless of seat
   }
 
   _followCam() {
@@ -2940,6 +2941,7 @@ class CapturedTank {
     else if (input.isDown('KeyS')) spd = -max * 0.6;
     const fwd = new THREE.Vector3(Math.sin(this.hullYaw), 0, Math.cos(this.hullYaw));
     this.pos.x += fwd.x * spd * dt; this.pos.z += fwd.z * spd * dt;
+    if (spd !== 0) this._runOver();
     this._collide();
     const lim = this.game.world.HALF - 2.6;
     this.pos.x = clamp(this.pos.x, -lim, lim); this.pos.z = clamp(this.pos.z, -lim, lim);
@@ -2953,6 +2955,182 @@ class CapturedTank {
     // crude engine rumble while driving (optional, low vol)
     this._engT = (this._engT || 0) - dt;
     if (this._engT <= 0 && this.game.audio.tone) { this._engT = 0.28; this.game.audio.tone(42, 0.26, 'sawtooth', 0.05 + (spd !== 0 ? 0.04 : 0)); }
+  }
+
+  // ---- Task 17: gunner station ------------------------------------------------
+
+  _gunner(dt) {
+    // Task 19 peek stance: just follow-cam until implemented
+    if (this.stance === 'peek') { this._followCam(); this._showOverlay('none'); return; }
+
+    const input = this.game.input;
+    const cam   = this.game.engine.camera;
+    const sens  = this.game.player.sens || 0.0025;
+
+    // 1. Mouse aim (weighty)
+    this.turYaw  -= input.mouseDX * sens;
+    this.gunPitch = clamp(this.gunPitch - input.mouseDY * sens, -0.15, 0.4);
+
+    // 2. Apply to rig
+    const ud = this.group.userData;
+    if (ud.turret)     ud.turret.rotation.y     = this.turYaw - this.hullYaw;
+    if (ud.gunMantlet) ud.gunMantlet.rotation.x = -this.gunPitch;
+
+    // 3. Camera down the sight
+    cam.rotation.order = 'YXZ';
+    const aimFwd = new THREE.Vector3(Math.sin(this.turYaw), 0, Math.cos(this.turYaw));
+    cam.position.set(
+      this.pos.x - aimFwd.x * 0.4,
+      2.7,
+      this.pos.z - aimFwd.z * 0.4
+    );
+    cam.rotation.set(this.gunPitch, this.turYaw, 0);
+    if (this.game.engine.setFov) this.game.engine.setFov(this.thermal ? 40 : 45);
+    this._showOverlay('sight');
+
+    // 4. Fire timers
+    this.cannonCD -= dt;
+    if (this.mgReload > 0) this.mgReload -= dt;
+
+    // LMB → cannon
+    if (input.buttons[0] && this.cannonCD <= 0 && this.cannonAmmo > 0) {
+      this._gunFireCannon();
+    }
+    // RMB → MG
+    if (input.buttons[2]) {
+      this._gunFireMG(dt);
+    }
+
+    // recoil decay (cosmetic — nudges gunPitch back)
+    if (this.recoil > 0) {
+      this.recoil = Math.max(0, this.recoil - dt * 2);
+    }
+  }
+
+  _gunFireCannon() {
+    this.cannonCD  = 3.5;
+    this.cannonAmmo--;
+
+    const cam = this.game.engine.camera;
+    cam.updateMatrixWorld();
+    const muz = this.group.userData.muzzle
+      ? this.group.userData.muzzle.getWorldPosition(new THREE.Vector3())
+      : new THREE.Vector3(this.pos.x, 2.4, this.pos.z);
+
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+
+    // shell mesh
+    this.shells = this.shells || [];
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.22, 0.65),
+      new THREE.MeshBasicMaterial({ color: 0xffe060 })
+    );
+    mesh.position.copy(muz);
+    this.game.engine.scene.add(mesh);
+    this.shells.push({ mesh, vel: dir.clone().multiplyScalar(70), fuse: 3, radius: 6.5, dmg: 200 });
+
+    this.recoil = 0.5;
+    if (this.game.effects.muzzleFlash) this.game.effects.muzzleFlash(muz, dir, 2.6);
+    if (this.game.audio.gunshot) this.game.audio.gunshot({ body: 55, crack: 0.3, vol: 1.0, hp: 400, bp: 120 });
+    if (this.game.engine.shake) this.game.engine.shake(0.25);
+
+    if (this.cannonAmmo <= 0 && this.game.hud.bigMessage) {
+      this.game.hud.bigMessage('OUT OF SHELLS', 'MG only');
+    }
+  }
+
+  _tickShells(dt) {
+    if (!this.shells || this.shells.length === 0) return;
+    const enemies = this.game.enemies;
+    const scene   = this.game.engine.scene;
+    for (let i = this.shells.length - 1; i >= 0; i--) {
+      const s = this.shells[i];
+      s.fuse -= dt;
+      s.mesh.position.addScaledVector(s.vel, dt);
+      const p = s.mesh.position;
+
+      let boom = p.y < 0.2 || s.fuse <= 0;
+
+      // ray along velocity for world collision
+      if (!boom && this.game.world.rayHit) {
+        const velDir = s.vel.clone().normalize();
+        const step   = s.vel.length() * dt + 0.5;
+        if (this.game.world.rayHit(p, velDir, step)) boom = true;
+      }
+
+      // proximity to any alive enemy
+      if (!boom) {
+        for (const e of enemies.active) {
+          if (!e.alive) continue;
+          if (Math.hypot(p.x - e.pos.x, p.z - e.pos.z) < (e.radius || 1) + 0.8) { boom = true; break; }
+        }
+      }
+
+      if (boom) {
+        if (this.game.effects.explosion) this.game.effects.explosion(p.clone(), s.radius);
+        enemies.damageInRadius(p.clone(), s.radius, s.dmg);
+        if (this.game.engine.shake) this.game.engine.shake(0.2);
+        scene.remove(s.mesh);
+        this.shells.splice(i, 1);
+      } else if (p.y < -5) {
+        scene.remove(s.mesh);
+        this.shells.splice(i, 1);
+      }
+    }
+  }
+
+  _gunFireMG(dt) {
+    if (this.mgReload > 0) return;
+    this._mgCD = (this._mgCD || 0) - dt;
+    if (this._mgCD > 0) return;
+    this._mgCD = 0.08;
+
+    if (this.mgAmmo <= 0) { this.mgReload = 3; this.mgAmmo = 250; return; }
+    this.mgAmmo--;
+
+    const cam = this.game.engine.camera;
+    cam.updateMatrixWorld();
+    const o = this.group.userData.mgMuzzle
+      ? this.group.userData.mgMuzzle.getWorldPosition(new THREE.Vector3())
+      : new THREE.Vector3(this.pos.x, 2.4, this.pos.z);
+
+    // camera-forward + small jitter
+    const jit = 0.03;
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    dir.x += rr(-jit, jit); dir.y += rr(-jit, jit); dir.z += rr(-jit, jit); dir.normalize();
+
+    const range  = 60;
+    const enemies = this.game.enemies;
+    const eHit = enemies.rayHit(o, dir, range);
+    const wHit = this.game.world.rayHit(o, dir, range);
+
+    const eDist = eHit ? eHit.dist : Infinity;
+    const wDist = wHit ? wHit.dist : Infinity;
+    const endPt = o.clone().addScaledVector(dir, Math.min(eDist, wDist, range));
+
+    if (this.game.effects.tracer) this.game.effects.tracer(o, endPt, 0xfff1a0);
+
+    if (eHit && eDist < wDist) {
+      enemies.damage(eHit.enemy, 9, 'gun', eHit.point);
+    }
+
+    if (this.game.audio.tone) this.game.audio.tone(180, 0.03, 'square', 0.10);
+
+    if (this.mgAmmo <= 0) {
+      this.mgReload = 3;
+      this.mgAmmo   = 250;
+      if (this.game.audio.tone) this.game.audio.tone(80, 0.2, 'square', 0.2);
+    }
+  }
+
+  _runOver() {
+    const enemies = this.game.enemies;
+    for (const e of enemies.active) {
+      if (!e.alive || (e.def && e.def.boss) || e.isElite || e.isTank) continue;
+      if (Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) < 3.0) {
+        enemies.damage(e, (e.hp || 0) + 1, 'contact');
+      }
+    }
   }
 
   _collide() {
