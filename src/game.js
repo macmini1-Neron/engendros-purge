@@ -2068,7 +2068,16 @@ class EnemyManager {
     }
   }
   // --- Tank damage helpers (Task 4) ---
-  _armorPing(e, hp) { this.game.audio.tone(220, 0.04, 'square', 0.18); if (hp && this.game.effects.impact) this.game.effects.impact(hp, new THREE.Vector3(0, 1, 0), 'spark'); }
+  _armorPing(e, hp) {
+    this.game.audio.tone(220, 0.04, 'square', 0.18);
+    if (hp && this.game.effects.impact) this.game.effects.impact(hp, new THREE.Vector3(0, 1, 0), 'spark');
+    // Throttled ricochet hint — at most once every 4 s so full-auto fire doesn't spam
+    const now = this.game.clock ? this.game.clock.elapsedTime : performance.now() / 1000;
+    if (!this._armorHintT || now - this._armorHintT > 4) {
+      this._armorHintT = now;
+      this.game.hud.bigMessage('ARMOR — BOUNCED', 'flank the rear / hit tracks, or wait for COMMANDER');
+    }
+  }
   _mitriHurt(e) { this.game.effects.stuffing(new THREE.Vector3(e.pos.x, e.pos.y + 2.5, e.pos.z), 0xf2c200, 5, 4); this.game.audio.enemyHurt(); }
   _armorHurt(e) { this.game.audio.tone(90, 0.06, 'sawtooth', 0.25); }
   _tankHitZone(e, hp) {
@@ -3456,6 +3465,13 @@ class WaveManager {
       e.entryTarget = { x: 0, z: 0 }; // plaza/arena center
       this.game.hud.bigMessage('T-90M «MITRI» ROLLS IN', 'armored boss inbound');
       this.game.audio.tone(40, 0.6, 'sawtooth', 0.35); // low engine roar entrance sting
+      if (!this.game._tankIntroShown) {
+        this.game._tankIntroShown = true;
+        // Delay the teach banner slightly so it doesn't clash with the entrance bigMessage
+        setTimeout(() => {
+          if (this.game && this.game.hud) this.game.hud.bigMessage('⚠ T-90M «MITRI»', 'Bullets won\'t dent armor — use EXPLOSIVES on the rear/tracks, or shoot the COMMANDER when he pops out to STEAL the tank!');
+        }, 2400);
+      }
     } else {
       this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
     }
@@ -5058,6 +5074,7 @@ class Game {
     this.hud.setScore(0); this.hud.setWeapon(this.weapons);
     this.hud.setNightMode(this.mode === 'longnight'); // shows/hides the clock + gear readout
     this._startCountdown = 0.6; this._waveBreak = 0;
+    this._tankIntroShown = false; // reset per-run so the first tank teach banner shows once per run
   }
   _disposeFlare(f) {
     this.engine.scene.remove(f.mesh); this.engine.scene.remove(f.light);
