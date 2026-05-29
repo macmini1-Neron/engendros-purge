@@ -428,6 +428,8 @@ const ENEMY_TYPES = {
   titan:    { hp: 640, speed: 1.1,  dmg: 30, reward: 260, scale: 2.05, variant: 'normal' },
   minitolo: { hp: 45,  speed: 3.9,  dmg: 14, reward: 25,  scale: 0.6,  variant: 'normal' },
   boss:     { hp: 3200, speed: 1.0, dmg: 32, reward: 1200, scale: 2.85, variant: 'boss', boss: true, laser: true },
+  tank:     { armorHP: 3600, mitriHP: 750, speed: 1.2, dmg: 40, reward: 1500, scale: 1,
+              variant: 'tank', boss: true, tank: true, armored: true, explosiveMult: 2.0 },
 };
 
 // ---------------------------------------------------------------------------
@@ -1753,14 +1755,18 @@ const WAVE_MODS = {
 };
 const MINIBOSS_NAMES = ['Stitchjaw', 'Mauler', 'Hugo', 'Ragnar', 'Bramble', 'Gloomgut'];
 
+const BOSS_ROSTER = ['boss', 'tank']; // 'boss' = Tolo, 'tank' = T-90M «MITRI»
+
 class WaveManager {
   constructor(game) { this.game = game; this.wave = 0; this.active = false; this.bountyMul = 1; }
   reset() { this.wave = 0; this.active = false; this.toSpawn = 0; this.bountyMul = 1; this.minibossPending = false; if (this.game.hud) this.game.hud.clearWaveTag(); }
   startWave(n) {
+    this.bossPick = null;
     if (this.game.mode === 'longnight') return this._startLongNight(n);
     if (this.game.mp.active && this.game.mp.isHost) { this.game.mp.respawnAll(); this.game.mp.net.send('wave', { n, label: 'WAVE ' + n, sub: 'co-op — hold the line' }); }
     this.wave = n; this.active = true; this.spawned = 0;
     this.isBossWave = (n % 5 === 0);
+    if (this.isBossWave) this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0];
     // pick a wave archetype (specials only from wave 3) + an optional modifier (from wave 4)
     let typeKey = 'normal';
     if (!this.isBossWave && n >= 3 && chc(0.5)) typeKey = pick(['horde', 'stampede', 'volatile', 'elite']);
@@ -1780,7 +1786,7 @@ class WaveManager {
     this.game.hud.setWave(n);
     // banner + persistent tag
     const title = this.isBossWave ? `WAVE ${n}` : `${t.label} ${n}`;
-    let sub = this.isBossWave ? 'BOSS TOLO APPROACHES' : t.sub;
+    let sub = this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : t.sub;
     if (this.mod) sub = `${this.mod.label} — ${sub}`;
     this.game.hud.bigMessage(title, sub);
     const tags = [];
@@ -1793,8 +1799,10 @@ class WaveManager {
   }
   // THE LONG NIGHT: endless escalation, boss every 5th wave, blood-moon swell.
   _startLongNight(n) {
+    this.bossPick = null;
     this.wave = n; this.active = true; this.spawned = 0;
     this.isBossWave = (n % 5 === 0); this.minibossPending = false; this.mod = null; this.typeKey = 'normal';
+    if (this.isBossWave) this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0];
     const blood = this.game.dayNight && this.game.dayNight.bloodMoon;
     this.speedMul = 1 + Math.min(n * 0.012, 0.45);
     this.hpMul = (1 + (n - 1) * 0.06) * (blood ? 1.2 : 1);
@@ -1805,7 +1813,7 @@ class WaveManager {
     this.weights = this._longNightWeights(n);
     if (this.game.player.armorOnWave > 0) { this.game.player.armor = Math.max(this.game.player.armor, Math.min(this.game.player.armorMax, this.game.player.armorOnWave)); this.game.hud.setArmor(this.game.player.armor, this.game.player.armorMax); }
     this.game.hud.setWave(n);
-    this.game.hud.bigMessage(this.isBossWave ? `WAVE ${n}` : `WAVE ${n}`, this.isBossWave ? 'BOSS TOLO APPROACHES' : 'more keep coming…');
+    this.game.hud.bigMessage(`WAVE ${n}`, this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : 'more keep coming…');
     const tags = []; if (this.isBossWave) tags.push({ t: '☠ BOSS' }); if (blood) tags.push({ t: '🔴 Blood Moon', mod: true });
     this.game.hud.setWaveTag(tags);
     this.game.audio.waveStart();
@@ -1861,7 +1869,8 @@ class WaveManager {
     const n = this.wave, pos = this._spawnPos();
     if (this.isBossWave && this.spawned === 0) {
       const hpScale = 1 + (Math.floor(n / 5) - 1) * 0.6;
-      this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
+      const which = this.bossPick || (this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0]);
+      this._spawnBoss(which, pos, hpScale);
       this.spawned++; return;
     }
     if (this.minibossPending && this.spawned === 0) { this.minibossPending = false; this._spawnMiniboss(pos, n); this.spawned++; return; }
@@ -1873,6 +1882,16 @@ class WaveManager {
     if (chc(0.01)) this.game.enemies.makeCourier(e); // ~1% rare backpack courier → drops a radio
     this.spawned++;
   }
+  _spawnBoss(which, pos, hpScale) {
+    if (which === 'tank') {
+      const e = this.game.enemies.spawn('tank', pos, Math.round(ENEMY_TYPES.tank.armorHP * hpScale), ENEMY_TYPES.tank.speed);
+      e.armorHP = e.armorHPmax = Math.round(ENEMY_TYPES.tank.armorHP * hpScale);
+      e.mitriHP = e.mitriHPmax = Math.round(ENEMY_TYPES.tank.mitriHP * Math.min(hpScale, 2.0)); // cap so capture stays viable late-game
+    } else {
+      this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
+    }
+  }
+  _forceTankWave() { this.startWave(this.wave + 1); this.isBossWave = true; this.bossPick = 'tank'; this.spawned = 0; this.total = 1; } // DEBUG
   // A named elite that hijacks the boss bar (no laser/phase-2) and pays out big.
   _spawnMiniboss(pos, n) {
     const baseType = chc(0.5) ? 'titan' : 'brute', def = ENEMY_TYPES[baseType];
