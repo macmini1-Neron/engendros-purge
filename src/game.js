@@ -1479,9 +1479,13 @@ class Enemy {
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.isTank = !!def.tank; // authoritative reset: true for tank type, false for all others
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
-    // boss state
+    // boss state (Tolo)
     this.phase = 1; this.laserCD = 3.2; this.charging = 0; this.addCD = 0; this.beamLife = 0;
     this.aim = new THREE.Vector3();
+    this.invuln = 0;          // i-frames during a phase transition (boss stands still & shudders)
+    this.baseSpeed = speed;   // phase speed scaling multiplies this (p1 ×1.0, p2 ×1.12, p3 ×1.20)
+    this.shotsLeft = 0; this.shotCD = 0; this._chargeDur = 0.85; // phase-1 blaster burst
+    this.sweepT = 0; this.sweepActive = false; this.sweepBase = 0; this.sweepPass = 0; // phase-2/3 sweep (later step)
     if (this.mesh.material && this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
     this.mesh.visible = true; this.mesh.scale.setScalar(def.scale); this.mesh.position.copy(pos);
     if (def.tank) {
@@ -1670,6 +1674,7 @@ class EnemyManager {
     this.pool = {};  // geoKey -> Enemy[]
     this.active = []; this._idc = 0;
     this._min = new THREE.Vector3(); this._max = new THREE.Vector3();
+    this.bossBolts = []; // BOSS TOLO phase-1 blaster bolts (traveling projectiles)
   }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
@@ -1764,7 +1769,8 @@ class EnemyManager {
       const beeline = e.stuck > 1.6;
       const wx = beeline ? dx : dx + sx * 0.6 + ax, wz = beeline ? dz : dz + sz * 0.6 + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
-      const spd = e.speed * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
+      const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
+      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
       if (_wz) {
         _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down
         e._wireT = (e._wireT || 0) + dt;
@@ -1813,6 +1819,7 @@ class EnemyManager {
       if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);
       if (e.def.boss) this._bossTolo(e, dt);
     }
+    this._updateBossBolts(dt);
     if (this._aimRing && this._aimRingT > 0) { this._aimRingT -= dt; this._aimRing.material.opacity = Math.max(0, this._aimRingT) * 1.05; }
     if (this.shells) for (let i = this.shells.length - 1; i >= 0; i--) {
       const s = this.shells[i]; s.fuse -= dt; s.vel.y -= s.grav * dt;
@@ -1894,40 +1901,113 @@ class EnemyManager {
     }
   }
 
+  // Belly bullseye = the laser emitter AND the only weak spot. Phases gate by HP:
+  //   1 (>66%) blaster burst · 2 (33–66%) sweep · 3 (<33%) double sweep + fire (sweep/fire land in later steps).
   _bossTolo(e, dt) {
     const pp = this.game.player.pos;
     this.game.hud.setBoss(e.hp / e.maxHp, e.name);
-    if (e.phase === 1 && e.hp <= e.maxHp * 0.5) { e.phase = 2; e.addCD = 0.6; this.game.hud.bigMessage('TOLO ENRAGED', 'he summons mini-Tolos!'); }
-    // laser cannon charging up out of the belly target, then firing
-    // belly-bullseye glow telegraphs the charge WITHOUT reddening the eyes/face (lazy child of the boss mesh, the laser emitter)
+
+    // belly-bullseye glow telegraphs the charge (lazy child of the boss mesh, the laser emitter)
     if (!e._tolGlow) {
       e._tolGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.05, 22),
         new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
       e._tolGlow.rotation.x = Math.PI / 2; e._tolGlow.position.set(0, 0.6, 0.42); e._tolGlow.renderOrder = 999;
       e.mesh.add(e._tolGlow);
     }
+    // fade the single-beam placeholder used by phases 2/3 until the real sweep lands
+    if (e.beamLife > 0 && e._beam) { e.beamLife -= dt; e._beam.material.opacity = Math.max(0, e.beamLife / 0.18); if (e.beamLife <= 0) e._beam.visible = false; }
+
+    // ── phase gates by HP — 1: >66% · 2: 33–66% · 3: <33% ──
+    const want = e.hp > e.maxHp * 0.66 ? 1 : (e.hp > e.maxHp * 0.33 ? 2 : 3);
+    if (want > e.phase) {
+      e.phase = want; e.invuln = 3.0;                  // 3s i-frames so the player notices the shift
+      e.charging = 0; e.shotsLeft = 0; e.sweepActive = false; e.sweepT = 0; e.laserCD = 1.2;
+      e.speed = e.baseSpeed * (want === 3 ? 1.20 : 1.12); // each phase a bit faster (fat → still not free)
+      if (e._beam) e._beam.visible = false;
+      this.game.hud.bigMessage('TOLO ZUŘÍ', want === 2 ? 'nastává fáze 2 — laserový sweep!' : 'nastává fáze 3 — žhavá zkáza!');
+      this.game.audio.tone(200, 0.5, 'sawtooth', 0.4);
+    }
+
+    // ── phase-change i-frames: stand still, shudder, leak stuffing, no attacks ──
+    if (e.invuln > 0) {
+      e.invuln -= dt;
+      e._tolGlow.material.opacity = 0.30 + 0.22 * Math.sin(e.bob * 6);
+      e.mesh.rotation.z = Math.sin(e.bob * 8) * 0.13;
+      if (Math.random() < 0.3) this.game.effects.stuffing(new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z), e.col.body, 3, 4);
+      return;
+    }
+
+    // ── an attack is mid-flight ──
+    if (e.shotsLeft > 0) { this._bossBurst(e, dt); return; }
+
+    // ── charge telegraph: terčík se nabíjí = the ONLY window to damage Tolo ──
     if (e.charging > 0) {
       e.charging -= dt;
-      const f = 1 - e.charging / 0.85;
+      const f = 1 - e.charging / e._chargeDur;
       e._tolGlow.material.opacity = 0.95 * f; e._tolGlow.scale.setScalar(0.7 + f * 0.7);
-      if (e.charging <= 0) this._bossLaser(e);
-    } else {
-      if (e._tolGlow.material.opacity > 0.02) e._tolGlow.material.opacity *= 0.82;
-      e.laserCD -= dt;
-      if (e.laserCD <= 0) {
-        e.laserCD = e.phase === 2 ? 2.6 : 3.8; e.charging = 0.85;
+      if (e.charging <= 0) {
         e.aim.set(pp.x - e.pos.x, (pp.y + 1.0) - (e.pos.y + 0.6 * e.scale), pp.z - e.pos.z).normalize();
+        if (e.phase === 1) { e.shotsLeft = 5; e.shotCD = 0; }  // 5 blaster bolts
+        else this._bossLaser(e);                               // TEMP: single beam until the sweep step
       }
+      return;
     }
-    if (e.beamLife > 0 && e._beam) { e.beamLife -= dt; e._beam.material.opacity = Math.max(0, e.beamLife / 0.18); if (e.beamLife <= 0) e._beam.visible = false; }
-    // phase 2: keep summoning small fast mini-Tolos around himself
-    if (e.phase === 2) {
-      e.addCD -= dt;
-      if (e.addCD <= 0 && this.active.length < 18) {
-        e.addCD = 6;
-        for (let k = 0; k < 3; k++) { const a = rr(0, TAU); this.spawn('minitolo', { x: e.pos.x + Math.cos(a) * 3.5, y: 0, z: e.pos.z + Math.sin(a) * 3.5 }, ENEMY_TYPES.minitolo.hp, ENEMY_TYPES.minitolo.speed); }
-      }
+
+    // ── idle: tick down to the next attack, then start charging ──
+    if (e._tolGlow.material.opacity > 0.02) e._tolGlow.material.opacity *= 0.82;
+    e.laserCD -= dt;
+    if (e.laserCD <= 0) {
+      e.laserCD = e.phase === 3 ? 3.0 : (e.phase === 2 ? 4.0 : 3.8);
+      e._chargeDur = e.phase === 1 ? 0.85 : 0.7;
+      e.charging = e._chargeDur;
     }
+  }
+
+  // Phase 1: a short burst of 5 thin red blaster bolts at the locked aim. Anti-camp: tight cone
+  // when the player stands still (~60% hit feel), wide cone when they strafe (~35%).
+  _bossBurst(e, dt) {
+    e.shotCD -= dt;
+    if (e.shotCD > 0) return;
+    e.shotCD = 0.22; e.shotsLeft--;
+    const pl = this.game.player;
+    const moving = Math.hypot(pl.vel.x, pl.vel.z) > 1.5;
+    const spread = moving ? 0.14 : 0.05;
+    const a = e.aim.clone();
+    a.x += rr(-spread, spread); a.y += rr(-spread * 0.4, spread * 0.4); a.z += rr(-spread, spread);
+    a.normalize();
+    this._spawnBolt(e, a);
+    this.game.audio.tone(1300, 0.07, 'square', 0.3);
+    if (e.shotsLeft <= 0) e._tolGlow.material.opacity = 0;
+  }
+
+  _spawnBolt(e, dir) {
+    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
+    if (!this._boltGeo) this._boltGeo = new THREE.BoxGeometry(0.18, 0.18, 1.6);
+    const m = new THREE.Mesh(this._boltGeo, new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }));
+    m.renderOrder = 998; m.position.copy(belly); m.lookAt(belly.clone().add(dir));
+    this.game.engine.scene.add(m);
+    this.bossBolts.push({ mesh: m, vel: dir.clone().multiplyScalar(55), life: 1.7, dmg: e.def.dmg });
+    this.game.effects.muzzleFlash(belly, dir, 2.0);
+  }
+
+  _updateBossBolts(dt) {
+    if (!this.bossBolts.length) return;
+    const pl = this.game.player, pp = pl.pos;
+    for (let i = this.bossBolts.length - 1; i >= 0; i--) {
+      const b = this.bossBolts[i];
+      b.mesh.position.addScaledVector(b.vel, dt); b.life -= dt;
+      const m = b.mesh.position;
+      const d = Math.hypot(m.x - pp.x, m.y - (pp.y + 1.0), m.z - pp.z);
+      let dead = b.life <= 0;
+      if (!dead && d < 1.1) { pl.hurt(b.dmg); dead = true; }
+      if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); b.mesh.material.dispose(); this.bossBolts.splice(i, 1); }
+    }
+  }
+
+  // Feedback when shots hit Tolo anywhere but the charging bullseye — a small puff + faint tink.
+  _bossDeflect(e, hitPoint) {
+    if (hitPoint) this.game.effects.stuffing(hitPoint, e.col.body, 2, 2);
+    if (Math.random() < 0.25) this.game.audio.tone(420, 0.04, 'square', 0.16);
   }
 
   _bossTank(e, dt) {
@@ -2196,6 +2276,16 @@ class EnemyManager {
       }
       return false; // 'contact' n/a for the tank
     }
+    // BOSS TOLO: immune everywhere & always EXCEPT a hit on the belly bullseye while it is charging a shot.
+    if (e.def.boss) {
+      if (e.invuln > 0) { this._bossDeflect(e, hitPoint); return false; }      // phase-change i-frames
+      let onTarget = false;
+      if (e.charging > 0 && hitPoint && e._tolGlow) {
+        const tp = e._tolGlow.getWorldPosition(this._tv || (this._tv = new THREE.Vector3()));
+        onTarget = hitPoint.distanceTo(tp) < 1.4 * e.scale;
+      }
+      if (!onTarget) { this._bossDeflect(e, hitPoint); return false; }         // bounced off the plush
+    }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
     if (e.hp <= 0) {
       e.alive = false; e.mesh.visible = false;
@@ -2337,7 +2427,7 @@ class EnemyManager {
     e.tankGroup = null; // ownership transferred — clearAll/pool won't touch it; next tank spawn builds fresh
     return true;
   }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this._aimRing) this._aimRing.material.opacity = 0; }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this._aimRing) this._aimRing.material.opacity = 0; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
