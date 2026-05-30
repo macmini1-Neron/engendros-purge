@@ -1989,7 +1989,7 @@ class EnemyManager {
     const m = new THREE.Mesh(this._boltGeo, new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }));
     m.renderOrder = 998; m.position.copy(belly); m.lookAt(belly.clone().add(dir));
     this.game.engine.scene.add(m);
-    this.bossBolts.push({ mesh: m, vel: dir.clone().multiplyScalar(55), life: 1.7, dmg: e.def.dmg });
+    this.bossBolts.push({ mesh: m, vel: dir.clone().multiplyScalar(55), life: 70 / 55, dmg: e.def.dmg }); // range = 50% of the 140-wide arena
     this.game.effects.muzzleFlash(belly, dir, 2.0);
   }
 
@@ -2021,7 +2021,7 @@ class EnemyManager {
     e.sweepActive = true; e.sweepHitCD = 0;
     e.sweepCenter = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z); // XZ angle toward the player at fire time
     e.sweepArc = Math.PI / 4;                 // 45° wedge
-    e.sweepLen = e.phase === 3 ? 140 : 112;   // 100% / 80% of the 140-wide arena
+    e.sweepLen = 70;                           // 50% of the 140-wide arena (all phases)
     e.sweepPasses = e.phase === 3 ? 2 : 1;    // phase 3 = double sweep
     e.sweepPass = 0;
     if (!e._beam) {
