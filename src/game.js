@@ -1675,6 +1675,7 @@ class EnemyManager {
     this.active = []; this._idc = 0;
     this._min = new THREE.Vector3(); this._max = new THREE.Vector3();
     this.bossBolts = []; // BOSS TOLO phase-1 blaster bolts (traveling projectiles)
+    this.bossFires = []; // BOSS TOLO phase-3 lingering fire zones (area denial)
   }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
@@ -1820,6 +1821,7 @@ class EnemyManager {
       if (e.def.boss) this._bossTolo(e, dt);
     }
     this._updateBossBolts(dt);
+    this._updateBossFires(dt);
     if (this._aimRing && this._aimRingT > 0) { this._aimRingT -= dt; this._aimRing.material.opacity = Math.max(0, this._aimRingT) * 1.05; }
     if (this.shells) for (let i = this.shells.length - 1; i >= 0; i--) {
       const s = this.shells[i]; s.fuse -= dt; s.vel.y -= s.grav * dt;
@@ -1939,6 +1941,7 @@ class EnemyManager {
 
     // ── an attack is mid-flight ──
     if (e.shotsLeft > 0) { this._bossBurst(e, dt); return; }
+    if (e.sweepActive)   { this._bossSweep(e, dt); return; }
 
     // ── charge telegraph: terčík se nabíjí = the ONLY window to damage Tolo ──
     if (e.charging > 0) {
@@ -1948,7 +1951,7 @@ class EnemyManager {
       if (e.charging <= 0) {
         e.aim.set(pp.x - e.pos.x, (pp.y + 1.0) - (e.pos.y + 0.6 * e.scale), pp.z - e.pos.z).normalize();
         if (e.phase === 1) { e.shotsLeft = 5; e.shotCD = 0; }  // 5 blaster bolts
-        else this._bossLaser(e);                               // TEMP: single beam until the sweep step
+        else this._beginSweep(e);                              // phase 2/3: sweeping beam
       }
       return;
     }
@@ -2008,6 +2011,84 @@ class EnemyManager {
   _bossDeflect(e, hitPoint) {
     if (hitPoint) this.game.effects.stuffing(hitPoint, e.col.body, 2, 2);
     if (Math.random() < 0.25) this.game.audio.tone(420, 0.04, 'square', 0.16);
+  }
+
+  // Phase 2/3: lock the player's position, then sweep a continuous beam through a 45° wedge.
+  // The player must run out of the wedge. Range = 80% (p2) / 100% (p3) of the arena width.
+  // Phase 3 does a double sweep (there and back) and scorches lingering fire onto the floor.
+  _beginSweep(e) {
+    const pp = this.game.player.pos;
+    e.sweepActive = true; e.sweepHitCD = 0;
+    e.sweepCenter = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z); // XZ angle toward the player at fire time
+    e.sweepArc = Math.PI / 4;                 // 45° wedge
+    e.sweepLen = e.phase === 3 ? 140 : 112;   // 100% / 80% of the 140-wide arena
+    e.sweepPasses = e.phase === 3 ? 2 : 1;    // phase 3 = double sweep
+    e.sweepPass = 0;
+    if (!e._beam) {
+      e._beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+      e._beam.renderOrder = 998; this.game.engine.scene.add(e._beam);
+    }
+    e._beam.material.color.setHex(e.phase === 3 ? 0xff3a10 : 0xff2436);
+    e._beam.visible = true; e._beam.material.opacity = 1;
+    this._sweepStartPass(e);
+    this.game.audio.tone(900, 0.2, 'sawtooth', 0.3);
+  }
+
+  _sweepStartPass(e) {
+    e.sweepT = 0;
+    e.sweepDur = e.phase === 3 ? 1.5 : 3.0;   // p3: two quick passes (~3s total); p2: one 3s pass
+    const half = e.sweepArc / 2;
+    if (e.sweepPass % 2 === 0) { e.sweepFrom = e.sweepCenter - half; e.sweepTo = e.sweepCenter + half; }
+    else                       { e.sweepFrom = e.sweepCenter + half; e.sweepTo = e.sweepCenter - half; }
+  }
+
+  _bossSweep(e, dt) {
+    e.sweepT += dt; e.sweepHitCD -= dt;
+    const frac = clamp(e.sweepT / e.sweepDur, 0, 1);
+    const ang = e.sweepFrom + (e.sweepTo - e.sweepFrom) * frac;
+    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
+    const dir = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
+    const len = e.sweepLen, end = belly.clone().addScaledVector(dir, len);
+    const thick = e.phase === 3 ? 0.9 : 0.55;
+    e._beam.position.copy(belly).add(end).multiplyScalar(0.5);
+    e._beam.scale.set(thick, thick, len); e._beam.lookAt(end);
+    e._beam.material.opacity = 0.85 + 0.15 * Math.sin(e.sweepT * 40);
+    if (e._tolGlow) e._tolGlow.material.opacity = 0.9;                  // emitter stays lit while firing
+    if (Math.random() < 0.4) this.game.audio.noise(0.05, 0.2, 'highpass', 1600, 0.5);
+    // phase 3: the beam scorches the floor — drop lingering fire zones along it (area denial)
+    if (e.phase === 3) {
+      e._fireDropT = (e._fireDropT || 0) - dt;
+      if (e._fireDropT <= 0) { e._fireDropT = 0.10; const fd = rr(5, len * 0.7); this._dropBossFire(belly.x + dir.x * fd, belly.z + dir.z * fd); }
+    }
+    // contact damage: horizontal distance to the beam line, throttled so a graze = one "hit"
+    const pp = this.game.player.pos;
+    const t = clamp((pp.x - belly.x) * dir.x + (pp.z - belly.z) * dir.z, 0, len);
+    const dl = Math.hypot(pp.x - (belly.x + dir.x * t), pp.z - (belly.z + dir.z * t));
+    const reach = e.phase === 3 ? 2.0 : 1.6;
+    if (dl < reach && e.sweepHitCD <= 0) { e.sweepHitCD = 0.7; this.game.player.hurt(e.phase === 3 ? 200 : 55); }
+    if (e.sweepT >= e.sweepDur) {
+      e.sweepPass++;
+      if (e.sweepPass < e.sweepPasses) this._sweepStartPass(e);
+      else { e.sweepActive = false; e._beam.visible = false; }
+    }
+  }
+
+  _dropBossFire(x, z) {
+    if (this.bossFires.length > 48) return;   // perf cap
+    this.game.effects.firePool({ x, y: 0.08, z }, 1.4, 0.8);
+    this.bossFires.push({ x, z, r: 1.9, life: 3.0 });
+  }
+
+  _updateBossFires(dt) {
+    if (!this.bossFires.length) return;
+    const pp = this.game.player.pos; let inFire = false;
+    for (let i = this.bossFires.length - 1; i >= 0; i--) {
+      const f = this.bossFires[i]; f.life -= dt;
+      if (f.life <= 0) { this.bossFires.splice(i, 1); continue; }
+      if (Math.random() < 0.18) this.game.effects.firePool({ x: f.x, y: 0.08, z: f.z }, 1.1, 0.5); // keep it visibly burning
+      if (Math.hypot(pp.x - f.x, pp.z - f.z) < f.r) inFire = true;
+    }
+    if (inFire) { this._fireTickT = (this._fireTickT || 0) - dt; if (this._fireTickT <= 0) { this._fireTickT = 0.4; this.game.player.hurt(12); } }
   }
 
   _bossTank(e, dt) {
@@ -2427,7 +2508,7 @@ class EnemyManager {
     e.tankGroup = null; // ownership transferred — clearAll/pool won't touch it; next tank spawn builds fresh
     return true;
   }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this._aimRing) this._aimRing.material.opacity = 0; }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._aimRing) this._aimRing.material.opacity = 0; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
