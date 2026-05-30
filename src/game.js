@@ -3585,6 +3585,24 @@ class WeaponSystem {
     if (this.game.hud) this.game.hud.setWeapon(this);
   }
 
+  // A ground-found ammo box tops up ONLY the weapon currently in hand — you choose which gun gets it
+  // by holding it when you grab the box. Adds 25% of that gun's max reserve, rounded UP to a whole
+  // number of magazines. Returns { ok:true, key } on a refill, or { ok:false, reason } so the caller
+  // can leave the box on the ground (melee/tool/infinite-ammo/already-full can't take it).
+  refillHeld() {
+    const held = this.game.inventory ? this.game.inventory.curItem() : null;
+    const key = held && held.kind, d = key && WEAPONS[key];
+    if (!d || d.melee || d.class === 'tool' || d.class === 'builder') return { ok: false, reason: 'noweapon' };
+    if (this.reserve[key] === Infinity || d.reserveMax === Infinity) return { ok: false, reason: 'infinite' };
+    const max = d.reserveMax;
+    if (this.reserve[key] >= max) return { ok: false, reason: 'full' };
+    const mag = this.magMax[key] || d.mag || 1;
+    const give = Math.ceil((max * 0.25) / mag) * mag;            // 25% of capacity, rounded up to whole mags
+    this.reserve[key] = Math.min(max, this.reserve[key] + give);
+    if (this.game.hud) this.game.hud.setWeapon(this);
+    return { ok: true, key };
+  }
+
   update(dt) {
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.grenadeCD > 0) this.grenadeCD -= dt;
@@ -4304,17 +4322,28 @@ class LootManager {
   tryPickupNearby() {
     const pu = this.nearPickup; if (!pu) return false;
     const inv = this.game.inventory;
+    if (pu.kind === 'ammo') { // ground ammo never enters the backpack — it tops up ONLY the gun in hand (you pick which by holding it)
+      const r = this.game.weapons.refillHeld();
+      if (!r.ok) {
+        if (r.reason === 'full') this.game.hud.toast('Ammo reserve full', 0xb88a3a);
+        else this.game.hud.toast('Hold a firearm to grab ammo', 0xd23a2a);
+        return true; // leave the box on the ground — switch to a gun and grab it again
+      }
+      this.game.audio.reloadClick(); this.game.hud.toast('Ammo · ' + WEAPONS[r.key].name, 0xb88a3a);
+      this._removePickup(pu); this.nearPickup = null;
+      return true;
+    }
     if (inv.isFull()) { this.game.hud.toast('Inventory full — drop something (I)', 0xd23a2a); return true; }
     if (WEAPONS[pu.kind]) this.game.weapons.grant(pu.kind); // a dropped weapon → re-own it
     inv.addItem(pu.kind, pu.value);
     const label = WEAPONS[pu.kind] ? WEAPONS[pu.kind].name : (ITEM_DEFS[pu.kind] ? ITEM_DEFS[pu.kind].icon + ' ' + ITEM_DEFS[pu.kind].name : pu.kind);
     this.game.audio.buy(); this.game.hud.toast('Picked up ' + label, 0x7fd06a);
-    this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose();
-    const idx = this.pickups.indexOf(pu); if (idx >= 0) this.pickups.splice(idx, 1);
+    this._removePickup(pu);
     this.nearPickup = null;
     return true;
   }
-  promptPickup() { if (!this.nearPickup) return null; const k = this.nearPickup.kind; const label = WEAPONS[k] ? WEAPONS[k].name : (ITEM_DEFS[k] ? ITEM_DEFS[k].icon + ' ' + ITEM_DEFS[k].name : k); return 'Press <b>E</b> to pick up ' + label; }
+  _removePickup(pu) { this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); const idx = this.pickups.indexOf(pu); if (idx >= 0) this.pickups.splice(idx, 1); }
+  promptPickup() { if (!this.nearPickup) return null; const k = this.nearPickup.kind; if (k === 'ammo') return 'Press <b>E</b> to load ammo into the gun in hand'; const label = WEAPONS[k] ? WEAPONS[k].name : (ITEM_DEFS[k] ? ITEM_DEFS[k].icon + ' ' + ITEM_DEFS[k].name : k); return 'Press <b>E</b> to pick up ' + label; }
 
   update(dt) {
     const p = this.game.player, pp = p.pos;
