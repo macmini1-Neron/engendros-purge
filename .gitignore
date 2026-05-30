@@ -3,3 +3,34 @@ node_modules/
 __pycache__/
 *.log
 *.pyc
+
+# --- dev / QA artifacts (not part of the game) ---
+# Playwright MCP captures
+.playwright-mcp/
+# QA screenshots & render captures
+shot-*.jpeg
+shot-*.png
+tank-*.jpeg
+tank-*.png
+rig-*.jpeg
+barrel*.jpeg
+bolts-check.jpeg
+glb-iso.jpeg
+probe-height.jpeg
+shop-thumb.png
+shop-verify.jpeg
+ph4-held-medkit.png
+# Standalone dev model viewers
+glb-rig.html
+glb-viewer.html
+tank-viewer.html
+tankglb-test.html
+# Unused / reference-only dev assets
+assets/Terrifying SU-57 Sound*.mp3
+assets/arty*.mov
+assets/ref-t90m-blueprint.png
+# 50 MB experimental GLB tank — NOT used by the live game (voxel tank is built in code).
+# Only referenced by dev tools (tankglb.js, glb-*.html). Add via Git LFS if you wire it up.
+assets/modely/*.glb
+# stray empty file
+/game

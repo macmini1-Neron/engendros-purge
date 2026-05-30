@@ -74,6 +74,10 @@ export class MeshBuilder {
     if (opts.sx || opts.sy || opts.sz) {
       _m4.scale(_v.set(opts.sx || 1, opts.sy || 1, opts.sz || 1));
     }
+    if (opts.align) { // orient local +Y along the given normal vector (applied AFTER rx/ry/rz, before translation)
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), opts.align.clone().normalize());
+      _m4.premultiply(new THREE.Matrix4().makeRotationFromQuaternion(q));
+    }
     _m4.setPosition(x, y, z);
     _m3.getNormalMatrix(_m4);
 

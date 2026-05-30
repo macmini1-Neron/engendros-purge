@@ -4,24 +4,55 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>ENGENDROS PURGE — voxel wave shooter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='15' r='13' fill='%23e8622e'/><circle cx='16' cy='13' r='4.5' fill='%23161210'/><circle cx='16' cy='13' r='1.6' fill='%23fff'/><path d='M8 20 q8 6 16 0' stroke='%23161210' stroke-width='2' fill='none'/><path d='M14 3 l-1 4 M19 3 l1 4' stroke='%23161210' stroke-width='1.5'/></svg>" />
   <style>
     :root {
-      --paper: #f3e7c9;
+      /* ---- type ---- */
+      --font-display: 'Oswald', 'Trebuchet MS', system-ui, sans-serif;
+      --font-body: 'Rajdhani', 'Trebuchet MS', system-ui, sans-serif;
+      /* ---- ink ---- */
+      --paper: #f1e6cb;
+      --ink-dim: #b8a888;
+      /* ---- accents ---- */
       --gold: #ffcf5c;
+      --gold-2: #e2a233;
+      --gold-deep: #8a5a18;
+      --olive: #b7bd6a;
       --red: #e8533a;
       --green: #7fd06a;
       --blue: #6fa8e8;
+      --steel: #8fb3e0;
       --c-common: #cfd3d8;
       --c-rare: #5fa8ff;
       --c-epic: #b070ff;
       --c-legendary: #ffc23a;
+      /* ---- surfaces (warm dark sandstone) ---- */
+      --bg: #0b0907;
+      --surface-1: rgba(38, 26, 16, .55);
+      --surface-2: rgba(20, 14, 9, .72);
+      --glass: rgba(18, 13, 8, .55);
+      /* ---- lines ---- */
+      --line: rgba(255, 207, 92, .18);
+      --line-soft: rgba(255, 255, 255, .08);
+      --line-gold: rgba(255, 207, 92, .5);
+      /* ---- radii ---- */
+      --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
+      /* ---- shadow + motion ---- */
+      --shadow-1: 0 6px 22px rgba(0, 0, 0, .45);
+      --shadow-card: 0 28px 70px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(255, 235, 190, .08);
+      --t: .18s cubic-bezier(.2, .7, .3, 1);
+      --t-fast: .1s ease;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #0c0a08; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
     body {
-      font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+      font-family: var(--font-body);
+      font-weight: 600;
       color: var(--paper); user-select: none; -webkit-user-select: none; cursor: default;
+      -webkit-font-smoothing: antialiased;
     }
     #game {
       position: fixed; inset: 0; display: block;
@@ -53,44 +84,62 @@
     #scope::before { content:''; position:absolute; top:50%; left:0; height:1px; width:100%; background:rgba(0,0,0,.6); }
     #scope.show { opacity: 1; }
 
+    /* binocular overlay (glassing with binoculars) — twin overlapping eyepieces, soft-edged figure-8, no reticle.
+       Each radial mask is transparent INSIDE its circle (see-through) and opaque OUTSIDE; `intersect`
+       keeps the overlay only where BOTH are opaque, so the cut-out is the UNION of the two lenses. */
+    #binoview { position: fixed; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .12s;
+                background: #04060a;
+                -webkit-mask:
+                  radial-gradient(circle 31vmin at calc(50% - 14.5vmin) 50%, transparent 0 70%, #000 90%),
+                  radial-gradient(circle 31vmin at calc(50% + 14.5vmin) 50%, transparent 0 70%, #000 90%);
+                mask:
+                  radial-gradient(circle 31vmin at calc(50% - 14.5vmin) 50%, transparent 0 70%, #000 90%),
+                  radial-gradient(circle 31vmin at calc(50% + 14.5vmin) 50%, transparent 0 70%, #000 90%);
+                -webkit-mask-composite: source-in; /* legacy alias: source-in == intersect */
+                mask-composite: intersect; }      /* declared LAST so it wins: cut-out = UNION of the two lenses */
+    #binoview.show { opacity: 1; }
+
     /* periscope overlay (driver seat) */
     #periscope { position:fixed; inset:0; pointer-events:none; opacity:0; transition:opacity .2s; z-index:60;
       background: linear-gradient(to bottom, #05060a 0%, #05060a 31%, rgba(5,6,10,0) 35%, rgba(5,6,10,0) 63%, #05060a 67%, #05060a 100%); }
     #periscope::after { content:''; position:absolute; inset:0; box-shadow: inset 0 0 220px 60px rgba(0,0,0,0.85); }
     #periscope.show { opacity:1; }
 
-    .panel { position: absolute; bottom: 22px; background: rgba(20,14,8,.45); border: 2px solid rgba(255,207,92,.35); border-radius: 10px; padding: 10px 16px; backdrop-filter: blur(2px); }
-    #hpwrap { left: 26px; min-width: 230px; }
-    #ammowrap { right: 26px; text-align: right; min-width: 210px; }
-    .label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; opacity: .7; }
-    .bar { margin-top: 5px; height: 14px; background: rgba(0,0,0,.4); border-radius: 6px; overflow: hidden; }
+    .panel { position: absolute; bottom: 22px; background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-md); padding: 11px 16px; backdrop-filter: blur(6px); box-shadow: var(--shadow-1); }
+    #hpwrap { left: 26px; min-width: 232px; }
+    #ammowrap { right: 26px; text-align: right; min-width: 212px; }
+    .label { font-family: var(--font-display); font-size: 10.5px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--ink-dim); }
+    .bar { margin-top: 5px; height: 13px; background: rgba(0,0,0,.5); border-radius: 5px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,.5); }
     #armorbar { height: 9px; margin-bottom: 4px; }
     #armorfill { height: 100%; width: 0%; background: linear-gradient(90deg,#4f8fe0,#9fd0ff); transition: width .12s; }
     #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg, #e8533a, #ffb24a); transition: width .12s; }
-    #hpnum { font-size: 20px; font-weight: bold; margin-top: 3px; }
+    #hpnum { font-family: var(--font-display); font-size: 21px; font-weight: 600; margin-top: 4px; letter-spacing: .5px; }
     #hungerbar { height: 9px; margin-top: 4px; }
     #hungerfill { height: 100%; width: 100%; background: linear-gradient(90deg,#8a5a2a,#dfa050); transition: width .12s, filter .2s; }
     #survival { font-size: 12px; font-weight: 800; margin-top: 4px; min-height: 14px; letter-spacing: .5px; }
     #survival .leg { color: #ff6a52; }
     #survival .spl { color: #c9a8ff; }
-    #ammonum { font-size: 34px; font-weight: bold; line-height: 1; }
-    #ammonum .res { font-size: 18px; opacity: .65; font-weight: normal; }
-    #wepname { font-size: 14px; letter-spacing: 1px; margin-top: 4px; font-weight: 800; }
-    #wepclass { font-size: 11px; opacity:.6; }
+    #ammonum { font-family: var(--font-display); font-size: 36px; font-weight: 600; line-height: 1; }
+    #ammonum .res { font-size: 18px; color: var(--ink-dim); font-weight: 400; }
+    #wepname { font-family: var(--font-display); font-size: 15px; letter-spacing: 1px; margin-top: 5px; font-weight: 600; text-transform: uppercase; }
+    #wepclass { font-size: 11.5px; color: var(--ink-dim); letter-spacing: .3px; }
 
-    #topbar { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 22px; align-items: center; }
-    #wave { font-size: 20px; font-weight: bold; letter-spacing: 2px; }
-    #money { font-size: 20px; font-weight: bold; color: var(--gold); }
-    #keys { font-size: 20px; font-weight: bold; color: #ffe08a; }
-    #radios { font-size: 20px; font-weight: bold; color: #6fd0e8; }
-    #score { font-size: 13px; opacity: .7; }
+    #topbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; align-items: center;
+      background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 7px 20px; backdrop-filter: blur(6px); box-shadow: var(--shadow-1); }
+    #topbar > div { font-family: var(--font-display); font-weight: 600; }
+    #wave { font-size: 19px; letter-spacing: 2px; }
+    #money { font-size: 19px; color: var(--gold); }
+    #keys { font-size: 19px; color: #ffe08a; }
+    #radios { font-size: 19px; color: #6fd0e8; }
+    #score { font-size: 13px; color: var(--ink-dim); letter-spacing: 1px; }
 
-    #msg { position: absolute; left: 50%; top: 32%; transform: translate(-50%,-50%); font-size: 54px; font-weight: 900; letter-spacing: 4px; text-align: center; opacity: 0; transition: opacity .3s; color: var(--gold); text-shadow: 0 4px 0 rgba(0,0,0,.5), 0 0 30px rgba(255,207,92,.4); }
-    #msg.show { opacity: 1; }
-    #msg small { display: block; font-size: 20px; font-weight: 600; letter-spacing: 2px; color: var(--paper); opacity: .85; margin-top: 8px; }
+    #msg { position: absolute; left: 50%; top: 32%; transform: translate(-50%,-50%); font-family: var(--font-display); font-size: 60px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; text-align: center; opacity: 0; transition: opacity .3s; color: var(--gold); text-shadow: 0 3px 0 rgba(0,0,0,.55), 0 0 34px rgba(255,207,92,.35); }
+    #msg.show { opacity: 1; animation: msgPop .4s cubic-bezier(.2,.9,.3,1.2); }
+    @keyframes msgPop { from { transform: translate(-50%,-50%) scale(.9); } to { transform: translate(-50%,-50%) scale(1); } }
+    #msg small { display: block; font-family: var(--font-body); font-size: 19px; font-weight: 600; letter-spacing: 1.5px; text-transform: none; color: var(--paper); opacity: .82; margin-top: 10px; }
 
-    #toast { position: absolute; left: 50%; top: 70px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; }
-    #toast div { background: rgba(20,14,8,.7); border: 2px solid rgba(255,255,255,.2); border-radius: 8px; padding: 6px 16px; font-size: 15px; font-weight: 700; opacity: 0; animation: toast 3s forwards; }
+    #toast { position: absolute; left: 50%; top: 72px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 5px; }
+    #toast div { background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 16px; font-size: 14.5px; font-weight: 600; backdrop-filter: blur(6px); box-shadow: var(--shadow-1); opacity: 0; animation: toast 3s forwards; }
     @keyframes toast { 0%{opacity:0; transform: translateY(-10px) scale(.9);} 10%{opacity:1; transform:none;} 80%{opacity:1;} 100%{opacity:0;} }
 
     #bossbar { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); width: min(70vw, 640px); text-align: center; opacity: 0; transition: opacity .3s; }
@@ -103,17 +152,17 @@
     #bosspip.show { opacity:1; }
     #bossbar.exposed { box-shadow:0 0 14px rgba(255,200,60,.7); }
 
-    #interact { position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); font-size: 18px; font-weight: 700; background: rgba(20,14,8,.6); border: 2px solid var(--gold); border-radius: 10px; padding: 8px 18px; opacity: 0; transition: opacity .12s; }
+    #interact { position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); font-size: 16px; font-weight: 600; background: var(--glass); border: 1px solid var(--line-gold); border-radius: var(--r-sm); padding: 8px 18px; opacity: 0; transition: opacity .12s; backdrop-filter: blur(6px); box-shadow: var(--shadow-1); }
     #interact.show { opacity: 1; }
-    #interact b { color: var(--gold); }
+    #interact b { color: var(--gold); font-family: var(--font-display); padding: 1px 7px; background: rgba(255,207,92,.14); border: 1px solid var(--line); border-radius: 5px; }
 
     #vignette { position: fixed; inset: 0; z-index: 9; pointer-events: none; box-shadow: inset 0 0 200px 40px rgba(200,30,20,0); transition: box-shadow .15s; }
     #firevig { position: fixed; inset: 0; z-index: 9; pointer-events: none; box-shadow: inset 0 0 220px 80px rgba(255,90,20,0); transition: box-shadow .1s; }
     #firepov { position: fixed; inset: 0; z-index: 9; pointer-events: none; opacity: 0; mix-blend-mode: screen; background: radial-gradient(140% 55% at 50% 122%, rgba(255,150,30,0) 42%, rgba(255,110,20,.85) 74%, rgba(255,210,70,.95) 100%); }
     #firepov.on { opacity: .85; animation: firepovF .5s steps(4) infinite; }
     @keyframes firepovF { 0% { transform: translateY(2%) scaleY(1); } 50% { transform: translateY(-3%) scaleY(1.09); } 100% { transform: translateY(2%) scaleY(1); } }
-    #killfeed { position: absolute; top: 60px; right: 26px; text-align: right; font-size: 14px; opacity: .9; }
-    #killfeed div { margin: 2px 0; opacity: 0; animation: kf 2.4s forwards; }
+    #killfeed { position: absolute; top: 60px; right: 26px; text-align: right; font-size: 14px; font-weight: 600; opacity: .92; }
+    #killfeed div { margin: 3px 0; padding: 2px 10px; background: var(--glass); border: 1px solid var(--line-soft); border-radius: 6px; display: inline-block; opacity: 0; animation: kf 2.4s forwards; }
     @keyframes kf { 0%{opacity:0; transform: translateX(20px);} 12%{opacity:1; transform:none;} 80%{opacity:1;} 100%{opacity:0;} }
 
     /* ---------- multiplayer ---------- */
@@ -123,7 +172,9 @@
     .mp-label .mp-hpwrap { display: inline-block; width: 64px; height: 6px; background: rgba(0,0,0,.55); border-radius: 3px; overflow: hidden; margin-top: 2px; border: 1px solid rgba(0,0,0,.4); }
     .mp-label .mp-hp { display: block; height: 100%; width: 100%; background: linear-gradient(90deg,#7fd06a,#bff0a0); transition: width .15s; }
     .mp-label.down .mp-name { color: #ff7a6a; } .mp-label.down .mp-hp { background: #b03a2a; }
-    .mp-input { display: block; margin: 6px auto; width: 220px; max-width: 80%; padding: 9px 12px; font-size: 15px; font-weight: 700; text-align: center; border-radius: 8px; border: 2px solid rgba(255,207,92,.4); background: rgba(0,0,0,.35); color: var(--paper); outline: none; }
+    .mp-input { display: block; margin: 6px auto; width: 220px; max-width: 80%; padding: 10px 12px; font-family: var(--font-body); font-size: 15px; font-weight: 600; text-align: center; border-radius: var(--r-sm); border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--paper); outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+    .mp-input:focus { border-color: var(--line-gold); box-shadow: 0 0 0 3px rgba(255,207,92,.12); }
+    .mp-input::placeholder { color: var(--ink-dim); opacity: .7; }
     .mp-row { display: flex; gap: 8px; align-items: center; justify-content: center; margin: 10px 0; flex-wrap: wrap; }
     .mp-row .btn { margin: 0; }
     .mp-or { opacity: .55; font-size: 13px; }
@@ -148,42 +199,66 @@
     .mp-skinpick.sel { opacity: 1; transform: scale(1.18); box-shadow: 0 0 0 2px var(--gold); }
 
     /* ---------- overlays ---------- */
-    .overlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(20,14,8,.72), rgba(8,6,4,.92)); pointer-events: auto; }
-    .overlay.show { display: flex; }
-    .card { background: linear-gradient(180deg, #25190f, #181009); border: 3px solid var(--gold); border-radius: 18px; padding: 34px 42px; max-width: 820px; width: min(92vw, 820px); max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.6), inset 0 0 40px rgba(255,207,92,.06); text-align: center; }
-    .title { font-size: 54px; font-weight: 900; letter-spacing: 5px; color: var(--gold); text-shadow: 0 5px 0 #8a5a1a, 0 0 40px rgba(255,207,92,.35); margin-bottom: 6px; }
-    .subtitle { font-size: 15px; opacity: .82; margin-bottom: 20px; line-height: 1.6; }
-    .btn { display: inline-block; cursor: pointer; pointer-events: auto; background: linear-gradient(180deg, #ffd86b, #e29a2c); color: #2a1a06; font-weight: 800; letter-spacing: 1px; border: none; border-radius: 12px; padding: 15px 32px; font-size: 19px; box-shadow: 0 5px 0 #9c6212, 0 8px 18px rgba(0,0,0,.4); transition: transform .08s, box-shadow .08s; margin: 8px; }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 7px 0 #9c6212, 0 10px 22px rgba(0,0,0,.45); }
-    .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #9c6212; }
-    .btn.sec { background: linear-gradient(180deg,#5a4a36,#3a2c1c); color: var(--paper); box-shadow: 0 5px 0 #211810; }
+    .overlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse 80% 70% at 50% 38%, rgba(40,26,14,.55), rgba(6,4,3,.93) 90%); pointer-events: auto; }
+    .overlay.show { display: flex; animation: ovIn .25s ease both; }
+    @keyframes ovIn { from { opacity: 0; } to { opacity: 1; } }
+    /* film grain on menus */
+    .overlay::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .045; mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+    .card { position: relative; background:
+        linear-gradient(180deg, rgba(46,32,19,.96), rgba(20,13,8,.97));
+      border: 1px solid var(--line-gold); border-radius: var(--r-lg);
+      padding: 38px 44px; max-width: 760px; width: min(92vw, 760px); max-height: 92vh; overflow-y: auto;
+      box-shadow: var(--shadow-card); text-align: center;
+      animation: cardIn .34s cubic-bezier(.2,.8,.25,1) both; }
+    @keyframes cardIn { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+    /* stencil corner ticks */
+    .card::before, .card::after { content: ''; position: absolute; width: 22px; height: 22px; border: 2px solid var(--line-gold); pointer-events: none; opacity: .7; }
+    .card::before { top: 12px; left: 12px; border-right: 0; border-bottom: 0; border-top-left-radius: 6px; }
+    .card::after { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-bottom-right-radius: 6px; }
+    .title { font-family: var(--font-display); font-size: 58px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase;
+      color: var(--gold); line-height: .98; text-shadow: 0 2px 0 var(--gold-deep), 0 0 34px rgba(255,207,92,.28); margin-bottom: 10px; }
+    .subtitle { font-size: 15.5px; font-weight: 500; color: var(--ink-dim); margin: 0 auto 22px; max-width: 62ch; line-height: 1.55; }
+    .subtitle b { color: var(--paper); font-weight: 700; }
+    .btn { display: inline-block; cursor: pointer; pointer-events: auto; font-family: var(--font-display); text-transform: uppercase;
+      background: linear-gradient(180deg, #ffd877, #e0a134); color: #2a1a06; font-weight: 600; letter-spacing: 1.5px;
+      border: 1px solid rgba(255,225,150,.6); border-radius: var(--r-md); padding: 13px 30px; font-size: 18px;
+      box-shadow: 0 3px 0 var(--gold-deep), var(--shadow-1); transition: transform var(--t-fast), box-shadow var(--t-fast), filter var(--t-fast); margin: 7px; }
+    .btn:hover { transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 5px 0 var(--gold-deep), 0 12px 24px rgba(0,0,0,.45); }
+    .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--gold-deep), 0 4px 10px rgba(0,0,0,.4); }
+    .btn:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
+    .btn.sec { background: linear-gradient(180deg,#3c2e1e,#281c11); color: var(--paper); border-color: var(--line); box-shadow: 0 3px 0 #160f08, var(--shadow-1); }
+    .btn.sec:hover { filter: brightness(1.18); }
 
-    .controls { display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: center; font-size: 13px; opacity: .85; margin-top: 18px; }
-    .controls b { color: var(--gold); }
+    .controls { display: flex; flex-wrap: wrap; gap: 7px 10px; justify-content: center; font-size: 12.5px; color: var(--ink-dim); margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+    .controls span { background: rgba(255,255,255,.03); border: 1px solid var(--line-soft); border-radius: 6px; padding: 3px 9px; }
+    .controls b { color: var(--gold); font-family: var(--font-display); font-weight: 600; letter-spacing: .5px; }
 
-    .shoptabs { display:flex; gap:8px; justify-content:center; margin-bottom:14px; }
-    .tab { cursor:pointer; pointer-events:auto; padding:8px 18px; border-radius:9px; font-weight:800; font-size:14px; background:rgba(255,255,255,.06); border:2px solid transparent; }
-    .tab.on { border-color: var(--gold); color: var(--gold); }
-    #previewWrap { display: none; margin: 4px 0 8px; }
-    #previewCanvas { width: 100%; height: 200px; display: block; image-rendering: auto; background: radial-gradient(ellipse at center, rgba(255,255,255,.07), rgba(0,0,0,.3)); border: 2px solid rgba(255,207,92,.25); border-radius: 12px; }
-    #previewName { margin-top: 6px; font-size: 17px; font-weight: 800; color: var(--gold); letter-spacing: 1px; }
-    .shopgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 16px 0; }
-    .item { background: rgba(255,255,255,.04); border: 2px solid rgba(255,207,92,.25); border-radius: 12px; padding: 12px 14px; text-align: left; display: flex; flex-direction: column; gap: 5px; }
-    .item .nm { font-size: 16px; font-weight: 800; }
-    .item .ds { font-size: 12px; opacity: .7; min-height: 28px; }
+    .shoptabs { display:flex; gap:6px; justify-content:center; margin-bottom:16px; background: rgba(0,0,0,.25); border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 5px; }
+    .tab { cursor:pointer; pointer-events:auto; flex: 1; text-align: center; padding:9px 14px; border-radius:8px; font-family: var(--font-display); text-transform: uppercase; font-weight:600; letter-spacing: 1px; font-size:14px; color: var(--ink-dim); background:transparent; border:none; transition: background var(--t-fast), color var(--t-fast); }
+    .tab:hover { color: var(--paper); background: rgba(255,255,255,.05); }
+    .tab.on { color: #2a1a06; background: linear-gradient(180deg,#ffd877,#e0a134); box-shadow: 0 2px 8px rgba(255,207,92,.25); }
+    #previewWrap { display: none; margin: 4px 0 10px; }
+    #previewCanvas { width: 100%; height: 196px; display: block; image-rendering: auto; background: radial-gradient(ellipse at 50% 40%, rgba(255,223,150,.10), rgba(0,0,0,.35) 75%); border: 1px solid var(--line); border-radius: var(--r-md); }
+    #previewName { margin-top: 8px; font-family: var(--font-display); font-size: 18px; font-weight: 600; text-transform: uppercase; color: var(--gold); letter-spacing: 1.5px; }
+    .shopgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
+    .item { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; text-align: left; display: flex; flex-direction: column; gap: 5px; }
+    .item .nm { font-family: var(--font-display); font-size: 16px; font-weight: 600; letter-spacing: .5px; }
+    .item .ds { font-size: 12.5px; font-weight: 500; color: var(--ink-dim); min-height: 30px; line-height: 1.35; }
     .item .row { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
-    .item .cost { color: var(--gold); font-weight: 800; }
-    .item .buy { cursor: pointer; pointer-events: auto; background: linear-gradient(180deg,#7fd06a,#4ea63c); color: #0c2a06; font-weight: 800; border: none; border-radius: 8px; padding: 7px 15px; font-size: 13px; box-shadow: 0 3px 0 #2f6a22; }
+    .item .cost { color: var(--gold); font-family: var(--font-display); font-weight: 600; letter-spacing: .5px; }
+    .item .buy { cursor: pointer; pointer-events: auto; font-family: var(--font-display); letter-spacing: .5px; text-transform: uppercase; background: linear-gradient(180deg,#7fd06a,#4ea63c); color: #0c2a06; font-weight: 600; border: 1px solid rgba(150,230,120,.5); border-radius: 7px; padding: 6px 14px; font-size: 13px; box-shadow: 0 2px 0 #2f6a22; transition: filter var(--t-fast), transform var(--t-fast); }
+    .item .buy:hover { filter: brightness(1.08); }
     .item .buy:active { transform: translateY(2px); box-shadow: 0 1px 0 #2f6a22; }
-    .item .buy:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
-    .item.owned { opacity: .55; }
-    .shopmoney { font-size: 20px; font-weight: 800; color: var(--gold); margin-bottom: 4px; }
+    .item .buy:disabled { filter: grayscale(.7) brightness(.6); cursor: not-allowed; }
+    .item.owned { opacity: .5; }
+    .shopmoney { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: 1px; color: var(--gold); margin-bottom: 4px; }
     .tag { font-size:10px; font-weight:800; padding:2px 6px; border-radius:5px; letter-spacing:1px; }
     /* Shop: pin the header + 3D preview + start button; let ONLY the weapon grid scroll,
        so the preview stays visible no matter how far down the list you hover. */
     #shop .card { display: flex; flex-direction: column; overflow: hidden; }
-    #shop .card > .title, #shop .shopmoney, #shop .subtitle, #shop .shoptabs, #shop #previewWrap, #shop #nextWaveBtn { flex: 0 0 auto; }
-    #shop #nextWaveBtn { align-self: center; margin-top: 12px; }
+    #shop .card > .title, #shop .shopmoney, #shop .subtitle, #shop .shoptabs, #shop #previewWrap, #shop #loadoutStrip, #shop .armory-actions { flex: 0 0 auto; }
     #shop .shopgrid { flex: 1 1 auto; min-height: 0; overflow-y: auto; align-content: start; padding-right: 8px;
       scrollbar-width: thin; scrollbar-color: rgba(255,207,92,.55) rgba(0,0,0,.25); }
     #shop .shopgrid::-webkit-scrollbar { width: 9px; }
@@ -193,17 +268,51 @@
     .item:not(.owned):hover { transform: translateY(-1px); }
     .item.previewing { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold), 0 0 16px rgba(255,207,92,.3); }
     #previewHint { font-size: 11px; opacity: .5; margin-top: 2px; }
+    .item.equipped { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold), 0 0 14px rgba(255,207,92,.28); opacity: 1; }
+    .item .acts { display: inline-flex; gap: 6px; }
+    .buy.sell { background: linear-gradient(180deg,#d98a4a,#a8542c); box-shadow: 0 3px 0 #6a3418; color: #2a1206; }
+    #loadoutStrip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0 6px; }
+    .lo-slot { background: var(--surface-1); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 8px; text-align: center; transition: border-color var(--t-fast); }
+    .lo-slot.on { border-color: var(--line-gold); background: rgba(40,28,8,.5); }
+    /* survival inventory hotbar (right edge, vertical) — wheel scrolls it, selected is gold */
+    #hotbar { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 4px; pointer-events: none; z-index: 4; }
+    .hb-slot { width: 44px; height: 44px; border: 2px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(10,8,4,.5); display: flex; align-items: center; justify-content: center; position: relative; transition: border-color .1s, box-shadow .1s, transform .1s; }
+    .hb-slot.hb-loadout { border-color: rgba(111,168,232,.32); }
+    .hb-slot.hb-sel { border-color: var(--gold); box-shadow: 0 0 10px rgba(255,207,92,.5); transform: scale(1.12); }
+    .hb-ico { font-size: 20px; line-height: 1; }
+    .hb-badge { position: absolute; bottom: 1px; right: 3px; font-size: 10px; font-weight: 800; color: var(--gold); text-shadow: 0 1px 2px #000; }
+    /* survival inventory overlay (key I) — non-pausing; frees the cursor while the game runs underneath */
+    .inv-overlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(6,4,2,.5); }
+    .inv-overlay.show { display: flex; }
+    .inv-card { pointer-events: auto; background: var(--surface-1); border: 1px solid var(--line-gold); border-radius: var(--r-lg); padding: 20px 26px 22px; min-width: 520px; max-width: 70vw; box-shadow: var(--shadow-card); }
+    .inv-title { font-family: var(--font-display); font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--gold); }
+    .inv-shead { font-family: var(--font-display); font-size: 13px; letter-spacing: 1.5px; color: var(--ink-dim); text-transform: uppercase; margin: 14px 0 6px; }
+    .inv-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .inv-slot { background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--r-sm); min-height: 66px; padding: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; position: relative; }
+    .inv-slot.on { border-color: var(--line-gold); background: rgba(40,28,8,.4); }
+    .inv-slot.filled { cursor: grab; border-color: rgba(255,207,92,.3); }
+    .inv-slot.filled:active { cursor: grabbing; }
+    .inv-slot.empty { opacity: .35; border-style: dashed; }
+    .inv-ico { font-size: 24px; line-height: 1; }
+    .inv-slk { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-dim); }
+    .inv-snm { font-size: 11px; font-weight: 700; text-align: center; color: var(--ink); line-height: 1.1; }
+    .inv-drop { margin-top: 3px; font-size: 9px; padding: 1px 7px; border: 0; border-radius: 4px; background: linear-gradient(180deg,#d98a4a,#a8542c); color: #2a1206; cursor: pointer; font-weight: 800; }
+    .inv-hint { margin-top: 16px; font-size: 12px; color: var(--ink-dim); }
+    .lo-slot .lo-lbl { display: block; font-size: 9.5px; letter-spacing: 1.5px; color: var(--ink-dim); text-transform: uppercase; }
+    .lo-slot .lo-nm { display: block; font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .3px; margin-top: 3px; }
+    .armory-actions { display: flex; gap: 10px; justify-content: center; margin-top: 6px; }
+    .armory-actions .btn { margin: 0; }
 
-    #left { font-size: 13px; opacity: .7; align-self: center; letter-spacing: 1px; }
-    #wavetag { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; opacity: 0; transition: opacity .25s; pointer-events: none; }
-    #wavetag.show { opacity: .95; }
-    #wavetag .wt { font-size: 12px; font-weight: 800; letter-spacing: 1px; padding: 3px 11px; border-radius: 8px; background: rgba(10,7,4,.55); border: 1px solid rgba(255,255,255,.2); text-shadow: 0 2px 0 rgba(0,0,0,.5); }
-    #wavetag .wt.mod { color: var(--gold); border-color: rgba(255,207,92,.55); background: rgba(40,28,8,.6); }
+    #left { font-size: 13px; color: var(--ink-dim); align-self: center; letter-spacing: 1px; }
+    #wavetag { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); display: flex; gap: 7px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+    #wavetag.show { opacity: 1; }
+    #wavetag .wt { font-family: var(--font-display); font-size: 11.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; padding: 3px 11px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line-soft); backdrop-filter: blur(4px); }
+    #wavetag .wt.mod { color: var(--gold); border-color: var(--line-gold); background: rgba(40,28,8,.6); }
     /* mode picker on the menu */
-    .modepick { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: 6px 0 4px; }
-    .modepick .btn { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 230px; padding: 16px 22px; }
-    .modepick .btn small { font-weight: 600; font-size: 11px; opacity: .8; letter-spacing: 0; text-transform: none; }
-    .btn.night { background: linear-gradient(180deg, #5566b8, #2a2f63); color: #eaf0ff; box-shadow: 0 5px 0 #1a1d44, 0 8px 18px rgba(0,0,0,.4); }
+    .modepick { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 4px 0; }
+    .modepick .btn { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 232px; padding: 16px 22px; }
+    .modepick .btn small { font-family: var(--font-body); font-weight: 500; font-size: 11.5px; opacity: .85; letter-spacing: .2px; text-transform: none; }
+    .btn.night { background: linear-gradient(180deg, #5a6cc0, #2a2f63); color: #eaf0ff; border-color: rgba(150,170,255,.5); box-shadow: 0 3px 0 #1a1d44, var(--shadow-1); }
     .btn.night small { color: #c7d2ff; }
     /* THE LONG NIGHT HUD: clock + gear readout */
     #clock { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); font-size: 14px; font-weight: 800; letter-spacing: 1px; padding: 4px 14px; border-radius: 9px; background: rgba(6,8,18,.6); border: 1px solid rgba(160,180,230,.3); text-shadow: 0 2px 0 rgba(0,0,0,.6); display: none; }
@@ -288,7 +397,6 @@
       <div id="wave">WAVE 1</div>
       <div id="left"></div>
       <div id="money">$0</div>
-      <div id="keys">🔑 0</div>
       <div id="radios"></div>
       <div id="buildmats" style="color:#cdb887;font-weight:800"></div>
       <div id="score">0</div>
@@ -315,13 +423,24 @@
       <div id="wepclass">pistol · slot 1</div>
     </div>
 
+    <div id="hotbar"></div>
+
     <div id="interact"></div>
     <div id="tankhp"><div id="tankhpfill"></div></div>
     <div id="heatbar"><div class="hl" id="heatlabel">BARREL HEAT</div><div class="hb"><div id="heatfill"></div></div></div>
     <div id="msg"></div>
   </div>
 
+  <div id="inventory" class="inv-overlay">
+    <div class="inv-card">
+      <div class="inv-title">INVENTORY <span id="inv-count" style="font-size:14px;color:var(--ink-dim);font-weight:600">0/15</span></div>
+      <div id="inv-grid" class="inv-grid"></div>
+      <div class="inv-hint"><b>I</b> close · drag to reorder · <b>drag a slot OUT</b> to drop it · scavenge with <b>E</b> · hold &amp; use with the wheel + <b>LMB</b></div>
+    </div>
+  </div>
+
   <div id="scope"></div>
+  <div id="binoview"></div>
   <div id="periscope"></div>
   <div id="tanksight">
     <div class="ts-reticle"></div>
@@ -339,24 +458,24 @@
     <div class="card">
       <div class="title">ENGENDROS PURGE</div>
       <div class="subtitle">
-        The voodoo plushies woke up hungry. Hold the dusty arena, pop them for stuffing &amp; cash,
-        snatch <b>keys</b> to crack open weapon <b>lootboxes</b>, and gear up between waves.
+        The voodoo plushies woke up hungry. Hold the dusty arena, pop them for stuffing &amp; cash —
+        every run banks to your <b>account</b>. Spend it in the <b>SHOP</b> to unlock gear and build your loadout.
       </div>
       <div id="menuBest" class="subtitle" style="margin:-6px 0 14px;font-size:13px;opacity:.72;color:var(--gold);"></div>
       <div class="modepick">
         <button class="btn" id="playBtn">▶ PURGE<small>arcade wave modes — special waves, mini-bosses</small></button>
         <button class="btn night" id="longNightBtn">🌙 THE LONG NIGHT<small>endless survival · day/night · pitch-dark nights</small></button>
       </div>
+      <button class="btn" id="armoryBtn">🔫 SHOP<small>spend your bank — unlock &amp; equip your loadout</small></button>
       <button class="btn" id="multiplayerBtn">👥 MULTIPLAYER<small>co-op for 2–4 · host or join with a room code</small></button>
       <button class="btn sec" id="settingsBtn">⚙ SETTINGS</button>
       <button class="btn sec" id="adminBtn">🛠 ADMIN — ASSET VIEWER</button>
       <div class="controls">
-        <span><b>WASD</b> move</span><span><b>Mouse</b> look</span><span><b>LMB</b> attack</span>
-        <span><b>RMB</b> aim/scope</span><span><b>R</b> reload</span><span><b>Space</b> jump</span>
-        <span><b>Shift</b> sprint</span><span><b>1-9</b> weapons</span><span><b>Wheel</b> cycle</span>
-        <span><b>V</b> melee</span><span><b>G</b> grenade</span><span><b>E</b> open lootbox</span>
-        <span><b>B</b> fire mode</span><span><b>L</b> flashlight</span><span><b>C</b> flare</span>
-        <span><b>F</b> fullscreen</span><span><b>Esc</b> pause</span><span><b>M</b> mute</span>
+        <span><b>WASD</b> move</span><span><b>Mouse</b> look</span><span><b>LMB</b> use / attack</span>
+        <span><b>RMB</b> aim / zoom</span><span><b>Wheel</b> scroll inventory</span><span><b>1-5</b> loadout slots</span>
+        <span><b>I</b> inventory</span><span><b>E</b> pick up / interact</span><span><b>R</b> reload</span>
+        <span><b>V</b> quick-melee</span><span><b>B</b> fire mode</span><span><b>Space</b> jump</span>
+        <span><b>Shift</b> sprint</span><span><b>F</b> fullscreen</span><span><b>Esc</b> pause</span><span><b>M</b> mute</span>
       </div>
     </div>
   </div>
@@ -373,13 +492,16 @@
 
   <div id="shop" class="overlay">
     <div class="card">
-      <div class="title" style="font-size:36px;">ARMORY</div>
-      <div class="shopmoney">Cash: <span id="shopMoney">$0</span> &nbsp;·&nbsp; <span id="shopKeys">🔑 0</span></div>
-      <div class="subtitle" style="margin:4px 0 12px;">Wave <span id="shopNextWave">2</span> incoming. Stock up.</div>
+      <div class="title" style="font-size:36px;">SHOP</div>
+      <div class="shopmoney">💰 Bank: <span id="bankAmt">$0</span></div>
+      <div class="subtitle" style="margin:4px 0 12px;">Unlock gear &amp; build your 4-slot loadout — you deploy with what you equip here.</div>
       <div class="shoptabs" id="shopTabs"></div>
-      <div id="previewWrap"><canvas id="previewCanvas"></canvas><div id="previewName"></div><div id="previewHint">Hover a weapon to preview · drag the list to see them all</div></div>
+      <div id="previewWrap"><canvas id="previewCanvas"></canvas><div id="previewName"></div><div id="previewHint">Hover an item to preview</div></div>
       <div class="shopgrid" id="shopGrid"></div>
-      <button class="btn" id="nextWaveBtn">⚔ START NEXT WAVE</button>
+      <div id="loadoutStrip"></div>
+      <div class="armory-actions">
+        <button class="btn" id="armoryBackBtn">← BACK</button>
+      </div>
     </div>
   </div>
 
@@ -417,6 +539,8 @@
       <div id="mp-status" class="mp-status">Host a room, or enter a friend's code and Join.</div>
       <div id="mp-roster" class="mp-roster"></div>
       <button class="btn" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
+      <button class="btn sec" id="mpReadyBtn" style="display:none;">☐ CLICK WHEN READY</button>
+      <button class="btn sec" id="lobbyArmoryBtn">🔫 SHOP — buy &amp; equip</button>
       <button class="btn sec" id="mpBackBtn">← BACK</button>
     </div>
   </div>
@@ -461,6 +585,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=99"></script>
+  <script type="module" src="./src/game.js?v=136"></script>
 </body>
 </html>

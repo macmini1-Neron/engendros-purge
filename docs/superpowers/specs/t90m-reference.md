@@ -1,5 +1,7 @@
 # T-90M «Proryv» — visual/technical reference (for Task 22 model + Task 28 poster)
 
+> **Orthographic blueprint (best modeling reference):** `assets/ref-t90m-blueprint.png` — clean 4-view line drawing (side, front, top, rear). Use it to get proportions right: 6 evenly-spaced road wheels, the long gun with thermal sleeve + bore-evacuator bulge, the angular welded turret with ERA chevrons on the cheeks, side-skirt panel rows, rear slat cage, RWS + sights + antenna on the roof. The top view shows the distinctive ERA chevron layout on the turret roof and the bustle.
+
 User-supplied accurate reference (2026-05-29) to keep the voxel model recognizable. Source notes: T-90M is a modernization of the T-90/T-72 line — new **welded turret**, 125 mm gun, **Relikt ERA**, V-92S2F diesel (~1130 hp), ~48 t.
 
 ## Silhouette priorities (must read as a T-90M, not a generic/Western tank)

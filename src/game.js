@@ -3,13 +3,22 @@
 // arena against waves of "Engendros" voodoo-plush zombies. Big weapon roster
 // (guns + melee), a key→lootbox loot loop with weapon rarity, perks & pickups.
 import * as THREE from 'three';
-import { Engine } from './engine.js';
+import { Engine, WEAPON_LAYER } from './engine.js?e=2';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
-import { MeshBuilder, voxelMaterial, clamp, damp, makeRNG, randRange, TAU, shade } from './util.js';
+import { MeshBuilder, voxelMaterial, clamp, damp, makeRNG, randRange, TAU, shade } from './util.js?u=2';
 import { Net, makeRoomCode } from './net.js';
 import { buildT34Hull, buildT34Model, buildT34Tracks, buildT34Turret } from './t34model.js';
+import {
+  buildSu34DuctBellyModule,
+  buildSu34FinishPhotoModule,
+  buildSu34ForwardModule,
+  buildSu34Model,
+  buildSu34RearModule,
+  buildSu34UpperTailExhaustModule,
+  buildSu34WingModule,
+} from './su34model.js';
 
 // --- gameplay RNG (non-deterministic; map gen uses a seeded rng) ---
 const rr = (lo, hi) => lo + (hi - lo) * Math.random();
@@ -64,15 +73,9 @@ function rayAABB(ox, oy, oz, dx, dy, dz, min, max) {
 }
 
 // ---------------------------------------------------------------------------
-// Rarity tiers — rolled when a weapon drops from a lootbox.
+// Economy payouts — rarity removed (flat stats). Former key drops convert to a small cash bonus; supply drops grant cash.
 // ---------------------------------------------------------------------------
-const RARITY = {
-  common:    { name: 'Common',    color: 0xcfd3d8, mult: 1.0,  w: 50 },
-  rare:      { name: 'Rare',      color: 0x5fa8ff, mult: 1.3,  w: 27 },
-  epic:      { name: 'Epic',      color: 0xb070ff, mult: 1.7,  w: 16 },
-  legendary: { name: 'Legendary', color: 0xffc23a, mult: 2.2,  w: 7 },
-};
-const rollRarity = () => weightedPick(Object.keys(RARITY).map((k) => ({ v: k, w: RARITY[k].w })));
+const KEY_CASH = 60, SUPPLY_CASH = 600;
 
 // ---------------------------------------------------------------------------
 // Weapons — guns + melee. dmg is BASE (rarity & perks multiply at use).
@@ -84,14 +87,14 @@ const WEAPONS = {
   cleaver:  { name: 'Meat Cleaver',  class: 'melee', shape: 'cleaver', melee: true, dmg: 88,  rate: 0.52, range: 2.3, arcCos: 0.45, knock: 4, price: 800,  loot: 6, color: 0xd8dde2, accent: 0x6b3a1a },
   shovel:   { name: 'Trench Shovel', class: 'melee', shape: 'shovel',  melee: true, dmg: 120, rate: 0.66, range: 2.7, arcCos: 0.5, knock: 9,  price: 1000, loot: 5, color: 0x8a8f95, accent: 0x5a3a1c },
   // --- pistols ---
-  luger:    { name: 'Luger P08',  class: 'pistol', shape: 'pistol',  dmg: 30, rpm: 360, auto: false, mag: 8,  reserveMax: Infinity, reload: 1.0, spread: 0.012, bloom: 0.012, pellets: 1, recoil: 0.9, range: 200, adsFov: 60, price: 0,    color: 0x33373d, accent: 0xd8c089 },
+  luger:    { name: 'Luger P08',  class: 'pistol', shape: 'pistol',  dmg: 30, rpm: 360, auto: false, mag: 8,  reserveMax: Infinity, reload: 1.0, spread: 0.012, bloom: 0.012, pellets: 1, recoil: 0.9, range: 200, adsFov: 60, price: 400,  color: 0x33373d, accent: 0xd8c089 },
   revolver: { name: 'Peacemaker', class: 'pistol', shape: 'revolver',dmg: 72, rpm: 150, auto: false, mag: 6,  reserveMax: 60,       reload: 1.6, spread: 0.01,  bloom: 0.01,  pellets: 1, recoil: 1.6, range: 220, adsFov: 58, price: 900,  loot: 9, color: 0x4a3320, accent: 0xc9a04a },
   // --- SMGs ---
   thompson: { name: 'Thompson',   class: 'smg', shape: 'smg',  dmg: 18, rpm: 700, auto: true,  mag: 30, reserveMax: 270, reload: 1.7, spread: 0.022, bloom: 0.02, pellets: 1, recoil: 0.5,  range: 150, adsFov: 62, price: 1200, loot: 12, color: 0x3a2a1c, accent: 0x9c6a32 },
-  ppsh:     { name: 'PPSh-41',    class: 'smg', shape: 'drum', dmg: 16, rpm: 900, auto: true,  mag: 71, reserveMax: 213, reload: 2.4, spread: 0.03,  bloom: 0.02, pellets: 1, recoil: 0.45, range: 140, adsFov: 64, price: 1600, loot: 8,  color: 0x2f2218, accent: 0xb88a3a },
+  ppsh:     { name: 'PPSh-41',    class: 'smg', shape: 'drum', dmg: 16, rpm: 1000, auto: true,  mag: 71, reserveMax: 213, reload: 2.4, spread: 0.03,  bloom: 0.02, pellets: 1, recoil: 0.45, range: 140, adsFov: 64, price: 1600, loot: 8,  color: 0x2f2218, accent: 0xb88a3a },
   // --- rifles ---
-  carbine:  { name: 'M1 Carbine', class: 'rifle', shape: 'rifle', dmg: 34, rpm: 400, auto: false, mag: 15, reserveMax: 120, reload: 1.5, spread: 0.01,  bloom: 0.012, pellets: 1, recoil: 0.8, range: 260, adsFov: 55, price: 1100, loot: 10, color: 0x4a3422, accent: 0x2a2a30 },
-  garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'rifle', dmg: 78, rpm: 250, auto: false, mag: 8,  reserveMax: 64,  reload: 1.4, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.4, range: 320, adsFov: 50, price: 2000, loot: 7,  color: 0x52371f, accent: 0x222226 },
+  carbine:  { name: 'M1 Carbine', class: 'rifle', shape: 'carbine', dmg: 34, rpm: 400, auto: false, mag: 15, reserveMax: 120, reload: 1.5, spread: 0.01,  bloom: 0.012, pellets: 1, recoil: 0.8, range: 260, adsFov: 55, price: 1100, loot: 10, color: 0x4a3422, accent: 0x2a2a30 },
+  garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 78, rpm: 250, auto: false, mag: 8,  reserveMax: 64,  reload: 1.4, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.4, range: 320, adsFov: 50, price: 2000, loot: 7,  color: 0x52371f, accent: 0x222226 },
   stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 33, rpm: 550, auto: true,  mag: 30, reserveMax: 240, reload: 2.0, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.82, range: 240, adsFov: 54, price: 2400, loot: 6,  color: 0x33373d, accent: 0x6e4a28 },
   // --- shotguns ---
   shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 12, rpm: 80,  auto: false, mag: 6, reserveMax: 48, reload: 2.0, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.8, range: 60, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
@@ -100,24 +103,40 @@ const WEAPONS = {
   kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 155, rpm: 50, auto: false, mag: 5, reserveMax: 30, reload: 2.1, spread: 0.002, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, color: 0x20242a, accent: 0x6fa8e8 },
   // --- extra arsenal (loot + shop) ---
   magnum:   { name: '.44 Magnum',  class: 'pistol', shape: 'magnum', dmg: 98, rpm: 120, auto: false, mag: 6, reserveMax: 48, reload: 1.8, spread: 0.01, bloom: 0.01, pellets: 1, recoil: 2.0, range: 220, adsFov: 58, price: 1400, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a },
-  mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 19, rpm: 520, auto: true, mag: 32, reserveMax: 256, reload: 1.8, spread: 0.02, bloom: 0.018, pellets: 1, recoil: 0.5, range: 150, adsFov: 62, price: 1300, loot: 11, color: 0x2e3036, accent: 0x3a3a3a },
-  grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 23, rpm: 430, auto: true, mag: 30, reserveMax: 240, reload: 1.9, spread: 0.024, bloom: 0.02, pellets: 1, recoil: 0.55, range: 140, adsFov: 62, price: 1250, loot: 9, color: 0x3a3d42, accent: 0x262626 },
-  bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 42, rpm: 500, auto: true, mag: 20, reserveMax: 160, reload: 2.4, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.1, range: 260, adsFov: 55, price: 2600, loot: 6, color: 0x3a3128, accent: 0x26262a },
+  mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 19, rpm: 500, auto: true, mag: 32, reserveMax: 256, reload: 1.8, spread: 0.02, bloom: 0.018, pellets: 1, recoil: 0.5, range: 150, adsFov: 62, price: 1300, loot: 11, color: 0x2e3036, accent: 0x3a3a3a },
+  grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 23, rpm: 450, auto: true, mag: 30, reserveMax: 240, reload: 1.9, spread: 0.024, bloom: 0.02, pellets: 1, recoil: 0.55, range: 140, adsFov: 62, price: 1250, loot: 9, color: 0x3a3d42, accent: 0x262626 },
+  bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 42, rpm: 550, auto: true, mag: 20, reserveMax: 160, reload: 2.4, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.1, range: 260, adsFov: 55, price: 2600, loot: 6, color: 0x3a3128, accent: 0x26262a },
   dp28:     { name: 'DP-28',       class: 'rifle', shape: 'dp28', dmg: 31, rpm: 540, auto: true, mag: 47, reserveMax: 188, reload: 2.8, spread: 0.018, bloom: 0.018, pellets: 1, recoil: 0.7, range: 240, adsFov: 56, price: 2700, loot: 5, color: 0x3a352c, accent: 0x4a4a50, spinMag: { shape: 'pan', x: 0, y: 0.2, z: -0.3, r: 0.28, axis: 'y', step: TAU / 47 } },
   mosin:    { name: 'Mosin-Nagant', class: 'sniper', shape: 'mosin', dmg: 165, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0022, bloom: 0, pellets: 1, recoil: 2.7, range: 480, adsFov: 26, scope: true, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54 },
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 30, auto: false, mag: 1, reserveMax: 8, reload: 2.8, spread: 0.004, bloom: 0, pellets: 1, recoil: 2.6, range: 300, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
   flashlight: { name: 'Flashlight', class: 'tool', shape: 'flashlight', color: 0x9aa0a6, accent: 0xc23a2a },
-  binoculars: { name: 'Binoculars', class: 'tool', shape: 'binoculars', zoom: true, scope: true, adsFov: 16, color: 0x4a5240, accent: 0xb08a3a }, // Soviet B-6 6×30 — RMB zooms to a realistic 6× (FOV≈16°)
+  binoculars: { name: 'Binoculars', class: 'tool', shape: 'binoculars', zoom: true, scope: true, adsFov: 12, color: 0x26282b, accent: 0xb08a3a }, // Soviet Б8×30 field glasses — RMB zooms to a realistic 8× (FOV≈12°)
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
-  build_sandbag: { name: 'Sandbags',     class: 'builder', shape: 'build_sandbag', buildKind: 'sandbag', color: 0xcdb887, accent: 0xb89a5e },
-  build_wire:    { name: 'Barbed Wire',  class: 'builder', shape: 'build_wire',    buildKind: 'wire',    color: 0x8a8f98, accent: 0x5a4a32 },
-  build_wood:    { name: 'Barricade',    class: 'builder', shape: 'build_wood',    buildKind: 'wood',    color: 0x8a6a40, accent: 0x5a4026 },
+  // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98', 'flashlight', 'binoculars', 'build_sandbag', 'build_wire', 'build_wood'];
+const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98', 'flashlight', 'binoculars'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
+
+// Survival inventory items — held things that are NOT weapons (consumables/throwables/materials/callables).
+// Kept PARALLEL to WEAPONS so the weapon pipe (WEAPON_ORDER / ownedOrder / refillAll) stays clean.
+// `mesh` reuses LootManager._pickupMesh(kind); the molotov/flare reuse their own builders.
+const ITEM_DEFS = {
+  medkit:  { name: 'Medkit',       class: 'consumable', icon: '🩺', mesh: 'medkit', heal: 35 },
+  food:    { name: 'Field Ration', class: 'consumable', icon: '🥫', mesh: 'food',   food: 40 },
+  armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50 },
+  ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo' },
+  splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint' },
+  radio:   { name: 'Radio',        class: 'callable',   icon: '📻', mesh: 'radio' },
+  flare:   { name: 'Signal Flare', class: 'callable',   icon: '🔆', mesh: 'flare' },
+  grenade: { name: 'Frag Grenade', class: 'throwable',  icon: '💣', mesh: 'grenade', fuse: 1.6 },
+  molotov: { name: 'Molotov',      class: 'throwable',  icon: '🔥', mesh: 'molotov', ignite: 0.7 },
+  sandbag: { name: 'Sandbag',      class: 'material',   icon: '🧱', build: 'sandbag' },
+  wire:    { name: 'Barbed Wire',  class: 'material',   icon: '🔩', build: 'wire' },
+  wood:    { name: 'Barricade',    class: 'material',   icon: '🪵', build: 'wood' },
+};
 
 const SOUND_BY_CLASS = {
   pistol:  { body: 240, crack: 0.06, vol: 0.42, hp: 2100, bp: 1000 },
@@ -225,6 +244,70 @@ function buildEngendro(col, variant = 'normal') {
   }
 
   const geo = b.build();
+  geo.computeBoundingBox();
+  return geo;
+}
+
+// BOSS TOLO remodel (user-supplied) — white plush: sphere head/body, baked belly bullseye,
+// button eye (left) / bead eye (right), stitched smile, top loop, capsule limbs. Built in the
+// buildViewmodel convention (face -Z) then BAKED to the enemy envelope (face +Z, feet at y=0,
+// ~2.25 tall) so the existing boss spawn/scale/AI keeps working unchanged.
+function buildTolo() {
+  const b = new MeshBuilder();
+  const cHead = 0xF3F3F3, cBody = 0xEAEAEA, cLimb = 0xEFEFEF, cBlack = 0x121212, cBtn = 0x0C0C0C, cRim = 0x2C2C2C, cRed = 0xD11515;
+  const HEAD_R = 0.32, HEAD_Y = 0.34;
+  const headFront = (x, y) => { let u = HEAD_R*HEAD_R - x*x - (y-HEAD_Y)*(y-HEAD_Y); if (u < 0.0009) u = 0.0009; return -Math.sqrt(u); };
+  const headSurf = (x, y) => new THREE.Vector3(x, y, headFront(x, y));
+  const headNorm = (x, y) => { const p = headSurf(x, y); return new THREE.Vector3(p.x, p.y - HEAD_Y, p.z).normalize(); };
+  const stitch1 = (x, y, len, ang, color) => { const p = headSurf(x, y), n = headNorm(x, y); b.box(len, 0.012, 0.012, p.x - n.x*0.003, p.y - n.y*0.003, p.z - n.z*0.003, color, { ry: ang, align: n }); };
+  const xStitch = (x, y, len, color, rot=0) => { stitch1(x, y, len,  0.78 + rot, color); stitch1(x, y, len, -0.78 + rot, color); };
+  const arcTube = (cx, cy, r, a0, a1, tube, color) => {
+    const pts = [], steps = 14;
+    for (let i = 0; i <= steps; i++) { const a = a0 + (a1 - a0) * (i / steps); const p = headSurf(cx + r*Math.cos(a), cy + r*Math.sin(a)); const n = headNorm(cx + r*Math.cos(a), cy + r*Math.sin(a)); pts.push(new THREE.Vector3(p.x - n.x*0.008, p.y - n.y*0.008, p.z - n.z*0.008)); }
+    const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 28, tube, 6, false); b.geo(g, 0, 0, 0, color); g.dispose();
+  };
+  // smyčka na temeni (spirála)
+  { const cx = 0, cy = 0.752; const pts = [ new THREE.Vector3(0, 0.610, 0), new THREE.Vector3(0, 0.648, 0) ]; const M = 26, turns = 1.18, a0 = -Math.PI/2;
+    for (let k = 0; k <= M; k++) { const f = k / M; const a = a0 + turns * Math.PI * 2 * f; const r = 0.072 - 0.038 * f; pts.push(new THREE.Vector3(cx + r*Math.cos(a), cy + r*Math.sin(a), 0)); }
+    const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 70, 0.015, 8, false); b.geo(g, 0, 0, 0, cBlack); g.dispose(); }
+  // hlava
+  { const g = new THREE.SphereGeometry(HEAD_R, 18, 14); b.geo(g, 0, HEAD_Y, 0, cHead); g.dispose(); }
+  // tělo
+  const BODY_R = 0.23, BODY_Y = -0.12;
+  { const g = new THREE.SphereGeometry(BODY_R, 20, 16); b.geo(g, 0, BODY_Y, 0, cBody); g.dispose(); }
+  // terčík (zapečený do bříška)
+  { const tr = BODY_R + 0.002;
+    const ring = new THREE.SphereGeometry(tr, 28, 48, 0, Math.PI*2, 0.362, 0.210); b.geo(ring, 0, BODY_Y, 0, cRed, { rx: -Math.PI/2 }); ring.dispose();
+    const dot = new THREE.SphereGeometry(tr, 28, 24, 0, Math.PI*2, 0, 0.1885); b.geo(dot, 0, BODY_Y, 0, cRed, { rx: -Math.PI/2 }); dot.dispose(); }
+  // ručičky
+  { const g = new THREE.CapsuleGeometry(0.072, 0.075, 4, 10); b.geo(g, -0.255, -0.02, 0.0, cLimb, { rz:  0.78 }); g.dispose(); }
+  { const g = new THREE.CapsuleGeometry(0.072, 0.075, 4, 10); b.geo(g,  0.255, -0.02, 0.0, cLimb, { rz: -0.78 }); g.dispose(); }
+  // nožičky
+  { const g = new THREE.CapsuleGeometry(0.082, 0.05, 4, 10); b.geo(g, -0.115, -0.34, 0.015, cLimb); g.dispose(); }
+  { const g = new THREE.CapsuleGeometry(0.082, 0.05, 4, 10); b.geo(g,  0.115, -0.34, 0.015, cLimb); g.dispose(); }
+  // oči: knoflík (+X) / korálek (-X)
+  const EY = 0.40;
+  { const ex = 0.135, n = headNorm(ex, EY), p = headSurf(ex, EY); const at = (o) => [p.x + n.x*o, p.y + n.y*o, p.z + n.z*o]; let q;
+    const rim = new THREE.TorusGeometry(0.056, 0.014, 8, 18); q = at(0.002); b.geo(rim, q[0], q[1], q[2], cRim, { rx: Math.PI/2, align: n }); rim.dispose();
+    const face = new THREE.CylinderGeometry(0.048, 0.048, 0.022, 18); q = at(0.010); b.geo(face, q[0], q[1], q[2], cBtn, { align: n }); face.dispose();
+    q = at(0.024); b.box(0.058, 0.010, 0.010, q[0], q[1], q[2], cHead, { ry:  0.78, align: n }); b.box(0.058, 0.010, 0.010, q[0], q[1], q[2], cHead, { ry: -0.78, align: n }); }
+  { const ex = -0.135, n = headNorm(ex, EY), p = headSurf(ex, EY); const g = new THREE.SphereGeometry(0.038, 12, 10); b.geo(g, p.x + n.x*0.010, p.y + n.y*0.010, p.z + n.z*0.010, 0x070707); g.dispose();
+    arcTube(ex, EY, 0.056, Math.PI*0.55, Math.PI*1.45, 0.010, cBlack); }
+  // pusa
+  const smileXY = (t) => [ -0.16 + 0.32 * t, 0.205 + 0.058 * Math.pow(2*t - 1, 2) ];
+  { const pts = [], N = 26; for (let i = 0; i <= N; i++) { const [mx, my] = smileXY(i / N); const p = headSurf(mx, my), n = headNorm(mx, my); pts.push(new THREE.Vector3(p.x - n.x*0.008, p.y - n.y*0.008, p.z - n.z*0.008)); }
+    const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 50, 0.012, 7, false); b.geo(g, 0, 0, 0, cBlack); g.dispose(); }
+  for (const t of [0.2, 0.5, 0.8]) { const [mx, my] = smileXY(t); xStitch(mx, my, 0.068, cBlack, t === 0.5 ? 0 : 0.42); }
+  { const [lx, ly] = smileXY(0.0); arcTube(lx + 0.032, ly - 0.011, 0.044,  Math.PI*0.58, Math.PI*1.42, 0.012, cBlack); }
+  { const [rx2, ry2] = smileXY(1.0); arcTube(rx2 - 0.032, ry2 - 0.011, 0.044, -Math.PI*0.42, Math.PI*0.42, 0.012, cBlack); }
+  // bake: face -Z -> +Z, feet at y=0, ~2.25 tall
+  const geo = b.build();
+  geo.rotateY(Math.PI);
+  geo.computeBoundingBox();
+  const S = 2.25 / (geo.boundingBox.max.y - geo.boundingBox.min.y);
+  geo.scale(S, S, S);
+  geo.computeBoundingBox();
+  geo.translate(0, -geo.boundingBox.min.y, 0);
   geo.computeBoundingBox();
   return geo;
 }
@@ -1362,7 +1445,7 @@ class World {
       else if (ey <= ez) normal.set(0, point.y < (hitBox.min.y + hitBox.max.y) / 2 ? -1 : 1, 0);
       else normal.set(0, 0, point.z < (hitBox.min.z + hitBox.max.z) / 2 ? -1 : 1);
     }
-    return { dist: best, point, normal };
+    return { dist: best, point, normal, box: (hitBox && hitBox !== 'ground') ? hitBox : null };
   }
 
   addWreckObstacle(pos, yaw) {
@@ -1588,7 +1671,7 @@ class EnemyManager {
     this.active = []; this._idc = 0;
     this._min = new THREE.Vector3(); this._max = new THREE.Vector3();
   }
-  _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = buildEngendro(col, variant)); }
+  _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
     const list = (this.pool[geoKey] ||= []);
     let e = list.find((x) => !x.alive);
@@ -1786,7 +1869,7 @@ class EnemyManager {
 
   // Boss laser: a thick red beam from the belly target along the locked aim; hits the player if near the line.
   _bossLaser(e) {
-    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 1.2 * e.scale, e.pos.z + 0.4 * e.scale);
+    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
     const dir = e.aim, len = 70;
     const end = belly.clone().addScaledVector(dir, len);
     if (!e._beam) {
@@ -1816,16 +1899,24 @@ class EnemyManager {
     this.game.hud.setBoss(e.hp / e.maxHp, e.name);
     if (e.phase === 1 && e.hp <= e.maxHp * 0.5) { e.phase = 2; e.addCD = 0.6; this.game.hud.bigMessage('TOLO ENRAGED', 'he summons mini-Tolos!'); }
     // laser cannon charging up out of the belly target, then firing
+    // belly-bullseye glow telegraphs the charge WITHOUT reddening the eyes/face (lazy child of the boss mesh, the laser emitter)
+    if (!e._tolGlow) {
+      e._tolGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.05, 22),
+        new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      e._tolGlow.rotation.x = Math.PI / 2; e._tolGlow.position.set(0, 0.6, 0.42); e._tolGlow.renderOrder = 999;
+      e.mesh.add(e._tolGlow);
+    }
     if (e.charging > 0) {
       e.charging -= dt;
-      if (e.mesh.material.emissive) { e.mesh.material.emissive.setHex(0xff2010); e.mesh.material.emissiveIntensity = 1.3 * (1 - e.charging / 0.85); }
+      const f = 1 - e.charging / 0.85;
+      e._tolGlow.material.opacity = 0.95 * f; e._tolGlow.scale.setScalar(0.7 + f * 0.7);
       if (e.charging <= 0) this._bossLaser(e);
     } else {
-      if (e.mesh.material.emissiveIntensity > 0.02) e.mesh.material.emissiveIntensity *= 0.85;
+      if (e._tolGlow.material.opacity > 0.02) e._tolGlow.material.opacity *= 0.82;
       e.laserCD -= dt;
       if (e.laserCD <= 0) {
         e.laserCD = e.phase === 2 ? 2.6 : 3.8; e.charging = 0.85;
-        e.aim.set(pp.x - e.pos.x, (pp.y + 1.0) - (e.pos.y + 1.2 * e.scale), pp.z - e.pos.z).normalize();
+        e.aim.set(pp.x - e.pos.x, (pp.y + 1.0) - (e.pos.y + 0.6 * e.scale), pp.z - e.pos.z).normalize();
       }
     }
     if (e.beamLife > 0 && e._beam) { e.beamLife -= dt; e._beam.material.opacity = Math.max(0, e.beamLife / 0.18); if (e.beamLife <= 0) e._beam.visible = false; }
@@ -2343,7 +2434,7 @@ class BuildManager {
     this.scene.add(this.ghost);
   }
 
-  _curKind() { const d = WEAPONS[this.game.weapons.cur]; return (d && d.class === 'builder') ? d.buildKind : null; }
+  _curKind() { return this.game.inventory.heldMaterial(); } // material held in the backpack → its build kind (else null)
   rotateGhost(dir) { const k = this._curKind(); if (k) this.ghostYaw += dir * (STRUCT_DEFS[k].rotStep || Math.PI / 12); }
 
   // AABB half-extents of the footprint after yaw rotation
@@ -2353,8 +2444,7 @@ class BuildManager {
   }
 
   validateAt(pos, yaw, kind) {
-    const w = this.game.weapons;
-    if (!w.buildMats || w.buildMats[kind] <= 0) return false;
+    if (this.game.inventory.heldMaterial() !== kind) return false; // must be holding that material item
     if (this.structures.length >= STRUCT_CAP) return false;
     if (!pos) return false;
     const sd = STRUCT_DEFS[kind], fp = this._footprint(kind, yaw), top = pos.y + sd.h;
@@ -2407,7 +2497,7 @@ class BuildManager {
       this.placeStructure(kind, pos, yaw, id);
       if (mp && mp.active && mp.isHost) mp.net.broadcast('struct', { id, kind, x: pos.x, z: pos.z, yaw });
     }
-    this.game.weapons.consumeBuildMat(kind);
+    this.game.inventory.consumeHeldMaterial();
     this.game.audio.buy && this.game.audio.buy();
   }
 
@@ -2439,6 +2529,14 @@ class BuildManager {
     s.hp -= dmg;
     if (s.mesh && s.mesh.material.emissive) { const f = Math.max(0, s.hp / s.maxHp); s.mesh.material.emissive.setRGB((1 - f) * 0.22, 0, 0); }
     if (s.hp <= 0) this.destroyStructure(s, 'smash');
+  }
+
+  // player-caused damage (shooting / melee); host-authoritative in MP (clients ask the host)
+  playerDamage(s, dmg) {
+    if (!s) return;
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) mp.net.send('structhit', { id: s.id, dmg });
+    else this.attackStructure(s, dmg, null);
   }
 
   destroyStructure(s, cause) {
@@ -2486,13 +2584,181 @@ function buildViewmodel(def) {
   const b = new MeshBuilder();
   const c = def.color, a = def.accent, dark = shade(c, -0.1);
   switch (def.shape) {
-    case 'knife':   b.box(0.05, 0.06, 0.5, 0, 0, -0.45, a); b.box(0.04, 0.12, 0.5, 0, 0.02, -0.9, c, { tint: 0.03 }); b.box(0.14, 0.04, 0.06, 0, 0, -0.6, dark); break;
-    case 'machete': b.box(0.06, 0.07, 0.28, 0, 0, -0.3, a); b.box(0.04, 0.16, 0.8, 0.02, 0.04, -0.85, c, { tint: 0.03 }); break;
-    case 'cleaver': b.box(0.05, 0.08, 0.24, 0, 0, -0.26, a); b.box(0.05, 0.34, 0.42, 0, 0.08, -0.62, c, { tint: 0.03 }); break;
-    case 'shovel':  b.box(0.05, 0.05, 0.9, 0, 0, -0.6, a); b.box(0.26, 0.04, 0.34, 0, 0, -1.15, c, { tint: 0.03 }); break;
-    case 'pistol':  b.box(0.12, 0.16, 0.6, 0, 0, -0.3, c, { tint: 0.04 }); b.box(0.1, 0.26, 0.14, 0, -0.2, 0.04, dark); b.box(0.05, 0.05, 0.1, 0, 0.07, -0.34, a); break;
-    case 'revolver':b.box(0.12, 0.16, 0.62, 0, 0, -0.32, c, { tint: 0.04 }); b.box(0.13, 0.18, 0.16, 0, -0.01, -0.06, a); b.box(0.1, 0.26, 0.14, 0, -0.2, 0.06, dark); break;
-    case 'smg':     b.box(0.14, 0.18, 0.95, 0, 0, -0.45, c, { tint: 0.04 }); b.box(0.1, 0.34, 0.12, 0, -0.26, -0.16, a); b.box(0.1, 0.24, 0.12, 0, -0.2, 0.06, dark); b.box(0.1, 0.1, 0.34, 0, 0.1, -0.5, dark); break;
+    case 'knife': { // Seitengewehr 84/98 III — K98k knife bayonet: fullered spear-point blade, bakelite grip, beak pommel (NO muzzle ring)
+      const sHi = 0x6f747b, sMid = 0x52565c, sLo = 0x2c2f33, sSlot = 0x1c1e21, sBright = 0x8a8f96; // blued steel
+      const kHi = 0x7a4d33, kMid = 0x5a3826, kLo = 0x3a2417;                                          // reddish bakelite grip
+      // blade (single-edged, fullered; muzzle -Z)
+      b.box(0.024, 0.058, 0.56, 0, 0.0, -0.62, sMid, { tint: 0.02 });
+      b.box(0.026, 0.014, 0.56, 0, 0.03, -0.62, sLo);                          // flat spine (top, matte)
+      b.box(0.014, 0.012, 0.54, 0, -0.027, -0.62, sBright);                    // honed edge bevel (bottom)
+      b.box(0.008, 0.022, 0.44, 0.012, 0.003, -0.60, sSlot); b.box(0.008, 0.022, 0.44, -0.012, 0.003, -0.60, sSlot); // fuller groove both faces
+      b.box(0.022, 0.04, 0.10, 0, 0.006, -0.93, sHi);                          // double-edged spear point tip
+      // crossguard (short bar, no ring)
+      b.box(0.06, 0.05, 0.045, 0, -0.006, -0.33, sMid); b.box(0.012, 0.012, 0.012, 0.024, -0.006, -0.33, sBright); // bar + rivet
+      // bakelite grip (grooved scales)
+      b.box(0.052, 0.072, 0.34, 0, 0.0, -0.13, kMid, { tint: 0.03 });          // grip core
+      b.box(0.014, 0.062, 0.32, 0.026, 0.0, -0.13, kHi); b.box(0.014, 0.062, 0.32, -0.026, 0.0, -0.13, kLo); // lit/shadow faces
+      for (let i = 0; i < 5; i++) b.box(0.056, 0.012, 0.013, 0, -0.022, -0.25 + i * 0.052, kLo); // grooves
+      b.box(0.03, 0.012, 0.34, 0, 0.043, -0.13, sBright);                      // flash-guard steel strip (spine of grip)
+      b.box(0.012, 0.012, 0.012, 0.028, 0.0, -0.18, sBright); b.box(0.012, 0.012, 0.012, 0.028, 0.0, -0.05, sBright); // rivet domes
+      // beak pommel + T-slot + press-stud
+      b.box(0.05, 0.085, 0.10, 0, -0.006, 0.07, sMid, { tint: 0.02 });
+      b.box(0.046, 0.05, 0.045, 0, -0.045, 0.10, sLo);                         // downward beak
+      b.box(0.02, 0.045, 0.035, 0, 0.0, 0.118, sSlot);                         // T-mortise slot (rearward)
+      b.box(0.018, 0.02, 0.02, 0.03, 0.0, 0.055, sBright);                     // press-stud (right side)
+      break;
+    }
+    case 'machete': { // U.S. M1942 machete — long bellied single-edge blade, riveted full-tang slab grip
+      const bHi = 0xc2c8ce, bMid = 0x8a9097, bLo = 0x5a6065, bEdge = 0xe8ecef, bSlot = 0x24272a; // worn satin steel
+      const wHi = 0x8a6238, wMid = 0x6b4a2e, wLo = 0x3e2a18, brass = 0xb9962e;                    // oiled hardwood + brass rivets
+      // blade — straight level spine, convex belly toward the tip (muzzle -Z)
+      b.box(0.02, 0.052, 0.92, 0, 0.02, -0.76, bMid, { tint: 0.02 });          // main blade (straight spine on top)
+      b.box(0.02, 0.05, 0.46, 0, -0.022, -0.96, bMid, { tint: 0.02 });         // belly widening DOWNWARD only (front half; top stays at spine)
+      b.box(0.024, 0.013, 0.92, 0, 0.046, -0.76, bLo);                         // unsharpened spine (top, matte, dead straight)
+      b.box(0.013, 0.012, 0.62, 0, -0.052, -0.98, bEdge);                      // honed edge bevel (lower, follows the belly)
+      b.box(0.022, 0.05, 0.14, 0, -0.012, -1.22, bHi, { rx: 0.34 });           // clipped drop-point tip
+      b.box(0.024, 0.06, 0.16, 0, 0.012, -0.40, bLo);                          // flat ricasso (no bevel)
+      // full-tang slab grip (no guard)
+      b.box(0.05, 0.078, 0.36, 0, 0.0, -0.06, wMid, { tint: 0.03 });           // grip core
+      b.box(0.013, 0.066, 0.34, 0.026, 0.0, -0.06, wHi); b.box(0.013, 0.066, 0.34, -0.026, 0.0, -0.06, wLo); // scale faces
+      b.box(0.054, 0.012, 0.36, 0, 0.041, -0.06, bLo); b.box(0.054, 0.012, 0.36, 0, -0.041, -0.06, bLo);     // exposed tang spine+edge
+      for (let i = 0; i < 3; i++) { const z = -0.18 + i * 0.13; const r = new THREE.CylinderGeometry(0.013, 0.013, 0.056, 10); b.geo(r, 0, 0.0, z, brass, { rz: Math.PI / 2 }); r.dispose(); } // 3 round rivets
+      b.box(0.05, 0.092, 0.07, 0, -0.006, 0.13, wMid);                         // flared pommel (finger hook)
+      b.box(0.056, 0.024, 0.022, 0, -0.004, 0.145, bSlot);                     // lanyard hole
+      break;
+    }
+    case 'cleaver': { // heavy butcher cleaver — tall rectangular blade with hanging hole, riveted wood handle
+      const bHi = 0x9aa0a6, bMid = 0x6f7378, bLo = 0x3a3d42, bEdge = 0xcdd1d6, bSlot = 0x2a2c2e; // aged tool steel
+      const wHi = 0xcd9a5e, wMid = 0xb07a42, wLo = 0x7c5328;                                       // beech handle
+      // tall rectangular blade (front ~65%, muzzle -Z)
+      b.box(0.04, 0.34, 0.52, 0, 0.06, -0.50, bMid, { tint: 0.02 });           // blade slab
+      b.box(0.05, 0.045, 0.52, 0, 0.225, -0.50, bHi);                          // thick straight spine (top, lit)
+      b.box(0.013, 0.31, 0.50, 0.022, 0.06, -0.50, bHi); b.box(0.013, 0.31, 0.50, -0.022, 0.06, -0.50, bLo); // lit/shadow faces
+      b.box(0.04, 0.09, 0.20, 0, -0.135, -0.66, bMid, { tint: 0.02 });         // forward belly drop (toe lowest)
+      b.box(0.018, 0.018, 0.48, 0, -0.105, -0.50, bEdge); b.box(0.018, 0.02, 0.14, 0, -0.175, -0.66, bEdge); // honed edge + toe
+      { const h = new THREE.CylinderGeometry(0.03, 0.03, 0.05, 12); b.geo(h, 0, 0.205, -0.72, bSlot, { rz: Math.PI / 2 }); h.dispose(); } // hanging hole (top-front)
+      b.box(0.06, 0.13, 0.10, 0, 0.0, -0.17, bMid);                            // bolster / heel neck-down
+      // riveted full-tang handle (lower than blade centerline)
+      b.box(0.056, 0.092, 0.40, 0, -0.04, 0.09, wMid, { tint: 0.03 });         // handle core
+      b.box(0.014, 0.08, 0.38, 0.028, -0.04, 0.09, wHi); b.box(0.014, 0.08, 0.38, -0.028, -0.04, 0.09, wLo); // scales
+      for (let i = 0; i < 3; i++) { const z = -0.02 + i * 0.14; const r = new THREE.CylinderGeometry(0.014, 0.014, 0.06, 10); b.geo(r, 0, -0.04, z, bEdge, { rz: Math.PI / 2 }); r.dispose(); b.box(0.012, 0.012, 0.012, 0, -0.04, z, bSlot); } // rivets w/ dark center
+      b.box(0.062, 0.11, 0.06, 0, -0.04, 0.28, wMid);                          // flared rounded butt
+      break;
+    }
+    case 'shovel': { // Soviet MPL-50 entrenching tool — pentagonal steel blade, riveted socket, singed-wood shaft
+      const mHi = 0x5a6065, mMid = 0x3b3f42, mLo = 0x24272a, mEdge = 0x8a9097, mBright = 0x9aa0a6; // blued-grey steel
+      const wHi = 0x7a5d38, wMid = 0x5a4327, wLo = 0x3a2a18;                                         // scorched wood
+      // grip end + shaft (toward player +Z), pointed blade at -Z
+      { const g = new THREE.CylinderGeometry(0.05, 0.045, 0.10, 12); b.geo(g, 0, 0, 0.40, wHi, { rx: Math.PI / 2 }); g.dispose(); } // rounded grip cap
+      { const sh = new THREE.CylinderGeometry(0.034, 0.034, 0.58, 12); b.geo(sh, 0, 0, 0.10, wMid, { rx: Math.PI / 2, tint: 0.03 }); sh.dispose(); } // shaft
+      b.box(0.012, 0.07, 0.56, 0.03, 0, 0.10, wHi); b.box(0.012, 0.07, 0.56, -0.03, 0, 0.10, wLo);   // shaft grain hi/lo
+      // tapered sheet-metal socket + rivets
+      { const so = new THREE.CylinderGeometry(0.058, 0.04, 0.13, 12); b.geo(so, 0, 0, -0.21, mMid, { rx: Math.PI / 2, tint: 0.02 }); so.dispose(); }
+      for (let i = 0; i < 5; i++) { const a2 = (i - 2) * 0.5; b.box(0.014, 0.014, 0.014, Math.sin(a2) * 0.05, 0.05 * Math.cos(a2) * 0 + 0.045, -0.20, mBright); } // rivet row (top arc)
+      // pentagonal blade (flat, horizontal, pointed tip at -Z)
+      b.box(0.24, 0.026, 0.30, 0, 0, -0.45, mMid, { tint: 0.02 });             // main blade slab
+      b.box(0.155, 0.028, 0.13, 0, 0, -0.62, mMid);                            // converging neck
+      b.box(0.07, 0.03, 0.09, 0, 0, -0.71, mHi);                               // pointed digging tip
+      b.box(0.23, 0.009, 0.30, 0, 0.015, -0.45, mHi);                          // top-lit face
+      b.box(0.23, 0.009, 0.30, 0, -0.015, -0.45, mLo);                         // underside shadow
+      b.box(0.014, 0.024, 0.34, 0.12, 0, -0.47, mEdge);                        // honed lateral edge (one side)
+      { const st = new THREE.CylinderGeometry(0.03, 0.03, 0.006, 12); b.geo(st, 0, 0.016, -0.42, mLo); st.dispose(); } // faint factory stamp disc
+      break;
+    }
+    case 'pistol': { // Luger P08 — toggle-lock breech, raked checkered grip, tapered barrel (9x19, 8-rnd box)
+      const sHi = 0x5d646e, sMid = 0x474c54, sLo = 0x32363c, sSlot = 0x1d1f23, sBright = 0x707782; // blued steel
+      const wHi = 0x8a5a2e, wMid = 0x6c4422, wLo = 0x4a2f18, straw = 0xb59a4a;                       // walnut + straw small parts
+      // barrel (thin, tapered; muzzle -Z)
+      b.box(0.058, 0.058, 0.40, 0, 0.045, -0.50, sMid, { tint: 0.02 });
+      b.box(0.05, 0.018, 0.40, 0, 0.078, -0.50, sHi);                          // top highlight
+      b.box(0.05, 0.05, 0.06, 0, 0.045, -0.71, sLo);                           // muzzle crown
+      b.box(0.022, 0.022, 0.05, 0, 0.045, -0.74, sSlot);                       // bore
+      b.box(0.012, 0.045, 0.025, 0, 0.085, -0.66, sBright);                    // front sight blade
+      b.box(0.092, 0.10, 0.14, 0, 0.03, -0.30, sMid, { tint: 0.02 });          // barrel-to-frame step
+      // frame / receiver
+      b.box(0.10, 0.12, 0.42, 0, 0.0, -0.12, sMid, { tint: 0.02 });            // frame body
+      b.box(0.105, 0.03, 0.42, 0, -0.062, -0.12, sLo);                         // lower shadow strip
+      // toggle-lock breech (the Luger signature, raised top-rear)
+      b.box(0.088, 0.085, 0.24, 0, 0.095, -0.04, sHi, { tint: 0.02 });         // breech block (lit)
+      b.box(0.075, 0.05, 0.15, 0, 0.15, 0.01, sMid);                           // rear toggle link
+      { const tk = new THREE.CylinderGeometry(0.038, 0.038, 0.14, 14); b.geo(tk, 0, 0.155, 0.08, sBright, { rz: Math.PI / 2 }); tk.dispose(); } // two round toggle knobs
+      b.box(0.045, 0.04, 0.04, 0, 0.135, -0.08, sSlot);                        // rear sight notch (dark)
+      b.box(0.012, 0.04, 0.02, -0.022, 0.155, -0.08, sHi); b.box(0.012, 0.04, 0.02, 0.022, 0.155, -0.08, sHi); // notch ears
+      // raked grip (checkered walnut)
+      b.box(0.088, 0.27, 0.115, 0, -0.16, 0.10, wMid, { rx: -0.5, tint: 0.05 });    // grip body
+      b.box(0.07, 0.25, 0.02, 0.05, -0.16, 0.10, wHi, { rx: -0.5 });                // right checker face (lit)
+      b.box(0.07, 0.25, 0.02, -0.05, -0.16, 0.10, wLo, { rx: -0.5 });               // left face (shadow)
+      b.box(0.10, 0.035, 0.12, 0, -0.30, 0.225, straw, { rx: -0.5 });               // magazine base plate
+      // trigger guard + trigger
+      b.box(0.075, 0.022, 0.085, 0, -0.085, -0.085, sLo);                      // guard bottom
+      b.box(0.02, 0.06, 0.02, 0, -0.06, -0.12, sLo);                           // guard front post
+      b.box(0.018, 0.05, 0.018, 0, -0.055, -0.085, straw);                     // trigger (straw)
+      break;
+    }
+    case 'revolver': { // Colt Single Action Army "Peacemaker" — long barrel, ejector rod, fluted 6-cylinder, plow grip (.45 Colt)
+      const sHi = 0x9aa1ab, sMid = 0x6f7680, sLo = 0x4c525a, sSlot = 0x2a2e34, sBright = 0xb4bbc4; // bright blued/case steel
+      const wHi = 0x6a4a2c, wMid = 0x4e3420, wLo = 0x352213, ch = 0x8a7f6a;                          // walnut grip + color-case frame
+      // long round barrel (muzzle -Z)
+      { const bar = new THREE.CylinderGeometry(0.045, 0.048, 0.62, 16); b.geo(bar, 0, 0.03, -0.5, sMid, { rx: Math.PI / 2, tint: 0.02 }); bar.dispose(); }
+      b.box(0.03, 0.018, 0.6, 0, 0.073, -0.5, sHi);                            // top barrel highlight
+      b.box(0.012, 0.03, 0.02, 0, 0.076, -0.78, sBright);                      // front sight blade
+      b.box(0.03, 0.03, 0.05, 0, 0.03, -0.82, sSlot);                          // muzzle/bore
+      // ejector-rod tube under the barrel
+      { const ej = new THREE.CylinderGeometry(0.022, 0.022, 0.42, 12); b.geo(ej, 0.0, -0.018, -0.56, sLo, { rx: Math.PI / 2 }); ej.dispose(); }
+      b.box(0.03, 0.03, 0.04, 0.0, -0.018, -0.78, sMid);                       // ejector head
+      // frame + topstrap
+      b.box(0.085, 0.13, 0.20, 0, 0.0, -0.10, ch, { tint: 0.03 });             // frame (color-case)
+      b.box(0.07, 0.025, 0.16, 0, 0.07, -0.12, sHi);                           // topstrap
+      b.box(0.04, 0.035, 0.04, 0, 0.075, -0.04, sSlot);                        // rear sight notch
+      // fluted cylinder (6-shot)
+      { const cyl = new THREE.CylinderGeometry(0.072, 0.072, 0.17, 18); b.geo(cyl, 0, 0.0, -0.06, sMid, { rx: Math.PI / 2, tint: 0.02 }); cyl.dispose(); }
+      for (let i = 0; i < 6; i++) { const a2 = i / 6 * Math.PI * 2; b.box(0.016, 0.016, 0.15, Math.cos(a2) * 0.066, Math.sin(a2) * 0.066, -0.06, sSlot); } // flutes
+      b.box(0.012, 0.05, 0.07, 0.07, 0.0, 0.01, sLo);                          // loading gate (right rear)
+      // hammer (big spur, up at rear)
+      b.box(0.03, 0.07, 0.05, 0, 0.10, 0.07, sLo);                             // hammer body
+      b.box(0.045, 0.03, 0.04, 0, 0.135, 0.085, sBright);                      // hammer spur
+      // plow-handle grip (curved, swept down-back)
+      b.box(0.072, 0.22, 0.11, 0, -0.13, 0.135, wMid, { rx: -0.55, tint: 0.04 });   // grip body
+      b.box(0.055, 0.2, 0.02, 0.045, -0.13, 0.135, wHi, { rx: -0.55 });             // right face (lit)
+      b.box(0.055, 0.2, 0.02, -0.045, -0.13, 0.135, wLo, { rx: -0.55 });            // left face
+      b.box(0.078, 0.05, 0.10, 0, -0.235, 0.24, sLo, { rx: -0.55 });                // grip butt cap
+      // trigger guard + trigger
+      b.box(0.06, 0.02, 0.075, 0, -0.085, -0.02, sMid);                        // guard bottom
+      b.box(0.018, 0.05, 0.018, 0, -0.06, -0.04, sBright);                     // trigger
+      break;
+    }
+    case 'smg': { // Thompson M1928A1 "Tommy Gun" — Cutts compensator, finned barrel, top charging knob, Lyman sight, walnut furniture (.45 ACP, 700 rpm)
+      const sHi = 0x5a606a, sMid = 0x40454d, sLo = 0x2b2f35, sSlot = 0x1a1c20, sBright = 0x6f757e; // blued steel
+      const wHi = 0x9a6a38, wMid = 0x7c5026, wLo = 0x553418;                                          // walnut
+      // Cutts compensator (slotted) + bore
+      { const cc = new THREE.CylinderGeometry(0.062, 0.062, 0.11, 14); b.geo(cc, 0, 0.03, -1.04, sMid, { rx: Math.PI / 2 }); cc.dispose(); }
+      for (let i = 0; i < 3; i++) b.box(0.04, 0.016, 0.02, 0, 0.085, -1.07 + i * 0.03, sSlot);   // comp slots (top)
+      b.box(0.03, 0.03, 0.05, 0, 0.03, -1.11, sSlot);                                            // bore
+      // finned cooling barrel
+      b.box(0.045, 0.045, 0.40, 0, 0.03, -0.78, sMid);                                           // barrel core
+      for (let i = 0; i < 7; i++) { const f = new THREE.CylinderGeometry(0.06, 0.06, 0.022, 14); b.geo(f, 0, 0.03, -0.62 - i * 0.055, sHi, { rx: Math.PI / 2 }); f.dispose(); } // fins
+      b.box(0.04, 0.05, 0.05, 0, 0.075, -0.95, sLo); b.box(0.012, 0.04, 0.02, 0, 0.10, -0.95, sBright); // protected front sight
+      // boxy receiver
+      b.box(0.10, 0.135, 0.50, 0, 0.0, -0.26, sMid, { tint: 0.02 });                             // body
+      b.box(0.092, 0.035, 0.50, 0, 0.085, -0.26, sHi);                                           // top (lit)
+      b.box(0.104, 0.03, 0.50, 0, -0.07, -0.26, sLo);                                            // lower shadow
+      b.box(0.05, 0.045, 0.05, 0, 0.105, -0.14, sBright);                                        // top charging knob
+      b.box(0.055, 0.05, 0.04, 0, 0.10, -0.02, sLo); b.box(0.03, 0.025, 0.02, 0, 0.13, -0.02, sBright); // Lyman ladder rear sight
+      // vertical wood foregrip
+      b.box(0.062, 0.17, 0.10, 0, -0.15, -0.60, wMid, { tint: 0.03 });
+      b.box(0.05, 0.155, 0.022, 0.034, -0.15, -0.60, wHi); b.box(0.05, 0.155, 0.022, -0.034, -0.15, -0.60, wLo);
+      // box stick magazine (down, ahead of trigger)
+      b.box(0.05, 0.24, 0.092, 0, -0.21, -0.10, sMid, { tint: 0.02 });
+      b.box(0.054, 0.03, 0.096, 0, -0.33, -0.10, sLo);                                           // mag floor
+      // angled walnut pistol grip + trigger
+      b.box(0.06, 0.20, 0.105, 0, -0.15, 0.10, wMid, { rx: -0.28, tint: 0.03 });
+      b.box(0.048, 0.18, 0.022, 0.033, -0.15, 0.10, wHi, { rx: -0.28 }); b.box(0.048, 0.18, 0.022, -0.033, -0.15, 0.10, wLo, { rx: -0.28 });
+      b.box(0.07, 0.022, 0.13, 0, -0.075, 0.04, sLo); b.box(0.02, 0.05, 0.02, 0, -0.05, 0.02, sBright); // guard + trigger
+      // walnut buttstock
+      b.box(0.092, 0.15, 0.44, 0, -0.04, 0.44, wMid, { tint: 0.03 });
+      b.box(0.082, 0.045, 0.42, 0, 0.04, 0.44, wHi); b.box(0.10, 0.20, 0.07, 0, -0.06, 0.67, wLo); // comb + butt plate
+      break;
+    }
     case 'drum': { // PPSh-41 — clean voxel build: layered gun-blue steel + grained wood, hooded sights, iconic 71-rnd drum
       // Layered palette gives the crisp "voxel render" look: top faces catch light (Hi),
       // sides are mid, undersides + recesses go dark, perforations are near-black.
@@ -2552,7 +2818,49 @@ function buildViewmodel(def) {
       b.box(0.11, 0.022, 0.022, 0, -0.27, 0.095, stLo);                        // winding-key bar across the hub
       break;
     }
-    case 'rifle':   b.box(0.12, 0.16, 1.3, 0, 0, -0.6, c, { tint: 0.03 }); b.box(0.1, 0.3, 0.14, 0, -0.18, 0.04, dark); b.box(0.1, 0.26, 0.34, 0, -0.18, 0.3, a, { tint: 0.03 }); b.box(0.08, 0.08, 0.3, 0, 0.1, -0.7, dark); break;
+    case 'carbine': { // U.S. M1 Carbine — slim one-piece walnut stock, exposed thin barrel + band, winged sight, 15-rnd box (.30 Carbine, semi)
+      const sHi = 0x565a52, sMid = 0x3c3f3a, sLo = 0x262824, sSlot = 0x171815, sBright = 0x6a6e66; // parkerized steel
+      const wHi = 0xa9703f, wMid = 0x8a5a34, wLo = 0x5c3a20;
+      b.box(0.078, 0.10, 0.40, 0, 0.0, 0.02, sMid, { tint: 0.02 });           // receiver
+      b.box(0.07, 0.03, 0.40, 0, 0.055, 0.02, sHi);                           // top (lit)
+      b.box(0.04, 0.038, 0.05, 0.05, 0.02, 0.08, sBright);                    // charging handle (right)
+      b.box(0.045, 0.04, 0.04, 0, 0.075, 0.16, sLo); b.box(0.02, 0.022, 0.02, 0, 0.10, 0.16, sSlot); // rear aperture
+      b.box(0.04, 0.04, 0.5, 0, 0.03, -1.05, sMid);                           // exposed barrel
+      b.box(0.05, 0.05, 0.05, 0, 0.075, -1.18, sLo); b.box(0.012, 0.05, 0.02, -0.024, 0.10, -1.18, sLo); b.box(0.012, 0.05, 0.02, 0.024, 0.10, -1.18, sLo); b.box(0.012, 0.045, 0.02, 0, 0.108, -1.18, sBright); // winged front sight
+      b.box(0.09, 0.085, 0.06, 0, 0.0, -0.82, sLo);                           // barrel band
+      b.box(0.082, 0.10, 0.72, 0, -0.02, -0.50, wMid, { tint: 0.03 });        // forearm/handguard
+      b.box(0.07, 0.03, 0.72, 0, 0.035, -0.50, wHi);                          // top highlight
+      b.box(0.075, 0.12, 0.24, 0, -0.06, 0.22, wMid, { tint: 0.03 });         // wrist
+      b.box(0.088, 0.17, 0.42, 0, -0.04, 0.46, wMid, { tint: 0.03 });         // buttstock
+      b.box(0.078, 0.05, 0.40, 0, 0.05, 0.46, wHi);                           // comb (lit)
+      b.box(0.092, 0.20, 0.06, 0, -0.06, 0.68, wLo);                          // buttplate
+      b.box(0.046, 0.17, 0.085, 0, -0.14, -0.05, sMid, { tint: 0.02 });       // box magazine
+      b.box(0.05, 0.022, 0.13, 0, -0.06, 0.04, sLo); b.box(0.018, 0.04, 0.018, 0, -0.04, 0.02, sBright); // guard + trigger
+      break;
+    }
+    case 'garand': { // U.S. M1 Garand — full walnut stock + upper handguard, gas cylinder + winged sight, op-rod, en-bloc receiver (.30-06, 8-rnd)
+      const sHi = 0x5a6068, sMid = 0x3a3d42, sLo = 0x24272b, sSlot = 0x16181b, sBright = 0x6a7079; // blued steel
+      const wHi = 0x8a5630, wMid = 0x6b3e22, wLo = 0x472815;
+      b.box(0.095, 0.13, 0.42, 0, 0.0, 0.0, sMid, { tint: 0.02 });            // receiver
+      b.box(0.088, 0.035, 0.42, 0, 0.08, 0.0, sHi);                           // top
+      b.box(0.05, 0.04, 0.05, 0, 0.11, 0.14, sLo); b.box(0.022, 0.022, 0.02, 0, 0.13, 0.14, sSlot); // rear peep
+      b.box(0.06, 0.04, 0.16, 0, 0.085, -0.02, sSlot);                        // open en-bloc top
+      b.box(0.045, 0.045, 0.9, 0, 0.04, -0.78, sMid);                         // barrel
+      b.box(0.07, 0.06, 0.5, 0, 0.085, -0.55, wMid, { tint: 0.03 });          // upper handguard
+      b.box(0.062, 0.025, 0.5, 0, 0.115, -0.55, wHi);                         // handguard highlight
+      b.box(0.062, 0.062, 0.20, 0, 0.04, -1.28, sLo, { tint: 0.02 });         // gas cylinder
+      b.box(0.05, 0.05, 0.05, 0, 0.085, -1.34, sLo); b.box(0.012, 0.055, 0.02, -0.024, 0.105, -1.34, sLo); b.box(0.012, 0.055, 0.02, 0.024, 0.105, -1.34, sLo); b.box(0.012, 0.05, 0.02, 0, 0.115, -1.34, sBright); // winged front sight
+      b.box(0.03, 0.03, 0.08, 0, 0.04, -1.42, sSlot);                         // muzzle/bore
+      b.box(0.022, 0.03, 0.7, 0.042, -0.005, -0.7, sBright);                  // operating rod (under-right)
+      b.box(0.085, 0.09, 0.7, 0, -0.045, -0.52, wMid, { tint: 0.03 });        // lower forearm
+      b.box(0.075, 0.028, 0.7, 0, 0.0, -0.52, wHi);
+      b.box(0.078, 0.13, 0.24, 0, -0.07, 0.22, wMid, { tint: 0.03 });         // wrist
+      b.box(0.092, 0.18, 0.44, 0, -0.05, 0.46, wMid, { tint: 0.03 });         // buttstock
+      b.box(0.082, 0.05, 0.42, 0, 0.04, 0.46, wHi);                           // comb
+      b.box(0.096, 0.22, 0.06, 0, -0.06, 0.68, wLo);                          // buttplate
+      b.box(0.05, 0.024, 0.14, 0, -0.085, 0.02, sLo); b.box(0.018, 0.045, 0.018, 0, -0.06, 0.0, sBright); // trigger
+      break;
+    }
     case 'stg': {   // StG 44 — layered-shade rebuild: stamped receiver, vented handguard, curved 30-rnd banana, warm wood
       const stHi = 0x888f99, stMid = 0x636a74, stLo = 0x474d56, stSlot = 0x2b2f35, stBright = 0xa0a7af; // gun-blue steel
       const wHi = 0x9d6d38, wMid = 0x82562a, wLo = 0x643f1e;                   // reddish-warm wood
@@ -2596,46 +2904,334 @@ function buildViewmodel(def) {
       b.box(0.04, 0.04, 0.04, -0.135, 0.06, -0.12, stBright);                 // knob
       break;
     }
-    case 'shotgun': b.box(0.15, 0.16, 1.2, 0, 0, -0.55, c, { tint: 0.03 }); b.box(0.13, 0.13, 1.2, 0, -0.16, -0.55, dark, { tint: 0.03 }); b.box(0.16, 0.34, 0.3, 0, -0.16, 0.22, a, { tint: 0.03 }); break;
-    case 'sawed':   b.box(0.16, 0.14, 0.6, 0.07, 0, -0.32, c, { tint: 0.03 }); b.box(0.16, 0.14, 0.6, -0.07, 0, -0.32, dark, { tint: 0.03 }); b.box(0.16, 0.3, 0.26, 0, -0.16, 0.12, a); break;
-    case 'sniper':  b.box(0.12, 0.14, 1.7, 0, 0, -0.75, c, { tint: 0.03 }); b.box(0.16, 0.1, 0.5, 0, 0.13, -0.35, dark); b.box(0.1, 0.1, 0.16, 0, 0.13, -0.62, a); b.box(0.16, 0.34, 0.32, 0, -0.16, 0.3, c, { tint: 0.03 }); break;
-    case 'magnum':  b.box(0.13, 0.18, 0.52, 0, 0, -0.28, c, { tint: 0.03 }); b.box(0.16, 0.2, 0.2, 0, -0.01, -0.05, c, { tint: 0.03 }); b.box(0.11, 0.28, 0.15, 0, -0.22, 0.07, a, { tint: 0.03 }); b.box(0.05, 0.05, 0.1, 0, 0.07, -0.34, dark); break;
-    case 'mp40':    b.box(0.11, 0.15, 0.55, 0, 0.02, -0.45, c, { tint: 0.02 }); b.box(0.07, 0.07, 0.5, 0, 0.02, -0.85, dark); b.box(0.09, 0.34, 0.1, 0, -0.26, -0.08, a); b.box(0.1, 0.22, 0.12, 0, -0.18, 0.1, dark); b.box(0.05, 0.05, 0.45, 0, -0.04, 0.42, dark); break;
-    case 'grease':  b.box(0.14, 0.15, 0.7, 0, 0, -0.4, c, { tint: 0.02 }); b.box(0.09, 0.3, 0.11, 0, -0.24, -0.05, dark); b.box(0.1, 0.2, 0.12, 0, -0.16, 0.1, dark); b.box(0.05, 0.05, 0.35, 0, 0, 0.42, dark); break;
-    case 'bar':     b.box(0.14, 0.18, 1.3, 0, 0, -0.6, c, { tint: 0.02 }); b.box(0.1, 0.3, 0.14, 0, -0.18, 0.06, dark); b.box(0.11, 0.32, 0.16, 0, -0.22, -0.18, a, { tint: 0.02 }); b.box(0.06, 0.3, 0.05, -0.06, -0.32, -0.95, dark, { rz: 0.35 }); b.box(0.06, 0.3, 0.05, 0.06, -0.32, -0.95, dark, { rz: -0.35 }); b.box(0.08, 0.08, 0.3, 0, 0.1, -0.95, dark); break;
-    case 'dp28': {  // DP-28 LMG: wood stock, slotted shroud, long barrel + conical flash hider, bipod (pan = separate spinning mesh)
-      const wood = 0x9a6a36, metal = 0x2c2f34, gd = 0x17191c;
-      b.box(0.1, 0.18, 0.5, 0, -0.05, 0.5, wood, { tint: 0.03 });            // stock
-      b.box(0.11, 0.24, 0.12, 0, -0.1, 0.74, wood, { tint: 0.03 });          // butt
-      b.box(0.09, 0.22, 0.12, 0, -0.17, 0.16, gd, { rx: -0.2 });             // grip
-      b.box(0.12, 0.16, 0.45, 0, 0.0, 0.0, metal, { tint: 0.02 });           // receiver
-      b.box(0.22, 0.04, 0.22, 0, 0.1, -0.3, metal);                          // pan seat
-      b.box(0.1, 0.12, 0.66, 0, 0.04, -0.62, metal, { tint: 0.02 });         // barrel shroud
-      for (let i = 0; i < 4; i++) b.box(0.11, 0.05, 0.09, 0, 0.08, -0.45 - i * 0.14, gd); // cooling slots
-      b.box(0.06, 0.06, 0.62, 0, 0.04, -1.15, metal);                        // long barrel
-      const cone = new THREE.CylinderGeometry(0.1, 0.05, 0.18, 12); b.geo(cone, 0, 0.04, -1.5, metal, { rx: Math.PI / 2 }); cone.dispose(); // conical flash hider
-      b.box(0.05, 0.1, 0.05, 0, 0.13, -1.04, gd);                            // front sight
-      b.box(0.06, 0.07, 0.06, 0, 0.14, 0.1, gd);                             // rear sight
-      b.box(0.1, 0.06, 0.06, 0, -0.05, -1.0, gd);                            // bipod pivot
-      b.box(0.04, 0.52, 0.04, -0.11, -0.3, -1.0, gd, { rz: 0.26 });          // bipod leg
-      b.box(0.04, 0.52, 0.04, 0.11, -0.3, -1.0, gd, { rz: -0.26 });          // bipod leg
+    case 'shotgun': { // Winchester M1897 Trench Gun — perforated heat shield, bayonet ring, ribbed pump forend, external hammer (12ga, 5+1 tube, pump)
+      const sHi = 0x4a5058, sMid = 0x33373d, sLo = 0x222529, sSlot = 0x141619, sBright = 0x646a72; // blued steel
+      const wHi = 0x8a5a32, wMid = 0x6b4426, wLo = 0x472c18;
+      // barrel + perforated heat shield (the cheese-grater)
+      b.box(0.05, 0.05, 0.72, 0, 0.04, -0.86, sMid);                          // barrel core
+      b.box(0.085, 0.092, 0.60, 0, 0.04, -0.84, sMid, { tint: 0.02 });        // heat shield sleeve
+      b.box(0.07, 0.026, 0.60, 0, 0.094, -0.84, sHi);                         // shield top (lit)
+      for (let i = 0; i < 6; i++) { const z = -0.62 - i * 0.095; b.box(0.04, 0.022, 0.05, 0, 0.092, z, sSlot); b.box(0.018, 0.04, 0.05, 0.046, 0.04, z, sSlot); b.box(0.018, 0.04, 0.05, -0.046, 0.04, z, sSlot); } // perforations
+      b.box(0.10, 0.10, 0.06, 0, 0.04, -1.18, sLo);                           // bayonet adapter ring
+      b.box(0.012, 0.04, 0.02, 0, 0.10, -1.16, sBright);                      // front sight
+      // tube magazine + band
+      b.box(0.044, 0.044, 0.58, 0, -0.03, -0.84, sLo);                        // mag tube
+      b.box(0.05, 0.092, 0.05, 0, 0.005, -1.0, sLo);                          // barrel band
+      // slab receiver + external hammer spur
+      b.box(0.09, 0.135, 0.34, 0, 0.0, -0.10, sMid, { tint: 0.02 });
+      b.box(0.082, 0.035, 0.34, 0, 0.085, -0.10, sHi);
+      b.box(0.03, 0.05, 0.045, 0, 0.105, 0.05, sBright);                      // external hammer spur (top-rear)
+      b.box(0.006, 0.05, 0.13, 0.07, 0.04, -0.06, sSlot);                     // ejection port (right)
+      // ribbed wooden pump forend
+      b.box(0.078, 0.085, 0.30, 0, -0.05, -0.46, wMid, { tint: 0.03 });
+      for (let i = 0; i < 4; i++) b.box(0.082, 0.06, 0.012, 0, -0.05, -0.36 - i * 0.06, wLo); // ribs
+      // straight-wrist buttstock
+      b.box(0.072, 0.12, 0.22, 0, -0.05, 0.16, wMid, { tint: 0.03 });         // wrist
+      b.box(0.085, 0.16, 0.42, 0, -0.04, 0.42, wMid, { tint: 0.03 });         // butt
+      b.box(0.075, 0.05, 0.40, 0, 0.05, 0.42, wHi);                           // comb
+      b.box(0.092, 0.20, 0.06, 0, -0.06, 0.64, wLo);                          // buttplate
+      b.box(0.05, 0.022, 0.13, 0, -0.075, 0.0, sLo); b.box(0.018, 0.04, 0.018, 0, -0.05, -0.02, sBright); // guard + trigger
       break;
     }
-    case 'mosin':   b.box(0.1, 0.15, 1.45, 0, -0.02, -0.65, c, { tint: 0.03 }); b.box(0.07, 0.07, 0.7, 0, 0.03, -1.4, a); b.box(0.11, 0.28, 0.34, 0, -0.16, 0.4, c, { tint: 0.03 }); b.box(0.13, 0.05, 0.07, 0.1, 0.03, -0.1, a); b.box(0.06, 0.1, 0.05, 0, 0.12, -0.7, a); break;
-    case 'bazooka': b.box(0.22, 0.22, 1.55, 0, 0, -0.7, c, { tint: 0.02 }); b.box(0.28, 0.28, 0.16, 0, 0, 0.12, dark); b.box(0.1, 0.26, 0.12, 0, -0.22, -0.12, dark); b.box(0.08, 0.12, 0.1, 0, 0.16, -0.5, dark); break;
-    case 'axe':     b.box(0.05, 0.05, 0.72, 0, 0, -0.5, a, { tint: 0.03 }); b.box(0.06, 0.3, 0.06, 0.02, 0.12, -0.86, c, { tint: 0.02 }); b.box(0.18, 0.26, 0.05, 0.12, 0.12, -0.86, c, { tint: 0.02 }); break;
-    case 'binoculars': {     // Soviet WW2 6×30 (B-6): twin green-crackle barrels, worn brass rings, leather centre hinge, focus wheel
-      const grn = 0x4a5240, grnHi = 0x5e6650, brass = 0xb08a3a, brassHi = 0xccA050, blk = 0x1a1c18, lens = 0x10141a;
-      for (const sx of [-0.14, 0.14]) {
-        let gg = new THREE.CylinderGeometry(0.11, 0.12, 0.5, 16); b.geo(gg, sx, 0, -0.45, grn, { rx: Math.PI / 2, tint: 0.06 }); gg.dispose();   // barrel (crackle via tint)
-        b.box(0.05, 0.02, 0.46, sx, 0.1, -0.45, grnHi);                                                                                          // top highlight
-        gg = new THREE.CylinderGeometry(0.118, 0.118, 0.05, 16); b.geo(gg, sx, 0, -0.68, brass, { rx: Math.PI / 2 }); gg.dispose();              // brass objective ring
-        gg = new THREE.CylinderGeometry(0.1, 0.1, 0.02, 16); b.geo(gg, sx, 0, -0.705, lens, { rx: Math.PI / 2 }); gg.dispose();                  // objective lens
-        gg = new THREE.CylinderGeometry(0.085, 0.095, 0.06, 16); b.geo(gg, sx, 0, -0.17, brass, { rx: Math.PI / 2 }); gg.dispose();              // brass eyepiece ring
-        gg = new THREE.CylinderGeometry(0.07, 0.07, 0.04, 14); b.geo(gg, sx, 0, -0.13, blk, { rx: Math.PI / 2 }); gg.dispose();                  // eyecup
+    case 'sawed': { // Sawed-off side-by-side 12ga — twin stubby barrels, boxlock, external hammers, cut-down checkered stock (break, 2 shells)
+      const sHi = 0x4a5058, sMid = 0x2b2e33, sLo = 0x1c1e22, sSlot = 0x121417, sBright = 0x5e646c; // blue-black steel
+      const wHi = 0x7a4f34, wMid = 0x5a3826, wLo = 0x3a2418;
+      // twin side-by-side barrels (figure-8 bores at muzzle)
+      { const bl = new THREE.CylinderGeometry(0.042, 0.042, 0.58, 14); b.geo(bl, -0.046, 0.03, -0.55, sMid, { rx: Math.PI / 2, tint: 0.02 }); bl.dispose(); }
+      { const br = new THREE.CylinderGeometry(0.042, 0.042, 0.58, 14); b.geo(br, 0.046, 0.03, -0.55, sMid, { rx: Math.PI / 2, tint: 0.02 }); br.dispose(); }
+      b.box(0.03, 0.026, 0.58, 0, 0.072, -0.55, sHi);                         // top rib between barrels
+      b.box(0.026, 0.026, 0.04, -0.046, 0.03, -0.85, sSlot); b.box(0.026, 0.026, 0.04, 0.046, 0.03, -0.85, sSlot); // bores
+      b.box(0.07, 0.05, 0.12, 0, 0.0, -0.30, sLo);                            // short forend underlug
+      // break-action hinge + chunky boxlock receiver
+      b.box(0.115, 0.075, 0.06, 0, -0.01, -0.24, sLo);                        // hinge knuckle
+      b.box(0.125, 0.135, 0.30, 0, -0.01, -0.04, sMid, { tint: 0.02 });       // boxlock body
+      b.box(0.118, 0.035, 0.30, 0, 0.07, -0.04, sHi);                         // top (lit)
+      b.box(0.025, 0.04, 0.10, 0, 0.085, 0.04, sLo);                          // top break lever
+      b.box(0.022, 0.05, 0.03, -0.03, 0.08, 0.10, sBright); b.box(0.022, 0.05, 0.03, 0.03, 0.08, 0.10, sBright); // two external hammers
+      // cut-down pistol-wrist stock (checkered)
+      b.box(0.078, 0.19, 0.30, 0, -0.12, 0.18, wMid, { rx: -0.42, tint: 0.04 });
+      b.box(0.062, 0.17, 0.022, 0.04, -0.12, 0.18, wHi, { rx: -0.42 }); b.box(0.062, 0.17, 0.022, -0.04, -0.12, 0.18, wLo, { rx: -0.42 });
+      b.box(0.09, 0.10, 0.06, 0, -0.23, 0.33, wLo, { rx: -0.42 });            // butt
+      // double triggers in open guard
+      b.box(0.05, 0.022, 0.12, 0, -0.085, 0.06, sLo); b.box(0.016, 0.04, 0.016, 0, -0.06, 0.02, sBright); b.box(0.016, 0.04, 0.016, 0, -0.06, 0.08, sBright);
+      break;
+    }
+    case 'sniper': { // Kar98k (scoped) — near-full-length wood stock, turned-down bolt, 2 barrel bands, ZF39 scope, hooded front sight (8mm Mauser, 5-rnd, bolt)
+      const sHi = 0x4a5058, sMid = 0x2f3237, sLo = 0x1e2125, sSlot = 0x121417, sBright = 0x5e646c; // blued steel
+      const wHi = 0xc79a5a, wMid = 0xa9793a, wLo = 0x855a28, lens = 0x0e1218;                          // honey wood + glass
+      // long wood stock + forend (covers most of the barrel)
+      b.box(0.088, 0.10, 1.05, 0, -0.02, -0.55, wMid, { tint: 0.03 });        // forend
+      b.box(0.075, 0.028, 1.0, 0, 0.034, -0.55, wHi);                         // top handguard highlight
+      b.box(0.078, 0.13, 0.24, 0, -0.06, 0.22, wMid, { tint: 0.03 });         // wrist
+      b.box(0.092, 0.18, 0.44, 0, -0.05, 0.48, wMid, { tint: 0.03 });         // buttstock
+      b.box(0.082, 0.05, 0.42, 0, 0.045, 0.48, wHi);                          // comb (lit)
+      b.box(0.096, 0.22, 0.06, 0, -0.06, 0.70, wLo);                          // buttplate
+      { const disc = new THREE.CylinderGeometry(0.05, 0.05, 0.012, 12); b.geo(disc, -0.047, -0.02, 0.50, sLo, { rz: Math.PI / 2 }); disc.dispose(); } // stock takedown disc (left)
+      // barrel bands + short exposed barrel + hooded front sight
+      b.box(0.095, 0.10, 0.05, 0, 0.0, -0.78, sLo); b.box(0.095, 0.10, 0.05, 0, 0.0, -1.05, sLo); // two barrel bands
+      b.box(0.044, 0.044, 0.30, 0, 0.02, -1.42, sMid);                        // exposed barrel tip
+      b.box(0.05, 0.05, 0.05, 0, 0.06, -1.55, sLo); b.box(0.012, 0.05, 0.02, 0, 0.10, -1.55, sBright); b.box(0.012,0.055,0.02,-0.024,0.09,-1.55,sLo); b.box(0.012,0.055,0.02,0.024,0.09,-1.55,sLo); // hooded front sight
+      // receiver + tangent rear sight + turned-down bolt
+      b.box(0.08, 0.10, 0.30, 0, 0.0, -0.02, sMid, { tint: 0.02 });
+      b.box(0.06, 0.04, 0.07, 0, 0.075, -0.18, sLo);                          // tangent rear sight
+      b.box(0.024, 0.024, 0.12, 0.075, 0.0, 0.06, sBright);                   // bolt arm (out right)
+      b.box(0.024, 0.07, 0.024, 0.105, -0.04, 0.06, sBright);                 // turned-down section
+      { const kn = new THREE.CylinderGeometry(0.028, 0.028, 0.03, 12); b.geo(kn, 0.105, -0.08, 0.06, sBright, { ry: Math.PI / 2 }); kn.dispose(); } // ball knob
+      // ZF39 scope high on two rings
+      { const sc = new THREE.CylinderGeometry(0.036, 0.036, 0.42, 14); b.geo(sc, 0, 0.18, -0.08, sLo, { rx: Math.PI / 2, tint: 0.02 }); sc.dispose(); }
+      { const bell = new THREE.CylinderGeometry(0.046, 0.036, 0.10, 14); b.geo(bell, 0, 0.18, -0.30, sLo, { rx: Math.PI / 2 }); bell.dispose(); }
+      { const gl = new THREE.CylinderGeometry(0.04, 0.04, 0.012, 14); b.geo(gl, 0, 0.18, -0.355, lens, { rx: Math.PI / 2 }); gl.dispose(); }
+      b.box(0.03, 0.07, 0.03, 0, 0.115, 0.04, sLo); b.box(0.03, 0.07, 0.03, 0, 0.115, -0.18, sLo); // scope rings
+      // trigger
+      b.box(0.05, 0.024, 0.14, 0, -0.085, 0.02, sLo); b.box(0.018, 0.045, 0.018, 0, -0.06, 0.0, sBright);
+      break;
+    }
+    case 'magnum': { // S&W Model 29 .44 Magnum — vent-rib barrel + ejector shroud, adj. sights, walnut target grips
+      const sHi = 0x5a6470, sMid = 0x3f474f, sLo = 0x2b3138, sSlot = 0x191c20, sBright = 0x6e7884; // deep royal-blue steel
+      const wHi = 0x7a5230, wMid = 0x5e3d22, wLo = 0x3f2814, red = 0xb53026;                         // walnut grips + red ramp
+      // barrel: thick, top sighting rib + full underlug shroud
+      b.box(0.075, 0.085, 0.56, 0, 0.04, -0.46, sMid, { tint: 0.02 });         // barrel body
+      b.box(0.055, 0.03, 0.56, 0, 0.092, -0.46, sHi);                          // top vent rib (lit)
+      for (let i = 0; i < 5; i++) b.box(0.04, 0.018, 0.02, 0, 0.078, -0.30 - i * 0.08, sSlot); // rib vents
+      b.box(0.075, 0.05, 0.52, 0, -0.02, -0.46, sLo, { tint: 0.02 });          // ejector-rod underlug
+      b.box(0.02, 0.04, 0.02, 0, 0.075, -0.72, red);                           // red ramp front sight
+      b.box(0.04, 0.04, 0.05, 0, 0.04, -0.75, sSlot);                          // muzzle/bore
+      // frame + adjustable rear sight + thumb latch
+      b.box(0.09, 0.135, 0.22, 0, 0.0, -0.10, sMid, { tint: 0.02 });           // frame
+      b.box(0.075, 0.03, 0.07, 0, 0.082, -0.02, sLo);                          // adj rear sight body
+      b.box(0.05, 0.02, 0.02, 0, 0.10, 0.0, sBright); b.box(0.02, 0.028, 0.02, 0, 0.10, 0.0, sSlot); // sight + notch
+      b.box(0.012, 0.06, 0.09, -0.052, 0.0, -0.04, sLo);                       // cylinder thumb latch (left)
+      // fluted swing-out cylinder (6)
+      { const cyl = new THREE.CylinderGeometry(0.082, 0.082, 0.18, 18); b.geo(cyl, 0, -0.005, -0.05, sMid, { rx: Math.PI / 2, tint: 0.02 }); cyl.dispose(); }
+      for (let i = 0; i < 6; i++) { const a2 = i / 6 * Math.PI * 2; b.box(0.018, 0.018, 0.16, Math.cos(a2) * 0.076, -0.005 + Math.sin(a2) * 0.076, -0.05, sSlot); }
+      // hammer spur
+      b.box(0.03, 0.06, 0.05, 0, 0.105, 0.075, sLo); b.box(0.04, 0.025, 0.04, 0, 0.132, 0.09, sBright);
+      // rounded target grip (checkered walnut, chunky)
+      b.box(0.092, 0.24, 0.14, 0, -0.15, 0.11, wMid, { rx: -0.32, tint: 0.05 });    // grip body
+      b.box(0.07, 0.22, 0.025, 0.055, -0.15, 0.11, wHi, { rx: -0.32 });             // right face (lit)
+      b.box(0.07, 0.22, 0.025, -0.055, -0.15, 0.11, wLo, { rx: -0.32 });            // left face
+      // trigger guard + grooved trigger
+      b.box(0.07, 0.022, 0.12, 0, -0.085, -0.02, sMid);                        // guard (rounded)
+      b.box(0.02, 0.055, 0.022, 0, -0.058, -0.03, sBright);                    // trigger
+      break;
+    }
+    case 'mp40': { // MP 40 — all-steel-and-bakelite: tubular receiver, hooked magwell raked forward, ribbed handguard, underfolding stock (9x19, 500 rpm)
+      const sHi = 0x565c64, sMid = 0x3e434a, sLo = 0x2a2e33, sSlot = 0x191c20, sBright = 0x6f757e; // dark gun-blue steel
+      const kHi = 0x4a4239, kMid = 0x36302a, kLo = 0x241f1b;                                         // dark bakelite (NO wood)
+      // short barrel + stepped muzzle nut
+      b.box(0.044, 0.044, 0.34, 0, 0.04, -0.78, sMid, { tint: 0.02 });
+      b.box(0.06, 0.06, 0.07, 0, 0.04, -0.97, sLo);                            // stepped muzzle nut
+      b.box(0.022, 0.022, 0.04, 0, 0.04, -1.0, sSlot);                         // bore
+      b.box(0.034, 0.05, 0.06, 0, -0.005, -0.72, sLo);                         // under-barrel resting bar/hook
+      // tubular receiver
+      { const rc = new THREE.CylinderGeometry(0.058, 0.058, 0.58, 16); b.geo(rc, 0, 0.04, -0.3, sMid, { rx: Math.PI / 2, tint: 0.02 }); rc.dispose(); }
+      b.box(0.05, 0.018, 0.56, 0, 0.092, -0.3, sHi);                           // top highlight
+      b.box(0.008, 0.03, 0.18, -0.058, 0.05, -0.2, sSlot);                     // left bolt slot
+      b.box(0.032, 0.032, 0.04, -0.072, 0.055, -0.16, sBright);                // charging knob (left)
+      b.box(0.03, 0.04, 0.05, 0, 0.10, 0.0, sLo); b.box(0.022, 0.016, 0.016, 0, 0.125, 0.0, sBright); // rear sight
+      // hooked magazine housing + magazine (raked slightly forward)
+      b.box(0.052, 0.15, 0.11, 0, -0.12, -0.20, sMid, { rx: 0.12, tint: 0.02 });   // magwell housing
+      b.box(0.046, 0.26, 0.088, 0, -0.34, -0.255, sMid, { rx: 0.12, tint: 0.02 });  // long box magazine
+      b.box(0.05, 0.03, 0.092, 0, -0.47, -0.27, sLo, { rx: 0.12 });                  // mag floor
+      // ribbed bakelite handguard (underside ahead of magwell)
+      b.box(0.066, 0.06, 0.22, 0, -0.05, -0.46, kMid, { tint: 0.03 });
+      for (let i = 0; i < 4; i++) b.box(0.07, 0.05, 0.012, 0, -0.05, -0.40 - i * 0.05, kLo);   // ribs
+      // bakelite pistol grip + trigger guard
+      b.box(0.058, 0.20, 0.10, 0, -0.15, 0.08, kMid, { rx: -0.22, tint: 0.03 });
+      b.box(0.046, 0.18, 0.02, 0.032, -0.15, 0.08, kHi, { rx: -0.22 }); b.box(0.046, 0.18, 0.02, -0.032, -0.15, 0.08, kLo, { rx: -0.22 });
+      b.box(0.055, 0.022, 0.10, 0, -0.072, 0.0, sLo); b.box(0.018, 0.045, 0.018, 0, -0.05, -0.02, sBright); // guard + trigger
+      // underfolding skeleton stock (extended)
+      b.box(0.022, 0.022, 0.34, 0.025, -0.05, 0.34, sMid); b.box(0.022, 0.022, 0.34, -0.025, -0.05, 0.34, sMid); // struts
+      b.box(0.11, 0.03, 0.03, 0, -0.05, 0.52, sMid);                           // shoulder bar
+      break;
+    }
+    case 'grease': { // M3 "Grease Gun" — fat tubular receiver, top dust cover, vertical grip, straight box mag, wire stock (.45 ACP, 450 rpm)
+      const sHi = 0x646859, sMid = 0x474a42, sLo = 0x303129, sSlot = 0x1e201c, sBright = 0x767a6c; // dull parkerized greenish-charcoal
+      // fat "soup can" receiver
+      { const rc = new THREE.CylinderGeometry(0.076, 0.076, 0.62, 18); b.geo(rc, 0, 0.0, 0.04, sMid, { rx: Math.PI / 2, tint: 0.02 }); rc.dispose(); }
+      b.box(0.06, 0.02, 0.60, 0, 0.078, 0.04, sHi);                            // top highlight strip
+      b.box(0.07, 0.02, 0.60, 0, -0.078, 0.04, sLo);                           // bottom shadow strip
+      // stubby barrel + knurled muzzle nut + sights
+      b.box(0.042, 0.042, 0.26, 0, 0.0, -0.40, sMid);
+      b.box(0.058, 0.058, 0.06, 0, 0.0, -0.54, sLo); b.box(0.022, 0.022, 0.04, 0, 0.0, -0.57, sSlot); // muzzle nut + bore
+      b.box(0.014, 0.032, 0.02, 0, 0.092, -0.40, sBright);                     // front blade sight
+      b.box(0.04, 0.032, 0.014, 0, 0.092, 0.30, sLo); b.box(0.016, 0.016, 0.016, 0, 0.10, 0.30, sSlot); // rear peep
+      // top ejection-port dust cover
+      b.box(0.05, 0.028, 0.13, 0.02, 0.078, -0.06, sLo);
+      // vertical pistol grip + big round trigger guard (rear third)
+      b.box(0.06, 0.19, 0.092, 0, -0.16, 0.20, sMid, { tint: 0.02 });
+      b.box(0.048, 0.17, 0.02, 0.033, -0.16, 0.20, sHi); b.box(0.048, 0.17, 0.02, -0.033, -0.16, 0.20, sLo);
+      b.box(0.058, 0.022, 0.14, 0, -0.075, 0.13, sLo); b.box(0.022, 0.018, 0.10, 0, -0.06, 0.08, sLo); // big rounded guard
+      b.box(0.018, 0.04, 0.018, 0, -0.05, 0.11, sBright);                      // trigger
+      // straight box magazine (front, slight forward rake)
+      b.box(0.05, 0.26, 0.088, 0, -0.20, -0.05, sMid, { rx: 0.06, tint: 0.02 });
+      b.box(0.054, 0.03, 0.092, 0, -0.33, -0.06, sLo, { rx: 0.06 });
+      // retractable wire stock (two side rails + shoulder)
+      b.box(0.014, 0.014, 0.40, 0.05, -0.02, 0.44, sMid); b.box(0.014, 0.014, 0.40, -0.05, -0.02, 0.44, sMid);
+      b.box(0.13, 0.014, 0.014, 0, -0.02, 0.63, sMid);                         // shoulder bar
+      break;
+    }
+    case 'bar': { // BAR M1918A2 — long barrel-over-gas-tube, tall 20-rnd box, wood stock+forearm, bipod, flash hider (.30-06, auto)
+      const sHi = 0x3a3f47, sMid = 0x2c2f35, sLo = 0x1c1e22, sSlot = 0x131519, sBright = 0x565b63; // worn blued steel
+      const wHi = 0x8a6038, wMid = 0x6e4a2f, wLo = 0x4a301e;
+      b.box(0.11, 0.15, 0.5, 0, 0.0, -0.08, sMid, { tint: 0.02 });            // receiver
+      b.box(0.10, 0.035, 0.5, 0, 0.09, -0.08, sHi);                           // top (lit)
+      b.box(0.05, 0.04, 0.05, 0, 0.12, 0.04, sLo); b.box(0.022, 0.018, 0.02, 0, 0.14, 0.04, sBright); // rear leaf
+      b.box(0.052, 0.052, 0.9, 0, 0.05, -0.95, sMid);                         // barrel (top)
+      b.box(0.034, 0.034, 0.74, 0, -0.04, -0.90, sLo);                        // gas tube (below, air gap = the BAR look)
+      { const fh = new THREE.CylinderGeometry(0.052, 0.072, 0.12, 12); b.geo(fh, 0, 0.05, -1.46, sLo, { rx: Math.PI / 2 }); fh.dispose(); } // flash hider
+      b.box(0.05, 0.05, 0.05, 0, 0.10, -1.30, sLo); b.box(0.012, 0.05, 0.02, 0, 0.13, -1.30, sBright); // front sight
+      b.box(0.09, 0.10, 0.34, 0, -0.01, -0.50, wMid, { tint: 0.03 });         // wood forearm
+      b.box(0.078, 0.03, 0.34, 0, 0.045, -0.50, wHi);
+      b.box(0.058, 0.28, 0.10, 0, -0.22, -0.02, sMid, { tint: 0.02 });        // tall 20-rnd box mag
+      b.box(0.062, 0.03, 0.104, 0, -0.37, -0.02, sLo);                        // mag floor
+      b.box(0.082, 0.13, 0.26, 0, -0.06, 0.22, wMid, { tint: 0.03 });         // wrist
+      b.box(0.095, 0.18, 0.46, 0, -0.04, 0.50, wMid, { tint: 0.03 });         // butt
+      b.box(0.085, 0.05, 0.44, 0, 0.05, 0.50, wHi);                           // comb
+      b.box(0.10, 0.22, 0.06, 0, -0.05, 0.73, wLo);                           // buttplate
+      b.box(0.05, 0.024, 0.14, 0, -0.085, 0.02, sLo); b.box(0.018, 0.045, 0.018, 0, -0.06, 0.0, sBright); // trigger
+      b.box(0.05, 0.05, 0.06, 0, -0.04, -1.18, sLo);                          // bipod mount
+      b.box(0.022, 0.36, 0.022, -0.10, -0.26, -1.18, sLo, { rz: 0.4 });       // bipod leg L
+      b.box(0.022, 0.36, 0.022, 0.10, -0.26, -1.18, sLo, { rz: -0.4 });       // bipod leg R
+      b.box(0.06, 0.018, 0.03, -0.165, -0.42, -1.18, sBright); b.box(0.06, 0.018, 0.03, 0.165, -0.42, -1.18, sBright); // skid feet
+      break;
+    }
+    case 'dp28': {  // DP-28 LMG — warm blued gunmetal (NOT black), honey-walnut stock, slotted shroud, conical flash hider, bipod (pan = separate spinning mesh)
+      const stHi = 0x666d76, stMid = 0x4a4f57, stLo = 0x33373d, stSlot = 0x23262b, stBright = 0x747b84; // warm blued gunmetal
+      const wHi = 0xb07e44, wMid = 0x8f6230, wLo = 0x5e3f1e;                                              // honey walnut
+      b.box(0.1, 0.18, 0.5, 0, -0.05, 0.5, wMid, { tint: 0.03 });            // stock
+      b.box(0.088, 0.05, 0.48, 0, 0.03, 0.5, wHi);                           // comb (lit)
+      b.box(0.11, 0.24, 0.12, 0, -0.1, 0.74, wLo, { tint: 0.03 });           // butt
+      b.box(0.09, 0.22, 0.12, 0, -0.17, 0.16, stLo, { rx: -0.2 });           // grip
+      b.box(0.12, 0.16, 0.45, 0, 0.0, 0.0, stMid, { tint: 0.02 });           // receiver
+      b.box(0.112, 0.04, 0.45, 0, 0.085, 0.0, stHi);                         // receiver top (lit)
+      b.box(0.22, 0.04, 0.22, 0, 0.1, -0.3, stMid);                          // pan seat
+      b.box(0.1, 0.12, 0.66, 0, 0.04, -0.62, stMid, { tint: 0.02 });         // barrel shroud
+      b.box(0.088, 0.03, 0.66, 0, 0.10, -0.62, stHi);                        // shroud top highlight
+      for (let i = 0; i < 4; i++) b.box(0.11, 0.05, 0.09, 0, 0.08, -0.45 - i * 0.14, stSlot); // cooling slots
+      b.box(0.06, 0.06, 0.62, 0, 0.04, -1.15, stMid);                        // long barrel
+      const cone = new THREE.CylinderGeometry(0.1, 0.05, 0.18, 12); b.geo(cone, 0, 0.04, -1.5, stLo, { rx: Math.PI / 2 }); cone.dispose(); // conical flash hider
+      b.box(0.05, 0.1, 0.05, 0, 0.13, -1.04, stLo); b.box(0.012, 0.05, 0.02, 0, 0.17, -1.04, stBright); // front sight + post
+      b.box(0.06, 0.07, 0.06, 0, 0.14, 0.1, stLo);                           // rear sight
+      b.box(0.1, 0.06, 0.06, 0, -0.05, -1.0, stLo);                          // bipod pivot
+      b.box(0.04, 0.52, 0.04, -0.11, -0.3, -1.0, stLo, { rz: 0.26 });        // bipod leg
+      b.box(0.04, 0.52, 0.04, 0.11, -0.3, -1.0, stLo, { rz: -0.26 });        // bipod leg
+      break;
+    }
+    case 'mosin': { // Mosin-Nagant M91/30 (sniper) — very long, hooded front sight, 2 bands, bent-down bolt, PU scope offset-left (7.62x54R, 5-rnd, bolt)
+      const sHi = 0x4a4e54, sMid = 0x2f3237, sLo = 0x1e2125, sSlot = 0x121417, sBright = 0x5e646c; // blued steel
+      const wHi = 0xc28a48, wMid = 0x9a6a32, wLo = 0x6a4520, lens = 0x0e1218;                          // amber birch + glass
+      // long thin barrel projecting far forward
+      b.box(0.044, 0.044, 0.55, 0, 0.03, -1.45, sMid);                        // exposed barrel
+      b.box(0.05, 0.05, 0.05, 0, 0.07, -1.62, sLo); b.box(0.012, 0.05, 0.02, 0, 0.105, -1.62, sBright); b.box(0.014,0.06,0.022,-0.026,0.095,-1.62,sLo); b.box(0.014,0.06,0.022,0.026,0.095,-1.62,sLo); // hooded front sight (ears)
+      // wood stock + forend (forward half) + two bands
+      b.box(0.085, 0.10, 1.05, 0, -0.02, -0.62, wMid, { tint: 0.03 });        // forend
+      b.box(0.072, 0.028, 1.0, 0, 0.034, -0.62, wHi);                         // handguard highlight
+      b.box(0.092, 0.095, 0.05, 0, 0.0, -0.78, sLo); b.box(0.092, 0.095, 0.05, 0, 0.0, -1.12, sLo); // two barrel bands
+      b.box(0.074, 0.12, 0.24, 0, -0.06, 0.26, wMid, { tint: 0.03 });         // wrist (straight broomstick)
+      b.box(0.088, 0.17, 0.44, 0, -0.05, 0.52, wMid, { tint: 0.03 });         // slim butt
+      b.box(0.078, 0.05, 0.42, 0, 0.045, 0.52, wHi);                          // comb
+      b.box(0.092, 0.20, 0.06, 0, -0.06, 0.74, wLo);                          // buttplate
+      // hex receiver + tangent ladder rear sight + mag box
+      b.box(0.078, 0.105, 0.30, 0, 0.0, -0.04, sMid, { tint: 0.02 });
+      b.box(0.06, 0.045, 0.08, 0, 0.08, -0.30, sLo);                          // tangent rear sight
+      b.box(0.07, 0.09, 0.12, 0, -0.10, 0.04, sLo);                           // magazine box + floorplate
+      // bent-down sniper bolt handle (right)
+      b.box(0.024, 0.024, 0.10, 0.07, -0.01, 0.08, sBright); b.box(0.024, 0.10, 0.024, 0.10, -0.07, 0.08, sBright);
+      { const kn = new THREE.CylinderGeometry(0.026, 0.026, 0.03, 12); b.geo(kn, 0.10, -0.13, 0.08, sBright, { ry: Math.PI / 2 }); kn.dispose(); }
+      // PU scope on offset bracket (above + left of bore)
+      { const sc = new THREE.CylinderGeometry(0.032, 0.032, 0.30, 14); b.geo(sc, -0.03, 0.165, -0.06, sLo, { rx: Math.PI / 2, tint: 0.02 }); sc.dispose(); }
+      { const gl = new THREE.CylinderGeometry(0.03, 0.03, 0.012, 14); b.geo(gl, -0.03, 0.165, -0.21, lens, { rx: Math.PI / 2 }); gl.dispose(); }
+      b.box(0.05, 0.08, 0.03, -0.03, 0.105, 0.0, sLo);                        // offset mount bracket
+      // trigger
+      b.box(0.05, 0.024, 0.13, 0, -0.085, 0.04, sLo); b.box(0.018, 0.045, 0.018, 0, -0.06, 0.02, sBright);
+      break;
+    }
+    case 'bazooka': { // M1A1 2.36-inch Rocket Launcher — long open olive tube, twin wood grips, shoulder rest, battery box, rear blast ring (60mm rocket, single)
+      const oHi = 0x646a48, oMid = 0x4d5038, oLo = 0x363a28, oSlot = 0x222616, oBright = 0x787e5c; // olive-drab steel
+      const wHi = 0x8a6238, wMid = 0x6e4a2a, wLo = 0x4a3018, warhead = 0x9a7a32;
+      // long open smoothbore tube
+      { const t = new THREE.CylinderGeometry(0.10, 0.10, 1.5, 20); b.geo(t, 0, 0.0, -0.10, oMid, { rx: Math.PI / 2, tint: 0.02 }); t.dispose(); }
+      b.box(0.07, 0.022, 1.46, 0, 0.10, -0.10, oHi);                          // top highlight strip
+      b.box(0.075, 0.024, 1.46, 0, -0.10, -0.10, oLo);                        // bottom shadow strip
+      { const fb = new THREE.CylinderGeometry(0.075, 0.075, 0.04, 18); b.geo(fb, 0, 0, -0.85, oSlot, { rx: Math.PI / 2 }); fb.dispose(); } // front bore (open)
+      // front sight (ladder) on top near muzzle
+      b.box(0.02, 0.07, 0.04, 0, 0.13, -0.70, oLo); b.box(0.04, 0.012, 0.012, 0, 0.165, -0.70, oBright);
+      // front wood fore-grip (hangs down)
+      b.box(0.05, 0.16, 0.085, 0, -0.20, -0.34, wMid, { tint: 0.03 });
+      b.box(0.04, 0.145, 0.02, 0.03, -0.20, -0.34, wHi); b.box(0.04, 0.145, 0.02, -0.03, -0.20, -0.34, wLo);
+      // rear wood trigger grip + guard
+      b.box(0.05, 0.18, 0.09, 0, -0.19, 0.16, wMid, { rx: -0.18, tint: 0.03 });
+      b.box(0.04, 0.16, 0.02, 0.03, -0.19, 0.16, wHi); b.box(0.04, 0.16, 0.02, -0.03, -0.19, 0.16, wLo);
+      b.box(0.05, 0.022, 0.10, 0, -0.10, 0.12, oLo); b.box(0.016, 0.04, 0.016, 0, -0.075, 0.10, oBright); // guard + trigger
+      // wood shoulder-rest board (underside, rear)
+      b.box(0.07, 0.05, 0.30, 0, -0.135, 0.38, wMid, { tint: 0.03 });
+      // battery / contact box on top near rear grip
+      b.box(0.075, 0.06, 0.13, 0, 0.125, 0.14, oLo, { tint: 0.02 }); b.box(0.05, 0.018, 0.10, 0, 0.16, 0.14, oBright);
+      // rear blast ring + loaded finned rocket protruding
+      { const ring = new THREE.CylinderGeometry(0.125, 0.125, 0.03, 18); b.geo(ring, 0, 0, 0.66, oLo, { rx: Math.PI / 2 }); ring.dispose(); }
+      { const rk = new THREE.CylinderGeometry(0.05, 0.05, 0.22, 14); b.geo(rk, 0, 0, 0.74, warhead, { rx: Math.PI / 2, tint: 0.02 }); rk.dispose(); }
+      { const nose = new THREE.CylinderGeometry(0.05, 0.028, 0.10, 14); b.geo(nose, 0, 0, 0.62, oLo, { rx: -Math.PI / 2 }); nose.dispose(); } // warhead nose into tube
+      for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; b.box(0.01, 0.05, 0.10, Math.cos(a) * 0.055, Math.sin(a) * 0.055, 0.86, oSlot, { rz: -a }); } // tail fins
+      break;
+    }
+    case 'axe': { // German trench hatchet (Beilpicke) — fan bit + tapering spike poll, langets, hardwood haft
+      const sHi = 0x9aa0a4, sMid = 0x6e7378, sLo = 0x44484c, sEdge = 0xc4cace, sSlot = 0x2a2d30; // forged steel
+      const wHi = 0xd8ae76, wMid = 0xb98a4e, wLo = 0x7e5a30;                                       // hickory haft
+      // haft (head forward -Z, grip toward +Z)
+      b.box(0.046, 0.052, 0.80, 0, 0.0, -0.42, wMid, { tint: 0.04 });
+      b.box(0.046, 0.013, 0.80, 0, 0.03, -0.42, wHi); b.box(0.046, 0.013, 0.80, 0, -0.03, -0.42, wLo); // grain hi/lo
+      { const k = new THREE.CylinderGeometry(0.05, 0.044, 0.10, 12); b.geo(k, 0, 0, 0.04, wHi, { rx: Math.PI / 2 }); k.dispose(); } // grip swell knob (butt)
+      // head collar (eye) + langets down the haft
+      b.box(0.07, 0.082, 0.12, 0, 0.01, -0.80, sMid, { tint: 0.02 });          // eye/collar
+      b.box(0.014, 0.05, 0.16, 0.03, 0.0, -0.70, sLo); b.box(0.014, 0.05, 0.16, -0.03, 0.0, -0.70, sLo); // langets
+      b.box(0.016, 0.016, 0.016, 0.034, 0.0, -0.66, sHi); b.box(0.016, 0.016, 0.016, -0.034, 0.0, -0.66, sHi); // langet rivets
+      // fan-shaped bit (flares down & forward)
+      b.box(0.05, 0.20, 0.14, 0, -0.06, -0.90, sMid, { tint: 0.02 });          // bit body
+      b.box(0.052, 0.035, 0.14, 0, 0.045, -0.90, sHi);                         // bit top (lit)
+      b.box(0.02, 0.24, 0.05, 0, -0.09, -0.965, sEdge);                        // broad curved cutting edge (bright)
+      // pick / spike poll (projects back toward player)
+      b.box(0.04, 0.05, 0.10, 0, 0.02, -0.73, sMid);                           // spike base
+      b.box(0.026, 0.034, 0.12, 0, 0.02, -0.63, sMid, { tint: 0.02 });         // tapering spike
+      b.box(0.014, 0.018, 0.06, 0, 0.02, -0.55, sEdge);                        // spike point (bright)
+      break;
+    }
+    case 'binoculars': {   // Soviet 6x30 porro field binocular (per blueprint) — COMPACT (depth<width), NEAR-PARALLEL barrels with a porro vertical JOG (eyepiece high/back, objective low/front), chunky rounded bodies tapering to the objective, glass lenses, central bridge focus wheel. Black leatherette. No markings.
+      const body = 0x2c2f33, bodyLo = 0x191b1e, steel = 0x646b73, steelLo = 0x3a3f45,
+            brass = 0x9c7a3c, brassHi = 0xc6a05a, glassMid = 0xa6c8d8, glassHi = 0xd9eef6, glint = 0xffffff, lensDk = 0x3a525e;
+      const PI2 = Math.PI / 2;
+      const cyl = (r0, r1, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(r1, r0, h, o.seg || 24); b.geo(g, x, y, z, col, o); g.dispose(); };
+      const lat = (prof, x, y, z, col, o = {}) => { const g = new THREE.LatheGeometry(prof.map(q => new THREE.Vector2(q[0], q[1])), o.seg || 22); b.geo(g, x, y, z, col, o); g.dispose(); };
+      const tube = (A, B, rB, rT, col, seg = 26) => { const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, mz = (A[2] + B[2]) / 2, dx = B[0] - A[0], dz = B[2] - A[2], len = Math.hypot(dx, B[1] - A[1], dz), rz = Math.atan2(-dx, dz); cyl(rB, rT, len, mx, my, mz, col, { rx: PI2, rz, seg }); return rz; };
+      const slab = (w, h, depth, rad, x, y, z, col) => { const sh = new THREE.Shape(), x0 = -w / 2, y0 = -h / 2; sh.moveTo(x0 + rad, y0); sh.lineTo(x0 + w - rad, y0); sh.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + rad); sh.lineTo(x0 + w, y0 + h - rad); sh.quadraticCurveTo(x0 + w, y0 + h, x0 + w - rad, y0 + h); sh.lineTo(x0 + rad, y0 + h); sh.quadraticCurveTo(x0, y0 + h, x0, y0 + h - rad); sh.lineTo(x0, y0 + rad); sh.quadraticCurveTo(x0, y0, x0 + rad, y0); const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: 0.024, bevelSize: 0.024, bevelSegments: 3, curveSegments: 6 }); g.translate(0, 0, -depth / 2); b.geo(g, x, y, z, col); g.dispose(); };
+      const eyeSep = 0.135, objSep = 0.143, eyeY = 0.038, objY = -0.038;   // near-parallel + porro vertical jog
+      for (const s of [-1, 1]) {
+        const hx = eyeSep * s;
+        slab(0.152, 0.205, 0.15, 0.06, hx, 0, 0, body);                            // chunky rounded prism body (spans the jog)
+        // short tapered objective barrel — low/front (porro jog), fat at the body, thinner at the lens
+        const A = [hx, objY, -0.05], B = [objSep * s, objY, -0.225];
+        const rz = tube(A, B, 0.084, 0.072, body, 28);
+        cyl(0.078, 0.078, 0.05, B[0], B[1], B[2] - 0.002, brass, { rx: PI2, rz, seg: 28 });   // brass objective bezel
+        cyl(0.08, 0.078, 0.012, B[0], B[1], B[2] - 0.026, brassHi, { rx: PI2, rz, seg: 28 });  // bright lip
+        cyl(0.066, 0.066, 0.012, B[0], B[1], B[2] - 0.03, glassMid, { rx: PI2, rz, seg: 28 }); // glass lens
+        cyl(0.044, 0.044, 0.012, B[0], B[1], B[2] - 0.033, glassHi, { rx: PI2, rz, seg: 24 });  // glass pane
+        cyl(0.022, 0.022, 0.007, B[0] - 0.028 * s, B[1] + 0.028, B[2] - 0.038, glint, { rx: PI2, rz, seg: 12 }); // reflection
+        // eyepiece — high/back (porro jog): knurled steel focus ring + rubber eyecup + glass
+        const ep = [[0.05, 0], [0.058, 0.01]]; for (let i = 0; i <= 7; i++) ep.push([i % 2 ? 0.061 : 0.054, 0.018 + i * 0.008]); ep.push([0.055, 0.082], [0.045, 0.092]);
+        lat(ep, hx, eyeY, 0.06, steel, { rx: PI2, seg: 22 });
+        lat([[0.045, 0], [0.055, 0.016], [0.057, 0.03], [0.05, 0.04]], hx, eyeY, 0.102, bodyLo, { rx: PI2, seg: 20 }); // rubber eyecup
+        cyl(0.05, 0.05, 0.012, hx, eyeY, 0.108, 0x1f2932, { rx: PI2, seg: 24 });    // eyepiece glass — DARK (you look INTO the lens, so it's not see-through-looking)
+        cyl(0.036, 0.036, 0.011, hx, eyeY, 0.112, 0x36474f, { rx: PI2, seg: 20 });   // faint inner sheen
+        cyl(0.016, 0.016, 0.008, hx - 0.016 * s, eyeY + 0.016, 0.117, glint, { rx: PI2, seg: 12 }); // bright catch-light (reads as glass)
+        cyl(0.012, 0.012, 0.014, hx + 0.088 * s, 0.01, -0.02, brass, { rx: 0, rz: PI2, seg: 12 }); // flat-head plate screw (outer face)
       }
-      b.box(0.18, 0.14, 0.34, 0, 0, -0.4, blk, { tint: 0.03 });                                                                                  // leather centre hinge cover
-      const fw = new THREE.CylinderGeometry(0.032, 0.032, 0.24, 12); b.geo(fw, 0, 0.04, -0.32, brassHi, { rx: Math.PI / 2 }); fw.dispose();      // focus wheel axle
+      // central bridge focus wheel + diopter scale + screw slot + hinge axle
+      { const kn = [[0.034, 0]]; for (let i = 0; i <= 9; i++) kn.push([i % 2 ? 0.052 : 0.045, 0.01 + i * 0.0105]); kn.push([0.034, 0.115]); lat(kn, 0, -0.058, 0, brass, { seg: 26 }); }
+      cyl(0.052, 0.052, 0.01, 0, 0.055, 0, brassHi, { seg: 26 });                 // diopter scale bevel
+      for (let i = 0; i < 14; i++) { const a = i / 14 * TAU; b.box(0.0035, 0.005, 0.0035, Math.cos(a) * 0.048, 0.061, Math.sin(a) * 0.048, steelLo); } // graduation ticks
+      cyl(0.026, 0.026, 0.016, 0, 0.062, 0, brassHi, { seg: 18 });               // centre boss
+      b.box(0.032, 0.006, 0.006, 0, 0.072, 0, steelLo);                          // diopter screw slot
+      cyl(0.02, 0.02, 0.16, 0, 0, 0, bodyLo, { seg: 14 });                       // central hinge axle (vertical)
       break;
     }
     case 'flashlight': {     // Soviet steel torch: ribbed body, flared reflector head, red push-button (ref Michael Dronov)
@@ -2669,7 +3265,11 @@ function buildViewmodel(def) {
     }
     default:        b.box(0.12, 0.16, 0.6, 0, 0, -0.3, c, { tint: 0.04 }); b.box(0.1, 0.26, 0.14, 0, -0.2, 0.04, dark);
   }
-  const m = new THREE.Mesh(b.build(), voxelMaterial({ depthTest: false }));
+  const geom = b.build();
+  if (def.shape === 'binoculars') geom.rotateY(Math.PI);   // eyepieces face the player in POV (you look INTO them, not the objectives)
+  // Binoculars have open revolved tubes (eyecups, focus rings) — render double-sided so the inner
+  // walls draw and you never see THROUGH them into the void (depthTest is off, so a culled back face = a hole).
+  const m = new THREE.Mesh(geom, voxelMaterial({ side: THREE.DoubleSide })); // depthTest on (2-pass) + DoubleSide => correct self-occlusion, no see-through through open tubes
   m.renderOrder = 1000; m.frustumCulled = false;
   return m;
 }
@@ -2677,7 +3277,7 @@ function buildViewmodel(def) {
 // Separate, spinnable magazine mesh (built centred at origin so it rotates cleanly).
 function buildMag(cfg) {
   const b = new MeshBuilder();
-  const dark = 0x202225, edge = 0x33373d, hubC = 0x4a4e54;
+  const dark = 0x444a52, edge = 0x5a616b, hubC = 0x6d747d;
   if (cfg.shape === 'pan') { // flat DP-28 pan on top, spins about Y
     const disc = new THREE.CylinderGeometry(cfg.r, cfg.r, 0.07, 24); b.geo(disc, 0, 0, 0, dark); disc.dispose();
     const rim = new THREE.CylinderGeometry(cfg.r, cfg.r, 0.02, 24); b.geo(rim, 0, 0.045, 0, edge); rim.dispose();
@@ -2688,7 +3288,7 @@ function buildMag(cfg) {
     const hub = new THREE.CylinderGeometry(0.08, 0.08, 0.2, 12); b.geo(hub, 0, 0, 0, hubC, { rz: Math.PI / 2 }); hub.dispose();
     for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; b.box(0.1, 0.055, 0.04, 0.09, Math.cos(a) * (cfg.r - 0.06), Math.sin(a) * (cfg.r - 0.06), edge); }
   }
-  const m = new THREE.Mesh(b.build(), voxelMaterial({ depthTest: false }));
+  const m = new THREE.Mesh(b.build(), voxelMaterial({}));
   m.renderOrder = 1001; m.frustumCulled = false;
   return m;
 }
@@ -2699,7 +3299,8 @@ function buildMag(cfg) {
 class WeaponSystem {
   constructor(game) {
     this.game = game;
-    this.owned = {}; this.rarity = {}; this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
+    this.owned = {}; this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
+    this.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null }; this.slotOrder = ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'];
     this.cur = 'luger';
     this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0;
     this.grenades = 2; this.grenadeCD = 0; this.ads = false; this.fov = 80;
@@ -2718,7 +3319,7 @@ class WeaponSystem {
       mg = new THREE.CylinderGeometry(0.062, 0.062, 0.03, 14); mb.geo(mg, 0, 0.12, 0, 0x57a06a); mg.dispose();                 // lit shoulder
       mg = new THREE.CylinderGeometry(0.03, 0.045, 0.09, 12); mb.geo(mg, 0, 0.18, 0, 0x2a5f34); mg.dispose();                  // neck
       mb.box(0.035, 0.08, 0.035, 0, 0.25, 0, 0xcdb98a);                                                                        // cloth rag
-      this.molotovModel = new THREE.Mesh(mb.build(), voxelMaterial({ depthTest: false }));
+      this.molotovModel = new THREE.Mesh(mb.build(), voxelMaterial({}));
       this.molotovModel.renderOrder = 1000; this.molotovModel.frustumCulled = false; this.molotovModel.visible = false;
       this.molotovModel.position.set(0.1, -0.16, -0.5); this.molotovModel.rotation.set(0.2, 0.3, -0.15);
       this.molotovRagFlame = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6),
@@ -2728,6 +3329,8 @@ class WeaponSystem {
       this.group.add(this.molotovModel); }
     this.magMeshes = {}; // separate spinning magazines (DP-28 pan, PPSh drum)
     for (const k of WEAPON_ORDER) { const sm = WEAPONS[k].spinMag; if (!sm) continue; const mm = buildMag(sm); mm.position.set(sm.x, sm.y, sm.z); mm.visible = false; mm._targetRot = 0; this.group.add(mm); this.magMeshes[k] = mm; }
+    // Render the whole held viewmodel in the engine's 2nd (weapon) pass — tag every mesh onto WEAPON_LAYER.
+    this.group.traverse(o => { if (o.isMesh) o.layers.set(WEAPON_LAYER); });
     this.basePos = new THREE.Vector3(0.3, -0.27, -0.72);
     this.group.position.copy(this.basePos);
     game.engine.camera.add(this.group);
@@ -2745,37 +3348,50 @@ class WeaponSystem {
     this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.ads = false;
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
-    for (const k of WEAPON_ORDER) { this.owned[k] = false; this.rarity[k] = null; this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
+    for (const k of WEAPON_ORDER) { this.owned[k] = false; this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
     this.buildMats = { sandbag: 0, wire: 0, wood: 0 }; // fortification material (per-player; from supply drops)
-    this.grant('luger', 'common'); this.grant('knife', 'common');
-    this.cur = 'luger'; this.grenades = 2; this.flares = 0; this.flashlightOwned = false;
+    // deploy the player's saved loadout (knife-only by default; gadgets deploy EMPTY — charge/material scavenged in-run)
+    const lo = (this.game.meta && this.game.meta.loadout) || { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null };
+    this.loadout = { primary: lo.primary || null, secondary: lo.secondary || null, melee: lo.melee || 'knife', gadget1: lo.gadget1 || null, gadget2: lo.gadget2 || null };
+    this.grenades = 0; this.flares = 0; this.flashlightOwned = false;
+    for (const slot of ['primary', 'secondary', 'melee']) { const k = this.loadout[slot]; if (k && WEAPONS[k]) this.grant(k); }
+    this._deployGadget(this.loadout.gadget1);
+    this._deployGadget(this.loadout.gadget2);
+    if (!this.owned[this.loadout.melee]) { this.loadout.melee = 'knife'; this.grant('knife'); } // a run always has a melee
+    this.cur = this.loadout.primary || this.loadout.secondary || this.loadout.melee || 'knife';
+    if (!this.owned[this.cur]) this.cur = 'knife';
     this.molotovs = 0; this.molotovCD = 0; this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
     if (this.molotovModel) { this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0); }
-    for (const k in this.models) this.models[k].visible = (k === this.cur);
-    for (const k in this.magMeshes) this.magMeshes[k].visible = (k === this.cur);
+    this._grenadeArmed = false; this._throwSlot = null;
+    for (const k in this.models) this.models[k].visible = false;
+    for (const k in this.magMeshes) this.magMeshes[k].visible = false;
+    // Populate the ONE flat inventory with the deployed gear (weapons/tools) + throwable start-stock, and hold the first slot.
+    if (this.game.inventory) this.game.inventory.deployLoadout();
   }
 
   ownedOrder() { return WEAPON_ORDER.filter((k) => this.owned[k]); }
   def() { return WEAPONS[this.cur]; }
-  effMult(key) { return RARITY[this.rarity[key] || 'common'].mult * this.game.player.damageMult; }
+  effMult(key) { return this.game.player.damageMult; } // flat stats — rarity removed
 
-  grant(key, rarityKey) {
+  grant(key) {
     const d = WEAPONS[key];
-    const prev = this.rarity[key];
-    if (this.owned[key] && prev && RARITY[rarityKey].mult <= RARITY[prev].mult) {
-      // keep better rarity, just top up ammo
-    } else { this.rarity[key] = rarityKey; }
     this.owned[key] = true;
     if (!d.melee && d.class !== 'builder' && d.class !== 'tool') {
-      const mult = RARITY[this.rarity[key]].mult;
-      this.magMax[key] = Math.max(1, Math.round(d.mag * (1 + (mult - 1) * 0.4)));
-      this.mag[key] = this.magMax[key];
+      this.magMax[key] = d.mag;                                   // flat — no rarity scaling
+      this.mag[key] = d.mag;
       this.reserve[key] = d.reserveMax === Infinity ? Infinity : d.reserveMax;
     }
     if (this.game.hud) this.game.hud.setWeapon(this);
   }
+  // Equip a gadget into the gadget slot. Tools (flashlight/binoculars) become usable; molotov/grenade/builders
+  // deploy EMPTY (their counts/material stay 0 — the player scavenges charge in-run).
+  _deployGadget(g) {
+    if (!g) return;
+    const d = WEAPONS[g];
+    if (d && d.class === 'tool') { this.owned[g] = true; if (g === 'flashlight') this.flashlightOwned = true; }
+  }
 
-  isThrowLocked() { return this.molotovState === 'lit' || this.molotovState === 'lighting'; }
+  isThrowLocked() { return this.molotovState === 'lit' || this.molotovState === 'lighting' || !!this._grenadeArmed; }
   select(key) {
     if (this.isThrowLocked()) return;
     if (!this.owned[key] || key === this.cur) return;
@@ -2786,13 +3402,16 @@ class WeaponSystem {
     this.cooldown = 0.1; this.bloom = 0;
     this.game.hud.setWeapon(this); this.game.audio.reloadClick();
   }
-  selectSlot(n) { const o = this.ownedOrder(); if (o[n - 1]) this.select(o[n - 1]); }
-  quickMelee() { const m = this.ownedOrder().find((k) => WEAPONS[k].melee); if (m) this.select(m); }
-  cycle(dir) { const o = this.ownedOrder(); let i = o.indexOf(this.cur); i = (i + dir + o.length) % o.length; this.select(o[i]); }
+  // weapon switching maps to the typed loadout slots (1=Primary 2=Secondary 3=Melee 4=Gadget)
+  selectSlot(n) { const k = this.loadout[this.slotOrder[n - 1]]; if (k && this.owned[k]) this.select(k); }
+  quickMelee() { const k = this.loadout.melee; if (k && this.game.inventory) this.game.inventory.selectKind(k); else if (k && this.owned[k]) this.select(k); }
+  cycle(dir) { this.game.inventory.cycleWheel(dir); } // the wheel scrolls the unified inventory (loadout weapons + backpack)
   // Fortification material — granted by supply drops; a builder becomes selectable only while it has material.
   grantBuildMats(amt) {
-    for (const k in amt) { if (this.buildMats[k] == null) continue; this.buildMats[k] += amt[k]; if (this.buildMats[k] > 0) this.owned['build_' + k] = true; }
-    if (this.game.hud) { this.game.hud.setBuildMats(this); this.game.hud.setWeapon(this); }
+    // Fortification material is now carried as inventory items (1 item = 1 placement), not a counter.
+    const inv = this.game.inventory;
+    for (const k in amt) { for (let n = 0; n < (amt[k] || 0); n++) { if (inv) inv.addToBackpack(k, 1); } }
+    if (this.game.hud) this.game.hud.setWeapon(this);
   }
   consumeBuildMat(kind) {
     if (this.buildMats[kind] == null) return;
@@ -2854,6 +3473,12 @@ class WeaponSystem {
       e.pos.x += (dx / (dist || 1)) * d.knock; e.pos.z += (dz / (dist || 1)) * d.knock;
       if (this.game.enemies.damage(e, d.dmg * mult, 'melee')) killed = true;
     }
+    for (const s of this.game.build.structures) {                                  // melee also smashes fortifications
+      const sx = s.pos.x - origin.x, sz = s.pos.z - origin.z, sd = Math.hypot(sx, sz);
+      if (sd > d.range + 1.2) continue;                                            // slack: structures are wide
+      if ((sx / (sd || 1)) * fwd.x + (sz / (sd || 1)) * fwd.z < d.arcCos) continue;
+      hitAny = true; this.game.build.playerDamage(s, d.dmg * mult);
+    }
     if (hitAny) this.game.hud.hitmarker(killed);
   }
 
@@ -2899,6 +3524,7 @@ class WeaponSystem {
         else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
       } else if (wHit) {
         this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
+        if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); } // shoot down fortifications
       } else {
         this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
       }
@@ -2911,9 +3537,9 @@ class WeaponSystem {
   }
 
   throwGrenade() {
-    if (this.isThrowLocked()) return;
-    if (this.grenades <= 0 || this.grenadeCD > 0) return;
-    this.grenades--; this.grenadeCD = 0.6; this.game.hud.setWeapon(this);
+    // the throw count is the backpack slot the Inventory consumes — this just spawns the projectile
+    if (this.grenadeCD > 0) return;
+    this.grenadeCD = 0.6;
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
@@ -2924,27 +3550,17 @@ class WeaponSystem {
     this.game.audio.uiClick();
   }
 
-  armMolotov() {
-    if (this.molotovState || this.molotovCD > 0 || this.reloading > 0) return;
-    if (this.game.player.inTank || this.game.player.mountedGun) return;
-    if (this.game._waveBreak > 0) return;
-    if (this.molotovs <= 0) { this.game.audio.dryFire(); this.game.hud.toast('No molotovs — buy them in the shop', 0xff8a3a); return; }
-    this.molotovState = 'lighting'; this.molotovLightT = 0; this.molotovFuseT = 0;
-    this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
-    this.molotovModel.visible = true; this.molotovRagFlame.scale.setScalar(0);
-    this.game.audio.reloadIn();
-  }
-  _unarmVisual() {
-    this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0);
-    this.models[this.cur].visible = true; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = true;
-  }
+  // (armMolotov + _unarmVisual removed — molotov is a held backpack item; Inventory._armThrowable drives the ignite)
   cancelMolotov() {
     if (!this.molotovState) return; // safely un-commit when leaving 'playing' (shop/pause): keep the molotov, no self-damage
-    this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; this._unarmVisual(); this.game.hud.setWeapon(this);
+    this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
+    this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0);
+    if (this.game.inventory) this.game.inventory._reshowAfterThrow();
+    this.game.hud.setWeapon(this);
   }
   throwMolotov() {
     if (this.molotovState !== 'lit') return;
-    this.molotovs--; this.molotovCD = MOLO_THROW_CD; this.molotovState = null; this._unarmVisual(); this.game.hud.setWeapon(this);
+    this.molotovCD = MOLO_THROW_CD; this.molotovState = null; this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0); this.game.hud.setWeapon(this);
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
@@ -2970,7 +3586,9 @@ class WeaponSystem {
     this.game.audio.uiClick();
   }
   _shatterInHand() {
-    this.molotovs--; this.molotovState = null; this.molotovCD = 0.6; this._unarmVisual(); this.game.hud.setWeapon(this);
+    this.molotovState = null; this.molotovCD = 0.6; this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0);
+    if (this.game.inventory && this._throwSlot != null) { const s = this._throwSlot; this._throwSlot = null; this.game.inventory._consumeSlot(s); }
+    this.game.hud.setWeapon(this);
     this.game.player.burnT = PLAYER_BURN_DUR; this.game.player._takeSurvivalDamage(20, 1);
     this.game.effects.explosion(this.game.player.pos.clone().setY(0.5), 1.0);
     this.game.audio.explosion(); this.game.hud.toast('🔥 The bottle shattered in your hand!', 0xff5a26);
@@ -3002,7 +3620,7 @@ class WeaponSystem {
     const targetFov = this.ads ? (d.adsFov || 60) : baseFov;
     this.fov = damp(this.fov, targetFov, 16, dt);
     this.game.engine.setFov(this.fov);
-    this.game.hud.setScope(this.ads && d.scope);
+    this.game.hud.setScope(this.ads && d.scope, d.shape === 'binoculars');
 
     // viewmodel bob/sway/recoil/swing
     const pl = this.game.player;
@@ -3346,7 +3964,7 @@ class LootManager {
     this.game = game; this.scene = game.engine.scene;
     this.pickups = []; this.boxes = [];
     this.drops = []; this.nearDrop = null; // parachuting supply drops (radio-called)
-    this.nearBox = null; this.prompt = null;
+    this.nearBox = null; this.prompt = null; this.nearPickup = null;
     this._buildLootboxes();
   }
 
@@ -3401,6 +4019,7 @@ class LootManager {
 
   _pickupMesh(kind) {
     const b = new MeshBuilder();
+    if (WEAPONS[kind]) { const m = buildViewmodel(WEAPONS[kind]); m.position.set(0, 0, 0); m.rotation.set(0.3, 0.6, 0); m.scale.setScalar(0.5); return m; } // a dropped weapon, as a ground pickup
     if (kind === 'key') return this._keyMesh();
     if (kind === 'radio') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
       const olive = 0x3f4a2c, oHi = 0x515c39, oLo = 0x2c331d, blk = 0x16160f, metal = 0x8a8f86, scr = 0x9be86a, btn = 0x202018;
@@ -3553,11 +4172,11 @@ class LootManager {
   drop(pos, def) {
     const p = this.game.player;
     // keys
-    if (def.boss) { for (let i = 0; i < 3; i++) this._spawnPickup('key', pos, 1); }
+    if (def.boss) { p.addMoney(KEY_CASH * 3); }
     else {
-      let keyChance = 0.16 * p.keyDropMult;
+      let keyChance = 0.16;
       if (def.explode || def.scale > 1.4) keyChance *= 1.5;
-      if (chc(keyChance)) this._spawnPickup('key', pos, 1);
+      if (chc(keyChance)) p.addMoney(KEY_CASH);
     }
     // health/ammo/armor
     const roll = Math.random();
@@ -3583,7 +4202,7 @@ class LootManager {
     if (r < 0.4) this._spawnPickup('medkit', pos, 60);
     else if (r < 0.7) this._spawnPickup('ammo', pos, 1);
     else if (r < 0.9) this._spawnPickup('armor', pos, 60);
-    else this._spawnPickup('key', pos, 1);
+    else this.game.player.addMoney(KEY_CASH);
     this.game.hud.toast('📻 Radio dropped! (press T)', 0x6fd0e8);
   }
 
@@ -3632,29 +4251,34 @@ class LootManager {
     const { canopy: chute, rig: lines } = buildChuteRig();   // segmented canopy + crossed risers + carabiners
     grp.add(chute); grp.add(lines);
     this.scene.add(grp);
-    // signal flare strapped to the load: a blinking strobe dot + its light, riding DOWN with the crate (no sky-beam beacon)
-    const flareDot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), new THREE.MeshBasicMaterial({ color: 0xff3b1a, fog: false }));
-    flareDot.position.set(0.5, 1.5, 0.5); grp.add(flareDot);
-    const flare = new THREE.PointLight(0xff5a2a, 3.2, 20, 2); flare.position.set(0.5, 1.6, 0.5); grp.add(flare);
-    this.drops.push({ grp, crate, chute, lines, flare, flareDot, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
+    // a REAL lit signal flare strapped to the load (replaces the old glowing orb): burning flame nub + flickering light + smoke
+    const flareMesh = buildFlare();
+    flareMesh.position.set(0.5, 1.28, 0.42); flareMesh.rotation.set(0.45, 0.7, 0.5); // jammed onto the crate at an angle, cap up
+    grp.add(flareMesh);
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    flame.position.set(0, 0.34, 0); flame.renderOrder = 998; flareMesh.add(flame);                                          // burning nub at the cap (flare local +Y)
+    const flareLight = new THREE.PointLight(0xff5a26, 16, 28, 1.3); flareLight.position.set(0, 0.42, 0); flareMesh.add(flareLight); // starts hot (ignite), eased down in update
+    this.drops.push({ grp, crate, chute, lines, flareMesh, flame, flameMat: flame.material, flareLight, flareLife: 20, flareSmokeT: 0, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
     this.game.hud.toast('📦 Supply drop released!', 0xff8a3a);
   }
 
   _openDrop(d) {
     d.opened = true;
-    const key = lootWeapon(), rarity = weightedPick([{ v: 'rare', w: 1 }, { v: 'epic', w: 3 }, { v: 'legendary', w: 2 }]);
     const p = this.game.player;
-    this.game.weapons.grant(key, rarity); this.game.weapons.select(key);
     p.hp = p.maxHp; this.game.hud.setHealth(p.hp, p.maxHp);
     p.armor = p.armorMax; this.game.hud.setArmor(p.armor, p.armorMax);
     this.game.weapons.refillAll();
-    this.game.weapons.grantBuildMats({ sandbag: 6, wire: 4, wood: 5 }); // fortification material — supply drop is the only source
+    // fortification material is RARE (OP item) — only ~2 pieces per drop, random across the 3 kinds
+    const give = { sandbag: 0, wire: 0, wood: 0 }, ks = ['sandbag', 'wire', 'wood'];
+    for (let i = 0; i < 2; i++) give[ks[Math.floor(Math.random() * 3)]]++;
+    this.game.weapons.grantBuildMats(give);
     p.hunger = HUNGER_MAX; this.game.hud.setHunger(p.hunger); p._starveT = 0; // rations in the crate — top off hunger
-    this.game.hud.toast(`📦 ${RARITY[rarity].name} ${WEAPONS[key].name} + full heal/ammo/armor!`, RARITY[rarity].color, RARITY[rarity].name);
-    this.game.hud.toast('🧱 +6 sandbags  🔩 +4 wire  🪵 +5 planks  🥫 food topped', 0xcdb887);
-    this.game.hud.bigMessage('SUPPLY CLAIMED', `${WEAPONS[key].name} · health, armor, ammo & food topped`);
+    p.addMoney(SUPPLY_CASH); // cash bonus → banks at run end
+    this.game.hud.toast(`📦 Resupply + $${SUPPLY_CASH} — full heal / armor / ammo`, 0xff8a3a);
+    { const parts = []; if (give.sandbag) parts.push('🧱×' + give.sandbag); if (give.wire) parts.push('🔩×' + give.wire); if (give.wood) parts.push('🪵×' + give.wood); this.game.hud.toast(parts.join('  ') + '  🥫 food topped', 0xcdb887); }
+    this.game.hud.bigMessage('SUPPLY CLAIMED', 'health, armor, ammo, food & cash topped up');
     this.game.audio.buy();
-    this.game.effects.stuffing(d.pos.clone().setY(1.4), RARITY[rarity].color, 32, 7);
+    this.game.effects.stuffing(d.pos.clone().setY(1.4), 0xffc23a, 32, 7);
     this._disposeDrop(d); const i = this.drops.indexOf(d); if (i >= 0) this.drops.splice(i, 1);
   }
   _disposeDrop(d) {
@@ -3663,33 +4287,35 @@ class LootManager {
   }
 
   openNearby() {
-    if (this.nearDrop) { this._openDrop(this.nearDrop); this.nearDrop = null; return; } // claim a landed supply drop (no key needed)
-    const lb = this.nearBox;
-    if (!lb || lb.open) return;
-    if (this.game.player.keys <= 0) { this.game.audio.noMoney(); return; }
-    this.game.player.keys--; this.game.hud.setKeys(this.game.player.keys);
-    lb.open = true; lb.cd = 8; lb.key.visible = false;
-    lb.crate.material.emissiveIntensity = 0.0;
-    const key = lootWeapon(), rarity = rollRarity();
-    this.game.weapons.grant(key, rarity);
-    this.game.weapons.select(key);
-    this.game.hud.toast(`GOT: ${WEAPONS[key].name}`, RARITY[rarity].color, RARITY[rarity].name);
-    this.game.audio.buy();
-    this.game.effects.stuffing(lb.pos.clone().setY(1.2), RARITY[rarity].color, 24, 6);
+    if (this.nearDrop) { this._openDrop(this.nearDrop); this.nearDrop = null; } // claim a landed supply drop (no key needed; map lootboxes are gone)
   }
+  // E-pickup: put the nearest ground item into the backpack (no auto-walkover). Returns true if it consumed the E press.
+  tryPickupNearby() {
+    const pu = this.nearPickup; if (!pu) return false;
+    const inv = this.game.inventory;
+    if (inv.isFull()) { this.game.hud.toast('Inventory full — drop something (I)', 0xd23a2a); return true; }
+    if (WEAPONS[pu.kind]) this.game.weapons.grant(pu.kind); // a dropped weapon → re-own it
+    inv.addItem(pu.kind, pu.value);
+    const label = WEAPONS[pu.kind] ? WEAPONS[pu.kind].name : (ITEM_DEFS[pu.kind] ? ITEM_DEFS[pu.kind].icon + ' ' + ITEM_DEFS[pu.kind].name : pu.kind);
+    this.game.audio.buy(); this.game.hud.toast('Picked up ' + label, 0x7fd06a);
+    this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose();
+    const idx = this.pickups.indexOf(pu); if (idx >= 0) this.pickups.splice(idx, 1);
+    this.nearPickup = null;
+    return true;
+  }
+  promptPickup() { if (!this.nearPickup) return null; const k = this.nearPickup.kind; const label = WEAPONS[k] ? WEAPONS[k].name : (ITEM_DEFS[k] ? ITEM_DEFS[k].icon + ' ' + ITEM_DEFS[k].name : k); return 'Press <b>E</b> to pick up ' + label; }
 
   update(dt) {
     const p = this.game.player, pp = p.pos;
-    // pickups
+    // pickups — NO auto-walkover: float + despawn on life, track the NEAREST in range for E-pickup into the backpack
+    this.nearPickup = null; let npd = 1.7;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const pu = this.pickups[i];
       pu.t += dt * 2; pu.life -= dt;
       pu.mesh.position.y = 0.55 + Math.sin(pu.t) * 0.12; pu.mesh.rotation.y += dt * 2;
+      if (pu.life <= 0) { this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); this.pickups.splice(i, 1); continue; }
       const d = Math.hypot(pu.mesh.position.x - pp.x, pu.mesh.position.z - pp.z);
-      if (d < 1.5 && Math.abs(pu.mesh.position.y - (pp.y + 1)) < 2.2) {
-        this._collect(pu); this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); this.pickups.splice(i, 1); continue;
-      }
-      if (pu.life <= 0) { this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); this.pickups.splice(i, 1); }
+      if (d < npd && Math.abs(pu.mesh.position.y - (pp.y + 1)) < 2.2) { npd = d; this.nearPickup = pu; }
     }
     this.nearBox = null; // map lootboxes removed; this.boxes is empty
     // supply plane fly-by + parachuting drops
@@ -3697,8 +4323,19 @@ class LootManager {
     this.nearDrop = null; let ndd = 3.6;
     for (const d of this.drops) {
       d.t = (d.t || 0) + dt;
-      // blinking signal flare on the load (strobe) — works while falling AND once landed, replacing the old sky beacon
-      if (d.flare) { const on = Math.sin(d.t * 8) > 0.15; d.flare.intensity = on ? 3.4 : 0.35; if (d.flareDot) d.flareDot.visible = on; }
+      // burning signal flare on the load: lit + flickering + smoking while falling; burns out ~20s after it lands (then a dark stick)
+      if (d.flareMesh && d.flareLife > 0) {
+        if (d.state === 'landed') d.flareLife -= dt;                                    // full-bright during the descent; 20s countdown starts on the ground
+        const fade = d.flareLife < 3.5 ? Math.max(0, d.flareLife / 3.5) : 1;            // gradual burn-out over the last 3.5s
+        const flick = 0.82 + Math.sin(d.t * 22) * 0.12 + Math.sin(d.t * 57) * 0.05;
+        d.flareLight.intensity += (9 * fade * flick - d.flareLight.intensity) * Math.min(1, dt * 6); // ease the ignite spike down, then fade
+        d.flareLight.color.setHSL(0.035, 1, 0.5 + 0.05 * Math.sin(d.t * 30));
+        d.flame.scale.setScalar((0.8 + Math.sin(d.t * 26) * 0.2) * (0.4 + 0.6 * fade));
+        d.flameMat.opacity = 0.95 * fade;
+        d.flareSmokeT -= dt;
+        if (d.flareSmokeT <= 0) { d.flareSmokeT = 0.08; d.flame.getWorldPosition(_flareWP); this.game.effects.flareSmoke(_flareWP.clone().setY(_flareWP.y + 0.05), fade); }
+        if (d.flareLife <= 0) { d.flareLight.intensity = 0; d.flame.visible = false; }  // burned out
+      }
       if (d.state === 'falling') {
         d.y -= dt * 3.4; d.sway += dt;
         if (d.y <= 0.1) { d.y = 0.1; d.state = 'landed'; d.grp.position.set(d.pos.x, 0.1, d.pos.z); d.chute.visible = false; d.lines.visible = false; this.game.hud.toast('📦 Drop landed — go grab it!', 0xff8a3a); this.game.audio.buy(); }
@@ -3714,8 +4351,7 @@ class LootManager {
 
   _collect(pu) {
     const p = this.game.player;
-    if (pu.kind === 'key') { p.keys += pu.value; this.game.hud.setKeys(p.keys); this.game.audio.uiClick(); this.game.hud.toast('+1 🔑 Key', 0xffd24a); }
-    else if (pu.kind === 'radio') { p.radios = (p.radios || 0) + pu.value; this.game.hud.setRadios(p.radios); this.game.audio.buy(); this.game.hud.toast('📻 +1 Radio — press T to call a drop', 0x6fd0e8); }
+    if (pu.kind === 'radio') { p.radios = (p.radios || 0) + pu.value; this.game.hud.setRadios(p.radios); this.game.audio.buy(); this.game.hud.toast('📻 +1 Radio — press T to call a drop', 0x6fd0e8); }
     else if (pu.kind === 'medkit') { p.hp = Math.min(p.maxHp, p.hp + pu.value); this.game.hud.setHealth(p.hp, p.maxHp); this.game.audio.reloadIn(); this.game.hud.toast('+' + pu.value + ' HP', 0x7fd06a); }
     else if (pu.kind === 'ammo') { this.game.weapons.refillAll(); this.game.audio.reloadClick(); this.game.hud.toast('Ammo refilled', 0xb88a3a); }
     else if (pu.kind === 'splint') { p.splints += pu.value; this.game.hud.setSurvival(p); this.game.audio.reloadIn(); this.game.hud.toast('🩹 +' + pu.value + ' Splint (press X to apply)', 0xc9a8ff); }
@@ -3728,7 +4364,7 @@ class LootManager {
     for (const pu of this.pickups) { this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); }
     this.pickups.length = 0;
     for (const d of this.drops) this._disposeDrop(d);
-    this.drops.length = 0; this.nearDrop = null;
+    this.drops.length = 0; this.nearDrop = null; this.nearPickup = null;
     if (this.plane) { if (this.plane.jet) this.plane.jet.stop(); this.scene.remove(this.plane.mesh); this.plane.mesh.geometry.dispose(); this.plane.mesh.material.dispose(); this.plane = null; }
   }
 }
@@ -3748,8 +4384,8 @@ class Player {
   }
   resetStats() {
     this.maxHp = 100; this.hp = 100; this.armor = 0; this.armorMax = 100;
-    this.money = 0; this.keys = 0; this.radios = 0; this.alive = true;
-    this.moveSpeedMult = 1; this.damageMult = 1; this.reloadMult = 1; this.keyDropMult = 1; this.moneyMult = 1;
+    this.money = 0; this.radios = 0; this.alive = true;
+    this.moveSpeedMult = 1; this.damageMult = 1; this.reloadMult = 1;
     this.armorOnWave = 0;
     this.mountedGun = null;
     this.inTank = null;
@@ -3827,7 +4463,7 @@ class Player {
     if (mp.active) this.game.mp.claimPlayerHit(mp.myId, dmg);
     else this.hurt(dmg, bypassArmor);
   }
-  addMoney(n) { this.money += Math.round(n * this.moneyMult); this.game.hud.setMoney(this.money); }
+  addMoney(n) { this.money += Math.round(n); this.game.hud.setMoney(this.money); }
   spend(n) { if (this.money >= n) { this.money -= n; this.game.hud.setMoney(this.money); return true; } return false; }
 
   update(dt) {
@@ -3878,6 +4514,7 @@ class Player {
 // Wave director
 // ---------------------------------------------------------------------------
 // Wave archetypes — each tilts the spawn mix + count + alive-cap and gets its own banner.
+const WAVE_ADVANCE_SECS = 25, WAVE_BREATHER = 4; // continuous waves: timed-advance countdown (survivors carry over) + post-clear breather
 const WAVE_TYPES = {
   normal:   { label: 'WAVE',     sub: 'they come for the stuffing',      countMul: 1.0,  cap: 24, base: { grunt: 30, runner: 22, swarmer: 16, brute: 9, exploder: 8, charger: 6 } },
   horde:    { label: 'HORDE',    sub: 'a tidal wave of plush',           countMul: 1.7,  cap: 34, speedMul: 1.05, base: { swarmer: 52, runner: 34, grunt: 14 } },
@@ -3885,21 +4522,14 @@ const WAVE_TYPES = {
   volatile: { label: 'VOLATILE', sub: 'careful — everything pops',        countMul: 1.0,  cap: 22, base: { exploder: 54, charger: 30, grunt: 16 } },
   elite:    { label: 'ELITE',    sub: 'fewer of them, but they are tanks', countMul: 0.62, cap: 18, hpMul: 1.15, base: { brute: 46, titan: 24, grunt: 30 } },
 };
-// Wave modifiers — optional mutators rolled on top (never on boss waves).
-const WAVE_MODS = {
-  frenzy: { label: 'FRENZY',     tag: '⚡ Frenzy',     speedMul: 1.25 },
-  tough:  { label: 'TOUGH HIDE', tag: '🛡 Tough Hide', hpMul: 1.35 },
-  payday: { label: 'PAYDAY',     tag: '💰 Payday',     bountyMul: 1.6 },
-  swarm:  { label: 'SWARM',      tag: '🐜 Swarm',      countMul: 1.4 },
-  glass:  { label: 'GLASS',      tag: '💢 Glass',      hpMul: 0.55, speedMul: 1.18 },
-};
+// (Wave modifiers removed — no frenzy / tough-hide / swarm / glass / payday mutators.)
 const MINIBOSS_NAMES = ['Stitchjaw', 'Mauler', 'Hugo', 'Ragnar', 'Bramble', 'Gloomgut'];
 
 const BOSS_ROSTER = ['boss', 'tank']; // 'boss' = Tolo, 'tank' = T-90M «MITRI»
 
 class WaveManager {
-  constructor(game) { this.game = game; this.wave = 0; this.active = false; this.bountyMul = 1; }
-  reset() { this.wave = 0; this.active = false; this.toSpawn = 0; this.bountyMul = 1; this.minibossPending = false; if (this.game.hud) this.game.hud.clearWaveTag(); }
+  constructor(game) { this.game = game; this.wave = 0; this.active = false; }
+  reset() { this.wave = 0; this.active = false; this.toSpawn = 0; this.minibossPending = false; if (this.game.hud) this.game.hud.clearWaveTag(); }
   startWave(n) {
     this.bossPick = null;
     if (this.game.mode === 'longnight') return this._startLongNight(n);
@@ -3908,33 +4538,27 @@ class WaveManager {
     this.isBossWave = (n % 5 === 0);
     if (this.isBossWave) this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0];
     if (this._forceBoss) { this.isBossWave = true; this.bossPick = this._forceBoss; this._forceBoss = null; }
-    // pick a wave archetype (specials only from wave 3) + an optional modifier (from wave 4)
+    // pick a wave archetype (specials only from wave 3)
     let typeKey = 'normal';
     if (!this.isBossWave && n >= 3 && chc(0.5)) typeKey = pick(['horde', 'stampede', 'volatile', 'elite']);
     this.typeKey = typeKey; const t = WAVE_TYPES[typeKey];
-    this.mod = (!this.isBossWave && n >= 4 && chc(0.4)) ? WAVE_MODS[pick(Object.keys(WAVE_MODS))] : null;
-    const m = this.mod || {};
     this.minibossPending = (!this.isBossWave && n >= 3 && n % 5 === 3); // waves 3, 8, 13, …
-    // combined multipliers
-    this.speedMul = (t.speedMul || 1) * (m.speedMul || 1);
-    this.hpMul = (t.hpMul || 1) * (m.hpMul || 1);
-    this.bountyMul = (m.bountyMul || 1);
-    this.cap = t.cap || 24;
-    this.total = this.isBossWave ? Math.round(6 + n * 1.4) : Math.round((5 + n * 2.3) * (t.countMul || 1) * (m.countMul || 1));
-    this.toSpawn = this.total; this.spawnTimer = 0.5;
+    this.speedMul = (t.speedMul || 1);
+    this.hpMul = (t.hpMul || 1);
+    this.cap = (t.cap || 24) + this.game.enemies.aliveCount; // +carried-over survivors so new spawns aren't starved
+    this.total = this.isBossWave ? Math.round(6 + n * 1.4) : Math.round((5 + n * 2.3) * (t.countMul || 1));
+    this.toSpawn = this.total; this.spawnTimer = 0.5; this.advanceTimer = null;
     this.weights = this._effectiveWeights(typeKey, n);
     if (this.game.player.armorOnWave > 0) { this.game.player.armor = Math.max(this.game.player.armor, Math.min(this.game.player.armorMax, this.game.player.armorOnWave)); this.game.hud.setArmor(this.game.player.armor, this.game.player.armorMax); }
     this.game.hud.setWave(n);
     // banner + persistent tag
     const title = this.isBossWave ? `WAVE ${n}` : `${t.label} ${n}`;
     let sub = this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : t.sub;
-    if (this.mod) sub = `${this.mod.label} — ${sub}`;
     this.game.hud.bigMessage(title, sub);
     const tags = [];
     if (this.isBossWave) tags.push({ t: '☠ BOSS' });
     else if (typeKey !== 'normal') tags.push({ t: t.label });
     if (this.minibossPending) tags.push({ t: '☠ Mini-boss' });
-    if (this.mod) tags.push({ t: this.mod.tag, mod: true });
     this.game.hud.setWaveTag(tags);
     this.game.audio.waveStart();
   }
@@ -3942,16 +4566,15 @@ class WaveManager {
   _startLongNight(n) {
     this.bossPick = null;
     this.wave = n; this.active = true; this.spawned = 0;
-    this.isBossWave = (n % 5 === 0); this.minibossPending = false; this.mod = null; this.typeKey = 'normal';
+    this.isBossWave = (n % 5 === 0); this.minibossPending = false; this.typeKey = 'normal';
     if (this.isBossWave) this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0];
     if (this._forceBoss) { this.isBossWave = true; this.bossPick = this._forceBoss; this._forceBoss = null; }
     const blood = this.game.dayNight && this.game.dayNight.bloodMoon;
     this.speedMul = 1 + Math.min(n * 0.012, 0.45);
     this.hpMul = (1 + (n - 1) * 0.06) * (blood ? 1.2 : 1);
-    this.bountyMul = 1;
-    this.cap = Math.min(60, 26 + Math.floor(n * 1.6));
+    this.cap = Math.min(60, 26 + Math.floor(n * 1.6)) + this.game.enemies.aliveCount; // +carried-over survivors
     this.total = this.isBossWave ? Math.round(8 + n * 1.6) : Math.round((8 + n * 3.0) * (blood ? 1.3 : 1));
-    this.toSpawn = this.total; this.spawnTimer = 0.5; this.clearGrace = 16;
+    this.toSpawn = this.total; this.spawnTimer = 0.5; this.advanceTimer = null;
     this.weights = this._longNightWeights(n);
     if (this.game.player.armorOnWave > 0) { this.game.player.armor = Math.max(this.game.player.armor, Math.min(this.game.player.armorMax, this.game.player.armorOnWave)); this.game.hud.setArmor(this.game.player.armor, this.game.player.armorMax); }
     this.game.hud.setWave(n);
@@ -3972,14 +4595,17 @@ class WaveManager {
         this.spawnTimer = Math.max(0.16, 1.2 - this.wave * 0.04);
         this._spawnOne(); this.toSpawn--;
       }
-    } else if (this.game.enemies.aliveCount === 0) {
-      this.active = false; this.game.hud.clearWaveTag(); this.game.onWaveCleared(this.wave);
-    } else {
-      // failsafe: once everything's spawned, don't make the player hunt a lost straggler —
-      // after a grace period, non-boss leftovers despawn (bosses must still be killed).
-      const bossAlive = this.game.enemies.active.some((e) => e.alive && e.def.boss);
-      if (!bossAlive) { this.clearGrace -= dt; if (this.clearGrace <= 0) this.game.enemies.despawnStragglers(); }
-    }
+    } else this._advanceCheck(dt);
+  }
+  // Wave fully spawned: clear when all dead; otherwise after ~25s start the next wave with survivors
+  // CARRIED OVER (never despawned). A live boss pauses the countdown — bosses must be killed.
+  _advanceCheck(dt) {
+    if (this.game.enemies.aliveCount === 0) { this.active = false; this.game.hud.clearWaveTag(); this.game.onWaveCleared(this.wave); return; }
+    const bossAlive = this.game.enemies.active.some((e) => e.alive && e.def.boss);
+    if (bossAlive) { this.advanceTimer = null; return; }
+    if (this.advanceTimer == null) this.advanceTimer = WAVE_ADVANCE_SECS;
+    this.advanceTimer -= dt;
+    if (this.advanceTimer <= 0) { this.active = false; this.game.onTimedAdvance(this.wave); }
   }
   // Spawn weights as a weightedPick array; normal waves creep toward heavier enemies as n climbs.
   _effectiveWeights(typeKey, n) {
@@ -4000,7 +4626,7 @@ class WaveManager {
         this.spawnTimer = Math.max(0.2, 1.4 - this.wave * 0.05);
         this._spawnOne(); this.toSpawn--;
       }
-    } else if (this.game.enemies.aliveCount === 0) { this.active = false; this.game.hud.clearWaveTag(); this.game.onWaveCleared(this.wave); }
+    } else this._advanceCheck(dt);
   }
   _spawnPos() {
     const pp = this.game.player.pos; let best = null, bestD = -1;
@@ -4062,88 +4688,361 @@ class WaveManager {
 // Shop (DOM) — weapons / items tabs. Perks removed by design: hardcore survival,
 // no stat-creep upgrades — you live on weapons, ammo, heals and your aim.
 // ---------------------------------------------------------------------------
-const SHOP_ITEMS = [
-  { id: 'ammo', name: 'Ammo Resupply', desc: 'Refill all magazines & reserves.', cost: 300, apply: (g) => g.weapons.refillAll() },
-  { id: 'heal', name: 'Patch Kit', desc: 'Restore full health.', cost: 350, apply: (g) => { g.player.hp = g.player.maxHp; g.hud.setHealth(g.player.hp, g.player.maxHp); } },
-  { id: 'armor', name: 'Armor Plate (+50)', desc: 'Add 50 armor.', cost: 400, apply: (g) => { g.player.armor = Math.min(g.player.armorMax, g.player.armor + 50); g.hud.setArmor(g.player.armor, g.player.armorMax); } },
-  { id: 'nade', name: 'Grenades x2', desc: 'Two more boom-bears.', cost: 400, apply: (g) => { g.weapons.grenades += 2; g.hud.setWeapon(g.weapons); } },
-  { id: 'molotov', name: 'Molotov Cocktails x2', desc: 'Press N to light, click to throw — leaves a burning pool.', cost: 350, apply: (g) => { g.weapons.molotovs += 2; g.hud.setWeapon(g.weapons); } },
-  { id: 'key', name: 'Lootbox Key', desc: 'A key to crack a lootbox.', cost: 500, apply: (g) => { g.player.keys++; g.hud.setKeys(g.player.keys); } },
-  { id: 'splint', name: 'Field Splint', desc: 'Cures a broken leg. Press X to apply (~3s, immobile).', cost: 250, apply: (g) => { g.player.splints++; g.hud.setSurvival(g.player); } },
-  { id: 'rations', name: 'Field Rations', desc: `Restore +${FOOD_RESTORE} hunger.`, cost: 150, apply: (g) => { if (!g.player.eatFood(FOOD_RESTORE)) { g.player.money += 150; g.hud.setMoney(g.player.money); } } },
-  // THE LONG NIGHT only:
-  { id: 'flashlight', name: 'Flashlight', desc: 'Steel torch — switch to it to light the way (can\'t shoot while held). Co-op: others see your beam.', cost: 600, owned: (g) => g.weapons.flashlightOwned, apply: (g) => { g.weapons.flashlightOwned = true; g.weapons.owned['flashlight'] = true; g.dayNight.flashOn = true; g.hud.setNightGear(g); g.hud.setWeapon(g.weapons); } }, // owned + selectable (switch to it); not auto-equipped so you don't start a wave unable to shoot
-  { id: 'binoculars', name: 'Binoculars (6×30)', desc: 'Soviet B-6 field glasses — switch to them, hold RMB to glass the horizon at a realistic 6× zoom.', cost: 450, owned: (g) => !!g.weapons.owned['binoculars'], apply: (g) => { g.weapons.owned['binoculars'] = true; g.hud.setWeapon(g.weapons); } },
-  { id: 'flares', name: 'Flares x3', desc: 'Throw a glowing flare (C) to light up an area.', cost: 250, longnight: true, apply: (g) => { g.weapons.flares += 3; g.hud.setNightGear(g); } },
+// (SHOP_ITEMS removed — the lobby Shop/Armory replaces the between-wave shop; consumables are scavenged in-run.)
+
+// Typed loadout slots + the gadget catalogue (molotov/grenade are virtual; tools/builders live in WEAPONS).
+const ARMORY_SLOTS = [
+  { id: 'primary',   label: 'Primary',   classes: ['rifle', 'smg', 'shotgun', 'sniper', 'launcher'] },
+  { id: 'secondary', label: 'Secondary', classes: ['pistol'] },
+  { id: 'melee',     label: 'Melee',     classes: ['melee'] },
+  { id: 'gadget1',   label: 'Gadget 1',  classes: null },
+  { id: 'gadget2',   label: 'Gadget 2',  classes: null },
+];
+const GADGETS = [
+  { key: 'grenade',    name: 'Frag Grenades', price: 400, desc: 'Hold in hand · hold LMB to cook, release to throw. Deploy with 2; scavenge more.' },
+  { key: 'molotov',    name: 'Molotov',       price: 350, desc: 'Hold in hand · hold LMB to light, then throw a fire pool. Deploy with 1; scavenge more.' },
+  { key: 'flashlight', name: 'Flashlight',    price: 600, desc: 'Hold it out — the beam lights the dark while held.' },
+  { key: 'binoculars', name: 'Binoculars 8×', price: 450, desc: 'Hold RMB to glass the horizon at 8×.' },
 ];
 
+// The lobby/menu ARMORY: spend the persistent bank to permanently unlock gear, then build the 4-slot loadout.
+// (Class kept named "Shop" so existing `this.shop` references stay valid.)
 class Shop {
   constructor(game) {
     this.game = game;
     this.grid = document.getElementById('shopGrid');
     this.tabsEl = document.getElementById('shopTabs');
-    this.moneyEl = document.getElementById('shopMoney');
-    this.keysEl = document.getElementById('shopKeys');
-    this.nextWaveEl = document.getElementById('shopNextWave');
-    this.tab = 'items';
+    this.bankEl = document.getElementById('bankAmt');
+    this.stripEl = document.getElementById('loadoutStrip');
+    this.tab = 'primary';
+    this.returnTo = 'menu';
     this._buildTabs();
   }
   _buildTabs() {
     this.tabsEl.innerHTML = '';
-    for (const [id, label] of [['items', 'Items'], ['weapons', 'Weapons']]) {
-      const t = document.createElement('div'); t.className = 'tab' + (id === this.tab ? ' on' : ''); t.textContent = label;
-      t.addEventListener('click', () => { this.tab = id; this._render(); });
+    for (const s of ARMORY_SLOTS) {
+      const t = document.createElement('div'); t.className = 'tab' + (s.id === this.tab ? ' on' : ''); t.dataset.tab = s.id; t.textContent = s.label;
+      t.addEventListener('click', () => { this.tab = s.id; this._render(); });
       t.addEventListener('mouseenter', () => this.game.audio.uiHover());
       this.tabsEl.appendChild(t);
     }
   }
-  open(nextWave) { this.nextWaveEl.textContent = nextWave; this.tab = 'weapons'; this._render(); this.game.ui.show('shop'); if (this.game.preview) this.game.preview.setSize(); }
-
-  _render() {
-    const g = this.game;
-    this.moneyEl.textContent = '$' + g.player.money;
-    this.keysEl.textContent = '🔑 ' + g.player.keys;
-    for (const t of this.tabsEl.children) t.classList.toggle('on', t.textContent.toLowerCase() === this.tab);
-    this.grid.innerHTML = '';
-    const pw = document.getElementById('previewWrap'); if (pw) pw.style.display = this.tab === 'weapons' ? 'block' : 'none';
-    if (this.tab === 'items') for (const it of SHOP_ITEMS) {
-      if (it.longnight && g.mode !== 'longnight') continue; // flashlight/flares only in THE LONG NIGHT
-      const owned = it.owned ? it.owned(g) : false;
-      this._card(it.name, it.desc, it.cost, owned, () => { if (owned) return; if (g.player.spend(it.cost)) { g.audio.buy(); it.apply(g); this._render(); } else g.audio.noMoney(); }, owned ? 'OWNED' : 'BUY');
-    }
-    else {
-      if (g.preview) g.preview.setSize();
-      let first = null, firstEl = null;
-      const cards = [];
-      const nameEl = document.getElementById('previewName');
-      const preview = (k, el) => { if (g.preview) { g.preview.show(k); if (nameEl) nameEl.textContent = WEAPONS[k].name; } for (const c of cards) c.classList.toggle('previewing', c === el); };
-      for (const k of WEAPON_ORDER) {
-        const d = WEAPONS[k]; if (!d.price) continue;
-        const owned = g.weapons.owned[k];
-        const el = this._card(d.name, `${d.class} · ${d.melee ? 'melee' : 'firearm'}`, d.price, owned, () => { if (owned) return; if (g.player.spend(d.price)) { g.audio.buy(); g.weapons.grant(k, 'common'); g.weapons.select(k); this._render(); } else g.audio.noMoney(); }, owned ? 'OWNED' : 'BUY');
-        cards.push(el);
-        // hover or click (touch / no-hover) previews the weapon; the pinned preview stays in view while the grid scrolls
-        el.addEventListener('mouseenter', () => preview(k, el));
-        el.addEventListener('click', () => preview(k, el));
-        if (!first) { first = k; firstEl = el; }
-      }
-      if (first) preview(first, firstEl);
-    }
+  open(returnTo) {
+    this.returnTo = returnTo || 'menu';
+    this.game.state = 'shop';
+    this._render(); this.game.ui.show('shop');
+    if (this.game.preview) this.game.preview.setSize();
   }
-
-  _card(name, desc, cost, owned, onBuy, label = 'BUY') {
-    const g = this.game;
-    const el = document.createElement('div'); el.className = 'item' + (owned ? ' owned' : '');
-    const afford = g.player.money >= cost && !owned;
-    el.innerHTML = `<div class="nm">${name}</div><div class="ds">${owned ? 'Already owned.' : desc}</div>
-      <div class="row"><span class="cost">${owned ? '✓' : '$' + cost}</span>
-      <button class="buy" ${afford ? '' : 'disabled'}>${label}</button></div>`;
-    const btn = el.querySelector('.buy');
-    btn.addEventListener('mouseenter', () => g.audio.uiHover());
-    btn.addEventListener('click', (e) => { e.stopPropagation(); onBuy(); }); // don't also trigger the card's preview-on-click
+  _meta() { return this.game.meta; }
+  _slotList(slot) {
+    if (slot === 'gadget1' || slot === 'gadget2') return GADGETS.map((gd) => ({ key: gd.key, name: gd.name, price: gd.price, desc: gd.desc, pk: WEAPONS[gd.key] ? gd.key : null }));
+    const classes = ARMORY_SLOTS.find((s) => s.id === slot).classes;
+    return WEAPON_ORDER.filter((k) => WEAPONS[k] && classes.includes(WEAPONS[k].class))
+      .map((k) => ({ key: k, name: WEAPONS[k].name, price: WEAPONS[k].price || 0, desc: WEAPONS[k].class, pk: k }));
+  }
+  _render() {
+    const g = this.game, m = this._meta();
+    if (this.bankEl) this.bankEl.textContent = '$' + m.bank;
+    for (const t of this.tabsEl.children) t.classList.toggle('on', t.dataset.tab === this.tab);
+    this.grid.innerHTML = '';
+    const slot = this.tab, list = this._slotList(slot);
+    const nameEl = document.getElementById('previewName');
+    const cards = [];
+    const preview = (pk, el) => { if (pk && g.preview) { g.preview.show(pk); if (nameEl) nameEl.textContent = WEAPONS[pk].name; } for (const c of cards) c.classList.toggle('previewing', c === el); };
+    let firstPk = null, firstEl = null;
+    for (const it of list) {
+      const el = this._card(it, this._meta().unlocked.includes(it.key), m.loadout[slot] === it.key, slot);
+      cards.push(el);
+      if (it.pk) { el.addEventListener('mouseenter', () => preview(it.pk, el)); el.addEventListener('click', () => preview(it.pk, el)); if (!firstPk) { firstPk = it.pk; firstEl = el; } }
+    }
+    const pw = document.getElementById('previewWrap'); if (pw) pw.style.display = firstPk ? 'block' : 'none';
+    if (firstPk) preview(firstPk, firstEl);
+    this._renderStrip();
+  }
+  _card(it, unlocked, equipped, slot) {
+    const g = this.game, m = this._meta();
+    const el = document.createElement('div'); el.className = 'item' + (equipped ? ' equipped' : (unlocked ? ' owned' : ''));
+    const canSell = unlocked && !(slot === 'melee' && it.key === 'knife'); // the knife is free + un-sellable (always a melee)
+    let costHtml, btns = '';
+    if (!unlocked) {
+      const afford = m.bank >= it.price;
+      costHtml = '$' + it.price;
+      btns = `<button class="buy" data-act="unlock" ${afford ? '' : 'disabled'}>UNLOCK</button>`;
+    } else if (equipped) {
+      costHtml = '✓ equipped';
+      if (canSell) btns = `<button class="buy sell" data-act="sell">SELL</button>`;
+    } else {
+      costHtml = 'owned';
+      btns = `<button class="buy" data-act="equip">EQUIP</button>` + (canSell ? ` <button class="buy sell" data-act="sell">SELL</button>` : '');
+    }
+    el.innerHTML = `<div class="nm">${it.name}</div><div class="ds">${it.desc || ''}</div>
+      <div class="row"><span class="cost">${costHtml}</span><span class="acts">${btns}</span></div>`;
+    el.querySelectorAll('.buy').forEach((btn) => {
+      btn.addEventListener('mouseenter', () => g.audio.uiHover());
+      btn.addEventListener('click', (e) => { e.stopPropagation(); this._action(btn.dataset.act, it, slot); });
+    });
     this.grid.appendChild(el);
     return el;
   }
+  _action(act, it, slot) {
+    const g = this.game, m = this._meta();
+    if (act === 'unlock') {
+      if (m.bank < it.price) { g.audio.noMoney(); return; }
+      m.bank -= it.price; if (!m.unlocked.includes(it.key)) m.unlocked.push(it.key);
+      m.loadout[slot] = it.key; // auto-equip on unlock for convenience
+      g.audio.buy();
+    } else if (act === 'equip') {
+      m.loadout[slot] = it.key; g.audio.uiClick();
+    } else if (act === 'sell') {
+      if (slot === 'melee' && it.key === 'knife') return;
+      m.bank += Math.round((it.price || 0) * 0.6); // 60% refund
+      m.unlocked = m.unlocked.filter((k) => k !== it.key);
+      if (m.loadout[slot] === it.key) m.loadout[slot] = (slot === 'melee' ? 'knife' : null); // unequip (melee falls back to knife)
+      g.audio.buy();
+    }
+    // a gadget can occupy only one of the two gadget slots — clear it from the other
+    if ((slot === 'gadget1' || slot === 'gadget2') && (act === 'unlock' || act === 'equip')) {
+      const other = slot === 'gadget1' ? 'gadget2' : 'gadget1';
+      if (m.loadout[other] === it.key) m.loadout[other] = null;
+    }
+    g._saveMeta();
+    this._render();
+  }
+  _renderStrip() {
+    if (!this.stripEl) return;
+    const m = this._meta();
+    const nm = (k) => !k ? '— empty —' : (WEAPONS[k] ? WEAPONS[k].name : ((GADGETS.find((x) => x.key === k) || {}).name || k));
+    this.stripEl.innerHTML = ARMORY_SLOTS.map((s) => `<div class="lo-slot${m.loadout[s.id] ? ' on' : ''}"><span class="lo-lbl">${s.label}</span><span class="lo-nm">${nm(m.loadout[s.id])}</span></div>`).join('');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inventory — survival backpack + the unified "everything is a held item" model.
+// Owns the 10-slot loot backpack and (from Phase 6) the molotov/grenade throw state.
+// scrollOrder() = owned loadout weapons/tools, then non-null backpack slots — the wheel
+// traverses this single list; LMB uses whatever is held.
+// ---------------------------------------------------------------------------
+const SLOT_CAP = 15; // ONE flat, uniform inventory — deployed gear + scavenged loot share these equal slots
+class Inventory {
+  constructor(game) {
+    this.game = game;
+    this.slots = new Array(SLOT_CAP).fill(null); // null | { kind, value } — kind is a WEAPONS key OR an ITEM_DEFS kind
+    this._activeSlot = -1;     // index of the slot currently held in hand
+    this._wheelIdx = 0;        // index into scrollOrder()
+    this.itemModels = {};      // held viewmodels for ITEM_DEFS kinds (weapons reuse weapons.models)
+    this._hotbarDirty = true; this._lastHotbarIdx = -1;
+    this._buildItemModels();
+  }
+  reset() { this.slots.fill(null); this._activeSlot = -1; this._wheelIdx = 0; this._hideAllItemModels(); this._hotbarDirty = true; this._lastHotbarIdx = -1; }
+  firstFreeSlot() { return this.slots.findIndex((s) => s === null); }
+  isFull() { return this.firstFreeSlot() < 0; }
+  count(kind) { return this.slots.reduce((n, s) => n + (s && s.kind === kind ? 1 : 0), 0); }
+  addItem(kind, value) { const i = this.firstFreeSlot(); if (i < 0) return false; this.slots[i] = { kind, value: (value == null ? 1 : value) }; this.refreshHotbar(); return true; }
+  // back-compat alias (older call sites): scavenged/granted things go into the flat inventory
+  addToBackpack(kind, value) { return this.addItem(kind, value); }
+  scrollOrder() { const out = []; for (let i = 0; i < this.slots.length; i++) if (this.slots[i]) out.push({ slot: i, kind: this.slots[i].kind }); return out; }
+  curItem() { const o = this.scrollOrder(); return o.length ? o[Math.max(0, Math.min(this._wheelIdx, o.length - 1))] : null; }
+  _curIndexInOrder() { return this.scrollOrder().findIndex((o) => o.slot === this._activeSlot); }
+  heldMaterial() { const c = this.curItem(); return (c && ITEM_DEFS[c.kind] && ITEM_DEFS[c.kind].class === 'material') ? ITEM_DEFS[c.kind].build : null; }
+  isHoldingFlashlight() { const c = this.curItem(); return !!(c && c.kind === 'flashlight'); }
+  isThrowLocked() { return this.game.weapons.isThrowLocked(); }
+  refreshHotbar() { this._hotbarDirty = true; } // flag a rebuild; update() picks it up next frame
+
+  // deploy the meta loadout into the flat inventory at run start (called from WeaponSystem.resetLoadout after the weapons are granted)
+  deployLoadout() {
+    this.slots.fill(null);
+    const w = this.game.weapons, lo = w.loadout;
+    for (const s of ['primary', 'secondary', 'melee', 'gadget1', 'gadget2']) {
+      const k = lo[s]; if (!k) continue;
+      if (WEAPONS[k]) { if (w.owned[k]) this.addItem(k); }                              // weapon or tool
+      else if (k === 'grenade') { this.addItem('grenade'); this.addItem('grenade'); }   // throwable start-stock
+      else if (k === 'molotov') { this.addItem('molotov'); }
+    }
+    this._activeSlot = -1; this._wheelIdx = 0;
+    const o = this.scrollOrder(); if (o.length) this._select(o[0], 0); else this._holdNothing();
+    this.refreshHotbar();
+  }
+
+  update(dt) {
+    const w = this.game.weapons, down = this.game.input.buttons[0];
+    // throwables: molotov lit + LMB released -> throw; grenade pin pulled + released -> throw (ignite/fuse tick in WeaponSystem.update)
+    if (w.molotovState === 'lit' && !down) this._throwMolotovFromSlot();
+    else if (w._grenadeArmed && !down) this._throwGrenadeFromSlot();
+    const hud = this.game.hud; if (!hud || !hud.refreshHotbar) return;
+    const idx = this._curIndexInOrder();
+    if (this._hotbarDirty || idx !== this._lastHotbarIdx) { this._hotbarDirty = false; this._lastHotbarIdx = idx; hud.refreshHotbar(this); }
+  }
+
+  // ---- selection: wheel scrolls the flat list; digit jumps to the Nth filled slot; every slot is equal ----
+  _select(entry, idx) { this._wheelIdx = idx; this._activateSlot(entry.slot); }
+  _activateSlot(slotIdx) {
+    const entry = this.slots[slotIdx]; if (!entry) return;
+    const w = this.game.weapons, kind = entry.kind;
+    this._activeSlot = slotIdx;
+    if (WEAPONS[kind]) {
+      this._hideAllItemModels(); if (w.molotovModel) w.molotovModel.visible = false;
+      if (w.owned[kind]) {
+        if (kind !== w.cur) w.select(kind);
+        w.cur = kind;
+        for (const k in w.models) w.models[k].visible = (k === kind);
+        for (const k in w.magMeshes) w.magMeshes[k].visible = (k === kind);
+        if (this.game.hud) this.game.hud.setWeapon(w);
+      }
+    } else {
+      for (const k in w.models) w.models[k].visible = false;
+      for (const k in w.magMeshes) w.magMeshes[k].visible = false;
+      if (w.molotovModel) w.molotovModel.visible = false;
+      this._hideAllItemModels();
+      const m = this.itemModels[kind]; if (m) m.visible = true;
+      if (this.game.hud && this.game.hud.setHeldItem) this.game.hud.setHeldItem(ITEM_DEFS[kind], entry);
+    }
+  }
+  _holdNothing() { const w = this.game.weapons; this._hideAllItemModels(); if (w.molotovModel) w.molotovModel.visible = false; for (const k in w.models) w.models[k].visible = false; for (const k in w.magMeshes) w.magMeshes[k].visible = false; }
+  cycleWheel(dir) {
+    if (this.isThrowLocked()) return;
+    const order = this.scrollOrder(); if (!order.length) return;
+    let i = this._curIndexInOrder(); if (i < 0) i = 0;
+    i = (i + dir + order.length) % order.length;
+    this._select(order[i], i);
+  }
+  selectSlotN(n) { const o = this.scrollOrder(); if (o[n - 1]) this._select(o[n - 1], n - 1); } // 1-5 -> jump to the Nth filled slot
+  selectKind(kind) { const o = this.scrollOrder(), i = o.findIndex((e) => e.kind === kind); if (i >= 0) this._select(o[i], i); } // jump to the slot holding a given kind (quick-melee)
+
+  // ---- LMB use, dispatched by the held thing ----
+  handleLMB(edge) {
+    const c = this.curItem(); if (!c) return;
+    if (WEAPONS[c.kind]) { this.game.weapons.tryFire(edge); return; }   // gun/melee/tool (tools no-op in tryFire)
+    const def = ITEM_DEFS[c.kind]; if (!def) return;
+    if (def.class === 'consumable') { if (edge === 'press') this._useConsumable(c.kind, c.slot); }
+    else if (def.class === 'material') { if (edge === 'press') this.game.build.place(); }
+    else if (def.class === 'callable') { if (edge === 'press') { if (c.kind === 'radio') this._useRadio(c.slot); else this._throwFlare(c.slot); } }
+    else if (def.class === 'throwable') { this._armThrowable(c.kind, c.slot, edge); }
+  }
+  _useConsumable(kind, slotIdx) {
+    const p = this.game.player; if (!this.slots[slotIdx]) return;
+    const val = this.slots[slotIdx].value; let used = true;
+    if (kind === 'medkit') { if (p.hp >= p.maxHp) { this.game.hud.toast('Already at full HP', 0x7fd06a); used = false; } else { p.hp = Math.min(p.maxHp, p.hp + val); this.game.hud.setHealth(p.hp, p.maxHp); this.game.audio.reloadIn(); this.game.hud.toast('+' + val + ' HP', 0x7fd06a); } }
+    else if (kind === 'food') { used = p.eatFood(val); }
+    else if (kind === 'armor') { if (p.armor >= p.armorMax) { this.game.hud.toast('Armor full', 0x6fa8e8); used = false; } else { p.armor = Math.min(p.armorMax, p.armor + val); this.game.hud.setArmor(p.armor, p.armorMax); this.game.audio.buy(); this.game.hud.toast('+' + val + ' Armor', 0x6fa8e8); } }
+    else if (kind === 'ammo') { this.game.weapons.refillAll(); this.game.audio.reloadClick(); this.game.hud.toast('Ammo refilled', 0xb88a3a); }
+    else if (kind === 'splint') {
+      if (!p.legBroken) { this.game.hud.toast('Leg is fine -- saved', 0x7fd06a); used = false; }
+      else { p.splints = (p.splints || 0) + 1; const t0 = p._splintT; p.applySplint(); used = p._splintT > t0; if (!used) p.splints -= 1; }
+    }
+    if (used) this._consumeSlot(slotIdx);
+  }
+  _useRadio(slotIdx) { this.game.loot.callSupplyDrop(); this.game.audio.buy(); this.game.hud.toast('Supply drop inbound!', 0x6fd0e8); this._consumeSlot(slotIdx); }
+  _throwFlare(slotIdx) { this.game.weapons.flares = (this.game.weapons.flares || 0) + 1; this.game.throwFlare(true); this._consumeSlot(slotIdx); }
+  // throwables: hold LMB to arm (committed -> can't scroll away), release to throw
+  _armThrowable(kind, slotIdx, edge) {
+    const w = this.game.weapons;
+    if (edge !== 'press' && edge !== 'hold') return;
+    if (this.game.player.inTank || this.game.player.mountedGun || this.game._waveBreak > 0) return;
+    if (kind === 'molotov') {
+      if (w.molotovState || w.molotovCD > 0 || w.reloading > 0) return;
+      w.molotovState = 'lighting'; w.molotovLightT = 0; w.molotovFuseT = 0; w._throwSlot = slotIdx;
+      if (this.itemModels.molotov) this.itemModels.molotov.visible = false;
+      w.molotovModel.visible = true; w.molotovRagFlame.scale.setScalar(0);
+      this.game.audio.reloadIn();
+    } else if (kind === 'grenade') {
+      if (w._grenadeArmed || w.grenadeCD > 0) return;
+      w._grenadeArmed = true; w._throwSlot = slotIdx; this.game.audio.reloadIn();
+    }
+  }
+  _throwMolotovFromSlot() {
+    const w = this.game.weapons, slot = w._throwSlot; w._throwSlot = null;
+    w.throwMolotov(); // spawns the bottle/pool, clears state, hides the model
+    if (slot != null) this._consumeSlot(slot);
+  }
+  _throwGrenadeFromSlot() {
+    const w = this.game.weapons, slot = w._throwSlot; w._grenadeArmed = false; w._throwSlot = null;
+    w.throwGrenade(); // spawns the grenade projectile
+    if (slot != null) this._consumeSlot(slot);
+  }
+  _reshowAfterThrow() { if (this._activeSlot >= 0 && this.slots[this._activeSlot]) { const m = this.itemModels[this.slots[this._activeSlot].kind]; if (m) m.visible = true; } }
+
+  // ---- consume / drop / reorder / spill ----
+  consumeHeldMaterial() { if (this._activeSlot >= 0) this._consumeSlot(this._activeSlot); }
+  _consumeSlot(slotIdx) {
+    const wasKind = this.slots[slotIdx] ? this.slots[slotIdx].kind : null;
+    this.slots[slotIdx] = null;
+    if (this._activeSlot === slotIdx) {
+      this._activeSlot = -1;
+      const order = this.scrollOrder();
+      let idx = order.findIndex((o) => o.kind === wasKind); // keep the same kind in hand if more remain
+      if (idx < 0) idx = 0;
+      if (order.length) this._select(order[idx], idx); else this._holdNothing();
+    }
+    this.refreshHotbar();
+  }
+  // drop ANY slot by dragging it out of the inventory UI (freedom of choice — incl. your starting gear)
+  dropSlot(slotIdx) {
+    const entry = this.slots[slotIdx]; if (!entry) return;
+    const kind = entry.kind, pos = this.game.player.pos.clone(); pos.y = 0.55;
+    if (WEAPONS[kind]) { if (kind === 'knife') { this.game.hud.toast('Can not drop your bare knife', 0xd23a2a); return; } this.game.weapons.owned[kind] = false; }
+    this.game.loot._spawnPickup(kind, pos, entry.value); // re-grabbable with E (teammates too)
+    if (this.game.audio.uiClick) this.game.audio.uiClick();
+    this._consumeSlot(slotIdx);
+  }
+  moveSlot(from, to) {
+    if (from === to) return;
+    const a = this.slots[from]; this.slots[from] = this.slots[to]; this.slots[to] = a;
+    if (this._activeSlot === from) this._activeSlot = to; else if (this._activeSlot === to) this._activeSlot = from;
+    this.refreshHotbar();
+  }
+  // co-op: on real death spill the whole inventory onto the ground (local + broadcast so teammates can grab it with E)
+  spillAll() {
+    const pos = this.game.player.pos, mp = this.game.mp;
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = this.slots[i]; if (!s) continue;
+      if (s.kind === 'knife') { this.slots[i] = null; continue; }
+      const p = pos.clone(); p.y = 0.55; p.x += rr(-1.2, 1.2); p.z += rr(-1.2, 1.2);
+      if (WEAPONS[s.kind]) this.game.weapons.owned[s.kind] = false;
+      this.game.loot._spawnPickup(s.kind, p, s.value);
+      if (mp && mp.active) mp.net.broadcast('droppickup', { kind: s.kind, value: s.value, x: p.x, z: p.z });
+      this.slots[i] = null;
+    }
+    this.refreshHotbar();
+  }
+
+  // ---- held viewmodels (added to weapons.group; rendered in the WEAPON_LAYER pass like guns) ----
+  _buildItemModels() {
+    const loot = this.game.loot, grp = this.game.weapons.group;
+    const makers = {
+      medkit: () => loot._pickupMesh('medkit'), food: () => loot._pickupMesh('food'), armor: () => loot._pickupMesh('armor'),
+      ammo: () => loot._pickupMesh('ammo'), splint: () => loot._pickupMesh('splint'), radio: () => loot._pickupMesh('radio'),
+      molotov: () => loot._pickupMesh('molotov'), flare: () => buildFlare(), grenade: () => this._buildGrenadeModel(),
+      sandbag: () => buildViewmodel({ shape: 'build_sandbag', color: 0xcdb887, accent: 0xb89a5e }),
+      wire: () => buildViewmodel({ shape: 'build_wire', color: 0x8a8f98, accent: 0x5a4a32 }),
+      wood: () => buildViewmodel({ shape: 'build_wood', color: 0x8a6a40, accent: 0x5a4026 }),
+    };
+    for (const kind in makers) {
+      let obj; try { obj = makers[kind](); } catch (e) { obj = null; }
+      if (!obj) continue;
+      const held = this._poseHeld(obj); held.visible = false;
+      held.traverse((o) => { if (o.isMesh) { o.layers.set(WEAPON_LAYER); o.frustumCulled = false; o.renderOrder = 1000; } });
+      grp.add(held); this.itemModels[kind] = held;
+    }
+  }
+  _poseHeld(obj) {
+    const grp = new THREE.Group();
+    const bb = new THREE.Box3().setFromObject(obj), c = new THREE.Vector3(), sz = new THREE.Vector3();
+    bb.getCenter(c); bb.getSize(sz);
+    obj.position.set(obj.position.x - c.x, obj.position.y - c.y, obj.position.z - c.z); // recenter around origin
+    const maxd = Math.max(sz.x, sz.y, sz.z) || 1;
+    grp.add(obj); grp.scale.setScalar(0.42 / maxd);
+    grp.position.set(0.05, -0.12, -0.42); grp.rotation.set(0.18, 0.5, 0.05);
+    return grp;
+  }
+  _buildGrenadeModel() {
+    const b = new MeshBuilder();
+    let g = new THREE.SphereGeometry(0.13, 12, 10); g.scale(1, 1.25, 1); b.geo(g, 0, 0, 0, 0x46532f, { tint: 0.05 }); g.dispose();
+    g = new THREE.CylinderGeometry(0.05, 0.06, 0.06, 10); b.geo(g, 0, 0.17, 0, 0x6a7240); g.dispose();
+    g = new THREE.CylinderGeometry(0.075, 0.075, 0.03, 10); b.geo(g, 0, 0.21, 0, 0x3a3a32); g.dispose();
+    b.box(0.02, 0.17, 0.05, 0.07, 0.12, 0, 0x9aa07e);
+    return new THREE.Mesh(b.build(), voxelMaterial({}));
+  }
+  _hideAllItemModels() { for (const k in this.itemModels) this.itemModels[k].visible = false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -4156,16 +5055,16 @@ class HUD {
     this.el = {
       hud: $('hud'), hpfill: $('hpfill'), armorfill: $('armorfill'), hpnum: $('hpnum'),
       ammonum: $('ammonum'), wepname: $('wepname'), wepclass: $('wepclass'),
-      wave: $('wave'), money: $('money'), keys: $('keys'), radios: $('radios'), score: $('score'),
+      wave: $('wave'), money: $('money'), radios: $('radios'), score: $('score'),
       msg: $('msg'), vignette: $('vignette'), hitmarker: $('hitmarker'), killfeed: $('killfeed'),
-      cross: $('cross'), toast: $('toast'), interact: $('interact'), scope: $('scope'),
+      cross: $('cross'), toast: $('toast'), interact: $('interact'), scope: $('scope'), binoview: $('binoview'),
       bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), bosspip: $('bosspip'), left: $('left'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
       clock: $('clock'), nightgear: $('nightgear'),
       tankhp: $('tankhp'), tankhpfill: $('tankhpfill'),
       hungerfill: $('hungerfill'), survival: $('survival'),
       firevig: $('firevig'), firepov: $('firepov'), molotov: $('molotovhud'),
-      buildmats: $('buildmats'),
+      buildmats: $('buildmats'), hotbar: $('hotbar'),
     };
     this._hitT = 0; this._msgT = 0;
   }
@@ -4175,31 +5074,78 @@ class HUD {
   setHunger(h) { if (!this.el.hungerfill) return; this.el.hungerfill.style.width = clamp(h / HUNGER_MAX, 0, 1) * 100 + '%'; this.el.hungerfill.style.filter = h < HUNGER_LOW ? 'saturate(1.7) brightness(1.2)' : 'none'; }
   setSurvival(p) { if (!this.el.survival) return; let s = ''; if (p.legBroken) s += '<span class="leg">🦵 LEG BROKEN — X to splint</span> '; if (p.splints > 0) s += `<span class="spl">🩹 ×${p.splints}</span>`; this.el.survival.innerHTML = s; }
   setWeapon(w) {
-    const key = w.cur, d = WEAPONS[key], rarity = w.rarity[key] || 'common';
+    const key = w.cur, d = WEAPONS[key];
     this.el.wepname.textContent = d.name.toUpperCase();
-    this.el.wepname.style.color = `var(--c-${rarity})`;
+    this.el.wepname.style.color = 'var(--gold)';
     if (d.class === 'tool') { // flashlight / binoculars: no ammo
       if (d.zoom) { this.el.wepclass.textContent = 'optics · RMB to zoom'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔭 6×</span>`; }
       else { const on = this.game.dayNight && this.game.dayNight.flashOn; this.el.wepclass.textContent = 'tool · L: toggle beam'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔦 ${on ? 'ON' : 'off'}</span>`; }
       if (this.el.molotov) this.el.molotov.innerHTML = '';
       return;
     }
-    if (d.class === 'builder') { // builders show material count instead of ammo
-      const n = (w.buildMats && w.buildMats[d.buildKind]) || 0;
-      this.el.wepclass.textContent = 'build · LMB place · Shift+wheel rotate';
-      this.el.ammonum.innerHTML = `${n}<span class="res"> left</span>`;
-      if (this.el.molotov) this.el.molotov.innerHTML = '';
-      return;
-    }
+    // (builder HUD branch removed — fortification material is carried as inventory items)
     const slot = w.ownedOrder().indexOf(key) + 1;
     const mode = d.melee ? '' : (d.auto ? (w.semi[key] ? ' · SEMI' : ' · AUTO') : ' · SEMI');
-    this.el.wepclass.textContent = `${d.class} · ${RARITY[rarity].name}${slot ? ' · slot ' + slot : ''}${mode}`;
+    this.el.wepclass.textContent = `${d.class}${slot ? ' · slot ' + slot : ''}${mode}`;
     if (d.melee) this.el.ammonum.innerHTML = `<span style="font-size:22px">MELEE</span>`;
     else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
     if (this.el.molotov) this.el.molotov.innerHTML = w.molotovs > 0 ? `🔥 ×${w.molotovs}` : '';
   }
+  setHeldItem(def, slot) {
+    if (!def) return;
+    this.el.wepname.textContent = (def.name || '').toUpperCase(); this.el.wepname.style.color = 'var(--gold)';
+    const hint = def.class === 'throwable' ? 'hold LMB to throw' : def.class === 'material' ? 'LMB to build' : 'LMB to use';
+    this.el.wepclass.textContent = def.class + ' · ' + hint;
+    this.el.ammonum.innerHTML = `<span style="font-size:22px">${def.icon}</span>`;
+    if (this.el.molotov) this.el.molotov.innerHTML = '';
+  }
+  refreshHotbar(inv) {
+    const el = this.el.hotbar; if (!el) return;
+    const order = inv.scrollOrder(), sel = inv._curIndexInOrder();
+    let html = '';
+    for (let i = 0; i < order.length; i++) {
+      const o = order[i]; let icon = '?', badge = '', cls = 'hb-slot';
+      if (WEAPONS[o.kind]) {
+        const d = WEAPONS[o.kind];
+        icon = d.melee ? '🔪' : (d.class === 'tool' ? (d.zoom ? '🔭' : '🔦') : (d.class === 'launcher' ? '🚀' : '🔫'));
+        if (!d.melee && d.class !== 'tool' && inv.game.weapons.mag[o.kind] != null) badge = String(inv.game.weapons.mag[o.kind]);
+      } else { const def = ITEM_DEFS[o.kind]; icon = def ? def.icon : '?'; }
+      if (i === sel) cls += ' hb-sel';
+      html += `<div class="${cls}"><span class="hb-ico">${icon}</span>${badge ? `<span class="hb-badge">${badge}</span>` : ''}</div>`;
+    }
+    el.innerHTML = html;
+  }
+  openInventory(inv) { this._renderInventory(inv); const el = document.getElementById('inventory'); if (el) el.classList.add('show'); }
+  closeInventory() { const el = document.getElementById('inventory'); if (el) el.classList.remove('show'); }
+  _itemIcon(kind) {
+    if (WEAPONS[kind]) { const d = WEAPONS[kind]; return d.melee ? '🔪' : (d.class === 'tool' ? (d.zoom ? '🔭' : '🔦') : (d.class === 'launcher' ? '🚀' : '🔫')); }
+    return (ITEM_DEFS[kind] || {}).icon || '?';
+  }
+  _renderInventory(inv) {
+    const grid = document.getElementById('inv-grid'); if (!grid) return;
+    let html = '';
+    for (let i = 0; i < inv.slots.length; i++) {
+      const s = inv.slots[i];
+      if (s) {
+        const name = WEAPONS[s.kind] ? WEAPONS[s.kind].name : ((ITEM_DEFS[s.kind] || {}).name || s.kind);
+        html += `<div class="inv-slot filled" draggable="true" data-slot="${i}"><div class="inv-ico">${this._itemIcon(s.kind)}</div><div class="inv-snm">${mpEscape(name)}</div></div>`;
+      } else html += `<div class="inv-slot empty" data-slot="${i}"></div>`;
+    }
+    grid.innerHTML = html;
+    const cnt = document.getElementById('inv-count'); if (cnt) cnt.textContent = inv.slots.filter(Boolean).length + '/' + inv.slots.length;
+    // drag to reorder (drop onto a slot); drag OUT of the grid (drop anywhere else) to discard the item
+    let dragFrom = null, handled = false;
+    grid.querySelectorAll('.inv-slot').forEach((el) => {
+      const idx = parseInt(el.dataset.slot, 10);
+      el.addEventListener('dragover', (e) => e.preventDefault());
+      el.addEventListener('drop', (e) => { e.preventDefault(); if (dragFrom != null && !isNaN(idx)) { inv.moveSlot(dragFrom, idx); handled = true; this._renderInventory(inv); } });
+      if (el.classList.contains('filled')) {
+        el.addEventListener('dragstart', () => { dragFrom = idx; handled = false; });
+        el.addEventListener('dragend', () => { if (!handled && dragFrom != null) { inv.dropSlot(dragFrom); this._renderInventory(inv); } dragFrom = null; });
+      }
+    });
+  }
   setMoney(m) { this.el.money.textContent = '$' + m; }
-  setKeys(k) { this.el.keys.textContent = '🔑 ' + k; }
   setRadios(n) { if (this.el.radios) this.el.radios.textContent = n > 0 ? '📻 ' + n : ''; }
   setBuildMats(w) { if (!this.el.buildmats) return; const m = w.buildMats || {}; const p = []; if (m.sandbag) p.push('🧱' + m.sandbag); if (m.wire) p.push('🔩' + m.wire); if (m.wood) p.push('🪵' + m.wood); this.el.buildmats.textContent = p.join('  '); }
   setWaveTag(tags) {
@@ -4229,7 +5175,12 @@ class HUD {
   setScore(s) { this.el.score.textContent = s; }
   setWave(n) { this.el.wave.textContent = 'WAVE ' + n; }
   setEnemiesLeft(n) { this.el.left.textContent = n > 0 ? '· ' + n + ' left' : ''; }
-  setScope(on) { this.el.scope.classList.toggle('show', !!on); }
+  setScope(on, binocular = false) {
+    const glass = !!on && binocular;            // binoculars: twin-circle mask, no reticle
+    this.el.scope.classList.toggle('show', !!on && !binocular); // rifle scope: single circle + crosshair
+    if (this.el.binoview) this.el.binoview.classList.toggle('show', glass);
+    if (this.el.cross) this.el.cross.style.opacity = glass ? '0' : ''; // hide the crosshair while glassing
+  }
   setBoss(frac, name) { this.el.bossbar.classList.add('show'); this.el.bossfill.style.width = clamp(frac, 0, 1) * 100 + '%'; if (name) this.el.bossname.textContent = name; }
   setBossPip(frac) {
     const el = this.el.bosspip; if (!el) return;
@@ -4460,7 +5411,7 @@ class Admin {
     if (this.tab === 'weapons') return WEAPON_ORDER.map((k) => ({ name: WEAPONS[k].name, sub: WEAPONS[k].class, make: () => { const grp = new THREE.Group(); grp.add(buildViewmodel(WEAPONS[k])); const sm = WEAPONS[k].spinMag; if (sm) { const mg = buildMag(sm); mg.position.set(sm.x, sm.y, sm.z); grp.add(mg); } return grp; } }));
     if (this.tab === 'enemies') {
       const list = ENGENDRO_COLORS.map((col) => ({ name: col.name, sub: 'engendro skin', make: () => new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()) }));
-      list.push({ name: 'BOSS TOLO', sub: 'boss', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'Tolo' }, 'boss'), voxelMaterial()) });
+      list.push({ name: 'BOSS TOLO', sub: 'boss', make: () => new THREE.Mesh(buildTolo(), voxelMaterial()) });
       list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'mini' }, 'normal'), voxelMaterial()) });
       list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: () => new THREE.Mesh(buildEngendro(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length], 'exploder'), voxelMaterial()) });
       list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
@@ -4474,6 +5425,13 @@ class Admin {
     }
     if (this.tab === 'props') return [
       { name: 'Su-24M Fencer', sub: 'supply plane', make: () => buildSu24() },
+      { name: 'Su-34 Fullback', sub: 'from-zero guide p5-42', make: () => buildSu34Model() },
+      { name: 'Su-34 p5-14 forward fuselage', sub: 'Jetworks guide part', make: () => buildSu34ForwardModule() },
+      { name: 'Su-34 p15-16 wing/canards', sub: 'Jetworks guide part', make: () => buildSu34WingModule() },
+      { name: 'Su-34 p17-24 rear/nacelles', sub: 'Jetworks guide part', make: () => buildSu34RearModule() },
+      { name: 'Su-34 p25-33 ducts/belly', sub: 'Jetworks guide part', make: () => buildSu34DuctBellyModule() },
+      { name: 'Su-34 p34-40 upper/tails', sub: 'Jetworks guide part', make: () => buildSu34UpperTailExhaustModule() },
+      { name: 'Su-34 p41-42 finish/photo', sub: 'guide finish pass', make: () => buildSu34FinishPhotoModule() },
       { name: 'Radio (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('radio') },
       { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
       { name: 'Parachute rig', sub: 'air drop', make: () => this._chuteRig() },
@@ -5311,9 +6269,9 @@ class MP {
     this.game = game; this.net = new Net();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
-    this.chosenSkin = 0; this._hadBoss = false;
+    this.chosenSkin = 0; this._hadBoss = false; this.ready = false;
     this._xfT = 0; this._snapT = 0; this._reviveT = 0;
-    this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false;
+    this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
     this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
@@ -5321,7 +6279,7 @@ class MP {
   // ---- lobby ----
   startHost(name) {
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
-    this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0 });
+    this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys() });
     const code = makeRoomCode();
     this.net.onPeerOpen = (c) => this._lobbyMsg(`Room code: <b>${c}</b> — share it. Waiting for players…`, c);
     this.net.onError = (t) => this._lobbyMsg(t === 'unavailable-id' ? 'Code taken — retry.' : 'Network error: ' + t);
@@ -5331,11 +6289,12 @@ class MP {
     if (!code) { this._lobbyMsg('Enter a room code.'); return; }
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
     this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + code + '…');
-    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.lastRecv = performance.now(); this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0 }); this._lobbyMsg('Connected! Waiting for host to start…'); };
+    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.lastRecv = performance.now(); this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys() }); this._lobbyMsg('Connected! Waiting for host to start…'); };
     this.net.onError = (t) => this._lobbyMsg(t === 'peer-unavailable' ? 'No room with that code.' : 'Network error: ' + t);
     this.net.join(code.trim().toUpperCase());
   }
   leave() {
+    this.ready = false;
     try { this.net.close(); } catch (e) {}
     for (const [, rp] of this.remotes) rp.dispose();
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
@@ -5343,11 +6302,31 @@ class MP {
     this.net = new Net(); this._wireNet();
   }
   _lobbyMsg(html, code) { const el = document.getElementById('mp-status'); if (el) el.innerHTML = html; if (code) { const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = code; } }
+  _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
+  _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
+  toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }
   _renderRoster() {
-    const el = document.getElementById('mp-roster'); if (el) { const names = [...this.roster.values()].map(p => p.name); el.innerHTML = (names.map(n => `<div class="mp-rosteritem">🌸 ${n}</div>`).join('') || '<div class="mp-rosteritem">…</div>'); }
-    const sb = document.getElementById('mpStartBtn'); if (sb) sb.style.display = (this.isHost && this.net.connected) ? 'block' : 'none';
+    const el = document.getElementById('mp-roster');
+    if (el) {
+      const rows = [...this.roster.values()].map((p) => {
+        const ready = p.ready ? '<span style="color:#6fcf4f">✓ READY</span>' : '<span style="color:#e8a23a">…</span>';
+        const lo = (p.loadout || []).map((k) => this._loadoutLabel(k)).filter(Boolean).join(' · ') || 'Bayonet Knife';
+        return `<div class="mp-rosteritem">🌸 ${mpEscape(p.name)} ${ready}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
+      });
+      el.innerHTML = rows.join('') || '<div class="mp-rosteritem">…</div>';
+    }
+    const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
+    const sb = document.getElementById('mpStartBtn');
+    if (sb) { sb.style.display = (this.isHost && this.net.connected) ? 'block' : 'none'; sb.disabled = !allReady; sb.textContent = allReady ? '▶ START CO-OP' : '▶ WAITING FOR READY…'; }
+    const rb = document.getElementById('mpReadyBtn');
+    if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
   }
-  hostStart() { if (!this.isHost) return; this.active = true; this._initHostStates(); this.net.send('start', { mode: this.game.mode || 'purge' }); this.game._enterMP('purge'); }
+  hostStart() {
+    if (!this.isHost) return;
+    const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
+    if (!allReady) { this._lobbyMsg('Waiting for all players to be READY…'); return; }
+    this.active = true; this._initHostStates(); this.net.send('start', { mode: this.game.mode || 'purge' }); this.game._enterMP('purge');
+  }
   _initHostStates() { this.pstate.clear(); for (const [id, info] of this.roster) this.pstate.set(id, this._freshState(info)); }
   _freshState(info) { return { hp: 100, maxHp: 100, armor: 0, armorMax: 100, down: false, downT: 0, waiting: false, dead: false, downs: 0, name: info.name, skin: info.skin }; }
   // ---- net wiring ----
@@ -5362,11 +6341,12 @@ class MP {
     n.on('hello', (d, from) => {
       if (!this.isHost) return;
       const skin = (d.skin != null) ? d.skin : this.roster.size;
-      this.roster.set(from, { name: (d.name || 'Player').slice(0, 14), skin });
+      this.roster.set(from, { name: (d.name || 'Player').slice(0, 14), skin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [] });
       this.net.send('roster', this._rosterArr()); this._renderRoster();
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
-    n.on('roster', (arr) => { this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin }); this._renderRoster(); this._syncRemoteObjs(); });
+    n.on('roster', (arr) => { this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [] }); this._renderRoster(); this._syncRemoteObjs(); });
+    n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
     n.on('start', (d) => { this.active = true; this.net.lastRecv = performance.now(); this.game._enterMP(d.mode || 'purge'); this._syncRemoteObjs(); });
     n.on('xf', (d) => { const rp = this._remote(d.id); if (rp) rp.setTransform(d); });
     n.on('espawn', (d) => this._clientSpawnEnemy(d));
@@ -5374,10 +6354,11 @@ class MP {
     n.on('struct', (d) => g.build.applyRemoteStruct(d));                       // a structure was placed (host-authoritative)
     n.on('structreq', (d) => { if (this.isHost) g.build.hostPlaceFromClient(d); }); // client asks host to place
     n.on('structdie', (d) => g.build.applyRemoteDestroy(d.id));                // a structure was destroyed
+    n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('edie', (d) => this._clientEnemyDie(d));
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else g.hud.setBoss(d.frac, d.name); });
-    n.on('wave', (d) => { if (g.state === 'shop') { g.ui.hideAll(); g.state = 'playing'; g.input.requestLock(); } g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); });
-    n.on('waveclear', (d) => { if (g.state === 'playing') { g.hud.bigMessage('WAVE CLEAR', 'visit the armory'); g._mpOpenShop(d.n); } });
+    n.on('wave', (d) => { g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); }); // continuous: clients just track the wave (no shop)
+    n.on('waveclear', (d) => { if (g.state === 'playing') g.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); });
     n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from); });
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
     n.on('molotov', (d) => { if (this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
@@ -5391,8 +6372,9 @@ class MP {
     n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
     n.on('feed', (d) => this.game.hud.kill(d.who + ' \u27a4 ' + d.what));
     n.on('gameover', () => this.game._mpGameOver());
+    n.on('droppickup', (d) => { const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E
   }
-  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin })); }
+  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [] })); }
   _remote(id) {
     if (id === this.myId) return null;
     if (!this.remotes.has(id)) { const info = this.roster.get(id) || { name: 'Flopo', skin: 1 }; this.remotes.set(id, new RemotePlayer(this.game, id, info.name, info.skin)); }
@@ -5454,14 +6436,14 @@ class MP {
   // ---- combat ----
   claimHit(e, dmg, src) { this.net.send('hit', { eid: e.id, dmg, src }); }
   creditKill(killerId, e) {
-    const reward = Math.round(e.def.reward * ((this.game.waves.bountyMul || 1) * (e.isElite ? 2.4 : 1)));
-    this.net.sendTo(killerId, 'kill', { reward, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0) + (e.isElite ? 600 : 0) });
+    const reward = Math.round(e.def.reward);
+    this.net.sendTo(killerId, 'kill', { reward, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0) });
     this.feed(((this.roster.get(killerId) || {}).name) || 'Player', e.name);
   }
   _clientKill(d) {
     const g = this.game; g.kills++; g.player.addMoney(d.reward); g.score += d.score; g.hud.setScore(g.score); g.hud.kill(d.name);
     const def = ENEMY_TYPES[d.type]; if (def) g.loot.drop({ x: d.x, y: 0, z: d.z }, def);
-    if (d.elite) for (let i = 0; i < 2; i++) g.loot._spawnPickup('key', { x: d.x, y: 0, z: d.z }, 1);
+    if (d.elite) g.player.addMoney(KEY_CASH * 2);
   }
   rayHitPlayers(origin, dir, maxDist) {
     let best = maxDist, hit = null, hp = null;
@@ -5496,7 +6478,7 @@ class MP {
       g.hud.setHealth(d.hp, d.maxHp); g.hud.setArmor(d.armor, g.player.armorMax);
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
       this.frozen = d.down || d.dead || d.waiting;
-      if (d.dead) g.hud.bigMessage('YOU ARE OUT', 'no lives left');
+      if (d.dead) { g.hud.bigMessage('YOU ARE OUT', 'no lives left'); if (!this._spilledLoot) { this._spilledLoot = true; g.inventory.spillAll(); } } // real death → spill your backpack for teammates
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
     } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down || d.waiting; rp.dead = d.dead; } }
@@ -5576,6 +6558,7 @@ class Game {
     this.capturedTank = null; // set by _tankCaptured; cleared on reset
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
+    this.inventory = new Inventory(this); // survival backpack + unified held-item model
     this.shop = new Shop(this);
     const _pc = document.getElementById('previewCanvas'); this.preview = _pc ? new WeaponPreview(_pc) : null;
     this.ui = new UI();
@@ -5612,9 +6595,13 @@ class Game {
     click('adminBtn', () => this.openAdmin());
     click('adminBack', () => this.toMenu());
     click('multiplayerBtn', () => this.toLobby());
+    click('armoryBtn', () => this.shop.open('menu'));
+    click('lobbyArmoryBtn', () => this.shop.open('lobby'));
+    click('armoryBackBtn', () => { if (this.shop.returnTo === 'lobby') this.toLobby(); else this.toMenu(); });
     click('mpHostBtn', () => this.mp.startHost((document.getElementById('mp-name') || {}).value || 'Host'));
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
     click('mpStartBtn', () => this.mp.hostStart());
+    click('mpReadyBtn', () => this.mp.toggleReady());
     click('mpBackBtn', () => { this.mp.leave(); this.toMenu(); });
     document.querySelectorAll('.mp-skinpick').forEach(b => b.addEventListener('click', () => {
       this.mp.chosenSkin = +b.dataset.skin;
@@ -5635,8 +6622,6 @@ class Game {
       if (this.state !== 'playing') return;
       if (this.weapons.isThrowLocked() && code !== 'KeyM') return; // committed molotov: only the LMB throw (and mute) work
       if (code === 'KeyR') this.weapons.startReload();
-      else if (code === 'KeyG') this.weapons.throwGrenade();
-      else if (code === 'KeyN') this.weapons.armMolotov();
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
         // ---- CapturedTank: exit when aboard ----
@@ -5647,6 +6632,7 @@ class Game {
         else if (this.mountedGun.near(this.player.pos)) this.mountedGun.mount();
         // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
         else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
+        else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
         else this.loot.openNearby();
       }
       else if (code === 'KeyQ') {
@@ -5655,23 +6641,20 @@ class Game {
         if (_ct && this.player.inTank === _ct) { _ct.switchSeat(); return; }
       }
       else if (code === 'KeyF') this.toggleFullscreen();
-      else if (code === 'KeyL') this.dayNight.toggleFlashlight();
       else if (code === 'KeyC') {
-        // CapturedTank: gunner peek stance (when in tank); else flare
+        // CapturedTank: gunner peek stance (flares are a held inventory item now, used with LMB)
         const _ct = this.capturedTank;
-        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.stance = _ct.stance === 'sight' ? 'peek' : 'sight'; if (_ct.stance === 'sight') { _ct.peekYaw = null; _ct.peekPitch = null; } return; }
-        this.throwFlare();
+        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.stance = _ct.stance === 'sight' ? 'peek' : 'sight'; if (_ct.stance === 'sight') { _ct.peekYaw = null; _ct.peekPitch = null; } }
       }
       else if (code === 'KeyT') {
-        // CapturedTank: thermal toggle (gunner only); else radio
+        // CapturedTank: thermal toggle (gunner only); radio is a held inventory item now, used with LMB
         const _ct = this.capturedTank;
-        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.thermal = !_ct.thermal; return; }
-        this.useRadio();
+        if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.thermal = !_ct.thermal; }
       }
       else if (code === 'KeyB') this.weapons.toggleFireMode();
-      else if (code === 'KeyX') this.player.applySplint();
+      else if (code === 'KeyI') this.toggleInventory();
       else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
-      else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.weapons.selectSlot(n); }
+      else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.inventory.selectSlotN(n); }
     });
   }
 
@@ -5695,12 +6678,14 @@ class Game {
   }
 
   reset() {
+    if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
+    this.inventory.reset(); // clear backpack BEFORE resetLoadout (which deploys throwable start-stock into it)
     this.weapons.resetLoadout();
     this.waves.reset();
     this._clearFlares();
@@ -5710,12 +6695,12 @@ class Game {
     this.score = 0; this.kills = 0;
     this.hud.setHealth(this.player.hp, this.player.maxHp);
     this.hud.setArmor(this.player.armor, this.player.armorMax);
-    this.hud.setMoney(this.player.money); this.hud.setKeys(this.player.keys); this.hud.setRadios(this.player.radios);
+    this.hud.setMoney(this.player.money); this.hud.setRadios(this.player.radios);
     this.hud.setBuildMats(this.weapons);
     this.hud.setHunger(this.player.hunger); this.hud.setSurvival(this.player);
     this.hud.setScore(0); this.hud.setWeapon(this.weapons);
     this.hud.setNightMode(this.mode === 'longnight'); // shows/hides the clock + gear readout
-    this._startCountdown = 0.6; this._waveBreak = 0;
+    this._startCountdown = 0.6; this._waveBreak = 0; this._banked = false; // _banked: per-run guard for bank deposit
     this._tankIntroShown = false; // reset per-run so the first tank teach banner shows once per run
   }
   _disposeFlare(f) {
@@ -5727,8 +6712,8 @@ class Game {
     for (const f of this.flares) this._disposeFlare(f);
     this.flares.length = 0;
   }
-  throwFlare() {
-    if (this.mode !== 'longnight' || this.weapons.flares <= 0) return;
+  throwFlare(force) {
+    if ((!force && this.mode !== 'longnight') || this.weapons.flares <= 0) return;
     this.weapons.flares--; this.hud.setNightGear(this);
     const cam = this.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
@@ -5842,7 +6827,14 @@ class Game {
     this.loot.callSupplyDrop();
   }
 
-  pause() { if (this.state !== 'playing') return; this.weapons.cancelMolotov(); this.state = 'paused'; this.ui.show('pause'); }
+  // Survival inventory overlay (key I) — non-pausing: free the cursor but keep the run live (you stay vulnerable while managing).
+  toggleInventory() {
+    if (this._invOpen) { this._closeInventory(); return; }
+    this._invOpen = true; this.hud.openInventory(this.inventory);
+    this._intentionalUnlock = true; this.input.exitLock(); // free the cursor; the 'unlock' handler skips the pause
+  }
+  _closeInventory() { this._invOpen = false; this.hud.closeInventory(); if (this.state === 'playing') this.input.requestLock(); }
+  pause() { if (this.state !== 'playing') return; if (this._invOpen) this._closeInventory(); this.weapons.cancelMolotov(); this.state = 'paused'; this.ui.show('pause'); }
   resume() {
     if (this.state !== 'paused') return;
     // Re-enter fullscreen (Esc may have dropped it) then re-grab the pointer; 'lock' handler hides the overlay once granted.
@@ -5852,6 +6844,7 @@ class Game {
     else after();
   }
   toMenu() {
+    if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();
     const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
@@ -5881,17 +6874,16 @@ class Game {
     this.kills++;
     // --- Task 12: asymmetric tank rewards (replaces generic boss payout for the tank) ---
     if (e.def.tank) {
-      const bounty = this.waves.bountyMul || 1;
       if (e.captured) {
-        // Captured — tank itself is the prize: smaller cash, 1 key, base score only
-        this.player.addMoney(Math.round(e.def.reward * 0.4) * bounty);
+        // Captured — tank itself is the prize: smaller cash, base score only
+        this.player.addMoney(Math.round(e.def.reward * 0.4));
         this.score += e.def.reward; this.hud.setScore(this.score);
-        this.loot._spawnPickup('key', e.pos, 1);
+        this.player.addMoney(KEY_CASH);
       } else {
-        // Destroyed — walked away with loot: full cash, 3 keys, +800 score bonus
-        this.player.addMoney(e.def.reward * bounty);
+        // Destroyed — walked away with loot: full cash, +800 score bonus
+        this.player.addMoney(e.def.reward);
         this.score += e.def.reward + 800; this.hud.setScore(this.score);
-        for (let i = 0; i < 3; i++) this.loot._spawnPickup('key', e.pos, 1);
+        this.player.addMoney(KEY_CASH * 3);
       }
       if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
       // loot.drop with boss flag cleared so it doesn't auto-spawn boss keys again
@@ -5899,12 +6891,11 @@ class Game {
       return; // skip generic boss payout below — no double-pay
     }
     // --- generic path (non-tank enemies) ---
-    const bounty = (this.waves.bountyMul || 1) * (e.isElite ? 2.4 : 1); // payday modifier + elite bonus
-    this.player.addMoney(e.def.reward * bounty);
-    this.score += e.def.reward + (e.def.boss ? 1500 : 0) + (e.isElite ? 600 : 0); this.hud.setScore(this.score);
+    this.player.addMoney(e.def.reward);
+    this.score += e.def.reward + (e.def.boss ? 1500 : 0); this.hud.setScore(this.score);
     if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
     this.loot.drop(e.pos, e.def);
-    if (e.isElite) for (let i = 0; i < 2; i++) this.loot._spawnPickup('key', e.pos, 1); // elites guarantee a couple of keys
+    if (e.isElite) this.player.addMoney(KEY_CASH * 2); // elites pay a small cash bonus
     if (e.courier) this.loot.dropCourier(e.pos); // backpack courier → a radio + a bonus
   }
   toLobby() { this.state = 'menu'; this.ui.show('lobby'); }
@@ -5919,7 +6910,9 @@ class Game {
   }
   _mpGameOver() {
     if (this.state === 'dead') return;
+    if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this._bankRunMoney(); this._saveMeta(); // each player banks their own run money locally
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.audio.gameOver(); this.audio.stopMusic(); this.hud.show(false);
@@ -5930,7 +6923,7 @@ class Game {
     const gk = document.getElementById('goKills'); if (gk) gk.textContent = this.kills;
     this.ui.show('gameover');
   }
-  _mpOpenShop(n) { this.weapons.cancelMolotov(); this._intentionalUnlock = true; this.input.exitLock(); this.state = 'shop'; this.hud.setInteract(null); this.shop.open((n || this.waves.wave) + 1); }
+  // _mpOpenShop removed — co-op has continuous waves with no between-wave shop.
   _hurtTarget(id, dmg) { if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dmg); else this.player.hurt(dmg); }
   _explodeHurt(pos, radius, dmg) {
     const hurt = (px, pz, id) => { const d = Math.hypot(px - pos.x, pz - pos.z); if (d < radius) { const dd = dmg * (1 - d / radius); if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dd); else this.player.hurt(dd); } };
@@ -5938,12 +6931,19 @@ class Game {
     else hurt(this.player.pos.x, this.player.pos.z, 'host');
   }
   onWaveCleared(n) {
-    this.audio.waveClear(); this.player.addMoney((150 + n * 25) * (this.waves.bountyMul || 1));
+    this.audio.waveClear(); this.player.addMoney(150 + n * 25);
     if (this.mp.active && this.mp.isHost) this.mp.net.send('waveclear', { n: this.waves.wave });
-    this.hud.bigMessage('WAVE CLEAR', 'visit the armory'); this._waveBreak = 1.4;
+    this.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); this._waveBreak = WAVE_BREATHER; // pure breather, auto-advances (no shop)
+  }
+  // Wave timed out with survivors still alive — start the next wave on top of them (no clear, no breather; they carry over).
+  onTimedAdvance(n) {
+    this.waves.startWave(n + 1); // startWave handles the MP 'wave' broadcast + survivors persist (it never clears enemies)
+    this.hud.bigMessage('WAVE ' + (n + 1), 'survivors remain — hold!');
   }
   onPlayerDead() {
+    if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.audio.gameOver(); this.audio.stopMusic(); this.hud.show(false);
@@ -5967,8 +6967,28 @@ class Game {
     this.ui.show('gameover');
   }
   _fmtTime(s) { s = Math.floor(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
-  _loadMeta() { try { return JSON.parse(localStorage.getItem('engendros_meta') || '{}'); } catch (e) { return {}; } }
+  _loadMeta() {
+    let m; try { m = JSON.parse(localStorage.getItem('engendros_meta') || '{}'); } catch (e) { m = {}; }
+    // roguelite economy (backward-compatible: missing keys default for existing players)
+    if (typeof m.bank !== 'number') m.bank = 0;                                   // persistent money "account"
+    if (!Array.isArray(m.unlocked)) m.unlocked = ['knife'];                       // permanently owned gear keys
+    if (!m.unlocked.includes('knife')) m.unlocked.push('knife');                  // knife is always owned (cold start)
+    if (!m.loadout || typeof m.loadout !== 'object') m.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null };
+    // migrate the old single gadget slot → two gadget slots (backward-compatible)
+    if ('gadget' in m.loadout) { if (m.loadout.gadget1 == null) m.loadout.gadget1 = m.loadout.gadget; delete m.loadout.gadget; }
+    if (!('gadget1' in m.loadout)) m.loadout.gadget1 = null;
+    if (!('gadget2' in m.loadout)) m.loadout.gadget2 = null;
+    if (!m.loadout.melee) m.loadout.melee = 'knife';                              // a run always has a melee
+    // drop removed builder keys from any loadout slot
+    for (const s of ['primary', 'secondary', 'melee', 'gadget1', 'gadget2']) { const k = m.loadout[s]; if (k && /^build_/.test(k)) m.loadout[s] = (s === 'melee' ? 'knife' : null); }
+    return m;
+  }
   _saveMeta() { try { localStorage.setItem('engendros_meta', JSON.stringify(this.meta)); } catch (e) {} }
+  // Deposit this run's money into the persistent bank — once per run (guarded by _banked, reset in reset()).
+  _bankRunMoney() {
+    if (this._banked) return; this._banked = true;
+    this.meta.bank = (this.meta.bank || 0) + Math.max(0, Math.round(this.player.money || 0));
+  }
   _showMenuBest() {
     const el = document.getElementById('menuBest'); if (!el) return;
     const m = this.meta || {}; const parts = [];
@@ -5983,7 +7003,7 @@ class Game {
     if (!(dt > 0)) dt = 0.0001; dt = Math.min(dt, 0.05);
     if (this.state === 'playing') this._updatePlaying(dt);
     this.engine.update(dt); this.engine.render();
-    if (this.state === 'shop' && this.preview && this.shop.tab === 'weapons') this.preview.render(dt);
+    if (this.state === 'shop' && this.preview) this.preview.render(dt);
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
     this.input.endFrame();
   }
@@ -5991,27 +7011,25 @@ class Game {
   _updatePlaying(dt) {
     const hostSim = !this.mp.active || this.mp.isHost; // clients don't simulate enemies/waves
     if (hostSim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
-    if (hostSim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this.weapons.cancelMolotov(); this._intentionalUnlock = true; this.input.exitLock(); this.state = 'shop'; this.hud.setInteract(null); this.shop.open(this.waves.wave + 1); return; } }
+    if (hostSim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._waveBreak = 0; this.waves.startWave(this.waves.wave + 1); } } // continuous: breather → next wave (no shop, stay 'playing')
 
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
     } else if (this.player.inTank) {
       this.player.inTank.controlUpdate(dt); // tank camera + controls handled here
     } else {
-      const _isBuilder = WEAPONS[this.weapons.cur].class === 'builder';
       if (!this.mp.frozen) {
-        if (_isBuilder) { if (this.input.buttonsPressed[0]) this.build.place(); } // holding a builder: LMB places instead of firing
-        else if (this.weapons.molotovState === 'lit') { if (this.input.buttonsPressed[0]) this.weapons.throwMolotov(); }
-        else if (this.input.buttonsPressed[0]) this.weapons.tryFire('press');
-        else if (this.input.buttons[0]) this.weapons.tryFire('hold');
+        const edge = this.input.buttonsPressed[0] ? 'press' : (this.input.buttons[0] ? 'hold' : null);
+        if (edge) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
-      if (this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (_isBuilder && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates the ghost; plain wheel always cycles weapons
+      if (this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
       this.player.update(dt);
       this.weapons.update(dt);
+      this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
     }
     this.player.survivalTick(dt); // survival timers tick in every seat (on foot, .50 cal, tank)
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
-    this.dayNight.flash.intensity = (!this.player.inTank && !this.player.mountedGun && this.weapons.cur === 'flashlight' && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = held + toggled on
+    this.dayNight.flash.intensity = (!this.player.inTank && !this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (hostSim) this.enemies.update(dt);
     this.loot.update(dt);
     if (hostSim) this.waves.update(dt);
@@ -6034,6 +7052,8 @@ class Game {
       this.hud.setInteract('Press <b>E</b> to man the .50 cal — ∞ ammo, overheats');
     } else if (this.player._splintT > 0) {
       this.hud.setInteract(`Applying splint… ${this.player._splintT.toFixed(1)}s`);
+    } else if (this.loot.nearPickup) {
+      this.hud.setInteract(this.loot.promptPickup());
     } else {
       this.hud.setInteract(this.loot.prompt);
     }

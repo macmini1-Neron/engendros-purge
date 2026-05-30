@@ -20,6 +20,7 @@ export class Net {
     this.selfId = null;           // our PeerJS id
     this.conns = new Map();       // remotePeerId -> DataConnection
     this.handlers = {};           // type -> fn(data, fromId)
+    this.lastRecv = 0;            // perf.now() of the last received message (heartbeat)
     // callbacks (assign directly)
     this.onPeerOpen = null;       // (roomCode)        host/peer is registered with the broker
     this.onConnect = null;        // (peerId)          a data connection opened
@@ -73,6 +74,7 @@ export class Net {
 
   _recv(msg, fromId) {
     if (!msg || typeof msg.t !== 'string') return;
+    this.lastRecv = (typeof performance !== 'undefined') ? performance.now() : 0;
     // host relays "broadcast" messages on to the OTHER clients
     if (this.isHost && msg._r) {
       for (const [pid, c] of this.conns) if (pid !== fromId && c.open) c.send(msg);

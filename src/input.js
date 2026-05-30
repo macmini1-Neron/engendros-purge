@@ -49,7 +49,7 @@ export class Input {
     });
     window.addEventListener('wheel', (e) => {
       if (!this.locked) return;
-      this.wheel += Math.sign(e.deltaY);
+      this.wheel += Math.sign(e.deltaY || e.deltaX); // Shift+wheel comes through as horizontal scroll (deltaX, deltaY=0) — fall back to it
     }, { passive: true });
     window.addEventListener('contextmenu', (e) => { if (this.locked) e.preventDefault(); });
 

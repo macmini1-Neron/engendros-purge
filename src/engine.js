@@ -3,6 +3,11 @@
 import * as THREE from 'three';
 import { clamp } from './util.js';
 
+// The held weapon (viewmodel) renders in a SECOND pass on its own layer with a
+// freshly-cleared depth buffer: always drawn on top of the world, yet it still
+// depth-tests against ITSELF so its parts self-occlude (no see-through artifacts).
+export const WEAPON_LAYER = 1;
+
 export class Engine {
   constructor(canvas) {
     this.canvas = canvas;
@@ -20,6 +25,7 @@ export class Engine {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    this.renderer.autoClear = false; // we drive clears manually for the 2-pass viewmodel render
 
     this.scene = new THREE.Scene();
 
@@ -60,6 +66,12 @@ export class Engine {
 
     this.ambient = new THREE.AmbientLight(0xffffff, 0.18);
     this.scene.add(this.ambient);
+
+    // The viewmodel renders in its own pass on WEAPON_LAYER — let the main lights reach it too
+    // (a light only illuminates objects that share one of its layers).
+    this.hemi.layers.enable(WEAPON_LAYER);
+    this.sun.layers.enable(WEAPON_LAYER);
+    this.ambient.layers.enable(WEAPON_LAYER);
   }
 
   _buildSky() {
@@ -145,7 +157,17 @@ export class Engine {
       this._shake *= 0.85;
       if (this._shake < 0.005) this._shake = 0;
     }
-    this.renderer.render(this.scene, this.camera);
+    // Two-pass render: world first, then wipe depth and draw the viewmodel on top.
+    const r = this.renderer, cam = this.camera, sc = this.scene;
+    r.clear();                          // autoClear is off → clear colour+depth ourselves
+    cam.layers.set(0);                  // pass 1 — the world (default layer)
+    r.render(sc, cam);
+    r.clearDepth();                     // wipe ONLY depth so the weapon can never lose a depth test to the world…
+    const bg = sc.background; sc.background = null; // …and don't repaint the sky over the world in pass 2
+    cam.layers.set(WEAPON_LAYER);       // pass 2 — the viewmodel, self-occluding (its materials keep depthTest on)
+    r.render(sc, cam);
+    sc.background = bg;
+    cam.layers.set(0);                  // restore the default layer (raycasts / game logic expect it)
   }
 
   dispose() {

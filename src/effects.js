@@ -102,6 +102,7 @@ export class Effects {
     pt.bounce = opts.bounce ?? 0;
     pt.floorY = opts.floorY ?? 0;
     pt.shrink = opts.shrink ?? true;
+    pt.bloom = opts.bloom ?? false;   // grows from nothing → peak → fades (vapour/contrail)
     pt.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     pt.rotV.set(randRange(-8, 8), randRange(-8, 8), randRange(-8, 8));
     return pt;
@@ -123,6 +124,51 @@ export class Effects {
         color: useWhite ? white : c,
         bounce: 0.3,
         floorY: pos.y - 0.4,
+      });
+    }
+  }
+
+  // Soft vapour puff that blooms then fades — Su-24 engine contrail.
+  contrailPuff(pos, { size = 2.0, life = 3.4, color = 0xeef2f6 } = {}) {
+    this._spawn({
+      pos,
+      vel: _v.set(randRange(-0.5, 0.5), randRange(-0.1, 0.4), randRange(-0.5, 0.5)),
+      life: life * randRange(0.85, 1.15),
+      size: size * randRange(0.8, 1.2),
+      grav: -0.25, drag: 0.5,
+      color: new THREE.Color(color),
+      bounce: 0, floorY: -999, bloom: true,
+    });
+  }
+
+  // Signal-flare smoke — a puff that blooms, rises and drifts; reddish near the
+  // flame, greying as it climbs. `intensity` (0..1) scales size as the flare dies.
+  flareSmoke(pos, intensity = 1) {
+    const warm = Math.random() < 0.4;
+    this._spawn({
+      pos,
+      vel: _v.set(randRange(-0.3, 0.3), randRange(0.9, 1.7), randRange(-0.3, 0.3)),
+      life: randRange(1.5, 2.6),
+      size: randRange(0.16, 0.32) * (0.5 + 0.5 * intensity),
+      grav: 0.35, drag: 0.7,                       // gentle buoyant rise
+      color: new THREE.Color(warm ? 0xbe5a34 : 0x6b635c),
+      bounce: 0, floorY: -999, bloom: true,
+    });
+  }
+
+  // Persistent fire-pool flames — orange/red blooming tongues licking up from the ground.
+  // Used for the molotov pool, the in-flight rag trail, and burning enemies.
+  firePool(pos, radius = 3.2, intensity = 1) {
+    const n = Math.max(1, Math.round(3 * intensity));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, dist = Math.random() * radius * 0.7;
+      this._spawn({
+        pos: _v.set(pos.x + Math.cos(a) * dist, pos.y + 0.03, pos.z + Math.sin(a) * dist),
+        vel: _s.set(randRange(-0.25, 0.25), randRange(0.5, 1.3), randRange(-0.25, 0.25)),
+        life: randRange(0.45, 0.85), size: randRange(0.3, 0.6) * (0.6 + 0.4 * intensity),
+        grav: 0.4, drag: 1.4,
+        color: new THREE.Color(Math.random() < 0.7 ? 0xff7a2a : 0xffd24a),
+        bounce: 0, floorY: -999, bloom: true,
       });
     }
   }
@@ -243,7 +289,8 @@ export class Effects {
       }
       pt.rot.x += pt.rotV.x * dt; pt.rot.y += pt.rotV.y * dt; pt.rot.z += pt.rotV.z * dt;
       const lifeFrac = pt.life / pt.maxLife;
-      const sz = pt.shrink ? pt.size * clamp(lifeFrac * 1.3, 0.05, 1) : pt.size;
+      const sz = pt.bloom ? pt.size * Math.sin((1 - lifeFrac) * Math.PI)
+        : pt.shrink ? pt.size * clamp(lifeFrac * 1.3, 0.05, 1) : pt.size;
       _q.setFromEuler(pt.rot);
       _m.compose(pt.pos, _q, _s.set(sz, sz, sz));
       this.mesh.setMatrixAt(k, _m);
