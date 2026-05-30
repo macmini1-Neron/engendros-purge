@@ -5256,6 +5256,7 @@ class HUD {
       msg: $('msg'), vignette: $('vignette'), hitmarker: $('hitmarker'), killfeed: $('killfeed'),
       cross: $('cross'), toast: $('toast'), interact: $('interact'), scope: $('scope'), binoview: $('binoview'),
       bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), bosspip: $('bosspip'), left: $('left'),
+      bleedbar: $('bleedbar'), bleedfill: $('bleedfill'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
       clock: $('clock'), nightgear: $('nightgear'),
       tankhp: $('tankhp'), tankhpfill: $('tankhpfill'),
@@ -5384,6 +5385,7 @@ class HUD {
     else { el.classList.add('show'); if (this.el.bossbar) this.el.bossbar.classList.add('exposed'); el.style.width = (clamp(frac, 0, 1) * 100) + '%'; }
   }
   hideBoss() { this.el.bossbar.classList.remove('show'); }
+  setBleed(frac) { if (!this.el.bleedbar) return; if (frac < 0) this.el.bleedbar.classList.remove('show'); else { this.el.bleedbar.classList.add('show'); this.el.bleedfill.style.width = (clamp(frac, 0, 1) * 100) + '%'; } }
   setHeat(frac, over) { this.el.heatbar.classList.add('show'); this.el.heatfill.style.width = clamp(frac, 0, 1) * 100 + '%'; this.el.heatbar.classList.toggle('over', !!over); this.el.heatlabel.textContent = over ? 'OVERHEATED — COOLING' : 'BARREL HEAT'; }
   hideHeat() { this.el.heatbar.classList.remove('show'); }
   setTankHp(frac) {
@@ -6396,7 +6398,7 @@ class RemotePlayer {
     this._hasFlash = false; this._fwd = new THREE.Vector3(); this._fe = new THREE.Euler();
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
-    this.hp = 100; this.maxHp = 100; this.down = false; this.dead = false;
+    this.hp = 100; this.maxHp = 100; this.down = false; this.waiting = false; this.dead = false;
     this._animT = 0; this._spd = 0; this._lastx = 0; this._lastz = 30;
     const wrap = document.getElementById('mp-labels');
     this.label = document.createElement('div'); this.label.className = 'mp-label';
@@ -6405,7 +6407,7 @@ class RemotePlayer {
     this._hpEl = this.label.querySelector('.mp-hp');
     if (wrap) wrap.appendChild(this.label);
   }
-  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; this.down = !!s.down; this.dead = !!s.dead; if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } }
+  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } } // down/dead/waiting come authoritatively from pstate, NOT from xf
   setHP(hp, maxHp) { this.hp = hp; if (maxHp) this.maxHp = maxHp; }
   update(dt, cam) {
     const k = 1 - Math.exp(-15 * dt);
@@ -6415,7 +6417,7 @@ class RemotePlayer {
     this._spd = damp(this._spd, mv, 8, dt); this._lastx = this.pos.x; this._lastz = this.pos.z;
     const o = this.obj, p = this.parts;
     o.position.set(this.pos.x, this.pos.y, this.pos.z);
-    if (this.dead || this.down) {
+    if (this.dead || this.down || this.waiting) {
       o.rotation.set(-Math.PI * 0.46, this.yaw + Math.PI, 0); o.position.y = this.pos.y + 0.35; // +PI: model faces +z, but look/move forward is -z
       p.legL.rotation.x = p.legR.rotation.x = p.armL.rotation.x = p.armR.rotation.x = 0;
       if (this.gunAnchor) this.gunAnchor.visible = false;
@@ -6430,7 +6432,7 @@ class RemotePlayer {
       o.position.y = this.pos.y + (moving ? Math.abs(Math.sin(this._animT)) * 0.06 : 0);
       if (this.gunAnchor) this.gunAnchor.visible = true;
     }
-    if (this._hasFlash && !this.down && !this.dead) { // beam from this player's flashlight, aimed where they look
+    if (this._hasFlash && !this.down && !this.dead && !this.waiting) { // beam from this player's flashlight, aimed where they look
       const f = this._fwd.set(0, 0, -1).applyEuler(this._fe.set(this.pitch, this.yaw, 0, 'XYZ'));
       const hx = this.pos.x, hy = this.pos.y + 1.6, hz = this.pos.z;
       this.flashLight.position.set(hx, hy, hz);
@@ -6443,7 +6445,7 @@ class RemotePlayer {
     this.label.style.left = ((hp.x * 0.5 + 0.5) * window.innerWidth) + 'px';
     this.label.style.top = ((-hp.y * 0.5 + 0.5) * window.innerHeight) + 'px';
     this._hpEl.style.width = clamp((this.hp / this.maxHp) * 100, 0, 100) + '%';
-    this.label.classList.toggle('down', this.down || this.dead);
+    this.label.classList.toggle('down', this.down || this.waiting || this.dead);
   }
   setWeapon(key) {
     while (this.gunAnchor.children.length) { const c = this.gunAnchor.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
@@ -6470,6 +6472,7 @@ class MP {
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
     this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
+    this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
     this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
@@ -6499,6 +6502,7 @@ class MP {
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
     if (this._lastXf) this._lastXf.clear();
     this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false;
+    this._localDown = false; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
     this.net = new Net(); this._wireNet();
   }
   // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
@@ -6690,6 +6694,9 @@ class MP {
     this._pingT -= dt; if (this._pingT <= 0) { this._pingT = 2; if (!this.isHost) this.net.send('ping', { t: performance.now() }); }
     this._pstatT -= dt; if (this._pstatT <= 0) { this._pstatT = 1; const myPing = this.isHost ? 0 : this.myPing, myMoney = g.player.money; const me = this.roster.get(this.myId); if (me) { me.ping = myPing; me.money = myMoney; } this.net.broadcast('pstat', { id: this.myId, ping: myPing, money: myMoney }); if (this._sbOpen) this.renderScoreboard(); }
     this._updateRevive(dt);
+    // local bleed-out bar: counts the downed player's 20s toward bleeding out
+    if (this._localDown) { this._bleedT = Math.max(0, (this._bleedT || 0) - dt); g.hud.setBleed(this._bleedT / 20); this._bleedShown = true; }
+    else if (this._bleedShown) { g.hud.setBleed(-1); this._bleedShown = false; }
   }
   // ---- enemy sync (host → clients) ----
   onEnemySpawn(e) { if (this.active && this.isHost) this.net.send('espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), hpf: Math.round((e.hp / e.maxHp) * 100) }); }
@@ -6731,7 +6738,7 @@ class MP {
     if (!this.friendlyFire) return null;   // co-op: gunfire passes through teammates (no accidental teamkills)
     let best = maxDist, hit = null, hp = null;
     for (const [id, rp] of this.remotes) {
-      if (rp.dead || rp.down) continue;
+      if (rp.dead || rp.down || rp.waiting) continue;
       const mn = _mpMin.set(rp.pos.x - 0.42, rp.pos.y, rp.pos.z - 0.42), mx = _mpMax.set(rp.pos.x + 0.42, rp.pos.y + 2.5, rp.pos.z + 0.42);
       const t = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, mn, mx);
       if (t !== null && t < best) { best = t; hit = id; hp = new THREE.Vector3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t); }
@@ -6746,7 +6753,7 @@ class MP {
     const s = this.pstate.get(id); if (!s || s.dead || s.waiting || s.down) return;
     if (s.armor > 0) { const t = Math.min(s.armor, dmg); s.armor -= t; dmg -= t; }
     s.hp -= dmg;
-    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 4) s.dead = true; else { s.down = true; s.downT = 20; } }
+    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 3) s.dead = true; else { s.down = true; s.downT = 20; } } // 2 downs survivable, the 3rd is permanent death
     this._broadcastPState(id);
     if (s.dead) this._checkGameOver();
   }
@@ -6761,10 +6768,11 @@ class MP {
       g.hud.setHealth(d.hp, d.maxHp); g.hud.setArmor(d.armor, g.player.armorMax);
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
       this.frozen = d.down || d.dead || d.waiting;
+      if (d.down) this._bleedT = d.downT || 20; // start/refresh the local bleed-out bar countdown
       if (d.dead) { g.hud.bigMessage('YOU ARE OUT', 'no lives left'); if (!this._spilledLoot) { this._spilledLoot = true; g.inventory.spillAll(); } } // real death → spill your backpack for teammates
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
-    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down || d.waiting; rp.dead = d.dead; } }
+    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; } }
   }
   nearestPlayer(x, z) {
     let best = Infinity, id = null, pos = null;
