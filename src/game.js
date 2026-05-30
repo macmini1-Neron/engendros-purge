@@ -1961,7 +1961,7 @@ class EnemyManager {
     if (e._tolGlow.material.opacity > 0.02) e._tolGlow.material.opacity *= 0.82;
     e.laserCD -= dt;
     if (e.laserCD <= 0) {
-      e.laserCD = e.phase === 3 ? 3.0 : (e.phase === 2 ? 4.0 : 3.8);
+      e.laserCD = e.phase === 3 ? 4.0 : (e.phase === 2 ? 5.0 : 3.8);
       e._chargeDur = e.phase === 1 ? 0.85 : 0.7;
       e.charging = e._chargeDur;
     }
