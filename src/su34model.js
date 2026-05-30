@@ -1955,6 +1955,137 @@ function buildSu34ScratchFinishPhotoModule() {
   return root;
 }
 
+function buildSu34ScratchGeneralArrangementModule() {
+  const M = makeScratchMaterials();
+  const root = new THREE.Group();
+  root.name = 'su34_generalArrangement_reference_1398_845_291';
+
+  const noseZ = SU34_GUIDE_SCENE_NOSE_Z;
+  const tailZ = SU34_GUIDE_SCENE_TAIL_Z;
+  const halfSpan = SU34_GA_SCENE_HALF_SPAN;
+  const groundY = SU34_GA_SCENE_GROUND_Y;
+  const topY = SU34_GA_SCENE_TOP_Y;
+  const wingY = 2.08;
+  const wingRootZ = -3.86;
+  const wingTipZ = 0.10;
+  const wingTrailRootZ = 4.72;
+  const wingTrailTipZ = 3.16;
+
+  const reference = new THREE.Group();
+  reference.name = 'ga_orthographicDatums';
+  root.add(reference);
+
+  gaTube(reference, 'ga_lengthDatum_1398mm', M.red, [[0, groundY, noseZ], [0, groundY, tailZ]], 0.020, 1, 'length 1398 mm');
+  gaTube(reference, 'ga_spanDatum_845mm', M.red, [[-halfSpan, wingY + 0.18, wingTipZ], [halfSpan, wingY + 0.18, wingTipZ]], 0.020, 1, 'span 845 mm');
+  gaTube(reference, 'ga_heightDatum_291mm', M.red, [[0.34, groundY, 7.84], [0.34, topY, 7.84]], 0.020, 1, 'height 291 mm');
+  gaTube(reference, 'ga_centerline', M.ink, [[0, wingY + 0.05, noseZ], [0, wingY + 0.05, tailZ]], 0.010, 2, 'centerline from top and side view');
+
+  gaPanel(reference, 'ga_topViewForwardDuckbillEnvelope', M.ghost, [
+    [-0.10, 1.88, noseZ],
+    [0.10, 1.88, noseZ],
+    [1.62, 2.06, -9.20],
+    [1.48, 2.16, -7.34],
+    [0.76, 2.40, -4.80],
+    [-0.76, 2.40, -4.80],
+    [-1.48, 2.16, -7.34],
+    [-1.62, 2.06, -9.20],
+  ], 'wide Su-34 forward fuselage top-view envelope');
+  gaPanel(reference, 'ga_leftWingPlanform_845span', M.ghost, [
+    [-0.66, wingY, wingRootZ],
+    [-2.70, wingY - 0.02, -2.72],
+    [-5.34, wingY - 0.10, -0.86],
+    [-halfSpan, wingY - 0.20, wingTipZ],
+    [-6.62, wingY - 0.20, wingTrailTipZ],
+    [-5.24, wingY - 0.09, 3.82],
+    [-0.90, wingY, wingTrailRootZ],
+  ], 'left wing planform scaled to GA span');
+  gaPanel(reference, 'ga_rightWingPlanform_845span', M.ghost, [
+    [0.66, wingY, wingRootZ],
+    [2.70, wingY - 0.02, -2.72],
+    [5.34, wingY - 0.10, -0.86],
+    [halfSpan, wingY - 0.20, wingTipZ],
+    [6.62, wingY - 0.20, wingTrailTipZ],
+    [5.24, wingY - 0.09, 3.82],
+    [0.90, wingY, wingTrailRootZ],
+  ], 'right wing planform scaled to GA span');
+
+  for (const sx of [-1, 1]) {
+    const side = sx < 0 ? 'left' : 'right';
+    gaTube(reference, `ga_${side}_leadingEdge`, M.seam, [
+      [sx * 0.66, wingY + 0.02, wingRootZ],
+      [sx * 2.70, wingY, -2.72],
+      [sx * 5.34, wingY - 0.10, -0.86],
+      [sx * halfSpan, wingY - 0.18, wingTipZ],
+    ], 0.012, 12, 'leading edge from top-view GA correction');
+    gaTube(reference, `ga_${side}_trailingEdge`, M.seam, [
+      [sx * 0.90, wingY, wingTrailRootZ],
+      [sx * 3.00, wingY - 0.02, 4.50],
+      [sx * 5.24, wingY - 0.10, 3.82],
+      [sx * 6.62, wingY - 0.18, wingTrailTipZ],
+    ], 0.012, 12, 'trailing edge from top-view GA correction');
+    gaTube(reference, `ga_${side}_canardPlanform`, M.seam, [
+      [sx * 1.02, 2.46, -5.96],
+      [sx * 3.60, 2.48, -4.92],
+      [sx * 3.32, 2.48, -3.44],
+      [sx * 1.08, 2.46, -4.26],
+      [sx * 1.02, 2.46, -5.96],
+    ], 0.011, 5, 'canard public top-view location');
+    gaTube(reference, `ga_${side}_verticalTailHeightLimit`, M.red, [
+      [sx * 2.20, groundY, 7.84],
+      [sx * 2.20, topY, 7.84],
+    ], 0.012, 2, 'vertical tail must fit height datum');
+  }
+
+  gaTube(reference, 'ga_sideViewUpperSilhouette', M.blueDark, [
+    [0, 1.82, noseZ],
+    [0, 2.20, -8.80],
+    [0, 3.36, -6.70],
+    [0, 2.70, -1.20],
+    [0, 2.52, 3.90],
+    [0, 2.36, 7.20],
+    [0, 2.16, tailZ],
+  ], 0.014, 18, 'side-view upper fuselage curve');
+  gaTube(reference, 'ga_sideViewLowerSilhouette', M.blueDark, [
+    [0, 1.70, noseZ],
+    [0, 1.28, -7.40],
+    [0, 1.10, -1.00],
+    [0, 0.94, 5.70],
+    [0, 1.12, 9.50],
+    [0, 1.70, tailZ],
+  ], 0.014, 18, 'side-view lower fuselage/nacelle curve');
+  gaTube(reference, 'ga_tailTopLimit_291height', M.red, [
+    [-2.20, topY, 7.84],
+    [2.20, topY, 7.84],
+  ], 0.014, 1, 'top of vertical tails after 291/1398 height correction');
+
+  const noseRing = torus(reference, 'ga_frontDuckbillCrossSection', M.red, 1, 0.010, [0, 2.02, -9.30], [0, 0, 0], 72);
+  noseRing.scale.set(1.64, 0.42, 1);
+  tagGeneralArrangement(noseRing, 'front duckbill cross-section', 'wide oval Su-34 nose, not conical');
+  const midRing = torus(reference, 'ga_midFuselageCrossSection', M.seam, 1, 0.009, [0, 2.16, -1.20], [0, 0, 0], 72);
+  midRing.scale.set(1.08, 0.62, 1);
+  tagGeneralArrangement(midRing, 'mid fuselage cross-section', 'broad blended shoulder through wing roots');
+  for (const sx of [-1, 1]) {
+    const ring = torus(reference, sx < 0 ? 'ga_leftEngineTunnelDatum' : 'ga_rightEngineTunnelDatum', M.seam, 0.46, 0.010, [sx * 1.28, 1.47, 8.62], [0, 0, 0], 54);
+    ring.scale.set(1.05, 0.88, 1);
+    tagGeneralArrangement(ring, sx < 0 ? 'left engine tunnel datum' : 'right engine tunnel datum', 'twin nozzle position and scale');
+  }
+
+  Object.assign(root.userData, {
+    viewerSpin: -0.78,
+    viewerDistMult: 1.14,
+    assetOnly: true,
+    source: SU34_GENERAL_ARRANGEMENT.source,
+    sourceUrl: SU34_GENERAL_ARRANGEMENT.sourceUrl,
+    generalArrangement: SU34_GENERAL_ARRANGEMENT,
+    sceneScale: {
+      guideLengthUnits: SU34_GUIDE_SCENE_LENGTH,
+      targetHalfSpanUnits: Number(SU34_GA_SCENE_HALF_SPAN.toFixed(3)),
+      targetTopY: Number(SU34_GA_SCENE_TOP_Y.toFixed(3)),
+    },
+  });
+  return root;
+}
+
 function buildSu34ScratchModel() {
   const root = new THREE.Group();
   root.name = 'su34_fromZero_stage05_p05_p42_assetOnly';
@@ -1975,8 +2106,21 @@ function buildSu34ScratchModel() {
     viewerSpin: -0.90,
     viewerDistMult: 1.20,
     source: 'Jetworks Su-34 Construction Guide 2020-11-29',
+    sourceUrl: SU34_GUIDE_SOURCE_URL,
+    generalArrangement: SU34_GENERAL_ARRANGEMENT,
+    guideManifest: SU34_GUIDE_PAGE_MANIFEST,
     pages: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
-    stage: 'from-zero guide rebuild, pages 5-42 complete as procedural modules plus photo finish pass',
+    sceneScale: {
+      guideLengthUnits: SU34_GUIDE_SCENE_LENGTH,
+      targetHalfSpanUnits: Number(SU34_GA_SCENE_HALF_SPAN.toFixed(3)),
+      targetTopY: Number(SU34_GA_SCENE_TOP_Y.toFixed(3)),
+    },
+    fidelityNotes: [
+      'Main wing half-span corrected to the General Arrangement 845/1398 span/length ratio.',
+      'Vertical stabiliser top corrected to the General Arrangement 291/1398 height/length ratio.',
+      'Pages 1-4 are reference/material metadata; page-by-page geometry starts at page 5.',
+    ],
+    stage: 'from-zero guide rebuild, pages 5-42 complete as procedural modules plus GA proportion correction',
     assetOnly: true,
   });
   return root;
@@ -2044,6 +2188,10 @@ export function buildSu34UpperTailExhaustModule() {
 
 export function buildSu34FinishPhotoModule() {
   return buildSu34ScratchFinishPhotoModule();
+}
+
+export function buildSu34GeneralArrangementModule() {
+  return buildSu34ScratchGeneralArrangementModule();
 }
 
 export function buildSu34Model() {
