@@ -536,6 +536,11 @@
         <button class="mp-skinpick" data-skin="2" style="background:#9b6fe0;border-color:#ffd24a"></button>
         <button class="mp-skinpick" data-skin="3" style="background:#5fd0a0;border-color:#e8533a"></button>
       </div>
+      <div class="shoptabs" id="mp-modes" style="max-width:440px;margin:8px auto 4px;">
+        <button class="tab on" id="mp-mode-purge" data-mode="purge">⚔ PURGE</button>
+        <button class="tab" id="mp-mode-night" data-mode="longnight">🌙 THE LONG NIGHT</button>
+      </div>
+      <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">⚔ Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
       <div id="mp-status" class="mp-status">Host a room, or enter a friend's code and Join.</div>
       <div id="mp-roster" class="mp-roster"></div>
       <button class="btn" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
@@ -585,6 +590,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=137"></script>
+  <script type="module" src="./src/game.js?v=138"></script>
 </body>
 </html>

@@ -6276,6 +6276,7 @@ class MP {
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
     this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
+    this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
     this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
@@ -6350,13 +6351,39 @@ class MP {
     if (sb) { sb.style.display = (this.isHost && this.net.connected) ? 'block' : 'none'; sb.disabled = !allReady; sb.textContent = allReady ? '▶ START CO-OP' : '▶ WAITING FOR READY…'; }
     const rb = document.getElementById('mpReadyBtn');
     if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
+    this._renderModeSel();
+  }
+  // ---- game-mode pick (host-authoritative; only the host simulates waves, so the host owns the mode) ----
+  setMode(m) {
+    if (this.active) return;                                   // locked once the run starts
+    if (!(this.isHost || !this.net.connected)) return;          // a connected client can't override the host
+    const mode = (m === 'longnight') ? 'longnight' : 'purge';
+    this.game.mode = mode; this._lobbyMode = mode;
+    if (this.isHost) this.net.send('mode', { mode });           // tell the squad (no-op with zero peers)
+    this._renderModeSel();
+  }
+  _renderModeSel() {
+    const wrap = document.getElementById('mp-modes'); if (!wrap) return;
+    const canPick = this.isHost || !this.net.connected;         // host (or nobody yet) picks; joined clients just see it
+    const mode = canPick ? (this.game.mode || 'purge') : (this._lobbyMode || 'purge');
+    wrap.querySelectorAll('.tab').forEach((b) => {
+      const on = b.getAttribute('data-mode') === mode;
+      b.classList.toggle('on', on);
+      b.disabled = !canPick; b.style.cursor = canPick ? 'pointer' : 'default'; b.style.opacity = (canPick || on) ? '1' : '.4';
+    });
+    const note = document.getElementById('mp-modenote');
+    if (note) note.textContent = (mode === 'longnight'
+      ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
+      : '⚔ Arcade waves — special waves & mini-bosses.')
+      + (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.');
   }
   hostStart() {
     if (!this.isHost) return;
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
     if (!allReady) { this._lobbyMsg('Waiting for all players to be READY…'); return; }
     const now = performance.now(); for (const [id] of this.roster) this._lastXf.set(id, now); // fresh heartbeat baseline so nobody is insta-timed-out
-    this.active = true; this._initHostStates(); this.net.send('start', { mode: this.game.mode || 'purge' }); this.game._enterMP('purge');
+    const mode = this.game.mode || 'purge';
+    this.active = true; this._initHostStates(); this.net.send('start', { mode }); this.game._enterMP(mode);
   }
   _initHostStates() { this.pstate.clear(); for (const [id, info] of this.roster) this.pstate.set(id, this._freshState(info)); }
   _freshState(info) { return { hp: 100, maxHp: 100, armor: 0, armorMax: 100, down: false, downT: 0, waiting: false, dead: false, downs: 0, name: info.name, skin: info.skin }; }
@@ -6379,6 +6406,7 @@ class MP {
       this._lastXf.set(from, performance.now());
       this.net.send('roster', this._rosterArr()); this._renderRoster();
       this.net.sendTo(from, 'joinok', {});
+      this.net.sendTo(from, 'mode', { mode: this.game.mode || 'purge' });   // so the joiner's lobby shows the chosen mode
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
     n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 4 players).'); try { this.net.close(); } catch (e) {} } });
@@ -6388,6 +6416,7 @@ class MP {
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
     n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
+    n.on('mode', (d) => { if (!this.isHost && d) { this._lobbyMode = (d.mode === 'longnight') ? 'longnight' : 'purge'; this.game.mode = this._lobbyMode; this._renderModeSel(); } }); // host announced the squad's mode
     n.on('start', (d) => { this.active = true; this.net.lastRecv = performance.now(); this.game._enterMP(d.mode || 'purge'); this._syncRemoteObjs(); });
     n.on('xf', (d, from) => { if (this.isHost) this._lastXf.set(from, performance.now()); const rp = this._remote(d.id); if (rp) rp.setTransform(d); }); // host: track per-client heartbeat
     n.on('espawn', (d) => this._clientSpawnEnemy(d));
@@ -6672,6 +6701,8 @@ class Game {
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
     click('mpStartBtn', () => this.mp.hostStart());
     click('mpReadyBtn', () => this.mp.toggleReady());
+    click('mp-mode-purge', () => this.mp.setMode('purge'));
+    click('mp-mode-night', () => this.mp.setMode('longnight'));
     click('mpBackBtn', () => { this.mp.leave(); this.toMenu(); });
     document.querySelectorAll('.mp-skinpick').forEach(b => b.addEventListener('click', () => {
       this.mp.chosenSkin = +b.dataset.skin;
@@ -6974,7 +7005,7 @@ class Game {
     if (e.isElite) this.player.addMoney(KEY_CASH * 2); // elites pay a small cash bonus
     if (e.courier) this.loot.dropCourier(e.pos); // backpack courier → a radio + a bonus
   }
-  toLobby() { this.state = 'menu'; this.ui.show('lobby'); }
+  toLobby() { this.state = 'menu'; this.ui.show('lobby'); this.mp._renderModeSel(); }
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
     this.audio.init(); this.audio.startMusic(); this._intentionalUnlock = false;
