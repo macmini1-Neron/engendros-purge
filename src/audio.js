@@ -12,6 +12,7 @@ export class AudioManager {
     this._started = false;
     // real recorded crew-radio line (assets/crew-lines.mp3), wired through a comms-band filter in init()
     this._crewEl = null; this._crewSrc = null; this._crewGain = null; this._crewFailed = false;
+    this._jetFailed = false; // real jet.mp3 may fail async (404/decode/autoplay) — callers degrade to procedural startJet()
   }
 
   // Must be created/resumed from a user gesture.
@@ -38,7 +39,7 @@ export class AudioManager {
     try {
       const el = new Audio('assets/crew-lines.mp3');
       el.preload = 'auto';
-      el.addEventListener('error', () => { this._crewFailed = true; });
+      el.addEventListener('error', () => { this._crewFailed = true; if (typeof console !== 'undefined') console.warn('[audio] crew-lines.mp3 load failed — using TTS/chatter fallback'); });
       const src = this.ctx.createMediaElementSource(el);
       const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 300;
       const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3600;
@@ -62,22 +63,23 @@ export class AudioManager {
   }
 
   // Real jet roar (assets/jet.mp3) for the Su-24 fly-by: smooth fade-in; .stop(fade) fades out (no abrupt cut).
+  // Returns null if the clip can't load/play; callers consult _jetFailed and degrade to the procedural startJet().
   startJetClip() {
-    if (typeof Audio === 'undefined' || !this.ctx) return null;
+    if (typeof Audio === 'undefined' || !this.ctx || this._jetFailed) return null;
     try {
       const el = new Audio('assets/jet.mp3'); el.preload = 'auto'; el.loop = true;
-      el.addEventListener('error', () => {});
+      el.addEventListener('error', () => { this._jetFailed = true; if (typeof console !== 'undefined') console.warn('[audio] jet.mp3 load failed — using procedural jet'); });
       const src = this.ctx.createMediaElementSource(el);
       const g = this.ctx.createGain(); g.gain.value = 0.0001;
       src.connect(g); g.connect(this.sfxGain);
       const t = this.t, peak = Math.max(0.0002, (this.volume || 0.8) * 0.9);
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(peak, t + 0.9); // fade-in
-      const p = el.play(); if (p && p.catch) p.catch(() => {});
+      const p = el.play(); if (p && p.catch) p.catch(() => { this._jetFailed = true; if (typeof console !== 'undefined') console.warn('[audio] jet.mp3 play blocked — using procedural jet'); });
       return {
         stop: (fade = 1.4) => { const tt = this.t; try { g.gain.cancelScheduledValues(tt); g.gain.setTargetAtTime(0.0001, tt, Math.max(0.05, fade / 3)); } catch (e) {} setTimeout(() => { try { el.pause(); el.src = ''; } catch (e) {} }, (fade + 0.3) * 1000); },
       };
-    } catch (e) { return null; }
+    } catch (e) { this._jetFailed = true; return null; }
   }
 
   setVolume(v) { this.volume = v; if (this.sfxGain) this.sfxGain.gain.value = v; }

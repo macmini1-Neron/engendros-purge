@@ -1,7 +1,7 @@
 // game.js — ENGENDROS PURGE. Orchestrator + gameplay.
 // A Zumbi-Blocks-style voxel FPS wave shooter: hold a dusty de_dust2-flavored
 // arena against waves of "Engendros" voodoo-plush zombies. Big weapon roster
-// (guns + melee), a key→lootbox loot loop with weapon rarity, perks & pickups.
+// (guns + melee), a bank-economy survival loop: scavenge pickups, unlock loadout gear in the SHOP, manage a flat 15-slot inventory.
 import * as THREE from 'three';
 import { Engine, WEAPON_LAYER } from './engine.js?e=2';
 import { Input } from './input.js';
@@ -14,6 +14,7 @@ import {
   buildSu34DuctBellyModule,
   buildSu34FinishPhotoModule,
   buildSu34ForwardModule,
+  buildSu34GeneralArrangementModule,
   buildSu34Model,
   buildSu34RearModule,
   buildSu34UpperTailExhaustModule,
@@ -118,6 +119,7 @@ const WEAPONS = {
 };
 const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98', 'flashlight', 'binoculars'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
+const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
 
 // Survival inventory items — held things that are NOT weapons (consumables/throwables/materials/callables).
@@ -1198,7 +1200,7 @@ const STRUCT_DEFS = {
 
 // ---------------------------------------------------------------------------
 // World — voxel de_dust2-flavored arena. Sandstone structures, crates,
-// chokepoints. Collision = AABBs. Also holds lootbox anchor spots & spawns.
+// chokepoints. Collision = AABBs. Also holds supply-drop landing spots & spawns.
 // ---------------------------------------------------------------------------
 class World {
   constructor(game) {
@@ -1364,7 +1366,7 @@ class World {
       const a = (i / 26) * TAU;
       this.spawns.push(new THREE.Vector3(Math.cos(a) * (H - 5), 0, Math.sin(a) * (H - 5)));
     }
-    // lootbox anchors (open ground near landmarks)
+    // supply-drop landing spots (open ground near landmarks)
     this.lootSpots = [
       new THREE.Vector3(0, 0, 16), new THREE.Vector3(-34, 0, -22), new THREE.Vector3(26, 0, -38),
       new THREE.Vector3(30, 0, 30), new THREE.Vector3(-40, 0, 24), new THREE.Vector3(0, 0, -34),
@@ -1891,6 +1893,7 @@ class EnemyManager {
     e._beam.scale.set(0.4, 0.4, len); e._beam.lookAt(end);
     this.game.effects.muzzleFlash(belly, dir, 2.6);
     this.game.audio.tone(1300, 0.08, 'square', 0.35); this.game.audio.noise(0.16, 0.35, 'highpass', 1400, 0.8);
+    { const _mp = this.game.mp; if (_mp && _mp.active && _mp.isHost) _mp.net.broadcast('fx', { e: 'laser', p: [+belly.x.toFixed(2), +belly.y.toFixed(2), +belly.z.toFixed(2)], d: [+dir.x.toFixed(3), +dir.y.toFixed(3), +dir.z.toFixed(3)] }); } // clients see/hear the boss beam
     const p = this.game.player.pos;
     const t = clamp((p.x - belly.x) * dir.x + (p.y + 1.0 - belly.y) * dir.y + (p.z - belly.z) * dir.z, 0, len);
     const dl = Math.hypot(p.x - (belly.x + dir.x * t), p.y + 1.0 - (belly.y + dir.y * t), p.z - (belly.z + dir.z * t));
@@ -2634,8 +2637,7 @@ class BuildManager {
     return { hx: (sd.w / 2) * c + (sd.d / 2) * s, hz: (sd.w / 2) * s + (sd.d / 2) * c, h: sd.h };
   }
 
-  validateAt(pos, yaw, kind) {
-    if (this.game.inventory.heldMaterial() !== kind) return false; // must be holding that material item
+  validateAt(pos, yaw, kind) { // host-authoritative: geometry/cap/overlap only (holding the material is a LOCAL check in place()/the ghost)
     if (this.structures.length >= STRUCT_CAP) return false;
     if (!pos) return false;
     const sd = STRUCT_DEFS[kind], fp = this._footprint(kind, yaw), top = pos.y + sd.h;
@@ -2683,12 +2685,13 @@ class BuildManager {
     const pos = this._ghostPos.clone(), yaw = this.ghostYaw, mp = this.game.mp;
     if (mp && mp.active && !mp.isHost) {
       mp.net.send('structreq', { kind, x: pos.x, z: pos.z, yaw });    // client → host (host validates + echoes)
+      this.game.inventory.consumeHeldMaterial();                       // optimistic consume; restored on 'structrej'
     } else {
       const id = this._idc++;
       this.placeStructure(kind, pos, yaw, id);
       if (mp && mp.active && mp.isHost) mp.net.broadcast('struct', { id, kind, x: pos.x, z: pos.z, yaw });
+      this.game.inventory.consumeHeldMaterial();
     }
-    this.game.inventory.consumeHeldMaterial();
     this.game.audio.buy && this.game.audio.buy();
   }
 
@@ -2743,9 +2746,9 @@ class BuildManager {
   }
 
   // ---- multiplayer (host-authoritative) ----
-  hostPlaceFromClient(d) {
+  hostPlaceFromClient(d, from) {
     const pos = new THREE.Vector3(d.x, 0, d.z);
-    if (!this.validateAt(pos, d.yaw, d.kind)) return;          // reject invalid placements
+    if (!this.validateAt(pos, d.yaw, d.kind)) { this.game.mp.net.sendTo(from, 'structrej', { kind: d.kind }); return; } // reject → tell client to restore its material
     const id = this._idc++;
     this.placeStructure(d.kind, pos, d.yaw, id);
     this.game.mp.net.broadcast('struct', { id, kind: d.kind, x: d.x, z: d.z, yaw: d.yaw });
@@ -3387,7 +3390,7 @@ function buildViewmodel(def) {
       b.box(0.014, 0.018, 0.06, 0, 0.02, -0.55, sEdge);                        // spike point (bright)
       break;
     }
-    case 'binoculars': {   // Soviet 6x30 porro field binocular (per blueprint) — COMPACT (depth<width), NEAR-PARALLEL barrels with a porro vertical JOG (eyepiece high/back, objective low/front), chunky rounded bodies tapering to the objective, glass lenses, central bridge focus wheel. Black leatherette. No markings.
+    case 'binoculars': {   // Soviet 8×30 porro field binocular (per blueprint) — COMPACT (depth<width), NEAR-PARALLEL barrels with a porro vertical JOG (eyepiece high/back, objective low/front), chunky rounded bodies tapering to the objective, glass lenses, central bridge focus wheel. Black leatherette. No markings.
       const body = 0x2c2f33, bodyLo = 0x191b1e, steel = 0x646b73, steelLo = 0x3a3f45,
             brass = 0x9c7a3c, brassHi = 0xc6a05a, glassMid = 0xa6c8d8, glassHi = 0xd9eef6, glint = 0xffffff, lensDk = 0x3a525e;
       const PI2 = Math.PI / 2;
@@ -3490,12 +3493,12 @@ function buildMag(cfg) {
 class WeaponSystem {
   constructor(game) {
     this.game = game;
-    this.owned = {}; this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
+    this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
     this.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null }; this.slotOrder = ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'];
     this.cur = 'luger';
     this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0;
-    this.grenades = 2; this.grenadeCD = 0; this.ads = false; this.fov = 80;
-    this.molotovs = 0; this.molotovCD = 0;
+    this.grenadeCD = 0; this.ads = false; this.fov = 80;
+    this.molotovCD = 0;
     this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; // null|'lighting'|'lit'
     this._bobT = 0; this._swing = 0;
     this.projectiles = [];
@@ -3539,19 +3542,15 @@ class WeaponSystem {
     this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.ads = false;
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
-    for (const k of WEAPON_ORDER) { this.owned[k] = false; this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
-    this.buildMats = { sandbag: 0, wire: 0, wood: 0 }; // fortification material (per-player; from supply drops)
+    for (const k of WEAPON_ORDER) { this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
     // deploy the player's saved loadout (knife-only by default; gadgets deploy EMPTY — charge/material scavenged in-run)
     const lo = (this.game.meta && this.game.meta.loadout) || { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null };
     this.loadout = { primary: lo.primary || null, secondary: lo.secondary || null, melee: lo.melee || 'knife', gadget1: lo.gadget1 || null, gadget2: lo.gadget2 || null };
-    this.grenades = 0; this.flares = 0; this.flashlightOwned = false;
-    for (const slot of ['primary', 'secondary', 'melee']) { const k = this.loadout[slot]; if (k && WEAPONS[k]) this.grant(k); }
-    this._deployGadget(this.loadout.gadget1);
-    this._deployGadget(this.loadout.gadget2);
-    if (!this.owned[this.loadout.melee]) { this.loadout.melee = 'knife'; this.grant('knife'); } // a run always has a melee
+    this.flares = 0;
+    if (!this.loadout.melee || !WEAPONS[this.loadout.melee]) this.loadout.melee = 'knife'; // a run always has a valid melee
     this.cur = this.loadout.primary || this.loadout.secondary || this.loadout.melee || 'knife';
-    if (!this.owned[this.cur]) this.cur = 'knife';
-    this.molotovs = 0; this.molotovCD = 0; this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
+    this.molotovCD = 0; this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
+    // ownership + deploy now happen entirely in inventory.deployLoadout() (grant = ammo init; a slot confers ownership)
     if (this.molotovModel) { this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0); }
     this._grenadeArmed = false; this._throwSlot = null;
     for (const k in this.models) this.models[k].visible = false;
@@ -3560,32 +3559,25 @@ class WeaponSystem {
     if (this.game.inventory) this.game.inventory.deployLoadout();
   }
 
-  ownedOrder() { return WEAPON_ORDER.filter((k) => this.owned[k]); }
+  owns(key) { const inv = this.game.inventory; return !!inv && inv.slots.some((s) => s && s.kind === key); } // ownership is derived — an inventory slot holds it
+  ownedOrder() { return WEAPON_ORDER.filter((k) => this.owns(k)); }
   def() { return WEAPONS[this.cur]; }
   effMult(key) { return this.game.player.damageMult; } // flat stats — rarity removed
 
-  grant(key) {
+  grant(key) { // ammo-init only; ownership is conferred by adding an inventory slot (Inventory.deployLoadout / addItem)
     const d = WEAPONS[key];
-    this.owned[key] = true;
-    if (!d.melee && d.class !== 'builder' && d.class !== 'tool') {
+    if (!d.melee && d.class !== 'tool') {
       this.magMax[key] = d.mag;                                   // flat — no rarity scaling
       this.mag[key] = d.mag;
       this.reserve[key] = d.reserveMax === Infinity ? Infinity : d.reserveMax;
     }
     if (this.game.hud) this.game.hud.setWeapon(this);
   }
-  // Equip a gadget into the gadget slot. Tools (flashlight/binoculars) become usable; molotov/grenade/builders
-  // deploy EMPTY (their counts/material stay 0 — the player scavenges charge in-run).
-  _deployGadget(g) {
-    if (!g) return;
-    const d = WEAPONS[g];
-    if (d && d.class === 'tool') { this.owned[g] = true; if (g === 'flashlight') this.flashlightOwned = true; }
-  }
 
   isThrowLocked() { return this.molotovState === 'lit' || this.molotovState === 'lighting' || !!this._grenadeArmed; }
   select(key) {
     if (this.isThrowLocked()) return;
-    if (!this.owned[key] || key === this.cur) return;
+    if (!this.owns(key) || key === this.cur) return;
     this.reloading = 0; // switching weapons (incl. auto-equip of loot/shop buys) cancels an in-progress reload
     this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
     this.cur = key;
@@ -3593,25 +3585,14 @@ class WeaponSystem {
     this.cooldown = 0.1; this.bloom = 0;
     this.game.hud.setWeapon(this); this.game.audio.reloadClick();
   }
-  // weapon switching maps to the typed loadout slots (1=Primary 2=Secondary 3=Melee 4=Gadget)
-  selectSlot(n) { const k = this.loadout[this.slotOrder[n - 1]]; if (k && this.owned[k]) this.select(k); }
-  quickMelee() { const k = this.loadout.melee; if (k && this.game.inventory) this.game.inventory.selectKind(k); else if (k && this.owned[k]) this.select(k); }
+  quickMelee() { const k = this.loadout.melee; if (k && this.game.inventory) this.game.inventory.selectKind(k); else if (k && this.owns(k)) this.select(k); }
   cycle(dir) { this.game.inventory.cycleWheel(dir); } // the wheel scrolls the unified inventory (loadout weapons + backpack)
-  // Fortification material — granted by supply drops; a builder becomes selectable only while it has material.
+  // Fortification material — granted by supply drops as inventory items (1 item = 1 placement).
   grantBuildMats(amt) {
     // Fortification material is now carried as inventory items (1 item = 1 placement), not a counter.
     const inv = this.game.inventory;
     for (const k in amt) { for (let n = 0; n < (amt[k] || 0); n++) { if (inv) inv.addToBackpack(k, 1); } }
     if (this.game.hud) this.game.hud.setWeapon(this);
-  }
-  consumeBuildMat(kind) {
-    if (this.buildMats[kind] == null) return;
-    this.buildMats[kind] = Math.max(0, this.buildMats[kind] - 1);
-    if (this.buildMats[kind] <= 0) {
-      this.owned['build_' + kind] = false;
-      if (this.cur === 'build_' + kind) { const o = this.ownedOrder(); const g = o.find((k) => WEAPONS[k].class !== 'builder') || o[0]; if (g) this.select(g); } // ran out → back to a gun
-    }
-    if (this.game.hud) { this.game.hud.setBuildMats(this); this.game.hud.setWeapon(this); }
   }
   toggleFireMode() {
     if (this.isThrowLocked()) return;
@@ -3684,6 +3665,7 @@ class WeaponSystem {
     this.game.effects.muzzleFlash(muzzle, fwd, d.class === 'shotgun' || d.class === 'launcher' ? 1.6 : 1);
     if (d.class !== 'launcher') this.game.effects.shell(muzzle.clone().addScaledVector(right, -0.08), right);
     this.game.audio.gunshot(SOUND_BY_CLASS[d.class] || SOUND_BY_CLASS.pistol);
+    { const _mp = this.game.mp; if (_mp && _mp.active) _mp.net.broadcast('shot', { pid: _mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: d.class, col: d.accent }); } // teammates see/hear your gunfire
 
     if (d.class === 'launcher') { // fire a rocket projectile that explodes on impact
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.55), new THREE.MeshLambertMaterial({ color: 0x394b2e }));
@@ -3787,7 +3769,7 @@ class WeaponSystem {
 
   refillAll() {
     for (const k of WEAPON_ORDER) {
-      if (!this.owned[k] || WEAPONS[k].melee) continue;
+      if (!this.owns(k) || WEAPONS[k].melee) continue;
       this.reserve[k] = WEAPONS[k].reserveMax === Infinity ? Infinity : WEAPONS[k].reserveMax;
       this.mag[k] = this.magMax[k];
     }
@@ -3880,6 +3862,7 @@ class WeaponSystem {
         } else {
           this.game.effects.explosion(g.mesh.position.clone(), g.radius);
           this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg);
+          { const _mp = this.game.mp; if (_mp && _mp.active) { const gp = g.mesh.position; _mp.net.broadcast('fx', { e: 'expl', p: [+gp.x.toFixed(2), +gp.y.toFixed(2), +gp.z.toFixed(2)], s: g.radius }); } } // teammates see the blast
         }
         this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose();
         if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); }
@@ -4379,11 +4362,11 @@ class LootManager {
     else if (roll < 0.235) this._spawnPickup('molotov', pos, 1);
   }
 
-  _spawnPickup(kind, pos, value) {
+  _spawnPickup(kind, pos, value, life = 30) {
     const mesh = this._pickupMesh(kind);
     mesh.position.set(pos.x + rr(-0.6, 0.6), 0.6, pos.z + rr(-0.6, 0.6));
     this.scene.add(mesh);
-    this.pickups.push({ mesh, kind, value, t: rr(0, TAU), life: 30 });
+    this.pickups.push({ mesh, kind, value, t: rr(0, TAU), life });
   }
 
   // Backpack courier death → a radio + one configurable bonus.
@@ -4398,19 +4381,31 @@ class LootManager {
   }
 
   // Radio call-in: a Su-24 streaks across the map and releases a parachute crate over a random spot.
-  callSupplyDrop() {
-    const spots = this.game.world.lootSpots.length ? this.game.world.lootSpots : this.game.world.spawns;
-    const target = pick(spots).clone(); target.y = 0;
-    const ALT = 38, R = 200, ang = rr(0, TAU), dx = Math.sin(ang), dz = Math.cos(ang);
+  // Radio entry point: host/SP spawn the drop; a client asks the host (which rolls + broadcasts the replication spec).
+  requestSupplyDrop() {
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) { mp.net.send('dropreq', {}); this.game.hud.toast('📡 Radio: requesting drop…', 0x6fd0e8); return; }
+    this.callSupplyDrop();
+  }
+  callSupplyDrop(spec) {
+    const mp = this.game.mp;
+    let target, ang, id;
+    if (spec) { target = new THREE.Vector3(spec.tx, 0, spec.tz); ang = spec.ang; id = spec.id; }      // client: mirror the host's flyby+crate (visual)
+    else {
+      const spots = this.game.world.lootSpots.length ? this.game.world.lootSpots : this.game.world.spawns;
+      target = pick(spots).clone(); target.y = 0; ang = rr(0, TAU); id = (this._dropId = (this._dropId || 0) + 1);
+      if (mp && mp.active && mp.isHost) mp.net.broadcast('supplydrop', { id, tx: target.x, tz: target.z, ang }); // everyone sees the same drop
+    }
+    const ALT = 38, R = 200, dx = Math.sin(ang), dz = Math.cos(ang);
     const mesh = buildSu24(); mesh.scale.setScalar(1.5); // bigger so the detail reads on the pass
     mesh.position.set(target.x - dx * R, ALT, target.z - dz * R);
     mesh.rotation.y = Math.atan2(dx, dz) + Math.PI; // model nose is -Z → add PI so the NOSE (not the tail) leads the travel direction
     this.scene.add(mesh);
-    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 3, released: false, trailT: 0 };
+    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 3, released: false, trailT: 0, dropId: id, net: !!spec };
     this.game.hud.toast('📡 Radio: Su-24 inbound!', 0x6fd0e8);
     this.game.hud.bigMessage('ЗАПРОС ПОДТВЕРЖДЁН', 'a Fencer is making a pass — watch the smoke');
     this.game.audio.radioCall(); // Soviet-radio confirmation + epic WW2 sting
-    this.plane.jet = this.game.audio.startJetClip() || this.game.audio.startJet(); // real SU-57 clip (fade in/out), else procedural
+    this.plane.jet = this.game.audio.startJetClip() || (this.game.audio._jetFailed ? null : this.game.audio.startJet()); // real jet clip (fade in/out), else procedural (skipped if the clip already failed)
   }
 
   _updatePlane(dt) {
@@ -4429,12 +4424,12 @@ class LootManager {
     // release the crate at closest approach to the target
     if (!pl.released) {
       const ahead = (pl.target.x - pl.mesh.position.x) * pl.dir.x + (pl.target.z - pl.mesh.position.z) * pl.dir.z;
-      if (ahead <= 0) { pl.released = true; this._spawnDropCrate(pl.target, pl.mesh.position.y - 2); this.game.audio.uiClick(); }
+      if (ahead <= 0) { pl.released = true; this._spawnDropCrate(pl.target, pl.mesh.position.y - 2, pl.dropId, pl.net); this.game.audio.uiClick(); }
     }
     if (pl.travelled >= pl.total) { if (pl.jet) pl.jet.stop(); this.scene.remove(pl.mesh); pl.mesh.geometry.dispose(); pl.mesh.material.dispose(); this.plane = null; }
   }
 
-  _spawnDropCrate(pos, fromY) {
+  _spawnDropCrate(pos, fromY, id, isNet) {
     const grp = new THREE.Group(); grp.position.set(pos.x, fromY, pos.z);
     const crate = buildSupplyCrate();
     crate.material.emissive.setHex(0x3a2a00); crate.material.emissiveIntensity = 0.7; // glows once landed
@@ -4449,28 +4444,44 @@ class LootManager {
     const flame = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     flame.position.set(0, 0.34, 0); flame.renderOrder = 998; flareMesh.add(flame);                                          // burning nub at the cap (flare local +Y)
     const flareLight = new THREE.PointLight(0xff5a26, 16, 28, 1.3); flareLight.position.set(0, 0.42, 0); flareMesh.add(flareLight); // starts hot (ignite), eased down in update
-    this.drops.push({ grp, crate, chute, lines, flareMesh, flame, flameMat: flame.material, flareLight, flareLife: 20, flareSmokeT: 0, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
+    this.drops.push({ id, _net: !!isNet, grp, crate, chute, lines, flareMesh, flame, flameMat: flame.material, flareLight, flareLife: 20, flareSmokeT: 0, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
     this.game.hud.toast('📦 Supply drop released!', 0xff8a3a);
   }
 
-  _openDrop(d) {
-    d.opened = true;
-    const p = this.game.player;
-    p.hp = p.maxHp; this.game.hud.setHealth(p.hp, p.maxHp);
-    p.armor = p.armorMax; this.game.hud.setArmor(p.armor, p.armorMax);
-    this.game.weapons.refillAll();
-    // fortification material is RARE (OP item) — only ~2 pieces per drop, random across the 3 kinds
-    const give = { sandbag: 0, wire: 0, wood: 0 }, ks = ['sandbag', 'wire', 'wood'];
-    for (let i = 0; i < 2; i++) give[ks[Math.floor(Math.random() * 3)]]++;
-    this.game.weapons.grantBuildMats(give);
-    p.hunger = HUNGER_MAX; this.game.hud.setHunger(p.hunger); p._starveT = 0; // rations in the crate — top off hunger
-    p.addMoney(SUPPLY_CASH); // cash bonus → banks at run end
-    this.game.hud.toast(`📦 Resupply + $${SUPPLY_CASH} — full heal / armor / ammo`, 0xff8a3a);
-    { const parts = []; if (give.sandbag) parts.push('🧱×' + give.sandbag); if (give.wire) parts.push('🔩×' + give.wire); if (give.wood) parts.push('🪵×' + give.wood); this.game.hud.toast(parts.join('  ') + '  🥫 food topped', 0xcdb887); }
-    this.game.hud.bigMessage('SUPPLY CLAIMED', 'health, armor, ammo, food & cash topped up');
+  _rollGive() { const give = { sandbag: 0, wire: 0, wood: 0 }, ks = ['sandbag', 'wire', 'wood']; for (let i = 0; i < 2; i++) give[ks[Math.floor(Math.random() * 3)]]++; return give; } // RARE: ~2 random fort. mats
+  // Burst a landed crate open: scatter its contents as PHYSICAL ground pickups in
+  // a ring around the crate (grab each later with E) instead of auto-filling the
+  // backpack. Cash is the only instant payout. Applied to the LOCAL opener only —
+  // used directly (host/SP) or via the 'dropreward' net msg.
+  _spillDropLoot(pos, give) {
+    const cx = pos.x, cz = pos.z;
+    const gun = FIREARM_KEYS[Math.floor(Math.random() * FIREARM_KEYS.length)]; // 100%: one guaranteed random firearm, any kind
+    const items = [[gun, 1], ['medkit', 60], ['medkit', 60], ['armor', 60], ['armor', 60], ['ammo', 1], ['ammo', 1], ['food', FOOD_RESTORE]];
+    const g = give || {};
+    for (const k of ['sandbag', 'wire', 'wood']) for (let n = 0; n < (g[k] || 0); n++) items.push([k, 1]); // ~2 random fort. mats
+    items.forEach(([kind, value], i) => {
+      const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
+      this._spawnPickup(kind, new THREE.Vector3(cx + Math.cos(a) * r, 0.6, cz + Math.sin(a) * r), value, 75); // 75s life — time to grab the whole pile
+    });
+    this.game.player.addMoney(SUPPLY_CASH); // cash is the only instant payout
+    this.game.effects.stuffing(new THREE.Vector3(cx, 1.4, cz), 0xffc23a, 36, 8);
+    this.game.hud.toast(`📦 Supply drop burst open — grab the loot! +$${SUPPLY_CASH}`, 0xff8a3a);
+    this.game.hud.bigMessage('SUPPLY DROP', 'loot scattered on the ground — grab it with E');
     this.game.audio.buy();
-    this.game.effects.stuffing(d.pos.clone().setY(1.4), 0xffc23a, 32, 7);
-    this._disposeDrop(d); const i = this.drops.indexOf(d); if (i >= 0) this.drops.splice(i, 1);
+  }
+  _removeDrop(d) { this._disposeDrop(d); const i = this.drops.indexOf(d); if (i >= 0) this.drops.splice(i, 1); }
+  removeDropById(id) { const d = this.drops.find((x) => x.id === id && !x.opened); if (d) { d.opened = true; this._removeDrop(d); } } // a teammate claimed it → clear the visual
+  _openDrop(d) {
+    if (d.opened) return;
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) {                 // client: this is a visual crate → ask the host (it grants + dedupes)
+      if (d.id != null) mp.net.send('dropopen', { id: d.id });
+      d.opened = true; this.game.effects.stuffing(d.pos.clone().setY(1.4), 0xffc23a, 32, 7); this._removeDrop(d); return;
+    }
+    d.opened = true;                                     // host / single-player: authoritative spill
+    this._spillDropLoot(d.pos, this._rollGive());
+    if (mp && mp.active && mp.isHost && d.id != null) mp.net.broadcast('dropopened', { id: d.id });
+    this._removeDrop(d);
   }
   _disposeDrop(d) {
     this.scene.remove(d.grp);
@@ -4540,16 +4551,6 @@ class LootManager {
     this.prompt = this.nearDrop ? 'Press <b>E</b> to grab the <b>SUPPLY DROP</b> — OP loot!' : null;
   }
 
-  _collect(pu) {
-    const p = this.game.player;
-    if (pu.kind === 'radio') { p.radios = (p.radios || 0) + pu.value; this.game.hud.setRadios(p.radios); this.game.audio.buy(); this.game.hud.toast('📻 +1 Radio — press T to call a drop', 0x6fd0e8); }
-    else if (pu.kind === 'medkit') { p.hp = Math.min(p.maxHp, p.hp + pu.value); this.game.hud.setHealth(p.hp, p.maxHp); this.game.audio.reloadIn(); this.game.hud.toast('+' + pu.value + ' HP', 0x7fd06a); }
-    else if (pu.kind === 'ammo') { this.game.weapons.refillAll(); this.game.audio.reloadClick(); this.game.hud.toast('Ammo refilled', 0xb88a3a); }
-    else if (pu.kind === 'splint') { p.splints += pu.value; this.game.hud.setSurvival(p); this.game.audio.reloadIn(); this.game.hud.toast('🩹 +' + pu.value + ' Splint (press X to apply)', 0xc9a8ff); }
-    else if (pu.kind === 'food') { if (p.eatFood(pu.value)) this.game.hud.toast('🥫 +' + pu.value + ' Food', 0xdfa050); }
-    else if (pu.kind === 'molotov') { this.game.weapons.molotovs += pu.value; this.game.hud.setWeapon(this.game.weapons); this.game.audio.buy(); this.game.hud.toast('🔥 +' + pu.value + ' Molotov (press N)', 0xff8a3a); }
-    else { p.armor = Math.min(p.armorMax, p.armor + pu.value); this.game.hud.setArmor(p.armor, p.armorMax); this.game.audio.buy(); this.game.hud.toast('+' + pu.value + ' Armor', 0x6fa8e8); }
-  }
 
   reset() {
     for (const pu of this.pickups) { this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); }
@@ -4604,7 +4605,7 @@ class Player {
     if (this.legBroken) return;
     this.legBroken = true;
     this.game.audio.playerHurt(); this.game.hud.damageFlash();
-    this.game.hud.toast('🦵 LEG BROKEN — find a splint (X)!', 0xd23a2a);
+    this.game.hud.toast('🦵 LEG BROKEN — find a splint (use it from your inventory)!', 0xd23a2a);
     this.game.hud.setSurvival(this);
   }
   applySplint() {
@@ -4721,6 +4722,7 @@ const BOSS_ROSTER = ['boss', 'tank']; // 'boss' = Tolo, 'tank' = T-90M «MITRI»
 class WaveManager {
   constructor(game) { this.game = game; this.wave = 0; this.active = false; }
   reset() { this.wave = 0; this.active = false; this.toSpawn = 0; this.minibossPending = false; if (this.game.hud) this.game.hud.clearWaveTag(); }
+  _coopMul() { const mp = this.game.mp; return (mp && mp.active) ? 1 + (Math.max(1, mp.pstate.size) - 1) * 0.5 : 1; } // co-op enemy multiplier (1p=1.0, 2p=1.5, 3p=2.0, 4p=2.5); single-player = 1
   startWave(n) {
     this.bossPick = null;
     if (this.game.mode === 'longnight') return this._startLongNight(n);
@@ -4736,8 +4738,9 @@ class WaveManager {
     this.minibossPending = (!this.isBossWave && n >= 3 && n % 5 === 3); // waves 3, 8, 13, …
     this.speedMul = (t.speedMul || 1);
     this.hpMul = (t.hpMul || 1);
-    this.cap = (t.cap || 24) + this.game.enemies.aliveCount; // +carried-over survivors so new spawns aren't starved
-    this.total = this.isBossWave ? Math.round(6 + n * 1.4) : Math.round((5 + n * 2.3) * (t.countMul || 1));
+    const pcMul = this._coopMul();                            // co-op scales enemy count; single-player unchanged
+    this.cap = Math.round((t.cap || 24) * pcMul) + this.game.enemies.aliveCount; // +carried-over survivors so new spawns aren't starved
+    this.total = this.isBossWave ? Math.round((6 + n * 1.4) * pcMul) : Math.round((5 + n * 2.3) * (t.countMul || 1) * pcMul);
     this.toSpawn = this.total; this.spawnTimer = 0.5; this.advanceTimer = null;
     this.weights = this._effectiveWeights(typeKey, n);
     if (this.game.player.armorOnWave > 0) { this.game.player.armor = Math.max(this.game.player.armor, Math.min(this.game.player.armorMax, this.game.player.armorOnWave)); this.game.hud.setArmor(this.game.player.armor, this.game.player.armorMax); }
@@ -4763,8 +4766,9 @@ class WaveManager {
     const blood = this.game.dayNight && this.game.dayNight.bloodMoon;
     this.speedMul = 1 + Math.min(n * 0.012, 0.45);
     this.hpMul = (1 + (n - 1) * 0.06) * (blood ? 1.2 : 1);
-    this.cap = Math.min(60, 26 + Math.floor(n * 1.6)) + this.game.enemies.aliveCount; // +carried-over survivors
-    this.total = this.isBossWave ? Math.round(8 + n * 1.6) : Math.round((8 + n * 3.0) * (blood ? 1.3 : 1));
+    const pcMul = this._coopMul();                            // co-op scales enemy count; single-player unchanged
+    this.cap = Math.round(Math.min(60, 26 + Math.floor(n * 1.6)) * pcMul) + this.game.enemies.aliveCount; // +carried-over survivors
+    this.total = this.isBossWave ? Math.round((8 + n * 1.6) * pcMul) : Math.round((8 + n * 3.0) * (blood ? 1.3 : 1) * pcMul);
     this.toSpawn = this.total; this.spawnTimer = 0.5; this.advanceTimer = null;
     this.weights = this._longNightWeights(n);
     if (this.game.player.armorOnWave > 0) { this.game.player.armor = Math.max(this.game.player.armor, Math.min(this.game.player.armorMax, this.game.player.armorOnWave)); this.game.hud.setArmor(this.game.player.armor, this.game.player.armorMax); }
@@ -4896,7 +4900,7 @@ const GADGETS = [
   { key: 'binoculars', name: 'Binoculars 8×', price: 450, desc: 'Hold RMB to glass the horizon at 8×.' },
 ];
 
-// The lobby/menu ARMORY: spend the persistent bank to permanently unlock gear, then build the 4-slot loadout.
+// The lobby/menu SHOP: spend the persistent bank to permanently unlock gear, then build the 5-slot loadout.
 // (Class kept named "Shop" so existing `this.shop` references stay valid.)
 class Shop {
   constructor(game) {
@@ -5009,8 +5013,8 @@ class Shop {
 
 // ---------------------------------------------------------------------------
 // Inventory — survival backpack + the unified "everything is a held item" model.
-// Owns the 10-slot loot backpack and (from Phase 6) the molotov/grenade throw state.
-// scrollOrder() = owned loadout weapons/tools, then non-null backpack slots — the wheel
+// Owns the flat 15-slot inventory (SLOT_CAP) — deployed gear + scavenged loot share equal slots — plus the molotov/grenade throw state.
+// scrollOrder() = the filled slots in order — the wheel
 // traverses this single list; LMB uses whatever is held.
 // ---------------------------------------------------------------------------
 const SLOT_CAP = 15; // ONE flat, uniform inventory — deployed gear + scavenged loot share these equal slots
@@ -5045,10 +5049,11 @@ class Inventory {
     const w = this.game.weapons, lo = w.loadout;
     for (const s of ['primary', 'secondary', 'melee', 'gadget1', 'gadget2']) {
       const k = lo[s]; if (!k) continue;
-      if (WEAPONS[k]) { if (w.owned[k]) this.addItem(k); }                              // weapon or tool
+      if (WEAPONS[k]) { w.grant(k); this.addItem(k); }                                  // weapon/tool: grant = ammo init, the slot = ownership
       else if (k === 'grenade') { this.addItem('grenade'); this.addItem('grenade'); }   // throwable start-stock
       else if (k === 'molotov') { this.addItem('molotov'); }
     }
+    if (!this.slots.some((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee)) { w.grant('knife'); this.addItem('knife'); } // a run always has a melee
     this._activeSlot = -1; this._wheelIdx = 0;
     const o = this.scrollOrder(); if (o.length) this._select(o[0], 0); else this._holdNothing();
     this.refreshHotbar();
@@ -5072,7 +5077,7 @@ class Inventory {
     this._activeSlot = slotIdx;
     if (WEAPONS[kind]) {
       this._hideAllItemModels(); if (w.molotovModel) w.molotovModel.visible = false;
-      if (w.owned[kind]) {
+      if (w.owns(kind)) {
         if (kind !== w.cur) w.select(kind);
         w.cur = kind;
         for (const k in w.models) w.models[k].visible = (k === kind);
@@ -5096,7 +5101,7 @@ class Inventory {
     i = (i + dir + order.length) % order.length;
     this._select(order[i], i);
   }
-  selectSlotN(n) { const o = this.scrollOrder(); if (o[n - 1]) this._select(o[n - 1], n - 1); } // 1-5 -> jump to the Nth filled slot
+  selectSlotN(n) { const o = this.scrollOrder(); if (o[n - 1]) this._select(o[n - 1], n - 1); } // 1-9 -> jump to the Nth filled slot in the wheel
   selectKind(kind) { const o = this.scrollOrder(), i = o.findIndex((e) => e.kind === kind); if (i >= 0) this._select(o[i], i); } // jump to the slot holding a given kind (quick-melee)
 
   // ---- LMB use, dispatched by the held thing ----
@@ -5122,7 +5127,7 @@ class Inventory {
     }
     if (used) this._consumeSlot(slotIdx);
   }
-  _useRadio(slotIdx) { this.game.loot.callSupplyDrop(); this.game.audio.buy(); this.game.hud.toast('Supply drop inbound!', 0x6fd0e8); this._consumeSlot(slotIdx); }
+  _useRadio(slotIdx) { this.game.loot.requestSupplyDrop(); this.game.audio.buy(); this.game.hud.toast('Supply drop inbound!', 0x6fd0e8); this._consumeSlot(slotIdx); }
   _throwFlare(slotIdx) { this.game.weapons.flares = (this.game.weapons.flares || 0) + 1; this.game.throwFlare(true); this._consumeSlot(slotIdx); }
   // throwables: hold LMB to arm (committed -> can't scroll away), release to throw
   _armThrowable(kind, slotIdx, edge) {
@@ -5157,6 +5162,7 @@ class Inventory {
   _consumeSlot(slotIdx) {
     const wasKind = this.slots[slotIdx] ? this.slots[slotIdx].kind : null;
     this.slots[slotIdx] = null;
+    if (this.game.weapons._throwSlot === slotIdx) this.game.weapons._throwSlot = null; // keep an armed throwable's slot index valid
     if (this._activeSlot === slotIdx) {
       this._activeSlot = -1;
       const order = this.scrollOrder();
@@ -5170,7 +5176,7 @@ class Inventory {
   dropSlot(slotIdx) {
     const entry = this.slots[slotIdx]; if (!entry) return;
     const kind = entry.kind, pos = this.game.player.pos.clone(); pos.y = 0.55;
-    if (WEAPONS[kind]) { if (kind === 'knife') { this.game.hud.toast('Can not drop your bare knife', 0xd23a2a); return; } this.game.weapons.owned[kind] = false; }
+    if (kind === 'knife') { this.game.hud.toast('Can not drop your bare knife', 0xd23a2a); return; } // bare knife stays — always have a melee
     this.game.loot._spawnPickup(kind, pos, entry.value); // re-grabbable with E (teammates too)
     if (this.game.audio.uiClick) this.game.audio.uiClick();
     this._consumeSlot(slotIdx);
@@ -5179,6 +5185,7 @@ class Inventory {
     if (from === to) return;
     const a = this.slots[from]; this.slots[from] = this.slots[to]; this.slots[to] = a;
     if (this._activeSlot === from) this._activeSlot = to; else if (this._activeSlot === to) this._activeSlot = from;
+    const w = this.game.weapons; if (w._throwSlot === from) w._throwSlot = to; else if (w._throwSlot === to) w._throwSlot = from;
     this.refreshHotbar();
   }
   // co-op: on real death spill the whole inventory onto the ground (local + broadcast so teammates can grab it with E)
@@ -5188,7 +5195,6 @@ class Inventory {
       const s = this.slots[i]; if (!s) continue;
       if (s.kind === 'knife') { this.slots[i] = null; continue; }
       const p = pos.clone(); p.y = 0.55; p.x += rr(-1.2, 1.2); p.z += rr(-1.2, 1.2);
-      if (WEAPONS[s.kind]) this.game.weapons.owned[s.kind] = false;
       this.game.loot._spawnPickup(s.kind, p, s.value);
       if (mp && mp.active) mp.net.broadcast('droppickup', { kind: s.kind, value: s.value, x: p.x, z: p.z });
       this.slots[i] = null;
@@ -5208,7 +5214,7 @@ class Inventory {
       wood: () => buildViewmodel({ shape: 'build_wood', color: 0x8a6a40, accent: 0x5a4026 }),
     };
     for (const kind in makers) {
-      let obj; try { obj = makers[kind](); } catch (e) { obj = null; }
+      let obj; try { obj = makers[kind](); } catch (e) { obj = null; if (typeof console !== 'undefined') console.warn('[loot] held item model build failed: ' + kind, e); }
       if (!obj) continue;
       const held = this._poseHeld(obj); held.visible = false;
       held.traverse((o) => { if (o.isMesh) { o.layers.set(WEAPON_LAYER); o.frustumCulled = false; o.renderOrder = 1000; } });
@@ -5280,7 +5286,7 @@ class HUD {
     this.el.wepclass.textContent = `${d.class}${slot ? ' · slot ' + slot : ''}${mode}`;
     if (d.melee) this.el.ammonum.innerHTML = `<span style="font-size:22px">MELEE</span>`;
     else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
-    if (this.el.molotov) this.el.molotov.innerHTML = w.molotovs > 0 ? `🔥 ×${w.molotovs}` : '';
+    if (this.el.molotov) { const mc = this.game.inventory ? this.game.inventory.count('molotov') : 0; this.el.molotov.innerHTML = mc > 0 ? `🔥 ×${mc}` : ''; }
   }
   setHeldItem(def, slot) {
     if (!def) return;
@@ -5338,7 +5344,6 @@ class HUD {
   }
   setMoney(m) { this.el.money.textContent = '$' + m; }
   setRadios(n) { if (this.el.radios) this.el.radios.textContent = n > 0 ? '📻 ' + n : ''; }
-  setBuildMats(w) { if (!this.el.buildmats) return; const m = w.buildMats || {}; const p = []; if (m.sandbag) p.push('🧱' + m.sandbag); if (m.wire) p.push('🔩' + m.wire); if (m.wood) p.push('🪵' + m.wood); this.el.buildmats.textContent = p.join('  '); }
   setWaveTag(tags) {
     const el = this.el.wavetag; if (!el) return;
     if (!tags || !tags.length) { el.classList.remove('show'); el.innerHTML = ''; return; }
@@ -5361,7 +5366,7 @@ class HUD {
   setNightGear(g) {
     if (!this.el.nightgear) return;
     const w = g.weapons;
-    this.el.nightgear.innerHTML = `<span class="ng${w.flashlightOwned ? ' on' : ' off'}">🔦 ${w.flashlightOwned ? (g.dayNight.flashOn ? 'ON' : 'off') : '—'}</span><span class="ng">🟠 ×${w.flares}</span>`;
+    const fl = w.owns('flashlight'); this.el.nightgear.innerHTML = `<span class="ng${fl ? ' on' : ' off'}">🔦 ${fl ? (g.dayNight.flashOn ? 'ON' : 'off') : '—'}</span><span class="ng">🟠 ×${w.flares}</span>`;
   }
   setScore(s) { this.el.score.textContent = s; }
   setWave(n) { this.el.wave.textContent = 'WAVE ' + n; }
@@ -5616,7 +5621,8 @@ class Admin {
     }
     if (this.tab === 'props') return [
       { name: 'Su-24M Fencer', sub: 'supply plane', make: () => buildSu24() },
-      { name: 'Su-34 Fullback', sub: 'from-zero guide p5-42', make: () => buildSu34Model() },
+      { name: 'Su-34 Fullback', sub: 'from-zero guide p5-42 + GA fit', make: () => buildSu34Model() },
+      { name: 'Su-34 GA reference', sub: '1398/845/291 datums', make: () => buildSu34GeneralArrangementModule() },
       { name: 'Su-34 p5-14 forward fuselage', sub: 'Jetworks guide part', make: () => buildSu34ForwardModule() },
       { name: 'Su-34 p15-16 wing/canards', sub: 'Jetworks guide part', make: () => buildSu34WingModule() },
       { name: 'Su-34 p17-24 rear/nacelles', sub: 'Jetworks guide part', make: () => buildSu34RearModule() },
@@ -5644,7 +5650,7 @@ class Admin {
     const a = this.game.audio;
     return [
       ['📻 Radio call (Su-24)', () => a.radioCall()],
-      ['✈ Jet pass (demo)', () => { const j = a.startJetClip() || a.startJet(); if (!j) return; if (j.set) { let t = 0; const id = setInterval(() => { t += 0.1; const near = Math.max(0, 1 - Math.abs(t - 1.6) / 1.6); j.set(0.3 + near * 0.7, near); if (t >= 3.3) { clearInterval(id); j.stop(); } }, 100); } else { setTimeout(() => j.stop(1.4), 3800); } }],
+      ['✈ Jet pass (demo)', () => { const j = a.startJetClip() || (a._jetFailed ? null : a.startJet()); if (!j) return; if (j.set) { let t = 0; const id = setInterval(() => { t += 0.1; const near = Math.max(0, 1 - Math.abs(t - 1.6) / 1.6); j.set(0.3 + near * 0.7, near); if (t >= 3.3) { clearInterval(id); j.stop(); } }, 100); } else { setTimeout(() => j.stop(1.4), 3800); } }],
       ['Gunshot', () => a.gunshot({})], ['Explosion', () => a.explosion()],
       ['Reload click', () => a.reloadClick()], ['Reload in', () => a.reloadIn()], ['Dry fire', () => a.dryFire()],
       ['Hit marker', () => a.hitMarker()], ['Headshot', () => a.headshot()], ['Enemy hurt', () => a.enemyHurt()],
@@ -6314,7 +6320,7 @@ class DayNight {
     this._apply(active ? 0.0 : 1.0, Math.PI / 2, true);
   }
   setFlashlight(on) { this.flashOn = on; this.flash.intensity = on ? 7 : 0; }
-  toggleFlashlight() { if (this.game.weapons.flashlightOwned) { this.flashOn = !this.flashOn; this.game.audio.uiClick(); this.game.hud.setNightGear(this.game); this.game.hud.setWeapon(this.game.weapons); } else this.game.hud.bigMessage('NO FLASHLIGHT', 'buy one in the armory (key L)'); }
+  toggleFlashlight() { if (this.game.weapons.owns('flashlight')) { this.flashOn = !this.flashOn; this.game.audio.uiClick(); this.game.hud.setNightGear(this.game); this.game.hud.setWeapon(this.game.weapons); } else this.game.hud.bigMessage('NO FLASHLIGHT', 'buy one in the SHOP and put it in your inventory'); }
 
   info() { const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE; const night = c >= DAY_FRAC; return { night, n: this.nightCount, blood: this.bloodMoon && night }; }
 
@@ -6410,11 +6416,11 @@ class RemotePlayer {
     const o = this.obj, p = this.parts;
     o.position.set(this.pos.x, this.pos.y, this.pos.z);
     if (this.dead || this.down) {
-      o.rotation.set(-Math.PI * 0.46, this.yaw, 0); o.position.y = this.pos.y + 0.35;
+      o.rotation.set(-Math.PI * 0.46, this.yaw + Math.PI, 0); o.position.y = this.pos.y + 0.35; // +PI: model faces +z, but look/move forward is -z
       p.legL.rotation.x = p.legR.rotation.x = p.armL.rotation.x = p.armR.rotation.x = 0;
       if (this.gunAnchor) this.gunAnchor.visible = false;
     } else {
-      o.rotation.set(0, this.yaw, 0);
+      o.rotation.set(0, this.yaw + Math.PI, 0); // +PI: model faces +z, but look/move forward is -z
       const moving = this._spd > 0.7;
       this._animT += dt * (moving ? 9 : 2.6);
       const sw = Math.sin(this._animT) * (moving ? 0.6 : 0.07);
@@ -6460,8 +6466,9 @@ class MP {
     this.game = game; this.net = new Net();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
-    this.chosenSkin = 0; this._hadBoss = false; this.ready = false;
-    this._xfT = 0; this._snapT = 0; this._reviveT = 0;
+    this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
+    this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
+    this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
@@ -6470,53 +6477,104 @@ class MP {
   // ---- lobby ----
   startHost(name) {
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
-    this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys() });
+    this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
     this.net.onPeerOpen = (c) => this._lobbyMsg(`Room code: <b>${c}</b> — share it. Waiting for players…`, c);
-    this.net.onError = (t) => this._lobbyMsg(t === 'unavailable-id' ? 'Code taken — retry.' : 'Network error: ' + t);
+    this.net.onError = (t) => this._lobbyMsg(this._netErr(t));
     this.net.host(code); this._renderRoster();
   }
   startJoin(code, name) {
     if (!code) { this._lobbyMsg('Enter a room code.'); return; }
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
     this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + code + '…');
-    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.lastRecv = performance.now(); this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys() }); this._lobbyMsg('Connected! Waiting for host to start…'); };
-    this.net.onError = (t) => this._lobbyMsg(t === 'peer-unavailable' ? 'No room with that code.' : 'Network error: ' + t);
+    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.lastRecv = performance.now(); this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId }); this._lobbyMsg('Connecting… handshaking with host…'); };
+    this.net.onError = (t) => this._lobbyMsg(this._netErr(t));
     this.net.join(code.trim().toUpperCase());
   }
   leave() {
     this.ready = false;
+    try { if (this.active && !this.isHost) this.net.send('goodbye', {}); } catch (e) {} // tell the host to despawn me instantly
     try { this.net.close(); } catch (e) {}
     for (const [, rp] of this.remotes) rp.dispose();
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
-    this.active = false; this.isHost = false; this.frozen = false;
+    if (this._lastXf) this._lastXf.clear();
+    this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false;
     this.net = new Net(); this._wireNet();
   }
+  // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
+  _dropPeer(peerId, opts) {
+    if (peerId === 'host') return;
+    const r = this.roster.get(peerId), nm = r ? r.name : null;
+    if (this.remotes.has(peerId)) { this.remotes.get(peerId).dispose(); this.remotes.delete(peerId); }
+    this.roster.delete(peerId); this.pstate.delete(peerId); if (this._lastXf) this._lastXf.delete(peerId);
+    if (this.isHost) {
+      this.net.broadcast('playerLeft', { id: peerId });   // other clients dispose this character immediately
+      this.net.send('roster', this._rosterArr());
+      this._renderRoster(); this._checkGameOver();
+      if (!(opts && opts.silent) && nm) { try { this.game.hud.kill(mpEscape(nm) + ' left'); } catch (e) {} }
+    }
+  }
+  hostKick(peerId) {
+    if (!this.isHost || !peerId || peerId === 'host') return;
+    try { this.net.sendTo(peerId, 'kicked', {}); } catch (e) {}
+    const c = this.net.conns.get(peerId); if (c) { try { c.close(); } catch (e) {} }   // stop them sending
+    this._dropPeer(peerId);
+  }
   _lobbyMsg(html, code) { const el = document.getElementById('mp-status'); if (el) el.innerHTML = html; if (code) { const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = code; } }
+  _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
   _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
   toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }
   _renderRoster() {
     const el = document.getElementById('mp-roster');
     if (el) {
-      const rows = [...this.roster.values()].map((p) => {
-        const ready = p.ready ? '<span style="color:#6fcf4f">✓ READY</span>' : '<span style="color:#e8a23a">…</span>';
+      const rows = [...this.roster].map(([id, p]) => {
+        const tag = (id === 'host') ? '<span style="color:#c9a84a">★ HOST</span>' : (p.ready ? '<span style="color:#6fcf4f">✓ READY</span>' : '<span style="color:#e8a23a">…</span>');
         const lo = (p.loadout || []).map((k) => this._loadoutLabel(k)).filter(Boolean).join(' · ') || 'Bayonet Knife';
-        return `<div class="mp-rosteritem">🌸 ${mpEscape(p.name)} ${ready}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
+        const kick = (this.isHost && id !== 'host') ? ` <button class="mp-kick" data-peer="${mpEscape(id)}" title="Kick player" style="margin-left:6px;background:#5a2024;color:#fff;border:1px solid #a3434a;border-radius:4px;cursor:pointer;font-weight:800;padding:0 7px">✕</button>` : '';
+        return `<div class="mp-rosteritem">🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
       });
       el.innerHTML = rows.join('') || '<div class="mp-rosteritem">…</div>';
+      if (this.isHost) el.querySelectorAll('.mp-kick').forEach((b) => { b.onclick = () => this.hostKick(b.getAttribute('data-peer')); });
     }
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
     const sb = document.getElementById('mpStartBtn');
     if (sb) { sb.style.display = (this.isHost && this.net.connected) ? 'block' : 'none'; sb.disabled = !allReady; sb.textContent = allReady ? '▶ START CO-OP' : '▶ WAITING FOR READY…'; }
     const rb = document.getElementById('mpReadyBtn');
     if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
+    this._renderModeSel();
+  }
+  // ---- game-mode pick (host-authoritative; only the host simulates waves, so the host owns the mode) ----
+  setMode(m) {
+    if (this.active) return;                                   // locked once the run starts
+    if (!(this.isHost || !this.net.connected)) return;          // a connected client can't override the host
+    const mode = (m === 'longnight') ? 'longnight' : 'purge';
+    this.game.mode = mode; this._lobbyMode = mode;
+    if (this.isHost) this.net.send('mode', { mode });           // tell the squad (no-op with zero peers)
+    this._renderModeSel();
+  }
+  _renderModeSel() {
+    const wrap = document.getElementById('mp-modes'); if (!wrap) return;
+    const canPick = this.isHost || !this.net.connected;         // host (or nobody yet) picks; joined clients just see it
+    const mode = canPick ? (this.game.mode || 'purge') : (this._lobbyMode || 'purge');
+    wrap.querySelectorAll('.tab').forEach((b) => {
+      const on = b.getAttribute('data-mode') === mode;
+      b.classList.toggle('on', on);
+      b.disabled = !canPick; b.style.cursor = canPick ? 'pointer' : 'default'; b.style.opacity = (canPick || on) ? '1' : '.4';
+    });
+    const note = document.getElementById('mp-modenote');
+    if (note) note.textContent = (mode === 'longnight'
+      ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
+      : '⚔ Arcade waves — special waves & mini-bosses.')
+      + (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.');
   }
   hostStart() {
     if (!this.isHost) return;
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
     if (!allReady) { this._lobbyMsg('Waiting for all players to be READY…'); return; }
-    this.active = true; this._initHostStates(); this.net.send('start', { mode: this.game.mode || 'purge' }); this.game._enterMP('purge');
+    const now = performance.now(); for (const [id] of this.roster) this._lastXf.set(id, now); // fresh heartbeat baseline so nobody is insta-timed-out
+    const mode = this.game.mode || 'purge';
+    this.active = true; this._initHostStates(); this.net.send('start', { mode }); this.game._enterMP(mode);
   }
   _initHostStates() { this.pstate.clear(); for (const [id, info] of this.roster) this.pstate.set(id, this._freshState(info)); }
   _freshState(info) { return { hp: 100, maxHp: 100, armor: 0, armorMax: 100, down: false, downT: 0, waiting: false, dead: false, downs: 0, name: info.name, skin: info.skin }; }
@@ -6524,29 +6582,51 @@ class MP {
   _wireNet() {
     const n = this.net, g = this.game;
     n.onDisconnect = (pid) => {
-      if (this.remotes.has(pid)) { this.remotes.get(pid).dispose(); this.remotes.delete(pid); }
-      this.roster.delete(pid); this.pstate.delete(pid);
-      if (this.isHost) { this.net.send('roster', this._rosterArr()); this._renderRoster(); this._checkGameOver(); }
-      else if (this.active) { this._hostGone(); }
+      if (this.isHost) this._dropPeer(pid);
+      else if (this.active) this._hostGone();
     };
     n.on('hello', (d, from) => {
       if (!this.isHost) return;
+      const nm = (d.name || 'Player').slice(0, 14), pid = (typeof d.pid === 'string') ? d.pid : null;
+      // same player reconnecting (reload / 2nd tab / network blip) → drop the stale entry first (by stable id, else name)
+      const dupe = [...this.roster].find(([id, r]) => id !== from && id !== 'host' && ((pid && r.pid === pid) || (r.name || '').toLowerCase() === nm.toLowerCase()));
+      if (dupe) this._dropPeer(dupe[0], { silent: true });
+      if (!this.roster.has(from) && this.roster.size >= 4) { this.net.sendTo(from, 'full', {}); return; }   // co-op cap = 4 (host + 3)
       const skin = (d.skin != null) ? d.skin : this.roster.size;
-      this.roster.set(from, { name: (d.name || 'Player').slice(0, 14), skin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [] });
+      this.roster.set(from, { name: nm, skin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [], pid });
+      this._lastXf.set(from, performance.now());
       this.net.send('roster', this._rosterArr()); this._renderRoster();
+      this.net.sendTo(from, 'joinok', {});
+      this.net.sendTo(from, 'mode', { mode: this.game.mode || 'purge' });   // so the joiner's lobby shows the chosen mode
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
-    n.on('roster', (arr) => { this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [] }); this._renderRoster(); this._syncRemoteObjs(); });
+    n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 4 players).'); try { this.net.close(); } catch (e) {} } });
+    n.on('joinok', () => { if (!this.isHost) this._lobbyMsg('Connected! Waiting for the host to start…'); });
+    n.on('goodbye', (d, from) => { if (this.isHost) this._dropPeer(from); });                                  // client left cleanly
+    n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
+    n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
+    n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
+    n.on('mode', (d) => { if (!this.isHost && d) { this._lobbyMode = (d.mode === 'longnight') ? 'longnight' : 'purge'; this.game.mode = this._lobbyMode; this._renderModeSel(); } }); // host announced the squad's mode
     n.on('start', (d) => { this.active = true; this.net.lastRecv = performance.now(); this.game._enterMP(d.mode || 'purge'); this._syncRemoteObjs(); });
-    n.on('xf', (d) => { const rp = this._remote(d.id); if (rp) rp.setTransform(d); });
+    n.on('xf', (d, from) => { if (this.isHost) this._lastXf.set(from, performance.now()); const rp = this._remote(d.id); if (rp) rp.setTransform(d); }); // host: track per-client heartbeat
     n.on('espawn', (d) => this._clientSpawnEnemy(d));
     n.on('esnap', (arr) => this._clientSnap(arr));
     n.on('struct', (d) => g.build.applyRemoteStruct(d));                       // a structure was placed (host-authoritative)
-    n.on('structreq', (d) => { if (this.isHost) g.build.hostPlaceFromClient(d); }); // client asks host to place
+    n.on('structreq', (d, from) => { if (this.isHost) g.build.hostPlaceFromClient(d, from); }); // client asks host to place
+    n.on('structrej', (d) => { if (!this.isHost && d && typeof d.kind === 'string') this.game.inventory.addItem(d.kind, 1); }); // host rejected → restore material
     n.on('structdie', (d) => g.build.applyRemoteDestroy(d.id));                // a structure was destroyed
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('edie', (d) => this._clientEnemyDie(d));
+    n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
+      if (d.e === 'expl') eff.explosion(V(d.p), d.s || 3);
+      else if (d.e === 'laser') { const from = V(d.p), dir = V(d.d); eff.muzzleFlash(from, dir, 2.6); g.audio.tone(1300, 0.08, 'square', 0.35); g.audio.noise(0.16, 0.35, 'highpass', 1400, 0.8); g._fxBeam(from, dir); } });
+    n.on('shot', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate's gunfire: muzzle + tracer + shot sound
+      const muzzle = V(d.p), dir = V(d.d).normalize();
+      g.effects.muzzleFlash(muzzle, dir, (d.cls === 'shotgun' || d.cls === 'launcher') ? 1.6 : 1);
+      const wh = g.world.rayHit(muzzle, dir, 120); const end = wh ? wh.point : muzzle.clone().addScaledVector(dir, 120);
+      g.effects.tracer(muzzle, end, d.col != null ? d.col : 0xffd27f);
+      g.audio.gunshot(SOUND_BY_CLASS[d.cls] || SOUND_BY_CLASS.pistol); });
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else g.hud.setBoss(d.frac, d.name); });
     n.on('wave', (d) => { g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); }); // continuous: clients just track the wave (no shop)
     n.on('waveclear', (d) => { if (g.state === 'playing') g.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); });
@@ -6563,9 +6643,14 @@ class MP {
     n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
     n.on('feed', (d) => this.game.hud.kill(d.who + ' \u27a4 ' + d.what));
     n.on('gameover', () => this.game._mpGameOver());
-    n.on('droppickup', (d) => { const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E
+    n.on('droppickup', (d) => { if (!d || typeof d.kind !== 'string' || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return; const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E
+    n.on('dropreq', () => { if (this.isHost) g.loot.requestSupplyDrop(); });                                              // client asked for a drop → host spawns + broadcasts it
+    n.on('supplydrop', (d) => { if (!this.isHost && d) g.loot.callSupplyDrop({ id: d.id, tx: d.tx, tz: d.tz, ang: d.ang }); }); // mirror the host's flyby+crate (visual)
+    n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); this.net.sendTo(from, 'dropreward', { give: g.loot._rollGive() }); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative claim
+    n.on('dropreward', (d) => { g.loot._spillDropLoot(g.player.pos, (d && d.give) || {}); });                              // the opener spills the loot at their feet (applied locally)
+    n.on('dropopened', (d) => { if (d) g.loot.removeDropById(d.id); });                                                   // someone claimed it → clear the visual crate everywhere
   }
-  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [] })); }
+  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null })); }
   _remote(id) {
     if (id === this.myId) return null;
     if (!this.remotes.has(id)) { const info = this.roster.get(id) || { name: 'Flopo', skin: 1 }; this.remotes.set(id, new RemotePlayer(this.game, id, info.name, info.skin)); }
@@ -6592,6 +6677,8 @@ class MP {
         if (boss) { this.net.send('boss', { frac: boss.hp / boss.maxHp, name: boss.name }); this._hadBoss = true; }
         else if (this._hadBoss) { this.net.send('boss', { hide: true }); this._hadBoss = false; }
       }
+      this._toT -= dt;
+      if (this._toT <= 0) { this._toT = 2; const now = performance.now(); for (const [id] of this.roster) { if (id === 'host') continue; const last = this._lastXf.get(id); if (last != null && now - last > 10000) this._dropPeer(id); } } // crash detection: no xf for 10s → despawn
     } else {
       for (const [, e] of this.ghosts) {
         if (!e.alive) continue;
@@ -6605,21 +6692,25 @@ class MP {
     this._updateRevive(dt);
   }
   // ---- enemy sync (host → clients) ----
-  onEnemySpawn(e) { if (this.active && this.isHost) this.net.send('espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale }); }
-  onEnemyDie(e, killer) { if (this.active && this.isHost) this.net.send('edie', { id: e.id, k: killer }); }
+  onEnemySpawn(e) { if (this.active && this.isHost) this.net.send('espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), hpf: Math.round((e.hp / e.maxHp) * 100) }); }
+  onEnemyDie(e, killer) { if (this.active && this.isHost) this.net.send('edie', { id: e.id, k: killer, x: +e.pos.x.toFixed(2), y: +(e.pos.y + e.height * 0.5).toFixed(2), z: +e.pos.z.toFixed(2), col: e.col.body, el: !!e.isElite, bs: !!e.def.boss, ex: e.def.explode ? (e.def.explodeRadius || 5) : 0 }); }
   onBoss(frac, name) { if (this.active && this.isHost) this.net.send('boss', { frac, name }); }
   onBossHide() { if (this.active && this.isHost) this.net.send('boss', { hide: true }); }
   _enemyById(id) { for (const e of this.game.enemies.active) if (e.id === id) return e; return null; }
   _clientSpawnEnemy(d) {
     if (this.ghosts.has(d.id)) return;
     const e = this.game.enemies.spawnGhost(d.id, d.type, d.gk, d.cb, d.vr, d.nm, d.sc);
+    if (Number.isFinite(d.x)) { e.pos.set(d.x, d.y || 0, d.z); e.mesh.position.set(d.x, 0, d.z); } // spawn at the host's real position (no (0,0,0) flash)
+    if (Number.isFinite(d.hpf)) e.hp = (d.hpf / 100) * e.maxHp;                                   // late-join: start at the host's current HP, not full
     e._tx = e.pos.x; e._tz = e.pos.z; e._try = 0; this.ghosts.set(d.id, e);
   }
   _clientSnap(arr) { for (const s of arr) { const e = this.ghosts.get(s.id); if (!e) continue; e._tx = s.x; e._tz = s.z; e._try = s.ry; e.hp = (s.hp / 100) * e.maxHp; } }
   _clientEnemyDie(d) {
     const e = this.ghosts.get(d.id); if (!e) return;
-    const top = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
-    this.game.effects.stuffing(top, e.col.body, 16, 6); this.game.audio.enemyDie();
+    const top = Number.isFinite(d.x) ? new THREE.Vector3(d.x, d.y, d.z) : new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
+    const col = (d.col != null) ? d.col : e.col.body;
+    this.game.effects.stuffing(top, col, d.bs ? 44 : (d.el ? 30 : 16), d.bs ? 9 : (d.el ? 8 : 6)); // boss/elite get the bigger burst
+    if (d.ex) this.game.effects.explosion(top, d.ex); else this.game.audio.enemyDie();              // exploder death blast (explosion() plays its own boom)
     e.alive = false; e.mesh.visible = false;
     const i = this.game.enemies.active.indexOf(e); if (i >= 0) this.game.enemies.active.splice(i, 1);
     this.ghosts.delete(d.id);
@@ -6637,6 +6728,7 @@ class MP {
     if (d.elite) g.player.addMoney(KEY_CASH * 2);
   }
   rayHitPlayers(origin, dir, maxDist) {
+    if (!this.friendlyFire) return null;   // co-op: gunfire passes through teammates (no accidental teamkills)
     let best = maxDist, hit = null, hp = null;
     for (const [id, rp] of this.remotes) {
       if (rp.dead || rp.down) continue;
@@ -6708,8 +6800,15 @@ class MP {
   }
   _sendWorldTo(pid) {
     this.net.sendTo(pid, 'start', { mode: this.game.mode || 'purge' });
-    for (const e of this.game.enemies.active) if (e.alive) this.net.sendTo(pid, 'espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale });
+    const snap = [];
+    for (const e of this.game.enemies.active) if (e.alive) {
+      this.net.sendTo(pid, 'espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), hpf: Math.round((e.hp / e.maxHp) * 100) });
+      snap.push({ id: e.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100) });
+    }
+    if (snap.length) this.net.sendTo(pid, 'esnap', snap);                                   // immediate exact positions/HP (don't make the joiner wait ~80ms)
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
+    let boss = null; for (const e of this.game.enemies.active) if (e.alive && (e.def.boss || e.isElite)) { boss = e; break; }
+    if (boss) this.net.sendTo(pid, 'boss', { frac: boss.hp / boss.maxHp, name: boss.name });   // late-join: current boss bar
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
   }
   _hostGone() { if (!this.active) return; this.active = false; try { this.game.hud.bigMessage('HOST LEFT', 'returning to menu…'); } catch (e) {} this.leave(); this.game.toMenu(); }
@@ -6793,6 +6892,8 @@ class Game {
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
     click('mpStartBtn', () => this.mp.hostStart());
     click('mpReadyBtn', () => this.mp.toggleReady());
+    click('mp-mode-purge', () => this.mp.setMode('purge'));
+    click('mp-mode-night', () => this.mp.setMode('longnight'));
     click('mpBackBtn', () => { this.mp.leave(); this.toMenu(); });
     document.querySelectorAll('.mp-skinpick').forEach(b => b.addEventListener('click', () => {
       this.mp.chosenSkin = +b.dataset.skin;
@@ -6887,7 +6988,6 @@ class Game {
     this.hud.setHealth(this.player.hp, this.player.maxHp);
     this.hud.setArmor(this.player.armor, this.player.armorMax);
     this.hud.setMoney(this.player.money); this.hud.setRadios(this.player.radios);
-    this.hud.setBuildMats(this.weapons);
     this.hud.setHunger(this.player.hunger); this.hud.setSurvival(this.player);
     this.hud.setScore(0); this.hud.setWeapon(this.weapons);
     this.hud.setNightMode(this.mode === 'longnight'); // shows/hides the clock + gear readout
@@ -6970,6 +7070,13 @@ class Game {
     this.molotovPools.push({ pos: new THREE.Vector3(pos.x, py, pos.z), light, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 });
     if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
   }
+  _fxBeam(from, dir) { // transient red boss-laser beam for clients (visual only — damage is host-authoritative)
+    const len = 70, end = from.clone().addScaledVector(dir, len);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
+    beam.renderOrder = 998; beam.position.copy(from).add(end).multiplyScalar(0.5); beam.scale.set(0.4, 0.4, len); beam.lookAt(end);
+    this.engine.scene.add(beam);
+    setTimeout(() => { this.engine.scene.remove(beam); beam.geometry.dispose(); beam.material.dispose(); }, 180);
+  }
   _disposeMolotovPool(p) { if (p && p.light) this.engine.scene.remove(p.light); }
   _clearMolotovPools() { if (this.molotovPools) { for (const p of this.molotovPools) this._disposeMolotovPool(p); this.molotovPools.length = 0; } }
   _updateMolotovPools(dt) {
@@ -7015,7 +7122,7 @@ class Game {
     if (this.state !== 'playing') return;
     if ((this.player.radios || 0) <= 0) { this.hud.bigMessage('NO RADIO', 'kill a backpack courier to get one'); this.audio.noMoney(); return; }
     this.player.radios--; this.hud.setRadios(this.player.radios);
-    this.loot.callSupplyDrop();
+    this.loot.requestSupplyDrop();
   }
 
   // Survival inventory overlay (key I) — non-pausing: free the cursor but keep the run live (you stay vulnerable while managing).
@@ -7089,10 +7196,11 @@ class Game {
     if (e.isElite) this.player.addMoney(KEY_CASH * 2); // elites pay a small cash bonus
     if (e.courier) this.loot.dropCourier(e.pos); // backpack courier → a radio + a bonus
   }
-  toLobby() { this.state = 'menu'; this.ui.show('lobby'); }
+  toLobby() { this.state = 'menu'; this.ui.show('lobby'); this.mp._renderModeSel(); }
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
     this.audio.init(); this.audio.startMusic(); this._intentionalUnlock = false;
+    if (this.mp) this.mp._spilledLoot = false; // fresh run → loot can spill again on the next real death
     this.reset(); this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
     const labels = document.getElementById('mp-labels'); if (labels) labels.style.display = 'block';
     this.state = 'playing'; this._startCountdown = this.mp.isHost ? 0.6 : 0;
@@ -7169,6 +7277,7 @@ class Game {
     if ('gadget' in m.loadout) { if (m.loadout.gadget1 == null) m.loadout.gadget1 = m.loadout.gadget; delete m.loadout.gadget; }
     if (!('gadget1' in m.loadout)) m.loadout.gadget1 = null;
     if (!('gadget2' in m.loadout)) m.loadout.gadget2 = null;
+    if (!m.playerId) { m.playerId = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); try { localStorage.setItem('engendros_meta', JSON.stringify(m)); } catch (e) {} } // stable per-device co-op identity — persist immediately so it survives reloads
     if (!m.loadout.melee) m.loadout.melee = 'knife';                              // a run always has a melee
     // drop removed builder keys from any loadout slot
     for (const s of ['primary', 'secondary', 'melee', 'gadget1', 'gadget2']) { const k = m.loadout[s]; if (k && /^build_/.test(k)) m.loadout[s] = (s === 'melee' ? 'knife' : null); }

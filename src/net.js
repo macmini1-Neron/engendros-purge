@@ -67,7 +67,7 @@ export class Net {
       this.connected = true;
       this.onConnect && this.onConnect(conn.peer);
     });
-    conn.on('data', (msg) => { try { this._recv(msg, conn.peer); } catch (e) { /* swallow per-message errors */ } });
+    conn.on('data', (msg) => { try { this._recv(msg, conn.peer); } catch (e) { if (typeof console !== 'undefined') console.warn('[net] handler threw for', msg && msg.t, e); } });
     conn.on('close', () => { this.conns.delete(conn.peer); this.onDisconnect && this.onDisconnect(conn.peer); });
     conn.on('error', () => { /* connection-level errors are non-fatal */ });
   }
