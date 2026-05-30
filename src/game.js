@@ -1768,7 +1768,8 @@ class EnemyManager {
       if (dist > e.radius + this.game.player.radius + 0.8 && moved < e.speed * dt * 0.35) e.stuck += dt;
       else e.stuck = Math.max(0, e.stuck - dt * 0.6);
       const beeline = e.stuck > 1.6;
-      const wx = beeline ? dx : dx + sx * 0.6 + ax, wz = beeline ? dz : dz + sz * 0.6 + az, wl = Math.hypot(wx, wz) || 1;
+      const _sepW = e.def.boss ? 0 : 0.6; // Tolo is a giant — small mobs can't shove him off; he beelines for the nearest player
+      const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
       const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
       const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
@@ -1989,7 +1990,7 @@ class EnemyManager {
     const m = new THREE.Mesh(this._boltGeo, new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }));
     m.renderOrder = 998; m.position.copy(belly); m.lookAt(belly.clone().add(dir));
     this.game.engine.scene.add(m);
-    this.bossBolts.push({ mesh: m, vel: dir.clone().multiplyScalar(55), life: 70 / 55, dmg: e.def.dmg }); // range = 50% of the 140-wide arena
+    this.bossBolts.push({ mesh: m, dir: dir.clone(), spd: 55, life: 70 / 55, dmg: e.def.dmg }); // range = 50% of the 140-wide arena
     this.game.effects.muzzleFlash(belly, dir, 2.0);
   }
 
@@ -1998,11 +1999,21 @@ class EnemyManager {
     const pl = this.game.player, pp = pl.pos;
     for (let i = this.bossBolts.length - 1; i >= 0; i--) {
       const b = this.bossBolts[i];
-      b.mesh.position.addScaledVector(b.vel, dt); b.life -= dt;
-      const m = b.mesh.position;
-      const d = Math.hypot(m.x - pp.x, m.y - (pp.y + 1.0), m.z - pp.z);
-      let dead = b.life <= 0;
-      if (!dead && d < 1.1) { pl.hurt(b.dmg); dead = true; }
+      const step = b.spd * dt, m = b.mesh.position;
+      let dead = false;
+      // can't shoot through walls / objects: stop at the first solid hit this step
+      const wh = this.game.world.rayHit(m, b.dir, step);
+      if (wh) { this.game.effects.muzzleFlash(wh.point, b.dir, 1.4); dead = true; }
+      m.addScaledVector(b.dir, step); b.life -= dt;
+      // shred any other mob caught in the bolt (lots of damage), but never Tolo himself
+      if (!dead) {
+        for (const en of this.active) {
+          if (!en.alive || en.def.boss) continue;
+          if (Math.hypot(m.x - en.pos.x, m.z - en.pos.z) < en.radius + 0.4) { this.damage(en, 9999, 'gun', m.clone()); dead = true; break; }
+        }
+      }
+      if (!dead && b.life <= 0) dead = true;
+      if (!dead && Math.hypot(m.x - pp.x, m.y - (pp.y + 1.0), m.z - pp.z) < 1.1) { pl.hurt(b.dmg); dead = true; }
       if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); b.mesh.material.dispose(); this.bossBolts.splice(i, 1); }
     }
   }
@@ -2048,7 +2059,9 @@ class EnemyManager {
     const ang = e.sweepFrom + (e.sweepTo - e.sweepFrom) * frac;
     const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
     const dir = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
-    const len = e.sweepLen, end = belly.clone().addScaledVector(dir, len);
+    let len = e.sweepLen;
+    if (e.phase !== 3) { const wh = this.game.world.rayHit(belly, dir, len); if (wh) len = Math.max(2, belly.distanceTo(wh.point) - 0.2); } // phases 1/2 can't burn through walls (phase 3 does)
+    const end = belly.clone().addScaledVector(dir, len);
     const thick = e.phase === 3 ? 0.9 : 0.55;
     e._beam.position.copy(belly).add(end).multiplyScalar(0.5);
     e._beam.scale.set(thick, thick, len); e._beam.lookAt(end);
@@ -2066,6 +2079,13 @@ class EnemyManager {
     const dl = Math.hypot(pp.x - (belly.x + dir.x * t), pp.z - (belly.z + dir.z * t));
     const reach = e.phase === 3 ? 2.0 : 1.6;
     if (dl < reach && e.sweepHitCD <= 0) { e.sweepHitCD = 0.7; this.game.player.hurt(e.phase === 3 ? 200 : 55); }
+    // the sweep also shreds any other mob it passes over (lots of damage), but never Tolo himself
+    for (const en of this.active) {
+      if (!en.alive || en.def.boss) continue;
+      const te = clamp((en.pos.x - belly.x) * dir.x + (en.pos.z - belly.z) * dir.z, 0, len);
+      const de = Math.hypot(en.pos.x - (belly.x + dir.x * te), en.pos.z - (belly.z + dir.z * te));
+      if (de < reach + en.radius) this.damage(en, 9999, 'gun', en.pos.clone());
+    }
     if (e.sweepT >= e.sweepDur) {
       e.sweepPass++;
       if (e.sweepPass < e.sweepPasses) this._sweepStartPass(e);
