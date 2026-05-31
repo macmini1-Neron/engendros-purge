@@ -31,7 +31,8 @@ export class Effects {
     for (let i = 0; i < this.capacity; i++) {
       this.p.push({ alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(),
         rot: new THREE.Euler(), rotV: new THREE.Vector3(), life: 0, maxLife: 1,
-        size: 0.2, grav: -9.8, drag: 1, color: new THREE.Color(), bounce: 0, floorY: 0, shrink: true });
+        size: 0.2, grav: -9.8, drag: 1, color: new THREE.Color(), bounce: 0, floorY: 0, shrink: true,
+        onBounce: null, bounces: 0, maxBounceSounds: 0, bounceSoundMinVel: 0 });
     }
     this._cursor = 0;
 
@@ -103,6 +104,10 @@ export class Effects {
     pt.floorY = opts.floorY ?? 0;
     pt.shrink = opts.shrink ?? true;
     pt.bloom = opts.bloom ?? false;   // grows from nothing → peak → fades (vapour/contrail)
+    pt.onBounce = opts.onBounce || null;
+    pt.bounces = 0;
+    pt.maxBounceSounds = opts.maxBounceSounds ?? 0;
+    pt.bounceSoundMinVel = opts.bounceSoundMinVel ?? 2.5;
     pt.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     pt.rotV.set(randRange(-8, 8), randRange(-8, 8), randRange(-8, 8));
     return pt;
@@ -197,11 +202,15 @@ export class Effects {
   }
 
   shell(pos, rightDir, opts = {}) {
+    const onBounce = opts.sound === 'fiftyBrass'
+      ? ((pt, impactVel, bounceIndex) => { if (this.game.audio && this.game.audio.fiftyBrassLand) this.game.audio.fiftyBrassLand(impactVel, bounceIndex); })
+      : null;
     this._spawn({
       pos: pos.clone(),
-      vel: rightDir.clone().multiplyScalar(randRange(2, 3.5)).add(_v.set(0, randRange(1.5, 2.5), 0)),
-      life: opts.life || 1.4, size: opts.size || 0.05, grav: -16, drag: 0.4,
-      color: new THREE.Color(opts.color || 0xd9a441), bounce: 0.4, floorY: pos.y - 1.2, shrink: false,
+      vel: rightDir.clone().multiplyScalar(randRange(opts.sideMin || 2, opts.sideMax || 3.5)).add(_v.set(0, randRange(opts.upMin || 1.5, opts.upMax || 2.5), 0)),
+      life: opts.life || 1.4, size: opts.size || 0.05, grav: opts.grav ?? -16, drag: opts.drag ?? 0.4,
+      color: new THREE.Color(opts.color || 0xd9a441), bounce: opts.bounce ?? 0.4, floorY: opts.floorY ?? (pos.y - 1.2), shrink: false,
+      onBounce, maxBounceSounds: opts.maxBounceSounds ?? (onBounce ? 3 : 0), bounceSoundMinVel: opts.bounceSoundMinVel ?? 2.2,
     });
   }
 
@@ -283,9 +292,12 @@ export class Effects {
       pt.vel.multiplyScalar(Math.max(0, 1 - pt.drag * dt));
       pt.pos.addScaledVector(pt.vel, dt);
       if (pt.pos.y < pt.floorY && pt.bounce > 0) {
+        const impactVel = Math.abs(pt.vel.y);
         pt.pos.y = pt.floorY;
         pt.vel.y = -pt.vel.y * pt.bounce;
         pt.vel.x *= 0.6; pt.vel.z *= 0.6;
+        if (pt.onBounce && pt.bounces < pt.maxBounceSounds && impactVel >= pt.bounceSoundMinVel) pt.onBounce(pt, impactVel, pt.bounces);
+        pt.bounces++;
       }
       pt.rot.x += pt.rotV.x * dt; pt.rot.y += pt.rotV.y * dt; pt.rot.z += pt.rotV.z * dt;
       const lifeFrac = pt.life / pt.maxLife;

@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Engine, WEAPON_LAYER } from './engine.js?e=2';
 import { Input } from './input.js';
-import { AudioManager } from './audio.js?v=147';
+import { AudioManager } from './audio.js?v=149';
 import { Effects } from './effects.js';
 import { MeshBuilder, voxelMaterial, clamp, damp, makeRNG, randRange, TAU, shade } from './util.js?u=2';
 import { Net, makeRoomCode } from './net.js';
@@ -26,7 +26,7 @@ import {
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-05-31 04:20';
+const GAME_BUILD = '2026-05-31 04:45';
 
 // --- gameplay RNG (non-deterministic; map gen uses a seeded rng) ---
 const rr = (lo, hi) => lo + (hi - lo) * Math.random();
@@ -6017,6 +6017,8 @@ class MountedGun {
     this.beltRounds = []; this._smokeT = 0;
     this.occupant = null; // co-op: id currently manning the gun (null / 'host' / a peer id); host-authoritative
     this._aimT = 0;       // throttle timer for the aim broadcast
+    this._chargedOnce = false; this._nearWas = false; // first approach/mount plays the real two-cycle charge once per run
+    this._roundSeq = 0;   // every third .50 BMG round is a visible red tracer
     this._build();
   }
 
@@ -6153,8 +6155,10 @@ class MountedGun {
 
   _playFiftyCharge() {
     const audio = this.game.audio;
-    if (audio && typeof audio.fiftyCharge === 'function') audio.fiftyCharge();
-    else if (audio && typeof audio.reloadIn === 'function') audio.reloadIn();
+    if (!audio || !audio.ctx) return false;
+    if (typeof audio.fiftyCharge === 'function') { audio.fiftyCharge(); return true; }
+    if (typeof audio.reloadIn === 'function') { audio.reloadIn(); return true; }
+    return false;
   }
   _playFiftyShot() {
     const audio = this.game.audio;
@@ -6169,6 +6173,24 @@ class MountedGun {
       if (typeof audio.tone === 'function') audio.tone(100, 0.25, 'sawtooth', 0.25);
     }
   }
+  _broadcastFiftySound(kind) {
+    const mp = this.game.mp;
+    if (mp && mp.active && mp.net) mp.net.broadcast('fiftysound', { pid: mp.myId, k: kind });
+  }
+  _primeCharge() {
+    if (this._chargedOnce) return;
+    if (this._playFiftyCharge()) { this._chargedOnce = true; this._broadcastFiftySound('charge'); }
+  }
+  updateNearby(p) {
+    const isNear = this.near(p);
+    if (isNear && !this._nearWas) this._primeCharge();
+    this._nearWas = isNear;
+    return isNear;
+  }
+  _netVec(v, digits = 2) { return [+v.x.toFixed(digits), +v.y.toFixed(digits), +v.z.toFixed(digits)]; }
+  _muzzleWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0, 0.02, -2.38)); }
+  _ejectPortWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0.22, 0.0, 0.12)); }
+  _rightWorld() { this.gun.updateMatrixWorld(); return new THREE.Vector3(1, 0, 0).applyQuaternion(this.gun.getWorldQuaternion(new THREE.Quaternion())).normalize(); }
 
   // real seating (no claim check) — pin player to the gun, hide held weapon
   _doMount() {
@@ -6177,7 +6199,7 @@ class MountedGun {
     this.game.player.pos.set(this.base.x + Math.sin(this.baseYaw) * 0.9, this.base.y, this.base.z + Math.cos(this.baseYaw) * 0.9); // stand BEHIND the gun
     this.yaw = this.baseYaw; this.pitch = 0;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0'; // hide the white crosshair on the .50 — the ring sight is the reticle
-    this._playFiftyCharge();
+    this._primeCharge();
     this.game.hud.setMountedGun();
   }
   // claim-gated entry: solo seats immediately; co-op asks the host (host grants on first-come)
@@ -6211,6 +6233,8 @@ class MountedGun {
     this._doDismount();
     if (mp && mp.active && wasMe) { if (mp.isHost) mp._hostFiftyClaim('dismount', 'host'); else mp.net.send('fiftyclaim', { want: 'dismount' }); }
     this.occupant = null; // session/round reset clears the seat everywhere
+    this._chargedOnce = false; this._nearWas = false;
+    this._roundSeq = 0;
     this.heat = 0; this.overheated = false; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
     if (this.game.hud) { this.game.hud.hideHeat(); if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = ''; }
   }
@@ -6248,36 +6272,47 @@ class MountedGun {
     this.dismount();                  // boot the gunner off the overheated gun (co-op-safe)
     pl.yaw = by; pl.pitch = -0.35;    // stand behind the gun, POV left looking down at the smoking .50
     this._playFiftyOverheat();
+    this._broadcastFiftySound('overheat');
     if (this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED — get off it!', 0xd23a2a);
   }
 
   _fire() {
     this.cd = 60 / this.rpm;
     this.heat = Math.min(1, this.heat + 0.02);
+    this._roundSeq = (this._roundSeq || 0) + 1;
+    const tracerColor = (this._roundSeq % 3 === 0) ? 0xff2418 : 0xffe08a;
     if (this.heat >= 1) this.overheated = true;
     this._shake = Math.min(0.013, (this._shake || 0) + 0.0045); // very slight camera knock per shot
     this._recoil = Math.min(0.07, (this._recoil || 0) + 0.035);  // heavy recoil shove — makes the .50 feel massive
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion).normalize();
     const muzzle = origin.clone().addScaledVector(fwd, 2.1); muzzle.y += 0.04;
+    const barrelMuzzle = this._muzzleWorld(), ejectPort = this._ejectPortWorld(), ejectRight = this._rightWorld();
     this.game.effects.muzzleFlash(muzzle, fwd, 1.8);
     this._playFiftyShot();
-    { const ejectPort = this.gun.localToWorld(new THREE.Vector3(0.22, 0.0, 0.12)); this.game.effects.shell(ejectPort, right.clone(), { size: 0.1, color: 0xcaa64a }); } // big brass .50 case flung out the gun's RIGHT ejection port
+    this.game.effects.shell(ejectPort, ejectRight.clone(), { size: 0.1, color: 0xcaa64a, sound: 'fiftyBrass', life: 1.9, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1 }); // big brass .50 case flung out the gun's RIGHT ejection port
     const dir = fwd.clone(); dir.x += rr(-this.spread, this.spread); dir.y += rr(-this.spread, this.spread); dir.z += rr(-this.spread, this.spread); dir.normalize();
     const eHit = this.game.enemies.rayHit(muzzle, dir, this.range);
     const wHit = this.game.world.rayHit(muzzle, dir, this.range);
+    const mp = this.game.mp;
+    const pHit = (mp && mp.active) ? mp.rayHitPlayers(muzzle, dir, this.range) : null;
     let end;
-    if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
+    if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
+      const dmg = this.dmg * (pHit.head ? 1.6 : 1) * this.game.player.damageMult;
+      mp.claimPlayerHit(pHit.id, dmg);
+      end = pHit.point;
+      this.game.effects.tracer(muzzle, end, tracerColor);
+      this.game.hud.hitmarker(false);
+    } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
       const dmg = this.dmg * (eHit.head ? 1.6 : 1) * this.game.player.damageMult;
       const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
       end = eHit.point;
-      this.game.effects.tracer(muzzle, end, 0xffe08a);
+      this.game.effects.tracer(muzzle, end, tracerColor);
       if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
-    } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzle, end, 0xffe08a); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
-    else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzle, end, 0xffe08a); }
-    const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: [+muzzle.x.toFixed(2), +muzzle.y.toFixed(2), +muzzle.z.toFixed(2)], e: [+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)] }); // teammates see/hear the .50cal fire (damage stays host-authoritative via enemies.damage above)
+    } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzle, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
+    else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzle, end, tracerColor); }
+    if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(barrelMuzzle), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
   }
 
   update(dt, firing) {
@@ -7119,11 +7154,15 @@ class MP {
     // ---- rooftop .50cal (single shared MountedGun): seat claim + fire FX + barrel slew ----
     n.on('fiftyclaim', (d, from) => { if (this.isHost && d) this._hostFiftyClaim(d.want, from); });               // client → host: request mount/dismount
     n.on('fiftystate', (d) => { if (!this.isHost && d) this._applyFiftyState(d); });                              // host → clients: who owns the seat now
-    n.on('fiftyfire', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate firing the .50cal: muzzle + tracer + shot sound (damage is host-authoritative)
+    n.on('fiftyfire', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate firing the .50cal: muzzle + tracer + shot/brass sound (damage is host-authoritative)
       const o = V(d.o), e = V(d.e);
       g.effects.muzzleFlash(o, e.clone().sub(o).normalize(), 1.8);
-      g.effects.tracer(o, e, 0xffe08a);
-      g.audio.gunshot(SOUND_BY_CLASS.fiftycal); });
+      g.effects.tracer(o, e, d.c != null ? d.c : 0xffe08a);
+      if (d.s && d.r) g.effects.shell(V(d.s), V(d.r).normalize(), { size: 0.1, color: 0xcaa64a, sound: 'fiftyBrass', life: 1.9, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1 });
+      if (g.audio && typeof g.audio.fiftyShot === 'function') g.audio.fiftyShot(); else if (g.audio && typeof g.audio.gunshot === 'function') g.audio.gunshot(SOUND_BY_CLASS.fiftycal); });
+    n.on('fiftysound', (d) => { if (!d || d.pid === this.myId || !d.k) return; // non-shot .50cal foley: charging handle / overheat should be audible to nearby peers too
+      if (d.k === 'charge') { if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
+      else if (d.k === 'overheat') { if (g.audio && typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (g.audio && typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); } });
     n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) gun.gun.rotation.set(d.pitch, d.yaw, 0); if (gun && d.heat != null) gun.heat = d.heat; }); // slew the barrel + mirror heat so everyone sees the glow + smoke + overheat
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
@@ -7964,6 +8003,7 @@ class Game {
     this.hud.update(dt);
     // ---- Interact prompt priority: tank crew > .50 cal > loot ----
     const _ct = this.capturedTank;
+    const _nearMountedGun = !this.player.inTank && this.mountedGun.updateNearby(this.player.pos);
     if (this.player.mountedGun) {
       this.hud.setInteract('Press <b>E</b> to leave the .50 cal');
     } else if (_ct && this.player.inTank === _ct) {
@@ -7971,7 +8011,7 @@ class Game {
       this.hud.setInteract('E exit · Q seat' + seatHint);
     } else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) {
       this.hud.setInteract('Press <b>E</b> to commandeer the T-90M');
-    } else if (this.mountedGun.near(this.player.pos)) {
+    } else if (_nearMountedGun) {
       this.hud.setInteract('Press <b>E</b> to man the .50 cal — ∞ ammo, overheats');
     } else if (this.player._splintT > 0) {
       this.hud.setInteract(`Applying splint… ${this.player._splintT.toFixed(1)}s`);
