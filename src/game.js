@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-05-31 23:40';
+const GAME_BUILD = '2026-06-01 00:29';
 
 class Game {
   constructor() {
@@ -73,8 +73,9 @@ class Game {
 
   _wireUI() {
     const click = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('click', fn); };
-    const verEl = document.getElementById('lobby-version'); // lobby footer: build version + release time (to the minute)
-    if (verEl) verEl.innerHTML = `ENGENDROS PURGE <b>${GAME_VERSION}</b> (${GAME_BUILD})`;
+    // build version + release time (to the minute), shown in both the main menu and the co-op lobby corner
+    const verHTML = `ENGENDROS PURGE <b>${GAME_VERSION}</b> (${GAME_BUILD})`;
+    for (const id of ['lobby-version', 'menu-version']) { const e = document.getElementById(id); if (e) e.innerHTML = verHTML; }
     click('playBtn', () => this.startGame('purge'));
     click('longNightBtn', () => this.startGame('longnight'));
     click('resumeBtn', () => this.resume());
