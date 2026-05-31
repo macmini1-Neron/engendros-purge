@@ -196,12 +196,12 @@ export class Effects {
     }
   }
 
-  shell(pos, rightDir) {
+  shell(pos, rightDir, opts = {}) {
     this._spawn({
       pos: pos.clone(),
       vel: rightDir.clone().multiplyScalar(randRange(2, 3.5)).add(_v.set(0, randRange(1.5, 2.5), 0)),
-      life: 1.4, size: 0.05, grav: -16, drag: 0.4,
-      color: new THREE.Color(0xd9a441), bounce: 0.4, floorY: pos.y - 1.2, shrink: false,
+      life: opts.life || 1.4, size: opts.size || 0.05, grav: -16, drag: 0.4,
+      color: new THREE.Color(opts.color || 0xd9a441), bounce: 0.4, floorY: pos.y - 1.2, shrink: false,
     });
   }
 

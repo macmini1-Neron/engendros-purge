@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Engine, WEAPON_LAYER } from './engine.js?e=2';
 import { Input } from './input.js';
-import { AudioManager } from './audio.js';
+import { AudioManager } from './audio.js?v=147';
 import { Effects } from './effects.js';
 import { MeshBuilder, voxelMaterial, clamp, damp, makeRNG, randRange, TAU, shade } from './util.js?u=2';
 import { Net, makeRoomCode } from './net.js';
@@ -20,6 +20,13 @@ import {
   buildSu34UpperTailExhaustModule,
   buildSu34WingModule,
 } from './su34model.js';
+
+// --- build identity (shown bottom-right in the co-op lobby) ---
+// GAME_VERSION auto-tracks the ?v= cache-bust on this module's own URL, so it can't drift from
+// the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
+// bump it together with index.html's ?v= on every deploy.
+const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
+const GAME_BUILD = '2026-05-31 04:20';
 
 // --- gameplay RNG (non-deterministic; map gen uses a seeded rng) ---
 const rr = (lo, hi) => lo + (hi - lo) * Math.random();
@@ -147,6 +154,7 @@ const SOUND_BY_CLASS = {
   shotgun: { body: 120, crack: 0.13, vol: 0.62, hp: 1400, bp: 700 },
   sniper:  { body: 160, crack: 0.10, vol: 0.72, hp: 1700, bp: 800 },
   launcher:{ body: 90,  crack: 0.20, vol: 0.70, hp: 800,  bp: 450 },
+  fiftycal:{ body: 110, crack: 0.12, vol: 0.70, hp: 1500, bp: 650 }, // rooftop .50cal — mirrors MountedGun._fire() inline gunshot params
 };
 
 // ---------------------------------------------------------------------------
@@ -1678,6 +1686,10 @@ class EnemyManager {
     this._min = new THREE.Vector3(); this._max = new THREE.Vector3();
     this.bossBolts = []; // BOSS TOLO phase-1 blaster bolts (traveling projectiles)
     this.bossFires = []; // BOSS TOLO phase-3 lingering fire zones (area denial)
+    this._ghostBolts = []; // CLIENT visual-only boss bolts (relayed from host via 'bossfx')
+    this._ghostBeam = null; // CLIENT visual-only sweep beam
+    this._ghostFires = []; // CLIENT visual-only fire-zone flicker markers
+    this._ghostAimRing = null; // CLIENT visual-only tank cannon aim ring
   }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
@@ -1830,12 +1842,13 @@ class EnemyManager {
       const s = this.shells[i]; s.fuse -= dt; s.vel.y -= s.grav * dt;
       s.mesh.position.addScaledVector(s.vel, dt);
       const p = s.mesh.position; let boom = p.y < 0.2 || s.fuse <= 0;
-      if (!boom) { const dp = Math.hypot(p.x - this.game.player.pos.x, p.z - this.game.player.pos.z); if (dp < 1.5) boom = true; }
+      if (!boom && this._playerHitByPoint(p, 1.5)) boom = true; // proximity detonation near ANY living player
       if (!boom) { const wh = this.world.rayHit(p, this._downV || (this._downV = new THREE.Vector3(0, -1, 0)), 0.4); if (wh) boom = true; }
       if (boom) {
         this.game.effects.explosion(p.clone(), s.radius);
-        const pl = this.game.player, dp = Math.hypot(p.x - pl.pos.x, p.z - pl.pos.z);
-        if (dp < s.radius) pl.hurt(s.dmg * (1 - dp / s.radius));
+        this.game._bossFx('shell', { p: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], s: s.radius }); // clients see/hear the tank cannon blast
+        this.game._explodeHurt(p.clone ? p.clone() : p, s.radius, s.dmg); // splash fans out to ALL players w/ falloff
+        this.game.loot.clearPickupsInRadius(p.x, p.z, s.radius); // tank shell blast destroys ground items (this loop is host/solo-only — clients don't tick enemies.update)
         const ct = this.game.capturedTank;
         if (ct && ct.hp > 0) { const cd = Math.hypot(p.x - ct.pos.x, p.z - ct.pos.z); if (cd < s.radius) ct.hurt(s.dmg * (1 - cd / s.radius)); }
         if (this.game.engine.shake) this.game.engine.shake(0.4);
@@ -1907,10 +1920,28 @@ class EnemyManager {
     }
   }
 
+  // Co-op: resolve the boss/tank's current target — nearest living player on the host, else the local player.
+  _tgt(e) {
+    const mp = this.game.mp;
+    if (mp && mp.active && mp.isHost) { const np = mp.nearestPlayer(e.pos.x, e.pos.z); if (np) { e._tgtId = np.id; return np.pos; } }
+    e._tgtId = 'host';
+    return this.game.player.pos;
+  }
+  // Co-op: which living player (id) is within r of a world point — host + remotes; nearest wins. Solo → 'host' if the local player is in range.
+  _playerHitByPoint(p, r) {
+    const mp = this.game.mp; let best = r, hit = null;
+    const consider = (id, px, py, pz) => { const d = Math.hypot(px - p.x, (py + 1.0) - p.y, pz - p.z); if (d < best) { best = d; hit = id; } };
+    if (mp && mp.active && mp.isHost) {
+      const s = mp.pstate.get('host'); if (!(s && (s.down || s.dead || s.waiting))) consider('host', this.game.player.pos.x, this.game.player.pos.y, this.game.player.pos.z);
+      for (const [id, rp] of mp.remotes) { if (rp.down || rp.dead || rp.waiting) continue; consider(id, rp.pos.x, rp.pos.y, rp.pos.z); }
+    } else { consider('host', this.game.player.pos.x, this.game.player.pos.y, this.game.player.pos.z); }
+    return hit;
+  }
+
   // Belly bullseye = the laser emitter AND the only weak spot. Phases gate by HP:
   //   1 (>66%) blaster burst · 2 (33–66%) sweep · 3 (<33%) double sweep + fire (sweep/fire land in later steps).
   _bossTolo(e, dt) {
-    const pp = this.game.player.pos;
+    const pp = this._tgt(e);
     this.game.hud.setBoss(e.hp / e.maxHp, e.name);
 
     // belly-bullseye glow telegraphs the charge (lazy child of the boss mesh, the laser emitter)
@@ -1932,6 +1963,7 @@ class EnemyManager {
       if (e._beam) e._beam.visible = false;
       this.game.hud.bigMessage('TOLO ZUŘÍ', want === 2 ? 'nastává fáze 2 — laserový sweep!' : 'nastává fáze 3 — žhavá zkáza!');
       this.game.audio.tone(200, 0.5, 'sawtooth', 0.4);
+      this.game._bossFx('banner', { title: 'TOLO ZUŘÍ', sub: want === 2 ? 'nastává fáze 2 — laserový sweep!' : 'nastává fáze 3 — žhavá zkáza!' });
     }
 
     // ── phase-change i-frames: stand still, shudder, leak stuffing, no attacks ──
@@ -1967,6 +1999,7 @@ class EnemyManager {
       e.laserCD = e.phase === 3 ? 4.0 : (e.phase === 2 ? 5.0 : 3.8);
       e._chargeDur = e.phase === 1 ? 0.85 : 0.7;
       e.charging = e._chargeDur;
+      this.game._bossFx('glow', { id: e.id, f: 1 }); // telegraph the charge to clients (the only damage window)
     }
   }
 
@@ -1976,8 +2009,7 @@ class EnemyManager {
     e.shotCD -= dt;
     if (e.shotCD > 0) return;
     e.shotCD = 0.22; e.shotsLeft--;
-    const pl = this.game.player;
-    const moving = Math.hypot(pl.vel.x, pl.vel.z) > 1.5;
+    const moving = (e._tgtId === 'host') ? (Math.hypot(this.game.player.vel.x, this.game.player.vel.z) > 1.5) : true;
     const spread = moving ? 0.14 : 0.05;
     const a = e.aim.clone();
     a.x += rr(-spread, spread); a.y += rr(-spread * 0.4, spread * 0.4); a.z += rr(-spread, spread);
@@ -1995,11 +2027,11 @@ class EnemyManager {
     this.game.engine.scene.add(m);
     this.bossBolts.push({ mesh: m, dir: dir.clone(), spd: 55, life: 70 / 55, dmg: e.def.dmg }); // range = 50% of the 140-wide arena
     this.game.effects.muzzleFlash(belly, dir, 2.0);
+    this.game._bossFx('bolt', { p: [+belly.x.toFixed(2), +belly.y.toFixed(2), +belly.z.toFixed(2)], d: [+dir.x.toFixed(3), +dir.y.toFixed(3), +dir.z.toFixed(3)] });
   }
 
   _updateBossBolts(dt) {
     if (!this.bossBolts.length) return;
-    const pl = this.game.player, pp = pl.pos;
     for (let i = this.bossBolts.length - 1; i >= 0; i--) {
       const b = this.bossBolts[i];
       const step = b.spd * dt, m = b.mesh.position;
@@ -2016,7 +2048,7 @@ class EnemyManager {
         }
       }
       if (!dead && b.life <= 0) dead = true;
-      if (!dead && Math.hypot(m.x - pp.x, m.y - (pp.y + 1.0), m.z - pp.z) < 1.1) { pl.hurt(b.dmg); dead = true; }
+      if (!dead) { const hid = this._playerHitByPoint(m, 1.1); if (hid) { this.game._hurtTarget(hid, b.dmg); dead = true; } }
       if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); b.mesh.material.dispose(); this.bossBolts.splice(i, 1); }
     }
   }
@@ -2031,8 +2063,8 @@ class EnemyManager {
   // The player must run out of the wedge. Range = 80% (p2) / 100% (p3) of the arena width.
   // Phase 3 does a double sweep (there and back) and scorches lingering fire onto the floor.
   _beginSweep(e) {
-    const pp = this.game.player.pos;
-    e.sweepActive = true; e.sweepHitCD = 0;
+    const pp = this._tgt(e);
+    e.sweepActive = true; e.sweepHitCD = 0; e._sweepHitCD = {}; // per-player graze cooldowns (co-op)
     e.sweepCenter = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z); // XZ angle toward the player at fire time
     e.sweepArc = Math.PI / 4;                 // 45° wedge
     e.sweepLen = 70;                           // 50% of the 140-wide arena (all phases)
@@ -2046,6 +2078,7 @@ class EnemyManager {
     e._beam.visible = true; e._beam.material.opacity = 1;
     this._sweepStartPass(e);
     this.game.audio.tone(900, 0.2, 'sawtooth', 0.3);
+    this.game._bossFx('sweepStart', { ph: e.phase });
   }
 
   _sweepStartPass(e) {
@@ -2069,6 +2102,8 @@ class EnemyManager {
     e._beam.position.copy(belly).add(end).multiplyScalar(0.5);
     e._beam.scale.set(thick, thick, len); e._beam.lookAt(end);
     e._beam.material.opacity = 0.85 + 0.15 * Math.sin(e.sweepT * 40);
+    e._sweepFxT = (e._sweepFxT || 0) - dt;
+    if (e._sweepFxT <= 0) { e._sweepFxT = 0.07; this.game._bossFx('sweep', { p: [+belly.x.toFixed(2), +belly.y.toFixed(2), +belly.z.toFixed(2)], a: +ang.toFixed(3), len: +len.toFixed(2), th: thick, ph: e.phase }); }
     if (e._tolGlow) e._tolGlow.material.opacity = 0.9;                  // emitter stays lit while firing
     if (Math.random() < 0.4) this.game.audio.noise(0.05, 0.2, 'highpass', 1600, 0.5);
     // phase 3: the beam scorches the floor — drop lingering fire zones along it (area denial)
@@ -2076,12 +2111,20 @@ class EnemyManager {
       e._fireDropT = (e._fireDropT || 0) - dt;
       if (e._fireDropT <= 0) { e._fireDropT = 0.10; const fd = rr(5, len * 0.7); this._dropBossFire(belly.x + dir.x * fd, belly.z + dir.z * fd); }
     }
-    // contact damage: horizontal distance to the beam line, throttled so a graze = one "hit"
-    const pp = this.game.player.pos;
-    const t = clamp((pp.x - belly.x) * dir.x + (pp.z - belly.z) * dir.z, 0, len);
-    const dl = Math.hypot(pp.x - (belly.x + dir.x * t), pp.z - (belly.z + dir.z * t));
+    // contact damage: horizontal distance to the beam line, throttled per-player so a graze = one "hit"
     const reach = e.phase === 3 ? 2.0 : 1.6;
-    if (dl < reach && e.sweepHitCD <= 0) { e.sweepHitCD = 0.7; this.game.player.hurt(e.phase === 3 ? 200 : 55); }
+    const cds = e._sweepHitCD = e._sweepHitCD || {};
+    for (const k in cds) if ((cds[k] -= dt) <= 0) delete cds[k];
+    const beamHit = (pid, px, pz) => {
+      const t = clamp((px - belly.x) * dir.x + (pz - belly.z) * dir.z, 0, len);
+      const dl = Math.hypot(px - (belly.x + dir.x * t), pz - (belly.z + dir.z * t));
+      if (dl < reach && !(cds[pid] > 0)) { cds[pid] = 0.7; this.game._hurtTarget(pid, e.phase === 3 ? 200 : 55); }
+    };
+    const mp = this.game.mp;
+    if (mp && mp.active && mp.isHost) {
+      const s = mp.pstate.get('host'); if (!(s && (s.down || s.dead || s.waiting))) beamHit('host', this.game.player.pos.x, this.game.player.pos.z);
+      for (const [id, rp] of mp.remotes) { if (rp.down || rp.dead || rp.waiting) continue; beamHit(id, rp.pos.x, rp.pos.z); }
+    } else { beamHit('host', this.game.player.pos.x, this.game.player.pos.z); }
     // the sweep also shreds any other mob it passes over (lots of damage), but never Tolo himself
     for (const en of this.active) {
       if (!en.alive || en.def.boss) continue;
@@ -2092,7 +2135,7 @@ class EnemyManager {
     if (e.sweepT >= e.sweepDur) {
       e.sweepPass++;
       if (e.sweepPass < e.sweepPasses) this._sweepStartPass(e);
-      else { e.sweepActive = false; e._beam.visible = false; }
+      else { e.sweepActive = false; e._beam.visible = false; this.game._bossFx('sweepEnd', {}); }
     }
   }
 
@@ -2100,22 +2143,94 @@ class EnemyManager {
     if (this.bossFires.length > 48) return;   // perf cap
     this.game.effects.firePool({ x, y: 0.08, z }, 1.4, 0.8);
     this.bossFires.push({ x, z, r: 1.9, life: 3.0 });
+    this.game._bossFx('fire', { x: +x.toFixed(2), z: +z.toFixed(2) });
   }
 
   _updateBossFires(dt) {
     if (!this.bossFires.length) return;
-    const pp = this.game.player.pos; let inFire = false;
     for (let i = this.bossFires.length - 1; i >= 0; i--) {
       const f = this.bossFires[i]; f.life -= dt;
       if (f.life <= 0) { this.bossFires.splice(i, 1); continue; }
       if (Math.random() < 0.18) this.game.effects.firePool({ x: f.x, y: 0.08, z: f.z }, 1.1, 0.5); // keep it visibly burning
-      if (Math.hypot(pp.x - f.x, pp.z - f.z) < f.r) inFire = true;
     }
-    if (inFire) { this._fireTickT = (this._fireTickT || 0) - dt; if (this._fireTickT <= 0) { this._fireTickT = 0.4; this.game.player.hurt(12); } }
+    // per-player fire-zone DoT, throttled per player (co-op)
+    const cells = this.bossFires;
+    const inAnyFire = (px, pz) => { for (const f of cells) if (Math.hypot(px - f.x, pz - f.z) < f.r) return true; return false; };
+    const tt = this._fireTickT = (typeof this._fireTickT === 'object' && this._fireTickT) ? this._fireTickT : {};
+    const tickPlayer = (pid, px, pz) => {
+      if (!inAnyFire(px, pz)) { delete tt[pid]; return; }
+      tt[pid] = (tt[pid] || 0) - dt;
+      if (tt[pid] <= 0) { tt[pid] = 0.4; this.game._hurtTarget(pid, 12); }
+    };
+    const mp = this.game.mp;
+    if (mp && mp.active && mp.isHost) {
+      const s = mp.pstate.get('host'); if (!(s && (s.down || s.dead || s.waiting))) tickPlayer('host', this.game.player.pos.x, this.game.player.pos.z);
+      for (const [id, rp] of mp.remotes) { if (rp.down || rp.dead || rp.waiting) continue; tickPlayer(id, rp.pos.x, rp.pos.z); }
+    } else { tickPlayer('host', this.game.player.pos.x, this.game.player.pos.z); }
+  }
+
+  // ── CLIENT-SIDE boss/tank attack VISUALS (clients never run the host simulation above) ──
+  // These are spawned by the 'bossfx' net handler and advanced each frame by updateGhostFx(). Visual-only — NEVER deal damage.
+  spawnGhostBolt(belly, dir, col) {
+    if (!this._boltGeo) this._boltGeo = new THREE.BoxGeometry(0.18, 0.18, 1.6);
+    const m = new THREE.Mesh(this._boltGeo, new THREE.MeshBasicMaterial({ color: (col != null ? col : 0xff2436), fog: false, depthWrite: false }));
+    m.renderOrder = 998; m.position.copy(belly); m.lookAt(belly.clone().add(dir));
+    this.game.engine.scene.add(m);
+    this._ghostBolts.push({ mesh: m, dir: dir.clone().normalize(), spd: 55, life: 70 / 55 });
+    this.game.effects.muzzleFlash(belly, dir, 2.0);
+  }
+  ghostSweepStart(phase) {
+    if (!this._ghostBeam) {
+      this._ghostBeam = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+      this._ghostBeam.renderOrder = 998; this.game.engine.scene.add(this._ghostBeam);
+    }
+    this._ghostBeam.material.color.setHex(phase === 3 ? 0xff3a10 : 0xff2436);
+    this._ghostBeam.visible = true; this._ghostBeam.material.opacity = 1; this._ghostBeamT = 0;
+    this.game.audio.tone(900, 0.2, 'sawtooth', 0.3);
+  }
+  ghostSweepUpdate(belly, ang, len, thick, phase) {
+    if (!this._ghostBeam) this.ghostSweepStart(phase);
+    const dir = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
+    const end = belly.clone().addScaledVector(dir, len);
+    this._ghostBeam.visible = true;
+    this._ghostBeam.position.copy(belly).add(end).multiplyScalar(0.5);
+    this._ghostBeam.scale.set(thick, thick, len); this._ghostBeam.lookAt(end);
+    this._ghostBeamT = (this._ghostBeamT || 0) + 0.05;
+    this._ghostBeam.material.opacity = 0.85 + 0.15 * Math.sin(this._ghostBeamT * 40);
+    if (Math.random() < 0.4) this.game.audio.noise(0.05, 0.2, 'highpass', 1600, 0.5);
+  }
+  ghostSweepEnd() { if (this._ghostBeam) this._ghostBeam.visible = false; }
+  addGhostFire(x, z) { if (this._ghostFires.length > 48) return; this._ghostFires.push({ x, z, life: 3.0 }); }
+  ghostAimMarker(x, z) {
+    if (!this._ghostAimRing) {
+      this._ghostAimRing = new THREE.Mesh(new THREE.RingGeometry(1.2, 1.7, 20), new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+      this._ghostAimRing.rotation.x = -Math.PI / 2; this._ghostAimRing.renderOrder = 990; this.game.engine.scene.add(this._ghostAimRing);
+    }
+    this._ghostAimRing.position.set(x, 0.06, z); this._ghostAimRing.material.opacity = 0.85; this._ghostAimRingT = 0.8;
+  }
+  // Advance all client visual effects — called for NON-host from _updatePlaying (must NOT run on the host).
+  updateGhostFx(dt) {
+    // traveling bolts
+    for (let i = this._ghostBolts.length - 1; i >= 0; i--) {
+      const b = this._ghostBolts[i];
+      b.mesh.position.addScaledVector(b.dir, b.spd * dt); b.life -= dt;
+      if (b.life <= 0) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); b.mesh.material.dispose(); this._ghostBolts.splice(i, 1); }
+    }
+    // fire-zone flicker
+    for (let i = this._ghostFires.length - 1; i >= 0; i--) {
+      const f = this._ghostFires[i]; f.life -= dt;
+      if (f.life <= 0) { this._ghostFires.splice(i, 1); continue; }
+      if (Math.random() < 0.18) this.game.effects.firePool({ x: f.x, y: 0.08, z: f.z }, 1.1, 0.5);
+    }
+    // aim ring fade-out
+    if (this._ghostAimRing && this._ghostAimRing.material.opacity > 0) {
+      this._ghostAimRingT = (this._ghostAimRingT || 0) - dt;
+      if (this._ghostAimRingT <= 0) this._ghostAimRing.material.opacity = 0;
+    }
   }
 
   _bossTank(e, dt) {
-    const pp = this.game.player.pos;
+    const pp = this._tgt(e);
 
     // Task 14: entrance steering — redirect steering goal to arena center until close enough
     if (e.entering) {
@@ -2291,6 +2406,7 @@ class EnemyManager {
       this._aimRing.rotation.x = -Math.PI / 2; this._aimRing.renderOrder = 990; this.game.engine.scene.add(this._aimRing);
     }
     this._aimRing.position.set(target.x, 0.06, target.z); this._aimRing.material.opacity = 0.85; this._aimRingT = 0.8;
+    this.game._bossFx('aimring', { x: +target.x.toFixed(2), z: +target.z.toFixed(2) });
   }
   // empty stubs (filled by later tasks) so _tankCombat doesn't throw:
   _tankMG(e, dt, pp, dist, losClear) {
@@ -2306,10 +2422,11 @@ class EnemyManager {
         const wHit = this.world.rayHit(o, dir, 30);
         const end = o.clone().addScaledVector(dir, wHit ? wHit.dist : 30);
         this.game.effects.tracer(o, end, 0xfff1a0);
-        const pl = this.game.player;
-        const t = clamp((pl.pos.x - o.x) * dir.x + (pl.pos.y + 1 - o.y) * dir.y + (pl.pos.z - o.z) * dir.z, 0, 30);
-        const dl = Math.hypot(pl.pos.x - (o.x + dir.x * t), pl.pos.y + 1 - (o.y + dir.y * t), pl.pos.z - (o.z + dir.z * t));
-        if (dl < 1.0 && (!wHit || t < wHit.dist)) pl.hurt(6);
+        e._mgFxT = (e._mgFxT || 0) - 0.09;
+        if (e._mgFxT <= 0) { e._mgFxT = 0.18; this.game._bossFx('mg', { o: [+o.x.toFixed(2), +o.y.toFixed(2), +o.z.toFixed(2)], e: [+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)] }); }
+        const t = clamp((pp.x - o.x) * dir.x + (pp.y + 1 - o.y) * dir.y + (pp.z - o.z) * dir.z, 0, 30);
+        const dl = Math.hypot(pp.x - (o.x + dir.x * t), pp.y + 1 - (o.y + dir.y * t), pp.z - (o.z + dir.z * t));
+        if (dl < 1.0 && (!wHit || t < wHit.dist)) this.game._hurtTarget(e._tgtId, 6);
         this.game.audio.tone(180, 0.03, 'square', 0.12);
         if (e.mgAmmo <= 0) { e.mgReload = 3.5; e.mgAmmo = 250; this.game.audio.tone(80, 0.2, 'square', 0.2); }
       }
@@ -2321,9 +2438,11 @@ class EnemyManager {
     const toP = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z); const L = toP.length() || 1; toP.multiplyScalar(1 / L);
     if (dist < 4 && fwd.dot(toP) > 0.6 && e.ramCD <= 0) {
       e.ramCD = 2.5;
-      this.game.player.hurt(40);
-      if (this.game.player.vel) { this.game.player.vel.x += toP.x * 6; this.game.player.vel.z += toP.z * 6; } // knockback
-      if (this.game.engine.shake) this.game.engine.shake(0.35);
+      this.game._hurtTarget(e._tgtId, 40);
+      if (e._tgtId === 'host') { // can't shove a remote: only knock/shake the local player
+        if (this.game.player.vel) { this.game.player.vel.x += toP.x * 6; this.game.player.vel.z += toP.z * 6; } // knockback
+        if (this.game.engine.shake) this.game.engine.shake(0.35);
+      }
       this.game.audio.tone(70, 0.15, 'sawtooth', 0.3);
     }
   }
@@ -2335,6 +2454,7 @@ class EnemyManager {
       e.vulnerable = true; e.exposeT = expose;
       this.game.audio.tone(300, 0.08, 'square', 0.25);
       this.game.hud.bigMessage('COMMANDER EXPOSED', 'shoot Mitri!');
+      this.game._bossFx('banner', { title: 'COMMANDER EXPOSED', sub: 'shoot Mitri!' });
     }
     if (e.vulnerable) {
       e.exposeT -= dt;
@@ -2342,7 +2462,7 @@ class EnemyManager {
       if (e.mesh.userData.hatch) e.mesh.userData.hatch.position.y = 1.0 + rise; // cupola lifts (placeholder)
       if (e.exposeT <= 0) { e.vulnerable = false; e.windowT = cycle; if (e.mesh.userData.hatch) e.mesh.userData.hatch.position.y = 1.0; }
     }
-    if (!e._enraged && enraged) { e._enraged = true; this.game.hud.bigMessage('MITRI ENRAGED', 'the T-90M floors it!'); }
+    if (!e._enraged && enraged) { e._enraged = true; this.game.hud.bigMessage('MITRI ENRAGED', 'the T-90M floors it!'); this.game._bossFx('banner', { title: 'MITRI ENRAGED', sub: 'the T-90M floors it!' }); }
     this.game.hud.setBossPip(e.vulnerable ? e.mitriHP / e.mitriHPmax : -1);
     updateTankLights(e.mesh, this.game);
   }
@@ -2399,6 +2519,7 @@ class EnemyManager {
       if (e.def.explode) {
         this.game.effects.explosion(top, e.def.explodeRadius);
         this.damageInRadius(e.pos, e.def.explodeRadius, e.def.explodeDmg * 1.2, e);
+        this.game.loot.clearPickupsInRadius(e.pos.x, e.pos.z, e.def.explodeRadius); // blast destroys ground items (runs before this kill's onEnemyKilled loot drop below)
         // Only the triggering kill harms the player; chained (explosion-killed) exploders don't double-dip.
         if (source !== 'explosion') this.game._explodeHurt(e.pos, e.def.explodeRadius, e.def.explodeDmg);
         // Route explosion damage to captured tank (explosives are extra-effective vs armor)
@@ -2436,6 +2557,7 @@ class EnemyManager {
     if (!this._armorHintT || now - this._armorHintT > 4) {
       this._armorHintT = now;
       this.game.hud.bigMessage('ARMOR — BOUNCED', 'flank the rear / hit tracks, or wait for COMMANDER');
+      this.game._bossFx('banner', { title: 'ARMOR — BOUNCED', sub: 'flank the rear / hit tracks, or wait for COMMANDER' });
     }
   }
   _mitriHurt(e) { this.game.effects.stuffing(new THREE.Vector3(e.pos.x, e.pos.y + 2.5, e.pos.z), 0xf2c200, 5, 4); this.game.audio.enemyHurt(); }
@@ -2531,7 +2653,7 @@ class EnemyManager {
     e.tankGroup = null; // ownership transferred — clearAll/pool won't touch it; next tank spawn builds fresh
     return true;
   }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._aimRing) this._aimRing.material.opacity = 0; }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._aimRing) this._aimRing.material.opacity = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
@@ -2777,6 +2899,7 @@ class BuildManager {
 function buildViewmodel(def) {
   const b = new MeshBuilder();
   const c = def.color, a = def.accent, dark = shade(c, -0.1);
+  let _post = null; // optional callback(mesh) run after the merged mesh exists — for articulated child parts (e.g. the flashlight's press-button)
   switch (def.shape) {
     case 'knife': { // Seitengewehr 84/98 III — K98k knife bayonet: fullered spear-point blade, bakelite grip, beak pommel (NO muzzle ring)
       const sHi = 0x6f747b, sMid = 0x52565c, sLo = 0x2c2f33, sSlot = 0x1c1e21, sBright = 0x8a8f96; // blued steel
@@ -3439,7 +3562,16 @@ function buildViewmodel(def) {
       gg = new THREE.CylinderGeometry(0.135, 0.135, 0.02, 18); b.geo(gg, 0, 0, -0.73, lens, { rx: Math.PI / 2 }); gg.dispose();            // lens
       gg = new THREE.CylinderGeometry(0.078, 0.07, 0.09, 16); b.geo(gg, 0, 0, 0.13, stLo, { rx: Math.PI / 2 }); gg.dispose();             // knurled tail cap
       b.box(0.07, 0.04, 0.12, 0, 0.1, -0.05, stLo);                   // switch housing on top
-      b.box(0.04, 0.04, 0.04, 0, 0.13, -0.08, red); b.box(0.03, 0.022, 0.03, 0, 0.15, -0.08, redHi); // red push-button
+      // red push-button = a SEPARATE child mesh so it can pop UP (beam off) / sink DOWN (beam on); driven in WeaponSystem.update
+      _post = (mesh) => {
+        const bb = new MeshBuilder();
+        bb.box(0.04, 0.04, 0.04, 0, 0.13, -0.08, red); bb.box(0.03, 0.022, 0.03, 0, 0.15, -0.08, redHi); // built at the raised (off) position
+        const btn = new THREE.Mesh(bb.build(), voxelMaterial({ side: THREE.DoubleSide }));
+        btn.renderOrder = mesh.renderOrder; btn.frustumCulled = false;
+        btn.userData.upY = 0; btn.userData.downY = -0.05; // pressed sinks the stud into the housing
+        btn.position.y = btn.userData.upY;
+        mesh.add(btn); mesh.userData.flashBtn = btn;
+      };
       break;
     }
     case 'build_sandbag': {  // a single sandbag held in hand (the real preview is the world ghost)
@@ -3465,6 +3597,7 @@ function buildViewmodel(def) {
   // walls draw and you never see THROUGH them into the void (depthTest is off, so a culled back face = a hole).
   const m = new THREE.Mesh(geom, voxelMaterial({ side: THREE.DoubleSide })); // depthTest on (2-pass) + DoubleSide => correct self-occlusion, no see-through through open tubes
   m.renderOrder = 1000; m.frustumCulled = false;
+  if (_post) _post(m); // attach articulated children (flashlight press-button) now that the parent mesh + renderOrder exist
   return m;
 }
 
@@ -3665,13 +3798,15 @@ class WeaponSystem {
     this.game.effects.muzzleFlash(muzzle, fwd, d.class === 'shotgun' || d.class === 'launcher' ? 1.6 : 1);
     if (d.class !== 'launcher') this.game.effects.shell(muzzle.clone().addScaledVector(right, -0.08), right);
     this.game.audio.gunshot(SOUND_BY_CLASS[d.class] || SOUND_BY_CLASS.pistol);
-    { const _mp = this.game.mp; if (_mp && _mp.active) _mp.net.broadcast('shot', { pid: _mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: d.class, col: d.accent }); } // teammates see/hear your gunfire
+    if (d.class !== 'launcher') { const _mp = this.game.mp; if (_mp && _mp.active) _mp.net.broadcast('shot', { pid: _mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: d.class, col: d.accent }); } // teammates see/hear your gunfire (launchers show via the slow 'proj' rocket ghost instead of an instant tracer)
 
     if (d.class === 'launcher') { // fire a rocket projectile that explodes on impact
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.55), new THREE.MeshLambertMaterial({ color: 0x394b2e }));
       mesh.position.copy(muzzle); mesh.quaternion.copy(cam.quaternion);
       this.game.engine.scene.add(mesh);
-      this.projectiles.push({ mesh, vel: fwd.clone().multiplyScalar(58), fuse: 4, rocket: true, radius: d.explodeRadius || 7, dmg: d.explodeDmg || 230 });
+      const rvel = fwd.clone().multiplyScalar(58), rrad = d.explodeRadius || 7;
+      this.projectiles.push({ mesh, vel: rvel, fuse: 4, rocket: true, radius: rrad, dmg: d.explodeDmg || 230 });
+      { const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('proj', { pid: mp.myId, kind: 'rocket', p: [+muzzle.x.toFixed(2), +muzzle.y.toFixed(2), +muzzle.z.toFixed(2)], v: [+rvel.x.toFixed(2), +rvel.y.toFixed(2), +rvel.z.toFixed(2)], r: rrad }); } // teammates render a ghost so they see it fly
       this.recoilKick = Math.min(this.recoilKick + 0.28, 0.4); this.recoilPitch += 0.06;
       this.game.hud.setWeapon(this);
       return;
@@ -3719,7 +3854,10 @@ class WeaponSystem {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshLambertMaterial({ color: 0x3c5a32 }));
     mesh.castShadow = true; mesh.position.copy(origin).addScaledVector(fwd, 0.8);
     this.game.engine.scene.add(mesh);
-    this.projectiles.push({ mesh, vel: fwd.clone().multiplyScalar(20).add(new THREE.Vector3(0, 3, 0)), fuse: 1.6, radius: 7, dmg: 220 });
+    const vel = fwd.clone().multiplyScalar(20).add(new THREE.Vector3(0, 3, 0));
+    const radius = 7;
+    this.projectiles.push({ mesh, vel, fuse: 1.6, radius, dmg: 220 });
+    { const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('proj', { pid: mp.myId, kind: 'grenade', p: [+mesh.position.x.toFixed(2), +mesh.position.y.toFixed(2), +mesh.position.z.toFixed(2)], v: [+vel.x.toFixed(2), +vel.y.toFixed(2), +vel.z.toFixed(2)], r: radius }); } // teammates render a ghost so they see it fly
     this.game.audio.uiClick();
   }
 
@@ -3741,7 +3879,8 @@ class WeaponSystem {
     if (clear) {
       const hit = clear.point.clone().addScaledVector(clear.normal, OCCLUSION_INSET);
       this.game.effects.explosion(hit.clone(), 1.2); this.game.effects.firePool(hit, 1.6, 1.4);
-      this.game.audio.explosion(); this.game._spawnMolotovPool(hit); this.game.audio.uiClick();
+      this.game._spawnMolotovPool(hit); this.game.audio.uiClick();
+      { const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('fx', { e: 'expl', p: [+hit.x.toFixed(2), +hit.y.toFixed(2), +hit.z.toFixed(2)], s: 1.2 }); } // wall-shatter has no 'proj' ghost — show the flash to teammates
       return;
     }
     const mb = new MeshBuilder();
@@ -3753,18 +3892,25 @@ class WeaponSystem {
       new THREE.MeshBasicMaterial({ color: 0xffb24a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     flame.position.set(0, 0.2, 0); mesh.add(flame);
     this.game.engine.scene.add(mesh);
+    const mvel = fwd.clone().multiplyScalar(MOLO_THROW_SPEED).add(new THREE.Vector3(0, MOLO_THROW_LIFT, 0));
     this.projectiles.push({ mesh, flame, molotov: true, fuse: MOLO_MAX_FLIGHT, trailT: 0,
-      vel: fwd.clone().multiplyScalar(MOLO_THROW_SPEED).add(new THREE.Vector3(0, MOLO_THROW_LIFT, 0)),
+      vel: mvel,
       spin: new THREE.Vector3(rr(8, 14), rr(-3, 3), rr(4, 8)) });
+    { const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('proj', { pid: mp.myId, kind: 'molotov', p: [+mesh.position.x.toFixed(2), +mesh.position.y.toFixed(2), +mesh.position.z.toFixed(2)], v: [+mvel.x.toFixed(2), +mvel.y.toFixed(2), +mvel.z.toFixed(2)], r: 1.2 }); } // teammates render a ghost so they see it arc
     this.game.audio.uiClick();
   }
   _shatterInHand() {
     this.molotovState = null; this.molotovCD = 0.6; this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0);
     if (this.game.inventory && this._throwSlot != null) { const s = this._throwSlot; this._throwSlot = null; this.game.inventory._consumeSlot(s); }
     this.game.hud.setWeapon(this);
-    this.game.player.burnT = PLAYER_BURN_DUR; this.game.player._takeSurvivalDamage(20, 1);
-    this.game.effects.explosion(this.game.player.pos.clone().setY(0.5), 1.0);
-    this.game.audio.explosion(); this.game.hud.toast('🔥 The bottle shattered in your hand!', 0xff5a26);
+    { const mp = this.game.mp; // initial 20 damage routes authoritatively via _takeSurvivalDamage; this adds the lingering burn DoT
+      if (mp && mp.active) { if (mp.isHost) { const s = mp.pstate.get('host'); if (s) s.burnT = PLAYER_BURN_DUR; } else mp.net.send('ignite', {}); }
+      else this.game.player.burnT = PLAYER_BURN_DUR; } // solo: local burnT (survivalTick DoT, unchanged)
+    this.game.player._takeSurvivalDamage(20, 1);
+    const ip = this.game.player.pos.clone().setY(0.5);
+    this.game.effects.explosion(ip, 1.0);
+    this.game.hud.toast('🔥 The bottle shattered in your hand!', 0xff5a26);
+    { const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('fx', { e: 'expl', p: [+ip.x.toFixed(2), +ip.y.toFixed(2), +ip.z.toFixed(2)], s: 1.2 }); } // in-hand shatter has no 'proj' ghost — show the flash to teammates
   }
 
   refillAll() {
@@ -3780,6 +3926,15 @@ class WeaponSystem {
   // by holding it when you grab the box. Adds 25% of that gun's max reserve, rounded UP to a whole
   // number of magazines. Returns { ok:true, key } on a refill, or { ok:false, reason } so the caller
   // can leave the box on the ground (melee/tool/infinite-ammo/already-full can't take it).
+  // non-mutating: can the gun currently in hand take more reserve ammo? (used as a co-op pre-grab guard so we
+  // don't claim a shared ammo box we can't actually use). Mirrors refillHeld's reject conditions.
+  heldRefillable() {
+    const held = this.game.inventory ? this.game.inventory.curItem() : null;
+    const key = held && held.kind, d = key && WEAPONS[key];
+    if (!d || d.melee || d.class === 'tool' || d.class === 'builder') return false;
+    if (this.reserve[key] === Infinity || d.reserveMax === Infinity) return false;
+    return this.reserve[key] < d.reserveMax;
+  }
   refillHeld() {
     const held = this.game.inventory ? this.game.inventory.curItem() : null;
     const key = held && held.kind, d = key && WEAPONS[key];
@@ -3845,6 +4000,10 @@ class WeaponSystem {
       if (this.molotovFuseT >= MOLO_HAND_FUSE) this._shatterInHand();
     }
 
+    // flashlight press-button: pops UP when the beam is off, sinks DOWN (pressed) when it's on
+    const flBtn = this.models.flashlight && this.models.flashlight.userData.flashBtn;
+    if (flBtn) { const t = (this.game.dayNight && this.game.dayNight.flashOn) ? flBtn.userData.downY : flBtn.userData.upY; flBtn.position.y = damp(flBtn.position.y, t, 22, dt); }
+
     // grenades
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const g = this.projectiles[i];
@@ -3876,11 +4035,14 @@ class WeaponSystem {
         if (g.molotov) {
           const mpos = shatterAt || g.mesh.position.clone();
           this.game.effects.explosion(mpos.clone(), 1.2); this.game.effects.firePool(mpos, 1.6, 1.4);
-          this.game.audio.explosion(); this.game._spawnMolotovPool(mpos);
+          this.game._spawnMolotovPool(mpos);
         } else {
           this.game.effects.explosion(g.mesh.position.clone(), g.radius);
           this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg);
-          { const _mp = this.game.mp; if (_mp && _mp.active) { const gp = g.mesh.position; _mp.net.broadcast('fx', { e: 'expl', p: [+gp.x.toFixed(2), +gp.y.toFixed(2), +gp.z.toFixed(2)], s: g.radius }); } } // teammates see the blast
+          // explosive Full-FF: grenades/rockets damage self + teammates (host-authoritative). No 'fx' broadcast — other players see the boom via their 'proj' ghost detonation.
+          const _mp = this.game.mp; const gp = g.mesh.position;
+          if (!_mp.active || _mp.isHost) { this.game._explodeHurt(gp.clone(), g.radius, g.dmg); this.game.loot.clearPickupsInRadius(gp.x, gp.z, g.radius); } // host/solo: nuke ground items in the blast (client thrower clears via the host 'splash' path)
+          else _mp.net.send('splash', { p: [+gp.x.toFixed(2), +gp.y.toFixed(2), +gp.z.toFixed(2)], r: g.radius, dmg: g.dmg });
         }
         this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose();
         if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); }
@@ -4157,8 +4319,10 @@ class LootManager {
     this.pickups = []; this.boxes = [];
     this.drops = []; this.nearDrop = null; // parachuting supply drops (radio-called)
     this.nearBox = null; this.prompt = null; this.nearPickup = null;
+    this._pkSeq = 0; // host-only: monotonic id source for networked (shared) pickups
     this._buildLootboxes();
   }
+  _nextPickupId() { return 'pk' + (++this._pkSeq); } // only the HOST ever mints pickup ids
 
   _buildLootboxes() {
     // Map lootboxes removed (2026-05-29) — to be replaced by a radio + supply-drop
@@ -4361,41 +4525,122 @@ class LootManager {
     return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x002040, emissiveIntensity: 0.5 }));
   }
 
+  // Roll a kill's GROUND items (host-authoritative in co-op via spawnNetPickup; local in solo). Returns the
+  // rolled key-cash amount so the CALLER can attribute it to the actual KILLER (not whoever ran the roll —
+  // which is now always the host in co-op). NOTE: key-cash is no longer granted here.
   drop(pos, def) {
-    const p = this.game.player;
-    // keys
-    if (def.boss) { p.addMoney(KEY_CASH * 3); }
-    else {
-      let keyChance = 0.16;
-      if (def.explode || def.scale > 1.4) keyChance *= 1.5;
-      if (chc(keyChance)) p.addMoney(KEY_CASH);
-    }
-    // health/ammo/armor
+    // key-cash (rolled here, granted by the caller to the killer)
+    let keyCash = 0;
+    if (def.boss) keyCash = KEY_CASH * 3;
+    else { let keyChance = 0.16; if (def.explode || def.scale > 1.4) keyChance *= 1.5; if (chc(keyChance)) keyCash = KEY_CASH; }
+    // health/ammo/armor — shared in co-op (host rolls + broadcasts), local in solo
     const roll = Math.random();
-    if (roll < 0.05) this._spawnPickup('medkit', pos, 35);
-    else if (roll < 0.12) this._spawnPickup('ammo', pos, 1);
-    else if (roll < 0.16) this._spawnPickup('armor', pos, 50);
-    else if (roll < 0.185) this._spawnPickup('splint', pos, 1);
-    else if (roll < 0.215) this._spawnPickup('food', pos, FOOD_RESTORE);
-    else if (roll < 0.235) this._spawnPickup('molotov', pos, 1);
+    if (roll < 0.05) this.spawnNetPickup('medkit', pos.x, pos.z, 35);
+    else if (roll < 0.12) this.spawnNetPickup('ammo', pos.x, pos.z, 1);
+    else if (roll < 0.16) this.spawnNetPickup('armor', pos.x, pos.z, 50);
+    else if (roll < 0.185) this.spawnNetPickup('splint', pos.x, pos.z, 1);
+    else if (roll < 0.215) this.spawnNetPickup('food', pos.x, pos.z, FOOD_RESTORE);
+    else if (roll < 0.235) this.spawnNetPickup('molotov', pos.x, pos.z, 1);
+    return keyCash;
   }
 
-  _spawnPickup(kind, pos, value, life = 30) {
+  _spawnPickup(kind, pos, value, life = 30, id = null) {
     const mesh = this._pickupMesh(kind);
-    mesh.position.set(pos.x + rr(-0.6, 0.6), 0.6, pos.z + rr(-0.6, 0.6));
+    // networked pickups (id != null) carry authoritative coords → spawn EXACTLY there so all peers match;
+    // solo/local pickups (id == null) jitter so a kill's items don't stack on one spot.
+    if (id == null) mesh.position.set(pos.x + rr(-0.6, 0.6), 0.6, pos.z + rr(-0.6, 0.6));
+    else mesh.position.set(pos.x, 0.6, pos.z);
     this.scene.add(mesh);
-    this.pickups.push({ mesh, kind, value, t: rr(0, TAU), life });
+    this.pickups.push({ mesh, kind, value, t: rr(0, TAU), life, id });
   }
 
-  // Backpack courier death → a radio + one configurable bonus.
+  // HOST-authoritative shared spawn: the host mints an id, jitters ONCE, spawns locally, and broadcasts the
+  // exact coords so every client spawns the identical pickup. Solo spawns locally (jittered, id null). A
+  // non-host client never spawns ground loot directly — it only receives 'pickup' messages.
+  spawnNetPickup(kind, x, z, value, life = 30) {
+    const mp = this.game.mp;
+    if (mp && mp.active && mp.isHost) {
+      const id = this._nextPickupId();
+      const jx = x + rr(-0.6, 0.6), jz = z + rr(-0.6, 0.6);     // jitter ONCE on the host
+      this._spawnPickup(kind, new THREE.Vector3(jx, 0.55, jz), value, life, id);
+      mp.net.send('pickup', { id, kind, x: +jx.toFixed(2), z: +jz.toFixed(2), value, life });
+    } else if (!mp || !mp.active) {
+      this._spawnPickup(kind, new THREE.Vector3(x, 0.55, z), value, life);  // solo: local, jittered (id null)
+    }
+  }
+
+  removePickupById(id) {
+    const i = this.pickups.findIndex((p) => p.id === id); if (i < 0) return;
+    const pu = this.pickups[i];
+    this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose();
+    this.pickups.splice(i, 1);
+    if (this.nearPickup === pu) this.nearPickup = null;
+  }
+
+  // Destroy every ground pickup whose mesh is within radius r of (x,z). Host-authoritative: a non-host client
+  // owns NO pile (the host clears it and broadcasts 'pickupgone' so client copies vanish), so it bails early.
+  // Solo (mp inactive) removes locally with no net. Used by ALL explosions + the molotov fire pool (T9).
+  clearPickupsInRadius(x, z, r) {
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) return;        // only the host (or solo) owns the pile
+    const r2 = r * r;
+    for (let i = this.pickups.length - 1; i >= 0; i--) {       // iterate backwards — removal splices
+      const pu = this.pickups[i];
+      const px = pu.mesh.position.x - x, pz = pu.mesh.position.z - z;
+      if (px * px + pz * pz > r2) continue;
+      const id = pu.id;
+      if (id != null) { this.removePickupById(id); if (mp && mp.active) mp.net.send('pickupgone', { id }); } // shared pickup → clear everywhere
+      else this._removePickup(pu);                            // legacy/local (solo) pickup → remove locally, no broadcast
+    }
+  }
+
+  // HOST only: a player claimed the pickup → dedupe (first claim wins), clear it everywhere, and authorize
+  // the grant on the CLAIMER's machine (so held-gun-specific refills resolve on the right player).
+  claimPickup(id, byId) {
+    const pu = this.pickups.find((p) => p.id === id); if (!pu) return;   // already claimed → ignore (dedupe)
+    const kind = pu.kind, value = pu.value;
+    this.removePickupById(id);
+    this.game.mp.net.send('pickupgone', { id });                          // clear it on every client
+    if (byId === 'host' || byId === this.game.mp.myId) this._applyGrant(kind, value);  // host grabbed it
+    else this.game.mp.net.sendTo(byId, 'pickupgrant', { kind, value });   // the claiming client applies the effect
+  }
+
+  // Apply a pickup's effect on the CLAIMER's machine. Mirrors the solo grab path (ammo → refill the held gun;
+  // everything else → into the backpack). Returns false when the grab can't proceed (e.g. ammo with no gun
+  // in hand, or a full backpack) so the caller can leave the pickup on the ground.
+  _applyGrant(kind, value) {
+    const inv = this.game.inventory;
+    if (kind === 'ammo') { // ground ammo never enters the backpack — it tops up ONLY the gun in hand
+      const r = this.game.weapons.refillHeld();
+      if (!r.ok) {
+        if (r.reason === 'full') this.game.hud.toast('Ammo reserve full', 0xb88a3a);
+        else this.game.hud.toast('Hold a firearm to grab ammo', 0xd23a2a);
+        return false;
+      }
+      this.game.audio.reloadClick(); this.game.hud.toast('Ammo · ' + WEAPONS[r.key].name, 0xb88a3a);
+      return true;
+    }
+    if (inv.isFull()) { this.game.hud.toast('Inventory full — drop something (I)', 0xd23a2a); return false; }
+    if (WEAPONS[kind]) this.game.weapons.grant(kind); // a dropped weapon → re-own it
+    inv.addItem(kind, value);
+    const label = WEAPONS[kind] ? WEAPONS[kind].name : (ITEM_DEFS[kind] ? ITEM_DEFS[kind].icon + ' ' + ITEM_DEFS[kind].name : kind);
+    this.game.audio.buy(); this.game.hud.toast('Picked up ' + label, 0x7fd06a);
+    return true;
+  }
+
+  // Backpack courier death → a radio + one configurable bonus. Items are shared in co-op (host-authoritative
+  // via spawnNetPickup, so the radio reaches everyone); the cash-bonus branch is RETURNED so the caller can
+  // grant it to the KILLER (not the host). Returns the rolled bonus cash (0 unless the cash branch hit).
   dropCourier(pos) {
-    this._spawnPickup('radio', pos, 1);
+    this.spawnNetPickup('radio', pos.x, pos.z, 1);
     const r = Math.random();
-    if (r < 0.4) this._spawnPickup('medkit', pos, 60);
-    else if (r < 0.7) this._spawnPickup('ammo', pos, 1);
-    else if (r < 0.9) this._spawnPickup('armor', pos, 60);
-    else this.game.player.addMoney(KEY_CASH);
+    let bonusCash = 0;
+    if (r < 0.4) this.spawnNetPickup('medkit', pos.x, pos.z, 60);
+    else if (r < 0.7) this.spawnNetPickup('ammo', pos.x, pos.z, 1);
+    else if (r < 0.9) this.spawnNetPickup('armor', pos.x, pos.z, 60);
+    else bonusCash = KEY_CASH;
     this.game.hud.toast('📻 Radio dropped! (press T)', 0x6fd0e8);
+    return bonusCash;
   }
 
   // Radio call-in: a Su-24 streaks across the map and releases a parachute crate over a random spot.
@@ -4407,6 +4652,12 @@ class LootManager {
   }
   callSupplyDrop(spec) {
     const mp = this.game.mp;
+    if (this.plane) { // a previous flyby is still airborne — tear it down first so its LOOPING jet clip doesn't orphan (the "double flyby sound") and its mesh doesn't leak
+      if (this.plane.jet) this.plane.jet.stop();
+      if (!this.plane.released) this._spawnDropCrate(this.plane.target, this.plane.mesh.position.y - 2, this.plane.dropId, this.plane.net); // still deliver its pending crate (don't waste the radio)
+      this.scene.remove(this.plane.mesh); this.plane.mesh.geometry.dispose(); this.plane.mesh.material.dispose();
+      this.plane = null;
+    }
     let target, ang, id;
     if (spec) { target = new THREE.Vector3(spec.tx, 0, spec.tz); ang = spec.ang; id = spec.id; }      // client: mirror the host's flyby+crate (visual)
     else {
@@ -4467,21 +4718,24 @@ class LootManager {
   }
 
   _rollGive() { const give = { sandbag: 0, wire: 0, wood: 0 }, ks = ['sandbag', 'wire', 'wood']; for (let i = 0; i < 2; i++) give[ks[Math.floor(Math.random() * 3)]]++; return give; } // RARE: ~2 random fort. mats
-  // Burst a landed crate open: scatter its contents as PHYSICAL ground pickups in
-  // a ring around the crate (grab each later with E) instead of auto-filling the
-  // backpack. Cash is the only instant payout. Applied to the LOCAL opener only —
-  // used directly (host/SP) or via the 'dropreward' net msg.
-  _spillDropLoot(pos, give) {
-    const cx = pos.x, cz = pos.z;
-    const gun = FIREARM_KEYS[Math.floor(Math.random() * FIREARM_KEYS.length)]; // 100%: one guaranteed random firearm, any kind
+  // Burst a landed crate open: scatter its contents as PHYSICAL ground pickups in a ring around the crate.
+  // HOST-authoritative in co-op — the host rolls the GUN and spawns each item via spawnNetPickup so all
+  // players see ONE shared pile (with ids). The opener's instant cash goes to that opener: locally for the
+  // host/solo opener, or via a 'dropcash' message for a client opener (`opener` = the client's peer id).
+  // Solo (mp inactive) keeps the old local spill + local cash.
+  _spillDropLoot(pos, give, opener = null) {
+    const cx = pos.x, cz = pos.z, mp = this.game.mp;
+    const gun = FIREARM_KEYS[Math.floor(Math.random() * FIREARM_KEYS.length)]; // 100%: one guaranteed random firearm, any kind (rolled on the host)
     const items = [[gun, 1], ['medkit', 60], ['medkit', 60], ['armor', 60], ['armor', 60], ['ammo', 1], ['ammo', 1], ['food', FOOD_RESTORE]];
     const g = give || {};
     for (const k of ['sandbag', 'wire', 'wood']) for (let n = 0; n < (g[k] || 0); n++) items.push([k, 1]); // ~2 random fort. mats
     items.forEach(([kind, value], i) => {
       const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
-      this._spawnPickup(kind, new THREE.Vector3(cx + Math.cos(a) * r, 0.6, cz + Math.sin(a) * r), value, 75); // 75s life — time to grab the whole pile
+      this.spawnNetPickup(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, value, 75); // 75s life — shared (host) / local (solo)
     });
-    this.game.player.addMoney(SUPPLY_CASH); // cash is the only instant payout
+    // instant cash → the OPENER only
+    if (mp && mp.active && opener && opener !== 'host' && opener !== mp.myId) mp.net.sendTo(opener, 'dropcash', { amount: SUPPLY_CASH });
+    else this.game.player.addMoney(SUPPLY_CASH);
     this.game.effects.stuffing(new THREE.Vector3(cx, 1.4, cz), 0xffc23a, 36, 8);
     this.game.hud.toast(`📦 Supply drop burst open — grab the loot! +$${SUPPLY_CASH}`, 0xff8a3a);
     this.game.hud.bigMessage('SUPPLY DROP', 'loot scattered on the ground — grab it with E');
@@ -4507,12 +4761,26 @@ class LootManager {
   }
 
   openNearby() {
-    if (this.nearDrop) { this._openDrop(this.nearDrop); this.nearDrop = null; } // claim a landed supply drop (no key needed; map lootboxes are gone)
+    if (this.nearDrop) { this._openDrop(this.nearDrop); this.nearDrop = null; return true; } // claim a landed supply drop (no key needed; map lootboxes are gone)
+    return false;
   }
   // E-pickup: put the nearest ground item into the backpack (no auto-walkover). Returns true if it consumed the E press.
   tryPickupNearby() {
     const pu = this.nearPickup; if (!pu) return false;
-    const inv = this.game.inventory;
+    const inv = this.game.inventory, mp = this.game.mp;
+    // CO-OP shared pickup (has an id): don't grab locally — ask the host to authorize the claim. The grant
+    // (effect) + removal come back authoritatively, so two players can't both get it. We still pre-check the
+    // local guards (full backpack / ammo-needs-a-gun) so we never claim something we can't actually take.
+    if (mp && mp.active && pu.id != null) {
+      if (pu.kind === 'ammo') {
+        if (!this.game.weapons.heldRefillable()) { this.game.hud.toast('Hold a firearm with room for ammo', 0xd23a2a); return true; } // leave it on the ground
+      } else if (inv.isFull()) { this.game.hud.toast('Inventory full — drop something (I)', 0xd23a2a); return true; }
+      if (mp.isHost) this.claimPickup(pu.id, 'host');
+      else mp.net.send('pickupclaim', { id: pu.id });
+      this.nearPickup = null;
+      return true;
+    }
+    // SOLO, or a legacy/local pickup with no id: grab + apply locally (unchanged behaviour).
     if (pu.kind === 'ammo') { // ground ammo never enters the backpack — it tops up ONLY the gun in hand (you pick which by holding it)
       const r = this.game.weapons.refillHeld();
       if (!r.ok) {
@@ -4583,7 +4851,7 @@ class LootManager {
 
   reset() {
     for (const pu of this.pickups) { this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); }
-    this.pickups.length = 0;
+    this.pickups.length = 0; this._pkSeq = 0;
     for (const d of this.drops) this._disposeDrop(d);
     this.drops.length = 0; this.nearDrop = null; this.nearPickup = null;
     if (this.plane) { if (this.plane.jet) this.plane.jet.stop(); this.scene.remove(this.plane.mesh); this.plane.mesh.geometry.dispose(); this.plane.mesh.material.dispose(); this.plane = null; }
@@ -4623,6 +4891,8 @@ class Player {
   hurt(dmg, bypassArmor = 0) {
     if (!this.alive) return;
     if (this.inTank && this.inTank.shielded && this.inTank.shielded()) return; // protected by tank armor (enemy fire hits the tank instead — see captured-tank HP)
+    const mp = this.game.mp;
+    if (mp && mp.active) { mp.claimPlayerHit(mp.myId, dmg); return; } // co-op: player damage is host-authoritative (pstate owns hp/armor/down/3-down death)
     // bypassArmor 0..1 = fraction of dmg armor cannot soak (blunt trauma). 0 = bullets, 1 = ignores armor.
     if (this.armor > 0 && bypassArmor < 1) { const take = Math.min(this.armor, dmg * (1 - bypassArmor)); this.armor -= take; dmg -= take; this.game.hud.setArmor(this.armor, this.armorMax); }
     this.hp -= dmg; this._regenT = 0;
@@ -4754,8 +5024,8 @@ class WaveManager {
   _coopMul() { const mp = this.game.mp; return (mp && mp.active) ? 1 + (Math.max(1, mp.pstate.size) - 1) * 0.5 : 1; } // co-op enemy multiplier (1p=1.0, 2p=1.5, 3p=2.0, 4p=2.5); single-player = 1
   startWave(n) {
     this.bossPick = null;
+    if (this.game.mp.active && this.game.mp.isHost) { this.game.mp.respawnAll(); this.game.mp.net.send('wave', { n, label: 'WAVE ' + n, sub: 'co-op — hold the line' }); } // host: respawn bled-out players + broadcast the wave (both modes — hoisted above the longnight return)
     if (this.game.mode === 'longnight') return this._startLongNight(n);
-    if (this.game.mp.active && this.game.mp.isHost) { this.game.mp.respawnAll(); this.game.mp.net.send('wave', { n, label: 'WAVE ' + n, sub: 'co-op — hold the line' }); }
     this.wave = n; this.active = true; this.spawned = 0;
     this.isBossWave = (n % 5 === 0);
     if (this.isBossWave) this.bossPick = BOSS_ROSTER[(Math.random() * BOSS_ROSTER.length) | 0];
@@ -4783,6 +5053,7 @@ class WaveManager {
     else if (typeKey !== 'normal') tags.push({ t: t.label });
     if (this.minibossPending) tags.push({ t: '☠ Mini-boss' });
     this.game.hud.setWaveTag(tags);
+    if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('wavetag', { tags }); // host: persistent special-wave tags → clients
     this.game.audio.waveStart();
   }
   // THE LONG NIGHT: endless escalation, boss every 5th wave, blood-moon swell.
@@ -4805,6 +5076,7 @@ class WaveManager {
     this.game.hud.bigMessage(`WAVE ${n}`, this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : 'more keep coming…');
     const tags = []; if (this.isBossWave) tags.push({ t: '☠ BOSS' }); if (blood) tags.push({ t: '🔴 Blood Moon', mod: true });
     this.game.hud.setWaveTag(tags);
+    if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('wavetag', { tags }); // host: persistent special-wave tags → clients
     this.game.audio.waveStart();
   }
   _longNightWeights(n) {
@@ -4824,7 +5096,7 @@ class WaveManager {
   // Wave fully spawned: clear when all dead; otherwise after ~25s start the next wave with survivors
   // CARRIED OVER (never despawned). A live boss pauses the countdown — bosses must be killed.
   _advanceCheck(dt) {
-    if (this.game.enemies.aliveCount === 0) { this.active = false; this.game.hud.clearWaveTag(); this.game.onWaveCleared(this.wave); return; }
+    if (this.game.enemies.aliveCount === 0) { this.active = false; this.game.hud.clearWaveTag(); if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('wavetag', { tags: [] }); this.game.onWaveCleared(this.wave); return; }
     const bossAlive = this.game.enemies.active.some((e) => e.alive && e.def.boss);
     if (bossAlive) { this.advanceTimer = null; return; }
     if (this.advanceTimer == null) this.advanceTimer = WAVE_ADVANCE_SECS;
@@ -5206,7 +5478,13 @@ class Inventory {
     const entry = this.slots[slotIdx]; if (!entry) return;
     const kind = entry.kind, pos = this.game.player.pos.clone(); pos.y = 0.55;
     if (kind === 'knife') { this.game.hud.toast('Can not drop your bare knife', 0xd23a2a); return; } // bare knife stays — always have a melee
-    this.game.loot._spawnPickup(kind, pos, entry.value); // re-grabbable with E (teammates too)
+    const mp = this.game.mp;
+    if (mp && mp.active) {                                                  // co-op: route through the host so it becomes ONE shared pickup (no local non-id duplicate)
+      if (mp.isHost) this.game.loot.spawnNetPickup(kind, pos.x, pos.z, entry.value);
+      else mp.net.send('dropitem', { kind, value: entry.value, x: pos.x, z: pos.z });
+    } else {
+      this.game.loot._spawnPickup(kind, pos, entry.value);                 // solo: re-grabbable with E (unchanged)
+    }
     if (this.game.audio.uiClick) this.game.audio.uiClick();
     this._consumeSlot(slotIdx);
   }
@@ -5306,7 +5584,7 @@ class HUD {
     this.el.wepname.style.color = 'var(--gold)';
     if (d.class === 'tool') { // flashlight / binoculars: no ammo
       if (d.zoom) { this.el.wepclass.textContent = 'optics · RMB to zoom'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔭 6×</span>`; }
-      else { const on = this.game.dayNight && this.game.dayNight.flashOn; this.el.wepclass.textContent = 'tool · L: toggle beam'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔦 ${on ? 'ON' : 'off'}</span>`; }
+      else { const on = this.game.dayNight && this.game.dayNight.flashOn; this.el.wepclass.textContent = 'tool · E: toggle beam'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔦 ${on ? 'ON' : 'off'}</span>`; }
       if (this.el.molotov) this.el.molotov.innerHTML = '';
       return;
     }
@@ -5317,6 +5595,12 @@ class HUD {
     if (d.melee) this.el.ammonum.innerHTML = `<span style="font-size:22px">MELEE</span>`;
     else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
     if (this.el.molotov) { const mc = this.game.inventory ? this.game.inventory.count('molotov') : 0; this.el.molotov.innerHTML = mc > 0 ? `🔥 ×${mc}` : ''; }
+  }
+  setMountedGun() { // shown in the weapon slot while manning the .50 cal (M2HB)
+    this.el.wepname.textContent = '.50 CAL M2HB'; this.el.wepname.style.color = 'var(--gold)';
+    this.el.wepclass.textContent = 'mounted · ∞ ammo · overheats · E: dismount';
+    this.el.ammonum.innerHTML = `<span style="font-size:22px">∞</span>`;
+    if (this.el.molotov) this.el.molotov.innerHTML = '';
   }
   setHeldItem(def, slot) {
     if (!def) return;
@@ -5731,50 +6015,117 @@ class MountedGun {
     this.dmg = 65; this.rpm = 600; this.range = 380; this.spread = 0.012;
     this.pivot = pos.clone(); this.pivot.y += 1.05;
     this.beltRounds = []; this._smokeT = 0;
+    this.occupant = null; // co-op: id currently manning the gun (null / 'host' / a peer id); host-authoritative
+    this._aimT = 0;       // throttle timer for the aim broadcast
     this._build();
   }
 
   _build() {
     const scene = this.game.engine.scene;
-    const metal = 0x42474e, dark = 0x202327, olive = 0x4a5333, brass = 0xc9a44a;
+    // palette: worn blued steel + olive .50cal ammo can + brass belt
+    const bHi = 0x565d68, bMid = 0x414853, bLo = 0x2c313a, bSlot = 0x1a1e24, bBright = 0x6f7886; // worn blued steel
+    const oHi = 0x5a6238, oMid = 0x474e2b, oLo = 0x32381e, oSlot = 0x23271a;                     // olive ammo can
+    const cv = 0xa89f63, cvHi = 0xc6bd80;                                                         // canvas carry handle
+    const stencil = 0xd8d2b0, brass = 0xe0bb5c;                                                   // markings + belt brass
 
+    // ---- mount: just the central pintle post (legs/T&E removed per request) ----
     const tb = new MeshBuilder();
-    tb.box(0.12, 1.05, 0.12, 0, 0.52, 0, metal, { tint: 0.02 });
-    tb.box(0.06, 1.3, 0.06, 0, 0.5, -0.55, dark, { rx: 0.42 });
-    tb.box(0.06, 1.3, 0.06, -0.5, 0.5, 0.42, dark, { rx: -0.32, rz: 0.34 });
-    tb.box(0.06, 1.3, 0.06, 0.5, 0.5, 0.42, dark, { rx: -0.32, rz: -0.34 });
+    tb.box(0.16, 1.05, 0.16, 0, 0.52, 0, bMid, { tint: 0.02 });                 // pintle post (column)
+    tb.box(0.055, 1.0, 0.06, 0, 0.52, 0.082, bHi);                              // post front highlight
+    tb.box(0.06, 1.0, 0.055, 0.082, 0.52, 0, bLo);                              // post side shadow
+    tb.box(0.19, 0.10, 0.19, 0, 1.0, 0, bBright);                               // pintle collar (gun seats here)
+    tb.box(0.30, 0.05, 0.30, 0, 0.02, 0, bLo);                                  // base plate on the roof
     this.tripod = new THREE.Mesh(tb.build(), voxelMaterial());
     this.tripod.castShadow = true; this.tripod.position.copy(this.base); scene.add(this.tripod);
 
     this.gun = new THREE.Group(); this.gun.rotation.order = 'YXZ';
     this.gun.position.copy(this.pivot); scene.add(this.gun);
 
+    // ---- body: receiver, top cover, perforated jacket, grips, sights, ammo can ----
     const gb = new MeshBuilder();
-    gb.box(0.26, 0.28, 1.0, 0, 0, 0.05, metal, { tint: 0.02 });               // receiver
-    gb.box(0.27, 0.1, 1.0, 0, 0.16, 0.05, dark);                              // top cover
-    gb.box(0.17, 0.17, 0.7, 0, 0.02, -0.78, metal, { tint: 0.02 });           // perforated jacket
-    for (let i = 0; i < 5; i++) { const cyl = new THREE.CylinderGeometry(0.05, 0.05, 0.2, 10); gb.geo(cyl, 0, 0.02, -0.6 - i * 0.12, dark, { rz: Math.PI / 2 }); cyl.dispose(); }
-    gb.box(0.5, 0.06, 0.06, 0, 0.0, 0.62, dark);                              // spade grip crossbar
-    gb.box(0.06, 0.34, 0.06, -0.22, -0.16, 0.62, dark);                       // left spade
-    gb.box(0.06, 0.34, 0.06, 0.22, -0.16, 0.62, dark);                        // right spade
-    gb.box(0.12, 0.06, 0.06, 0, -0.04, 0.66, 0x6a6a6a);                       // butterfly trigger
-    gb.box(0.06, 0.14, 0.05, 0, 0.22, 0.4, dark);                             // rear sight
-    gb.box(0.04, 0.12, 0.04, 0, 0.13, -1.5, dark);                            // front sight
-    gb.box(0.24, 0.24, 0.32, 0.3, -0.06, 0.2, olive, { tint: 0.03 });         // ammo can
-    gb.box(0.26, 0.04, 0.34, 0.3, 0.08, 0.2, dark);                           // can lid
+    // receiver
+    gb.box(0.28, 0.30, 1.02, 0, 0.02, 0.05, bMid, { tint: 0.02 });             // main block
+    gb.box(0.285, 0.035, 1.02, 0, 0.165, 0.05, bHi);                           // lit top edge
+    gb.box(0.285, 0.04, 1.02, 0, -0.135, 0.05, bLo);                           // shadow underside
+    gb.box(0.30, 0.34, 0.055, 0, 0.0, 0.585, bMid, { tint: 0.02 });            // rear backplate face
+    gb.box(0.30, 0.03, 0.06, 0, 0.165, 0.585, bHi);                            // backplate lit cap
+    for (let i = 0; i < 4; i++) { gb.box(0.012, 0.012, 0.012, -0.142, 0.05, -0.26 + i * 0.22, bBright); gb.box(0.012, 0.012, 0.012, 0.142, 0.05, -0.26 + i * 0.22, bBright); } // side rivets
+    // top cover (raised, rounded) — kept low so it never crosses the eye→ring sightline
+    gb.box(0.24, 0.10, 0.84, 0, 0.22, 0.0, bMid, { tint: 0.02 });              // cover bulk
+    gb.box(0.20, 0.04, 0.84, 0, 0.255, 0.0, bHi);                              // lit crown
+    gb.box(0.245, 0.05, 0.84, 0, 0.185, 0.0, bLo);                             // cover lower-edge shadow
+    gb.box(0.20, 0.06, 0.10, 0, 0.215, -0.44, bLo, { rx: 0.5 });               // sloped front lip
+    gb.box(0.06, 0.05, 0.05, 0, 0.225, 0.42, bBright);                         // rear cover latch
+    // perforated barrel jacket (the M2 signature) — sleeve + lit/shadow strips + drilled holes
+    gb.box(0.20, 0.20, 0.78, 0, 0.02, -0.80, bMid, { tint: 0.02 });            // sleeve core
+    gb.box(0.155, 0.03, 0.78, 0, 0.115, -0.80, bHi);                           // lit top strip
+    gb.box(0.155, 0.03, 0.78, 0, -0.075, -0.80, bLo);                          // shadow bottom strip
+    gb.box(0.215, 0.215, 0.06, 0, 0.02, -0.42, bLo);                           // jacket-to-receiver collar
+    for (let i = 0; i < 6; i++) {
+      const z0 = -0.52 - i * 0.115;
+      const u = new THREE.CylinderGeometry(0.05, 0.05, 0.206, 10); gb.geo(u, 0, 0.055, z0, bSlot, { rz: Math.PI / 2 }); u.dispose();          // upper-row cooling hole
+      const l = new THREE.CylinderGeometry(0.05, 0.05, 0.206, 10); gb.geo(l, 0, -0.045, z0 - 0.057, bSlot, { rz: Math.PI / 2 }); l.dispose(); // lower-row (staggered)
+    }
+    gb.box(0.21, 0.21, 0.05, 0, 0.02, -1.20, bLo);                             // front jacket cap
+    gb.box(0.10, 0.10, 0.04, 0, 0.02, -1.215, bSlot);                          // jacket bore mouth
+    gb.box(0.045, 0.045, 0.04, 0, 0.02, -2.31, bSlot);                         // dark muzzle bore (on body, never glows)
+    // cosmetic iron sights (the ring "AA" sight below stays the aiming device)
+    gb.box(0.045, 0.07, 0.03, 0, 0.275, 0.30, bLo); gb.box(0.05, 0.018, 0.02, 0, 0.31, 0.30, bBright);   // folded leaf rear
+    gb.box(0.03, 0.09, 0.03, 0, 0.15, -1.16, bLo); gb.box(0.012, 0.03, 0.012, 0, 0.20, -1.16, bBright);  // front blade
+    // charging handle (right)
+    gb.box(0.05, 0.05, 0.22, 0.16, 0.06, 0.18, bLo); gb.box(0.04, 0.07, 0.04, 0.16, 0.06, 0.30, bBright);
+    // feed throat (belt enters the LEFT-top of the receiver; can sits on the left, belt feeds rightward in)
+    gb.box(0.12, 0.13, 0.18, -0.11, 0.07, -0.02, bLo); gb.box(0.10, 0.02, 0.12, -0.11, 0.135, -0.02, bSlot);
+    // spade grips + butterfly trigger (rear)
+    gb.box(0.50, 0.07, 0.07, 0, 0.0, 0.62, bLo);                               // crossbar
+    for (const hx of [-0.21, 0.21]) {
+      gb.box(0.058, 0.34, 0.06, hx, -0.16, 0.62, bMid, { tint: 0.03 });        // handle body
+      gb.box(0.02, 0.34, 0.062, hx, -0.16, 0.589, bHi);                        // front highlight
+      gb.box(0.02, 0.34, 0.062, hx, -0.16, 0.651, bLo);                        // back shadow
+      for (let i = 0; i < 3; i++) gb.box(0.062, 0.012, 0.062, hx, -0.05 - i * 0.09, 0.62, bSlot); // grip ribs
+      gb.box(0.07, 0.04, 0.07, hx, 0.025, 0.62, bBright);                      // grip cap
+    }
+    gb.box(0.13, 0.045, 0.05, 0, -0.05, 0.66, bBright);                        // butterfly trigger
+    gb.box(0.05, 0.03, 0.03, -0.05, -0.06, 0.69, bBright); gb.box(0.05, 0.03, 0.03, 0.05, -0.06, 0.69, bBright); // thumb paddles
+    // ammo can on the LEFT — OPEN-topped, hollow, NO lid; linked .50 rounds packed inside; belt feeds rightward into the throat
+    gb.box(0.11, 0.05, 0.30, -0.27, -0.04, 0.16, bLo);                         // cradle arm from receiver
+    gb.box(0.30, 0.03, 0.42, -0.42, -0.215, 0.16, oMid, { tint: 0.02 });       // box floor
+    gb.box(0.30, 0.30, 0.03, -0.42, -0.07, 0.37, oMid, { tint: 0.02 });        // front wall (+z, toward gunner)
+    gb.box(0.30, 0.30, 0.03, -0.42, -0.07, -0.05, oMid, { tint: 0.02 });       // back wall (−z)
+    gb.box(0.03, 0.30, 0.42, -0.565, -0.07, 0.16, oMid, { tint: 0.02 });       // outer wall (−x)
+    gb.box(0.03, 0.22, 0.42, -0.275, -0.11, 0.16, oLo);                        // inner wall (+x, lower so the belt rises out toward the gun)
+    gb.box(0.31, 0.022, 0.03, -0.42, 0.075, 0.37, oHi); gb.box(0.31, 0.022, 0.03, -0.42, 0.075, -0.05, oHi); // lit front/back rims
+    gb.box(0.03, 0.022, 0.43, -0.565, 0.075, 0.16, oHi);                       // lit outer rim
+    gb.box(0.30, 0.05, 0.04, -0.42, -0.05, 0.385, oLo);                        // front-face shadow band
+    for (let i = 0; i < 7; i++) gb.box(0.022, 0.026, 0.006, -0.55 + i * 0.038, -0.05, 0.388, stencil); // "CAL .50" stencil
+    gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.10, bBright, { rz: 0.3 }); gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.22, bBright, { rz: 0.3 }); gb.box(0.075, 0.02, 0.02, -0.64, 0.05, 0.16, bBright); // folding wire bail handle
+    { const cc = 0xcaa64a, kk = 0x26282d, pp = 0xb5763a; // linked .50 rounds packed inside (top layer): brass cases, dark links, copper noses
+      for (let i = 0; i < 5; i++) { const cx = -0.51 + i * 0.046;
+        const cs = new THREE.CylinderGeometry(0.022, 0.024, 0.18, 8); gb.geo(cs, cx, -0.05, 0.20, cc, { rx: Math.PI / 2, tint: 0.03 }); cs.dispose();  // brass case
+        const lk = new THREE.CylinderGeometry(0.028, 0.028, 0.05, 8); gb.geo(lk, cx, -0.05, 0.27, kk, { rx: Math.PI / 2 }); lk.dispose();              // dark steel link (at the base, back +z)
+        const tp = new THREE.CylinderGeometry(0.006, 0.020, 0.09, 8); gb.geo(tp, cx, -0.05, 0.07, pp, { rx: -Math.PI / 2 }); tp.dispose();             // copper bullet, nose kept inside the box
+      } }
     this.body = new THREE.Mesh(gb.build(), voxelMaterial()); this.body.castShadow = true; this.gun.add(this.body);
 
+    // ---- barrel: separate mesh on barrelMat — it glows / colour-shifts with heat (see update()) ----
     this.barrelMat = voxelMaterial();
     const bb = new MeshBuilder();
-    bb.box(0.09, 0.09, 1.0, 0, 0.02, -1.65, 0xffffff);
-    bb.box(0.12, 0.12, 0.12, 0, 0.02, -2.15, 0xffffff);
+    { const bar = new THREE.CylinderGeometry(0.055, 0.055, 1.12, 12); bb.geo(bar, 0, 0.02, -1.74, 0xffffff, { rx: Math.PI / 2 }); bar.dispose(); }    // heavy barrel
+    { const boost = new THREE.CylinderGeometry(0.075, 0.088, 0.16, 12); bb.geo(boost, 0, 0.02, -2.22, 0xffffff, { rx: Math.PI / 2 }); boost.dispose(); } // muzzle booster
     this.barrel = new THREE.Mesh(bb.build(), this.barrelMat); this.gun.add(this.barrel);
+    this.barrelMat.color.setRGB(0.25, 0.27, 0.31); this.barrelMat.emissive.setRGB(0, 0, 0); this.barrelMat.emissiveIntensity = 0; // cold = normal blued steel (not white) until heat ramps it
 
     this.belt = new THREE.Group(); this.gun.add(this.belt);
-    const rgeo = new THREE.CylinderGeometry(0.035, 0.035, 0.12, 8);
-    for (let i = 0; i < 12; i++) {
-      const r = new THREE.Mesh(rgeo, new THREE.MeshLambertMaterial({ color: brass }));
-      this.belt.add(r); this.beltRounds.push({ mesh: r, t: i / 12 });
+    // one linked .50 BMG round: brass case + dark steel link band + copper bullet (vertex-coloured shared geo)
+    { const rbld = new MeshBuilder();
+      const caseC = 0xcaa64a, linkC = 0x26282d, copC = 0xb5763a;
+      const cs = new THREE.CylinderGeometry(0.028, 0.030, 0.13, 8); rbld.geo(cs, 0, -0.01, 0, caseC, { tint: 0.03 }); cs.dispose();  // brass case (axis +Y)
+      const lk = new THREE.CylinderGeometry(0.034, 0.034, 0.05, 8); rbld.geo(lk, 0, -0.03, 0, linkC); lk.dispose();                  // dark steel link band
+      const tp = new THREE.CylinderGeometry(0.008, 0.026, 0.07, 8); rbld.geo(tp, 0, 0.085, 0, copC); tp.dispose();                   // copper bullet (points +Y)
+      this._beltGeo = rbld.build(); this._beltMat = voxelMaterial(); }
+    for (let i = 0; i < 9; i++) {
+      const r = new THREE.Mesh(this._beltGeo, this._beltMat);
+      this.belt.add(r); this.beltRounds.push({ mesh: r, t: i / 9 });
     }
     // rear ring "AA" sight — gunner looks THROUGH it; the target frames in the middle (ring + cross + centre ring)
     const sb = new MeshBuilder();
@@ -5784,29 +6135,60 @@ class MountedGun {
     sb.box(RR * 2, 0.012, 0.012, sx, sy, sz, col);                 // horizontal cross bar
     sb.box(0.012, RR * 2, 0.012, sx, sy, sz, col);                 // vertical cross bar
     sb.box(0.022, 0.42, 0.04, sx, sy - RR - 0.21, sz + 0.02, col); // post down to the receiver
-    this.sight = new THREE.Mesh(sb.build(), voxelMaterial({ depthTest: false }));
-    this.sight.renderOrder = 1002; this.sight.frustumCulled = false; this.gun.add(this.sight);
+    this.sight = new THREE.Mesh(sb.build(), voxelMaterial());            // solid 3D sight: occluded normally, no longer painted over the whole world
+    this.sight.frustumCulled = false; this.gun.add(this.sight);
     // Eye sits on the gun's firing axis, directly behind the ring centre, so the
     // ring centre, the crosshair and the bullet path are always collinear.
     this._sightCenter = new THREE.Vector3(sx, sy, sz);
-    this._camLocal = new THREE.Vector3(sx, sy, sz + 0.80);
+    this._camLocal = new THREE.Vector3(sx, sy, sz + 0.98); // eye sits behind the gun (stand behind it, not in it)
     this._layoutBelt();
   }
 
-  _beltPos(t, out) { return out.set(0.12 + t * 0.34, 0.12 - t * t * 0.18, 0.2); }
-  _layoutBelt() { const v = new THREE.Vector3(); for (const r of this.beltRounds) { this._beltPos(r.t, v); r.mesh.position.copy(v); r.mesh.rotation.set(0, 0.2, Math.PI / 2); } }
+  _beltPos(t, out) { const climb = Math.min(1, t / 0.4); return out.set(-0.40 + t * 0.29, -0.02 + 0.16 * climb + Math.sin(t * Math.PI) * 0.02, 0.14 - t * 0.16); } // starts DOWN inside the box, climbs out, feeds right into the throat
+  _layoutBelt() { const v = new THREE.Vector3(); for (const r of this.beltRounds) { this._beltPos(r.t, v); r.mesh.position.copy(v); r.mesh.rotation.set(-Math.PI / 2, 0, 0); } } // cartridges lined up across the belt, bullets pointing forward
 
   near(p) { return Math.hypot(p.x - this.base.x, p.z - this.base.z) < 2.4 && Math.abs(p.y - this.base.y) < 2.8; }
 
-  mount() {
+  idleCool(dt) { if (this.heat > 0) this.update(dt, false); } // the .50 keeps cooling (+ barrel glow fades / smoke vents) even when unmanned
+
+  _playFiftyCharge() {
+    const audio = this.game.audio;
+    if (audio && typeof audio.fiftyCharge === 'function') audio.fiftyCharge();
+    else if (audio && typeof audio.reloadIn === 'function') audio.reloadIn();
+  }
+  _playFiftyShot() {
+    const audio = this.game.audio;
+    if (audio && typeof audio.fiftyShot === 'function') audio.fiftyShot();
+    else if (audio && typeof audio.gunshot === 'function') audio.gunshot(SOUND_BY_CLASS.fiftycal);
+  }
+  _playFiftyOverheat() {
+    const audio = this.game.audio;
+    if (audio && typeof audio.fiftyOverheat === 'function') audio.fiftyOverheat();
+    else if (audio) {
+      if (typeof audio.noise === 'function') audio.noise(0.25, 0.35, 'highpass', 2400, 0.8);
+      if (typeof audio.tone === 'function') audio.tone(100, 0.25, 'sawtooth', 0.25);
+    }
+  }
+
+  // real seating (no claim check) — pin player to the gun, hide held weapon
+  _doMount() {
     this.game.player.mountedGun = this;
     this.game.weapons.group.visible = false;
-    this.game.player.pos.copy(this.base);
+    this.game.player.pos.set(this.base.x + Math.sin(this.baseYaw) * 0.9, this.base.y, this.base.z + Math.cos(this.baseYaw) * 0.9); // stand BEHIND the gun
     this.yaw = this.baseYaw; this.pitch = 0;
-    if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = ''; // keep the crosshair visible — the ring centre frames it
-    this.game.audio.reloadIn();
+    if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0'; // hide the white crosshair on the .50 — the ring sight is the reticle
+    this._playFiftyCharge();
+    this.game.hud.setMountedGun();
   }
-  dismount() {
+  // claim-gated entry: solo seats immediately; co-op asks the host (host grants on first-come)
+  mount() {
+    const mp = this.game.mp;
+    if (!mp || !mp.active) { this._doMount(); return; }          // solo: seat immediately (unchanged)
+    if (mp.isHost) mp._hostFiftyClaim('mount', 'host');           // host: claim locally
+    else mp.net.send('fiftyclaim', { want: 'mount' });            // client: ask host; seat only when 'fiftystate' grants it
+  }
+  // real unseat (no net) — clear player.mountedGun, restore camera/weapon
+  _doDismount() {
     if (this.game.player.mountedGun !== this) return;
     this.game.player.mountedGun = null;
     this.game.weapons.group.visible = true;
@@ -5815,9 +6197,20 @@ class MountedGun {
     this.game.player.vel.set(0, 0, 0); this.game.player._camY = this.base.y + this.game.player.eye;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '';
     this.game.hud.hideHeat();
+    this.game.hud.setWeapon(this.game.weapons);
+  }
+  dismount() {
+    const wasMe = (this.game.player.mountedGun === this);
+    this._doDismount();                                          // unseat locally right away (responsive)
+    const mp = this.game.mp;
+    if (mp && mp.active && wasMe) { if (mp.isHost) mp._hostFiftyClaim('dismount', 'host'); else mp.net.send('fiftyclaim', { want: 'dismount' }); }
   }
   forceReset() {
-    if (this.game.player && this.game.player.mountedGun === this) { this.game.player.mountedGun = null; this.game.weapons.group.visible = true; }
+    const mp = this.game.mp;
+    const wasMe = (this.game.player && this.game.player.mountedGun === this);
+    this._doDismount();
+    if (mp && mp.active && wasMe) { if (mp.isHost) mp._hostFiftyClaim('dismount', 'host'); else mp.net.send('fiftyclaim', { want: 'dismount' }); }
+    this.occupant = null; // session/round reset clears the seat everywhere
     this.heat = 0; this.overheated = false; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
     if (this.game.hud) { this.game.hud.hideHeat(); if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = ''; }
   }
@@ -5829,44 +6222,62 @@ class MountedGun {
     this.yaw = clamp(this.yaw, this.baseYaw - 1.1, this.baseYaw + 1.1);
     this.pitch = clamp(this.pitch, -0.45, 0.45);
     this.gun.rotation.set(this.pitch, this.yaw, 0);
+    { const mp = this.game.mp; if (mp && mp.active) { this._aimT = (this._aimT || 0) - dt; if (this._aimT <= 0) { this._aimT = 0.1; mp.net.broadcast('fiftyaim', { pid: mp.myId, yaw: +this.yaw.toFixed(3), pitch: +this.pitch.toFixed(3), heat: +this.heat.toFixed(2) }); } } } // co-op: slew the barrel + share heat (glow/smoke) on every screen (~10Hz)
     const cam = this.game.engine.camera; cam.rotation.order = 'YXZ';
     // Place the eye rigidly on the gun's firing axis, behind the ring sight, and
     // rotate it WITH the gun (about the pivot). Eye + ring centre + muzzle now
     // share one line, so the ring centre stays locked on the screen-centre
     // crosshair (= where the rounds actually go) at every pitch/yaw — no drift.
     this.gun.updateMatrixWorld();
-    cam.position.copy(this.gun.localToWorld(this._camLocal.clone()));
-    cam.rotation.set(this.pitch, this.yaw, 0);
+    const _rc = (this._recoil || 0); this._recoil = Math.max(0, _rc - dt * 0.6); // heavy recoil shove, decays
+    cam.position.copy(this.gun.localToWorld(this._camLocal.clone().add(new THREE.Vector3(0, _rc * 0.10, _rc * 0.8)))); // the .50 shoves the eye back + slightly up = massive
+    const _sh = (this._shake || 0); this._shake = Math.max(0, _sh - dt * 0.10); // mild firing jitter, decays out
+    cam.rotation.set(this.pitch + (Math.random() - 0.5) * _sh, this.yaw + (Math.random() - 0.5) * _sh, (Math.random() - 0.5) * _sh * 0.6);
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
     if (this.cd > 0) this.cd -= dt;
     const firing = input.buttons[0] && !this.overheated;
     if (firing && this.cd <= 0) this._fire();
     this.update(dt, firing);
     this.game.hud.setHeat(this.heat, this.overheated);
+    if (this.overheated) this._overheatEject(); // barrel maxed -> boot the gunner off, POV left looking at the gun
+  }
+
+  _overheatEject() {
+    const pl = this.game.player, by = this.baseYaw;
+    if (pl.mountedGun !== this) return;
+    this.dismount();                  // boot the gunner off the overheated gun (co-op-safe)
+    pl.yaw = by; pl.pitch = -0.35;    // stand behind the gun, POV left looking down at the smoking .50
+    this._playFiftyOverheat();
+    if (this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED — get off it!', 0xd23a2a);
   }
 
   _fire() {
     this.cd = 60 / this.rpm;
     this.heat = Math.min(1, this.heat + 0.02);
     if (this.heat >= 1) this.overheated = true;
+    this._shake = Math.min(0.013, (this._shake || 0) + 0.0045); // very slight camera knock per shot
+    this._recoil = Math.min(0.07, (this._recoil || 0) + 0.035);  // heavy recoil shove — makes the .50 feel massive
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion).normalize();
     const muzzle = origin.clone().addScaledVector(fwd, 2.1); muzzle.y += 0.04;
     this.game.effects.muzzleFlash(muzzle, fwd, 1.8);
-    this.game.audio.gunshot({ body: 110, crack: 0.12, vol: 0.7, hp: 1500, bp: 650 });
-    this.game.effects.shell(origin.clone().addScaledVector(fwd, 0.3).addScaledVector(right, -0.28), right.clone().multiplyScalar(-1));
+    this._playFiftyShot();
+    { const ejectPort = this.gun.localToWorld(new THREE.Vector3(0.22, 0.0, 0.12)); this.game.effects.shell(ejectPort, right.clone(), { size: 0.1, color: 0xcaa64a }); } // big brass .50 case flung out the gun's RIGHT ejection port
     const dir = fwd.clone(); dir.x += rr(-this.spread, this.spread); dir.y += rr(-this.spread, this.spread); dir.z += rr(-this.spread, this.spread); dir.normalize();
     const eHit = this.game.enemies.rayHit(muzzle, dir, this.range);
     const wHit = this.game.world.rayHit(muzzle, dir, this.range);
+    let end;
     if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
       const dmg = this.dmg * (eHit.head ? 1.6 : 1) * this.game.player.damageMult;
       const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
-      this.game.effects.tracer(muzzle, eHit.point, 0xffe08a);
+      end = eHit.point;
+      this.game.effects.tracer(muzzle, end, 0xffe08a);
       if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
-    } else if (wHit) { this.game.effects.tracer(muzzle, wHit.point, 0xffe08a); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
-    else this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, this.range), 0xffe08a);
+    } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzle, end, 0xffe08a); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
+    else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzle, end, 0xffe08a); }
+    const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: [+muzzle.x.toFixed(2), +muzzle.y.toFixed(2), +muzzle.z.toFixed(2)], e: [+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)] }); // teammates see/hear the .50cal fire (damage stays host-authoritative via enemies.damage above)
   }
 
   update(dt, firing) {
@@ -5875,7 +6286,7 @@ class MountedGun {
     const h = this.heat;
     this.barrelMat.emissive.setRGB(Math.min(1, h * 1.4), h * h * 0.55, 0);
     this.barrelMat.emissiveIntensity = h * 1.7;
-    this.barrelMat.color.setRGB(0.16 + h * 0.55, 0.17 + h * 0.12, 0.19);
+    this.barrelMat.color.setRGB(0.25 + h * 0.47, 0.27 + h * 0.09, 0.31 - h * 0.12);
     if (h > 0.45) {
       this._smokeT -= dt;
       if (this._smokeT <= 0) {
@@ -5884,7 +6295,7 @@ class MountedGun {
         this.game.effects._spawn({ pos: tip, vel: new THREE.Vector3(rr(-0.2, 0.2), rr(0.8, 1.8), rr(-0.2, 0.2)), life: rr(0.7, 1.5), size: rr(0.12, 0.28), grav: 1.4, drag: 1.0, color: new THREE.Color(h > 0.85 ? 0x888888 : 0x666666), bounce: 0, floorY: -999, shrink: true });
       }
     }
-    if (firing) { const v = new THREE.Vector3(); for (const r of this.beltRounds) { r.t -= dt * 1.1; if (r.t < 0) r.t += 1; this._beltPos(r.t, v); r.mesh.position.copy(v); } }
+    if (firing) { const v = new THREE.Vector3(); for (const r of this.beltRounds) { r.t += dt * 1.1; if (r.t > 1) r.t -= 1; this._beltPos(r.t, v); r.mesh.position.copy(v); } }
   }
 }
 
@@ -5960,7 +6371,7 @@ class CapturedTank {
     if (this.game.engine.shake) this.game.engine.shake(0.5);
     const wasAboard = this.active != null;
     this.leave();                                   // clears player.inTank (so the next hurt isn't shielded) + restores weapons + ejects beside tank
-    if (wasAboard) this.game.player.hurt(35);        // ejection damage (now unshielded since leave() cleared inTank)
+    if (wasAboard) this.game.player._takeSurvivalDamage(35, 1);        // ejection damage (now unshielded since leave() cleared inTank)
     if (this.group) this.group.visible = false;
     if (this.game.world.addWreckObstacle) this.game.world.addWreckObstacle(this.pos.clone(), this.hullYaw);
     { // Place visible wreck mesh + register for lingering smoke
@@ -6360,13 +6771,33 @@ class DayNight {
     this.t += dt;
     const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE;
     const day = c < DAY_FRAC;
+    const isNight = !day;
+    if (isNight && !this._wasNight) {
+      this.nightCount++; this.bloodMoon = this.nightCount > 1 && chc(0.25); this.game.onNightStart(this.nightCount, this.bloodMoon);
+      if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('night', { t: this.t, n: this.nightCount, blood: this.bloodMoon }); // host: announce night/blood-moon at this timing
+    }
+    else if (!isNight && this._wasNight) { this.game.onDayStart(); if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('night', { t: this.t, n: this.nightCount, blood: this.bloodMoon }); } // host: announce dawn transition
+    this._wasNight = isNight;
+    this._render();
+  }
+
+  // Host-authoritative state push (clients only): adopt the host's clock + night/blood-moon, then render that sky without advancing time.
+  applyNetState(d) {
+    if (!d) return;
+    const prevNight = this.nightCount, prevBlood = this.bloodMoon;
+    this.t = d.t; this.nightCount = d.n; this.bloodMoon = d.blood;
+    this._wasNight = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE >= DAY_FRAC;
+    this._render();
+    if (this.nightCount > prevNight || this.bloodMoon !== prevBlood) this.game.onNightStart(this.nightCount, this.bloodMoon); // mirror the host's NIGHT/BLOOD MOON banner
+  }
+
+  // Apply the sky for the CURRENT this.t / this.bloodMoon (no time advance) — shared by update() and applyNetState().
+  _render() {
+    const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE;
+    const day = c < DAY_FRAC;
     const dayT = c / DAY_FRAC;
     const L = day ? clamp(Math.sin(dayT * Math.PI), 0, 1) : 0;
     const ang = (day ? dayT : (c - DAY_FRAC) / (1 - DAY_FRAC)) * Math.PI;
-    const isNight = !day;
-    if (isNight && !this._wasNight) { this.nightCount++; this.bloodMoon = this.nightCount > 1 && chc(0.25); this.game.onNightStart(this.nightCount, this.bloodMoon); }
-    else if (!isNight && this._wasNight) { this.game.onDayStart(); }
-    this._wasNight = isNight;
     this._apply(L, ang, day);
   }
 
@@ -6424,10 +6855,11 @@ class RemotePlayer {
     // flashlight beam — a spotlight in world space, on when this player holds the flashlight (so everyone sees their cone)
     this.flashLight = new THREE.SpotLight(0xfff0d0, 0, 60, 0.62, 0.4, 0.0); this.flashTarget = new THREE.Object3D();
     this.flashLight.target = this.flashTarget; game.engine.scene.add(this.flashLight); game.engine.scene.add(this.flashTarget);
-    this._hasFlash = false; this._fwd = new THREE.Vector3(); this._fe = new THREE.Euler();
+    this._hasFlash = false; this._flashOn = true; this._seat = 0; this._fwd = new THREE.Vector3(); this._fe = new THREE.Euler();
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
     this.hp = 100; this.maxHp = 100; this.down = false; this.waiting = false; this.dead = false;
+    this.burnT = 0; this._burnFxT = 0; // on-fire flame (broadcast via xf bf flag); throttle for the body fire puff
     this._animT = 0; this._spd = 0; this._lastx = 0; this._lastz = 30;
     const wrap = document.getElementById('mp-labels');
     this.label = document.createElement('div'); this.label.className = 'mp-label';
@@ -6436,14 +6868,18 @@ class RemotePlayer {
     this._hpEl = this.label.querySelector('.mp-hp');
     if (wrap) wrap.appendChild(this.label);
   }
-  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } } // down/dead/waiting come authoritatively from pstate, NOT from xf
+  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; this._flashOn = (s.fl === undefined) ? true : !!s.fl; this._seat = s.seat ? 1 : 0; this.setBurn(s.bf ? PLAYER_BURN_DUR : 0); if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } } // down/dead/waiting come authoritatively from pstate, NOT from xf (fl: flashlight beam toggled on; absent → legacy peer, assume on; bf: on-fire flag → show body flame; seat: manning the .50cal → hide held weapon)
   setHP(hp, maxHp) { this.hp = hp; if (maxHp) this.maxHp = maxHp; }
+  setBurn(t) { this.burnT = t; }
   update(dt, cam) {
     const k = 1 - Math.exp(-15 * dt);
     this.pos.lerp(this.tpos, k);
     let dy = this.tyaw - this.yaw; while (dy > Math.PI) dy -= TAU; while (dy < -Math.PI) dy += TAU; this.yaw += dy * k;
     const mv = Math.hypot(this.pos.x - this._lastx, this.pos.z - this._lastz) / Math.max(dt, 1e-3);
     this._spd = damp(this._spd, mv, 8, dt); this._lastx = this.pos.x; this._lastz = this.pos.z;
+    // on fire: render a body flame for everyone (visual only; burnT is refreshed by the xf bf flag in setTransform)
+    this.burnT = Math.max(0, this.burnT - dt);
+    if (this.burnT > 0) { this._burnFxT -= dt; if (this._burnFxT <= 0) { this._burnFxT = 0.08; this.game.effects.firePool(this.pos, 0.45, 0.4); } }
     const o = this.obj, p = this.parts;
     o.position.set(this.pos.x, this.pos.y, this.pos.z);
     if (this.dead || this.down || this.waiting) {
@@ -6461,7 +6897,8 @@ class RemotePlayer {
       o.position.y = this.pos.y + (moving ? Math.abs(Math.sin(this._animT)) * 0.06 : 0);
       if (this.gunAnchor) this.gunAnchor.visible = true;
     }
-    if (this._hasFlash && !this.down && !this.dead && !this.waiting) { // beam from this player's flashlight, aimed where they look
+    if (this._seat && this.gunAnchor) this.gunAnchor.visible = false; // manning the .50cal: hide held weapon (avatar is pinned at the gun base by its broadcast pos)
+    if (this._hasFlash && this._flashOn && !this.down && !this.dead && !this.waiting) { // beam from this player's flashlight (held + toggled on), aimed where they look
       const f = this._fwd.set(0, 0, -1).applyEuler(this._fe.set(this.pitch, this.yaw, 0, 'XYZ'));
       const hx = this.pos.x, hy = this.pos.y + 1.6, hz = this.pos.z;
       this.flashLight.position.set(hx, hy, hz);
@@ -6497,9 +6934,11 @@ class MP {
     this.game = game; this.net = new Net();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
+    this._ghostProjectiles = []; // VISUAL-ONLY thrown/launched projectiles from teammates (never deal damage)
     this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
     this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
+    this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
@@ -6528,10 +6967,12 @@ class MP {
     try { if (this.active && !this.isHost) this.net.send('goodbye', {}); } catch (e) {} // tell the host to despawn me instantly
     try { this.net.close(); } catch (e) {}
     for (const [, rp] of this.remotes) rp.dispose();
+    this._clearGhostProjectiles();
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
     if (this._lastXf) this._lastXf.clear();
     this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false;
     this._localDown = false; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
+    if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
     this.net = new Net(); this._wireNet();
   }
   // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
@@ -6610,7 +7051,7 @@ class MP {
     this.active = true; this._initHostStates(); this.net.send('start', { mode }); this.game._enterMP(mode);
   }
   _initHostStates() { this.pstate.clear(); for (const [id, info] of this.roster) this.pstate.set(id, this._freshState(info)); }
-  _freshState(info) { return { hp: 100, maxHp: 100, armor: 0, armorMax: 100, down: false, downT: 0, waiting: false, dead: false, downs: 0, name: info.name, skin: info.skin }; }
+  _freshState(info) { return { hp: 100, maxHp: 100, armor: 0, armorMax: 100, down: false, downT: 0, waiting: false, dead: false, downs: 0, burnT: 0, name: info.name, skin: info.skin }; }
   // ---- net wiring ----
   _wireNet() {
     const n = this.net, g = this.game;
@@ -6652,16 +7093,45 @@ class MP {
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('edie', (d) => this._clientEnemyDie(d));
     n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
-      if (d.e === 'expl') eff.explosion(V(d.p), d.s || 3);
+      if (d.e === 'expl') { const bp = V(d.p); eff.explosion(bp, d.s || 3); if (g.engine.shake) { const dist = bp.distanceTo(g.player.pos); if (dist < 18) g.engine.shake(Math.max(0.08, 0.5 * (1 - dist / 18))); } } // distance-scaled shake so a teammate's blast also rattles the viewer
       else if (d.e === 'laser') { const from = V(d.p), dir = V(d.d); eff.muzzleFlash(from, dir, 2.6); g.audio.tone(1300, 0.08, 'square', 0.35); g.audio.noise(0.16, 0.35, 'highpass', 1400, 0.8); g._fxBeam(from, dir); } });
+    n.on('bossfx', (d) => { if (this.isHost || !d || !d.k) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); const em = g.enemies; // host-relayed boss/tank attack VISUALS (clients don't run EnemyManager.update) — visual-only, NO damage
+      switch (d.k) {
+        case 'bolt': em.spawnGhostBolt(V(d.p), V(d.d), d.col); break;
+        case 'sweepStart': em.ghostSweepStart(d.ph); break;
+        case 'sweep': em.ghostSweepUpdate(V(d.p), d.a, d.len, d.th, d.ph); break;
+        case 'sweepEnd': em.ghostSweepEnd(); break;
+        case 'fire': g.effects.firePool({ x: d.x, y: 0.08, z: d.z }, 1.2, 0.8); em.addGhostFire(d.x, d.z); break;
+        case 'glow': { const gh = this.ghosts.get(d.id); if (gh && gh.pos) { const belly = new THREE.Vector3(gh.pos.x, gh.pos.y + 0.6 * (gh.scale || 1), gh.pos.z + 0.4 * (gh.scale || 1)); g.effects.firePool({ x: belly.x, y: belly.y, z: belly.z }, 0.6, 1.2); } break; }
+        case 'banner': g.hud.bigMessage(d.title || '', d.sub || ''); g.audio.tone(200, 0.5, 'sawtooth', 0.4); break;
+        case 'aimring': em.ghostAimMarker(d.x, d.z); break;
+        case 'mg': g.effects.tracer(V(d.o), V(d.e), 0xfff1a0); g.audio.tone(180, 0.03, 'square', 0.10); break;
+        case 'shell': g.effects.explosion(V(d.p), d.s || 4); if (g.engine.shake) g.engine.shake(0.4); break;
+        case 'shake': if (g.engine.shake) g.engine.shake(d.a || 0.2); break;
+      }
+    });
     n.on('shot', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate's gunfire: muzzle + tracer + shot sound
       const muzzle = V(d.p), dir = V(d.d).normalize();
       g.effects.muzzleFlash(muzzle, dir, (d.cls === 'shotgun' || d.cls === 'launcher') ? 1.6 : 1);
       const wh = g.world.rayHit(muzzle, dir, 120); const end = wh ? wh.point : muzzle.clone().addScaledVector(dir, 120);
       g.effects.tracer(muzzle, end, d.col != null ? d.col : 0xffd27f);
       g.audio.gunshot(SOUND_BY_CLASS[d.cls] || SOUND_BY_CLASS.pistol); });
-    n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else g.hud.setBoss(d.frac, d.name); });
+    // ---- rooftop .50cal (single shared MountedGun): seat claim + fire FX + barrel slew ----
+    n.on('fiftyclaim', (d, from) => { if (this.isHost && d) this._hostFiftyClaim(d.want, from); });               // client → host: request mount/dismount
+    n.on('fiftystate', (d) => { if (!this.isHost && d) this._applyFiftyState(d); });                              // host → clients: who owns the seat now
+    n.on('fiftyfire', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate firing the .50cal: muzzle + tracer + shot sound (damage is host-authoritative)
+      const o = V(d.o), e = V(d.e);
+      g.effects.muzzleFlash(o, e.clone().sub(o).normalize(), 1.8);
+      g.effects.tracer(o, e, 0xffe08a);
+      g.audio.gunshot(SOUND_BY_CLASS.fiftycal); });
+    n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) gun.gun.rotation.set(d.pitch, d.yaw, 0); if (gun && d.heat != null) gun.heat = d.heat; }); // slew the barrel + mirror heat so everyone sees the glow + smoke + overheat
+    n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
+    n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
+    n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
     n.on('wave', (d) => { g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); }); // continuous: clients just track the wave (no shop)
+    n.on('wavetag', (d) => { if (!this.isHost && d) g.hud.setWaveTag(d.tags || []); });                  // host-authoritative special-wave tag (set/clear)
+    n.on('night', (d) => { if (!this.isHost && d) g.dayNight.applyNetState(d); });                       // host-authoritative day/night + blood-moon (clients never roll their own)
+    n.on('clock', (d) => { if (!this.isHost && d) { if (typeof d.t === 'number') g._surviveTime = d.t; if (typeof d.left === 'number') g.hud.setEnemiesLeft(d.left); } }); // host-authoritative survive-clock + enemies-left
     n.on('waveclear', (d) => { if (g.state === 'playing') g.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); });
     n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from); });
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
@@ -6669,6 +7139,8 @@ class MP {
     n.on('firepool', (d) => { if (!this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('kill', (d) => this._clientKill(d));
     n.on('burn', () => { this.game.player.burnT = PLAYER_BURN_DUR; });
+    n.on('bleed', (d) => { if (d && typeof d.t === 'number') this._bleedT = d.t; }); // host re-syncs the downed player's bleed-out bar to the authoritative downT
+    n.on('ignite', (d, from) => { if (this.isHost) { const s = this.pstate.get(from); if (s) s.burnT = PLAYER_BURN_DUR; } }); // client self-ignite (in-hand molotov shatter) → host owns the lingering burn DoT
     n.on('pstate', (d) => this._applyPState(d));
     n.on('revive', (d, from) => { if (this.isHost) this.hostRevive(d.tid, from); });
     n.on('ping', (d, from) => { if (this.isHost) this.net.sendTo(from, 'pong', d); });
@@ -6676,11 +7148,17 @@ class MP {
     n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
     n.on('feed', (d) => this.game.hud.kill(d.who + ' \u27a4 ' + d.what));
     n.on('gameover', () => this.game._mpGameOver());
-    n.on('droppickup', (d) => { if (!d || typeof d.kind !== 'string' || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return; const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E
+    n.on('droppickup', (d) => { if (!d || typeof d.kind !== 'string' || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return; const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E (legacy local pile)
+    // ---- host-authoritative SHARED ground loot (one pile for everyone, first grab claims it) ----
+    n.on('pickup', (d) => { if (!this.isHost && d) g.loot._spawnPickup(d.kind, new THREE.Vector3(d.x, 0.55, d.z), d.value, d.life, d.id); });        // client spawns the EXACT shared pickup the host broadcast
+    n.on('pickupgone', (d) => { if (d) g.loot.removePickupById(d.id); });                                                  // everyone removes a claimed/destroyed pickup
+    n.on('pickupclaim', (d, from) => { if (this.isHost && d) g.loot.claimPickup(d.id, from); });                           // a client wants it → host dedupes + authorizes
+    n.on('pickupgrant', (d) => { if (d) g.loot._applyGrant(d.kind, d.value); });                                          // host authorized THIS client to apply the effect
+    n.on('dropitem', (d, from) => { if (this.isHost && d) g.loot.spawnNetPickup(d.kind, d.x, d.z, d.value); });           // a client manually dropped an item → host makes it a shared pickup
     n.on('dropreq', () => { if (this.isHost) g.loot.requestSupplyDrop(); });                                              // client asked for a drop → host spawns + broadcasts it
     n.on('supplydrop', (d) => { if (!this.isHost && d) g.loot.callSupplyDrop({ id: d.id, tx: d.tx, tz: d.tz, ang: d.ang }); }); // mirror the host's flyby+crate (visual)
-    n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); this.net.sendTo(from, 'dropreward', { give: g.loot._rollGive() }); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative claim
-    n.on('dropreward', (d) => { g.loot._spillDropLoot(g.player.pos, (d && d.give) || {}); });                              // the opener spills the loot at their feet (applied locally)
+    n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); g.loot._spillDropLoot(drop.pos, g.loot._rollGive(), from); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative: roll the gun + spawn ONE shared pile, cash to the opener
+    n.on('dropcash', (d) => { if (d && Number.isFinite(d.amount)) g.player.addMoney(d.amount); });                        // host → opener: the crate's instant cash payout (items arrive as shared 'pickup's)
     n.on('dropopened', (d) => { if (d) g.loot.removeDropById(d.id); });                                                   // someone claimed it → clear the visual crate everywhere
   }
   _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null })); }
@@ -6690,6 +7168,18 @@ class MP {
     return this.remotes.get(id);
   }
   _syncRemoteObjs() { for (const [id, info] of this.roster) if (id !== this.myId && !this.remotes.has(id)) this.remotes.set(id, new RemotePlayer(this.game, id, info.name, info.skin)); }
+  // ---- rooftop .50cal seat (host-authoritative single occupant) ----
+  _hostFiftyClaim(want, from) {
+    if (!this.isHost) return; const gun = this.game.mountedGun; if (!gun) return;
+    if (want === 'mount') { if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { occ: gun.occupant }); return; } }
+    else if (want === 'dismount') { if (gun.occupant === from) gun.occupant = null; }
+    this._applyFiftyState({ occ: gun.occupant }); this.net.send('fiftystate', { occ: gun.occupant });
+  }
+  _applyFiftyState(d) {
+    const gun = this.game.mountedGun; if (!gun) return; gun.occupant = d.occ;
+    if (d.occ === this.myId) { if (this.game.player.mountedGun !== gun) gun._doMount(); }
+    else if (this.game.player.mountedGun === gun) { gun._doDismount(); }   // someone else took/cleared it
+  }
   // ---- per-frame ----
   update(dt) {
     if (!this.active) return;
@@ -6697,27 +7187,40 @@ class MP {
     this._xfT -= dt;
     if (this._xfT <= 0) {
       this._xfT = 0.066; const p = g.player;
-      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, wep: g.weapons.cur });
+      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, wep: g.weapons.cur, fl: g.inventory.isHoldingFlashlight() && !!(g.dayNight && g.dayNight.flashOn), bf: (g.player.burnT > 0) ? 1 : 0, seat: (g.player.mountedGun ? 1 : 0) });
     }
     for (const [, rp] of this.remotes) rp.update(dt, cam);
+    this._updateGhostProjectiles(dt);
     if (this.isHost) {
       this._snapT -= dt;
       if (this._snapT <= 0) {
         this._snapT = 0.08; const arr = [];
-        for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100) });
-        this.net.send('esnap', arr); this._tickDowns();
-        let boss = null; for (const e of g.enemies.active) if (e.alive && (e.def.boss || e.isElite)) { boss = e; break; }
-        if (boss) { this.net.send('boss', { frac: boss.hp / boss.maxHp, name: boss.name }); this._hadBoss = true; }
+        for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100), bf: e.burnT > 0 ? 1 : 0 });
+        this.net.send('esnap', arr); this._tickDowns(); this._tickBurn();
+        // pick a SINGLE highest-priority boss without flicker: a real boss/tank outranks an elite mini-boss
+        let boss = null; for (const e of g.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
+        if (boss) {
+          const isTank = !!(boss.isTank || boss.def.tank);
+          const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp);
+          const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1;
+          this.net.send('boss', { frac, name: boss.name, pip }); this._hadBoss = true;
+        }
         else if (this._hadBoss) { this.net.send('boss', { hide: true }); this._hadBoss = false; }
       }
       this._toT -= dt;
       if (this._toT <= 0) { this._toT = 2; const now = performance.now(); for (const [id] of this.roster) { if (id === 'host') continue; const last = this._lastXf.get(id); if (last != null && now - last > 10000) this._dropPeer(id); } } // crash detection: no xf for 10s → despawn
+      // host-authoritative survive-clock + enemies-left (~0.5s) and day/night drift correction (~2s) — only meaningful in LONG NIGHT but cheap to always send
+      this._clockT -= dt;
+      if (this._clockT <= 0) { this._clockT = 0.5; const left = g.waves.active ? g.waves.toSpawn + g.enemies.aliveCount : g.enemies.aliveCount; this.net.send('clock', { t: g._surviveTime, left }); }
+      this._nightT -= dt;
+      if (this._nightT <= 0) { this._nightT = 2; this.net.send('night', { t: g.dayNight.t, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon }); }
     } else {
       for (const [, e] of this.ghosts) {
         if (!e.alive) continue;
         e.pos.x = damp(e.pos.x, e._tx, 14, dt); e.pos.z = damp(e.pos.z, e._tz, 14, dt); e.bob += dt * 7;
         e.mesh.position.set(e.pos.x, Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
         e.mesh.rotation.y = damp(e.mesh.rotation.y, e._try, 12, dt);
+        if (e.burnT > 0) { e.burnT -= dt; e._burnFxT = (e._burnFxT || 0) - dt; if (e._burnFxT <= 0) { e._burnFxT = 0.08; g.effects.firePool(e.pos, 0.45, 0.4); } } // mirror the host's on-fire enemy flame
       }
     }
     this._pingT -= dt; if (this._pingT <= 0) { this._pingT = 2; if (!this.isHost) this.net.send('ping', { t: performance.now() }); }
@@ -6727,6 +7230,52 @@ class MP {
     if (this._localDown) { this._bleedT = Math.max(0, (this._bleedT || 0) - dt); g.hud.setBleed(this._bleedT / 20); this._bleedShown = true; }
     else if (this._bleedShown) { g.hud.setBleed(-1); this._bleedShown = false; }
   }
+  // ---- ghost projectiles (visual-only mirror of a teammate's thrown/launched projectile) ----
+  _clientSpawnProj(d) {
+    if (!d || d.pid === this.myId) return; // never ghost your OWN projectile — you simulate the real one locally
+    const g = this.game;
+    const col = d.kind === 'grenade' ? 0x3c5a32 : (d.kind === 'molotov' ? 0x2f6b3a : 0x394b2e);
+    const geo = d.kind === 'rocket' ? new THREE.BoxGeometry(0.2, 0.2, 0.55) : new THREE.BoxGeometry(0.22, 0.22, 0.22);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: col }));
+    mesh.position.set(d.p[0], d.p[1], d.p[2]); mesh.castShadow = true;
+    g.engine.scene.add(mesh);
+    // fuses mirror the real projectiles so the ghost detonates at ~the same moment/place as the thrower's real one
+    const fuse = d.kind === 'grenade' ? 1.6 : (d.kind === 'rocket' ? 4 : MOLO_MAX_FLIGHT);
+    this._ghostProjectiles.push({ mesh, kind: d.kind, vel: new THREE.Vector3(d.v[0], d.v[1], d.v[2]), fuse, r: d.r || 5, trailT: 0 });
+  }
+  _updateGhostProjectiles(dt) {
+    const arr = this._ghostProjectiles;
+    if (!arr || !arr.length) return;
+    const g = this.game, tmp = this._gpTmp || (this._gpTmp = new THREE.Vector3());
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const gp = arr[i];
+      gp.fuse -= dt;
+      let boom = gp.fuse <= 0;
+      if (gp.kind === 'molotov') { // MOLO_GRAV arc + fire trail (mirrors the real molotov integration)
+        gp.vel.y -= MOLO_GRAV * dt;
+        gp.mesh.position.addScaledVector(gp.vel, dt);
+        if (gp.mesh.position.y <= 0.05) { gp.mesh.position.y = 0.05; boom = true; }
+        if (!boom) { gp.trailT -= dt; if (gp.trailT <= 0) { gp.trailT = 0.04; g.effects.firePool(gp.mesh.position, 0.3, 0.6); } }
+      } else if (gp.kind === 'rocket') { // straight line + smoke/spark trail (mirrors the real rocket integration)
+        const dir = tmp.copy(gp.vel).normalize();
+        gp.mesh.position.addScaledVector(gp.vel, dt);
+        if (gp.mesh.position.y < 0.2) boom = true;
+        g.effects.impact(gp.mesh.position, dir, 'spark');
+      } else { // grenade: gravity + floor bounce (mirrors the real grenade integration)
+        gp.vel.y -= 22 * dt; gp.mesh.position.addScaledVector(gp.vel, dt);
+        gp.mesh.rotation.x += dt * 6; gp.mesh.rotation.y += dt * 4;
+        if (gp.mesh.position.y < 0.11) { gp.mesh.position.y = 0.11; gp.vel.y *= -0.4; gp.vel.x *= 0.6; gp.vel.z *= 0.6; }
+      }
+      if (boom) {
+        const pos = gp.mesh.position.clone();
+        if (gp.kind === 'molotov') g.effects.explosion(pos, 1.2); // the damaging fire pool is synced separately via 'molotov'/'firepool'
+        else g.effects.explosion(pos, gp.r || 5);
+        g.engine.scene.remove(gp.mesh); gp.mesh.geometry.dispose(); gp.mesh.material.dispose();
+        arr.splice(i, 1);
+      }
+    }
+  }
+  _clearGhostProjectiles() { if (this._ghostProjectiles) { for (const gp of this._ghostProjectiles) { this.game.engine.scene.remove(gp.mesh); gp.mesh.geometry.dispose(); gp.mesh.material.dispose(); } this._ghostProjectiles.length = 0; } }
   // ---- enemy sync (host → clients) ----
   onEnemySpawn(e) { if (this.active && this.isHost) this.net.send('espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), hpf: Math.round((e.hp / e.maxHp) * 100) }); }
   onEnemyDie(e, killer) { if (this.active && this.isHost) this.net.send('edie', { id: e.id, k: killer, x: +e.pos.x.toFixed(2), y: +(e.pos.y + e.height * 0.5).toFixed(2), z: +e.pos.z.toFixed(2), col: e.col.body, el: !!e.isElite, bs: !!e.def.boss, ex: e.def.explode ? (e.def.explodeRadius || 5) : 0 }); }
@@ -6740,7 +7289,7 @@ class MP {
     if (Number.isFinite(d.hpf)) e.hp = (d.hpf / 100) * e.maxHp;                                   // late-join: start at the host's current HP, not full
     e._tx = e.pos.x; e._tz = e.pos.z; e._try = 0; this.ghosts.set(d.id, e);
   }
-  _clientSnap(arr) { for (const s of arr) { const e = this.ghosts.get(s.id); if (!e) continue; e._tx = s.x; e._tz = s.z; e._try = s.ry; e.hp = (s.hp / 100) * e.maxHp; } }
+  _clientSnap(arr) { for (const s of arr) { const e = this.ghosts.get(s.id); if (!e) continue; e._tx = s.x; e._tz = s.z; e._try = s.ry; e.hp = (s.hp / 100) * e.maxHp; e.burnT = s.bf ? ENEMY_BURN_DUR : 0; } }
   _clientEnemyDie(d) {
     const e = this.ghosts.get(d.id); if (!e) return;
     const top = Number.isFinite(d.x) ? new THREE.Vector3(d.x, d.y, d.z) : new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
@@ -6753,14 +7302,18 @@ class MP {
   }
   // ---- combat ----
   claimHit(e, dmg, src) { this.net.send('hit', { eid: e.id, dmg, src }); }
-  creditKill(killerId, e) {
+  creditKill(killerId, e, keyCash = 0) {
     const reward = Math.round(e.def.reward);
-    this.net.sendTo(killerId, 'kill', { reward, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0) });
+    // keyCash = the GROUND-loot key-cash the host rolled for this kill → forwarded so the KILLER gets it (the
+    // host already broadcast the shared ground items separately and does NOT keep the client's key-cash).
+    this.net.sendTo(killerId, 'kill', { reward, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0), keyCash });
     this.feed(((this.roster.get(killerId) || {}).name) || 'Player', e.name);
   }
   _clientKill(d) {
+    // Client's personal kill reward ONLY. Ground items are NO LONGER rolled here — they arrive as shared
+    // 'pickup' broadcasts from the host (host-authoritative). We add cash/score + key-cash + elite bonus.
     const g = this.game; g.kills++; g.player.addMoney(d.reward); g.score += d.score; g.hud.setScore(g.score); g.hud.kill(d.name);
-    const def = ENEMY_TYPES[d.type]; if (def) g.loot.drop({ x: d.x, y: 0, z: d.z }, def);
+    if (d.keyCash) g.player.addMoney(d.keyCash);
     if (d.elite) g.player.addMoney(KEY_CASH * 2);
   }
   rayHitPlayers(origin, dir, maxDist) {
@@ -6787,9 +7340,11 @@ class MP {
     if (s.dead) this._checkGameOver();
   }
   hostRevive(tid) { if (!this.isHost) return; const s = this.pstate.get(tid); if (!s || !s.down) return; s.down = false; s.downT = 0; s.hp = Math.round(s.maxHp * 0.5); this._broadcastPState(tid); }
-  _tickDowns() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); } } } }
+  _tickDowns() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); } else if (id === this.myId) this._bleedT = s.downT; else this.net.sendTo(id, 'bleed', { t: s.downT }); } } } // push authoritative remaining time so the on-screen bleed bar matches the host clock
+  // host-authoritative, persistent player burn DoT: the molotov pool only refreshes s.burnT, so this is the SINGLE place DoT is applied (and it lingers after leaving the pool)
+  _tickBurn() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.burnT > 0) { s.burnT -= 0.08; this.hostHurt(id, PLAYER_BURN_DPS * 0.08); if (id === this.myId) this.game.player.burnT = PLAYER_BURN_DUR; else this.net.sendTo(id, 'burn', {}); } } }
   respawnAll() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.waiting && !s.dead) { s.waiting = false; s.hp = s.maxHp; s.armor = 0; this._broadcastPState(id); } } }
-  _broadcastPState(id) { const s = this.pstate.get(id); if (!s) return; const d = { id, hp: s.hp, maxHp: s.maxHp, armor: s.armor, down: s.down, downT: s.downT, waiting: s.waiting, dead: s.dead }; this._applyPState(d); if (id !== this.myId) this.net.send('pstate', d); }
+  _broadcastPState(id) { const s = this.pstate.get(id); if (!s) return; const d = { id, hp: s.hp, maxHp: s.maxHp, armor: s.armor, down: s.down, downT: s.downT, waiting: s.waiting, dead: s.dead, burn: s.burnT > 0 }; this._applyPState(d); if (id !== this.myId) this.net.send('pstate', d); }
   _applyPState(d) {
     const g = this.game;
     if (d.id === this.myId) {
@@ -6797,11 +7352,12 @@ class MP {
       g.hud.setHealth(d.hp, d.maxHp); g.hud.setArmor(d.armor, g.player.armorMax);
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
       this.frozen = d.down || d.dead || d.waiting;
+      g.player.alive = !(d.dead || d.down || d.waiting); // pstate owns life-state so Player.hurt's `if(!this.alive)` guard stops re-killing a downed player
       if (d.down) this._bleedT = d.downT || 20; // start/refresh the local bleed-out bar countdown
       if (d.dead) { g.hud.bigMessage('YOU ARE OUT', 'no lives left'); if (!this._spilledLoot) { this._spilledLoot = true; g.inventory.spillAll(); } } // real death → spill your backpack for teammates
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
-    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; } }
+    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); } } // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
   }
   nearestPlayer(x, z) {
     let best = Infinity, id = null, pos = null;
@@ -6844,9 +7400,12 @@ class MP {
     }
     if (snap.length) this.net.sendTo(pid, 'esnap', snap);                                   // immediate exact positions/HP (don't make the joiner wait ~80ms)
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
-    let boss = null; for (const e of this.game.enemies.active) if (e.alive && (e.def.boss || e.isElite)) { boss = e; break; }
-    if (boss) this.net.sendTo(pid, 'boss', { frac: boss.hp / boss.maxHp, name: boss.name });   // late-join: current boss bar
+    for (const pu of this.game.loot.pickups) if (pu.id != null) this.net.sendTo(pid, 'pickup', { id: pu.id, kind: pu.kind, x: pu.mesh.position.x, z: pu.mesh.position.z, value: pu.value, life: pu.life }); // late-join: existing shared ground pickups
+    let boss = null; for (const e of this.game.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
+    if (boss) { const isTank = !!(boss.isTank || boss.def.tank); const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp); const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1; this.net.sendTo(pid, 'boss', { frac, name: boss.name, pip }); }   // late-join: current boss bar
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
+    const g = this.game;
+    this.net.sendTo(pid, 'night', { t: g.dayNight.t, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon }); // late-join: current day/night + blood-moon state
   }
   _hostGone() { if (!this.active) return; this.active = false; try { this.game.hud.bigMessage('HOST LEFT', 'returning to menu…'); } catch (e) {} this.leave(); this.game.toMenu(); }
   _checkGameOver() {
@@ -6911,6 +7470,8 @@ class Game {
 
   _wireUI() {
     const click = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('click', fn); };
+    const verEl = document.getElementById('lobby-version'); // lobby footer: build version + release time (to the minute)
+    if (verEl) verEl.innerHTML = `ENGENDROS PURGE <b>${GAME_VERSION}</b> (${GAME_BUILD})`;
     click('playBtn', () => this.startGame('purge'));
     click('longNightBtn', () => this.startGame('longnight'));
     click('resumeBtn', () => this.resume());
@@ -6942,7 +7503,7 @@ class Game {
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
     this.input.on('lock', () => { if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
-    this.input.on('unlock', () => { if (this._intentionalUnlock) { this._intentionalUnlock = false; return; } if (this.state === 'playing') this.pause(); });
+    this.input.on('unlock', () => { if (this._intentionalUnlock) { this._intentionalUnlock = false; return; } if (this._invOpen) { this._closeInventory(); return; } if (this.state === 'playing') this.pause(); });
     document.addEventListener('fullscreenchange', () => this.engine.resize());
   }
 
@@ -6950,6 +7511,8 @@ class Game {
     this.input.on('key', (code) => {
       if (this.state !== 'playing') return;
       if (this.weapons.isThrowLocked() && code !== 'KeyM') return; // committed molotov: only the LMB throw (and mute) work
+      if (this.mp.active && this.mp.frozen) return; // downed/dead/waiting: no reload/melee/mount/board/loot/weapon-switch
+      if (this.player.mountedGun && code !== 'KeyE' && code !== 'KeyF' && code !== 'KeyM') return; // on the .50 cal: only dismount / fullscreen / mute — no weapon or inventory switching
       if (code === 'KeyR') this.weapons.startReload();
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
@@ -6962,7 +7525,8 @@ class Game {
         // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
         else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
         else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
-        else this.loot.openNearby();
+        else if (this.loot.openNearby()) { /* claimed a landed supply drop */ }
+        else if (this.inventory.isHoldingFlashlight()) this.dayNight.toggleFlashlight(); // nothing nearby to interact with → toggle the held flashlight beam
       }
       else if (code === 'KeyQ') {
         // CapturedTank: switch driver ↔ gunner seat
@@ -6981,6 +7545,7 @@ class Game {
         if (_ct && this.player.inTank === _ct && _ct.active === 'gunner') { _ct.thermal = !_ct.thermal; }
       }
       else if (code === 'KeyB') this.weapons.toggleFireMode();
+      else if (code === 'KeyG') { const c = this.inventory.curItem(); if (c) this.inventory.dropSlot(c.slot); }
       else if (code === 'KeyI') this.toggleInventory();
       else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
       else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.inventory.selectSlotN(n); }
@@ -7129,6 +7694,7 @@ class Game {
       p.tickT -= dt;
       if (hostSim && p.tickT <= 0 && p.life > 0) {
         p.tickT = FIRE_BURN_TICK;
+        this.loot.clearPickupsInRadius(p.pos.x, p.pos.z, p.radius); // fire burns up any ground item lying in (or dropped into) the pool while it's alight; broadcasts 'pickupgone' so clients' copies vanish too
         const center = this._molTmp.set(p.pos.x, p.pos.y + 0.5, p.pos.z);
         for (const e of this.enemies.active) {
           if (!e.alive || e.isTank) continue;
@@ -7139,8 +7705,9 @@ class Game {
         const tryBurn = (px, py, pz, id, isLocal) => {
           if (Math.hypot(px - p.pos.x, pz - p.pos.z) > p.radius) return;
           if (this.raySegBlocked(center, this._molTmp2.set(px, py + 0.9, pz))) return;
-          if (this.mp.active) { this.mp.hostHurt(id, PLAYER_BURN_DPS * FIRE_BURN_TICK); if (isLocal) this.player.burnT = PLAYER_BURN_DUR; else this.mp.net.sendTo(id, 'burn', {}); }
-          else this.player.burnT = PLAYER_BURN_DUR;
+          // MP: refresh the burn timer only — _tickBurn is the SINGLE source of player DoT, so burn lingers ~PLAYER_BURN_DUR after leaving the pool (no per-tick hostHurt here, or it'd double-dip)
+          if (this.mp.active) { const s = this.mp.pstate.get(id); if (s) s.burnT = PLAYER_BURN_DUR; }
+          else this.player.burnT = PLAYER_BURN_DUR; // solo: local burnT + survivalTick DoT (unchanged)
         };
         if (this.mp.active && this.mp.isHost) { tryBurn(this.player.pos.x, this.player.pos.y, this.player.pos.z, 'host', true); for (const [id, rp] of this.mp.remotes) tryBurn(rp.pos.x, rp.pos.y, rp.pos.z, id, false); }
         else if (!this.mp.active) tryBurn(this.player.pos.x, this.player.pos.y, this.player.pos.z, null, true);
@@ -7205,7 +7772,16 @@ class Game {
   }
 
   onEnemyKilled(e, attacker = 'host') {
-    if (this.mp.active && this.mp.isHost && attacker !== 'host') { this.mp.creditKill(attacker, e); return; }
+    // CO-OP, client-credited kill: the HOST still rolls+broadcasts the SHARED ground loot (so everyone sees
+    // the same pile), but the cash/score CREDIT — including the rolled key-cash — goes to the actual KILLER
+    // via creditKill. The host does NOT keep the client's reward. Tank-mechanic special rewards stay host-side.
+    if (this.mp.active && this.mp.isHost && attacker !== 'host') {
+      let keyCash = 0;
+      if (e.def.tank) keyCash += this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false }));
+      else { keyCash += this.loot.drop(e.pos, e.def); if (e.courier) keyCash += this.loot.dropCourier(e.pos); }
+      this.mp.creditKill(attacker, e, keyCash);   // killer gets reward + score + their own key-cash, exactly once
+      return;
+    }
     this.kills++;
     // --- Task 12: asymmetric tank rewards (replaces generic boss payout for the tank) ---
     if (e.def.tank) {
@@ -7221,17 +7797,18 @@ class Game {
         this.player.addMoney(KEY_CASH * 3);
       }
       if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
-      // loot.drop with boss flag cleared so it doesn't auto-spawn boss keys again
-      this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false }));
+      // loot.drop with boss flag cleared so it doesn't auto-spawn boss keys again. The host killer keeps the
+      // small random key-cash the drop rolls (preserves the original payout — it used to grant it inside drop()).
+      this.player.addMoney(this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false })));
       return; // skip generic boss payout below — no double-pay
     }
     // --- generic path (non-tank enemies) ---
     this.player.addMoney(e.def.reward);
     this.score += e.def.reward + (e.def.boss ? 1500 : 0); this.hud.setScore(this.score);
     if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
-    this.loot.drop(e.pos, e.def);
+    this.player.addMoney(this.loot.drop(e.pos, e.def)); // host/solo killer keeps the rolled key-cash
     if (e.isElite) this.player.addMoney(KEY_CASH * 2); // elites pay a small cash bonus
-    if (e.courier) this.loot.dropCourier(e.pos); // backpack courier → a radio + a bonus
+    if (e.courier) this.player.addMoney(this.loot.dropCourier(e.pos)); // backpack courier → a radio + a bonus (cash to the host killer)
   }
   toLobby() { this.state = 'menu'; this.ui.show('lobby'); this.mp._renderModeSel(); }
   _enterMP(mode) {
@@ -7261,6 +7838,8 @@ class Game {
   }
   // _mpOpenShop removed — co-op has continuous waves with no between-wave shop.
   _hurtTarget(id, dmg) { if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dmg); else this.player.hurt(dmg); }
+  // Host-origin one-way broadcast of a boss/tank attack VISUAL so clients (who never run EnemyManager.update) can SEE/HEAR it.
+  _bossFx(kind, fields) { if (this.mp && this.mp.active && this.mp.isHost) this.mp.net.send('bossfx', Object.assign({ k: kind }, fields)); }
   _explodeHurt(pos, radius, dmg) {
     const hurt = (px, pz, id) => { const d = Math.hypot(px - pos.x, pz - pos.z); if (d < radius) { const dd = dmg * (1 - d / radius); if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dd); else this.player.hurt(dd); } };
     if (this.mp.active && this.mp.isHost) { hurt(this.player.pos.x, this.player.pos.z, 'host'); for (const [id, rp] of this.mp.remotes) hurt(rp.pos.x, rp.pos.z, id); }
@@ -7277,6 +7856,7 @@ class Game {
     this.hud.bigMessage('WAVE ' + (n + 1), 'survivors remain — hold!');
   }
   onPlayerDead() {
+    if (this.mp && this.mp.active) return; // co-op death is pstate-driven; _mpGameOver handles the squad wipe
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
@@ -7350,6 +7930,10 @@ class Game {
     if (hostSim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
     if (hostSim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._waveBreak = 0; this.waves.startWave(this.waves.wave + 1); } } // continuous: breather → next wave (no shop, stay 'playing')
 
+    if (this.mp.active && this.mp.frozen) {
+      if (this.player.mountedGun) this.player.mountedGun.dismount();
+      if (this.player.inTank) this.player.inTank.leave();
+    }
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
     } else if (this.player.inTank) {
@@ -7364,16 +7948,18 @@ class Game {
       this.weapons.update(dt);
       this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
     }
+    if (this.player.mountedGun !== this.mountedGun) this.mountedGun.idleCool(dt); // the .50 cools down even when nobody is manning it
     this.player.survivalTick(dt); // survival timers tick in every seat (on foot, .50 cal, tank)
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     this.dayNight.flash.intensity = (!this.player.inTank && !this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (hostSim) this.enemies.update(dt);
     this.loot.update(dt);
+    if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (hostSim) this.waves.update(dt);
     this.mp.update(dt);
-    if (this.mode === 'longnight') { this._surviveTime += dt; this.dayNight.update(dt); this._updateFlares(dt); this.hud.setClock(this.dayNight.info(), this._surviveTime); }
+    if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this._updateFlares(dt); this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
     this._updateMolotovPools(dt);
-    this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount);
+    if (hostSim) this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount); // clients get the authoritative count via 'clock'
     this.effects.update(dt);
     this.hud.update(dt);
     // ---- Interact prompt priority: tank crew > .50 cal > loot ----

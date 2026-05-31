@@ -167,6 +167,84 @@ export class AudioManager {
   reloadIn() { this.tone(180, 0.08, 'square', 0.25); this.noise(0.05, 0.25, 'lowpass', 500, 1); }
   dryFire() { this.noise(0.03, 0.25, 'bandpass', 3200, 4); }
 
+  // ---- M2HB .50 cal: heavy industrial layered sound (close perspective) ----
+  _burst(t0, dur, vol, filterType, freq, q = 1) { // filtered-noise burst scheduled at an absolute time
+    if (!this.ctx) return;
+    const src = this.ctx.createBufferSource(); src.buffer = this._noiseBuffer(dur);
+    const f = this.ctx.createBiquadFilter(); f.type = filterType; f.frequency.value = freq; f.Q.value = q;
+    const g = this.ctx.createGain();
+    src.connect(f); f.connect(g); g.connect(this.sfxGain);
+    this._env(g, t0, vol, 0.002, dur);
+    src.start(t0); src.stop(t0 + dur + 0.02);
+  }
+  _clank(t0, vol, freq) { // heavy steel-on-steel impact (bolt rear-stop / lock-up)
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'square'; o.frequency.setValueAtTime(freq, t0); o.frequency.exponentialRampToValueAtTime(freq * 0.55, t0 + 0.05);
+    o.connect(g); g.connect(this.sfxGain);
+    this._env(g, t0, vol, 0.001, 0.06); o.start(t0); o.stop(t0 + 0.11);
+    this._burst(t0 + 0.003, 0.05, vol * 0.6, 'bandpass', 1500, 1.4); // metallic body
+    this._burst(t0 + 0.008, 0.02, vol * 0.4, 'highpass', 4800, 0.7); // sharp edge
+  }
+  fiftyShot() { // one .50 round: muzzle pressure + supersonic crack + heavy bolt + belt rattle + mount resonance
+    if (!this.ctx) return;
+    const t0 = this.t, pv = 0.97 + Math.random() * 0.06, vv = 0.92 + Math.random() * 0.16;
+    // L1 muzzle pressure — deep boom (sine sub + saw body)
+    const o1 = this.ctx.createOscillator(), g1 = this.ctx.createGain();
+    o1.type = 'sine'; o1.frequency.setValueAtTime(95 * pv, t0); o1.frequency.exponentialRampToValueAtTime(42, t0 + 0.09);
+    o1.connect(g1); g1.connect(this.sfxGain); this._env(g1, t0, 0.9 * vv, 0.001, 0.09); o1.start(t0); o1.stop(t0 + 0.15);
+    const o2 = this.ctx.createOscillator(), g2 = this.ctx.createGain();
+    o2.type = 'sawtooth'; o2.frequency.setValueAtTime(155 * pv, t0); o2.frequency.exponentialRampToValueAtTime(64, t0 + 0.07);
+    o2.connect(g2); g2.connect(this.sfxGain); this._env(g2, t0, 0.5 * vv, 0.001, 0.06); o2.start(t0); o2.stop(t0 + 0.12);
+    this._burst(t0, 0.05, 0.45 * vv, 'bandpass', 230, 0.8);   // body that reads on small speakers
+    this._burst(t0, 0.025, 0.32 * vv, 'bandpass', 620, 1.0);
+    // L2 sharp supersonic crack (2-8 kHz, very short)
+    this._burst(t0, 0.012, 0.55 * vv, 'highpass', 3600, 0.6);
+    // L3 heavy bolt / mechanism (~28 ms after)
+    const m0 = t0 + 0.028;
+    const om = this.ctx.createOscillator(), gm = this.ctx.createGain();
+    om.type = 'square'; om.frequency.setValueAtTime(190, m0); om.frequency.exponentialRampToValueAtTime(110, m0 + 0.05);
+    om.connect(gm); gm.connect(this.sfxGain); this._env(gm, m0, 0.3 * vv, 0.002, 0.06); om.start(m0); om.stop(m0 + 0.1);
+    this._burst(m0 + 0.004, 0.05, 0.3 * vv, 'bandpass', 1800, 1.4);
+    this._burst(m0 + 0.01, 0.018, 0.18 * vv, 'highpass', 5200, 0.7);
+    // L4 belt/link rattle (~50-100 ms after, randomized — some shots more, some none)
+    if (Math.random() < 0.75) {
+      const r0 = t0 + 0.05 + Math.random() * 0.05, n = 1 + (Math.random() * 2 | 0);
+      for (let i = 0; i < n; i++) this._burst(r0 + i * 0.022 + Math.random() * 0.015, 0.012, 0.08 + Math.random() * 0.07, 'bandpass', 2600 + Math.random() * 2400, 3);
+    }
+    // L6 mount resonance — low damped tone (tripod/structure rings with each shot)
+    const or = this.ctx.createOscillator(), gr = this.ctx.createGain();
+    or.type = 'triangle'; or.frequency.setValueAtTime(125, t0); or.frequency.exponentialRampToValueAtTime(78, t0 + 0.18);
+    or.connect(gr); gr.connect(this.sfxGain); this._env(gr, t0 + 0.004, 0.16 * vv, 0.004, 0.18); or.start(t0); or.stop(t0 + 0.24);
+  }
+  fiftyCharge() { // heavy ~1.1 s cocking foley: contact -> resistance -> long pull -> rear stop -> return -> lock-up -> after-rattle
+    if (!this.ctx) return;
+    const t0 = this.t;
+    this._burst(t0 + 0.02, 0.03, 0.12, 'bandpass', 1800, 2);                  // A hand contact
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();          // B initial resistance (low metal slide)
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(140, t0 + 0.12); o.frequency.linearRampToValueAtTime(108, t0 + 0.35);
+    o.connect(g); g.connect(this.sfxGain); this._env(g, t0 + 0.12, 0.12, 0.02, 0.22); o.start(t0 + 0.12); o.stop(t0 + 0.4);
+    this._burst(t0 + 0.14, 0.2, 0.10, 'bandpass', 680, 1.2);                  // friction
+    this._burst(t0 + 0.35, 0.32, 0.12, 'bandpass', 480, 0.8);                 // C long steel slide
+    for (let i = 0; i < 4; i++) this._burst(t0 + 0.38 + i * 0.07, 0.01, 0.06, 'bandpass', 2400 + Math.random() * 1600, 3); // micro-clicks
+    this._clank(t0 + 0.70, 0.5, 150);                                         // D hard rear stop
+    const o2 = this.ctx.createOscillator(), g2 = this.ctx.createGain();        // E return
+    o2.type = 'sawtooth'; o2.frequency.setValueAtTime(120, t0 + 0.80); o2.frequency.linearRampToValueAtTime(165, t0 + 1.02);
+    o2.connect(g2); g2.connect(this.sfxGain); this._env(g2, t0 + 0.80, 0.10, 0.02, 0.2); o2.start(t0 + 0.80); o2.stop(t0 + 1.06);
+    this._clank(t0 + 1.02, 0.45, 112);                                        // final dry lock-up
+    for (let i = 0; i < 3; i++) this._burst(t0 + 1.08 + i * 0.1 + Math.random() * 0.05, 0.012, 0.05, 'bandpass', 2600 + Math.random() * 2000, 3); // F after-rattle
+  }
+  fiftyOverheat() { // barrel maxed: steam hiss + low metallic stress groan + action seizing
+    if (!this.ctx) return;
+    const t0 = this.t;
+    this._burst(t0, 0.6, 0.3, 'highpass', 4200, 0.5);                         // steam hiss
+    this._burst(t0 + 0.05, 0.5, 0.2, 'bandpass', 2200, 0.8);
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();          // low stress groan
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(180, t0); o.frequency.exponentialRampToValueAtTime(85, t0 + 0.5);
+    o.connect(g); g.connect(this.sfxGain); this._env(g, t0, 0.28, 0.01, 0.5); o.start(t0); o.stop(t0 + 0.62);
+    this._clank(t0 + 0.02, 0.4, 130);                                         // action seizes
+  }
+
   hitMarker() { this.tone(1400, 0.04, 'square', 0.2); }
   headshot() { this.tone(2000, 0.05, 'square', 0.3); this.tone(2600, 0.05, 'square', 0.2); }
 
