@@ -1481,9 +1481,13 @@ class Enemy {
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.isTank = !!def.tank; // authoritative reset: true for tank type, false for all others
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
-    // boss state
+    // boss state (Tolo)
     this.phase = 1; this.laserCD = 3.2; this.charging = 0; this.addCD = 0; this.beamLife = 0;
     this.aim = new THREE.Vector3();
+    this.invuln = 0;          // i-frames during a phase transition (boss stands still & shudders)
+    this.baseSpeed = speed;   // phase speed scaling multiplies this (p1 ×1.0, p2 ×1.12, p3 ×1.20)
+    this.shotsLeft = 0; this.shotCD = 0; this._chargeDur = 0.85; // phase-1 blaster burst
+    this.sweepT = 0; this.sweepActive = false; this.sweepBase = 0; this.sweepPass = 0; // phase-2/3 sweep (later step)
     if (this.mesh.material && this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
     this.mesh.visible = true; this.mesh.scale.setScalar(def.scale); this.mesh.position.copy(pos);
     if (def.tank) {
@@ -1672,6 +1676,8 @@ class EnemyManager {
     this.pool = {};  // geoKey -> Enemy[]
     this.active = []; this._idc = 0;
     this._min = new THREE.Vector3(); this._max = new THREE.Vector3();
+    this.bossBolts = []; // BOSS TOLO phase-1 blaster bolts (traveling projectiles)
+    this.bossFires = []; // BOSS TOLO phase-3 lingering fire zones (area denial)
   }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
@@ -1764,9 +1770,11 @@ class EnemyManager {
       if (dist > e.radius + this.game.player.radius + 0.8 && moved < e.speed * dt * 0.35) e.stuck += dt;
       else e.stuck = Math.max(0, e.stuck - dt * 0.6);
       const beeline = e.stuck > 1.6;
-      const wx = beeline ? dx : dx + sx * 0.6 + ax, wz = beeline ? dz : dz + sz * 0.6 + az, wl = Math.hypot(wx, wz) || 1;
+      const _sepW = e.def.boss ? 0 : 0.6; // Tolo is a giant — small mobs can't shove him off; he beelines for the nearest player
+      const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
-      const spd = e.speed * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
+      const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
+      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
       if (_wz) {
         _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down
         e._wireT = (e._wireT || 0) + dt;
@@ -1815,6 +1823,8 @@ class EnemyManager {
       if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);
       if (e.def.boss) this._bossTolo(e, dt);
     }
+    this._updateBossBolts(dt);
+    this._updateBossFires(dt);
     if (this._aimRing && this._aimRingT > 0) { this._aimRingT -= dt; this._aimRing.material.opacity = Math.max(0, this._aimRingT) * 1.05; }
     if (this.shells) for (let i = this.shells.length - 1; i >= 0; i--) {
       const s = this.shells[i]; s.fuse -= dt; s.vel.y -= s.grav * dt;
@@ -1897,40 +1907,211 @@ class EnemyManager {
     }
   }
 
+  // Belly bullseye = the laser emitter AND the only weak spot. Phases gate by HP:
+  //   1 (>66%) blaster burst · 2 (33–66%) sweep · 3 (<33%) double sweep + fire (sweep/fire land in later steps).
   _bossTolo(e, dt) {
     const pp = this.game.player.pos;
     this.game.hud.setBoss(e.hp / e.maxHp, e.name);
-    if (e.phase === 1 && e.hp <= e.maxHp * 0.5) { e.phase = 2; e.addCD = 0.6; this.game.hud.bigMessage('TOLO ENRAGED', 'he summons mini-Tolos!'); }
-    // laser cannon charging up out of the belly target, then firing
-    // belly-bullseye glow telegraphs the charge WITHOUT reddening the eyes/face (lazy child of the boss mesh, the laser emitter)
+
+    // belly-bullseye glow telegraphs the charge (lazy child of the boss mesh, the laser emitter)
     if (!e._tolGlow) {
       e._tolGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.05, 22),
         new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
       e._tolGlow.rotation.x = Math.PI / 2; e._tolGlow.position.set(0, 0.6, 0.42); e._tolGlow.renderOrder = 999;
       e.mesh.add(e._tolGlow);
     }
+    // fade the single-beam placeholder used by phases 2/3 until the real sweep lands
+    if (e.beamLife > 0 && e._beam) { e.beamLife -= dt; e._beam.material.opacity = Math.max(0, e.beamLife / 0.18); if (e.beamLife <= 0) e._beam.visible = false; }
+
+    // ── phase gates by HP — 1: >66% · 2: 33–66% · 3: <33% ──
+    const want = e.hp > e.maxHp * 0.66 ? 1 : (e.hp > e.maxHp * 0.33 ? 2 : 3);
+    if (want > e.phase) {
+      e.phase = want; e.invuln = 3.0;                  // 3s i-frames so the player notices the shift
+      e.charging = 0; e.shotsLeft = 0; e.sweepActive = false; e.sweepT = 0; e.laserCD = 1.2;
+      e.speed = e.baseSpeed * (want === 3 ? 1.20 : 1.12); // each phase a bit faster (fat → still not free)
+      if (e._beam) e._beam.visible = false;
+      this.game.hud.bigMessage('TOLO ZUŘÍ', want === 2 ? 'nastává fáze 2 — laserový sweep!' : 'nastává fáze 3 — žhavá zkáza!');
+      this.game.audio.tone(200, 0.5, 'sawtooth', 0.4);
+    }
+
+    // ── phase-change i-frames: stand still, shudder, leak stuffing, no attacks ──
+    if (e.invuln > 0) {
+      e.invuln -= dt;
+      e._tolGlow.material.opacity = 0.30 + 0.22 * Math.sin(e.bob * 6);
+      e.mesh.rotation.z = Math.sin(e.bob * 8) * 0.13;
+      if (Math.random() < 0.3) this.game.effects.stuffing(new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z), e.col.body, 3, 4);
+      return;
+    }
+
+    // ── an attack is mid-flight ──
+    if (e.shotsLeft > 0) { this._bossBurst(e, dt); return; }
+    if (e.sweepActive)   { this._bossSweep(e, dt); return; }
+
+    // ── charge telegraph: terčík se nabíjí = the ONLY window to damage Tolo ──
     if (e.charging > 0) {
       e.charging -= dt;
-      const f = 1 - e.charging / 0.85;
+      const f = 1 - e.charging / e._chargeDur;
       e._tolGlow.material.opacity = 0.95 * f; e._tolGlow.scale.setScalar(0.7 + f * 0.7);
-      if (e.charging <= 0) this._bossLaser(e);
-    } else {
-      if (e._tolGlow.material.opacity > 0.02) e._tolGlow.material.opacity *= 0.82;
-      e.laserCD -= dt;
-      if (e.laserCD <= 0) {
-        e.laserCD = e.phase === 2 ? 2.6 : 3.8; e.charging = 0.85;
+      if (e.charging <= 0) {
         e.aim.set(pp.x - e.pos.x, (pp.y + 1.0) - (e.pos.y + 0.6 * e.scale), pp.z - e.pos.z).normalize();
+        if (e.phase === 1) { e.shotsLeft = 5; e.shotCD = 0; }  // 5 blaster bolts
+        else this._beginSweep(e);                              // phase 2/3: sweeping beam
       }
+      return;
     }
-    if (e.beamLife > 0 && e._beam) { e.beamLife -= dt; e._beam.material.opacity = Math.max(0, e.beamLife / 0.18); if (e.beamLife <= 0) e._beam.visible = false; }
-    // phase 2: keep summoning small fast mini-Tolos around himself
-    if (e.phase === 2) {
-      e.addCD -= dt;
-      if (e.addCD <= 0 && this.active.length < 18) {
-        e.addCD = 6;
-        for (let k = 0; k < 3; k++) { const a = rr(0, TAU); this.spawn('minitolo', { x: e.pos.x + Math.cos(a) * 3.5, y: 0, z: e.pos.z + Math.sin(a) * 3.5 }, ENEMY_TYPES.minitolo.hp, ENEMY_TYPES.minitolo.speed); }
+
+    // ── idle: tick down to the next attack, then start charging ──
+    if (e._tolGlow.material.opacity > 0.02) e._tolGlow.material.opacity *= 0.82;
+    e.laserCD -= dt;
+    if (e.laserCD <= 0) {
+      e.laserCD = e.phase === 3 ? 4.0 : (e.phase === 2 ? 5.0 : 3.8);
+      e._chargeDur = e.phase === 1 ? 0.85 : 0.7;
+      e.charging = e._chargeDur;
+    }
+  }
+
+  // Phase 1: a short burst of 5 thin red blaster bolts at the locked aim. Anti-camp: tight cone
+  // when the player stands still (~60% hit feel), wide cone when they strafe (~35%).
+  _bossBurst(e, dt) {
+    e.shotCD -= dt;
+    if (e.shotCD > 0) return;
+    e.shotCD = 0.22; e.shotsLeft--;
+    const pl = this.game.player;
+    const moving = Math.hypot(pl.vel.x, pl.vel.z) > 1.5;
+    const spread = moving ? 0.14 : 0.05;
+    const a = e.aim.clone();
+    a.x += rr(-spread, spread); a.y += rr(-spread * 0.4, spread * 0.4); a.z += rr(-spread, spread);
+    a.normalize();
+    this._spawnBolt(e, a);
+    this.game.audio.tone(1300, 0.07, 'square', 0.3);
+    if (e.shotsLeft <= 0) e._tolGlow.material.opacity = 0;
+  }
+
+  _spawnBolt(e, dir) {
+    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
+    if (!this._boltGeo) this._boltGeo = new THREE.BoxGeometry(0.18, 0.18, 1.6);
+    const m = new THREE.Mesh(this._boltGeo, new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }));
+    m.renderOrder = 998; m.position.copy(belly); m.lookAt(belly.clone().add(dir));
+    this.game.engine.scene.add(m);
+    this.bossBolts.push({ mesh: m, dir: dir.clone(), spd: 55, life: 70 / 55, dmg: e.def.dmg }); // range = 50% of the 140-wide arena
+    this.game.effects.muzzleFlash(belly, dir, 2.0);
+  }
+
+  _updateBossBolts(dt) {
+    if (!this.bossBolts.length) return;
+    const pl = this.game.player, pp = pl.pos;
+    for (let i = this.bossBolts.length - 1; i >= 0; i--) {
+      const b = this.bossBolts[i];
+      const step = b.spd * dt, m = b.mesh.position;
+      let dead = false;
+      // can't shoot through walls / objects: stop at the first solid hit this step
+      const wh = this.game.world.rayHit(m, b.dir, step);
+      if (wh) { this.game.effects.muzzleFlash(wh.point, b.dir, 1.4); dead = true; }
+      m.addScaledVector(b.dir, step); b.life -= dt;
+      // shred any other mob caught in the bolt (lots of damage), but never Tolo himself
+      if (!dead) {
+        for (const en of this.active) {
+          if (!en.alive || en.def.boss) continue;
+          if (Math.hypot(m.x - en.pos.x, m.z - en.pos.z) < en.radius + 0.4) { this.damage(en, 9999, 'gun', m.clone()); dead = true; break; }
+        }
       }
+      if (!dead && b.life <= 0) dead = true;
+      if (!dead && Math.hypot(m.x - pp.x, m.y - (pp.y + 1.0), m.z - pp.z) < 1.1) { pl.hurt(b.dmg); dead = true; }
+      if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); b.mesh.material.dispose(); this.bossBolts.splice(i, 1); }
     }
+  }
+
+  // Feedback when shots hit Tolo anywhere but the charging bullseye — a small puff + faint tink.
+  _bossDeflect(e, hitPoint) {
+    if (hitPoint) this.game.effects.stuffing(hitPoint, e.col.body, 2, 2);
+    if (Math.random() < 0.25) this.game.audio.tone(420, 0.04, 'square', 0.16);
+  }
+
+  // Phase 2/3: lock the player's position, then sweep a continuous beam through a 45° wedge.
+  // The player must run out of the wedge. Range = 80% (p2) / 100% (p3) of the arena width.
+  // Phase 3 does a double sweep (there and back) and scorches lingering fire onto the floor.
+  _beginSweep(e) {
+    const pp = this.game.player.pos;
+    e.sweepActive = true; e.sweepHitCD = 0;
+    e.sweepCenter = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z); // XZ angle toward the player at fire time
+    e.sweepArc = Math.PI / 4;                 // 45° wedge
+    e.sweepLen = 70;                           // 50% of the 140-wide arena (all phases)
+    e.sweepPasses = e.phase === 3 ? 2 : 1;    // phase 3 = double sweep
+    e.sweepPass = 0;
+    if (!e._beam) {
+      e._beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+      e._beam.renderOrder = 998; this.game.engine.scene.add(e._beam);
+    }
+    e._beam.material.color.setHex(e.phase === 3 ? 0xff3a10 : 0xff2436);
+    e._beam.visible = true; e._beam.material.opacity = 1;
+    this._sweepStartPass(e);
+    this.game.audio.tone(900, 0.2, 'sawtooth', 0.3);
+  }
+
+  _sweepStartPass(e) {
+    e.sweepT = 0;
+    e.sweepDur = e.phase === 3 ? 1.5 : 3.0;   // p3: two quick passes (~3s total); p2: one 3s pass
+    const half = e.sweepArc / 2;
+    if (e.sweepPass % 2 === 0) { e.sweepFrom = e.sweepCenter - half; e.sweepTo = e.sweepCenter + half; }
+    else                       { e.sweepFrom = e.sweepCenter + half; e.sweepTo = e.sweepCenter - half; }
+  }
+
+  _bossSweep(e, dt) {
+    e.sweepT += dt; e.sweepHitCD -= dt;
+    const frac = clamp(e.sweepT / e.sweepDur, 0, 1);
+    const ang = e.sweepFrom + (e.sweepTo - e.sweepFrom) * frac;
+    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
+    const dir = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
+    let len = e.sweepLen;
+    if (e.phase !== 3) { const wh = this.game.world.rayHit(belly, dir, len); if (wh) len = Math.max(2, belly.distanceTo(wh.point) - 0.2); } // phases 1/2 can't burn through walls (phase 3 does)
+    const end = belly.clone().addScaledVector(dir, len);
+    const thick = e.phase === 3 ? 0.9 : 0.55;
+    e._beam.position.copy(belly).add(end).multiplyScalar(0.5);
+    e._beam.scale.set(thick, thick, len); e._beam.lookAt(end);
+    e._beam.material.opacity = 0.85 + 0.15 * Math.sin(e.sweepT * 40);
+    if (e._tolGlow) e._tolGlow.material.opacity = 0.9;                  // emitter stays lit while firing
+    if (Math.random() < 0.4) this.game.audio.noise(0.05, 0.2, 'highpass', 1600, 0.5);
+    // phase 3: the beam scorches the floor — drop lingering fire zones along it (area denial)
+    if (e.phase === 3) {
+      e._fireDropT = (e._fireDropT || 0) - dt;
+      if (e._fireDropT <= 0) { e._fireDropT = 0.10; const fd = rr(5, len * 0.7); this._dropBossFire(belly.x + dir.x * fd, belly.z + dir.z * fd); }
+    }
+    // contact damage: horizontal distance to the beam line, throttled so a graze = one "hit"
+    const pp = this.game.player.pos;
+    const t = clamp((pp.x - belly.x) * dir.x + (pp.z - belly.z) * dir.z, 0, len);
+    const dl = Math.hypot(pp.x - (belly.x + dir.x * t), pp.z - (belly.z + dir.z * t));
+    const reach = e.phase === 3 ? 2.0 : 1.6;
+    if (dl < reach && e.sweepHitCD <= 0) { e.sweepHitCD = 0.7; this.game.player.hurt(e.phase === 3 ? 200 : 55); }
+    // the sweep also shreds any other mob it passes over (lots of damage), but never Tolo himself
+    for (const en of this.active) {
+      if (!en.alive || en.def.boss) continue;
+      const te = clamp((en.pos.x - belly.x) * dir.x + (en.pos.z - belly.z) * dir.z, 0, len);
+      const de = Math.hypot(en.pos.x - (belly.x + dir.x * te), en.pos.z - (belly.z + dir.z * te));
+      if (de < reach + en.radius) this.damage(en, 9999, 'gun', en.pos.clone());
+    }
+    if (e.sweepT >= e.sweepDur) {
+      e.sweepPass++;
+      if (e.sweepPass < e.sweepPasses) this._sweepStartPass(e);
+      else { e.sweepActive = false; e._beam.visible = false; }
+    }
+  }
+
+  _dropBossFire(x, z) {
+    if (this.bossFires.length > 48) return;   // perf cap
+    this.game.effects.firePool({ x, y: 0.08, z }, 1.4, 0.8);
+    this.bossFires.push({ x, z, r: 1.9, life: 3.0 });
+  }
+
+  _updateBossFires(dt) {
+    if (!this.bossFires.length) return;
+    const pp = this.game.player.pos; let inFire = false;
+    for (let i = this.bossFires.length - 1; i >= 0; i--) {
+      const f = this.bossFires[i]; f.life -= dt;
+      if (f.life <= 0) { this.bossFires.splice(i, 1); continue; }
+      if (Math.random() < 0.18) this.game.effects.firePool({ x: f.x, y: 0.08, z: f.z }, 1.1, 0.5); // keep it visibly burning
+      if (Math.hypot(pp.x - f.x, pp.z - f.z) < f.r) inFire = true;
+    }
+    if (inFire) { this._fireTickT = (this._fireTickT || 0) - dt; if (this._fireTickT <= 0) { this._fireTickT = 0.4; this.game.player.hurt(12); } }
   }
 
   _bossTank(e, dt) {
@@ -2199,6 +2380,16 @@ class EnemyManager {
       }
       return false; // 'contact' n/a for the tank
     }
+    // BOSS TOLO: immune everywhere & always EXCEPT a hit on the belly bullseye while it is charging a shot.
+    if (e.def.boss) {
+      if (e.invuln > 0) { this._bossDeflect(e, hitPoint); return false; }      // phase-change i-frames
+      let onTarget = false;
+      if (e.charging > 0 && hitPoint && e._tolGlow) {
+        const tp = e._tolGlow.getWorldPosition(this._tv || (this._tv = new THREE.Vector3()));
+        onTarget = hitPoint.distanceTo(tp) < 1.4 * e.scale;
+      }
+      if (!onTarget) { this._bossDeflect(e, hitPoint); return false; }         // bounced off the plush
+    }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
     if (e.hp <= 0) {
       e.alive = false; e.mesh.visible = false;
@@ -2340,7 +2531,7 @@ class EnemyManager {
     e.tankGroup = null; // ownership transferred — clearAll/pool won't touch it; next tank spawn builds fresh
     return true;
   }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this._aimRing) this._aimRing.material.opacity = 0; }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; if (e.tankGroup) e.tankGroup.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.shells) { for (const s of this.shells) if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh); this.shells.length = 0; } if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._aimRing) this._aimRing.material.opacity = 0; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
@@ -5094,6 +5285,7 @@ class HUD {
       msg: $('msg'), vignette: $('vignette'), hitmarker: $('hitmarker'), killfeed: $('killfeed'),
       cross: $('cross'), toast: $('toast'), interact: $('interact'), scope: $('scope'), binoview: $('binoview'),
       bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), bosspip: $('bosspip'), left: $('left'),
+      bleedbar: $('bleedbar'), bleedfill: $('bleedfill'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
       clock: $('clock'), nightgear: $('nightgear'),
       tankhp: $('tankhp'), tankhpfill: $('tankhpfill'),
@@ -5222,6 +5414,7 @@ class HUD {
     else { el.classList.add('show'); if (this.el.bossbar) this.el.bossbar.classList.add('exposed'); el.style.width = (clamp(frac, 0, 1) * 100) + '%'; }
   }
   hideBoss() { this.el.bossbar.classList.remove('show'); }
+  setBleed(frac) { if (!this.el.bleedbar) return; if (frac < 0) this.el.bleedbar.classList.remove('show'); else { this.el.bleedbar.classList.add('show'); this.el.bleedfill.style.width = (clamp(frac, 0, 1) * 100) + '%'; } }
   setHeat(frac, over) { this.el.heatbar.classList.add('show'); this.el.heatfill.style.width = clamp(frac, 0, 1) * 100 + '%'; this.el.heatbar.classList.toggle('over', !!over); this.el.heatlabel.textContent = over ? 'OVERHEATED — COOLING' : 'BARREL HEAT'; }
   hideHeat() { this.el.heatbar.classList.remove('show'); }
   setTankHp(frac) {
@@ -6234,7 +6427,7 @@ class RemotePlayer {
     this._hasFlash = false; this._fwd = new THREE.Vector3(); this._fe = new THREE.Euler();
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
-    this.hp = 100; this.maxHp = 100; this.down = false; this.dead = false;
+    this.hp = 100; this.maxHp = 100; this.down = false; this.waiting = false; this.dead = false;
     this._animT = 0; this._spd = 0; this._lastx = 0; this._lastz = 30;
     const wrap = document.getElementById('mp-labels');
     this.label = document.createElement('div'); this.label.className = 'mp-label';
@@ -6243,7 +6436,7 @@ class RemotePlayer {
     this._hpEl = this.label.querySelector('.mp-hp');
     if (wrap) wrap.appendChild(this.label);
   }
-  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; this.down = !!s.down; this.dead = !!s.dead; if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } }
+  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } } // down/dead/waiting come authoritatively from pstate, NOT from xf
   setHP(hp, maxHp) { this.hp = hp; if (maxHp) this.maxHp = maxHp; }
   update(dt, cam) {
     const k = 1 - Math.exp(-15 * dt);
@@ -6253,7 +6446,7 @@ class RemotePlayer {
     this._spd = damp(this._spd, mv, 8, dt); this._lastx = this.pos.x; this._lastz = this.pos.z;
     const o = this.obj, p = this.parts;
     o.position.set(this.pos.x, this.pos.y, this.pos.z);
-    if (this.dead || this.down) {
+    if (this.dead || this.down || this.waiting) {
       o.rotation.set(-Math.PI * 0.46, this.yaw + Math.PI, 0); o.position.y = this.pos.y + 0.35; // +PI: model faces +z, but look/move forward is -z
       p.legL.rotation.x = p.legR.rotation.x = p.armL.rotation.x = p.armR.rotation.x = 0;
       if (this.gunAnchor) this.gunAnchor.visible = false;
@@ -6268,7 +6461,7 @@ class RemotePlayer {
       o.position.y = this.pos.y + (moving ? Math.abs(Math.sin(this._animT)) * 0.06 : 0);
       if (this.gunAnchor) this.gunAnchor.visible = true;
     }
-    if (this._hasFlash && !this.down && !this.dead) { // beam from this player's flashlight, aimed where they look
+    if (this._hasFlash && !this.down && !this.dead && !this.waiting) { // beam from this player's flashlight, aimed where they look
       const f = this._fwd.set(0, 0, -1).applyEuler(this._fe.set(this.pitch, this.yaw, 0, 'XYZ'));
       const hx = this.pos.x, hy = this.pos.y + 1.6, hz = this.pos.z;
       this.flashLight.position.set(hx, hy, hz);
@@ -6281,7 +6474,7 @@ class RemotePlayer {
     this.label.style.left = ((hp.x * 0.5 + 0.5) * window.innerWidth) + 'px';
     this.label.style.top = ((-hp.y * 0.5 + 0.5) * window.innerHeight) + 'px';
     this._hpEl.style.width = clamp((this.hp / this.maxHp) * 100, 0, 100) + '%';
-    this.label.classList.toggle('down', this.down || this.dead);
+    this.label.classList.toggle('down', this.down || this.waiting || this.dead);
   }
   setWeapon(key) {
     while (this.gunAnchor.children.length) { const c = this.gunAnchor.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
@@ -6308,6 +6501,7 @@ class MP {
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
     this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
+    this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
     this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
@@ -6337,6 +6531,7 @@ class MP {
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
     if (this._lastXf) this._lastXf.clear();
     this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false;
+    this._localDown = false; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
     this.net = new Net(); this._wireNet();
   }
   // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
@@ -6528,6 +6723,9 @@ class MP {
     this._pingT -= dt; if (this._pingT <= 0) { this._pingT = 2; if (!this.isHost) this.net.send('ping', { t: performance.now() }); }
     this._pstatT -= dt; if (this._pstatT <= 0) { this._pstatT = 1; const myPing = this.isHost ? 0 : this.myPing, myMoney = g.player.money; const me = this.roster.get(this.myId); if (me) { me.ping = myPing; me.money = myMoney; } this.net.broadcast('pstat', { id: this.myId, ping: myPing, money: myMoney }); if (this._sbOpen) this.renderScoreboard(); }
     this._updateRevive(dt);
+    // local bleed-out bar: counts the downed player's 20s toward bleeding out
+    if (this._localDown) { this._bleedT = Math.max(0, (this._bleedT || 0) - dt); g.hud.setBleed(this._bleedT / 20); this._bleedShown = true; }
+    else if (this._bleedShown) { g.hud.setBleed(-1); this._bleedShown = false; }
   }
   // ---- enemy sync (host → clients) ----
   onEnemySpawn(e) { if (this.active && this.isHost) this.net.send('espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), hpf: Math.round((e.hp / e.maxHp) * 100) }); }
@@ -6569,7 +6767,7 @@ class MP {
     if (!this.friendlyFire) return null;   // co-op: gunfire passes through teammates (no accidental teamkills)
     let best = maxDist, hit = null, hp = null;
     for (const [id, rp] of this.remotes) {
-      if (rp.dead || rp.down) continue;
+      if (rp.dead || rp.down || rp.waiting) continue;
       const mn = _mpMin.set(rp.pos.x - 0.42, rp.pos.y, rp.pos.z - 0.42), mx = _mpMax.set(rp.pos.x + 0.42, rp.pos.y + 2.5, rp.pos.z + 0.42);
       const t = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, mn, mx);
       if (t !== null && t < best) { best = t; hit = id; hp = new THREE.Vector3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t); }
@@ -6584,7 +6782,7 @@ class MP {
     const s = this.pstate.get(id); if (!s || s.dead || s.waiting || s.down) return;
     if (s.armor > 0) { const t = Math.min(s.armor, dmg); s.armor -= t; dmg -= t; }
     s.hp -= dmg;
-    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 4) s.dead = true; else { s.down = true; s.downT = 20; } }
+    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 3) s.dead = true; else { s.down = true; s.downT = 20; } } // 2 downs survivable, the 3rd is permanent death
     this._broadcastPState(id);
     if (s.dead) this._checkGameOver();
   }
@@ -6599,10 +6797,11 @@ class MP {
       g.hud.setHealth(d.hp, d.maxHp); g.hud.setArmor(d.armor, g.player.armorMax);
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
       this.frozen = d.down || d.dead || d.waiting;
+      if (d.down) this._bleedT = d.downT || 20; // start/refresh the local bleed-out bar countdown
       if (d.dead) { g.hud.bigMessage('YOU ARE OUT', 'no lives left'); if (!this._spilledLoot) { this._spilledLoot = true; g.inventory.spillAll(); } } // real death → spill your backpack for teammates
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
-    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down || d.waiting; rp.dead = d.dead; } }
+    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; } }
   }
   nearestPlayer(x, z) {
     let best = Infinity, id = null, pos = null;
