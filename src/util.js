@@ -167,3 +167,32 @@ export class Pool {
     this.free.push(o);
   }
 }
+
+// --- gameplay RNG (unseeded) + ray/AABB — moved from game.js during the module split ---
+
+// --- gameplay RNG (non-deterministic; map gen uses a seeded rng) ---
+export const rr = (lo, hi) => lo + (hi - lo) * Math.random();
+export const ri = (lo, hi) => Math.floor(lo + (hi - lo + 1) * Math.random());
+export const pick = (a) => a[Math.floor(Math.random() * a.length)];
+export const chc = (p) => Math.random() < p;
+export function weightedPick(entries) {
+  let total = 0; for (const e of entries) total += e.w;
+  let r = Math.random() * total;
+  for (const e of entries) { r -= e.w; if (r <= 0) return e.v; }
+  return entries[entries.length - 1].v;
+}
+
+// ---------------------------------------------------------------------------
+// Ray vs AABB (slab). Returns forward entry distance >=0, or null.
+// ---------------------------------------------------------------------------
+export function rayAABB(ox, oy, oz, dx, dy, dz, min, max) {
+  let tmin = -Infinity, tmax = Infinity;
+  if (Math.abs(dx) < 1e-9) { if (ox < min.x || ox > max.x) return null; }
+  else { let a = (min.x - ox) / dx, b = (max.x - ox) / dx; if (a > b) { const s = a; a = b; b = s; } tmin = Math.max(tmin, a); tmax = Math.min(tmax, b); if (tmin > tmax) return null; }
+  if (Math.abs(dy) < 1e-9) { if (oy < min.y || oy > max.y) return null; }
+  else { let a = (min.y - oy) / dy, b = (max.y - oy) / dy; if (a > b) { const s = a; a = b; b = s; } tmin = Math.max(tmin, a); tmax = Math.min(tmax, b); if (tmin > tmax) return null; }
+  if (Math.abs(dz) < 1e-9) { if (oz < min.z || oz > max.z) return null; }
+  else { let a = (min.z - oz) / dz, b = (max.z - oz) / dz; if (a > b) { const s = a; a = b; b = s; } tmin = Math.max(tmin, a); tmax = Math.min(tmax, b); if (tmin > tmax) return null; }
+  if (tmax < 0) return null;
+  return tmin >= 0 ? tmin : 0;
+}

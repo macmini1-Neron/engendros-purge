@@ -1,0 +1,180 @@
+// admin.js — extracted from game.js during the module split (mechanical move, no logic changes).
+import * as THREE from 'three';
+import { clamp, voxelMaterial } from './util.js?u=3';
+import { buildTank, buildTankWreck } from './bosstank.js';
+import { buildBarbedWire, buildBarricade, buildChuteRig, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
+import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
+import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
+import { buildT34Hull, buildT34Model, buildT34Tracks, buildT34Turret } from './t34model.js';
+import { buildSu34DuctBellyModule, buildSu34FinishPhotoModule, buildSu34ForwardModule, buildSu34GeneralArrangementModule, buildSu34Model, buildSu34RearModule, buildSu34UpperTailExhaustModule, buildSu34WingModule } from './su34model.js';
+
+
+// ---------------------------------------------------------------------------
+// Admin asset viewer — orbit any 3D asset (weapons model+POV, enemy skins, props)
+// and audition every sound. Opened from the menu; its own WebGL canvas.
+// ---------------------------------------------------------------------------
+class AssetViewer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.scene = new THREE.Scene();
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x55606e, 1.2));
+    const d1 = new THREE.DirectionalLight(0xfff1d0, 1.8); d1.position.set(4, 6, 5); this.scene.add(d1);
+    const d2 = new THREE.DirectionalLight(0x90b0ff, 0.6); d2.position.set(-5, -2, -4); this.scene.add(d2);
+    this.cam = new THREE.PerspectiveCamera(35, 1.6, 0.01, 4000);
+    this.holder = new THREE.Group(); this.scene.add(this.holder);
+    this.spin = 0.6; this.dist = 3; this.pov = false; this.dragX = 0; this.dragY = 0;
+    this._drag = false; this._lx = 0; this._ly = 0;
+    canvas.addEventListener('pointerdown', (e) => { this._drag = true; this._lx = e.clientX; this._ly = e.clientY; try { canvas.setPointerCapture(e.pointerId); } catch (x) {} });
+    const up = () => { this._drag = false; };
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointerleave', up);
+    canvas.addEventListener('pointermove', (e) => { if (!this._drag) return; this.dragY += (e.clientX - this._lx) * 0.01; this.dragX = clamp(this.dragX + (e.clientY - this._ly) * 0.01, -1.3, 1.3); this._lx = e.clientX; this._ly = e.clientY; });
+    this.setSize();
+  }
+  setSize() {
+    const w = this.canvas.clientWidth || 600, h = this.canvas.clientHeight || 380;
+    this.renderer.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix();
+  }
+  clear() {
+    while (this.holder.children.length) {
+      const c = this.holder.children.pop();
+      c.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); });
+    }
+  }
+  show(obj, pov = false) {
+    this.clear(); this.pov = pov; this.dragX = 0; this.dragY = 0; this.spin = 0.6;
+    obj.traverse((o) => { if (o.material) { o.material.depthTest = true; o.renderOrder = 0; } });
+    this.holder.add(obj);
+    if (pov) { obj.position.set(0.3, -0.27, -0.72); }
+    else {
+      const box = new THREE.Box3().setFromObject(obj);
+      const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+      obj.position.sub(ctr);
+      this.dist = Math.max(size.x, size.y, size.z, 0.5) * 1.6 * (obj.userData.viewerDistMult || 1) + 0.4;
+      if (typeof obj.userData.viewerSpin === 'number') this.spin = obj.userData.viewerSpin;
+    }
+  }
+  render(dt) {
+    if (this.pov) {
+      this.cam.fov = 75; this.cam.position.set(0, 0, 0.0001); this.cam.up.set(0, 1, 0); this.cam.lookAt(0, -0.05, -1);
+      this.holder.rotation.set(0, 0, 0);
+    } else {
+      this.spin += dt * 0.5; this.holder.rotation.y = this.spin + this.dragY; this.holder.rotation.x = this.dragX;
+      const d = this.dist; this.cam.fov = 35; this.cam.position.set(d * 0.5, d * 0.42, d * 0.85); this.cam.up.set(0, 1, 0); this.cam.lookAt(0, 0, 0);
+    }
+    this.cam.updateProjectionMatrix();
+    this.renderer.render(this.scene, this.cam);
+  }
+}
+
+export class Admin {
+  constructor(game) {
+    this.game = game; this.tab = 'weapons'; this.pov = false; this.curIdx = 0;
+    this.viewer = new AssetViewer(document.getElementById('adminCanvas'));
+    this.tabsEl = document.getElementById('adminTabs');
+    this.listEl = document.getElementById('adminList');
+    this.nameEl = document.getElementById('adminName');
+    this.povBtn = document.getElementById('adminPovBtn');
+    this._buildTabs();
+    this.povBtn.addEventListener('click', () => { this.pov = !this.pov; this.povBtn.classList.toggle('on', this.pov); this._select(this.curIdx); });
+  }
+  _buildTabs() {
+    this.tabsEl.innerHTML = '';
+    for (const [id, label] of [['weapons', 'Weapons'], ['enemies', 'Enemies / Skins'], ['props', 'Props'], ['sounds', 'Sounds']]) {
+      const t = document.createElement('div'); t.className = 'tab' + (id === this.tab ? ' on' : ''); t.textContent = label;
+      t.addEventListener('click', () => { this.tab = id; for (const c of this.tabsEl.children) c.classList.toggle('on', c.textContent === label); this._render(); });
+      this.tabsEl.appendChild(t);
+    }
+  }
+  open() { this.game.audio.init(); this.game.ui.show('admin'); this.viewer.setSize(); this._render(); }
+  _crate() { return buildSupplyCrate(); }
+  _chuteRig() {   // crate + full parachute rigging (canopy, crossed risers, carabiners)
+    const grp = new THREE.Group();
+    const crate = buildSupplyCrate(); grp.add(crate);
+    const { canopy, rig } = buildChuteRig(); grp.add(canopy); grp.add(rig);
+    return grp;
+  }
+  _items() {
+    const g = this.game;
+    if (this.tab === 'weapons') return WEAPON_ORDER.map((k) => ({ name: WEAPONS[k].name, sub: WEAPONS[k].class, make: () => { const grp = new THREE.Group(); grp.add(buildViewmodel(WEAPONS[k])); const sm = WEAPONS[k].spinMag; if (sm) { const mg = buildMag(sm); mg.position.set(sm.x, sm.y, sm.z); grp.add(mg); } return grp; } }));
+    if (this.tab === 'enemies') {
+      const list = ENGENDRO_COLORS.map((col) => ({ name: col.name, sub: 'engendro skin', make: () => new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()) }));
+      list.push({ name: 'BOSS TOLO', sub: 'boss', make: () => new THREE.Mesh(buildTolo(), voxelMaterial()) });
+      list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'mini' }, 'normal'), voxelMaterial()) });
+      list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: () => new THREE.Mesh(buildEngendro(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length], 'exploder'), voxelMaterial()) });
+      list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
+      list.push({ name: 'T-90M «MITRI»', sub: 'tank boss', make: () => buildTank('desert') });
+      list.push({ name: 'T-90M (wreck)', sub: 'destroyed', make: () => buildTankWreck() });
+      list.push({ name: 'T-34/76 1942', sub: 'asset-only model', make: () => buildT34Model() });
+      list.push({ name: 'T-34/76 tracks', sub: 'rig part', make: () => buildT34Tracks() });
+      list.push({ name: 'T-34/76 hull', sub: 'rig part', make: () => buildT34Hull() });
+      list.push({ name: 'T-34/76 turret', sub: 'rig part', make: () => buildT34Turret() });
+      return list;
+    }
+    if (this.tab === 'props') return [
+      { name: 'Su-24M Fencer', sub: 'supply plane', make: () => buildSu24() },
+      { name: 'Su-34 Fullback', sub: 'from-zero guide p5-42 + GA fit', make: () => buildSu34Model() },
+      { name: 'Su-34 GA reference', sub: '1398/845/291 datums', make: () => buildSu34GeneralArrangementModule() },
+      { name: 'Su-34 p5-14 forward fuselage', sub: 'Jetworks guide part', make: () => buildSu34ForwardModule() },
+      { name: 'Su-34 p15-16 wing/canards', sub: 'Jetworks guide part', make: () => buildSu34WingModule() },
+      { name: 'Su-34 p17-24 rear/nacelles', sub: 'Jetworks guide part', make: () => buildSu34RearModule() },
+      { name: 'Su-34 p25-33 ducts/belly', sub: 'Jetworks guide part', make: () => buildSu34DuctBellyModule() },
+      { name: 'Su-34 p34-40 upper/tails', sub: 'Jetworks guide part', make: () => buildSu34UpperTailExhaustModule() },
+      { name: 'Su-34 p41-42 finish/photo', sub: 'guide finish pass', make: () => buildSu34FinishPhotoModule() },
+      { name: 'Radio (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('radio') },
+      { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
+      { name: 'Parachute rig', sub: 'air drop', make: () => this._chuteRig() },
+      { name: 'Lootbox Key', sub: 'pickup', make: () => g.loot._keyMesh() },
+      { name: 'Medkit', sub: 'pickup', make: () => g.loot._pickupMesh('medkit') },
+      { name: 'Ammo box', sub: 'pickup', make: () => g.loot._pickupMesh('ammo') },
+      { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
+      { name: 'Field splint', sub: 'pickup', make: () => g.loot._pickupMesh('splint') },
+      { name: 'Ration tin', sub: 'pickup', make: () => g.loot._pickupMesh('food') },
+      { name: 'Molotov bottle', sub: 'pickup', make: () => g.loot._pickupMesh('molotov') },
+      { name: 'Flare', sub: 'thrown light', make: () => buildFlare() },
+      { name: 'Sandbags', sub: 'fortification', make: () => buildSandbags() },
+      { name: 'Barbed wire', sub: 'fortification', make: () => buildBarbedWire() },
+      { name: 'Barricade', sub: 'fortification', make: () => buildBarricade() },
+    ];
+    return [];
+  }
+  _sounds() {
+    const a = this.game.audio;
+    return [
+      ['📻 Radio call (Su-24)', () => a.radioCall()],
+      ['✈ Jet pass (demo)', () => { const j = a.startJetClip() || (a._jetFailed ? null : a.startJet()); if (!j) return; if (j.set) { let t = 0; const id = setInterval(() => { t += 0.1; const near = Math.max(0, 1 - Math.abs(t - 1.6) / 1.6); j.set(0.3 + near * 0.7, near); if (t >= 3.3) { clearInterval(id); j.stop(); } }, 100); } else { setTimeout(() => j.stop(1.4), 3800); } }],
+      ['Gunshot', () => a.gunshot({})], ['Explosion', () => a.explosion()],
+      ['Reload click', () => a.reloadClick()], ['Reload in', () => a.reloadIn()], ['Dry fire', () => a.dryFire()],
+      ['Hit marker', () => a.hitMarker()], ['Headshot', () => a.headshot()], ['Enemy hurt', () => a.enemyHurt()],
+      ['Enemy die', () => a.enemyDie()], ['Enemy growl', () => a.enemyGrowl()], ['Player hurt', () => a.playerHurt()],
+      ['Footstep', () => a.footstep()], ['Jump', () => a.jump()], ['Land (hard)', () => a.land(true)],
+      ['UI click', () => a.uiClick()], ['UI hover', () => a.uiHover()], ['Buy', () => a.buy()], ['No money', () => a.noMoney()],
+      ['Wave start', () => a.waveStart()], ['Wave clear', () => a.waveClear()], ['Game over', () => a.gameOver()],
+    ];
+  }
+  _render() {
+    this.listEl.innerHTML = '';
+    const isSound = this.tab === 'sounds';
+    this.povBtn.style.display = this.tab === 'weapons' ? '' : 'none';
+    this.viewer.canvas.style.display = isSound ? 'none' : '';
+    if (isSound) {
+      this.nameEl.textContent = '🔊 Click a sound to play it';
+      for (const [label, fn] of this._sounds()) { const el = document.createElement('div'); el.className = 'arow snd'; el.innerHTML = `<span>${label}</span>`; el.addEventListener('click', fn); this.listEl.appendChild(el); }
+      return;
+    }
+    this._cache = this._items(); this._rows = [];
+    this._cache.forEach((it, i) => {
+      const el = document.createElement('div'); el.className = 'arow'; el.innerHTML = `<span>${it.name}</span><small>${it.sub || ''}</small>`;
+      el.addEventListener('click', () => this._select(i)); this.listEl.appendChild(el); this._rows.push(el);
+    });
+    if (this._cache.length) this._select(0);
+  }
+  _select(i) {
+    if (!this._cache || !this._cache[i]) return;
+    this.curIdx = i; this._rows.forEach((r, j) => r.classList.toggle('on', j === i));
+    const it = this._cache[i], usePov = this.pov && this.tab === 'weapons';
+    this.viewer.show(it.make(), usePov);
+    this.nameEl.textContent = it.name + (usePov ? '  ·  POV' : '');
+  }
+}
