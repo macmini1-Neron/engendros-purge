@@ -186,6 +186,15 @@ export class AudioManager {
     this._burst(t0 + 0.003, 0.05, vol * 0.6, 'bandpass', 1500, 1.4); // metallic body
     this._burst(t0 + 0.008, 0.02, vol * 0.4, 'highpass', 4800, 0.7); // sharp edge
   }
+  _metalPing(t0, freq, vol, dur = 0.11) { // short brass/steel resonance, used for links and spent cases
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(freq * (0.97 + Math.random() * 0.06), t0);
+    o.connect(g); g.connect(this.sfxGain);
+    this._env(g, t0, vol, 0.001, dur);
+    o.start(t0); o.stop(t0 + dur + 0.03);
+  }
   fiftyShot() { // one .50 round: muzzle pressure + supersonic crack + heavy bolt + belt rattle + mount resonance
     if (!this.ctx) return;
     const t0 = this.t, pv = 0.97 + Math.random() * 0.06, vv = 0.92 + Math.random() * 0.16;
@@ -217,22 +226,31 @@ export class AudioManager {
     or.type = 'triangle'; or.frequency.setValueAtTime(125, t0); or.frequency.exponentialRampToValueAtTime(78, t0 + 0.18);
     or.connect(gr); gr.connect(this.sfxGain); this._env(gr, t0 + 0.004, 0.16 * vv, 0.004, 0.18); or.start(t0); or.stop(t0 + 0.24);
   }
-  fiftyCharge() { // heavy ~1.1 s cocking foley: contact -> resistance -> long pull -> rear stop -> return -> lock-up -> after-rattle
+  fiftyCharge() { // M2HB load/charge: two vigorous pull-release cycles, heavy spring + bolt + loose receiver rattle
     if (!this.ctx) return;
     const t0 = this.t;
-    this._burst(t0 + 0.02, 0.03, 0.12, 'bandpass', 1800, 2);                  // A hand contact
-    const o = this.ctx.createOscillator(), g = this.ctx.createGain();          // B initial resistance (low metal slide)
-    o.type = 'sawtooth'; o.frequency.setValueAtTime(140, t0 + 0.12); o.frequency.linearRampToValueAtTime(108, t0 + 0.35);
-    o.connect(g); g.connect(this.sfxGain); this._env(g, t0 + 0.12, 0.12, 0.02, 0.22); o.start(t0 + 0.12); o.stop(t0 + 0.4);
-    this._burst(t0 + 0.14, 0.2, 0.10, 'bandpass', 680, 1.2);                  // friction
-    this._burst(t0 + 0.35, 0.32, 0.12, 'bandpass', 480, 0.8);                 // C long steel slide
-    for (let i = 0; i < 4; i++) this._burst(t0 + 0.38 + i * 0.07, 0.01, 0.06, 'bandpass', 2400 + Math.random() * 1600, 3); // micro-clicks
-    this._clank(t0 + 0.70, 0.5, 150);                                         // D hard rear stop
-    const o2 = this.ctx.createOscillator(), g2 = this.ctx.createGain();        // E return
-    o2.type = 'sawtooth'; o2.frequency.setValueAtTime(120, t0 + 0.80); o2.frequency.linearRampToValueAtTime(165, t0 + 1.02);
-    o2.connect(g2); g2.connect(this.sfxGain); this._env(g2, t0 + 0.80, 0.10, 0.02, 0.2); o2.start(t0 + 0.80); o2.stop(t0 + 1.06);
-    this._clank(t0 + 1.02, 0.45, 112);                                        // final dry lock-up
-    for (let i = 0; i < 3; i++) this._burst(t0 + 1.08 + i * 0.1 + Math.random() * 0.05, 0.012, 0.05, 'bandpass', 2600 + Math.random() * 2000, 3); // F after-rattle
+    const cycle = (off, v) => {
+      const t = t0 + off, pv = 0.96 + Math.random() * 0.08;
+      this._burst(t + 0.015, 0.025, 0.12 * v, 'bandpass', 2100, 2.2);          // hand grabs the retracting slide handle
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();        // long rearward pull against the drive spring
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(165 * pv, t + 0.06); o.frequency.linearRampToValueAtTime(95 * pv, t + 0.30);
+      o.connect(g); g.connect(this.sfxGain); this._env(g, t + 0.06, 0.13 * v, 0.018, 0.25); o.start(t + 0.06); o.stop(t + 0.34);
+      this._burst(t + 0.07, 0.24, 0.12 * v, 'bandpass', 480, 0.8);             // oiled rail scrape / mass sliding
+      this._burst(t + 0.09, 0.16, 0.06 * v, 'bandpass', 1700, 1.8);            // higher metal-on-metal edge
+      for (let i = 0; i < 3; i++) this._burst(t + 0.13 + i * 0.055 + Math.random() * 0.012, 0.009, 0.045 * v, 'bandpass', 2600 + Math.random() * 2200, 3.5);
+      this._clank(t + 0.34, 0.42 * v, 148 * pv);                               // bolt group reaches the rear stop
+      this._metalPing(t + 0.352, 5100 + Math.random() * 1600, 0.055 * v, 0.08);
+      const f = t + 0.43;
+      this._burst(f, 0.08, 0.10 * v, 'bandpass', 820, 1.0);                    // spring-driven forward run
+      const o2 = this.ctx.createOscillator(), g2 = this.ctx.createGain();
+      o2.type = 'sawtooth'; o2.frequency.setValueAtTime(120 * pv, f); o2.frequency.linearRampToValueAtTime(190 * pv, f + 0.10);
+      o2.connect(g2); g2.connect(this.sfxGain); this._env(g2, f, 0.08 * v, 0.012, 0.12); o2.start(f); o2.stop(f + 0.16);
+      this._clank(f + 0.10, 0.50 * v, 116 * pv);                               // bolt closes / locks in battery
+      this._burst(f + 0.105, 0.03, 0.12 * v, 'bandpass', 1450, 1.3);
+      for (let i = 0; i < 3; i++) this._burst(f + 0.16 + i * 0.045 + Math.random() * 0.02, 0.010, 0.045 * v, 'bandpass', 1800 + Math.random() * 4700, 4);
+    };
+    cycle(0.0, 1.0);
+    cycle(0.58 + Math.random() * 0.04, 0.82);
   }
   fiftyOverheat() { // barrel maxed: steam hiss + low metallic stress groan + action seizing
     if (!this.ctx) return;
@@ -243,6 +261,33 @@ export class AudioManager {
     o.type = 'sawtooth'; o.frequency.setValueAtTime(180, t0); o.frequency.exponentialRampToValueAtTime(85, t0 + 0.5);
     o.connect(g); g.connect(this.sfxGain); this._env(g, t0, 0.28, 0.01, 0.5); o.start(t0); o.stop(t0 + 0.62);
     this._clank(t0 + 0.02, 0.4, 130);                                         // action seizes
+  }
+  fiftyBrassLand(impactVel = 4, bounceIndex = 0) { // heavy .50 BMG brass casing on roof/concrete: clonk, ping, lazy tumble
+    if (!this.ctx) return;
+    const t0 = this.t;
+    if (bounceIndex === 0) this._fiftyBrassSeq = (this._fiftyBrassSeq || 0) + 1;
+    const full = bounceIndex === 0 && ((this._fiftyBrassSeq || 0) % 3 === 1 || Math.random() < 0.16);
+    const fall = Math.max(0.22, Math.min(1.15, impactVel / 6.5));
+    const s = fall * Math.pow(0.58, bounceIndex);
+    if (s < 0.08) return;
+    const bodyFreq = 230 + Math.random() * 210;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(bodyFreq, t0); o.frequency.exponentialRampToValueAtTime(bodyFreq * 0.72, t0 + 0.08);
+    o.connect(g); g.connect(this.sfxGain); this._env(g, t0, 0.075 * s, 0.002, 0.085); o.start(t0); o.stop(t0 + 0.13);
+    this._burst(t0, 0.006, 0.15 * s, 'highpass', 5200 + Math.random() * 2200, 0.55);       // hard lip-on-concrete tick
+    this._burst(t0 + 0.002, 0.020, 0.10 * s, 'bandpass', 2200 + Math.random() * 1400, 3.2); // hollow brass body
+    this._metalPing(t0 + 0.004, 2800 + Math.random() * 1600, 0.070 * s, 0.10);
+    this._metalPing(t0 + 0.009, 5600 + Math.random() * 2800, 0.035 * s, 0.07);
+    if (Math.random() < 0.5) this._burst(t0 + 0.018 + Math.random() * 0.035, 0.010, 0.045 * s, 'highpass', 7000 + Math.random() * 1800, 0.6); // belt-link tick
+    if (full) {
+      const n = 2 + (Math.random() * 2 | 0);
+      for (let i = 0; i < n; i++) {
+        const tt = t0 + 0.07 + i * (0.09 + Math.random() * 0.05);
+        const v = s * Math.pow(0.58, i + 1);
+        this._burst(tt, 0.008, 0.055 * v, 'bandpass', 1800 + Math.random() * 3300, 4);
+        this._metalPing(tt + 0.002, 3600 + Math.random() * 4700, 0.026 * v, 0.05);
+      }
+    }
   }
 
   hitMarker() { this.tone(1400, 0.04, 'square', 0.2); }
