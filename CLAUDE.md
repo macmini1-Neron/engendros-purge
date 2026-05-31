@@ -30,6 +30,38 @@ The single most important non-obvious workflow. On each deploy:
 
 `GAME_VERSION` is auto-extracted at runtime from the module's own `import.meta.url` `?v=` param, so it can't drift from the code the browser actually loaded. Both `GAME_VERSION` and `GAME_BUILD` are shown in the co-op lobby footer — keep them in sync so the lobby always reports the real loaded build. Note `audio.js` carries its own independent `?v=` (and `engine.js`/`util.js` use `?e=`/`?u=`) on their import URLs — bump those if you change those modules and need clients to refetch.
 
+## Git workflow
+
+**Applies to both brothers, strictly, on every code task.** `main` is branch-protected (PR + 1 approval) and **auto-deploys to Vercel on every push** → **never commit or push directly to `main`.** All work flows: feature branch → PR → the other brother approves → merge.
+
+### Start-of-task ritual — Claude runs this at the start of every code change
+
+Before touching code, Claude runs and shows these, explaining each in one sentence:
+
+1. `git status` + `git branch --show-current` — confirm where we are and that the tree is clean.
+2. If there are **unrelated** uncommitted changes, stop and flag it — don't pile new work onto a mixed branch.
+3. If we're on `main` (or a stale/unrelated branch), branch off fresh from up-to-date main:
+   - `git checkout main && git pull` — get the latest first.
+   - `git checkout -b <type>/<short-desc>` — e.g. `feat/muzzle-flash`, `fix/reload-stall`.
+
+**Teaching mode:** Claude executes the git commands itself, but ALWAYS prints the exact command first and explains in one sentence what it does and why — so both brothers learn by watching. (Neither brother is a git expert yet; this is deliberate hand-holding, not noise.)
+
+### Branch names
+
+`type/kebab-description` — `feat/`, `fix/`, `docs/`, `refactor/`, `chore/`. (Matches existing `feat/coop-sync-overhaul`.)
+
+### Commits
+
+Conventional style `type(scope): summary` (matches history: `feat(coop): …`, `fix(ammo): …`). Small, logical steps — one concern per commit. Commit/push only when the user asks.
+
+### Finishing a branch
+
+1. If the change ships to players, do the **cache-bust ritual first** (bump `?v=N` + `GAME_BUILD` — see above).
+2. `git push -u origin <branch>` — publish the branch.
+3. `gh pr create` — open the PR.
+4. The other brother reviews & approves (1 required), then merges → Vercel auto-deploys.
+5. After merge: `git branch -d <branch>` locally; `/clean_gone` clears merged remote branches.
+
 ## Architecture
 
 ### Entry point & boot
