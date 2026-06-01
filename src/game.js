@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-01 16:35';
+const GAME_BUILD = '2026-06-01 17:02';
 
 class Game {
   constructor() {

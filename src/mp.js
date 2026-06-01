@@ -220,10 +220,9 @@ export class MP {
     this.directory = null;
     this._renderRoomBrowser();
   }
-  _publishRoom() {
-    if (!this.isHost || !this.net.room) return;
-    this._closeDirectory();
-    this.directory = new RoomDirectory(() => ({
+  _ownRoomMeta() {
+    if (!this.isHost || !this.net || !this.net.room) return null;
+    return {
       code: this.net.room,
       host: this.name || 'Host',
       mode: this.game.mode || this._lobbyMode || 'purge',
@@ -231,7 +230,24 @@ export class MP {
       max: 4,
       state: this.active ? 'running' : 'lobby',
       build: (document.getElementById('lobby-version') || {}).textContent || '',
-    }));
+      slot: this.directory && this.directory.slot != null ? this.directory.slot : null,
+      mine: true,
+    };
+  }
+  _visibleRooms() {
+    const rooms = [...(this.rooms || [])];
+    const mine = this._ownRoomMeta();
+    if (mine) {
+      const idx = rooms.findIndex((r) => r && r.code === mine.code);
+      if (idx >= 0) rooms[idx] = { ...rooms[idx], ...mine };
+      else rooms.unshift(mine);
+    }
+    return rooms;
+  }
+  _publishRoom() {
+    if (!this.isHost || !this.net.room) return;
+    this._closeDirectory();
+    this.directory = new RoomDirectory(() => this._ownRoomMeta() || {});
     this.directory.onOpen = (slot) => { this._setLobbyDiag(`Public room listed #${slot + 1}.`); this._renderRoomBrowser(); };
     this.directory.onError = (t) => { this._setLobbyDiag(t === 'directory-full' ? 'Public room list is full; code join still works.' : 'Public room list unavailable; code join still works.'); this._renderRoomBrowser(); };
     this.directory.publish();
@@ -263,6 +279,8 @@ export class MP {
     this._renderRoomBrowser();
     try {
       this.rooms = await scanRooms();
+      const mine = this._ownRoomMeta();
+      if (mine && !this.rooms.some((r) => r.code === mine.code)) this.rooms.unshift(mine);
       if (!(this.isHost && this.directory && this.directory.slot != null)) {
         this._setLobbyDiag(this.rooms.length ? `${this.rooms.length} public room${this.rooms.length === 1 ? '' : 's'} found.` : 'No public rooms found right now.');
       }
@@ -288,15 +306,16 @@ export class MP {
       badge.classList.toggle('on', !!listed);
     }
     if (!list) return;
-    if (this.roomsBusy && !this.rooms.length) {
+    const rooms = this._visibleRooms();
+    if (this.roomsBusy && !rooms.length) {
       list.innerHTML = '<div class="mp-roomempty">Scanning public rooms…</div>';
       return;
     }
-    if (!this.rooms.length) {
+    if (!rooms.length) {
       list.innerHTML = '<div class="mp-roomempty">No public rooms online. Host one or paste a code.</div>';
       return;
     }
-    list.innerHTML = this.rooms.map((r) => {
+    list.innerHTML = rooms.map((r) => {
       const full = (r.players || 0) >= (r.max || 4);
       const mine = this.isHost && this.net.room && r.code === this.net.room;
       const disabled = full || mine;
@@ -309,7 +328,7 @@ export class MP {
         </div>
         <div class="mp-room-meta">
           <span>${Math.max(1, r.players || 1)}/${Math.max(1, r.max || 4)}</span>
-          <span>${state}</span>
+          <span>${r.mine ? 'YOURS' : state}</span>
           <code>${mpEscape(r.code || '')}</code>
         </div>
         <button class="btn mini" data-room="${mpEscape(r.code || '')}" ${disabled ? 'disabled' : ''}>${action}</button>
