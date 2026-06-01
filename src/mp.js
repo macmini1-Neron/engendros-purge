@@ -6,7 +6,7 @@ import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, makeRoomCode } from './net.js?v=1';
+import { Net, makeRoomCode } from './net.js?v=2';
 
 
 // ---------------------------------------------------------------------------

@@ -17,16 +17,17 @@ const PEER_OPTIONS = {
   path: '/',
   secure: true,
   debug: 2,
-  config: {
-    sdpSemantics: 'unified-plan',
-    iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:openrelay.metered.ca:80'] },
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    ],
-  },
 };
+
+function peerOptions() {
+  const opts = { ...PEER_OPTIONS };
+  try {
+    const raw = window.ENGENDROS_ICE_SERVERS || localStorage.getItem('engendros_ice_servers');
+    const iceServers = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : null);
+    if (Array.isArray(iceServers) && iceServers.length) opts.config = { sdpSemantics: 'unified-plan', iceServers };
+  } catch (e) {}
+  return opts;
+}
 
 export class Net {
   constructor() {
@@ -50,7 +51,8 @@ export class Net {
 
   _mkPeer(id) {
     if (!window.Peer) { throw new Error('PeerJS not loaded (no internet?)'); }
-    return id ? new window.Peer(id, PEER_OPTIONS) : new window.Peer(PEER_OPTIONS);
+    const opts = peerOptions();
+    return id ? new window.Peer(id, opts) : new window.Peer(opts);
   }
 
   _clearConnectTimer() {
