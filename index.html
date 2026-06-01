@@ -581,10 +581,10 @@
   <div id="lobby" class="overlay">
     <div class="card">
       <div class="title" style="font-size:38px;">CO-OP LOBBY</div>
-      <div class="subtitle" style="margin:2px 0 16px;">Host a public room, join from the list, or paste a room code.</div>
+      <div class="subtitle" style="margin:2px 0 16px;">Host a room and share the code, or paste a room code.</div>
       <div class="mp-lobby-grid">
         <div class="mp-col">
-          <div class="mp-sectionbar"><span>SQUAD SETUP</span><span id="mp-public-state" class="mp-pill">PUBLIC ROOMS</span></div>
+          <div class="mp-sectionbar"><span>SQUAD SETUP</span><span id="mp-public-state" class="mp-pill">CODE JOIN</span></div>
           <input id="mp-name" class="mp-input" maxlength="14" placeholder="Your name" />
           <div class="mp-hostline">
             <button class="btn" id="mpHostBtn">⚔ HOST</button>
@@ -605,7 +605,7 @@
             <button class="tab" id="mp-mode-night" data-mode="longnight">🌙 THE LONG NIGHT</button>
           </div>
           <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">⚔ Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
-          <div id="mp-status" class="mp-status">Host a room, choose a public room, or paste a code.</div>
+          <div id="mp-status" class="mp-status">Host a room or paste a code.</div>
           <div class="mp-diagbox">
             <div class="mp-diagtitle">CONNECTION CHECK</div>
             <div id="mp-diaggrid" class="mp-diaggrid"></div>
@@ -613,15 +613,14 @@
           <div id="mp-roster" class="mp-roster"></div>
         </div>
         <div class="mp-col">
-          <div class="mp-sectionbar"><span>PUBLIC ROOMS</span><button class="btn sec mini" id="mpRefreshRoomsBtn">REFRESH</button></div>
-          <div id="mp-roomlist" class="mp-roomlist"><div class="mp-roomempty">No public rooms online. Host one or paste a code.</div></div>
+          <div class="mp-sectionbar"><span>MANUAL JOIN</span></div>
+          <div id="mp-roomlist" class="mp-roomlist"><div class="mp-roomempty">Public room browser is disabled for this stabilization build. Host, copy the room code, and join manually.</div></div>
           <div id="mp-netdiag" class="mp-diag"></div>
         </div>
       </div>
       <div class="mp-actions">
           <button class="btn wide" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
           <button class="btn sec wide" id="mpReadyBtn" style="display:none;">☐ CLICK WHEN READY</button>
-          <button class="btn sec" id="mpRelayBtn">RELAY: AUTO</button>
           <button class="btn sec" id="lobbyArmoryBtn">🔫 SHOP</button>
           <button class="btn sec" id="mpBackBtn">← BACK</button>
       </div>
@@ -669,6 +668,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=179"></script>
+  <script type="module" src="./src/game.js?v=180"></script>
 </body>
 </html>

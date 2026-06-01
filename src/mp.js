@@ -6,7 +6,7 @@ import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, RoomDirectory, makeRoomCode, scanRooms } from './net.js';
+import { Net, makeRoomCode } from './net.js';
 
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,6 @@ export class MP {
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
     this._joinHandshakeTimer = null;
-    this.directory = null; this.rooms = []; this.roomsBusy = false;
     this.diag = this._newDiag();
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
@@ -178,8 +177,8 @@ export class MP {
   _diagAdvice(d) {
     if (!d) return '';
     if (d.error) {
-      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return this._forceRelay() ? 'Forced TURN relay failed. The public TURN server is blocked or unavailable on this network.' : 'WebRTC route failed after a long attempt. If this repeats across real networks, use a TURN relay.';
-      if (d.error === 'peer-unavailable') return 'No host owns that code right now. Ask the host to re-host or use the public list.';
+      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return 'WebRTC route failed after a long attempt. If this repeats across real networks, test a dedicated TURN relay or self-hosted PeerServer next.';
+      if (d.error === 'peer-unavailable') return 'No host owns that code right now. Ask the host to re-host and share the fresh code.';
       return 'Connection failed before the lobby handshake completed.';
     }
     if (!d.broker) return 'Waiting for the PeerJS broker.';
@@ -193,19 +192,6 @@ export class MP {
     if ((d.iceTypes || []).includes('relay') || d.selectedType === 'relay') return d.selectedType === 'relay' ? 'TURN relay route active.' : 'TURN relay available.';
     if (d.data && (d.joinokReceived || d.joinokSent)) return 'Lobby handshake OK.';
     return '';
-  }
-  _forceRelay() { try { return localStorage.getItem('engendros_force_relay') === '1'; } catch (e) { return false; } }
-  toggleRelayMode() {
-    const on = !this._forceRelay();
-    try { localStorage.setItem('engendros_force_relay', on ? '1' : '0'); } catch (e) {}
-    this._setLobbyDiag(on ? 'Relay test enabled. Host/join again to use TURN only.' : 'Relay test disabled. Host/join again to use automatic routing.');
-    this._renderRelayMode();
-  }
-  _renderRelayMode() {
-    const b = document.getElementById('mpRelayBtn'); if (!b) return;
-    const on = this._forceRelay();
-    b.textContent = on ? 'RELAY: FORCE' : 'RELAY: AUTO';
-    b.classList.toggle('danger', on);
   }
   _renderNetDiag() {
     const el = document.getElementById('mp-diaggrid');
@@ -227,44 +213,17 @@ export class MP {
       ${d.error ? `<div class="wide err"><span>Error</span><b>${mpEscape(d.error)}</b></div>` : ''}
       ${this._diagAdvice(d) ? `<div class="wide advice">${mpEscape(this._diagAdvice(d))}</div>` : ''}`;
   }
-  _modeLabel(mode) { return mode === 'longnight' ? 'LONG NIGHT' : 'PURGE'; }
-  _closeDirectory() {
-    try { this.directory && this.directory.close(); } catch (e) {}
-    this.directory = null;
-    this._renderRoomBrowser();
-  }
-  _ownRoomMeta() {
-    if (!this.isHost || !this.net || !this.net.room) return null;
-    return {
-      code: this.net.room,
-      host: this.name || 'Host',
-      mode: this.game.mode || this._lobbyMode || 'purge',
-      players: this.roster.size || 1,
-      max: 4,
-      state: this.active ? 'running' : 'lobby',
-      build: (document.getElementById('lobby-version') || {}).textContent || '',
-      slot: this.directory && this.directory.slot != null ? this.directory.slot : null,
-      mine: true,
-    };
-  }
-  _visibleRooms() {
-    const rooms = [...(this.rooms || [])];
-    const mine = this._ownRoomMeta();
-    if (mine) {
-      const idx = rooms.findIndex((r) => r && r.code === mine.code);
-      if (idx >= 0) rooms[idx] = { ...rooms[idx], ...mine };
-      else rooms.unshift(mine);
+  _renderRoomBrowser() {
+    this._renderNetDiag();
+    const list = document.getElementById('mp-roomlist');
+    const badge = document.getElementById('mp-public-state');
+    const close = document.getElementById('mpCloseRoomBtn');
+    if (close) close.style.display = (this.isHost && this.net && this.net.room) ? 'inline-block' : 'none';
+    if (badge) {
+      badge.textContent = (this.isHost && this.net && this.net.room) ? 'ROOM CODE' : 'CODE JOIN';
+      badge.classList.toggle('on', !!(this.isHost && this.net && this.net.room));
     }
-    return rooms;
-  }
-  _publishRoom() {
-    if (!this.isHost || !this.net.room) return;
-    this._closeDirectory();
-    this.directory = new RoomDirectory(() => this._ownRoomMeta() || {});
-    this.directory.onOpen = (slot) => { this._setLobbyDiag(`Public room listed #${slot + 1}.`); this._renderRoomBrowser(); };
-    this.directory.onError = (t) => { this._setLobbyDiag(t === 'directory-full' ? 'Public room list is full; code join still works.' : 'Public room list unavailable; code join still works.'); this._renderRoomBrowser(); };
-    this.directory.publish();
-    this._renderRoomBrowser();
+    if (list) list.innerHTML = '<div class="mp-roomempty">Public room browser is disabled for this stabilization build. Host, copy the room code, and join manually.</div>';
   }
   _resetLobbyTransport() {
     try { this.net && this.net.close(); } catch (e) {}
@@ -280,93 +239,21 @@ export class MP {
     if (!old) { this._lobbyMsg('No room is open.'); return; }
     try { if (this.isHost) this.net.send('roomClosed', {}); } catch (e) {}
     this.leave();
-    this.rooms = (this.rooms || []).filter((r) => r.code !== old);
     this._lobbyMsg(`Room <b>${old}</b> closed. Host again when ready.`);
     this._setLobbyDiag('Room closed.');
     this._resetDiag('idle', '');
     this._renderRoomBrowser();
   }
-  async refreshRooms() {
-    if (this.roomsBusy) return;
-    this.roomsBusy = true;
-    this._renderRoomBrowser();
-    try {
-      this.rooms = await scanRooms();
-      const mine = this._ownRoomMeta();
-      if (mine && !this.rooms.some((r) => r.code === mine.code)) this.rooms.unshift(mine);
-      if (!(this.isHost && this.directory && this.directory.slot != null)) {
-        this._setLobbyDiag(this.rooms.length ? `${this.rooms.length} public room${this.rooms.length === 1 ? '' : 's'} found.` : 'No public rooms found right now.');
-      }
-    } catch (e) {
-      this.rooms = [];
-      if (!(this.isHost && this.directory && this.directory.slot != null)) this._setLobbyDiag('Room list unavailable; manual code join still works.');
-    } finally {
-      this.roomsBusy = false;
-      this._renderRoomBrowser();
-    }
-  }
-  _renderRoomBrowser() {
-    this._renderNetDiag();
-    const list = document.getElementById('mp-roomlist');
-    const scan = document.getElementById('mpRefreshRoomsBtn');
-    const badge = document.getElementById('mp-public-state');
-    const close = document.getElementById('mpCloseRoomBtn');
-    if (scan) { scan.disabled = this.roomsBusy; scan.textContent = this.roomsBusy ? 'SCANNING' : 'REFRESH'; }
-    if (close) close.style.display = (this.isHost && this.net && this.net.room) ? 'inline-block' : 'none';
-    if (badge) {
-      const listed = this.directory && this.directory.slot != null;
-      badge.textContent = listed ? `LISTED #${this.directory.slot + 1}` : (this.isHost && this.net.room ? 'CODE ONLY' : 'PUBLIC ROOMS');
-      badge.classList.toggle('on', !!listed);
-    }
-    if (!list) return;
-    const rooms = this._visibleRooms();
-    if (this.roomsBusy && !rooms.length) {
-      list.innerHTML = '<div class="mp-roomempty">Scanning public rooms…</div>';
-      return;
-    }
-    if (!rooms.length) {
-      list.innerHTML = '<div class="mp-roomempty">No public rooms online. Host one or paste a code.</div>';
-      return;
-    }
-    list.innerHTML = rooms.map((r) => {
-      const full = (r.players || 0) >= (r.max || 4);
-      const mine = this.isHost && this.net.room && r.code === this.net.room;
-      const disabled = full || mine;
-      const state = r.state === 'running' ? 'RUNNING' : 'LOBBY';
-      const action = mine ? 'YOURS' : (full ? 'FULL' : 'JOIN');
-      return `<div class="mp-room ${r.state === 'running' ? 'run' : ''}">
-        <div class="mp-room-main">
-          <b>${mpEscape(r.host || 'Host')}</b>
-          <span>${this._modeLabel(r.mode)}</span>
-        </div>
-        <div class="mp-room-meta">
-          <span>${Math.max(1, r.players || 1)}/${Math.max(1, r.max || 4)}</span>
-          <span>${r.mine ? 'YOURS' : state}</span>
-          <code>${mpEscape(r.code || '')}</code>
-        </div>
-        <button class="btn mini" data-room="${mpEscape(r.code || '')}" ${disabled ? 'disabled' : ''}>${action}</button>
-      </div>`;
-    }).join('');
-    list.querySelectorAll('button[data-room]').forEach((b) => {
-      b.onclick = () => {
-        const code = b.getAttribute('data-room') || '';
-        const inp = document.getElementById('mp-code');
-        if (inp) inp.value = code;
-        this.startJoin(code, (document.getElementById('mp-name') || {}).value || 'Player');
-      };
-    });
-  }
   startHost(name) {
     this._clearJoinHandshakeTimer();
     this._setLobbyDiag('');
-    this._closeDirectory();
     this._resetLobbyTransport();
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
     this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
     this._resetDiag('host', code);
-    this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — waiting for players…`, c); this._publishRoom(); };
-    this.net.onError = (t) => { this._closeDirectory(); this._lobbyMsg(this._netErr(t)); };
+    this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — copy it and send it to the squad.`, c); this._setLobbyDiag('Manual room is open. Share the code; no public-room scanner is running.'); this._renderRoomBrowser(); };
+    this.net.onError = (t) => { this._lobbyMsg(this._netErr(t)); };
     this.net.host(code); this._renderRoster();
   }
   startJoin(code, name) {
@@ -375,7 +262,6 @@ export class MP {
     if (room.length !== 5) { this._lobbyMsg('Room codes are 5 characters.'); return; }
     this._clearJoinHandshakeTimer();
     this._setLobbyDiag('');
-    this._closeDirectory();
     this._resetLobbyTransport();
     this._resetDiag('join', room);
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
@@ -392,7 +278,6 @@ export class MP {
   }
   leave() {
     this._clearJoinHandshakeTimer();
-    this._closeDirectory();
     this.ready = false;
     try { if (this.active && !this.isHost) this.net.send('goodbye', {}); } catch (e) {} // tell the host to despawn me instantly
     try { this.net.close(); } catch (e) {}
@@ -405,7 +290,7 @@ export class MP {
     if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
     this.net = new Net(); this._wireNet();
     const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
-    this._lobbyMsg('Host a room, choose a public room, or paste a code.');
+    this._lobbyMsg('Host a room or paste a code.');
     this._setLobbyDiag('');
     this._resetDiag('idle', '');
     this._renderRoster();
@@ -459,7 +344,6 @@ export class MP {
     const rb = document.getElementById('mpReadyBtn');
     if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
     this._renderModeSel();
-    this._renderRelayMode();
     this._renderRoomBrowser();
   }
   // ---- game-mode pick (host-authoritative; only the host simulates waves, so the host owns the mode) ----
@@ -485,7 +369,7 @@ export class MP {
     if (note) note.textContent = (mode === 'longnight'
       ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
       : '⚔ Arcade waves — special waves & mini-bosses.')
-      + (this._forceRelay() ? ' Relay test forces TURN only.' : (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.'));
+      + (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.');
   }
   hostStart() {
     if (!this.isHost) return;

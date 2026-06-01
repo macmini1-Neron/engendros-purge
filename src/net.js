@@ -10,67 +10,17 @@
 // Register handlers with on(type, fn(data, fromId)).
 
 const ID_PREFIX = 'engpurgv1-'; // namespace room codes on the shared public broker
-const DIR_PREFIX = 'engpurgv1-dir-';
-const DIR_SLOTS = 32;
 const CONNECT_TIMEOUT_MS = 45000;
-const DIR_CONNECT_TIMEOUT_MS = 2200;
-const PEER_OPTIONS = {
-  host: '0.peerjs.com',
-  port: 443,
-  path: '/',
-  secure: true,
-  debug: 2,
-};
-const DEFAULT_ICE_SERVERS = [
-  { urls: 'stun:openrelay.metered.ca:80' },
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-];
+const PEER_OPTIONS = { debug: 1 };
 
 function peerOptions() {
   const opts = { ...PEER_OPTIONS };
   try {
     const raw = window.ENGENDROS_ICE_SERVERS || localStorage.getItem('engendros_ice_servers');
     const iceServers = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : null);
-    opts.config = { sdpSemantics: 'unified-plan', iceServers: (Array.isArray(iceServers) && iceServers.length) ? iceServers : DEFAULT_ICE_SERVERS };
-    if (window.ENGENDROS_FORCE_RELAY || localStorage.getItem('engendros_force_relay') === '1') opts.config.iceTransportPolicy = 'relay';
-  } catch (e) {
-    opts.config = { sdpSemantics: 'unified-plan', iceServers: DEFAULT_ICE_SERVERS };
-    if (window.ENGENDROS_FORCE_RELAY || localStorage.getItem('engendros_force_relay') === '1') opts.config.iceTransportPolicy = 'relay';
-  }
+    if (Array.isArray(iceServers) && iceServers.length) opts.config = { sdpSemantics: 'unified-plan', iceServers };
+  } catch (e) {}
   return opts;
-}
-
-function safeRoomMeta(meta) {
-  const d = meta || {};
-  return {
-    code: String(d.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5),
-    host: String(d.host || 'Host').slice(0, 14),
-    mode: d.mode === 'longnight' ? 'longnight' : 'purge',
-    players: Math.max(1, Math.min(4, d.players | 0 || 1)),
-    max: Math.max(1, Math.min(4, d.max | 0 || 4)),
-    state: d.state === 'running' ? 'running' : 'lobby',
-    build: String(d.build || '').slice(0, 24),
-    slot: Number.isFinite(d.slot) ? d.slot : null,
-    ts: Date.now(),
-  };
-}
-
-function suppressDirectoryPeerErrors() {
-  if (typeof console === 'undefined' || typeof console.error !== 'function') return () => {};
-  const original = console.error;
-  const wrapped = (...args) => {
-    const text = args.map((a) => {
-      try { return a && a.message ? a.message : String(a); }
-      catch (e) { return ''; }
-    }).join(' ');
-    if (text.includes('Could not connect to peer ' + DIR_PREFIX)) return;
-    original.apply(console, args);
-  };
-  console.error = wrapped;
-  return () => { if (console.error === wrapped) console.error = original; };
 }
 
 function peerConnectionFor(conn) {
@@ -291,114 +241,6 @@ export class Net {
     this.conns.clear();
     this.peer = null; this.connected = false; this.isHost = false; this.room = null; this.selfId = null;
   }
-}
-
-export class RoomDirectory {
-  constructor(metaFn) {
-    this.peer = null;
-    this.slot = null;
-    this.metaFn = metaFn || (() => ({}));
-    this.onOpen = null;
-    this.onError = null;
-  }
-
-  publish() {
-    this.close();
-    this._trySlot(0);
-  }
-
-  _mkPeer(id, quiet = false) {
-    if (!window.Peer) throw new Error('PeerJS not loaded (no internet?)');
-    const opts = peerOptions();
-    if (quiet) opts.debug = 0;
-    return new window.Peer(id, opts);
-  }
-
-  _trySlot(slot) {
-    if (slot >= DIR_SLOTS) { this.onError && this.onError('directory-full'); return; }
-    let peer;
-    try { peer = this._mkPeer(DIR_PREFIX + slot, true); }
-    catch (e) { this.onError && this.onError('no-peerjs', e); return; }
-    this.peer = peer;
-    peer.on('open', () => {
-      this.slot = slot;
-      peer.on('connection', (conn) => this._accept(conn));
-      this.onOpen && this.onOpen(slot);
-    });
-    peer.on('error', (e) => {
-      if (this.peer !== peer) return;
-      try { peer.destroy(); } catch (err) {}
-      if ((e && e.type) === 'unavailable-id') this._trySlot(slot + 1);
-      else this.onError && this.onError((e && e.type) || 'directory-error', e);
-    });
-  }
-
-  _accept(conn) {
-    conn.on('open', () => {
-      try { conn.send({ t: 'roomInfo', d: safeRoomMeta({ ...this.metaFn(), slot: this.slot }) }); } catch (e) {}
-    });
-    conn.on('data', (msg) => {
-      if (msg && msg.t === 'roomQuery') {
-        try { conn.send({ t: 'roomInfo', d: safeRoomMeta({ ...this.metaFn(), slot: this.slot }) }); } catch (e) {}
-      }
-    });
-  }
-
-  close() {
-    try { this.peer && this.peer.destroy(); } catch (e) {}
-    this.peer = null;
-    this.slot = null;
-  }
-}
-
-export function scanRooms() {
-  return new Promise((resolve, reject) => {
-    if (!window.Peer) { reject(new Error('PeerJS not loaded')); return; }
-    let peer;
-    const rooms = new Map();
-    const timers = [];
-    let remaining = DIR_SLOTS;
-    let finished = false;
-    let restoreConsole = null;
-    const finishAll = () => {
-      if (finished) return;
-      finished = true;
-      for (const t of timers) clearTimeout(t);
-      if (restoreConsole) restoreConsole();
-      try { peer && peer.destroy(); } catch (e) {}
-      resolve([...rooms.values()].sort((a, b) => (a.slot ?? 999) - (b.slot ?? 999)));
-    };
-    const finishOne = () => {
-      if (finished) return;
-      remaining--;
-      if (remaining <= 0) finishAll();
-    };
-    try {
-      const opts = peerOptions(); opts.debug = 0;
-      peer = new window.Peer(opts);
-    } catch (e) { reject(e); return; }
-    restoreConsole = suppressDirectoryPeerErrors();
-    timers.push(setTimeout(finishAll, DIR_CONNECT_TIMEOUT_MS + 3500));
-    peer.on('open', () => {
-      for (let slot = 0; slot < DIR_SLOTS; slot++) {
-        let done = false, conn = null;
-        const end = () => { if (done) return; done = true; try { conn && conn.close(); } catch (e) {} finishOne(); };
-        const timer = setTimeout(end, DIR_CONNECT_TIMEOUT_MS);
-        timers.push(timer);
-        try {
-          conn = peer.connect(DIR_PREFIX + slot, { reliable: true });
-          conn.on('open', () => { try { conn.send({ t: 'roomQuery' }); } catch (e) {} });
-          conn.on('data', (msg) => {
-            if (msg && msg.t === 'roomInfo' && msg.d && msg.d.code) rooms.set(msg.d.code, safeRoomMeta({ ...msg.d, slot }));
-            end();
-          });
-          conn.on('close', end);
-          conn.on('error', end);
-        } catch (e) { end(); }
-      }
-    });
-    peer.on('error', () => { /* slot scan failures are expected when no room owns that slot */ });
-  });
 }
 
 // A short, human-shareable room code (avoids ambiguous chars).
