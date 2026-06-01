@@ -178,14 +178,14 @@ export class MP {
   _diagAdvice(d) {
     if (!d) return '';
     if (d.error) {
-      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return 'WebRTC route failed. If this repeats across real networks, use a TURN relay.';
+      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return 'WebRTC route failed after a long attempt. If this repeats across real networks, use a TURN relay.';
       if (d.error === 'peer-unavailable') return 'No host owns that code right now. Ask the host to re-host or use the public list.';
       return 'Connection failed before the lobby handshake completed.';
     }
     if (!d.broker) return 'Waiting for the PeerJS broker.';
     if (d.broker && !d.data) {
       return d.role === 'join'
-        ? 'Broker OK, data WAIT: host is not reachable yet, or the route is blocked by NAT/firewall.'
+        ? 'Broker OK, data WAIT: still trying WebRTC. This can take up to 45s on strict NAT/firewall.'
         : 'Broker OK. Waiting for a player data channel.';
     }
     if (d.role === 'join' && d.data && d.helloSent && !d.joinokReceived) return 'Data OK, but host did not answer. This points to host cache/code or a stale room.';
@@ -366,13 +366,13 @@ export class MP {
     this._resetLobbyTransport();
     this._resetDiag('join', room);
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
-    this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + room + '…');
+    this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + room + '… finding WebRTC route (can take up to 45s).');
     this.net.onConnect = () => {
       this.myId = this.net.selfId; this.net.lastRecv = performance.now();
       this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
       this._markDiag({ helloSent: true }, 'Hello sent');
-      this._lobbyMsg('Connecting… handshaking with host…');
-      this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer. Ask the host to refresh/re-host.'), 9000);
+      this._lobbyMsg('Connected… handshaking with host (waiting up to 25s).');
+      this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer after 25s. Ask the host to refresh/re-host.'), 25000);
     };
     this.net.onError = (t) => { this._clearJoinHandshakeTimer(); this._lobbyMsg(this._netErr(t)); };
     this.net.join(room);
@@ -424,7 +424,7 @@ export class MP {
       const bar = document.getElementById('mp-codebar'); if (bar) bar.classList.add('show');
     }
   }
-  _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'connect-timeout': 'Connection timed out — try again, or have the host refresh/re-host.', 'connect-failed': 'WebRTC connection failed — try a fresh room code.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
+  _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'connect-timeout': 'Connection timed out after 45s — if this repeats, the route is probably blocked by NAT/firewall and needs TURN.', 'connect-failed': 'WebRTC connection failed — try a fresh room code, or use TURN if it repeats.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
   _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
   toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }

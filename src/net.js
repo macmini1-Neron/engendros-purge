@@ -12,7 +12,7 @@
 const ID_PREFIX = 'engpurgv1-'; // namespace room codes on the shared public broker
 const DIR_PREFIX = 'engpurgv1-dir-';
 const DIR_SLOTS = 32;
-const CONNECT_TIMEOUT_MS = 14000;
+const CONNECT_TIMEOUT_MS = 45000;
 const DIR_CONNECT_TIMEOUT_MS = 2200;
 const PEER_OPTIONS = {
   host: '0.peerjs.com',
