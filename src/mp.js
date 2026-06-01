@@ -5,6 +5,7 @@ import { ENEMY_BURN_DUR, MOLO_GRAV, MOLO_MAX_FLIGHT, PLAYER_BURN_DPS, PLAYER_BUR
 import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
+import { buildFlopo } from './props.js';
 import { Net, makeRoomCode } from './net.js';
 
 
