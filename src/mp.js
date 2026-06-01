@@ -6,7 +6,7 @@ import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, makeRoomCode } from './net.js';
+import { LanNet, Net, makeRoomCode } from './net.js';
 
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ class RemotePlayer {
 
 export class MP {
   constructor(game) {
-    this.game = game; this.net = new Net();
+    this.game = game; this.net = this._makeNet();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
     this._ghostProjectiles = []; // VISUAL-ONLY thrown/launched projectiles from teammates (never deal damage)
@@ -138,11 +138,14 @@ export class MP {
     const el = document.getElementById('mp-netdiag');
     if (el) el.textContent = text || '';
   }
+  _lanMode() { try { return localStorage.getItem('engendros_lan_mode') === '1'; } catch (e) { return false; } }
+  _makeNet() { return this._lanMode() ? new LanNet() : new Net(); }
   _newDiag(role = 'idle', room = '') {
     return {
       role, room, broker: false, data: false, helloSent: false, helloReceived: false,
       joinokSent: false, joinokReceived: false, iceTypes: [], selectedType: '',
-      iceState: '', connectionState: '', last: 'Idle', error: '',
+      remoteType: '', iceMode: '', iceState: '', connectionState: '', last: 'Idle',
+      error: '', message: '', details: '', peerId: '',
     };
   }
   _resetDiag(role = 'idle', room = '') {
@@ -158,15 +161,25 @@ export class MP {
     if (!d) return;
     if (d.room) this.diag.room = d.room;
     if (d.role) this.diag.role = d.role;
+    if (d.peerId) this.diag.peerId = d.peerId;
+    if (d.iceMode) this.diag.iceMode = d.iceMode;
     if (d.phase === 'broker') { this.diag.broker = true; this.diag.last = 'Broker connected'; }
     else if (d.phase === 'data') { this.diag.data = true; this.diag.last = 'Data channel open'; }
     else if (d.phase === 'ice') {
       this._mergeIce(d.candidateTypes);
       if (d.selectedType) this.diag.selectedType = d.selectedType;
+      if (d.remoteType) this.diag.remoteType = d.remoteType;
       if (d.iceState) this.diag.iceState = d.iceState;
       if (d.connectionState) this.diag.connectionState = d.connectionState;
     } else if (d.phase === 'closed') this.diag.last = 'Connection closed';
-    else if (d.phase === 'error') { this.diag.error = d.code || 'error'; this.diag.last = 'Error: ' + this.diag.error; }
+    else if (d.phase === 'error') {
+      this.diag.error = d.code || 'error';
+      this.diag.message = d.message || '';
+      this.diag.details = d.details || '';
+      if (d.iceState) this.diag.iceState = d.iceState;
+      if (d.connectionState) this.diag.connectionState = d.connectionState;
+      this.diag.last = 'Error: ' + this.diag.error;
+    }
     this._renderNetDiag();
   }
   _markDiag(fields, last) {
@@ -177,21 +190,57 @@ export class MP {
   _diagAdvice(d) {
     if (!d) return '';
     if (d.error) {
-      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return 'WebRTC route failed after a long attempt. If this repeats across real networks, test a dedicated TURN relay or self-hosted PeerServer next.';
+      if (d.error === 'negotiation-failed' || d.error === 'ice-failed' || d.error === 'connection-failed') {
+        return this._forceRelay()
+          ? 'ICE failed even with forced TURN. The relay is blocked/unreachable from this network, or the browser cannot use it.'
+          : 'ICE failed: broker is reachable, but the browsers found no usable route. Try same non-guest Wi-Fi/hotspot; if it repeats, use a dedicated TURN relay.';
+      }
+      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return this._forceRelay() ? 'Forced TURN relay failed. The relay server is blocked or unavailable on this network.' : 'WebRTC route failed after a long attempt. Toggle RELAY: FORCE, re-host, and try again to isolate NAT/firewall from game code.';
       if (d.error === 'peer-unavailable') return 'No host owns that code right now. Ask the host to re-host and share the fresh code.';
       return 'Connection failed before the lobby handshake completed.';
     }
-    if (!d.broker) return 'Waiting for the PeerJS broker.';
+    if (!d.broker) return this._lanMode() ? 'Waiting for the LAN relay.' : 'Waiting for the PeerJS broker.';
     if (d.broker && !d.data) {
       return d.role === 'join'
-        ? 'Broker OK, data WAIT: still trying WebRTC. This can take up to 45s on strict NAT/firewall.'
-        : 'Broker OK. Waiting for a player data channel.';
+        ? (this._lanMode() ? 'LAN relay OK. Waiting for the host handshake.' : 'Broker OK, data WAIT: still trying WebRTC. This can take up to 45s on strict NAT/firewall.')
+        : (this._lanMode() ? 'LAN relay OK. Waiting for a player.' : 'Broker OK. Waiting for a player data channel.');
     }
     if (d.role === 'join' && d.data && d.helloSent && !d.joinokReceived) return 'Data OK, but host did not answer. This points to host cache/code or a stale room.';
     if (d.role === 'host' && d.data && !d.helloReceived) return 'Data OK. Waiting for the joiner hello packet.';
     if ((d.iceTypes || []).includes('relay') || d.selectedType === 'relay') return d.selectedType === 'relay' ? 'TURN relay route active.' : 'TURN relay available.';
     if (d.data && (d.joinokReceived || d.joinokSent)) return 'Lobby handshake OK.';
     return '';
+  }
+  _forceRelay() { try { return localStorage.getItem('engendros_force_relay') === '1'; } catch (e) { return false; } }
+  toggleLanMode() {
+    const on = !this._lanMode();
+    try { localStorage.setItem('engendros_lan_mode', on ? '1' : '0'); } catch (e) {}
+    this._setLobbyDiag(on ? 'LAN mode enabled. Start scripts/lan-server.js, host on this Mac, and have the squad open the Hamachi IP.' : 'WebRTC mode enabled.');
+    this._resetLobbyTransport();
+    this._resetDiag('idle', '');
+    this._renderLanMode();
+    this._renderRelayMode();
+    this._renderRoomBrowser();
+  }
+  _renderLanMode() {
+    const b = document.getElementById('mpLanBtn'); if (!b) return;
+    const on = this._lanMode();
+    b.textContent = on ? 'NET: LAN' : 'NET: WEBRTC';
+    b.classList.toggle('danger', on);
+  }
+  toggleRelayMode() {
+    const on = !this._forceRelay();
+    try { localStorage.setItem('engendros_force_relay', on ? '1' : '0'); } catch (e) {}
+    this._setLobbyDiag(on ? 'Relay test enabled. Host/join again to use TURN only.' : 'Relay test disabled. Host/join again to use automatic routing.');
+    this._renderRelayMode();
+    this._renderNetDiag();
+  }
+  _renderRelayMode() {
+    const b = document.getElementById('mpRelayBtn'); if (!b) return;
+    const on = this._forceRelay();
+    b.textContent = on ? 'RELAY: FORCE' : 'RELAY: AUTO';
+    b.classList.toggle('danger', on);
+    b.style.display = this._lanMode() ? 'none' : '';
   }
   _renderNetDiag() {
     const el = document.getElementById('mp-diaggrid');
@@ -202,15 +251,20 @@ export class MP {
     const joinok = d.joinokReceived ? 'received' : (d.joinokSent ? 'sent' : 'wait');
     const ice = (d.iceTypes && d.iceTypes.length) ? d.iceTypes.join(' / ') : 'waiting';
     const sel = d.selectedType || 'unknown';
+    const route = d.selectedType ? (d.remoteType ? `${d.selectedType}->${d.remoteType}` : d.selectedType) : 'unknown';
+    const mode = d.iceMode || (this._lanMode() ? 'lan-ws' : (this._forceRelay() ? 'force-relay' : 'auto-default'));
+    const detail = d.message || d.details || '';
     el.innerHTML = `
       <div><span>Broker</span>${yn(d.broker)}</div>
       <div><span>Data</span>${yn(d.data)}</div>
       <div><span>Hello</span><b>${mpEscape(hello)}</b></div>
       <div><span>Join OK</span><b>${mpEscape(joinok)}</b></div>
+      <div><span>Mode</span><b>${mpEscape(mode)}</b></div>
+      <div><span>Route</span><b class="${sel === 'relay' ? 'ok' : ''}">${mpEscape(route)}</b></div>
       <div><span>ICE</span><b>${mpEscape(ice)}</b></div>
-      <div><span>Route</span><b class="${sel === 'relay' ? 'ok' : ''}">${mpEscape(sel)}</b></div>
       <div class="wide"><span>State</span><b>${mpEscape([d.iceState, d.connectionState].filter(Boolean).join(' / ') || d.last || 'idle')}</b></div>
       ${d.error ? `<div class="wide err"><span>Error</span><b>${mpEscape(d.error)}</b></div>` : ''}
+      ${detail ? `<div class="wide msg"><span>Message</span><b>${mpEscape(detail)}</b></div>` : ''}
       ${this._diagAdvice(d) ? `<div class="wide advice">${mpEscape(this._diagAdvice(d))}</div>` : ''}`;
   }
   _renderRoomBrowser() {
@@ -227,7 +281,7 @@ export class MP {
   }
   _resetLobbyTransport() {
     try { this.net && this.net.close(); } catch (e) {}
-    this.net = new Net();
+    this.net = this._makeNet();
     this._wireNet();
     for (const [, rp] of this.remotes) rp.dispose();
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
@@ -252,7 +306,7 @@ export class MP {
     this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
     this._resetDiag('host', code);
-    this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — copy it and send it to the squad.`, c); this._setLobbyDiag('Manual room is open. Share the code; no public-room scanner is running.'); this._renderRoomBrowser(); };
+    this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — copy it and send it to the squad.`, c); this._setLobbyDiag(this._lanMode() ? 'LAN room is open. Squad joins through the Hamachi IP and this code.' : 'Manual room is open. Share the code; no public-room scanner is running.'); this._renderRoomBrowser(); };
     this.net.onError = (t) => { this._lobbyMsg(this._netErr(t)); };
     this.net.host(code); this._renderRoster();
   }
@@ -265,7 +319,7 @@ export class MP {
     this._resetLobbyTransport();
     this._resetDiag('join', room);
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
-    this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + room + '… finding WebRTC route (can take up to 45s).');
+    this.net.onPeerOpen = () => this._lobbyMsg(this._lanMode() ? ('Connecting to LAN room ' + room + '…') : ('Connecting to ' + room + '… finding WebRTC route (can take up to 45s).'));
     this.net.onConnect = () => {
       this.myId = this.net.selfId; this.net.lastRecv = performance.now();
       this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
@@ -288,7 +342,7 @@ export class MP {
     this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false;
     this._localDown = false; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
     if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
-    this.net = new Net(); this._wireNet();
+    this.net = this._makeNet(); this._wireNet();
     const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
     this._lobbyMsg('Host a room or paste a code.');
     this._setLobbyDiag('');
@@ -322,7 +376,25 @@ export class MP {
       const bar = document.getElementById('mp-codebar'); if (bar) bar.classList.add('show');
     }
   }
-  _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'connect-timeout': 'Connection timed out after 45s — if this repeats, the route is probably blocked by NAT/firewall and needs TURN.', 'connect-failed': 'WebRTC connection failed — try a fresh room code, or use TURN if it repeats.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
+  _netErr(t) {
+    const forced = this._forceRelay();
+    return ({
+      'unavailable-id': 'Code taken — pick another.',
+      'peer-unavailable': 'No room with that code.',
+      'connect-timeout': forced ? 'Forced relay timed out after 45s — this relay is blocked or unavailable on this network.' : 'Connection timed out after 45s — toggle RELAY: FORCE, re-host, and try again to isolate NAT/firewall.',
+      'connect-failed': forced ? 'Forced relay failed — try AUTO again or use a dedicated TURN relay.' : 'WebRTC connection failed — try a fresh room code, or RELAY: FORCE if it repeats.',
+      'connection-failed': forced ? 'Forced relay connection failed — this relay is blocked or unavailable here.' : 'WebRTC connection state failed — broker is OK, but no browser-to-browser route worked.',
+      'ice-failed': forced ? 'Forced TURN ICE failed — the relay is blocked/unavailable on this network.' : 'WebRTC ICE failed — broker is OK, but the devices could not find a route.',
+      'negotiation-failed': forced ? 'Forced TURN negotiation failed — this relay is blocked/unavailable on this network.' : 'WebRTC negotiation failed — broker is OK, but ICE could not find a route.',
+      'network': 'Network error — check your internet.',
+      'server-error': 'Matchmaking busy — try again.',
+      'socket-error': 'Connection lost — try again.',
+      'socket-closed': 'Connection closed — try again.',
+      'lan-unavailable': 'LAN relay is not reachable — run: node scripts/lan-server.js --host 0.0.0.0',
+      'browser-incompatible': 'Your browser blocks WebRTC co-op.',
+      'ssl-unavailable': 'Secure connection failed.',
+    })[t] || ('Connection error: ' + t);
+  }
   _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
   toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }
@@ -344,6 +416,8 @@ export class MP {
     const rb = document.getElementById('mpReadyBtn');
     if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
     this._renderModeSel();
+    this._renderLanMode();
+    this._renderRelayMode();
     this._renderRoomBrowser();
   }
   // ---- game-mode pick (host-authoritative; only the host simulates waves, so the host owns the mode) ----
@@ -369,7 +443,7 @@ export class MP {
     if (note) note.textContent = (mode === 'longnight'
       ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
       : '⚔ Arcade waves — special waves & mini-bosses.')
-      + (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.');
+      + (this._lanMode() ? ' LAN mode uses Hamachi/WebSocket.' : (this._forceRelay() ? ' Relay test forces TURN only.' : (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.')));
   }
   hostStart() {
     if (!this.isHost) return;
@@ -415,7 +489,7 @@ export class MP {
         this._setLobbyDiag('Room closed by host.');
         this._resetDiag('idle', '');
         try { this.net.close(); } catch (e) {}
-        this.net = new Net(); this._wireNet();
+        this.net = this._makeNet(); this._wireNet();
         this.ready = false; this.myId = null; this.roster.clear(); this.pstate.clear();
         this._renderRoster();
       }

@@ -11,16 +11,74 @@
 
 const ID_PREFIX = 'engpurgv1-'; // namespace room codes on the shared public broker
 const CONNECT_TIMEOUT_MS = 45000;
+const ICE_SAMPLE_MS = 1200;
+const ICE_WATCH_TICKS = Math.ceil(CONNECT_TIMEOUT_MS / ICE_SAMPLE_MS) + 3;
 const PEER_OPTIONS = { debug: 1 };
+const DEFAULT_ICE_SERVERS = [
+  { urls: 'stun:openrelay.metered.ca:80' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+];
 
-function peerOptions() {
-  const opts = { ...PEER_OPTIONS };
+function storageGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
+function shortText(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.slice(0, 220);
+  if (v.message && typeof v.message === 'string') return v.message.slice(0, 220);
+  try { return JSON.stringify(v).slice(0, 220); } catch (e) { return String(v).slice(0, 220); }
+}
+
+function errorInfo(e, fallbackCode = 'error') {
+  return {
+    code: (e && (e.type || e.code)) || fallbackCode,
+    name: (e && e.name) || '',
+    message: shortText((e && e.message) || e),
+    details: shortText(e && e.details),
+  };
+}
+
+function parseIceServers(raw) {
+  if (Array.isArray(raw) && raw.length) return raw;
+  if (!raw) return null;
   try {
-    const raw = window.ENGENDROS_ICE_SERVERS || localStorage.getItem('engendros_ice_servers');
-    const iceServers = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : null);
-    if (Array.isArray(iceServers) && iceServers.length) opts.config = { sdpSemantics: 'unified-plan', iceServers };
-  } catch (e) {}
-  return opts;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function peerSetup() {
+  const opts = { ...PEER_OPTIONS };
+  let mode = 'auto-default';
+  let forceRelay = !!(typeof window !== 'undefined' && window.ENGENDROS_FORCE_RELAY);
+  forceRelay = forceRelay || storageGet('engendros_force_relay') === '1';
+  const makeConfig = (iceServers) => ({
+    sdpSemantics: 'unified-plan',
+    iceServers,
+    ...(forceRelay ? { iceTransportPolicy: 'relay' } : {}),
+  });
+
+  const windowIce = parseIceServers(typeof window !== 'undefined' && window.ENGENDROS_ICE_SERVERS);
+  if (windowIce) {
+    opts.config = makeConfig(windowIce);
+    return { opts, mode: forceRelay ? 'custom-force-relay' : 'custom-ice' };
+  }
+
+  const storedIce = parseIceServers(storageGet('engendros_ice_servers'));
+  if (storedIce) {
+    opts.config = makeConfig(storedIce);
+    return { opts, mode: forceRelay ? 'custom-force-relay' : 'custom-ice' };
+  }
+
+  opts.config = makeConfig(DEFAULT_ICE_SERVERS);
+  mode = forceRelay ? 'force-relay' : 'auto-turn';
+  return { opts, mode };
 }
 
 function peerConnectionFor(conn) {
@@ -53,6 +111,7 @@ export class Net {
     this.lastRecv = 0;            // perf.now() of the last received message (heartbeat)
     this._connectTimer = null;
     this._iceWatches = new Map();
+    this._iceMode = 'auto-default';
     // callbacks (assign directly)
     this.onPeerOpen = null;       // (roomCode)        host/peer is registered with the broker
     this.onConnect = null;        // (peerId)          a data connection opened
@@ -63,9 +122,11 @@ export class Net {
 
   get peerCount() { return this.conns.size; }
 
-  _mkPeer(id) {
+  async _mkPeer(id) {
     if (!window.Peer) { throw new Error('PeerJS not loaded (no internet?)'); }
-    const opts = peerOptions();
+    const setup = await peerSetup();
+    this._iceMode = setup.mode;
+    const opts = setup.opts;
     return id ? new window.Peer(id, opts) : new window.Peer(opts);
   }
 
@@ -74,7 +135,11 @@ export class Net {
     this._connectTimer = null;
   }
 
-  _diag(d) { this.onDiag && this.onDiag({ role: this.isHost ? 'host' : 'join', room: this.room, ...d }); }
+  _diag(d) {
+    const payload = { role: this.isHost ? 'host' : 'join', room: this.room, iceMode: this._iceMode, ...d };
+    if (payload.phase === 'error' && typeof console !== 'undefined') console.warn('[net]', payload);
+    this.onDiag && this.onDiag(payload);
+  }
 
   _clearIceWatch(peerId) {
     const w = this._iceWatches.get(peerId);
@@ -92,6 +157,7 @@ export class Net {
     if (!pc) { this._diag({ phase: 'ice', peerId: conn && conn.peer, available: false }); return; }
     const types = new Set();
     let selectedType = '';
+    let remoteType = '';
     try {
       const stats = await pc.getStats();
       const byId = new Map();
@@ -105,7 +171,9 @@ export class Net {
         if (r.type !== 'candidate-pair') return;
         if (!(r.selected || r.nominated || r.state === 'succeeded')) return;
         const local = byId.get(r.localCandidateId);
+        const remote = byId.get(r.remoteCandidateId);
         if (local && local.candidateType) selectedType = local.candidateType;
+        if (remote && remote.candidateType) remoteType = remote.candidateType;
       });
     } catch (e) {}
     this._diag({
@@ -114,6 +182,7 @@ export class Net {
       available: true,
       candidateTypes: [...types],
       selectedType,
+      remoteType,
       iceState: pc.iceConnectionState || '',
       connectionState: pc.connectionState || '',
     });
@@ -124,13 +193,34 @@ export class Net {
     this._clearIceWatch(conn.peer);
     const pc = peerConnectionFor(conn);
     let ticks = 0;
+    let failed = false;
+    const reportFailure = () => {
+      if (failed) return;
+      failed = true;
+      const code = (pc && pc.iceConnectionState === 'failed') ? 'ice-failed' : 'connection-failed';
+      const message = 'ICE failed before the WebRTC data channel opened.';
+      const info = {
+        phase: 'error',
+        code,
+        peerId: conn.peer,
+        message,
+        iceState: (pc && pc.iceConnectionState) || '',
+        connectionState: (pc && pc.connectionState) || '',
+      };
+      this._diag(info);
+      if (!conn.open) {
+        this._clearConnectTimer();
+        this.onError && this.onError(code, info);
+      }
+    };
     const tick = () => {
       ticks++;
       this._collectIce(conn);
+      if (pc && !conn.open && (pc.iceConnectionState === 'failed' || pc.connectionState === 'failed')) reportFailure();
       const w = this._iceWatches.get(conn.peer);
-      if (w && ticks >= 16) this._clearIceWatch(conn.peer);
+      if (w && ticks >= ICE_WATCH_TICKS) this._clearIceWatch(conn.peer);
     };
-    const timer = setInterval(tick, 1200);
+    const timer = setInterval(tick, ICE_SAMPLE_MS);
     const onChange = () => tick();
     if (pc && pc.addEventListener) {
       try { pc.addEventListener('iceconnectionstatechange', onChange); } catch (e) {}
@@ -143,31 +233,34 @@ export class Net {
   _watchConnect(conn) {
     this._clearConnectTimer();
     this._connectTimer = setTimeout(() => {
-      if (conn && !conn.open && !this.connected) {
+      if (conn && !conn.open) {
         try { conn.close(); } catch (e) {}
-        this._diag({ phase: 'error', code: 'connect-timeout', peerId: conn.peer });
-        this.onError && this.onError('connect-timeout', { peer: conn.peer, room: this.room });
+        const info = { phase: 'error', code: 'connect-timeout', peerId: conn.peer, message: 'Timed out before the WebRTC data channel opened.' };
+        this._diag(info);
+        this.onError && this.onError('connect-timeout', { peer: conn.peer, room: this.room, message: info.message });
       }
     }, CONNECT_TIMEOUT_MS);
   }
 
   // HOST a room under `code` (the broker id becomes ID_PREFIX+code).
-  host(code) {
+  async host(code) {
     this.isHost = true;
     this.room = code;
-    try { this.peer = this._mkPeer(ID_PREFIX + code); }
-    catch (e) { this.onError && this.onError('no-peerjs', e); return; }
+    try { this.peer = await this._mkPeer(ID_PREFIX + code); }
+    catch (e) { this._diag({ phase: 'error', ...errorInfo(e, 'no-peerjs') }); this.onError && this.onError('no-peerjs', e); return; }
+    if (!this.peer || !this.isHost || this.room !== code) { try { this.peer && this.peer.destroy(); } catch (e) {} this.peer = null; return; }
     this.peer.on('open', (pid) => { this.selfId = pid; this.connected = true; this._diag({ phase: 'broker', peerId: pid }); this.onPeerOpen && this.onPeerOpen(code); });
     this.peer.on('connection', (conn) => this._accept(conn));
-    this.peer.on('error', (e) => { this._diag({ phase: 'error', code: e.type || 'error' }); this.onError && this.onError(e.type || 'error', e); });
+    this.peer.on('error', (e) => { const info = errorInfo(e); this._diag({ phase: 'error', ...info }); this.onError && this.onError(info.code, e); });
   }
 
   // JOIN a room by `code`.
-  join(code) {
+  async join(code) {
     this.isHost = false;
     this.room = code;
-    try { this.peer = this._mkPeer(null); }
-    catch (e) { this.onError && this.onError('no-peerjs', e); return; }
+    try { this.peer = await this._mkPeer(null); }
+    catch (e) { this._diag({ phase: 'error', ...errorInfo(e, 'no-peerjs') }); this.onError && this.onError('no-peerjs', e); return; }
+    if (!this.peer || this.isHost || this.room !== code) { try { this.peer && this.peer.destroy(); } catch (e) {} this.peer = null; return; }
     this.peer.on('open', (pid) => {
       this.selfId = pid;
       this._diag({ phase: 'broker', peerId: pid });
@@ -176,7 +269,7 @@ export class Net {
       this._watchConnect(conn);
       this._accept(conn);
     });
-    this.peer.on('error', (e) => { this._diag({ phase: 'error', code: e.type || 'error' }); this.onError && this.onError(e.type || 'error', e); });
+    this.peer.on('error', (e) => { const info = errorInfo(e); this._diag({ phase: 'error', ...info }); this.onError && this.onError(info.code, e); });
   }
 
   _accept(conn) {
@@ -192,10 +285,11 @@ export class Net {
     conn.on('data', (msg) => { try { this._recv(msg, conn.peer); } catch (e) { if (typeof console !== 'undefined') console.warn('[net] handler threw for', msg && msg.t, e); } });
     conn.on('close', () => { this._clearIceWatch(conn.peer); this.conns.delete(conn.peer); this._diag({ phase: 'closed', peerId: conn.peer }); this.onDisconnect && this.onDisconnect(conn.peer); });
     conn.on('error', (e) => {
-      if (!conn.open && !this.connected) {
+      if (!conn.open) {
         this._clearConnectTimer();
-        this._diag({ phase: 'error', code: (e && e.type) || 'connect-failed', peerId: conn.peer });
-        this.onError && this.onError((e && e.type) || 'connect-failed', e);
+        const info = errorInfo(e, 'connect-failed');
+        this._diag({ phase: 'error', ...info, peerId: conn.peer });
+        this.onError && this.onError(info.code, e);
       }
     });
   }
@@ -240,6 +334,153 @@ export class Net {
     for (const peerId of [...this._iceWatches.keys()]) this._clearIceWatch(peerId);
     this.conns.clear();
     this.peer = null; this.connected = false; this.isHost = false; this.room = null; this.selfId = null;
+  }
+}
+
+function lanWsUrl() {
+  const explicit = (typeof window !== 'undefined' && window.ENGENDROS_LAN_WS) || storageGet('engendros_lan_ws');
+  if (explicit) return explicit;
+  const proto = (typeof location !== 'undefined' && location.protocol === 'https:') ? 'wss:' : 'ws:';
+  const host = (typeof location !== 'undefined' && location.hostname) ? location.hostname : 'localhost';
+  return `${proto}//${host}:8787`;
+}
+
+function lanPeer(peerId, onClose) {
+  return {
+    peer: peerId,
+    open: true,
+    close() { this.open = false; onClose && onClose(peerId); },
+  };
+}
+
+export class LanNet {
+  constructor() {
+    this.ws = null;
+    this.isHost = false;
+    this.connected = false;
+    this.room = null;
+    this.selfId = null;
+    this.conns = new Map();
+    this.handlers = {};
+    this.lastRecv = 0;
+    this._iceMode = 'lan-ws';
+    this.onPeerOpen = null;
+    this.onConnect = null;
+    this.onDisconnect = null;
+    this.onError = null;
+    this.onDiag = null;
+  }
+
+  get peerCount() { return this.conns.size; }
+
+  _diag(d) {
+    this.onDiag && this.onDiag({ role: this.isHost ? 'host' : 'join', room: this.room, iceMode: this._iceMode, ...d });
+  }
+
+  _connect(kind, code) {
+    this.room = code;
+    const url = lanWsUrl();
+    let ws;
+    try { ws = new WebSocket(url); }
+    catch (e) { this._diag({ phase: 'error', code: 'lan-unavailable', message: shortText(e) }); this.onError && this.onError('lan-unavailable', e); return; }
+    this.ws = ws;
+    ws.onopen = () => this._sendRaw({ lan: kind, room: code });
+    ws.onmessage = (ev) => {
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      this._handle(msg);
+    };
+    ws.onerror = () => {
+      const info = { phase: 'error', code: 'socket-error', message: 'LAN relay is not reachable. Start scripts/lan-server.js and open the game through the Hamachi IP.' };
+      this._diag(info); this.onError && this.onError(info.code, info);
+    };
+    ws.onclose = () => {
+      const wasConnected = this.connected;
+      this.connected = false;
+      this._diag({ phase: 'closed' });
+      if (wasConnected) {
+        for (const peerId of [...this.conns.keys()]) this._dropPeer(peerId);
+      }
+    };
+  }
+
+  _sendRaw(obj) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(obj));
+  }
+
+  _addPeer(peerId) {
+    if (!peerId || this.conns.has(peerId)) return;
+    this.conns.set(peerId, lanPeer(peerId, (id) => this._sendRaw({ lan: 'drop', id })));
+    this.connected = true;
+    this._diag({ phase: 'data', peerId });
+    this.onConnect && this.onConnect(peerId);
+  }
+
+  _dropPeer(peerId) {
+    const c = this.conns.get(peerId);
+    if (c) c.open = false;
+    this.conns.delete(peerId);
+    this._diag({ phase: 'closed', peerId });
+    this.onDisconnect && this.onDisconnect(peerId);
+  }
+
+  _handle(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.lan === 'open') {
+      this.selfId = msg.id || (this.isHost ? 'host' : '');
+      this.connected = true;
+      this._diag({ phase: 'broker', peerId: this.selfId, message: 'LAN relay connected' });
+      this.onPeerOpen && this.onPeerOpen(this.room);
+      if (!this.isHost) this._addPeer('host');
+      return;
+    }
+    if (msg.lan === 'peerJoin' && this.isHost) { this._addPeer(msg.id); return; }
+    if (msg.lan === 'peerLeft') { this._dropPeer(msg.id); return; }
+    if (msg.lan === 'roomClosed') { this.onError && this.onError('socket-closed', msg); this.close(); return; }
+    if (msg.lan === 'closed') { this.close(); return; }
+    if (msg.lan === 'error') {
+      const code = msg.code || 'socket-error';
+      this._diag({ phase: 'error', code, message: msg.message || '' });
+      this.onError && this.onError(code, msg);
+      return;
+    }
+    if (msg.lan === 'msg' && typeof msg.t === 'string') {
+      this.lastRecv = (typeof performance !== 'undefined') ? performance.now() : 0;
+      const h = this.handlers[msg.t];
+      if (h) h(msg.d, msg.from);
+    }
+  }
+
+  host(code) {
+    this.isHost = true;
+    this.selfId = 'host';
+    this._connect('host', code);
+  }
+
+  join(code) {
+    this.isHost = false;
+    this._connect('join', code);
+  }
+
+  on(type, fn) { this.handlers[type] = fn; }
+
+  send(type, data) {
+    this._sendRaw({ lan: 'msg', to: this.isHost ? '*' : 'host', t: type, d: data });
+  }
+
+  broadcast(type, data) {
+    this._sendRaw({ lan: 'msg', to: '*', t: type, d: data, _r: true });
+  }
+
+  sendTo(peerId, type, data) {
+    this._sendRaw({ lan: 'msg', to: peerId, t: type, d: data });
+  }
+
+  close() {
+    try { this.ws && this.ws.close(); } catch (e) {}
+    for (const [, c] of this.conns) c.open = false;
+    this.conns.clear();
+    this.ws = null; this.connected = false; this.isHost = false; this.room = null; this.selfId = null;
   }
 }
 

@@ -214,6 +214,7 @@
     .mp-diaggrid .ok { color: var(--green); }
     .mp-diaggrid .wait { color: var(--gold); }
     .mp-diaggrid .err b { color: var(--red); }
+    .mp-diaggrid .msg b { white-space: normal; text-align: right; line-height: 1.25; }
     .mp-diaggrid .advice { justify-content: center; color: var(--ink); text-align: center; line-height: 1.3; }
     .mp-roster { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; margin: 8px 0; }
     .mp-rosteritem { background: rgba(255,255,255,.08); border: 1px solid rgba(255,207,92,.25); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 14px; max-width: 100%; }
@@ -621,6 +622,8 @@
       <div class="mp-actions">
           <button class="btn wide" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
           <button class="btn sec wide" id="mpReadyBtn" style="display:none;">☐ CLICK WHEN READY</button>
+          <button class="btn sec" id="mpLanBtn">NET: WEBRTC</button>
+          <button class="btn sec" id="mpRelayBtn">RELAY: AUTO</button>
           <button class="btn sec" id="lobbyArmoryBtn">🔫 SHOP</button>
           <button class="btn sec" id="mpBackBtn">← BACK</button>
       </div>
@@ -668,6 +671,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=180"></script>
+  <script type="module" src="./src/game.js?v=185"></script>
 </body>
 </html>

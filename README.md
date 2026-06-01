@@ -18,6 +18,19 @@ Then open <http://localhost:8000>.
 
 > ⚠️ Serve it over HTTP, not by opening `index.html` as a `file://` URL — the game uses native ES modules and `fetch()` for assets, which browsers block on the file protocol.
 
+## Hamachi / LAN co-op
+
+For zero-cost co-op over Hamachi, run the game and the LAN relay on the host Mac:
+
+```bash
+node scripts/lan-server.js --host 0.0.0.0 --port 8787
+python3 -m http.server 8099
+```
+
+Both players should open the host Mac's Hamachi URL, for example
+`http://25.x.x.x:8099`. In the multiplayer lobby, switch `NET: WEBRTC` to
+`NET: LAN`, host a room, and join with the room code.
+
 ## Deploy to Vercel
 
 No configuration required — Vercel serves it as a static site:

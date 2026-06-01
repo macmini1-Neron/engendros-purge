@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-01 18:00';
+const GAME_BUILD = '2026-06-01 22:35 WEST';
 
 class Game {
   constructor() {
@@ -101,6 +101,8 @@ class Game {
     });
     click('mpStartBtn', () => this.mp.hostStart());
     click('mpReadyBtn', () => this.mp.toggleReady());
+    click('mpLanBtn', () => this.mp.toggleLanMode());
+    click('mpRelayBtn', () => this.mp.toggleRelayMode());
     click('mp-mode-purge', () => this.mp.setMode('purge'));
     click('mp-mode-night', () => this.mp.setMode('longnight'));
     click('mpBackBtn', () => { this.mp.leave(); this.toMenu(); });
@@ -424,6 +426,8 @@ class Game {
   toLobby() {
     this.state = 'menu';
     this.ui.show('lobby');
+    this.mp._renderLanMode();
+    this.mp._renderRelayMode();
     this.mp._renderModeSel();
     this.mp._renderRoomBrowser();
   }
