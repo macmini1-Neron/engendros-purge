@@ -179,15 +179,51 @@
     .mp-label .mp-hpwrap { display: inline-block; width: 64px; height: 6px; background: rgba(0,0,0,.55); border-radius: 3px; overflow: hidden; margin-top: 2px; border: 1px solid rgba(0,0,0,.4); }
     .mp-label .mp-hp { display: block; height: 100%; width: 100%; background: linear-gradient(90deg,#7fd06a,#bff0a0); transition: width .15s; }
     .mp-label.down .mp-name { color: #ff7a6a; } .mp-label.down .mp-hp { background: #b03a2a; }
-    .mp-input { display: block; margin: 6px auto; width: 220px; max-width: 80%; padding: 10px 12px; font-family: var(--font-body); font-size: 15px; font-weight: 600; text-align: center; border-radius: var(--r-sm); border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--paper); outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+    #lobby .card { width: min(96vw, 980px); max-width: 980px; padding: 32px 36px; }
+    .mp-lobby-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr); gap: 18px; align-items: start; text-align: left; }
+    .mp-col { min-width: 0; }
+    .mp-sectionbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; margin: 4px 0 9px; padding-bottom: 7px; border-bottom: 1px solid var(--line-soft); font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: 2px; color: var(--ink-dim); text-transform: uppercase; }
+    .mp-pill { min-width: 92px; text-align: center; padding: 4px 8px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--ink-dim); background: rgba(0,0,0,.18); font-size: 10px; letter-spacing: 1.4px; }
+    .mp-pill.on { color: #142006; background: linear-gradient(180deg,#a8e67c,#6dbb48); border-color: rgba(170,235,120,.55); }
+    .mp-input { display: block; margin: 0; width: 100%; max-width: none; padding: 10px 12px; font-family: var(--font-body); font-size: 15px; font-weight: 600; text-align: center; border-radius: var(--r-sm); border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--paper); outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
     .mp-input:focus { border-color: var(--line-gold); box-shadow: 0 0 0 3px rgba(255,207,92,.12); }
     .mp-input::placeholder { color: var(--ink-dim); opacity: .7; }
     .mp-row { display: flex; gap: 8px; align-items: center; justify-content: center; margin: 10px 0; flex-wrap: wrap; }
     .mp-row .btn { margin: 0; }
     .mp-or { opacity: .55; font-size: 13px; }
-    .mp-status { margin: 8px 0; font-size: 13px; opacity: .85; min-height: 18px; }
-    .mp-roster { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 8px 0; }
-    .mp-rosteritem { background: rgba(255,255,255,.08); border: 1px solid rgba(255,207,92,.25); border-radius: 8px; padding: 4px 12px; font-weight: 700; font-size: 14px; }
+    .mp-hostline, .mp-joinline { display: grid; gap: 8px; align-items: stretch; margin: 8px 0; }
+    .mp-hostline { grid-template-columns: minmax(112px, .42fr) minmax(0, 1fr); }
+    .mp-joinline { grid-template-columns: minmax(0, 1fr) minmax(104px, .35fr); }
+    .mp-hostline .btn, .mp-joinline .btn, .mp-actions .btn, .mp-room .btn { margin: 0; width: 100%; }
+    .mp-codebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 8px 9px 8px 13px; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(0,0,0,.22); }
+    .mp-codebar span { font-family: var(--font-display); font-size: 10px; letter-spacing: 2px; color: var(--ink-dim); }
+    .mp-codebar b { font-family: var(--font-display); font-size: 20px; letter-spacing: 2px; color: var(--gold); flex: 1; text-align: center; }
+    .mp-codebar .btn { width: auto; min-width: 62px; flex: 0 0 auto; }
+    .btn.mini { padding: 8px 12px; font-size: 13px; letter-spacing: 1px; border-radius: 8px; box-shadow: 0 2px 0 var(--gold-deep), var(--shadow-1); }
+    .btn.mini:disabled, .btn:disabled { cursor: default; opacity: .48; transform: none; filter: saturate(.5); }
+    .mp-status { margin: 8px 0; font-size: 13px; opacity: .85; min-height: 18px; text-align: center; }
+    .mp-diag { min-height: 17px; margin-top: 9px; font-size: 12px; color: var(--ink-dim); text-align: center; }
+    .mp-roster { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; margin: 8px 0; }
+    .mp-rosteritem { background: rgba(255,255,255,.08); border: 1px solid rgba(255,207,92,.25); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 14px; max-width: 100%; }
+    .mp-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .mp-actions .wide { grid-column: 1 / -1; }
+    .mp-roomlist { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding-right: 3px; }
+    .mp-room { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(0,0,0,.22); }
+    .mp-room.run { border-color: rgba(111,168,232,.35); }
+    .mp-room-main { min-width: 0; }
+    .mp-room-main b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 16px; letter-spacing: .8px; color: var(--paper); }
+    .mp-room-main span { font-size: 11px; letter-spacing: 1.2px; color: var(--gold); }
+    .mp-room-meta { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--ink-dim); letter-spacing: .6px; }
+    .mp-room-meta span, .mp-room-meta code { border: 1px solid var(--line-soft); border-radius: 999px; padding: 2px 8px; background: rgba(255,255,255,.03); }
+    .mp-room-meta code { color: var(--paper); font-family: var(--font-display); letter-spacing: 1.4px; }
+    .mp-roomempty { border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 18px 14px; text-align: center; color: var(--ink-dim); background: rgba(0,0,0,.16); }
+    @media (max-width: 780px) {
+      #lobby .card { padding: 28px 22px; }
+      .mp-lobby-grid { grid-template-columns: 1fr; }
+      .mp-hostline, .mp-joinline, .mp-actions { grid-template-columns: 1fr; }
+      .mp-actions .wide { grid-column: auto; }
+      .mp-roomlist { max-height: 240px; }
+    }
     #mp-scoreboard { position: fixed; inset: 0; z-index: 30; display: none; align-items: flex-start; justify-content: center; pointer-events: none; }
     #mp-scoreboard.show { display: flex; }
     #mp-scoreboard .sb-card { margin-top: 8vh; min-width: 440px; max-width: 84vw; background: rgba(20,14,8,.86); border: 2px solid rgba(255,207,92,.4); border-radius: 12px; padding: 14px 18px 10px; backdrop-filter: blur(3px); box-shadow: 0 10px 40px rgba(0,0,0,.5); }
@@ -533,31 +569,45 @@
   <div id="lobby" class="overlay">
     <div class="card">
       <div class="title" style="font-size:38px;">CO-OP LOBBY</div>
-      <div class="subtitle" style="margin:2px 0 12px;">Play with 2–4 friends over the internet — no install, just share a room code.</div>
-      <input id="mp-name" class="mp-input" maxlength="14" placeholder="Your name" />
-      <div class="mp-row">
-        <button class="btn" id="mpHostBtn">⚔ HOST</button>
-        <span class="mp-or">— or —</span>
-        <input id="mp-code" class="mp-input" maxlength="12" placeholder="CODE" style="text-transform:uppercase;width:120px;margin:0;" />
-        <button class="btn" id="mpJoinBtn">👥 JOIN</button>
+      <div class="subtitle" style="margin:2px 0 16px;">Host a public room, join from the list, or paste a room code.</div>
+      <div class="mp-lobby-grid">
+        <div class="mp-col">
+          <div class="mp-sectionbar"><span>SQUAD SETUP</span><span id="mp-public-state" class="mp-pill">PUBLIC ROOMS</span></div>
+          <input id="mp-name" class="mp-input" maxlength="14" placeholder="Your name" />
+          <div class="mp-hostline">
+            <button class="btn" id="mpHostBtn">⚔ HOST</button>
+            <div id="mp-codebar" class="mp-codebar"><span>ROOM</span><b id="mp-mycode">-----</b><button class="btn sec mini" id="mpCopyCodeBtn">COPY</button></div>
+          </div>
+          <div class="mp-joinline">
+            <input id="mp-code" class="mp-input" maxlength="12" placeholder="ROOM CODE" style="text-transform:uppercase;" />
+            <button class="btn" id="mpJoinBtn">👥 JOIN</button>
+          </div>
+          <div class="mp-skins" id="mp-skins">
+            <button class="mp-skinpick sel" data-skin="0" style="background:#49c6df;border-color:#e85ba0"></button>
+            <button class="mp-skinpick" data-skin="1" style="background:#e8a23a;border-color:#6fcf4f"></button>
+            <button class="mp-skinpick" data-skin="2" style="background:#9b6fe0;border-color:#ffd24a"></button>
+            <button class="mp-skinpick" data-skin="3" style="background:#5fd0a0;border-color:#e8533a"></button>
+          </div>
+          <div class="shoptabs" id="mp-modes" style="margin:8px 0 4px;">
+            <button class="tab on" id="mp-mode-purge" data-mode="purge">⚔ PURGE</button>
+            <button class="tab" id="mp-mode-night" data-mode="longnight">🌙 THE LONG NIGHT</button>
+          </div>
+          <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">⚔ Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
+          <div id="mp-status" class="mp-status">Host a room, choose a public room, or paste a code.</div>
+          <div id="mp-roster" class="mp-roster"></div>
+        </div>
+        <div class="mp-col">
+          <div class="mp-sectionbar"><span>PUBLIC ROOMS</span><button class="btn sec mini" id="mpRefreshRoomsBtn">REFRESH</button></div>
+          <div id="mp-roomlist" class="mp-roomlist"><div class="mp-roomempty">No public rooms online. Host one or paste a code.</div></div>
+          <div id="mp-netdiag" class="mp-diag"></div>
+        </div>
       </div>
-      <div class="mp-skins" id="mp-skins">
-        <button class="mp-skinpick sel" data-skin="0" style="background:#49c6df;border-color:#e85ba0"></button>
-        <button class="mp-skinpick" data-skin="1" style="background:#e8a23a;border-color:#6fcf4f"></button>
-        <button class="mp-skinpick" data-skin="2" style="background:#9b6fe0;border-color:#ffd24a"></button>
-        <button class="mp-skinpick" data-skin="3" style="background:#5fd0a0;border-color:#e8533a"></button>
+      <div class="mp-actions">
+        <button class="btn wide" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
+        <button class="btn sec wide" id="mpReadyBtn" style="display:none;">☐ CLICK WHEN READY</button>
+        <button class="btn sec" id="lobbyArmoryBtn">🔫 SHOP</button>
+        <button class="btn sec" id="mpBackBtn">← BACK</button>
       </div>
-      <div class="shoptabs" id="mp-modes" style="max-width:440px;margin:8px auto 4px;">
-        <button class="tab on" id="mp-mode-purge" data-mode="purge">⚔ PURGE</button>
-        <button class="tab" id="mp-mode-night" data-mode="longnight">🌙 THE LONG NIGHT</button>
-      </div>
-      <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">⚔ Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
-      <div id="mp-status" class="mp-status">Host a room, or enter a friend's code and Join.</div>
-      <div id="mp-roster" class="mp-roster"></div>
-      <button class="btn" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
-      <button class="btn sec" id="mpReadyBtn" style="display:none;">☐ CLICK WHEN READY</button>
-      <button class="btn sec" id="lobbyArmoryBtn">🔫 SHOP — buy &amp; equip</button>
-      <button class="btn sec" id="mpBackBtn">← BACK</button>
     </div>
     <div id="lobby-version" title="Build version &amp; release time"></div>
   </div>
@@ -602,6 +652,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=171"></script>
+  <script type="module" src="./src/game.js?v=173"></script>
 </body>
 </html>

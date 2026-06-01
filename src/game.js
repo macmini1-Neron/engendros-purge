@@ -16,7 +16,7 @@ import { Inventory, Shop } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
-import { MP } from './mp.js?v=10';
+import { MP } from './mp.js?v=12';
 import { Engine } from './engine.js?e=2';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js?v=151';
@@ -27,7 +27,7 @@ import { Effects } from './effects.js?v=7';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-01 13:43';
+const GAME_BUILD = '2026-06-01 15:47';
 
 class Game {
   constructor() {
@@ -92,6 +92,13 @@ class Game {
     click('armoryBackBtn', () => { if (this.shop.returnTo === 'lobby') this.toLobby(); else this.toMenu(); });
     click('mpHostBtn', () => this.mp.startHost((document.getElementById('mp-name') || {}).value || 'Host'));
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
+    click('mpRefreshRoomsBtn', () => this.mp.refreshRooms());
+    click('mpCopyCodeBtn', () => {
+      const code = ((document.getElementById('mp-mycode') || {}).textContent || '').trim();
+      if (!code || code === '-----') return;
+      try { navigator.clipboard && navigator.clipboard.writeText(code); } catch (e) {}
+      this.mp._setLobbyDiag('Room code copied.');
+    });
     click('mpStartBtn', () => this.mp.hostStart());
     click('mpReadyBtn', () => this.mp.toggleReady());
     click('mp-mode-purge', () => this.mp.setMode('purge'));
@@ -414,7 +421,13 @@ class Game {
     if (e.isElite) this.player.addMoney(KEY_CASH * 2); // elites pay a small cash bonus
     if (e.courier) this.player.addMoney(this.loot.dropCourier(e.pos)); // backpack courier → a radio + a bonus (cash to the host killer)
   }
-  toLobby() { this.state = 'menu'; this.ui.show('lobby'); this.mp._renderModeSel(); }
+  toLobby() {
+    this.state = 'menu';
+    this.ui.show('lobby');
+    this.mp._renderModeSel();
+    this.mp._renderRoomBrowser();
+    this.mp.refreshRooms();
+  }
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
     this.audio.init(); this.audio.startMusic(); this._intentionalUnlock = false;

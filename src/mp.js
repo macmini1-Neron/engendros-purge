@@ -6,7 +6,7 @@ import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, makeRoomCode } from './net.js?v=2';
+import { Net, RoomDirectory, makeRoomCode, scanRooms } from './net.js?v=4';
 
 
 // ---------------------------------------------------------------------------
@@ -124,6 +124,7 @@ export class MP {
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
     this._joinHandshakeTimer = null;
+    this.directory = null; this.rooms = []; this.roomsBusy = false;
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
     this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
@@ -133,13 +134,116 @@ export class MP {
     if (this._joinHandshakeTimer) clearTimeout(this._joinHandshakeTimer);
     this._joinHandshakeTimer = null;
   }
+  _setLobbyDiag(text) {
+    const el = document.getElementById('mp-netdiag');
+    if (el) el.textContent = text || '';
+  }
+  _modeLabel(mode) { return mode === 'longnight' ? 'LONG NIGHT' : 'PURGE'; }
+  _closeDirectory() {
+    try { this.directory && this.directory.close(); } catch (e) {}
+    this.directory = null;
+    this._renderRoomBrowser();
+  }
+  _publishRoom() {
+    if (!this.isHost || !this.net.room) return;
+    this._closeDirectory();
+    this.directory = new RoomDirectory(() => ({
+      code: this.net.room,
+      host: this.name || 'Host',
+      mode: this.game.mode || this._lobbyMode || 'purge',
+      players: this.roster.size || 1,
+      max: 4,
+      state: this.active ? 'running' : 'lobby',
+      build: (document.getElementById('lobby-version') || {}).textContent || '',
+    }));
+    this.directory.onOpen = (slot) => { this._setLobbyDiag(`Public room listed #${slot + 1}.`); this._renderRoomBrowser(); };
+    this.directory.onError = (t) => { this._setLobbyDiag(t === 'directory-full' ? 'Public room list is full; code join still works.' : 'Public room list unavailable; code join still works.'); this._renderRoomBrowser(); };
+    this.directory.publish();
+    this._renderRoomBrowser();
+  }
+  _resetLobbyTransport() {
+    try { this.net && this.net.close(); } catch (e) {}
+    this.net = new Net();
+    this._wireNet();
+    for (const [, rp] of this.remotes) rp.dispose();
+    this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
+    if (this._lastXf) this._lastXf.clear();
+    this.active = false; this.isHost = false; this.ready = false; this.myId = null;
+  }
+  async refreshRooms() {
+    if (this.roomsBusy) return;
+    this.roomsBusy = true;
+    this._renderRoomBrowser();
+    try {
+      this.rooms = await scanRooms();
+      if (!(this.isHost && this.directory && this.directory.slot != null)) {
+        this._setLobbyDiag(this.rooms.length ? `${this.rooms.length} public room${this.rooms.length === 1 ? '' : 's'} found.` : 'No public rooms found right now.');
+      }
+    } catch (e) {
+      this.rooms = [];
+      if (!(this.isHost && this.directory && this.directory.slot != null)) this._setLobbyDiag('Room list unavailable; manual code join still works.');
+    } finally {
+      this.roomsBusy = false;
+      this._renderRoomBrowser();
+    }
+  }
+  _renderRoomBrowser() {
+    const list = document.getElementById('mp-roomlist');
+    const scan = document.getElementById('mpRefreshRoomsBtn');
+    const badge = document.getElementById('mp-public-state');
+    if (scan) { scan.disabled = this.roomsBusy; scan.textContent = this.roomsBusy ? 'SCANNING' : 'REFRESH'; }
+    if (badge) {
+      const listed = this.directory && this.directory.slot != null;
+      badge.textContent = listed ? `LISTED #${this.directory.slot + 1}` : (this.isHost && this.net.room ? 'CODE ONLY' : 'PUBLIC ROOMS');
+      badge.classList.toggle('on', !!listed);
+    }
+    if (!list) return;
+    if (this.roomsBusy && !this.rooms.length) {
+      list.innerHTML = '<div class="mp-roomempty">Scanning public rooms…</div>';
+      return;
+    }
+    if (!this.rooms.length) {
+      list.innerHTML = '<div class="mp-roomempty">No public rooms online. Host one or paste a code.</div>';
+      return;
+    }
+    list.innerHTML = this.rooms.map((r) => {
+      const full = (r.players || 0) >= (r.max || 4);
+      const mine = this.isHost && this.net.room && r.code === this.net.room;
+      const disabled = full || mine;
+      const state = r.state === 'running' ? 'RUNNING' : 'LOBBY';
+      const action = mine ? 'YOURS' : (full ? 'FULL' : 'JOIN');
+      return `<div class="mp-room ${r.state === 'running' ? 'run' : ''}">
+        <div class="mp-room-main">
+          <b>${mpEscape(r.host || 'Host')}</b>
+          <span>${this._modeLabel(r.mode)}</span>
+        </div>
+        <div class="mp-room-meta">
+          <span>${Math.max(1, r.players || 1)}/${Math.max(1, r.max || 4)}</span>
+          <span>${state}</span>
+          <code>${mpEscape(r.code || '')}</code>
+        </div>
+        <button class="btn mini" data-room="${mpEscape(r.code || '')}" ${disabled ? 'disabled' : ''}>${action}</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('button[data-room]').forEach((b) => {
+      b.onclick = () => {
+        const code = b.getAttribute('data-room') || '';
+        const inp = document.getElementById('mp-code');
+        if (inp) inp.value = code;
+        this.startJoin(code, (document.getElementById('mp-name') || {}).value || 'Player');
+      };
+    });
+  }
   startHost(name) {
     this._clearJoinHandshakeTimer();
+    this._setLobbyDiag('');
+    this._closeDirectory();
+    this._resetLobbyTransport();
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
     this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
-    this.net.onPeerOpen = (c) => this._lobbyMsg(`Room code: <b>${c}</b> — share it. Waiting for players…`, c);
-    this.net.onError = (t) => this._lobbyMsg(this._netErr(t));
+    this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — waiting for players…`, c); this._publishRoom(); };
+    this.net.onError = (t) => { this._closeDirectory(); this._lobbyMsg(this._netErr(t)); };
     this.net.host(code); this._renderRoster();
   }
   startJoin(code, name) {
@@ -147,6 +251,9 @@ export class MP {
     if (!room) { this._lobbyMsg('Enter a room code.'); return; }
     if (room.length !== 5) { this._lobbyMsg('Room codes are 5 characters.'); return; }
     this._clearJoinHandshakeTimer();
+    this._setLobbyDiag('');
+    this._closeDirectory();
+    this._resetLobbyTransport();
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
     this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + room + '…');
     this.net.onConnect = () => {
@@ -160,6 +267,7 @@ export class MP {
   }
   leave() {
     this._clearJoinHandshakeTimer();
+    this._closeDirectory();
     this.ready = false;
     try { if (this.active && !this.isHost) this.net.send('goodbye', {}); } catch (e) {} // tell the host to despawn me instantly
     try { this.net.close(); } catch (e) {}
@@ -171,6 +279,10 @@ export class MP {
     this._localDown = false; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
     if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
     this.net = new Net(); this._wireNet();
+    const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
+    this._lobbyMsg('Host a room, choose a public room, or paste a code.');
+    this._setLobbyDiag('');
+    this._renderRoomBrowser();
   }
   // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
   _dropPeer(peerId, opts) {
@@ -191,7 +303,13 @@ export class MP {
     const c = this.net.conns.get(peerId); if (c) { try { c.close(); } catch (e) {} }   // stop them sending
     this._dropPeer(peerId);
   }
-  _lobbyMsg(html, code) { const el = document.getElementById('mp-status'); if (el) el.innerHTML = html; if (code) { const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = code; } }
+  _lobbyMsg(html, code) {
+    const el = document.getElementById('mp-status'); if (el) el.innerHTML = html;
+    if (code) {
+      const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = code;
+      const bar = document.getElementById('mp-codebar'); if (bar) bar.classList.add('show');
+    }
+  }
   _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'connect-timeout': 'Connection timed out — try again, or have the host refresh/re-host.', 'connect-failed': 'WebRTC connection failed — try a fresh room code.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
   _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
@@ -214,6 +332,7 @@ export class MP {
     const rb = document.getElementById('mpReadyBtn');
     if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
     this._renderModeSel();
+    this._renderRoomBrowser();
   }
   // ---- game-mode pick (host-authoritative; only the host simulates waves, so the host owns the mode) ----
   setMode(m) {
@@ -223,6 +342,7 @@ export class MP {
     this.game.mode = mode; this._lobbyMode = mode;
     if (this.isHost) this.net.send('mode', { mode });           // tell the squad (no-op with zero peers)
     this._renderModeSel();
+    this._renderRoomBrowser();
   }
   _renderModeSel() {
     const wrap = document.getElementById('mp-modes'); if (!wrap) return;
@@ -245,7 +365,7 @@ export class MP {
     if (!allReady) { this._lobbyMsg('Waiting for all players to be READY…'); return; }
     const now = performance.now(); for (const [id] of this.roster) this._lastXf.set(id, now); // fresh heartbeat baseline so nobody is insta-timed-out
     const mode = this.game.mode || 'purge';
-    this.active = true; this._initHostStates(); this.net.send('start', { mode }); this.game._enterMP(mode);
+    this.active = true; this._renderRoomBrowser(); this._initHostStates(); this.net.send('start', { mode }); this.game._enterMP(mode);
   }
   _initHostStates() { this.pstate.clear(); for (const [id, info] of this.roster) this.pstate.set(id, this._freshState(info)); }
   _freshState(info) { return { hp: 100, maxHp: 100, armor: 0, armorMax: 100, down: false, downT: 0, waiting: false, dead: false, downs: 0, burnT: 0, name: info.name, skin: info.skin }; }
