@@ -6,7 +6,7 @@ import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, makeRoomCode } from './net.js';
+import { Net, makeRoomCode } from './net.js?v=1';
 
 
 // ---------------------------------------------------------------------------
@@ -123,12 +123,18 @@ export class MP {
     this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
+    this._joinHandshakeTimer = null;
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
     this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
   }
   // ---- lobby ----
+  _clearJoinHandshakeTimer() {
+    if (this._joinHandshakeTimer) clearTimeout(this._joinHandshakeTimer);
+    this._joinHandshakeTimer = null;
+  }
   startHost(name) {
+    this._clearJoinHandshakeTimer();
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
     this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
@@ -137,14 +143,23 @@ export class MP {
     this.net.host(code); this._renderRoster();
   }
   startJoin(code, name) {
-    if (!code) { this._lobbyMsg('Enter a room code.'); return; }
+    const room = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    if (!room) { this._lobbyMsg('Enter a room code.'); return; }
+    if (room.length !== 5) { this._lobbyMsg('Room codes are 5 characters.'); return; }
+    this._clearJoinHandshakeTimer();
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
-    this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + code + '…');
-    this.net.onConnect = () => { this.myId = this.net.selfId; this.net.lastRecv = performance.now(); this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId }); this._lobbyMsg('Connecting… handshaking with host…'); };
-    this.net.onError = (t) => this._lobbyMsg(this._netErr(t));
-    this.net.join(code.trim().toUpperCase());
+    this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + room + '…');
+    this.net.onConnect = () => {
+      this.myId = this.net.selfId; this.net.lastRecv = performance.now();
+      this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
+      this._lobbyMsg('Connecting… handshaking with host…');
+      this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer. Ask the host to refresh/re-host.'), 9000);
+    };
+    this.net.onError = (t) => { this._clearJoinHandshakeTimer(); this._lobbyMsg(this._netErr(t)); };
+    this.net.join(room);
   }
   leave() {
+    this._clearJoinHandshakeTimer();
     this.ready = false;
     try { if (this.active && !this.isHost) this.net.send('goodbye', {}); } catch (e) {} // tell the host to despawn me instantly
     try { this.net.close(); } catch (e) {}
@@ -177,7 +192,7 @@ export class MP {
     this._dropPeer(peerId);
   }
   _lobbyMsg(html, code) { const el = document.getElementById('mp-status'); if (el) el.innerHTML = html; if (code) { const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = code; } }
-  _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
+  _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'connect-timeout': 'Connection timed out — try again, or have the host refresh/re-host.', 'connect-failed': 'WebRTC connection failed — try a fresh room code.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
   _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
   toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }
@@ -257,7 +272,7 @@ export class MP {
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
     n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 4 players).'); try { this.net.close(); } catch (e) {} } });
-    n.on('joinok', () => { if (!this.isHost) this._lobbyMsg('Connected! Waiting for the host to start…'); });
+    n.on('joinok', () => { if (!this.isHost) { this._clearJoinHandshakeTimer(); this._lobbyMsg('Connected! Waiting for the host to start…'); } });
     n.on('goodbye', (d, from) => { if (this.isHost) this._dropPeer(from); });                                  // client left cleanly
     n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });

@@ -10,6 +10,23 @@
 // Register handlers with on(type, fn(data, fromId)).
 
 const ID_PREFIX = 'engpurgv1-'; // namespace room codes on the shared public broker
+const CONNECT_TIMEOUT_MS = 14000;
+const PEER_OPTIONS = {
+  host: '0.peerjs.com',
+  port: 443,
+  path: '/',
+  secure: true,
+  debug: 2,
+  config: {
+    sdpSemantics: 'unified-plan',
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:openrelay.metered.ca:80'] },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    ],
+  },
+};
 
 export class Net {
   constructor() {
@@ -21,6 +38,7 @@ export class Net {
     this.conns = new Map();       // remotePeerId -> DataConnection
     this.handlers = {};           // type -> fn(data, fromId)
     this.lastRecv = 0;            // perf.now() of the last received message (heartbeat)
+    this._connectTimer = null;
     // callbacks (assign directly)
     this.onPeerOpen = null;       // (roomCode)        host/peer is registered with the broker
     this.onConnect = null;        // (peerId)          a data connection opened
@@ -32,7 +50,22 @@ export class Net {
 
   _mkPeer(id) {
     if (!window.Peer) { throw new Error('PeerJS not loaded (no internet?)'); }
-    return id ? new window.Peer(id, { debug: 1 }) : new window.Peer({ debug: 1 });
+    return id ? new window.Peer(id, PEER_OPTIONS) : new window.Peer(PEER_OPTIONS);
+  }
+
+  _clearConnectTimer() {
+    if (this._connectTimer) clearTimeout(this._connectTimer);
+    this._connectTimer = null;
+  }
+
+  _watchConnect(conn) {
+    this._clearConnectTimer();
+    this._connectTimer = setTimeout(() => {
+      if (conn && !conn.open && !this.connected) {
+        try { conn.close(); } catch (e) {}
+        this.onError && this.onError('connect-timeout', { peer: conn.peer, room: this.room });
+      }
+    }, CONNECT_TIMEOUT_MS);
   }
 
   // HOST a room under `code` (the broker id becomes ID_PREFIX+code).
@@ -56,6 +89,7 @@ export class Net {
       this.selfId = pid;
       this.onPeerOpen && this.onPeerOpen(code);
       const conn = this.peer.connect(ID_PREFIX + code, { reliable: true });
+      this._watchConnect(conn);
       this._accept(conn);
     });
     this.peer.on('error', (e) => this.onError && this.onError(e.type || 'error', e));
@@ -63,13 +97,19 @@ export class Net {
 
   _accept(conn) {
     conn.on('open', () => {
+      this._clearConnectTimer();
       this.conns.set(conn.peer, conn);
       this.connected = true;
       this.onConnect && this.onConnect(conn.peer);
     });
     conn.on('data', (msg) => { try { this._recv(msg, conn.peer); } catch (e) { if (typeof console !== 'undefined') console.warn('[net] handler threw for', msg && msg.t, e); } });
     conn.on('close', () => { this.conns.delete(conn.peer); this.onDisconnect && this.onDisconnect(conn.peer); });
-    conn.on('error', () => { /* connection-level errors are non-fatal */ });
+    conn.on('error', (e) => {
+      if (!conn.open && !this.connected) {
+        this._clearConnectTimer();
+        this.onError && this.onError((e && e.type) || 'connect-failed', e);
+      }
+    });
   }
 
   _recv(msg, fromId) {
@@ -108,6 +148,7 @@ export class Net {
   close() {
     try { for (const [, c] of this.conns) c.close(); } catch (e) {}
     try { this.peer && this.peer.destroy(); } catch (e) {}
+    this._clearConnectTimer();
     this.conns.clear();
     this.peer = null; this.connected = false; this.isHost = false; this.room = null; this.selfId = null;
   }
