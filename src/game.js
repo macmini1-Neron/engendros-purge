@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { TAU, randRange } from './util.js';
 import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER } from './tuning.js';
-import { KEY_CASH } from './economy.js';
+import { KILL_CASH } from './economy.js';
 import { buildFlare, buildFlopo } from './props.js';
 import { MountedGun, WeaponSystem } from './weapons.js';
 import { Player } from './player.js';
@@ -59,7 +59,7 @@ class Game {
     this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
     this._molTmp = new THREE.Vector3(); this._molTmp2 = new THREE.Vector3(); this._molTmp3 = new THREE.Vector3();
 
-    this.state = 'menu'; this.score = 0; this.kills = 0;
+    this.state = 'menu'; this.score = 0; this.kills = 0; this.mpMenuOpen = false;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
     this._last = 0; this._bound = this._frame.bind(this);
 
@@ -115,7 +115,7 @@ class Game {
       if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin') return;
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
-    this.input.on('lock', () => { if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
+    this.input.on('lock', () => { if (this.mpMenuOpen) this._closeMpMenu(false); else if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
     this.input.on('unlock', () => { if (this._intentionalUnlock) { this._intentionalUnlock = false; return; } if (this._invOpen) { this._closeInventory(); return; } if (this.state === 'playing') this.pause(); });
     document.addEventListener('fullscreenchange', () => this.engine.resize());
   }
@@ -123,6 +123,18 @@ class Game {
   _wireInput() {
     this.input.on('key', (code) => {
       if (this.state !== 'playing') return;
+      if (this.mpMenuOpen) {
+        if (code === 'KeyF') this.toggleFullscreen();
+        else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
+        return;
+      }
+      if (this.mp.active && this.mp._localDead) {
+        if (code === 'KeyQ') this.mp.cycleSpectate(-1);
+        else if (code === 'KeyE') this.mp.cycleSpectate(1);
+        else if (code === 'KeyF') this.toggleFullscreen();
+        else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
+        return;
+      }
       if (this.weapons.isThrowLocked() && code !== 'KeyM') return; // committed molotov: only the LMB throw (and mute) work
       if (this.mp.active && this.mp.frozen) return; // downed/dead/waiting: no reload/melee/mount/board/loot/weapon-switch
       if (this.player.mountedGun && code !== 'KeyE' && code !== 'KeyF' && code !== 'KeyM') return; // on the .50 cal: only dismount / fullscreen / mute — no weapon or inventory switching
@@ -349,8 +361,15 @@ class Game {
     this._intentionalUnlock = true; this.input.exitLock(); // free the cursor; the 'unlock' handler skips the pause
   }
   _closeInventory() { this._invOpen = false; this.hud.closeInventory(); if (this.state === 'playing') this.input.requestLock(); }
-  pause() { if (this.state !== 'playing') return; if (this._invOpen) this._closeInventory(); this.weapons.cancelMolotov(); this.state = 'paused'; this.ui.show('pause'); }
+  pause() {
+    if (this.state !== 'playing') return;
+    if (this._invOpen) this._closeInventory();
+    this.weapons.cancelMolotov();
+    if (this.mp && this.mp.active) { this.mpMenuOpen = true; this.ui.show('pause'); return; }
+    this.state = 'paused'; this.ui.show('pause');
+  }
   resume() {
+    if (this.mp && this.mp.active && this.mpMenuOpen) { this._closeMpMenu(true); return; }
     if (this.state !== 'paused') return;
     // Re-enter fullscreen (Esc may have dropped it) then re-grab the pointer; 'lock' handler hides the overlay once granted.
     const root = document.documentElement;
@@ -358,10 +377,16 @@ class Game {
     if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().then(after, after);
     else after();
   }
+  _closeMpMenu(lockPointer) {
+    this.mpMenuOpen = false;
+    this.ui.hideAll();
+    if (lockPointer && this.state === 'playing') this.input.requestLock();
+  }
   toMenu() {
     if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();
     const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
+    this.mpMenuOpen = false;
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
@@ -389,10 +414,9 @@ class Game {
     // the same pile), but the cash/score CREDIT — including the rolled key-cash — goes to the actual KILLER
     // via creditKill. The host does NOT keep the client's reward. Tank-mechanic special rewards stay host-side.
     if (this.mp.active && this.mp.isHost && attacker !== 'host') {
-      let keyCash = 0;
-      if (e.def.tank) keyCash += this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false }));
-      else { keyCash += this.loot.drop(e.pos, e.def); if (e.courier) keyCash += this.loot.dropCourier(e.pos); }
-      this.mp.creditKill(attacker, e, keyCash);   // killer gets reward + score + their own key-cash, exactly once
+      if (e.def.tank) this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false }));
+      else { this.loot.drop(e.pos, e.def); if (e.courier) this.loot.dropCourier(e.pos); }
+      this.mp.creditKill(attacker, e);   // killer gets flat personal cash + score; shared loot is separate
       return;
     }
     this.kills++;
@@ -400,28 +424,23 @@ class Game {
     if (e.def.tank) {
       if (e.captured) {
         // Captured — tank itself is the prize: smaller cash, base score only
-        this.player.addMoney(Math.round(e.def.reward * 0.4));
+        this.player.addMoney(KILL_CASH);
         this.score += e.def.reward; this.hud.setScore(this.score);
-        this.player.addMoney(KEY_CASH);
       } else {
         // Destroyed — walked away with loot: full cash, +800 score bonus
-        this.player.addMoney(e.def.reward);
+        this.player.addMoney(KILL_CASH);
         this.score += e.def.reward + 800; this.hud.setScore(this.score);
-        this.player.addMoney(KEY_CASH * 3);
       }
       if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
-      // loot.drop with boss flag cleared so it doesn't auto-spawn boss keys again. The host killer keeps the
-      // small random key-cash the drop rolls (preserves the original payout — it used to grant it inside drop()).
-      this.player.addMoney(this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false })));
+      this.loot.drop(e.pos, Object.assign({}, e.def, { boss: false }));
       return; // skip generic boss payout below — no double-pay
     }
     // --- generic path (non-tank enemies) ---
-    this.player.addMoney(e.def.reward);
+    this.player.addMoney(KILL_CASH);
     this.score += e.def.reward + (e.def.boss ? 1500 : 0); this.hud.setScore(this.score);
     if (this.mp.active && this.mp.isHost) this.mp.feed(((this.mp.roster.get('host') || {}).name) || 'Host', e.name); else this.hud.kill(e.name);
-    this.player.addMoney(this.loot.drop(e.pos, e.def)); // host/solo killer keeps the rolled key-cash
-    if (e.isElite) this.player.addMoney(KEY_CASH * 2); // elites pay a small cash bonus
-    if (e.courier) this.player.addMoney(this.loot.dropCourier(e.pos)); // backpack courier → a radio + a bonus (cash to the host killer)
+    this.loot.drop(e.pos, e.def);
+    if (e.courier) this.loot.dropCourier(e.pos);
   }
   toLobby() {
     this.state = 'menu';
@@ -434,7 +453,8 @@ class Game {
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
     this.audio.init(); this.audio.startMusic(); this._intentionalUnlock = false;
-    if (this.mp) this.mp._spilledLoot = false; // fresh run → loot can spill again on the next real death
+    this.mpMenuOpen = false;
+    if (this.mp) { this.mp._spilledLoot = false; this.mp.spectateTarget = null; } // fresh run → loot can spill again on the next real death
     this.reset(); this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
     const labels = document.getElementById('mp-labels'); if (labels) labels.style.display = 'block';
     this.state = 'playing'; this._startCountdown = this.mp.isHost ? 0.6 : 0;
@@ -553,6 +573,7 @@ class Game {
     if (this.mp.active && this.mp.frozen) {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
       if (this.player.inTank) this.player.inTank.leave();
+      this.weapons.cancelMolotov();
     }
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
@@ -563,7 +584,7 @@ class Game {
         const edge = this.input.buttonsPressed[0] ? 'press' : (this.input.buttons[0] ? 'hold' : null);
         if (edge) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
-      if (this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
+      if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
       this.player.update(dt);
       this.weapons.update(dt);
       this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
@@ -583,6 +604,11 @@ class Game {
     this.effects.update(dt);
     this.hud.update(dt);
     // ---- Interact prompt priority: tank crew > .50 cal > loot ----
+    if (this.mp.active && this.mp._localDead) {
+      const rp = this.mp.ensureSpectateTarget();
+      this.hud.setInteract(rp ? `Spectating <b>${rp.name}</b> · Q/E switch` : 'No live squadmate to spectate');
+      return;
+    }
     const _ct = this.capturedTank;
     const _nearMountedGun = !this.player.inTank && this.mountedGun.updateNearby(this.player.pos);
     if (this.player.mountedGun) {
@@ -593,7 +619,7 @@ class Game {
     } else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) {
       this.hud.setInteract('Press <b>E</b> to commandeer the T-90M');
     } else if (_nearMountedGun) {
-      this.hud.setInteract('Press <b>E</b> to man the .50 cal — ∞ ammo, overheats');
+      this.hud.setInteract('Press <b>E</b> to man the .50 cal — 250 rounds, overheats');
     } else if (this.player._splintT > 0) {
       this.hud.setInteract(`Applying splint… ${this.player._splintT.toFixed(1)}s`);
     } else if (this.loot.nearPickup) {

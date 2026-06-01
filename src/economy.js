@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 // Economy payouts — rarity removed (flat stats). Former key drops convert to a small cash bonus; supply drops grant cash.
 // ---------------------------------------------------------------------------
-export const KEY_CASH = 60, SUPPLY_CASH = 600;
+export const KEY_CASH = 60, KILL_CASH = 3, SUPPLY_CASH = 600;
 
 // Fortification pieces the player places (held like weapons; material comes from supply drops).
 // sandbag/wood are HARD walls (an AABB in World.boxes); wire is a non-blocking HAZARD zone (slow+DoT, breaks under trample).
