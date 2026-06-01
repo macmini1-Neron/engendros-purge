@@ -190,7 +190,7 @@ export class MP {
     }
     if (d.role === 'join' && d.data && d.helloSent && !d.joinokReceived) return 'Data OK, but host did not answer. This points to host cache/code or a stale room.';
     if (d.role === 'host' && d.data && !d.helloReceived) return 'Data OK. Waiting for the joiner hello packet.';
-    if (d.selectedType === 'relay') return 'Connected through relay.';
+    if ((d.iceTypes || []).includes('relay') || d.selectedType === 'relay') return d.selectedType === 'relay' ? 'TURN relay route active.' : 'TURN relay available.';
     if (d.data && (d.joinokReceived || d.joinokSent)) return 'Lobby handshake OK.';
     return '';
   }

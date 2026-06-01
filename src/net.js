@@ -21,14 +21,22 @@ const PEER_OPTIONS = {
   secure: true,
   debug: 2,
 };
+const DEFAULT_ICE_SERVERS = [
+  { urls: 'stun:openrelay.metered.ca:80' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+];
 
 function peerOptions() {
   const opts = { ...PEER_OPTIONS };
   try {
     const raw = window.ENGENDROS_ICE_SERVERS || localStorage.getItem('engendros_ice_servers');
     const iceServers = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : null);
-    if (Array.isArray(iceServers) && iceServers.length) opts.config = { sdpSemantics: 'unified-plan', iceServers };
-  } catch (e) {}
+    opts.config = { sdpSemantics: 'unified-plan', iceServers: (Array.isArray(iceServers) && iceServers.length) ? iceServers : DEFAULT_ICE_SERVERS };
+  } catch (e) {
+    opts.config = { sdpSemantics: 'unified-plan', iceServers: DEFAULT_ICE_SERVERS };
+  }
   return opts;
 }
 
