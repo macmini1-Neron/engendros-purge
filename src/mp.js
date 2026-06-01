@@ -178,7 +178,7 @@ export class MP {
   _diagAdvice(d) {
     if (!d) return '';
     if (d.error) {
-      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return 'WebRTC route failed after a long attempt. If this repeats across real networks, use a TURN relay.';
+      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return this._forceRelay() ? 'Forced TURN relay failed. The public TURN server is blocked or unavailable on this network.' : 'WebRTC route failed after a long attempt. If this repeats across real networks, use a TURN relay.';
       if (d.error === 'peer-unavailable') return 'No host owns that code right now. Ask the host to re-host or use the public list.';
       return 'Connection failed before the lobby handshake completed.';
     }
@@ -193,6 +193,19 @@ export class MP {
     if ((d.iceTypes || []).includes('relay') || d.selectedType === 'relay') return d.selectedType === 'relay' ? 'TURN relay route active.' : 'TURN relay available.';
     if (d.data && (d.joinokReceived || d.joinokSent)) return 'Lobby handshake OK.';
     return '';
+  }
+  _forceRelay() { try { return localStorage.getItem('engendros_force_relay') === '1'; } catch (e) { return false; } }
+  toggleRelayMode() {
+    const on = !this._forceRelay();
+    try { localStorage.setItem('engendros_force_relay', on ? '1' : '0'); } catch (e) {}
+    this._setLobbyDiag(on ? 'Relay test enabled. Host/join again to use TURN only.' : 'Relay test disabled. Host/join again to use automatic routing.');
+    this._renderRelayMode();
+  }
+  _renderRelayMode() {
+    const b = document.getElementById('mpRelayBtn'); if (!b) return;
+    const on = this._forceRelay();
+    b.textContent = on ? 'RELAY: FORCE' : 'RELAY: AUTO';
+    b.classList.toggle('danger', on);
   }
   _renderNetDiag() {
     const el = document.getElementById('mp-diaggrid');
@@ -446,6 +459,7 @@ export class MP {
     const rb = document.getElementById('mpReadyBtn');
     if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
     this._renderModeSel();
+    this._renderRelayMode();
     this._renderRoomBrowser();
   }
   // ---- game-mode pick (host-authoritative; only the host simulates waves, so the host owns the mode) ----
@@ -471,7 +485,7 @@ export class MP {
     if (note) note.textContent = (mode === 'longnight'
       ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
       : '⚔ Arcade waves — special waves & mini-bosses.')
-      + (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.');
+      + (this._forceRelay() ? ' Relay test forces TURN only.' : (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.'));
   }
   hostStart() {
     if (!this.isHost) return;

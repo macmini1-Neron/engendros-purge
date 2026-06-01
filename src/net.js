@@ -26,6 +26,7 @@ const DEFAULT_ICE_SERVERS = [
   { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 function peerOptions() {
@@ -34,8 +35,10 @@ function peerOptions() {
     const raw = window.ENGENDROS_ICE_SERVERS || localStorage.getItem('engendros_ice_servers');
     const iceServers = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : null);
     opts.config = { sdpSemantics: 'unified-plan', iceServers: (Array.isArray(iceServers) && iceServers.length) ? iceServers : DEFAULT_ICE_SERVERS };
+    if (window.ENGENDROS_FORCE_RELAY || localStorage.getItem('engendros_force_relay') === '1') opts.config.iceTransportPolicy = 'relay';
   } catch (e) {
     opts.config = { sdpSemantics: 'unified-plan', iceServers: DEFAULT_ICE_SERVERS };
+    if (window.ENGENDROS_FORCE_RELAY || localStorage.getItem('engendros_force_relay') === '1') opts.config.iceTransportPolicy = 'relay';
   }
   return opts;
 }
