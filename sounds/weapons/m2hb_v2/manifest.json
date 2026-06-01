@@ -1,0 +1,759 @@
+{
+  "sampleRate": 48000,
+  "bitDepth": 24,
+  "channels": 1,
+  "license": "Derived from CC0/public-domain sources plus local processing. Fire sounds use OpenGameArt-style firearm sources; replaced brass impacts use Freesound CC0 casing recordings.",
+  "sources": [
+    "https://opengameart.org/content/the-free-firearm-sound-library",
+    "https://opengameart.org/content/gun-reload-sounds",
+    "https://opengameart.org/content/equipment-clicks-iii",
+    "https://freesound.org/people/GrayJoy/sounds/210102/",
+    "https://freesound.org/people/Danwardvs/sounds/205126/",
+    "https://freesound.org/people/GryffDavid/sounds/318964/"
+  ],
+  "designNotes": {
+    "chosenDirection": "Use heavy_close and close burst files as the preferred M2HB sound direction.",
+    "bursts": "Burst WAVs are assembled from v2 heavy_close/auto_dry close shots at plausible M2HB 450-600 rpm timings.",
+    "brassV3": "2026-06-01: replaced m2hb_v2_brass_heavy_roof_* and m2hb_v2_brass_short_tick_* with real CC0 shell-casing recordings. Heavy impacts are brass-on-concrete with 2.8/6.1 kHz presence boosts; short ticks are tile/wood/concrete bounce cuts with 3.6/7.8 kHz metallic lift."
+  },
+  "assets": [
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_01.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AK-47/C_28P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_02.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/SKS/U_14P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_03.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AR-15/D_32P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_04.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/PPSh/P_30P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_05.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AK-47/C_28P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_06.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/SKS/U_14P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_07.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AR-15/D_32P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_08.wav",
+      "family": "fire",
+      "variant": "auto_dry",
+      "seconds": 0.42,
+      "peakDbfs": -3.4,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/PPSh/P_30P.wav",
+      "notes": "Real-source-derived auto_dry .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_01.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Tikka/W_29P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_02.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Model 12/K_22P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_03.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Nova/O_21P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_04.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AK-47/C_28P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_05.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/SKS/U_14P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_06.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Tikka/W_29P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_07.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Model 12/K_22P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_08.wav",
+      "family": "fire",
+      "variant": "heavy_close",
+      "seconds": 0.72,
+      "peakDbfs": -2.9,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Nova/O_21P.wav",
+      "notes": "Real-source-derived heavy_close .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_outdoor_real_01.wav",
+      "family": "fire",
+      "variant": "outdoor_real",
+      "seconds": 1.1,
+      "peakDbfs": -3.5,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AK-47/C_28P.wav",
+      "notes": "Real-source-derived outdoor_real .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_outdoor_real_02.wav",
+      "family": "fire",
+      "variant": "outdoor_real",
+      "seconds": 1.1,
+      "peakDbfs": -3.5,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/SKS/U_14P.wav",
+      "notes": "Real-source-derived outdoor_real .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_outdoor_real_03.wav",
+      "family": "fire",
+      "variant": "outdoor_real",
+      "seconds": 1.1,
+      "peakDbfs": -3.5,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Tikka/W_29P.wav",
+      "notes": "Real-source-derived outdoor_real .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_outdoor_real_04.wav",
+      "family": "fire",
+      "variant": "outdoor_real",
+      "seconds": 1.1,
+      "peakDbfs": -3.5,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AR-15/D_32P.wav",
+      "notes": "Real-source-derived outdoor_real .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_outdoor_real_05.wav",
+      "family": "fire",
+      "variant": "outdoor_real",
+      "seconds": 1.1,
+      "peakDbfs": -3.5,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AK-47/C_28P.wav",
+      "notes": "Real-source-derived outdoor_real .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_outdoor_real_06.wav",
+      "family": "fire",
+      "variant": "outdoor_real",
+      "seconds": 1.1,
+      "peakDbfs": -3.5,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/SKS/U_14P.wav",
+      "notes": "Real-source-derived outdoor_real .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_distant_01.wav",
+      "family": "fire",
+      "variant": "distant",
+      "seconds": 1.55,
+      "peakDbfs": -6,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AK-47/C_31P.wav",
+      "notes": "Real-source-derived distant .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_distant_02.wav",
+      "family": "fire",
+      "variant": "distant",
+      "seconds": 1.55,
+      "peakDbfs": -6,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/SKS/U_19P.wav",
+      "notes": "Real-source-derived distant .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_distant_03.wav",
+      "family": "fire",
+      "variant": "distant",
+      "seconds": 1.55,
+      "peakDbfs": -6,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Tikka/W_24P.wav",
+      "notes": "Real-source-derived distant .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_distant_04.wav",
+      "family": "fire",
+      "variant": "distant",
+      "seconds": 1.55,
+      "peakDbfs": -6,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/AK-47/C_31P.wav",
+      "notes": "Real-source-derived distant .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_distant_05.wav",
+      "family": "fire",
+      "variant": "distant",
+      "seconds": 1.55,
+      "peakDbfs": -6,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/SKS/U_19P.wav",
+      "notes": "Real-source-derived distant .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_distant_06.wav",
+      "family": "fire",
+      "variant": "distant",
+      "seconds": 1.55,
+      "peakDbfs": -6,
+      "source": ".tmp_audio_sources/free_firearm_prepared/Prepared SFX Library/Tikka/W_24P.wav",
+      "notes": "Real-source-derived distant .50 cal candidate."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_01.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_02.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_03.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_04.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_05.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_06.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_07.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_08.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_09.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_10.wav",
+      "family": "brass",
+      "variant": "heavy_roof",
+      "seconds": 0.48,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0: GrayJoy - Brass bullet shell casing drop onto concrete, multiple takes (https://freesound.org/people/GrayJoy/sounds/210102/)",
+      "notes": "Real brass-on-concrete one-shot, cropped and shaped for a heavier .50 BMG casing first impact."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_01.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_02.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_03.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_04.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_05.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_06.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_07.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_08.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_09.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_10.wav",
+      "family": "brass",
+      "variant": "short_tick",
+      "seconds": 0.3,
+      "peakDbfs": -9.5,
+      "source": "Freesound CC0 mix: GryffDavid shell casings, Danwardvs .30 shell, GrayJoy brass-on-concrete",
+      "notes": "Real casing bounce/tick one-shot, cropped and brightened for later metal rebounds."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_01.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 0.643,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_02.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 1.015,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_03.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 0.977,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_04.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 0.601,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_05.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 1.028,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_06.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 0.918,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_07.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 0.826,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_dirty_roll_08.wav",
+      "family": "brass",
+      "variant": "dirty_roll",
+      "seconds": 0.782,
+      "peakDbfs": -9.5,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass dirty_roll."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_soft_floor_01.wav",
+      "family": "brass",
+      "variant": "soft_floor",
+      "seconds": 0.169,
+      "peakDbfs": -12,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass soft_floor."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_soft_floor_02.wav",
+      "family": "brass",
+      "variant": "soft_floor",
+      "seconds": 0.224,
+      "peakDbfs": -12,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass soft_floor."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_soft_floor_03.wav",
+      "family": "brass",
+      "variant": "soft_floor",
+      "seconds": 0.175,
+      "peakDbfs": -12,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass soft_floor."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_soft_floor_04.wav",
+      "family": "brass",
+      "variant": "soft_floor",
+      "seconds": 0.207,
+      "peakDbfs": -12,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass soft_floor."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_soft_floor_05.wav",
+      "family": "brass",
+      "variant": "soft_floor",
+      "seconds": 0.124,
+      "peakDbfs": -12,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass soft_floor."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_soft_floor_06.wav",
+      "family": "brass",
+      "variant": "soft_floor",
+      "seconds": 0.227,
+      "peakDbfs": -12,
+      "source": "OpenGameArt CC0 gun reload sounds + equipment_clicks3.wav",
+      "notes": "Real foley-derived brass soft_floor."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_3rnd_600rpm_01.wav",
+      "family": "burst",
+      "variant": "3rnd_600rpm",
+      "seconds": 1,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "3-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_3rnd_600rpm_02.wav",
+      "family": "burst",
+      "variant": "3rnd_600rpm",
+      "seconds": 1,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "3-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_3rnd_600rpm_03.wav",
+      "family": "burst",
+      "variant": "3rnd_600rpm",
+      "seconds": 1,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "3-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_3rnd_600rpm_04.wav",
+      "family": "burst",
+      "variant": "3rnd_600rpm",
+      "seconds": 1,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "3-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_5rnd_600rpm_01.wav",
+      "family": "burst",
+      "variant": "5rnd_600rpm",
+      "seconds": 1.2,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "5-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_5rnd_600rpm_02.wav",
+      "family": "burst",
+      "variant": "5rnd_600rpm",
+      "seconds": 1.2,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "5-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_5rnd_600rpm_03.wav",
+      "family": "burst",
+      "variant": "5rnd_600rpm",
+      "seconds": 1.2,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "5-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_5rnd_600rpm_04.wav",
+      "family": "burst",
+      "variant": "5rnd_600rpm",
+      "seconds": 1.2,
+      "peakDbfs": -2.7,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "5-round close-perspective M2HB burst at about 600 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_8rnd_550rpm_01.wav",
+      "family": "burst",
+      "variant": "8rnd_550rpm",
+      "seconds": 1.364,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "8-round close-perspective M2HB burst at about 550 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_8rnd_550rpm_02.wav",
+      "family": "burst",
+      "variant": "8rnd_550rpm",
+      "seconds": 1.364,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "8-round close-perspective M2HB burst at about 550 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_8rnd_550rpm_03.wav",
+      "family": "burst",
+      "variant": "8rnd_550rpm",
+      "seconds": 1.364,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "8-round close-perspective M2HB burst at about 550 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_8rnd_550rpm_04.wav",
+      "family": "burst",
+      "variant": "8rnd_550rpm",
+      "seconds": 1.364,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "8-round close-perspective M2HB burst at about 550 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_10rnd_ragged_01.wav",
+      "family": "burst",
+      "variant": "10rnd_ragged",
+      "seconds": 1.638,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "10-round close-perspective M2HB burst at about 520 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_10rnd_ragged_02.wav",
+      "family": "burst",
+      "variant": "10rnd_ragged",
+      "seconds": 1.638,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "10-round close-perspective M2HB burst at about 520 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_10rnd_ragged_03.wav",
+      "family": "burst",
+      "variant": "10rnd_ragged",
+      "seconds": 1.638,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "10-round close-perspective M2HB burst at about 520 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_12rnd_500rpm_01.wav",
+      "family": "burst",
+      "variant": "12rnd_500rpm",
+      "seconds": 1.92,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "12-round close-perspective M2HB burst at about 500 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_12rnd_500rpm_02.wav",
+      "family": "burst",
+      "variant": "12rnd_500rpm",
+      "seconds": 1.92,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "12-round close-perspective M2HB burst at about 500 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_12rnd_500rpm_03.wav",
+      "family": "burst",
+      "variant": "12rnd_500rpm",
+      "seconds": 1.92,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "12-round close-perspective M2HB burst at about 500 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_16rnd_450rpm_01.wav",
+      "family": "burst",
+      "variant": "16rnd_450rpm",
+      "seconds": 2.6,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "16-round close-perspective M2HB burst at about 450 rpm."
+    },
+    {
+      "file": "sounds/weapons/m2hb_v2/bursts/m2hb_v2_burst_close_16rnd_450rpm_02.wav",
+      "family": "burst",
+      "variant": "16rnd_450rpm",
+      "seconds": 2.6,
+      "peakDbfs": -3.2,
+      "source": "m2hb_v2_fire_heavy_close_* + m2hb_v2_fire_auto_dry_*",
+      "notes": "16-round close-perspective M2HB burst at about 450 rpm."
+    }
+  ]
+}

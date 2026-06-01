@@ -1,4 +1,5 @@
-// audio.js — fully procedural SFX + music via Web Audio. No asset files needed.
+// audio.js — Web Audio SFX + music. Most sounds are procedural; selected hero
+// weapon sounds use recorded-source WAV assets with procedural fallback.
 export class AudioManager {
   constructor() {
     this.ctx = null;
@@ -13,6 +14,15 @@ export class AudioManager {
     // real recorded crew-radio line (assets/crew-lines.mp3), wired through a comms-band filter in init()
     this._crewEl = null; this._crewSrc = null; this._crewGain = null; this._crewFailed = false;
     this._jetFailed = false; // real jet.mp3 may fail async (404/decode/autoplay) — callers degrade to procedural startJet()
+    this._sampleBuffers = new Map();
+    this._samplePromises = new Map();
+    this._sampleIdx = {};
+    this._m2SamplesPrimed = false;
+    this._m2 = {
+      fireClose: Array.from({ length: 8 }, (_, i) => `sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_${String(i + 1).padStart(2, '0')}.wav`),
+      brassHeavy: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_${String(i + 1).padStart(2, '0')}.wav`),
+      brassTick: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_${String(i + 1).padStart(2, '0')}.wav`),
+    };
   }
 
   // Must be created/resumed from a user gesture.
@@ -30,6 +40,7 @@ export class AudioManager {
     this.musicGain.gain.value = this.musicVolume;
     this.musicGain.connect(this.master);
     this._initCrewLine();
+    this._primeM2Samples();
   }
 
   // Load the real recorded crew-radio line and route it through a telephone/radio band
@@ -87,6 +98,60 @@ export class AudioManager {
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 1; }
 
   get t() { return this.ctx ? this.ctx.currentTime : 0; }
+
+  _loadSample(path) {
+    if (!this.ctx) return null;
+    if (this._sampleBuffers.has(path)) return Promise.resolve(this._sampleBuffers.get(path));
+    if (this._samplePromises.has(path)) return this._samplePromises.get(path);
+    const p = fetch(path)
+      .then((r) => { if (!r.ok) throw new Error(`${r.status} ${path}`); return r.arrayBuffer(); })
+      .then((buf) => this.ctx.decodeAudioData(buf))
+      .then((decoded) => { this._sampleBuffers.set(path, decoded); return decoded; })
+      .catch((e) => { if (typeof console !== 'undefined') console.warn('[audio] sample load failed', path, e); return null; });
+    this._samplePromises.set(path, p);
+    return p;
+  }
+
+  _primeM2Samples() {
+    if (!this.ctx || this._m2SamplesPrimed) return;
+    this._m2SamplesPrimed = true;
+    for (const p of [...this._m2.fireClose, ...this._m2.brassHeavy, ...this._m2.brassTick]) this._loadSample(p);
+  }
+
+  _pickSample(key, paths) {
+    if (!paths || !paths.length) return null;
+    if (this._sampleIdx[key] == null) this._sampleIdx[key] = Math.floor(Math.random() * paths.length);
+    else this._sampleIdx[key] = (this._sampleIdx[key] + 1) % paths.length;
+    return paths[this._sampleIdx[key]];
+  }
+
+  _playSample(path, { vol = 1, rate = 1, when = this.t, dest = null } = {}) {
+    if (!this.ctx || !path) return false;
+    const buf = this._sampleBuffers.get(path);
+    if (!buf) { this._loadSample(path); return false; }
+    const src = this.ctx.createBufferSource();
+    const g = this.ctx.createGain();
+    src.buffer = buf;
+    src.playbackRate.value = Math.max(0.25, rate);
+    g.gain.value = vol;
+    src.connect(g); g.connect(dest || this.sfxGain);
+    src.start(when);
+    return true;
+  }
+
+  _playM2CloseShot() {
+    const path = this._pickSample('m2FireClose', this._m2.fireClose);
+    return this._playSample(path, { vol: 0.78 + Math.random() * 0.12, rate: 0.985 + Math.random() * 0.03 });
+  }
+
+  _playM2BrassSample(scale, bounceIndex) {
+    const paths = bounceIndex === 0 ? this._m2.brassHeavy : this._m2.brassTick;
+    const path = this._pickSample(bounceIndex === 0 ? 'm2BrassHeavy' : 'm2BrassTick', paths);
+    return this._playSample(path, {
+      vol: Math.min(0.5, Math.max(0.05, 0.34 * scale)),
+      rate: 0.96 + Math.random() * 0.09,
+    });
+  }
 
   _noiseBuffer(dur) {
     const n = Math.floor(this.ctx.sampleRate * dur);
@@ -197,6 +262,7 @@ export class AudioManager {
   }
   fiftyShot() { // one .50 round: muzzle pressure + supersonic crack + heavy bolt + belt rattle + mount resonance
     if (!this.ctx) return;
+    if (this._playM2CloseShot()) return;
     const t0 = this.t, pv = 0.97 + Math.random() * 0.06, vv = 0.92 + Math.random() * 0.16;
     // L1 muzzle pressure — deep boom (sine sub + saw body)
     const o1 = this.ctx.createOscillator(), g1 = this.ctx.createGain();
@@ -270,6 +336,7 @@ export class AudioManager {
     const fall = Math.max(0.22, Math.min(1.15, impactVel / 6.5));
     const s = fall * Math.pow(0.58, bounceIndex);
     if (s < 0.08) return;
+    if (this._playM2BrassSample(s, bounceIndex)) return;
     const bodyFreq = 230 + Math.random() * 210;
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = 'triangle'; o.frequency.setValueAtTime(bodyFreq, t0); o.frequency.exponentialRampToValueAtTime(bodyFreq * 0.72, t0 + 0.08);

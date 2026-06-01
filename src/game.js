@@ -19,7 +19,7 @@ import { Admin } from './admin.js';
 import { MP } from './mp.js';
 import { Engine } from './engine.js?e=2';
 import { Input } from './input.js';
-import { AudioManager } from './audio.js?v=149';
+import { AudioManager } from './audio.js?v=150';
 import { Effects } from './effects.js';
 
 // --- build identity (shown bottom-right in the co-op lobby) ---
@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-01 00:29';
+const GAME_BUILD = '2026-06-01 00:48';
 
 class Game {
   constructor() {
