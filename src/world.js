@@ -237,9 +237,11 @@ export class World {
     }
   }
 
-  rayHit(origin, dir, maxDist) {
+  rayHit(origin, dir, maxDist, ignore = null) {
     let best = maxDist, hitBox = null;
+    const ignored = Array.isArray(ignore) ? ignore : null;
     for (const b of this.boxes) {
+      if (b === ignore || (ignored && ignored.includes(b))) continue;
       const t = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, b.min, b.max);
       if (t !== null && t < best) { best = t; hitBox = b; }
     }

@@ -1,6 +1,6 @@
 // weapons.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, clamp, damp, rr, shade, voxelMaterial, weightedPick } from './util.js?u=3';
+import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js?u=3';
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js?e=2';
@@ -777,6 +777,23 @@ export function buildMag(cfg) {
   return m;
 }
 
+function addFiftyLiveRound(b, x, y, z, { axis = 'y', scale = 1, link = true } = {}) {
+  const brass = 0xcaa64a, brassHi = 0xe2c56b, brassLo = 0x8c6b2e, linkC = 0x26282d, copper = 0xb5763a;
+  const orient = axis === 'z' ? { rx: Math.PI / 2 } : axis === 'z-' ? { rx: -Math.PI / 2 } : {};
+  const place = (off) => (axis === 'z' || axis === 'z-') ? [x, y, z + off * scale] : [x, y + off * scale, z];
+  const cyl = (rt, rb, len, off, col, extra = {}) => {
+    const g = new THREE.CylinderGeometry(rt * scale, rb * scale, len * scale, extra.seg || 10);
+    const p = place(off);
+    b.geo(g, p[0], p[1], p[2], col, { ...orient, tint: extra.tint || 0 });
+    g.dispose();
+  };
+  cyl(0.026, 0.030, 0.155, -0.006, brass, { tint: 0.03 });
+  cyl(0.034, 0.034, 0.016, -0.089, brassHi, { tint: 0.02 });
+  cyl(0.027, 0.027, 0.012, -0.070, brassLo);
+  if (link) cyl(0.037, 0.037, 0.030, -0.030, linkC, { seg: 8 });
+  cyl(0.006, 0.024, 0.092, 0.108, copper, { tint: 0.02 });
+}
+
 // ---------------------------------------------------------------------------
 // WeaponSystem — ownership, rarity, ammo, firing (guns + melee), ADS, grenades.
 // ---------------------------------------------------------------------------
@@ -1219,14 +1236,14 @@ export class MountedGun {
     this.game = game;
     this.base = pos.clone();
     this.baseYaw = yaw; this.yaw = yaw; this.pitch = 0;
-    this.heat = 0; this.overheated = false; this.cd = 0;
+    this.heat = 0; this.overheated = false; this.cd = 0; this.readyToFire = true;
     this.dmg = 65; this.rpm = 600; this.range = 380; this.spread = 0.012;
     this.pivot = pos.clone(); this.pivot.y += 1.05;
     this.beltRounds = []; this._smokeT = 0;
     this.occupant = null; // co-op: id currently manning the gun (null / 'host' / a peer id); host-authoritative
     this._aimT = 0;       // throttle timer for the aim broadcast
-    this._chargedOnce = false; this._nearWas = false; // first approach/mount plays the real two-cycle charge once per run
-    this._roundSeq = 0;   // every third .50 BMG round is a visible red tracer
+    this._nearWas = false;
+    this._roundSeq = 0;   // every third .50 BMG round gets a warmer tracer color
     this._build();
   }
 
@@ -1282,8 +1299,10 @@ export class MountedGun {
     // cosmetic iron sights (the ring "AA" sight below stays the aiming device)
     gb.box(0.045, 0.07, 0.03, 0, 0.275, 0.30, bLo); gb.box(0.05, 0.018, 0.02, 0, 0.31, 0.30, bBright);   // folded leaf rear
     gb.box(0.03, 0.09, 0.03, 0, 0.15, -1.16, bLo); gb.box(0.012, 0.03, 0.012, 0, 0.20, -1.16, bBright);  // front blade
-    // charging handle (right)
-    gb.box(0.05, 0.05, 0.22, 0.16, 0.06, 0.18, bLo); gb.box(0.04, 0.07, 0.04, 0.16, 0.06, 0.30, bBright);
+    // right-side retracting slide slot: the handle itself is a separate animated mesh below
+    gb.box(0.018, 0.065, 0.76, 0.153, 0.06, 0.18, bSlot);
+    gb.box(0.016, 0.012, 0.76, 0.162, 0.10, 0.18, bBright);
+    gb.box(0.016, 0.012, 0.76, 0.162, 0.02, 0.18, bLo);
     // feed throat (belt enters the LEFT-top of the receiver; can sits on the left, belt feeds rightward in)
     gb.box(0.12, 0.13, 0.18, -0.11, 0.07, -0.02, bLo); gb.box(0.10, 0.02, 0.12, -0.11, 0.135, -0.02, bSlot);
     // spade grips + butterfly trigger (rear)
@@ -1309,11 +1328,9 @@ export class MountedGun {
     gb.box(0.30, 0.05, 0.04, -0.42, -0.05, 0.385, oLo);                        // front-face shadow band
     for (let i = 0; i < 7; i++) gb.box(0.022, 0.026, 0.006, -0.55 + i * 0.038, -0.05, 0.388, stencil); // "CAL .50" stencil
     gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.10, bBright, { rz: 0.3 }); gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.22, bBright, { rz: 0.3 }); gb.box(0.075, 0.02, 0.02, -0.64, 0.05, 0.16, bBright); // folding wire bail handle
-    { const cc = 0xcaa64a, kk = 0x26282d, pp = 0xb5763a; // linked .50 rounds packed inside (top layer): brass cases, dark links, copper noses
+    { // linked live .50 BMG rounds packed inside: brass case, rim/groove, dark link, copper bullet
       for (let i = 0; i < 5; i++) { const cx = -0.51 + i * 0.046;
-        const cs = new THREE.CylinderGeometry(0.022, 0.024, 0.18, 8); gb.geo(cs, cx, -0.05, 0.20, cc, { rx: Math.PI / 2, tint: 0.03 }); cs.dispose();  // brass case
-        const lk = new THREE.CylinderGeometry(0.028, 0.028, 0.05, 8); gb.geo(lk, cx, -0.05, 0.27, kk, { rx: Math.PI / 2 }); lk.dispose();              // dark steel link (at the base, back +z)
-        const tp = new THREE.CylinderGeometry(0.006, 0.020, 0.09, 8); gb.geo(tp, cx, -0.05, 0.07, pp, { rx: -Math.PI / 2 }); tp.dispose();             // copper bullet, nose kept inside the box
+        addFiftyLiveRound(gb, cx, -0.05, 0.19, { axis: 'z-', scale: 0.82, link: true });
       } }
     this.body = new THREE.Mesh(gb.build(), voxelMaterial()); this.body.castShadow = true; this.gun.add(this.body);
 
@@ -1325,13 +1342,23 @@ export class MountedGun {
     this.barrel = new THREE.Mesh(bb.build(), this.barrelMat); this.gun.add(this.barrel);
     this.barrelMat.color.setRGB(0.25, 0.27, 0.31); this.barrelMat.emissive.setRGB(0, 0, 0); this.barrelMat.emissiveIntensity = 0; // cold = normal blued steel (not white) until heat ramps it
 
+    // right-side charging handle / retracting slide group: pulled rearward (+Z) when someone mans the gun
+    const hb = new MeshBuilder();
+    hb.box(0.06, 0.07, 0.17, 0.185, 0.06, 0.16, bLo, { tint: 0.02 });          // sliding shoe riding in the right-side slot
+    hb.box(0.018, 0.075, 0.18, 0.222, 0.06, 0.16, bHi);                       // exposed outer face
+    { const grip = new THREE.CylinderGeometry(0.034, 0.034, 0.25, 12); hb.geo(grip, 0.325, 0.065, 0.22, bBright, { rz: Math.PI / 2, tint: 0.02 }); grip.dispose(); }
+    { const cap = new THREE.CylinderGeometry(0.039, 0.039, 0.024, 12); hb.geo(cap, 0.455, 0.065, 0.22, bLo, { rz: Math.PI / 2 }); cap.dispose(); }
+    hb.box(0.035, 0.02, 0.12, 0.255, 0.064, 0.11, bSlot);                     // shadow under the handle stem
+    this.chargeHandle = new THREE.Mesh(hb.build(), voxelMaterial());
+    this.chargeHandle.castShadow = true;
+    this.gun.add(this.chargeHandle);
+    this._chargeAnimT = -1;
+    this._updateChargeHandle(0);
+
     this.belt = new THREE.Group(); this.gun.add(this.belt);
-    // one linked .50 BMG round: brass case + dark steel link band + copper bullet (vertex-coloured shared geo)
+    // one linked live .50 BMG round: same brass/rim/groove + copper projectile style used in the ammo can
     { const rbld = new MeshBuilder();
-      const caseC = 0xcaa64a, linkC = 0x26282d, copC = 0xb5763a;
-      const cs = new THREE.CylinderGeometry(0.028, 0.030, 0.13, 8); rbld.geo(cs, 0, -0.01, 0, caseC, { tint: 0.03 }); cs.dispose();  // brass case (axis +Y)
-      const lk = new THREE.CylinderGeometry(0.034, 0.034, 0.05, 8); rbld.geo(lk, 0, -0.03, 0, linkC); lk.dispose();                  // dark steel link band
-      const tp = new THREE.CylinderGeometry(0.008, 0.026, 0.07, 8); rbld.geo(tp, 0, 0.085, 0, copC); tp.dispose();                   // copper bullet (points +Y)
+      addFiftyLiveRound(rbld, 0, 0, 0, { axis: 'y', scale: 1, link: true });
       this._beltGeo = rbld.build(); this._beltMat = voxelMaterial(); }
     for (let i = 0; i < 9; i++) {
       const r = new THREE.Mesh(this._beltGeo, this._beltMat);
@@ -1352,14 +1379,85 @@ export class MountedGun {
     this._sightCenter = new THREE.Vector3(sx, sy, sz);
     this._camLocal = new THREE.Vector3(sx, sy, sz + 0.98); // eye sits behind the gun (stand behind it, not in it)
     this._layoutBelt();
+    this._solidBoxes = this._makeCollisionBoxes();
+    this.game.world.boxes.push(...this._solidBoxes);
+    this.updateCollisionBoxes();
+  }
+
+  _partBox(space, c, h, id) {
+    return {
+      min: new THREE.Vector3(), max: new THREE.Vector3(),
+      mountedGun: true, _ref: this, _space: space, _id: id,
+      _c: new THREE.Vector3(c[0], c[1], c[2]),
+      _h: new THREE.Vector3(h[0], h[1], h[2])
+    };
+  }
+
+  _partSegments(space, id, x, y, z, hx, hy, hz, count) {
+    const boxes = [];
+    const step = (hz * 2) / count;
+    const segH = step * 0.54;
+    const start = z - hz + step * 0.5;
+    for (let i = 0; i < count; i++) boxes.push(this._partBox(space, [x, y, start + i * step], [hx, hy, segH], `${id}${i}`));
+    return boxes;
+  }
+
+  _makeCollisionBoxes() {
+    return [
+      ...this._partSegments('gun', 'receiver', 0, 0.04, 0.05, 0.155, 0.205, 0.55, 3),
+      ...this._partSegments('gun', 'topCover', 0, 0.22, 0.00, 0.13, 0.075, 0.44, 3),
+      ...this._partSegments('gun', 'barrelJacket', 0, 0.02, -0.82, 0.115, 0.115, 0.43, 4),
+      ...this._partSegments('gun', 'barrel', 0, 0.02, -1.74, 0.075, 0.075, 0.64, 8),
+      this._partBox('gun', [-0.42, -0.07, 0.16], [0.18, 0.19, 0.235], 'ammoCan'),
+      this._partBox('gun', [-0.21, -0.13, 0.62], [0.07, 0.25, 0.075], 'leftSpadeGrip'),
+      this._partBox('gun', [0.21, -0.13, 0.62], [0.07, 0.25, 0.075], 'rightSpadeGrip'),
+      this._partBox('gun', [0, 0.0, 0.62], [0.255, 0.045, 0.055], 'gripCrossbar'),
+      this._partBox('tripod', [0, 0.52, 0], [0.09, 0.53, 0.09], 'pintlePost'),
+      this._partBox('tripod', [0, 1.0, 0], [0.11, 0.065, 0.11], 'pintleCollar'),
+      this._partBox('tripod', [0, 0.025, 0], [0.16, 0.03, 0.16], 'basePlate')
+    ];
+  }
+
+  _setBoxFromLocal(box, matrixWorld) {
+    const mn = box.min.set(Infinity, Infinity, Infinity);
+    const mx = box.max.set(-Infinity, -Infinity, -Infinity);
+    const c = box._c, h = box._h, p = MountedGun._boxTmp || (MountedGun._boxTmp = new THREE.Vector3());
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      p.set(c.x + h.x * sx, c.y + h.y * sy, c.z + h.z * sz).applyMatrix4(matrixWorld);
+      mn.min(p); mx.max(p);
+    }
+    mn.addScalar(-0.004); mx.addScalar(0.004);
+  }
+
+  updateCollisionBoxes() {
+    if (!this._solidBoxes || !this.gun || !this.tripod) return;
+    this.gun.updateMatrixWorld(true);
+    this.tripod.updateMatrixWorld(true);
+    for (const box of this._solidBoxes) this._setBoxFromLocal(box, box._space === 'tripod' ? this.tripod.matrixWorld : this.gun.matrixWorld);
   }
 
   _beltPos(t, out) { const climb = Math.min(1, t / 0.4); return out.set(-0.40 + t * 0.29, -0.02 + 0.16 * climb + Math.sin(t * Math.PI) * 0.02, 0.14 - t * 0.16); } // starts DOWN inside the box, climbs out, feeds right into the throat
   _layoutBelt() { const v = new THREE.Vector3(); for (const r of this.beltRounds) { this._beltPos(r.t, v); r.mesh.position.copy(v); r.mesh.rotation.set(-Math.PI / 2, 0, 0); } } // cartridges lined up across the belt, bullets pointing forward
 
   near(p) { return Math.hypot(p.x - this.base.x, p.z - this.base.z) < 2.4 && Math.abs(p.y - this.base.y) < 2.8; }
+  lookingAt(maxDist = 3.6) {
+    if (!this._solidBoxes || !this._solidBoxes.length) return false;
+    this.updateCollisionBoxes();
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    let direct = Infinity;
+    for (const box of this._solidBoxes) {
+      const t = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, box.min, box.max);
+      if (t !== null && t < direct) direct = t;
+    }
+    if (!Number.isFinite(direct) || direct > maxDist) return false;
+    const first = this.game.world.rayHit(origin, dir, maxDist);
+    return !first || this._solidBoxes.includes(first.box) || first.dist + 0.03 >= direct;
+  }
+  canMount(p) { return !this.overheated && this.near(p) && this.lookingAt(); }
 
-  idleCool(dt) { if (this.heat > 0) this.update(dt, false); } // the .50 keeps cooling (+ barrel glow fades / smoke vents) even when unmanned
+  idleCool(dt) { if (this.heat > 0 || this._chargeAnimT >= 0) this.update(dt, false); } // the .50 keeps cooling/animating even when nobody local is manning it
 
   _playFiftyCharge() {
     const audio = this.game.audio;
@@ -1367,6 +1465,28 @@ export class MountedGun {
     if (typeof audio.fiftyCharge === 'function') { audio.fiftyCharge(); return true; }
     if (typeof audio.reloadIn === 'function') { audio.reloadIn(); return true; }
     return false;
+  }
+  animateCharge() {
+    this._chargeAnimT = 0;
+    this._updateChargeHandle(0);
+  }
+  _chargeCurve(t) {
+    const cycleStart = t < 0.58 ? 0 : 0.58;
+    const u = t - cycleStart;
+    if (u < 0 || u > 0.52) return 0;
+    const smooth = (x) => x * x * (3 - 2 * x);
+    if (u < 0.34) return smooth(u / 0.34);
+    return 1 - smooth((u - 0.34) / 0.18);
+  }
+  _updateChargeHandle(dt) {
+    if (!this.chargeHandle) return;
+    if (this._chargeAnimT >= 0) {
+      this._chargeAnimT += dt;
+      if (this._chargeAnimT > 1.16) { this._chargeAnimT = -1; this.readyToFire = true; }
+    }
+    const pull = this._chargeAnimT >= 0 ? this._chargeCurve(this._chargeAnimT) : 0;
+    this.chargeHandle.position.set(0.006 * Math.sin(pull * Math.PI), 0, pull * 0.34);
+    this.chargeHandle.rotation.set(0, 0, -0.08 * pull);
   }
   _playFiftyShot() {
     const audio = this.game.audio;
@@ -1386,18 +1506,20 @@ export class MountedGun {
     if (mp && mp.active && mp.net) mp.net.broadcast('fiftysound', { pid: mp.myId, k: kind });
   }
   _primeCharge() {
-    if (this._chargedOnce) return;
-    if (this._playFiftyCharge()) { this._chargedOnce = true; this._broadcastFiftySound('charge'); }
+    this.readyToFire = false;
+    this.animateCharge();
+    this._playFiftyCharge();
+    this._broadcastFiftySound('charge');
   }
   updateNearby(p) {
-    const isNear = this.near(p);
-    if (isNear && !this._nearWas) this._primeCharge();
-    this._nearWas = isNear;
-    return isNear;
+    const canUse = this.canMount(p);
+    this._nearWas = canUse;
+    return canUse;
   }
   _netVec(v, digits = 2) { return [+v.x.toFixed(digits), +v.y.toFixed(digits), +v.z.toFixed(digits)]; }
   _muzzleWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0, 0.02, -2.38)); }
   _ejectPortWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0.22, 0.0, 0.12)); }
+  _forwardWorld() { this.gun.updateMatrixWorld(); return new THREE.Vector3(0, 0, -1).applyQuaternion(this.gun.getWorldQuaternion(new THREE.Quaternion())).normalize(); }
   _rightWorld() { this.gun.updateMatrixWorld(); return new THREE.Vector3(1, 0, 0).applyQuaternion(this.gun.getWorldQuaternion(new THREE.Quaternion())).normalize(); }
 
   // real seating (no claim check) — pin player to the gun, hide held weapon
@@ -1412,6 +1534,7 @@ export class MountedGun {
   }
   // claim-gated entry: solo seats immediately; co-op asks the host (host grants on first-come)
   mount() {
+    if (this.overheated) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED', 0xd23a2a); return; }
     const mp = this.game.mp;
     if (!mp || !mp.active) { this._doMount(); return; }          // solo: seat immediately (unchanged)
     if (mp.isHost) mp._hostFiftyClaim('mount', 'host');           // host: claim locally
@@ -1441,9 +1564,11 @@ export class MountedGun {
     this._doDismount();
     if (mp && mp.active && wasMe) { if (mp.isHost) mp._hostFiftyClaim('dismount', 'host'); else mp.net.send('fiftyclaim', { want: 'dismount' }); }
     this.occupant = null; // session/round reset clears the seat everywhere
-    this._chargedOnce = false; this._nearWas = false;
+    this._nearWas = false;
     this._roundSeq = 0;
-    this.heat = 0; this.overheated = false; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
+    this.heat = 0; this.overheated = false; this.readyToFire = true; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
+    this._chargeAnimT = -1; this._updateChargeHandle(0);
+    this.updateCollisionBoxes();
     if (this.game.hud) { this.game.hud.hideHeat(); if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = ''; }
   }
 
@@ -1454,6 +1579,7 @@ export class MountedGun {
     this.yaw = clamp(this.yaw, this.baseYaw - 1.1, this.baseYaw + 1.1);
     this.pitch = clamp(this.pitch, -0.45, 0.45);
     this.gun.rotation.set(this.pitch, this.yaw, 0);
+    this.updateCollisionBoxes();
     { const mp = this.game.mp; if (mp && mp.active) { this._aimT = (this._aimT || 0) - dt; if (this._aimT <= 0) { this._aimT = 0.1; mp.net.broadcast('fiftyaim', { pid: mp.myId, yaw: +this.yaw.toFixed(3), pitch: +this.pitch.toFixed(3), heat: +this.heat.toFixed(2) }); } } } // co-op: slew the barrel + share heat (glow/smoke) on every screen (~10Hz)
     const cam = this.game.engine.camera; cam.rotation.order = 'YXZ';
     // Place the eye rigidly on the gun's firing axis, behind the ring sight, and
@@ -1467,7 +1593,7 @@ export class MountedGun {
     cam.rotation.set(this.pitch + (Math.random() - 0.5) * _sh, this.yaw + (Math.random() - 0.5) * _sh, (Math.random() - 0.5) * _sh * 0.6);
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
     if (this.cd > 0) this.cd -= dt;
-    const firing = input.buttons[0] && !this.overheated;
+    const firing = input.buttons[0] && this.readyToFire && !this.overheated;
     if (firing && this.cd <= 0) this._fire();
     this.update(dt, firing);
     this.game.hud.setHeat(this.heat, this.overheated);
@@ -1489,6 +1615,7 @@ export class MountedGun {
     this.heat = Math.min(1, this.heat + 0.02);
     this._roundSeq = (this._roundSeq || 0) + 1;
     const tracerColor = (this._roundSeq % 3 === 0) ? 0xff2418 : 0xffe08a;
+    const caseSeed = (Math.random() * 0xffffffff) >>> 0;
     if (this.heat >= 1) this.overheated = true;
     this._shake = Math.min(0.013, (this._shake || 0) + 0.0045); // very slight camera knock per shot
     this._recoil = Math.min(0.07, (this._recoil || 0) + 0.035);  // heavy recoil shove — makes the .50 feel massive
@@ -1496,13 +1623,14 @@ export class MountedGun {
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
     const muzzle = origin.clone().addScaledVector(fwd, 2.1); muzzle.y += 0.04;
-    const barrelMuzzle = this._muzzleWorld(), ejectPort = this._ejectPortWorld(), ejectRight = this._rightWorld();
-    this.game.effects.muzzleFlash(muzzle, fwd, 1.8);
+    const barrelMuzzle = this._muzzleWorld(), barrelFwd = this._forwardWorld(), ejectPort = this._ejectPortWorld(), ejectRight = this._rightWorld();
+    const muzzleFx = barrelMuzzle.clone().addScaledVector(barrelFwd, 0.22);
+    this.game.effects.muzzleFlash(muzzleFx, barrelFwd, 2.2);
     this._playFiftyShot();
-    this.game.effects.shell(ejectPort, ejectRight.clone(), { size: 0.1, color: 0xcaa64a, sound: 'fiftyBrass', life: 1.9, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1 }); // big brass .50 case flung out the gun's RIGHT ejection port
+    this.game.effects.shell(ejectPort, ejectRight.clone(), { mesh: 'fiftyCase', size: 1, color: 0xcaa64a, sound: 'fiftyBrass', life: 5, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1, seed: caseSeed }); // big brass .50 case flung out the gun's RIGHT ejection port
     const dir = fwd.clone(); dir.x += rr(-this.spread, this.spread); dir.y += rr(-this.spread, this.spread); dir.z += rr(-this.spread, this.spread); dir.normalize();
     const eHit = this.game.enemies.rayHit(muzzle, dir, this.range);
-    const wHit = this.game.world.rayHit(muzzle, dir, this.range);
+    const wHit = this.game.world.rayHit(muzzle, dir, this.range, this._solidBoxes);
     const mp = this.game.mp;
     const pHit = (mp && mp.active) ? mp.rayHitPlayers(muzzle, dir, this.range) : null;
     let end;
@@ -1510,20 +1638,21 @@ export class MountedGun {
       const dmg = this.dmg * (pHit.head ? 1.6 : 1) * this.game.player.damageMult;
       mp.claimPlayerHit(pHit.id, dmg);
       end = pHit.point;
-      this.game.effects.tracer(muzzle, end, tracerColor);
+      this.game.effects.tracer(muzzleFx, end, tracerColor);
       this.game.hud.hitmarker(false);
     } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
       const dmg = this.dmg * (eHit.head ? 1.6 : 1) * this.game.player.damageMult;
       const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
       end = eHit.point;
-      this.game.effects.tracer(muzzle, end, tracerColor);
+      this.game.effects.tracer(muzzleFx, end, tracerColor);
       if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
-    } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzle, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
-    else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzle, end, tracerColor); }
-    if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(barrelMuzzle), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
+    } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzleFx, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
+    else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzleFx, end, tracerColor); }
+    if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(muzzleFx), d: this._netVec(barrelFwd, 3), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor, rs: caseSeed }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
   }
 
   update(dt, firing) {
+    this._updateChargeHandle(dt);
     if (!firing) this.heat = Math.max(0, this.heat - 0.3 * dt);
     if (this.overheated && this.heat < 0.3) this.overheated = false;
     const h = this.heat;

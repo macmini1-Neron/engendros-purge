@@ -302,14 +302,15 @@ export class MP {
     n.on('fiftystate', (d) => { if (!this.isHost && d) this._applyFiftyState(d); });                              // host → clients: who owns the seat now
     n.on('fiftyfire', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate firing the .50cal: muzzle + tracer + shot/brass sound (damage is host-authoritative)
       const o = V(d.o), e = V(d.e);
-      g.effects.muzzleFlash(o, e.clone().sub(o).normalize(), 1.8);
+      const dir = d.d ? V(d.d).normalize() : e.clone().sub(o).normalize();
+      g.effects.muzzleFlash(o, dir, 2.2);
       g.effects.tracer(o, e, d.c != null ? d.c : 0xffe08a);
-      if (d.s && d.r) g.effects.shell(V(d.s), V(d.r).normalize(), { size: 0.1, color: 0xcaa64a, sound: 'fiftyBrass', life: 1.9, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1 });
+      if (d.s && d.r) g.effects.shell(V(d.s), V(d.r).normalize(), { mesh: 'fiftyCase', size: 1, color: 0xcaa64a, sound: 'fiftyBrass', life: 5, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1, seed: d.rs });
       if (g.audio && typeof g.audio.fiftyShot === 'function') g.audio.fiftyShot(); else if (g.audio && typeof g.audio.gunshot === 'function') g.audio.gunshot(SOUND_BY_CLASS.fiftycal); });
     n.on('fiftysound', (d) => { if (!d || d.pid === this.myId || !d.k) return; // non-shot .50cal foley: charging handle / overheat should be audible to nearby peers too
-      if (d.k === 'charge') { if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
+      if (d.k === 'charge') { if (g.mountedGun && typeof g.mountedGun.animateCharge === 'function') g.mountedGun.animateCharge(); if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
       else if (d.k === 'overheat') { if (g.audio && typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (g.audio && typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); } });
-    n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) gun.gun.rotation.set(d.pitch, d.yaw, 0); if (gun && d.heat != null) gun.heat = d.heat; }); // slew the barrel + mirror heat so everyone sees the glow + smoke + overheat
+    n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; }); // slew the barrel + mirror heat so everyone sees the glow + smoke + overheat
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
@@ -356,7 +357,7 @@ export class MP {
   // ---- rooftop .50cal seat (host-authoritative single occupant) ----
   _hostFiftyClaim(want, from) {
     if (!this.isHost) return; const gun = this.game.mountedGun; if (!gun) return;
-    if (want === 'mount') { if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { occ: gun.occupant }); return; } }
+    if (want === 'mount') { if (gun.overheated) { this.net.sendTo(from, 'fiftystate', { occ: gun.occupant }); return; } if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { occ: gun.occupant }); return; } }
     else if (want === 'dismount') { if (gun.occupant === from) gun.occupant = null; }
     this._applyFiftyState({ occ: gun.occupant }); this.net.send('fiftystate', { occ: gun.occupant });
   }

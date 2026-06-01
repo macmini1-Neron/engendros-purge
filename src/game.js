@@ -7,7 +7,7 @@ import { TAU, randRange } from './util.js?u=3';
 import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER } from './tuning.js';
 import { KEY_CASH } from './economy.js';
 import { buildFlare, buildFlopo } from './props.js';
-import { MountedGun, WeaponSystem } from './weapons.js';
+import { MountedGun, WeaponSystem } from './weapons.js?v=12';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
@@ -16,18 +16,18 @@ import { Inventory, Shop } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
-import { MP } from './mp.js';
+import { MP } from './mp.js?v=7';
 import { Engine } from './engine.js?e=2';
 import { Input } from './input.js';
-import { AudioManager } from './audio.js?v=150';
-import { Effects } from './effects.js';
+import { AudioManager } from './audio.js?v=151';
+import { Effects } from './effects.js?v=7';
 
 // --- build identity (shown bottom-right in the co-op lobby) ---
 // GAME_VERSION auto-tracks the ?v= cache-bust on this module's own URL, so it can't drift from
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-01 00:48';
+const GAME_BUILD = '2026-06-01 10:56';
 
 class Game {
   constructor() {
@@ -125,7 +125,7 @@ class Game {
         if (_ct && this.player.inTank === _ct) { _ct.leave(); return; }
         // ---- .50 cal + loot ----
         if (this.player.mountedGun) this.player.mountedGun.dismount();
-        else if (this.mountedGun.near(this.player.pos)) this.mountedGun.mount();
+        else if (this.mountedGun.canMount(this.player.pos)) this.mountedGun.mount();
         // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
         else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
         else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }

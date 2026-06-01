@@ -22,6 +22,7 @@ export class AudioManager {
       fireClose: Array.from({ length: 8 }, (_, i) => `sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_${String(i + 1).padStart(2, '0')}.wav`),
       brassHeavy: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_${String(i + 1).padStart(2, '0')}.wav`),
       brassTick: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_${String(i + 1).padStart(2, '0')}.wav`),
+      charge: ['sounds/weapons/m2hb_v2/foley/m2hb_v2_charge_handle_real_01.wav'],
     };
   }
 
@@ -115,7 +116,7 @@ export class AudioManager {
   _primeM2Samples() {
     if (!this.ctx || this._m2SamplesPrimed) return;
     this._m2SamplesPrimed = true;
-    for (const p of [...this._m2.fireClose, ...this._m2.brassHeavy, ...this._m2.brassTick]) this._loadSample(p);
+    for (const p of [...this._m2.fireClose, ...this._m2.brassHeavy, ...this._m2.brassTick, ...this._m2.charge]) this._loadSample(p);
   }
 
   _pickSample(key, paths) {
@@ -151,6 +152,11 @@ export class AudioManager {
       vol: Math.min(0.5, Math.max(0.05, 0.34 * scale)),
       rate: 0.96 + Math.random() * 0.09,
     });
+  }
+
+  _playM2ChargeSample() {
+    const path = this._pickSample('m2Charge', this._m2.charge);
+    return this._playSample(path, { vol: 0.92, rate: 0.98 + Math.random() * 0.025 });
   }
 
   _noiseBuffer(dur) {
@@ -294,6 +300,7 @@ export class AudioManager {
   }
   fiftyCharge() { // M2HB load/charge: two vigorous pull-release cycles, heavy spring + bolt + loose receiver rattle
     if (!this.ctx) return;
+    if (this._playM2ChargeSample()) return;
     const t0 = this.t;
     const cycle = (off, v) => {
       const t = t0 + off, pv = 0.96 + Math.random() * 0.08;

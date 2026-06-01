@@ -1,13 +1,12 @@
 // effects.js — particles (stuffing puffs, dust, sparks, shells), bullet tracers,
 // muzzle flashes, explosions. Particles share one InstancedMesh for performance.
 import * as THREE from 'three';
-import { randRange, clamp } from './util.js';
+import { MeshBuilder, randRange, clamp, voxelMaterial } from './util.js';
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _m = new THREE.Matrix4();
-const _up = new THREE.Vector3(0, 1, 0);
 
 export class Effects {
   constructor(game) {
@@ -40,6 +39,11 @@ export class Effects {
     this.tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9, fog: false });
     this.tracers = [];
 
+    // --- real .50 BMG spent casings (mesh, not particle cubes) ---
+    this.caseGeo = this._makeFiftyCaseGeo();
+    this.caseMat = voxelMaterial();
+    this.cases = [];
+
     // --- muzzle flash (one reusable sprite quad + light) ---
     this.flashTex = this._makeFlashTexture();
     this.flashMat = new THREE.MeshBasicMaterial({ map: this.flashTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
@@ -58,6 +62,27 @@ export class Effects {
     this.flashLight = new THREE.PointLight(0xffcc66, 0, 30, 2);
     this.scene.add(this.flashLight);
     this._lightLife = 0;
+  }
+
+  _makeFiftyCaseGeo() {
+    const b = new MeshBuilder();
+    const brass = 0xcaa64a, brassHi = 0xe2c56b, brassLo = 0x8c6b2e, dark = 0x28241b;
+    const body = new THREE.CylinderGeometry(0.026, 0.030, 0.16, 10); b.geo(body, 0, 0, 0, brass, { tint: 0.03 }); body.dispose();
+    const rim = new THREE.CylinderGeometry(0.034, 0.034, 0.016, 10); b.geo(rim, 0, -0.086, 0, brassHi, { tint: 0.02 }); rim.dispose();
+    const groove = new THREE.CylinderGeometry(0.027, 0.027, 0.012, 10); b.geo(groove, 0, -0.068, 0, brassLo); groove.dispose();
+    const mouth = new THREE.CylinderGeometry(0.022, 0.022, 0.006, 10); b.geo(mouth, 0, 0.083, 0, dark); mouth.dispose();
+    const primer = new THREE.CylinderGeometry(0.011, 0.011, 0.004, 8); b.geo(primer, 0, -0.096, 0, dark); primer.dispose();
+    return b.build();
+  }
+
+  _seedRand(seed) {
+    let a = (seed || 1) >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
   }
 
   _makeFlashTexture() {
@@ -205,6 +230,10 @@ export class Effects {
     const onBounce = opts.sound === 'fiftyBrass'
       ? ((pt, impactVel, bounceIndex) => { if (this.game.audio && this.game.audio.fiftyBrassLand) this.game.audio.fiftyBrassLand(impactVel, bounceIndex); })
       : null;
+    if (opts.mesh === 'fiftyCase') {
+      this._spawnFiftyCase(pos, rightDir, opts, onBounce);
+      return;
+    }
     this._spawn({
       pos: pos.clone(),
       vel: rightDir.clone().multiplyScalar(randRange(opts.sideMin || 2, opts.sideMax || 3.5)).add(_v.set(0, randRange(opts.upMin || 1.5, opts.upMax || 2.5), 0)),
@@ -212,6 +241,51 @@ export class Effects {
       color: new THREE.Color(opts.color || 0xd9a441), bounce: opts.bounce ?? 0.4, floorY: opts.floorY ?? (pos.y - 1.2), shrink: false,
       onBounce, maxBounceSounds: opts.maxBounceSounds ?? (onBounce ? 3 : 0), bounceSoundMinVel: opts.bounceSoundMinVel ?? 2.2,
     });
+  }
+
+  _spawnFiftyCase(pos, rightDir, opts, onBounce) {
+    const rnd = opts.seed != null ? this._seedRand(opts.seed) : Math.random;
+    const rr = (lo, hi) => lo + (hi - lo) * rnd();
+    let c = this.cases.find((x) => !x.mesh.visible);
+    if (!c) {
+      const mesh = new THREE.Mesh(this.caseGeo, this.caseMat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = false;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      c = { mesh, pos: new THREE.Vector3(), vel: new THREE.Vector3(), rot: new THREE.Euler(), rotV: new THREE.Vector3(), life: 0, maxLife: 1, bounces: 0 };
+      this.cases.push(c);
+    }
+    const side = rightDir.clone().normalize().multiplyScalar(rr(opts.sideMin || 2.6, opts.sideMax || 4.2));
+    c.mesh.visible = true;
+    c.pos.copy(pos);
+    c.vel.copy(side).add(_v.set(rr(-0.2, 0.2), rr(opts.upMin || 1.2, opts.upMax || 2.1), rr(-0.2, 0.2)));
+    c.rot.set(rnd() * 6, rnd() * 6, rnd() * 6);
+    c.rotV.set(rr(-22, 22), rr(-32, 32), rr(-24, 24));
+    c.life = c.maxLife = opts.life || 5;
+    c.grav = opts.grav ?? -16;
+    c.drag = opts.drag ?? 0.12;
+    c.bounce = opts.bounce ?? 0.48;
+    c.baseFloorY = opts.floorY ?? (pos.y - 1.2);
+    c.floorY = c.baseFloorY;
+    c._stacked = false;
+    c.onBounce = onBounce;
+    c.bounces = 0;
+    c.maxBounceSounds = opts.maxBounceSounds ?? (onBounce ? 3 : 0);
+    c.bounceSoundMinVel = opts.bounceSoundMinVel ?? 1.4;
+    c.mesh.scale.setScalar(opts.size || 1);
+    c.mesh.position.copy(c.pos);
+    c.mesh.rotation.copy(c.rot);
+  }
+
+  _caseStackY(pos, baseY) {
+    let nearby = 0;
+    for (const c of this.cases) {
+      if (!c.mesh.visible || c.bounces <= 0) continue;
+      const dx = c.pos.x - pos.x, dz = c.pos.z - pos.z;
+      if (dx * dx + dz * dz < 0.42) nearby++;
+    }
+    return baseY + Math.min(0.22, nearby * 0.018);
   }
 
   tracer(from, to, color = 0xffe08a) {
@@ -311,6 +385,29 @@ export class Effects {
     }
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+
+    // mesh casings
+    for (const c of this.cases) {
+      if (!c.mesh.visible) continue;
+      c.life -= dt;
+      if (c.life <= 0) { c.mesh.visible = false; continue; }
+      c.vel.y += c.grav * dt;
+      c.vel.multiplyScalar(Math.max(0, 1 - c.drag * dt));
+      c.pos.addScaledVector(c.vel, dt);
+      if (c.pos.y < c.floorY && c.bounce > 0) {
+        const impactVel = Math.abs(c.vel.y);
+        if (!c._stacked) { c.floorY = this._caseStackY(c.pos, c.baseFloorY); c._stacked = true; }
+        c.pos.y = c.floorY;
+        c.vel.y = -c.vel.y * c.bounce;
+        c.vel.x *= 0.58; c.vel.z *= 0.58;
+        c.rotV.multiplyScalar(0.82);
+        if (c.onBounce && c.bounces < c.maxBounceSounds && impactVel >= c.bounceSoundMinVel) c.onBounce(c, impactVel, c.bounces);
+        c.bounces++;
+      }
+      c.rot.x += c.rotV.x * dt; c.rot.y += c.rotV.y * dt; c.rot.z += c.rotV.z * dt;
+      c.mesh.position.copy(c.pos);
+      c.mesh.rotation.copy(c.rot);
+    }
 
     // tracers
     for (const t of this.tracers) {

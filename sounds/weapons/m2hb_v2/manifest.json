@@ -9,14 +9,25 @@
     "https://opengameart.org/content/equipment-clicks-iii",
     "https://freesound.org/people/GrayJoy/sounds/210102/",
     "https://freesound.org/people/Danwardvs/sounds/205126/",
-    "https://freesound.org/people/GryffDavid/sounds/318964/"
+    "https://freesound.org/people/GryffDavid/sounds/318964/",
+    "https://directory.audio/sound-effects/weapons/579-rifle-charging-handle"
   ],
   "designNotes": {
     "chosenDirection": "Use heavy_close and close burst files as the preferred M2HB sound direction.",
     "bursts": "Burst WAVs are assembled from v2 heavy_close/auto_dry close shots at plausible M2HB 450-600 rpm timings.",
-    "brassV3": "2026-06-01: replaced m2hb_v2_brass_heavy_roof_* and m2hb_v2_brass_short_tick_* with real CC0 shell-casing recordings. Heavy impacts are brass-on-concrete with 2.8/6.1 kHz presence boosts; short ticks are tile/wood/concrete bounce cuts with 3.6/7.8 kHz metallic lift."
+    "brassV3": "2026-06-01: replaced m2hb_v2_brass_heavy_roof_* and m2hb_v2_brass_short_tick_* with real CC0 shell-casing recordings. Heavy impacts are brass-on-concrete with 2.8/6.1 kHz presence boosts; short ticks are tile/wood/concrete bounce cuts with 3.6/7.8 kHz metallic lift.",
+    "chargeV1": "2026-06-01: added a real CC0 rifle charging-handle source, cut into a two-cycle M2-style charging handle one-shot and layered with low-pitched mechanical weight."
   },
   "assets": [
+    {
+      "file": "sounds/weapons/m2hb_v2/foley/m2hb_v2_charge_handle_real_01.wav",
+      "family": "foley",
+      "variant": "charge_handle",
+      "seconds": 1.25,
+      "source": "https://directory.audio/sound-effects/weapons/579-rifle-charging-handle",
+      "license": "CC0",
+      "notes": "Derived from the CC0 Rifle Charging Handle sound effect by Yoo-toob-FX. Edited into two M2HB charging cycles, converted to 48 kHz mono 24-bit WAV, with low-pitched mechanical support layers."
+    },
     {
       "file": "sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_auto_dry_01.wav",
       "family": "fire",
