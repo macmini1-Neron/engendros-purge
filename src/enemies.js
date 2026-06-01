@@ -1,6 +1,6 @@
 // enemies.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxelMaterial } from './util.js';
 import { ENEMY_BURN_SLOW } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { _tankWrecks, animateTank, buildTank, buildTankWreck, tankGroundFX, updateTankLights } from './bosstank.js';

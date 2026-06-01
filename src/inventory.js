@@ -1,10 +1,10 @@
 // inventory.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, rr, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, rr, voxelMaterial } from './util.js';
 import { buildFlare } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
-import { WEAPON_LAYER } from './engine.js?e=2';
+import { WEAPON_LAYER } from './engine.js';
 
 
 // ---------------------------------------------------------------------------

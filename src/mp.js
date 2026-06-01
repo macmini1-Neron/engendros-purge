@@ -1,12 +1,12 @@
 // mp.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, damp, rayAABB } from './util.js?u=3';
+import { clamp, damp, rayAABB } from './util.js';
 import { ENEMY_BURN_DUR, MOLO_GRAV, MOLO_MAX_FLIGHT, PLAYER_BURN_DPS, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, RoomDirectory, makeRoomCode, scanRooms } from './net.js?v=5';
+import { Net, RoomDirectory, makeRoomCode, scanRooms } from './net.js';
 
 
 // ---------------------------------------------------------------------------
@@ -175,6 +175,25 @@ export class MP {
     if (last) this.diag.last = last;
     this._renderNetDiag();
   }
+  _diagAdvice(d) {
+    if (!d) return '';
+    if (d.error) {
+      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return 'WebRTC route failed. If this repeats across real networks, use a TURN relay.';
+      if (d.error === 'peer-unavailable') return 'No host owns that code right now. Ask the host to re-host or use the public list.';
+      return 'Connection failed before the lobby handshake completed.';
+    }
+    if (!d.broker) return 'Waiting for the PeerJS broker.';
+    if (d.broker && !d.data) {
+      return d.role === 'join'
+        ? 'Broker OK, data WAIT: host is not reachable yet, or the route is blocked by NAT/firewall.'
+        : 'Broker OK. Waiting for a player data channel.';
+    }
+    if (d.role === 'join' && d.data && d.helloSent && !d.joinokReceived) return 'Data OK, but host did not answer. This points to host cache/code or a stale room.';
+    if (d.role === 'host' && d.data && !d.helloReceived) return 'Data OK. Waiting for the joiner hello packet.';
+    if (d.selectedType === 'relay') return 'Connected through relay.';
+    if (d.data && (d.joinokReceived || d.joinokSent)) return 'Lobby handshake OK.';
+    return '';
+  }
   _renderNetDiag() {
     const el = document.getElementById('mp-diaggrid');
     if (!el) return;
@@ -192,7 +211,8 @@ export class MP {
       <div><span>ICE</span><b>${mpEscape(ice)}</b></div>
       <div><span>Route</span><b class="${sel === 'relay' ? 'ok' : ''}">${mpEscape(sel)}</b></div>
       <div class="wide"><span>State</span><b>${mpEscape([d.iceState, d.connectionState].filter(Boolean).join(' / ') || d.last || 'idle')}</b></div>
-      ${d.error ? `<div class="wide err"><span>Error</span><b>${mpEscape(d.error)}</b></div>` : ''}`;
+      ${d.error ? `<div class="wide err"><span>Error</span><b>${mpEscape(d.error)}</b></div>` : ''}
+      ${this._diagAdvice(d) ? `<div class="wide advice">${mpEscape(this._diagAdvice(d))}</div>` : ''}`;
   }
   _modeLabel(mode) { return mode === 'longnight' ? 'LONG NIGHT' : 'PURGE'; }
   _closeDirectory() {

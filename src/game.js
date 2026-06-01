@@ -3,11 +3,11 @@
 // arena against waves of "Engendros" voodoo-plush zombies. Big weapon roster
 // (guns + melee), a bank-economy survival loop: scavenge pickups, unlock loadout gear in the SHOP, manage a flat 15-slot inventory.
 import * as THREE from 'three';
-import { TAU, randRange } from './util.js?u=3';
+import { TAU, randRange } from './util.js';
 import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER } from './tuning.js';
 import { KEY_CASH } from './economy.js';
 import { buildFlare, buildFlopo } from './props.js';
-import { MountedGun, WeaponSystem } from './weapons.js?v=12';
+import { MountedGun, WeaponSystem } from './weapons.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
@@ -16,18 +16,18 @@ import { Inventory, Shop } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
-import { MP } from './mp.js?v=13';
-import { Engine } from './engine.js?e=2';
+import { MP } from './mp.js';
+import { Engine } from './engine.js';
 import { Input } from './input.js';
-import { AudioManager } from './audio.js?v=151';
-import { Effects } from './effects.js?v=7';
+import { AudioManager } from './audio.js';
+import { Effects } from './effects.js';
 
 // --- build identity (shown bottom-right in the co-op lobby) ---
 // GAME_VERSION auto-tracks the ?v= cache-bust on this module's own URL, so it can't drift from
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-01 16:06';
+const GAME_BUILD = '2026-06-01 16:35';
 
 class Game {
   constructor() {

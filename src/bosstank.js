@@ -1,6 +1,6 @@
 // bosstank.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, randRange, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, randRange, voxelMaterial } from './util.js';
 
 
 // ---------------------------------------------------------------------------

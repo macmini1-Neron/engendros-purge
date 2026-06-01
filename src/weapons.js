@@ -1,9 +1,9 @@
 // weapons.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js?u=3';
+import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js';
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
-import { WEAPON_LAYER } from './engine.js?e=2';
+import { WEAPON_LAYER } from './engine.js';
 
 
 // ---------------------------------------------------------------------------

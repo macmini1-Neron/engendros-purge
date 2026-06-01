@@ -1,6 +1,6 @@
 // player.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, damp } from './util.js?u=3';
+import { clamp, damp } from './util.js';
 import { FALL_ARMOR_BYPASS, FALL_DMG_BONUS_AT_LETHAL, FALL_DMG_PER_VY, FALL_LETHAL, FALL_SAFE, HUNGER_DRAIN_PER_SEC, HUNGER_LOW, HUNGER_LOW_SPEED_MULT, HUNGER_MAX, LEG_BREAK_VY, LIMP_SPEED_MULT, PLAYER_BURN_DPS, PLAYER_BURN_TICK, SPLINT_APPLY_TIME, STARVE_TICK_DMG, STARVE_TICK_TIME } from './tuning.js';
 
 

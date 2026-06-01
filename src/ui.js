@@ -1,6 +1,6 @@
 // ui.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, hex } from './util.js?u=3';
+import { clamp, hex } from './util.js';
 import { HUNGER_LOW, HUNGER_MAX, PLAYER_BURN_DUR } from './tuning.js';
 import { WEAPONS, buildMag, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';

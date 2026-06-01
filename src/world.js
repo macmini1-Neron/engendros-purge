@@ -1,6 +1,6 @@
 // world.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildSandbags } from './props.js';
