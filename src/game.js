@@ -16,7 +16,7 @@ import { Inventory, Shop } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
-import { MP } from './mp.js?v=12';
+import { MP } from './mp.js?v=13';
 import { Engine } from './engine.js?e=2';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js?v=151';
@@ -27,7 +27,7 @@ import { Effects } from './effects.js?v=7';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-01 15:47';
+const GAME_BUILD = '2026-06-01 16:06';
 
 class Game {
   constructor() {
@@ -93,6 +93,7 @@ class Game {
     click('mpHostBtn', () => this.mp.startHost((document.getElementById('mp-name') || {}).value || 'Host'));
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
     click('mpRefreshRoomsBtn', () => this.mp.refreshRooms());
+    click('mpCloseRoomBtn', () => this.mp.closeRoom());
     click('mpCopyCodeBtn', () => {
       const code = ((document.getElementById('mp-mycode') || {}).textContent || '').trim();
       if (!code || code === '-----') return;

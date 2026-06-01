@@ -62,6 +62,24 @@ function suppressDirectoryPeerErrors() {
   return () => { if (console.error === wrapped) console.error = original; };
 }
 
+function peerConnectionFor(conn) {
+  if (!conn) return null;
+  const direct = [conn.peerConnection, conn._peerConnection, conn.pc, conn._pc];
+  for (const pc of direct) if (pc && typeof pc.getStats === 'function') return pc;
+  const nested = [conn.negotiator, conn._negotiator, conn.provider, conn._provider];
+  for (const obj of nested) {
+    if (!obj || typeof obj !== 'object') continue;
+    for (const k of ['peerConnection', '_peerConnection', 'pc', '_pc']) {
+      const pc = obj[k];
+      if (pc && typeof pc.getStats === 'function') return pc;
+    }
+  }
+  if (typeof RTCPeerConnection !== 'undefined') {
+    for (const v of Object.values(conn)) if (v instanceof RTCPeerConnection) return v;
+  }
+  return null;
+}
+
 export class Net {
   constructor() {
     this.peer = null;
@@ -73,11 +91,13 @@ export class Net {
     this.handlers = {};           // type -> fn(data, fromId)
     this.lastRecv = 0;            // perf.now() of the last received message (heartbeat)
     this._connectTimer = null;
+    this._iceWatches = new Map();
     // callbacks (assign directly)
     this.onPeerOpen = null;       // (roomCode)        host/peer is registered with the broker
     this.onConnect = null;        // (peerId)          a data connection opened
     this.onDisconnect = null;     // (peerId)          a data connection closed
     this.onError = null;          // (errCode, err)    fatal-ish error
+    this.onDiag = null;           // ({phase,...})     connection diagnostics for the lobby
   }
 
   get peerCount() { return this.conns.size; }
@@ -93,11 +113,78 @@ export class Net {
     this._connectTimer = null;
   }
 
+  _diag(d) { this.onDiag && this.onDiag({ role: this.isHost ? 'host' : 'join', room: this.room, ...d }); }
+
+  _clearIceWatch(peerId) {
+    const w = this._iceWatches.get(peerId);
+    if (!w) return;
+    if (w.timer) clearInterval(w.timer);
+    if (w.pc && w.onChange) {
+      try { w.pc.removeEventListener('iceconnectionstatechange', w.onChange); } catch (e) {}
+      try { w.pc.removeEventListener('connectionstatechange', w.onChange); } catch (e) {}
+    }
+    this._iceWatches.delete(peerId);
+  }
+
+  async _collectIce(conn) {
+    const pc = peerConnectionFor(conn);
+    if (!pc) { this._diag({ phase: 'ice', peerId: conn && conn.peer, available: false }); return; }
+    const types = new Set();
+    let selectedType = '';
+    try {
+      const stats = await pc.getStats();
+      const byId = new Map();
+      stats.forEach((r) => {
+        if (r.type === 'local-candidate' || r.type === 'remote-candidate') {
+          byId.set(r.id, r);
+          if (r.candidateType) types.add(r.candidateType);
+        }
+      });
+      stats.forEach((r) => {
+        if (r.type !== 'candidate-pair') return;
+        if (!(r.selected || r.nominated || r.state === 'succeeded')) return;
+        const local = byId.get(r.localCandidateId);
+        if (local && local.candidateType) selectedType = local.candidateType;
+      });
+    } catch (e) {}
+    this._diag({
+      phase: 'ice',
+      peerId: conn.peer,
+      available: true,
+      candidateTypes: [...types],
+      selectedType,
+      iceState: pc.iceConnectionState || '',
+      connectionState: pc.connectionState || '',
+    });
+  }
+
+  _watchIce(conn) {
+    if (!conn || !conn.peer) return;
+    this._clearIceWatch(conn.peer);
+    const pc = peerConnectionFor(conn);
+    let ticks = 0;
+    const tick = () => {
+      ticks++;
+      this._collectIce(conn);
+      const w = this._iceWatches.get(conn.peer);
+      if (w && ticks >= 16) this._clearIceWatch(conn.peer);
+    };
+    const timer = setInterval(tick, 1200);
+    const onChange = () => tick();
+    if (pc && pc.addEventListener) {
+      try { pc.addEventListener('iceconnectionstatechange', onChange); } catch (e) {}
+      try { pc.addEventListener('connectionstatechange', onChange); } catch (e) {}
+    }
+    this._iceWatches.set(conn.peer, { timer, pc, onChange });
+    setTimeout(tick, 50);
+  }
+
   _watchConnect(conn) {
     this._clearConnectTimer();
     this._connectTimer = setTimeout(() => {
       if (conn && !conn.open && !this.connected) {
         try { conn.close(); } catch (e) {}
+        this._diag({ phase: 'error', code: 'connect-timeout', peerId: conn.peer });
         this.onError && this.onError('connect-timeout', { peer: conn.peer, room: this.room });
       }
     }, CONNECT_TIMEOUT_MS);
@@ -109,9 +196,9 @@ export class Net {
     this.room = code;
     try { this.peer = this._mkPeer(ID_PREFIX + code); }
     catch (e) { this.onError && this.onError('no-peerjs', e); return; }
-    this.peer.on('open', (pid) => { this.selfId = pid; this.connected = true; this.onPeerOpen && this.onPeerOpen(code); });
+    this.peer.on('open', (pid) => { this.selfId = pid; this.connected = true; this._diag({ phase: 'broker', peerId: pid }); this.onPeerOpen && this.onPeerOpen(code); });
     this.peer.on('connection', (conn) => this._accept(conn));
-    this.peer.on('error', (e) => this.onError && this.onError(e.type || 'error', e));
+    this.peer.on('error', (e) => { this._diag({ phase: 'error', code: e.type || 'error' }); this.onError && this.onError(e.type || 'error', e); });
   }
 
   // JOIN a room by `code`.
@@ -122,26 +209,31 @@ export class Net {
     catch (e) { this.onError && this.onError('no-peerjs', e); return; }
     this.peer.on('open', (pid) => {
       this.selfId = pid;
+      this._diag({ phase: 'broker', peerId: pid });
       this.onPeerOpen && this.onPeerOpen(code);
       const conn = this.peer.connect(ID_PREFIX + code, { reliable: true });
       this._watchConnect(conn);
       this._accept(conn);
     });
-    this.peer.on('error', (e) => this.onError && this.onError(e.type || 'error', e));
+    this.peer.on('error', (e) => { this._diag({ phase: 'error', code: e.type || 'error' }); this.onError && this.onError(e.type || 'error', e); });
   }
 
   _accept(conn) {
+    this._watchIce(conn);
     conn.on('open', () => {
       this._clearConnectTimer();
       this.conns.set(conn.peer, conn);
       this.connected = true;
+      this._diag({ phase: 'data', peerId: conn.peer });
+      this._collectIce(conn);
       this.onConnect && this.onConnect(conn.peer);
     });
     conn.on('data', (msg) => { try { this._recv(msg, conn.peer); } catch (e) { if (typeof console !== 'undefined') console.warn('[net] handler threw for', msg && msg.t, e); } });
-    conn.on('close', () => { this.conns.delete(conn.peer); this.onDisconnect && this.onDisconnect(conn.peer); });
+    conn.on('close', () => { this._clearIceWatch(conn.peer); this.conns.delete(conn.peer); this._diag({ phase: 'closed', peerId: conn.peer }); this.onDisconnect && this.onDisconnect(conn.peer); });
     conn.on('error', (e) => {
       if (!conn.open && !this.connected) {
         this._clearConnectTimer();
+        this._diag({ phase: 'error', code: (e && e.type) || 'connect-failed', peerId: conn.peer });
         this.onError && this.onError((e && e.type) || 'connect-failed', e);
       }
     });
@@ -184,6 +276,7 @@ export class Net {
     try { for (const [, c] of this.conns) c.close(); } catch (e) {}
     try { this.peer && this.peer.destroy(); } catch (e) {}
     this._clearConnectTimer();
+    for (const peerId of [...this._iceWatches.keys()]) this._clearIceWatch(peerId);
     this.conns.clear();
     this.peer = null; this.connected = false; this.isHost = false; this.room = null; this.selfId = null;
   }

@@ -200,9 +200,20 @@
     .mp-codebar b { font-family: var(--font-display); font-size: 20px; letter-spacing: 2px; color: var(--gold); flex: 1; text-align: center; }
     .mp-codebar .btn { width: auto; min-width: 62px; flex: 0 0 auto; }
     .btn.mini { padding: 8px 12px; font-size: 13px; letter-spacing: 1px; border-radius: 8px; box-shadow: 0 2px 0 var(--gold-deep), var(--shadow-1); }
+    .btn.danger { background: linear-gradient(180deg,#c85a48,#7f2d24); color: #ffe8dc; border-color: rgba(255,120,90,.45); box-shadow: 0 2px 0 #4a1712, var(--shadow-1); }
     .btn.mini:disabled, .btn:disabled { cursor: default; opacity: .48; transform: none; filter: saturate(.5); }
     .mp-status { margin: 8px 0; font-size: 13px; opacity: .85; min-height: 18px; text-align: center; }
     .mp-diag { min-height: 17px; margin-top: 9px; font-size: 12px; color: var(--ink-dim); text-align: center; }
+    .mp-diagbox { margin: 8px 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(0,0,0,.18); }
+    .mp-diagtitle { margin-bottom: 7px; font-family: var(--font-display); font-size: 10px; letter-spacing: 1.8px; color: var(--ink-dim); text-transform: uppercase; text-align: center; }
+    .mp-diaggrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 8px; font-size: 11px; }
+    .mp-diaggrid > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 4px 7px; border: 1px solid var(--line-soft); border-radius: 6px; background: rgba(255,255,255,.03); }
+    .mp-diaggrid > div.wide { grid-column: 1 / -1; }
+    .mp-diaggrid span { color: var(--ink-dim); letter-spacing: .7px; text-transform: uppercase; }
+    .mp-diaggrid b { color: var(--paper); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mp-diaggrid .ok { color: var(--green); }
+    .mp-diaggrid .wait { color: var(--gold); }
+    .mp-diaggrid .err b { color: var(--red); }
     .mp-roster { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; margin: 8px 0; }
     .mp-rosteritem { background: rgba(255,255,255,.08); border: 1px solid rgba(255,207,92,.25); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 14px; max-width: 100%; }
     .mp-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
@@ -576,7 +587,7 @@
           <input id="mp-name" class="mp-input" maxlength="14" placeholder="Your name" />
           <div class="mp-hostline">
             <button class="btn" id="mpHostBtn">⚔ HOST</button>
-            <div id="mp-codebar" class="mp-codebar"><span>ROOM</span><b id="mp-mycode">-----</b><button class="btn sec mini" id="mpCopyCodeBtn">COPY</button></div>
+            <div id="mp-codebar" class="mp-codebar"><span>ROOM</span><b id="mp-mycode">-----</b><button class="btn sec mini" id="mpCopyCodeBtn">COPY</button><button class="btn danger mini" id="mpCloseRoomBtn" style="display:none;">CLOSE</button></div>
           </div>
           <div class="mp-joinline">
             <input id="mp-code" class="mp-input" maxlength="12" placeholder="ROOM CODE" style="text-transform:uppercase;" />
@@ -594,6 +605,10 @@
           </div>
           <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">⚔ Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
           <div id="mp-status" class="mp-status">Host a room, choose a public room, or paste a code.</div>
+          <div class="mp-diagbox">
+            <div class="mp-diagtitle">CONNECTION CHECK</div>
+            <div id="mp-diaggrid" class="mp-diaggrid"></div>
+          </div>
           <div id="mp-roster" class="mp-roster"></div>
         </div>
         <div class="mp-col">
@@ -652,6 +667,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=173"></script>
+  <script type="module" src="./src/game.js?v=174"></script>
 </body>
 </html>

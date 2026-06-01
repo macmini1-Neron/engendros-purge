@@ -6,7 +6,7 @@ import { KEY_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, RoomDirectory, makeRoomCode, scanRooms } from './net.js?v=4';
+import { Net, RoomDirectory, makeRoomCode, scanRooms } from './net.js?v=5';
 
 
 // ---------------------------------------------------------------------------
@@ -125,6 +125,7 @@ export class MP {
     this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
     this._joinHandshakeTimer = null;
     this.directory = null; this.rooms = []; this.roomsBusy = false;
+    this.diag = this._newDiag();
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
     this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
@@ -137,6 +138,61 @@ export class MP {
   _setLobbyDiag(text) {
     const el = document.getElementById('mp-netdiag');
     if (el) el.textContent = text || '';
+  }
+  _newDiag(role = 'idle', room = '') {
+    return {
+      role, room, broker: false, data: false, helloSent: false, helloReceived: false,
+      joinokSent: false, joinokReceived: false, iceTypes: [], selectedType: '',
+      iceState: '', connectionState: '', last: 'Idle', error: '',
+    };
+  }
+  _resetDiag(role = 'idle', room = '') {
+    this.diag = this._newDiag(role, room);
+    this._renderNetDiag();
+  }
+  _mergeIce(types) {
+    const set = new Set(this.diag.iceTypes || []);
+    for (const t of types || []) if (t) set.add(t);
+    this.diag.iceTypes = [...set].sort();
+  }
+  _onNetDiag(d) {
+    if (!d) return;
+    if (d.room) this.diag.room = d.room;
+    if (d.role) this.diag.role = d.role;
+    if (d.phase === 'broker') { this.diag.broker = true; this.diag.last = 'Broker connected'; }
+    else if (d.phase === 'data') { this.diag.data = true; this.diag.last = 'Data channel open'; }
+    else if (d.phase === 'ice') {
+      this._mergeIce(d.candidateTypes);
+      if (d.selectedType) this.diag.selectedType = d.selectedType;
+      if (d.iceState) this.diag.iceState = d.iceState;
+      if (d.connectionState) this.diag.connectionState = d.connectionState;
+    } else if (d.phase === 'closed') this.diag.last = 'Connection closed';
+    else if (d.phase === 'error') { this.diag.error = d.code || 'error'; this.diag.last = 'Error: ' + this.diag.error; }
+    this._renderNetDiag();
+  }
+  _markDiag(fields, last) {
+    Object.assign(this.diag, fields || {});
+    if (last) this.diag.last = last;
+    this._renderNetDiag();
+  }
+  _renderNetDiag() {
+    const el = document.getElementById('mp-diaggrid');
+    if (!el) return;
+    const d = this.diag || this._newDiag();
+    const yn = (ok) => ok ? '<b class="ok">OK</b>' : '<b class="wait">WAIT</b>';
+    const hello = d.helloSent ? 'sent' : (d.helloReceived ? 'received' : 'wait');
+    const joinok = d.joinokReceived ? 'received' : (d.joinokSent ? 'sent' : 'wait');
+    const ice = (d.iceTypes && d.iceTypes.length) ? d.iceTypes.join(' / ') : 'waiting';
+    const sel = d.selectedType || 'unknown';
+    el.innerHTML = `
+      <div><span>Broker</span>${yn(d.broker)}</div>
+      <div><span>Data</span>${yn(d.data)}</div>
+      <div><span>Hello</span><b>${mpEscape(hello)}</b></div>
+      <div><span>Join OK</span><b>${mpEscape(joinok)}</b></div>
+      <div><span>ICE</span><b>${mpEscape(ice)}</b></div>
+      <div><span>Route</span><b class="${sel === 'relay' ? 'ok' : ''}">${mpEscape(sel)}</b></div>
+      <div class="wide"><span>State</span><b>${mpEscape([d.iceState, d.connectionState].filter(Boolean).join(' / ') || d.last || 'idle')}</b></div>
+      ${d.error ? `<div class="wide err"><span>Error</span><b>${mpEscape(d.error)}</b></div>` : ''}`;
   }
   _modeLabel(mode) { return mode === 'longnight' ? 'LONG NIGHT' : 'PURGE'; }
   _closeDirectory() {
@@ -170,6 +226,17 @@ export class MP {
     if (this._lastXf) this._lastXf.clear();
     this.active = false; this.isHost = false; this.ready = false; this.myId = null;
   }
+  closeRoom() {
+    const old = this.net && this.net.room;
+    if (!old) { this._lobbyMsg('No room is open.'); return; }
+    try { if (this.isHost) this.net.send('roomClosed', {}); } catch (e) {}
+    this.leave();
+    this.rooms = (this.rooms || []).filter((r) => r.code !== old);
+    this._lobbyMsg(`Room <b>${old}</b> closed. Host again when ready.`);
+    this._setLobbyDiag('Room closed.');
+    this._resetDiag('idle', '');
+    this._renderRoomBrowser();
+  }
   async refreshRooms() {
     if (this.roomsBusy) return;
     this.roomsBusy = true;
@@ -188,10 +255,13 @@ export class MP {
     }
   }
   _renderRoomBrowser() {
+    this._renderNetDiag();
     const list = document.getElementById('mp-roomlist');
     const scan = document.getElementById('mpRefreshRoomsBtn');
     const badge = document.getElementById('mp-public-state');
+    const close = document.getElementById('mpCloseRoomBtn');
     if (scan) { scan.disabled = this.roomsBusy; scan.textContent = this.roomsBusy ? 'SCANNING' : 'REFRESH'; }
+    if (close) close.style.display = (this.isHost && this.net && this.net.room) ? 'inline-block' : 'none';
     if (badge) {
       const listed = this.directory && this.directory.slot != null;
       badge.textContent = listed ? `LISTED #${this.directory.slot + 1}` : (this.isHost && this.net.room ? 'CODE ONLY' : 'PUBLIC ROOMS');
@@ -242,6 +312,7 @@ export class MP {
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
     this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
+    this._resetDiag('host', code);
     this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — waiting for players…`, c); this._publishRoom(); };
     this.net.onError = (t) => { this._closeDirectory(); this._lobbyMsg(this._netErr(t)); };
     this.net.host(code); this._renderRoster();
@@ -254,11 +325,13 @@ export class MP {
     this._setLobbyDiag('');
     this._closeDirectory();
     this._resetLobbyTransport();
+    this._resetDiag('join', room);
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
     this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + room + '…');
     this.net.onConnect = () => {
       this.myId = this.net.selfId; this.net.lastRecv = performance.now();
       this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
+      this._markDiag({ helloSent: true }, 'Hello sent');
       this._lobbyMsg('Connecting… handshaking with host…');
       this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer. Ask the host to refresh/re-host.'), 9000);
     };
@@ -282,6 +355,8 @@ export class MP {
     const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
     this._lobbyMsg('Host a room, choose a public room, or paste a code.');
     this._setLobbyDiag('');
+    this._resetDiag('idle', '');
+    this._renderRoster();
     this._renderRoomBrowser();
   }
   // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
@@ -323,7 +398,7 @@ export class MP {
         const kick = (this.isHost && id !== 'host') ? ` <button class="mp-kick" data-peer="${mpEscape(id)}" title="Kick player" style="margin-left:6px;background:#5a2024;color:#fff;border:1px solid #a3434a;border-radius:4px;cursor:pointer;font-weight:800;padding:0 7px">✕</button>` : '';
         return `<div class="mp-rosteritem">🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
       });
-      el.innerHTML = rows.join('') || '<div class="mp-rosteritem">…</div>';
+      el.innerHTML = rows.join('');
       if (this.isHost) el.querySelectorAll('.mp-kick').forEach((b) => { b.onclick = () => this.hostKick(b.getAttribute('data-peer')); });
     }
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
@@ -372,12 +447,14 @@ export class MP {
   // ---- net wiring ----
   _wireNet() {
     const n = this.net, g = this.game;
+    n.onDiag = (d) => this._onNetDiag(d);
     n.onDisconnect = (pid) => {
       if (this.isHost) this._dropPeer(pid);
       else if (this.active) this._hostGone();
     };
     n.on('hello', (d, from) => {
       if (!this.isHost) return;
+      this._markDiag({ helloReceived: true }, 'Hello received');
       const nm = (d.name || 'Player').slice(0, 14), pid = (typeof d.pid === 'string') ? d.pid : null;
       // same player reconnecting (reload / 2nd tab / network blip) → drop the stale entry first (by stable id, else name)
       const dupe = [...this.roster].find(([id, r]) => id !== from && id !== 'host' && ((pid && r.pid === pid) || (r.name || '').toLowerCase() === nm.toLowerCase()));
@@ -388,11 +465,24 @@ export class MP {
       this._lastXf.set(from, performance.now());
       this.net.send('roster', this._rosterArr()); this._renderRoster();
       this.net.sendTo(from, 'joinok', {});
+      this._markDiag({ joinokSent: true }, 'Join OK sent');
       this.net.sendTo(from, 'mode', { mode: this.game.mode || 'purge' });   // so the joiner's lobby shows the chosen mode
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
     n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 4 players).'); try { this.net.close(); } catch (e) {} } });
-    n.on('joinok', () => { if (!this.isHost) { this._clearJoinHandshakeTimer(); this._lobbyMsg('Connected! Waiting for the host to start…'); } });
+    n.on('joinok', () => { if (!this.isHost) { this._clearJoinHandshakeTimer(); this._markDiag({ joinokReceived: true }, 'Join OK received'); this._lobbyMsg('Connected! Waiting for the host to start…'); } });
+    n.on('roomClosed', () => {
+      if (!this.isHost) {
+        this._clearJoinHandshakeTimer();
+        this._lobbyMsg('Host closed the room.');
+        this._setLobbyDiag('Room closed by host.');
+        this._resetDiag('idle', '');
+        try { this.net.close(); } catch (e) {}
+        this.net = new Net(); this._wireNet();
+        this.ready = false; this.myId = null; this.roster.clear(); this.pstate.clear();
+        this._renderRoster();
+      }
+    });
     n.on('goodbye', (d, from) => { if (this.isHost) this._dropPeer(from); });                                  // client left cleanly
     n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
