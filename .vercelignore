@@ -4,7 +4,7 @@
 .playwright-mcp
 .agents
 docs
-sounds
+# Runtime audio assets must deploy; otherwise browsers fall back to generated synth sounds.
 README.md
 
 # Full-res source model (the game loads the committed ~18 MB GLB)
