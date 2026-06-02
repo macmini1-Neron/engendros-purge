@@ -403,3 +403,174 @@ export function buildFlare() {
   g = new THREE.CylinderGeometry(0.05, 0.042, 0.03, 16); b.geo(g, 0, -0.285, 0, oLo); g.dispose();           // base cap
   return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x160b04, emissiveIntensity: 0.12 }));
 }
+
+// ---------------------------------------------------------------------------
+// FIELD RADIO «Р-105» — diegetic music prop (placeable building + held model).
+// Soviet field radio: olive layered-shaded case + a canvas-textured faceplate
+// (legible Cyrillic + gauges — a scoped exception to the vertex-color convention,
+// since fine Cyrillic can't be voxelized) + real 3D movable parts. Returns a
+// THREE.Group; userData = { needle, tunePriem, tunePered, band, redKnob, lamp, _t }
+// for animateFieldRadio(). Built at "design scale" then shrunk to ~1.25u wide.
+// ---------------------------------------------------------------------------
+const RADIO_FACE = { CW: 512, CH: 384, PW: 1.86, PH: 1.26 }; // canvas px + panel size (design units)
+
+function _radioFaceTexture(spec) {
+  if (typeof document === 'undefined') return null;
+  const { CW, CH } = RADIO_FACE;
+  const cv = document.createElement('canvas'); cv.width = CW; cv.height = CH;
+  const x = cv.getContext('2d'); if (!x) return null;
+  // base olive panel + worn speckle + inner frame
+  x.fillStyle = '#42542f'; x.fillRect(0, 0, CW, CH);
+  for (let i = 0; i < 2600; i++) { x.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(150,160,110,0.06)'; x.fillRect(Math.random()*CW|0, Math.random()*CH|0, 2, 2); }
+  x.strokeStyle = '#2a3619'; x.lineWidth = 6; x.strokeRect(6, 6, CW-12, CH-12);
+  x.strokeStyle = '#5c7038'; x.lineWidth = 2; x.strokeRect(11, 11, CW-22, CH-22);
+  const ring = (cx, cy, r, fill) => { x.fillStyle = fill || '#222a16'; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI*2); x.fill(); x.strokeStyle = '#161d0e'; x.lineWidth = 3; x.stroke(); };
+  const label = (t, cx, cy, sz = 13) => { x.fillStyle = '#d9d3ad'; x.font = `bold ${sz}px monospace`; x.textAlign = 'center'; t.split('\n').forEach((ln, i) => x.fillText(ln, cx, cy + i*(sz+1))); };
+  const screw = (cx, cy) => { x.fillStyle = '#8c9488'; x.beginPath(); x.arc(cx, cy, 4, 0, Math.PI*2); x.fill(); x.strokeStyle = '#2b2f26'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(cx-3, cy); x.lineTo(cx+3, cy); x.stroke(); };
+  // arc scale helper (numbered tick arc)
+  const arc = (cx, cy, r, a0, a1, nums) => {
+    x.strokeStyle = '#cfc9a0'; x.lineWidth = 2; x.beginPath(); x.arc(cx, cy, r, a0, a1); x.stroke();
+    const n = nums.length; for (let i = 0; i < n; i++) { const a = a0 + (a1-a0)*(i/(n-1)); const c = Math.cos(a), s = Math.sin(a);
+      x.beginPath(); x.moveTo(cx+c*(r-5), cy+s*(r-5)); x.lineTo(cx+c*r, cy+s*r); x.stroke();
+      x.fillStyle = '#cfc9a0'; x.font = '10px monospace'; x.textAlign = 'center'; x.fillText(nums[i], cx+c*(r+9), cy+s*(r+9)+3); }
+  };
+  for (const k of spec.knobs) {
+    ring(k.cx, k.cy, k.r + 4, k.col === 'orange' ? '#3a3017' : '#222a16'); // recessed well behind the 3D knob
+    if (k.label) label(k.label, k.cx, k.cy + k.r + 16, 12);
+    if (k.scale === 'arc30') arc(k.cx, k.cy - 4, k.r + 18, Math.PI*1.15, Math.PI*1.85, ['0','10','20','30']);
+    if (k.scale === 'arc100') arc(k.cx, k.cy, k.r + 22, Math.PI*0.86, Math.PI*0.14, ['0','20','40','60','80','100']);
+  }
+  // meter gauge (cream face)
+  const m = spec.meter; x.fillStyle = '#e9e3c2'; x.beginPath(); x.arc(m.cx, m.cy, m.r, 0, Math.PI*2); x.fill();
+  x.strokeStyle = '#5a6048'; x.lineWidth = 5; x.stroke();
+  arc(m.cx, m.cy + 6, m.r - 8, Math.PI*1.16, Math.PI*1.84, ['0','1','2','3']);
+  x.fillStyle = '#7a2018'; x.font = '9px monospace'; x.fillText('300', m.cx + 18, m.cy + 14);
+  // band toggle plate + label
+  const t = spec.toggle; x.fillStyle = '#1c2410'; x.fillRect(t.cx-9, t.cy-16, 18, 32); label(t.label, t.cx + 2, t.cy + 30, 11);
+  x.fillStyle = '#262e16'; x.fillText('←→', t.cx + 70, t.cy);
+  // multi-pin connector
+  const cn = spec.conn; ring(cn.cx, cn.cy, cn.r, '#161d0e'); x.fillStyle = '#0c1107'; x.beginPath(); x.arc(cn.cx, cn.cy, cn.r-7, 0, Math.PI*2); x.fill();
+  for (let i = 0; i < 6; i++) { const a = (i/6)*Math.PI*2; x.fillStyle = '#9aa08c'; x.beginPath(); x.arc(cn.cx+Math.cos(a)*14, cn.cy+Math.sin(a)*14, 4, 0, Math.PI*2); x.fill(); }
+  // bottom labels + jacks
+  label('ПРИЕМ ←→ ПЕРЕД', 232, 290, 12);
+  for (const [t2, jx] of [['+', 150], ['ТЕЛ.', 185], ['—', 222], ['КП', 322]]) { x.fillStyle = '#0c1107'; x.beginPath(); x.arc(jx + (t2.length>1?18:0), 352, 7, 0, Math.PI*2); x.fill(); label(t2, jx, 338, 11); }
+  // lamp socket + corner screws
+  ring(spec.lamp.cx, spec.lamp.cy, spec.lamp.r + 3, '#10160a');
+  for (const [sx, sy] of [[26,26],[CW-26,26],[26,CH-26],[CW-26,CH-26],[m.cx,m.cy-m.r-10],[m.cx,m.cy+m.r+10]]) screw(sx, sy);
+  const tex = new THREE.CanvasTexture(cv); tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.anisotropy = 4;
+  return tex;
+}
+
+export function buildFieldRadio() {
+  const oHi = 0x6f8549, oMid = 0x4e6134, oLo = 0x35441f, oSlot = 0x222b15, oBright = 0x8aa55c; // olive 5-tone
+  const kDark = 0x232c16, kHi = 0x3c4a26, kOrange = 0xb5701f, kOrHi = 0xe09a36;                 // knobs
+  const mHi = 0x9aa0a8, mMid = 0x6c727b, mLo = 0x474c54;                                        // metal fittings
+  const rHi = 0xd6402e, rMid = 0xab2417, rLo = 0x771509;                                        // red side knob
+  const { CW, CH, PW, PH } = RADIO_FACE;
+  const W = 2.0, H = 1.4, D = 1.1, CY = 0.8, FZ = D / 2;  // case dims; base sits at y=0.1, feet fill to 0
+  const conv = (cx, cy) => ({ x: (cx / CW - 0.5) * PW, y: CY + (0.5 - cy / CH) * PH });
+
+  const spec = {
+    knobs: [
+      { id: 'tunePriem', cx: 80,  cy: 110, r: 26, col: 'orange', label: 'НАСТР.\nПРИЕМ', scale: 'arc30' },
+      { id: 'obrSvyaz',  cx: 178, cy: 104, r: 24, col: 'dark',   label: 'ОБР.\nСВЯЗЬ' },
+      { id: 'antenna',   cx: 392, cy: 104, r: 24, col: 'dark',   label: 'НАСТР.\nАНТЕН' },
+      { id: 'nakal',     cx: 178, cy: 214, r: 24, col: 'dark',   label: 'НАКАЛ' },
+      { id: 'tunePered', cx: 382, cy: 246, r: 40, col: 'dark',   label: '', scale: 'arc100' },
+    ],
+    meter: { cx: 285, cy: 98, r: 46 },
+    toggle:{ cx: 64, cy: 210, label: 'ДИАПАЗ.' },
+    conn:  { cx: 108, cy: 316, r: 32 },
+    lamp:  { cx: 452, cy: 150, r: 9 },
+  };
+
+  const grp = new THREE.Group();
+  // ---- case (layered olive) ----
+  const b = new MeshBuilder();
+  b.box(W, H, D, 0, CY, 0, oMid, { tint: 0.03 });
+  b.box(W + 0.05, 0.12, D + 0.05, 0, CY + H/2 - 0.05, 0, oHi);          // lit top strip
+  b.box(W + 0.03, 0.18, D + 0.03, 0, CY - H/2 + 0.06, 0, oLo);          // shadow base
+  b.box(W - 0.1, 0.04, 0.05, 0, CY + H/2 - 0.02, FZ - 0.02, oBright);   // top-front lit edge
+  // raised bezel frame around the recessed panel
+  b.box(PW + 0.16, 0.08, 0.05, 0, CY + PH/2 + 0.05, FZ, oLo);
+  b.box(PW + 0.16, 0.08, 0.05, 0, CY - PH/2 - 0.05, FZ, oLo);
+  b.box(0.08, PH + 0.2, 0.05, -(PW/2 + 0.06), CY, FZ, oLo);
+  b.box(0.08, PH + 0.2, 0.05,  (PW/2 + 0.06), CY, FZ, oLo);
+  b.box(PW + 0.06, PH + 0.08, 0.04, 0, CY, FZ - 0.03, oSlot);           // recessed panel slab (texture pops on it)
+  // feet
+  for (const sx of [-0.82, 0.82]) for (const sz of [-0.4, 0.4]) b.box(0.2, 0.12, 0.2, sx, 0.05, sz, oLo);
+  grp.add(new THREE.Mesh(b.build(), voxelMaterial()));
+
+  // ---- faceplate texture plane ----
+  const face = _radioFaceTexture(spec);
+  if (face) {
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(PW + 0.06, PH + 0.08), new THREE.MeshLambertMaterial({ map: face }));
+    plane.position.set(0, CY, FZ + 0.001); grp.add(plane);
+  }
+
+  // ---- helpers for 3D parts ----
+  const knobMesh = (r, h, top, side) => {
+    const g = new THREE.Group();
+    const cg = new THREE.CylinderGeometry(r, r * 0.92, h, 16); cg.rotateX(Math.PI/2);
+    g.add(new THREE.Mesh(cg, new THREE.MeshLambertMaterial({ color: side })));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(r*0.96, r*0.96, 0.02, 16), new THREE.MeshLambertMaterial({ color: top })); cap.rotation.x = Math.PI/2; cap.position.z = h/2; g.add(cap);
+    const notch = new THREE.Mesh(new THREE.BoxGeometry(0.03, r*0.9, 0.03), new THREE.MeshLambertMaterial({ color: 0xf0ead0 })); notch.position.set(0, r*0.45, h/2 + 0.012); g.add(notch); // pointer
+    return g;
+  };
+  const place = (obj, cx, cy, zoff = 0.03) => { const p = conv(cx, cy); obj.position.set(p.x, p.y, FZ + zoff); grp.add(obj); return obj; };
+
+  // ---- knobs (over their painted wells) ----
+  let tunePriem = null, tunePered = null;
+  for (const k of spec.knobs) {
+    const scale = k.r / 26 * 0.16;
+    const knob = knobMesh(scale, 0.07, k.col === 'orange' ? kOrHi : kHi, k.col === 'orange' ? kOrange : kDark);
+    place(knob, k.cx, k.cy);
+    if (k.id === 'tunePriem') tunePriem = knob;
+    if (k.id === 'tunePered') tunePered = knob;
+  }
+
+  // ---- meter needle (3D, pivots at gauge center) ----
+  const ng = new THREE.BoxGeometry(0.02, 0.24, 0.02); ng.translate(0, 0.1, 0);
+  const needle = new THREE.Mesh(ng, new THREE.MeshLambertMaterial({ color: 0x161208 }));
+  place(needle, spec.meter.cx, spec.meter.cy + 14, 0.02);
+
+  // ---- band toggle (tilts on power) ----
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.04), new THREE.MeshLambertMaterial({ color: 0x1c2410 }));
+  const bandTop = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), new THREE.MeshLambertMaterial({ color: mHi })); bandTop.position.y = 0.09; band.add(bandTop);
+  place(band, spec.toggle.cx, spec.toggle.cy, 0.06);
+
+  // ---- green "on" lamp ----
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 10), new THREE.MeshBasicMaterial({ color: 0x123a16 }));
+  place(lamp, spec.lamp.cx, spec.lamp.cy, 0.05);
+
+  // ---- carry handle (top) ----
+  const hb = new MeshBuilder();
+  hb.box(0.1, 0.1, 0.5, -0.55, CY + H/2 + 0.12, 0, mMid); hb.box(0.1, 0.1, 0.5, 0.55, CY + H/2 + 0.12, 0, mMid);
+  hb.box(1.2, 0.1, 0.1, 0, CY + H/2 + 0.18, 0, mHi);
+  grp.add(new THREE.Mesh(hb.build(), voxelMaterial()));
+
+  // ---- RED side knob (right +X face) ----
+  const redG = new THREE.Group();
+  let rg = new THREE.CylinderGeometry(0.24, 0.24, 0.22, 18); rg.rotateZ(Math.PI/2);
+  redG.add(new THREE.Mesh(rg, new THREE.MeshLambertMaterial({ color: rMid })));
+  redG.add(new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.04, 18).rotateZ(Math.PI/2), new THREE.MeshLambertMaterial({ color: rLo })));
+  const redCap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 18), new THREE.MeshLambertMaterial({ color: rHi })); redCap.rotation.z = Math.PI/2; redCap.position.x = 0.12; redG.add(redCap);
+  redG.position.set(W/2 + 0.08, CY - 0.05, 0); grp.add(redG);
+
+  grp.scale.setScalar(0.6); // design scale -> ~1.2u wide world prop
+  grp.userData = { needle, tunePriem, tunePered, band, redKnob: redG, lamp, _t: 0 };
+  return grp;
+}
+
+// Drives the radio's live animation from its {on, station} state. Call each frame.
+export function animateFieldRadio(grp, state, dt) {
+  const u = grp && grp.userData; if (!u) return;
+  u._t += dt || 0;
+  const on = !!(state && state.on);
+  if (u.lamp) u.lamp.material.color.setHex(on ? 0x39ff6a : 0x123a16);
+  if (u.needle) { const base = on ? 0.55 : 0.05, jit = on ? Math.sin(u._t * 6.5) * 0.13 : 0; u.needle.rotation.z = (0.7 - base - jit); }
+  if (u.band) u.band.rotation.x = on ? -0.55 : 0.5;
+  const target = (state && state.station != null ? state.station : 0) * 0.9;
+  for (const k of [u.tunePered, u.redKnob]) if (k) { const cur = k.rotation[k === u.redKnob ? 'x' : 'z'] || 0; const nv = cur + (target - cur) * Math.min(1, (dt || 0) * 8); if (k === u.redKnob) k.rotation.x = nv; else k.rotation.z = nv; }
+  if (u.tunePriem) u.tunePriem.rotation.z = target * 0.6;
+}

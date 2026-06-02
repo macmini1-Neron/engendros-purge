@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { clamp, voxelMaterial } from './util.js?u=3';
 import { buildTank, buildTankWreck } from './bosstank.js';
-import { buildBarbedWire, buildBarricade, buildChuteRig, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
+import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
 import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
 import { buildT34Hull, buildT34Model, buildT34Tracks, buildT34Turret } from './t34model.js';
@@ -122,6 +122,7 @@ export class Admin {
       { name: 'Su-34 p25-33 ducts/belly', sub: 'Jetworks guide part', make: () => buildSu34DuctBellyModule() },
       { name: 'Su-34 p34-40 upper/tails', sub: 'Jetworks guide part', make: () => buildSu34UpperTailExhaustModule() },
       { name: 'Su-34 p41-42 finish/photo', sub: 'guide finish pass', make: () => buildSu34FinishPhotoModule() },
+      { name: 'Field Radio «Р-105»', sub: 'music prop (NEW)', make: () => buildFieldRadio() },
       { name: 'Vysílačka (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('airbeacon') },
       { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
       { name: 'Parachute rig', sub: 'air drop', make: () => this._chuteRig() },
