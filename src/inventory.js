@@ -366,6 +366,16 @@ export class Inventory {
     }
     if (used) this._consumeSlot(slotIdx);
   }
+  // E at the rooftop .50-cal while holding a .50-cal ammo can: reload the gun, consume the can.
+  // Returns true if it handled the press (so the E chain stops before trying to mount).
+  tryReloadFiftyCan() {
+    const c = this.curItem();
+    if (!c || c.kind !== 'fiftyammo') return false;
+    const gun = this.game.mountedGun;
+    if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(this.game.player.pos) || gun.ammo >= gun.maxAmmo) return false;
+    if (gun.reloadFromCan()) { this._consumeSlot(c.slot); return true; }
+    return false;
+  }
   _useRadio(slotIdx) { this.game.loot.requestSupplyDrop(); this.game.audio.buy(); this.game.hud.toast('Supply drop inbound!', 0x6fd0e8); this._consumeSlot(slotIdx); }
   _throwFlare(slotIdx) { this.game.weapons.flares = (this.game.weapons.flares || 0) + 1; this.game.throwFlare(true); this._consumeSlot(slotIdx); }
   // throwables: hold LMB to arm (committed -> can't scroll away), release to throw

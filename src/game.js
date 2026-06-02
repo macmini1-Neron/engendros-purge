@@ -173,6 +173,7 @@ class Game {
         if (_ct && this.player.inTank === _ct) { _ct.leave(); return; }
         // ---- .50 cal + loot ----
         if (this.player.mountedGun) this.player.mountedGun.dismount();
+        else if (this.inventory.tryReloadFiftyCan()) { /* reloaded the .50-cal from a carried ammo can */ }
         else if (this.mountedGun.canMount(this.player.pos)) this.mountedGun.mount();
         // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
         else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
