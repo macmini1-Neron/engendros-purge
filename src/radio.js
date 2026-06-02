@@ -19,8 +19,19 @@ export function radioAttenuation(dist) {
   return f * f; // ease-out falloff
 }
 
-export function stationLabel(i) {
+// 🥚 Hidden "ghost frequency" easter egg: not in the normal rotation — you only
+// catch it by chance while tuning (see BuildManager.cycleRadioStation). Soviet
+// broadcast, live HTTPS+AAC. station === GHOST_STATION (-1) marks it.
+export const GHOST_STATION = -1;
+export const RADIO_GHOST = { name: '☭ Радио СССР', genre: 'propaganda', url: 'https://station.waveradio.org/soviet' };
+
+export function stationByIndex(i) {
+  if (i === GHOST_STATION) return RADIO_GHOST;
   const n = RADIO_STATIONS.length;
-  const s = RADIO_STATIONS[((i % n) + n) % n];
+  return RADIO_STATIONS[((i % n) + n) % n];
+}
+
+export function stationLabel(i) {
+  const s = stationByIndex(i);
   return s ? `${s.name} · ${s.genre}` : '—';
 }

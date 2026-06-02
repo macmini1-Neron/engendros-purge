@@ -4,7 +4,7 @@ import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, s
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
-import { RADIO_STATIONS, radioAttenuation, stationLabel } from './radio.js';
+import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 
 
 // ---------------------------------------------------------------------------
@@ -389,7 +389,7 @@ export class BuildManager {
       el.addEventListener('error', () => { if (this.game.hud) this.game.hud.toast('📻 Station offline', 0xd23a2a); });
       s.audio = el;
     }
-    const n = RADIO_STATIONS.length, st = RADIO_STATIONS[((s.station % n) + n) % n];
+    const st = stationByIndex(s.station); // handles the hidden ghost frequency too
     if (st && s.audio.src !== st.url) s.audio.src = st.url;
     const p = s.audio.play(); if (p && p.catch) p.catch(() => {}); // play() is invoked from a user gesture (E/place)
   }
@@ -443,11 +443,17 @@ export class BuildManager {
   }
   cycleRadioStation(s, dir) {
     if (!s) return;
-    const n = RADIO_STATIONS.length, st = ((s.station + dir) % n + n) % n, mp = this.game.mp;
+    const n = RADIO_STATIONS.length, mp = this.game.mp;
+    let st;
+    if (s.station === GHOST_STATION) st = dir > 0 ? 0 : n - 1;   // leaving the ghost → rejoin the normal rotation
+    else if (chc(0.10)) st = GHOST_STATION;                       // 🥚 easter egg: the dial occasionally catches the Soviet ghost frequency
+    else st = ((s.station + dir) % n + n) % n;
     if (mp && mp.active && !mp.isHost) { mp.net.send('radioreq', { id: s.id, on: true, station: st }); return; }
     this.applyRadioSet({ id: s.id, on: true, station: st });
     if (mp && mp.active && mp.isHost) mp.net.broadcast('radioset', { id: s.id, on: true, station: st });
-    if (this.game.hud) this.game.hud.toast('📻 ' + stationLabel(st), 0x6fd0e8);
+    const ghost = st === GHOST_STATION;
+    if (this.game.hud) this.game.hud.toast((ghost ? '☭ ' : '📻 ') + stationLabel(st), ghost ? 0xd23a2a : 0x6fd0e8);
+    if (ghost && this.game.audio && this.game.audio.noise) this.game.audio.noise(0.35, 0.5, 'highpass', 2600, 0.5); // squelch/static as the ghost frequency catches
   }
   // apply authoritative state to a radio (local audio follows). Used by host/solo + remote clients.
   applyRadioSet(d) {
