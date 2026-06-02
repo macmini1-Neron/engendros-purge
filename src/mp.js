@@ -22,7 +22,8 @@ const MP_SKINS = [
   { skin: 0x49c6df, petal: 0xe85ba0 }, { skin: 0xe8a23a, petal: 0x6fcf4f },
   { skin: 0x9b6fe0, petal: 0xffd24a }, { skin: 0x5fd0a0, petal: 0xe8533a },
 ];
-const REVIVE_SECONDS = 10;
+const DOWN_SECONDS = 30;
+const REVIVE_CLICKS = 30;
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
@@ -42,6 +43,7 @@ class RemotePlayer {
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
     this.hp = 100; this.maxHp = 100; this.down = false; this.waiting = false; this.dead = false;
+    this._prone = false; this._proneYaw = 0;
     this.burnT = 0; this._burnFxT = 0; // on-fire flame (broadcast via xf bf flag); throttle for the body fire puff
     this._animT = 0; this._spd = 0; this._lastx = 0; this._lastz = 30;
     const wrap = document.getElementById('mp-labels');
@@ -73,12 +75,17 @@ class RemotePlayer {
     if (this.burnT > 0) { this._burnFxT -= dt; if (this._burnFxT <= 0) { this._burnFxT = 0.08; this.game.effects.firePool(this.pos, 0.45, 0.4); } }
     const o = this.obj, p = this.parts;
     o.position.set(this.pos.x, this.pos.y, this.pos.z);
-    if (this.dead || this.down || this.waiting) {
-      o.rotation.set(-Math.PI * 0.5, this.yaw + Math.PI, this.dead ? -0.08 : 0.16, 'YXZ'); // fully prone; +PI: model faces +z, but look/move forward is -z
+    const prone = this.dead || this.down || this.waiting;
+    if (prone && !this._prone) this._proneYaw = this.yaw;
+    this._prone = prone;
+    if (prone) {
+      let headYaw = this.yaw - this._proneYaw; while (headYaw > Math.PI) headYaw -= TAU; while (headYaw < -Math.PI) headYaw += TAU;
+      o.rotation.set(-Math.PI * 0.5, this._proneYaw + Math.PI, this.dead ? -0.08 : 0.16, 'YXZ'); // fully prone; body yaw freezes, head still tracks look
       o.position.y = this.pos.y + 0.28;
       p.legL.rotation.x = 0.22; p.legR.rotation.x = -0.18;
       p.armL.rotation.x = 0.75; p.armR.rotation.x = -0.55;
-      p.head.rotation.x = -0.18;
+      p.head.rotation.x = -0.18 + clamp(this.pitch, -0.45, 0.35) * 0.35;
+      p.head.rotation.y = clamp(headYaw, -0.55, 0.55);
       if (this.gunAnchor) this.gunAnchor.visible = false;
     } else {
       o.rotation.set(0, this.yaw + Math.PI, 0); // +PI: model faces +z, but look/move forward is -z
@@ -88,6 +95,7 @@ class RemotePlayer {
       p.legL.rotation.x = sw; p.legR.rotation.x = -sw;
       p.armL.rotation.x = -sw * 0.7; p.armR.rotation.x = sw * 0.7;
       p.head.rotation.x = clamp(this.pitch, -0.5, 0.5) * 0.5;
+      p.head.rotation.y = 0;
       o.position.y = this.pos.y + (moving ? Math.abs(Math.sin(this._animT)) * 0.06 : 0);
       if (this.gunAnchor) this.gunAnchor.visible = true;
     }
@@ -132,7 +140,7 @@ export class MP {
     this._ghostProjectiles = []; // VISUAL-ONLY thrown/launched projectiles from teammates (never deal damage)
     this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
-    this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
+    this._xfT = 0; this._snapT = 0; this._reviveClicks = 0; this._reviveTargetId = null; this._reviveActive = false; this._incomingRevive = null; this._reviveHostProgress = new Map(); this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this.spectateTarget = null;
@@ -299,8 +307,9 @@ export class MP {
     this._wireNet();
     for (const [, rp] of this.remotes) rp.dispose();
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
+    this._reviveHostProgress.clear();
     if (this._lastXf) this._lastXf.clear();
-    this.active = false; this.isHost = false; this.ready = false; this.myId = null; this.spectateTarget = null;
+    this.active = false; this.isHost = false; this.ready = false; this.myId = null; this.spectateTarget = null; this._resetRevive(true);
   }
   closeRoom() {
     const old = this.net && this.net.room;
@@ -352,9 +361,10 @@ export class MP {
     for (const [, rp] of this.remotes) rp.dispose();
     this._clearGhostProjectiles();
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
+    this._reviveHostProgress.clear();
     if (this._lastXf) this._lastXf.clear();
     this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false; this.spectateTarget = null;
-    this._localDown = false; this._localDead = false; this._localWaiting = false; this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
+    this._localDown = false; this._localDead = false; this._localWaiting = false; this._resetRevive(true); this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
     if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
     this.net = this._makeNet(); this._wireNet();
     const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
@@ -366,8 +376,8 @@ export class MP {
   }
   endRunToLobby(msg) {
     this.active = false; this.frozen = false; this._spilledLoot = false; this.spectateTarget = null;
-    this._localDown = false; this._localDead = false; this._localWaiting = false; this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; this._bleedShown = false; this._bleedT = 0;
-    this.pstate.clear(); this.ghosts.clear(); this._clearGhostProjectiles();
+    this._localDown = false; this._localDead = false; this._localWaiting = false; this._resetRevive(true); this._bleedShown = false; this._bleedT = 0;
+    this.pstate.clear(); this.ghosts.clear(); this._clearGhostProjectiles(); this._reviveHostProgress.clear();
     if (this._lastXf) this._lastXf.clear();
     for (const [, rp] of this.remotes) rp.dispose();
     this.remotes.clear();
@@ -601,6 +611,7 @@ export class MP {
     n.on('ignite', (d, from) => { if (this.isHost) { const s = this.pstate.get(from); if (s) s.burnT = PLAYER_BURN_DUR; } }); // client self-ignite (in-hand molotov shatter) → host owns the lingering burn DoT
     n.on('pstate', (d) => this._applyPState(d));
     n.on('revive', (d, from) => { if (this.isHost) this.hostRevive(d.tid, from); });
+    n.on('reviveprog', (d, from) => { if (this.isHost) this._hostReviveProgress(d, from); else this._applyReviveProgress(d); });
     n.on('ping', (d, from) => { if (this.isHost) this.net.sendTo(from, 'pong', d); });
     n.on('pong', (d) => { this.myPing = Math.round(performance.now() - d.t); });
     n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
@@ -686,8 +697,13 @@ export class MP {
     this._pstatT -= dt; if (this._pstatT <= 0) { this._pstatT = 1; const myPing = this.isHost ? 0 : this.myPing, myMoney = g.player.money; const me = this.roster.get(this.myId); if (me) { me.ping = myPing; me.money = myMoney; } this.net.broadcast('pstat', { id: this.myId, ping: myPing, money: myMoney }); if (this._sbOpen) this.renderScoreboard(); }
     this._updateRevive(dt);
     this.updateSpectator(dt);
-    // local bleed-out bar: counts the downed player's 20s toward bleeding out
-    if (this._localDown) { this._bleedT = Math.max(0, (this._bleedT || 0) - dt); g.hud.setBleed(this._bleedT / 20); this._bleedShown = true; }
+    // local bleed-out bar: counts the downed player's 30s toward bleeding out; revive progress temporarily takes over this bar.
+    if (this._localDown) {
+      this._bleedT = Math.max(0, (this._bleedT || 0) - dt);
+      const prog = this._incomingRevive && performance.now() < this._incomingRevive.until ? this._incomingRevive : null;
+      g.hud.setBleed(prog ? (prog.clicks / Math.max(1, prog.total)) : (this._bleedT / DOWN_SECONDS));
+      this._bleedShown = true;
+    }
     else if (this._bleedShown) { g.hud.setBleed(-1); this._bleedShown = false; }
   }
   // ---- ghost projectiles (visual-only mirror of a teammate's thrown/launched projectile) ----
@@ -826,11 +842,19 @@ export class MP {
     const s = this.pstate.get(id); if (!s || s.dead || s.waiting || s.down) return;
     if (s.armor > 0) { const t = Math.min(s.armor, dmg); s.armor -= t; dmg -= t; }
     s.hp -= dmg;
-    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 3) s.dead = true; else { s.down = true; s.downT = 20; } } // 2 downs survivable, the 3rd is permanent death
+    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 3) s.dead = true; else { s.down = true; s.downT = DOWN_SECONDS; } } // 2 downs survivable, the 3rd is permanent death
     this._broadcastPState(id);
     if (s.dead || s.down || s.waiting) this._checkGameOver();
   }
-  hostRevive(tid) { if (!this.isHost) return; const s = this.pstate.get(tid); if (!s || !s.down) return; s.down = false; s.downT = 0; s.hp = Math.round(s.maxHp * 0.5); this._broadcastPState(tid); }
+  hostRevive(tid, from = this.myId) {
+    if (!this.isHost) return;
+    const s = this.pstate.get(tid); if (!s || !s.down) return;
+    const key = (from || 'host') + ':' + tid;
+    if ((this._reviveHostProgress.get(key) || 0) < REVIVE_CLICKS) return;
+    this._hostReviveProgress({ tid, clicks: 0 }, from);
+    this._reviveHostProgress.delete(key);
+    s.down = false; s.downT = 0; s.hp = Math.round(s.maxHp * 0.5); this._broadcastPState(tid);
+  }
   _tickDowns() { if (!this.isHost) return; let changed = false; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); changed = true; } else if (id === this.myId) this._bleedT = s.downT; else this.net.sendTo(id, 'bleed', { t: s.downT }); } } if (changed) this._checkGameOver(); } // push authoritative remaining time so the on-screen bleed bar matches the host clock
   // host-authoritative, persistent player burn DoT: the molotov pool only refreshes s.burnT, so this is the SINGLE place DoT is applied (and it lingers after leaving the pool)
   _tickBurn() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.burnT > 0) { s.burnT -= 0.08; this.hostHurt(id, PLAYER_BURN_DPS * 0.08); if (id === this.myId) this.game.player.burnT = PLAYER_BURN_DUR; else this.net.sendTo(id, 'burn', {}); } } }
@@ -845,11 +869,11 @@ export class MP {
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
       this.frozen = d.down || d.dead || d.waiting;
       g.player.alive = !(d.dead || d.down || d.waiting); // pstate owns life-state so Player.hurt's `if(!this.alive)` guard stops re-killing a downed player
-      if (d.down) this._bleedT = d.downT || 20; // start/refresh the local bleed-out bar countdown
+      if (d.down) this._bleedT = d.downT || DOWN_SECONDS; // start/refresh the local bleed-out bar countdown
       if (d.dead) { g.hud.bigMessage('YOU ARE OUT', 'spectating live squadmates'); if (!this._spilledLoot) { this._spilledLoot = true; g.inventory.spillAll(); } this.ensureSpectateTarget(); } // real death → spill your backpack for teammates
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
-      else { this.spectateTarget = null; }
+      else { this.spectateTarget = null; this._incomingRevive = null; g.hud.setBleed(-1); }
     } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); } } // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
   }
   nearestPlayer(x, z) {
@@ -861,7 +885,44 @@ export class MP {
   }
   // ---- revive interaction ----
   _downedRemoteNear() { const p = this.game.player.pos; for (const [, rp] of this.remotes) if (rp.down && !rp.dead && Math.hypot(rp.pos.x - p.x, rp.pos.z - p.z) < 2.4) return rp; return null; }
-  reviveTargetNear() { return this._downedRemoteNear(); }
+  _downedRemoteAimed() {
+    const cam = this.game.engine.camera, origin = new THREE.Vector3(), dir = new THREE.Vector3(0, 0, -1);
+    cam.updateMatrixWorld(); origin.setFromMatrixPosition(cam.matrixWorld); dir.applyQuaternion(cam.quaternion).normalize();
+    let best = 0.9, hit = null;
+    for (const [, rp] of this.remotes) {
+      if (!rp.down || rp.dead || rp.waiting) continue;
+      const target = _v3a.set(rp.pos.x, rp.pos.y + 0.45, rp.pos.z);
+      const to = target.clone().sub(origin), dist = to.length();
+      if (dist > 3.1 || dist < 0.2) continue;
+      const dot = dir.dot(to.normalize());
+      const side = Math.sqrt(Math.max(0, 1 - dot * dot)) * dist;
+      if (dot > best && side < 0.9) { best = dot; hit = rp; }
+    }
+    return hit;
+  }
+  reviveTargetNear() { return this._reviveActive ? this._reviveRemote() : this._downedRemoteAimed(); }
+  canStartRevive() { return !this.frozen && !!this._downedRemoteAimed(); }
+  tryStartRevive() {
+    if (!this.active || this.frozen) return false;
+    if (this.game.player.inTank || this.game.player.mountedGun) return false;
+    const rp = this._downedRemoteAimed();
+    if (!rp) return false;
+    this._reviveActive = true; this._reviveTargetId = rp.id; this._reviveClicks = 0;
+    this._sendReviveProgress(rp.id, 0);
+    this.game.hud.setBleed(0);
+    if (this.game.audio && typeof this.game.audio.reloadIn === 'function') this.game.audio.reloadIn();
+    return true;
+  }
+  _reviveRemote() {
+    const rp = this._reviveTargetId ? this.remotes.get(this._reviveTargetId) : null;
+    if (!rp || !rp.down || rp.dead || rp.waiting) return null;
+    if (Math.hypot(rp.pos.x - this.game.player.pos.x, rp.pos.z - this.game.player.pos.z) > 3.2) return null;
+    return rp;
+  }
+  _resetRevive(clearIncoming = false) {
+    this._reviveActive = false; this._reviveTargetId = null; this._reviveClicks = 0;
+    if (clearIncoming) this._incomingRevive = null;
+  }
   // ---- Tab scoreboard ----
   _wireScoreboard() {
     const toggle = (down) => (e) => {
@@ -915,7 +976,7 @@ export class MP {
   _checkGameOver() {
     if (!this.isHost || !this.active) return;
     let any = false, allOut = true;
-    for (const [, s] of this.pstate) { any = true; if (!(s.dead || s.waiting || s.down)) allOut = false; }
+    for (const [, s] of this.pstate) { any = true; if (!(s.dead || s.waiting)) allOut = false; }
     if (any && allOut) {
       const reason = 'Squad wiped. Ready up and start again.';
       this.net.send('gameover', { reason });
@@ -923,29 +984,45 @@ export class MP {
     }
   }
   feed(who, what) { this.game.hud.kill(who + ' \u27a4 ' + what); this.net.broadcast('feed', { who, what }); }
+  blocksWeaponUse() { return this._reviveActive || !!this._downedRemoteAimed(); }
   revivePrompt(rp) {
-    const left = Math.max(0, REVIVE_SECONDS - this._reviveT);
-    return `Click <b>LMB</b> to resuscitate <b>${rp.name}</b>… ${left.toFixed(1)}s`;
+    if (this._reviveActive) return `CPR on <b>${rp.name}</b>: ${this._reviveClicks}/${REVIVE_CLICKS} clicks`;
+    return `Press <b>E</b> to start CPR on <b>${rp.name}</b>`;
+  }
+  _sendReviveProgress(tid, clicks) {
+    const d = { tid, clicks, total: REVIVE_CLICKS };
+    if (this.isHost) this._hostReviveProgress(d, this.myId);
+    else this.net.send('reviveprog', d);
+  }
+  _hostReviveProgress(d, from) {
+    if (!d || typeof d.tid !== 'string') return;
+    const clicks = clamp(Number(d.clicks) || 0, 0, REVIVE_CLICKS), total = REVIVE_CLICKS;
+    const s = this.pstate.get(d.tid);
+    if (!s || !s.down || s.dead || s.waiting) return;
+    this._reviveHostProgress.set((from || 'host') + ':' + d.tid, clicks);
+    const payload = { tid: d.tid, rid: from || 'host', clicks, total };
+    if (d.tid === this.myId) this._applyReviveProgress(payload);
+    else this.net.sendTo(d.tid, 'reviveprog', payload);
+  }
+  _applyReviveProgress(d) {
+    if (!d || d.tid !== this.myId) return;
+    this._incomingRevive = { clicks: clamp(Number(d.clicks) || 0, 0, Number(d.total) || REVIVE_CLICKS), total: Number(d.total) || REVIVE_CLICKS, until: performance.now() + 1200 };
   }
   _updateRevive(dt) {
-    if (!this.active || this.frozen) { this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; return; }
-    const rp = this._downedRemoteNear();
-    if (!rp) { this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; return; }
-    if (this._reviveTargetId !== rp.id) { this._reviveTargetId = rp.id; this._reviveT = 0; this._revivePulseT = 0; }
+    if (!this.active || this.frozen) { if (this._reviveActive) this._sendReviveProgress(this._reviveTargetId, 0); this._resetRevive(); return; }
+    if (!this._reviveActive) return;
+    const rp = this._reviveRemote();
+    if (!rp) { this._sendReviveProgress(this._reviveTargetId, 0); this._resetRevive(); this.game.hud.setBleed(-1); return; }
     if (this.game.input.buttonsPressed[0]) {
-      this._revivePulseT = 0.28;
+      this._reviveClicks = Math.min(REVIVE_CLICKS, this._reviveClicks + 1);
+      this._sendReviveProgress(rp.id, this._reviveClicks);
+      this.game.hud.setBleed(this._reviveClicks / REVIVE_CLICKS);
       if (this.game.audio && typeof this.game.audio.reloadIn === 'function') this.game.audio.reloadIn();
     }
-    if (this._revivePulseT > 0) {
-      this._revivePulseT = Math.max(0, this._revivePulseT - dt);
-      this._reviveT += dt;
-    } else {
-      this._reviveT = Math.max(0, this._reviveT - dt * 0.45);
-    }
-    this._reviveT = Math.min(REVIVE_SECONDS, this._reviveT);
     this.game.hud.setInteract(this.revivePrompt(rp));
-    if (this._reviveT >= REVIVE_SECONDS) {
-      this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null;
+    if (this._reviveClicks >= REVIVE_CLICKS) {
+      this._sendReviveProgress(rp.id, REVIVE_CLICKS);
+      this._resetRevive(); this.game.hud.setBleed(-1);
       if (this.isHost) this.hostRevive(rp.id); else this.net.send('revive', { tid: rp.id });
     }
   }

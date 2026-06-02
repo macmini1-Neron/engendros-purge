@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 01:09 WEST';
+const GAME_BUILD = '2026-06-02 10:01 WEST';
 
 class Game {
   constructor() {
@@ -165,6 +165,7 @@ class Game {
       if (code === 'KeyR') this.weapons.startReload();
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
+        if (this.mp.active && this.mp.tryStartRevive && this.mp.tryStartRevive()) return;
         // ---- CapturedTank: exit when aboard ----
         const _ct = this.capturedTank;
         if (_ct && this.player.inTank === _ct) { _ct.leave(); return; }
@@ -618,7 +619,7 @@ class Game {
     } else {
       if (!this.mp.frozen) {
         const edge = this.input.buttonsPressed[0] ? 'press' : (this.input.buttons[0] ? 'hold' : null);
-        const reviving = this.mp.active && this.mp.reviveTargetNear && this.mp.reviveTargetNear();
+        const reviving = this.mp.active && this.mp.blocksWeaponUse && this.mp.blocksWeaponUse();
         if (edge && !reviving) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
       if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
@@ -644,6 +645,15 @@ class Game {
     if (this.mp.active && this.mp._localDead) {
       const rp = this.mp.ensureSpectateTarget();
       this.hud.setInteract(rp ? `Spectating <b>${rp.name}</b> · Q/E switch` : 'No live squadmate to spectate');
+      return;
+    }
+    if (this.mp.active && this.mp._localDown) {
+      const prog = this.mp._incomingRevive && performance.now() < this.mp._incomingRevive.until ? this.mp._incomingRevive : null;
+      this.hud.setInteract(prog ? `Being revived: <b>${prog.clicks}/${prog.total}</b> clicks` : `DOWNED · bleed-out ${(this.mp._bleedT || 0).toFixed(0)}s`);
+      return;
+    }
+    if (this.mp.active && this.mp._localWaiting) {
+      this.hud.setInteract('WAITING · squad must survive');
       return;
     }
     if (this.mp.active && !this.mp.frozen && this.mp.reviveTargetNear) {
