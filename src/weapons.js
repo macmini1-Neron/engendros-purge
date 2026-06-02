@@ -36,7 +36,7 @@ export const WEAPONS = {
   grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 23, rpm: 450, auto: true, mag: 30, reserveMax: 240, reload: 1.9, spread: 0.024, bloom: 0.02, pellets: 1, recoil: 0.55, range: 140, adsFov: 62, price: 1250, loot: 9, color: 0x3a3d42, accent: 0x262626 },
   bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 42, rpm: 550, auto: true, mag: 20, reserveMax: 160, reload: 2.4, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.1, range: 260, adsFov: 55, price: 2600, loot: 6, color: 0x3a3128, accent: 0x26262a },
   dp28:     { name: 'DP-28',       class: 'rifle', shape: 'dp28', dmg: 31, rpm: 540, auto: true, mag: 47, reserveMax: 188, reload: 2.8, spread: 0.018, bloom: 0.018, pellets: 1, recoil: 0.7, range: 240, adsFov: 56, price: 2700, loot: 5, color: 0x3a352c, accent: 0x4a4a50, spinMag: { shape: 'pan', x: 0, y: 0.2, z: -0.3, r: 0.28, axis: 'y', step: TAU / 47 } },
-  mosin:    { name: 'Mosin-Nagant', class: 'sniper', shape: 'mosin', dmg: 165, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0022, bloom: 0, pellets: 1, recoil: 2.7, range: 480, adsFov: 26, scope: true, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54 },
+  mosin:    { name: 'Mosin 91/30', class: 'sniper', shape: 'mosin', dmg: 165, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0022, bloom: 0, pellets: 1, recoil: 2.7, range: 480, adsFov: 38, scope: false, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54, boltAction: true, reloadStyle: 'mosin', clipReload: 1.95, roundReload: 0.54 },
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 30, auto: false, mag: 1, reserveMax: 8, reload: 2.8, spread: 0.004, bloom: 0, pellets: 1, recoil: 2.6, range: 300, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
@@ -592,33 +592,105 @@ export function buildViewmodel(def) {
       b.box(0.04, 0.52, 0.04, 0.11, -0.3, -1.0, stLo, { rz: -0.26 });        // bipod leg
       break;
     }
-    case 'mosin': { // Mosin-Nagant M91/30 (sniper) — very long, hooded front sight, 2 bands, bent-down bolt, PU scope offset-left (7.62x54R, 5-rnd, bolt)
-      const sHi = 0x4a4e54, sMid = 0x2f3237, sLo = 0x1e2125, sSlot = 0x121417, sBright = 0x5e646c; // blued steel
-      const wHi = 0xc28a48, wMid = 0x9a6a32, wLo = 0x6a4520, lens = 0x0e1218;                          // amber birch + glass
-      // long thin barrel projecting far forward
-      b.box(0.044, 0.044, 0.55, 0, 0.03, -1.45, sMid);                        // exposed barrel
-      b.box(0.05, 0.05, 0.05, 0, 0.07, -1.62, sLo); b.box(0.012, 0.05, 0.02, 0, 0.105, -1.62, sBright); b.box(0.014,0.06,0.022,-0.026,0.095,-1.62,sLo); b.box(0.014,0.06,0.022,0.026,0.095,-1.62,sLo); // hooded front sight (ears)
-      // wood stock + forend (forward half) + two bands
-      b.box(0.085, 0.10, 1.05, 0, -0.02, -0.62, wMid, { tint: 0.03 });        // forend
-      b.box(0.072, 0.028, 1.0, 0, 0.034, -0.62, wHi);                         // handguard highlight
-      b.box(0.092, 0.095, 0.05, 0, 0.0, -0.78, sLo); b.box(0.092, 0.095, 0.05, 0, 0.0, -1.12, sLo); // two barrel bands
-      b.box(0.074, 0.12, 0.24, 0, -0.06, 0.26, wMid, { tint: 0.03 });         // wrist (straight broomstick)
-      b.box(0.088, 0.17, 0.44, 0, -0.05, 0.52, wMid, { tint: 0.03 });         // slim butt
-      b.box(0.078, 0.05, 0.42, 0, 0.045, 0.52, wHi);                          // comb
-      b.box(0.092, 0.20, 0.06, 0, -0.06, 0.74, wLo);                          // buttplate
-      // hex receiver + tangent ladder rear sight + mag box
-      b.box(0.078, 0.105, 0.30, 0, 0.0, -0.04, sMid, { tint: 0.02 });
-      b.box(0.06, 0.045, 0.08, 0, 0.08, -0.30, sLo);                          // tangent rear sight
-      b.box(0.07, 0.09, 0.12, 0, -0.10, 0.04, sLo);                           // magazine box + floorplate
-      // bent-down sniper bolt handle (right)
-      b.box(0.024, 0.024, 0.10, 0.07, -0.01, 0.08, sBright); b.box(0.024, 0.10, 0.024, 0.10, -0.07, 0.08, sBright);
-      { const kn = new THREE.CylinderGeometry(0.026, 0.026, 0.03, 12); b.geo(kn, 0.10, -0.13, 0.08, sBright, { ry: Math.PI / 2 }); kn.dispose(); }
-      // PU scope on offset bracket (above + left of bore)
-      { const sc = new THREE.CylinderGeometry(0.032, 0.032, 0.30, 14); b.geo(sc, -0.03, 0.165, -0.06, sLo, { rx: Math.PI / 2, tint: 0.02 }); sc.dispose(); }
-      { const gl = new THREE.CylinderGeometry(0.03, 0.03, 0.012, 14); b.geo(gl, -0.03, 0.165, -0.21, lens, { rx: Math.PI / 2 }); gl.dispose(); }
-      b.box(0.05, 0.08, 0.03, -0.03, 0.105, 0.0, sLo);                        // offset mount bracket
-      // trigger
-      b.box(0.05, 0.024, 0.13, 0, -0.085, 0.04, sLo); b.box(0.018, 0.045, 0.018, 0, -0.06, 0.02, sBright);
+    case 'mosin': { // Mosin 91/30 infantry rifle: long amber stock, straight bolt, hooded front sight, rod, bands, stripper-clip reload.
+      const wHi = 0xd49a52, wMid = 0xa66a31, wLo = 0x6f421f, wDark = 0x3a2313, wBright = 0xe0ad68;
+      const sHi = 0x7d858e, sMid = 0x535b64, sLo = 0x343941, sSlot = 0x1e2227, sBright = 0xa0a8b1;
+      const brass = 0xc9a64a, brassHi = 0xe0c770, copper = 0xb36a35;
+      const cyl = (r0, r1, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(r0, r1, h, o.seg || 14); b.geo(g, x, y, z, col, o); g.dispose(); };
+      const roundGeom = (mb, x, y, z, scale = 1, vertical = true) => {
+        const orient = vertical ? {} : { rx: Math.PI / 2 };
+        let g = new THREE.CylinderGeometry(0.011 * scale, 0.012 * scale, 0.09 * scale, 10); mb.geo(g, x, y, z, brass, { ...orient, tint: 0.02 }); g.dispose();
+        g = new THREE.CylinderGeometry(0.007 * scale, 0.011 * scale, 0.045 * scale, 10); mb.geo(g, x, y + (vertical ? 0.065 * scale : 0), z + (vertical ? 0 : -0.065 * scale), copper, orient); g.dispose();
+        g = new THREE.CylinderGeometry(0.013 * scale, 0.013 * scale, 0.011 * scale, 10); mb.geo(g, x, y - (vertical ? 0.052 * scale : 0), z + (vertical ? 0 : 0.052 * scale), brassHi, orient); g.dispose();
+      };
+
+      // Full-length birch stock silhouette. The M91/30 reads from its long slim wood, not a bulky black receiver.
+      b.box(0.128, 0.23, 0.11, 0, -0.075, 0.79, wLo, { tint: 0.035 });              // flat steel-capped butt end shadow
+      b.box(0.108, 0.18, 0.50, 0, -0.07, 0.53, wMid, { tint: 0.055 });              // buttstock body
+      b.box(0.088, 0.058, 0.43, 0, 0.035, 0.54, wHi, { tint: 0.04 });               // raised comb highlight
+      b.box(0.112, 0.035, 0.42, 0, -0.17, 0.54, wLo);                               // toe shadow
+      b.box(0.076, 0.13, 0.34, 0, -0.055, 0.22, wMid, { tint: 0.045 });             // wrist
+      b.box(0.058, 0.045, 0.26, 0, 0.038, 0.17, wHi, { tint: 0.03 });               // wrist comb into receiver
+      b.box(0.084, 0.105, 1.26, 0, -0.025, -0.61, wMid, { tint: 0.05 });            // long forend
+      b.box(0.066, 0.036, 1.17, 0, 0.044, -0.65, wHi, { tint: 0.04 });              // upper handguard strip
+      b.box(0.090, 0.028, 1.20, 0, -0.094, -0.61, wLo);                             // lower shadow strip
+      b.box(0.030, 0.018, 0.92, 0.038, -0.005, -0.70, wBright, { tint: 0.05 });      // right-side glossy grain streak
+      b.box(0.024, 0.014, 0.74, -0.039, -0.025, -0.48, wDark, { tint: 0.02 });       // dark left grain groove
+      b.box(0.020, 0.014, 0.24, 0.050, -0.020, 0.39, wDark);                        // butt sling slot
+      b.box(0.020, 0.014, 0.20, 0.052, -0.018, -0.60, wDark);                       // forend sling slot
+
+      // Metal receiver, magazine and trigger group.
+      b.box(0.086, 0.112, 0.25, 0, 0.020, -0.035, sMid, { tint: 0.02 });            // round receiver block
+      cyl(0.047, 0.047, 0.29, 0, 0.073, -0.035, sMid, { rx: Math.PI / 2, seg: 16, tint: 0.02 }); // receiver top tube
+      b.box(0.074, 0.023, 0.25, 0, 0.122, -0.035, sHi);                             // receiver top glint
+      b.box(0.050, 0.035, 0.105, 0.041, 0.062, -0.010, sSlot);                      // open ejection/charger bridge shadow
+      b.box(0.044, 0.025, 0.050, 0, 0.138, 0.072, sLo);                             // cocking piece cap
+      b.box(0.067, 0.092, 0.145, 0, -0.105, 0.025, sLo, { tint: 0.015 });           // magazine box
+      b.box(0.073, 0.018, 0.152, 0, -0.158, 0.025, sBright);                        // floorplate lip
+      b.box(0.060, 0.020, 0.135, 0, -0.082, 0.045, sLo);                            // trigger guard bow
+      b.box(0.018, 0.052, 0.017, 0, -0.060, 0.017, sBright);                        // trigger
+
+      // Rear sight ladder and graduation ticks.
+      b.box(0.070, 0.036, 0.155, 0, 0.103, -0.305, sLo);                            // tangent sight base
+      b.box(0.050, 0.014, 0.145, 0, 0.134, -0.305, sHi);                            // ladder top
+      b.box(0.012, 0.038, 0.045, -0.030, 0.142, -0.245, sBright);
+      b.box(0.012, 0.038, 0.045, 0.030, 0.142, -0.245, sBright);
+      for (let i = 0; i < 5; i++) b.box(0.042, 0.004, 0.008, 0, 0.151, -0.365 + i * 0.026, sBright);
+
+      // Barrel, nose cap, bayonet lug and cleaning rod under the wood.
+      cyl(0.026, 0.026, 0.74, 0, 0.073, -1.23, sMid, { rx: Math.PI / 2, seg: 16, tint: 0.02 });
+      b.box(0.034, 0.011, 0.68, 0, 0.101, -1.22, sHi);                              // barrel top highlight
+      b.box(0.018, 0.018, 0.94, 0, -0.105, -1.02, sLo);                              // cleaning rod
+      b.box(0.026, 0.026, 0.040, 0, -0.105, -1.50, sBright);                         // cleaning rod button
+      b.box(0.096, 0.103, 0.042, 0, -0.004, -0.455, sLo);                            // rear barrel band
+      b.box(0.098, 0.103, 0.042, 0, -0.004, -0.930, sLo);                            // front barrel band
+      b.box(0.106, 0.025, 0.042, 0, 0.056, -0.455, sHi);
+      b.box(0.108, 0.025, 0.042, 0, 0.056, -0.930, sHi);
+      b.box(0.077, 0.070, 0.075, 0, 0.047, -1.575, sLo);                             // front nose cap
+      b.box(0.044, 0.032, 0.054, 0, -0.035, -1.550, sLo);                            // bayonet lug / rod stop
+      b.box(0.024, 0.024, 0.040, 0, 0.073, -1.690, sSlot);                           // muzzle bore
+      b.box(0.014, 0.070, 0.026, 0, 0.136, -1.600, sBright);                         // blade post
+      b.box(0.016, 0.080, 0.030, -0.036, 0.125, -1.600, sLo);                        // hood ear L
+      b.box(0.016, 0.080, 0.030, 0.036, 0.125, -1.600, sLo);                         // hood ear R
+      b.box(0.080, 0.014, 0.030, 0, 0.165, -1.600, sLo);                             // hood bridge
+
+      // Decorative screws, sling hardware and little brass escutcheons.
+      cyl(0.012, 0.012, 0.010, 0.052, 0.002, 0.050, sBright, { rz: Math.PI / 2, seg: 10 });
+      cyl(0.012, 0.012, 0.010, 0.052, -0.010, -0.255, sBright, { rz: Math.PI / 2, seg: 10 });
+      cyl(0.015, 0.015, 0.010, 0.055, -0.020, 0.420, brass, { rz: Math.PI / 2, seg: 12 });
+      cyl(0.015, 0.015, 0.010, 0.055, -0.018, -0.620, brass, { rz: Math.PI / 2, seg: 12 });
+
+      _post = (mesh) => {
+        const makeMesh = (mb) => {
+          const child = new THREE.Mesh(mb.build(), voxelMaterial({ side: THREE.DoubleSide }));
+          child.renderOrder = mesh.renderOrder + 1; child.frustumCulled = false;
+          return child;
+        };
+        const bbolt = new MeshBuilder();
+        let g = new THREE.CylinderGeometry(0.026, 0.026, 0.205, 14); bbolt.geo(g, 0, 0, 0, sBright, { rx: Math.PI / 2, tint: 0.02 }); g.dispose();
+        bbolt.box(0.020, 0.020, 0.105, 0.058, -0.002, 0.032, sBright);          // straight bolt arm
+        g = new THREE.CylinderGeometry(0.028, 0.028, 0.032, 14); bbolt.geo(g, 0.090, -0.002, 0.082, sBright, { rz: Math.PI / 2 }); g.dispose(); // ball knob
+        bbolt.box(0.034, 0.020, 0.055, -0.020, 0.014, 0.106, sHi);             // cocking piece fin
+        const bolt = makeMesh(bbolt);
+        bolt.position.set(0.020, 0.078, 0.055);
+        bolt.userData.basePos = bolt.position.clone();
+        mesh.add(bolt);
+
+        const bclip = new MeshBuilder();
+        bclip.box(0.155, 0.012, 0.026, 0, 0.018, 0, sBright);
+        for (let i = 0; i < 5; i++) roundGeom(bclip, -0.056 + i * 0.028, -0.030, 0, 0.78, true);
+        const clip = makeMesh(bclip);
+        clip.visible = false; clip.position.set(0, 0.225, -0.020);
+        mesh.add(clip);
+
+        const bround = new MeshBuilder();
+        roundGeom(bround, 0, 0, 0, 0.90, true);
+        const round = makeMesh(bround);
+        round.visible = false; round.position.set(0.045, 0.200, -0.005);
+        mesh.add(round);
+
+        mesh.userData.mosin = { bolt, clip, round };
+      };
       break;
     }
     case 'bazooka': { // M1A1 2.36-inch Rocket Launcher — long open olive tube, twin wood grips, shoulder rest, battery box, rear blast ring (60mm rocket, single)
@@ -807,6 +879,8 @@ export class WeaponSystem {
     this.grenadeCD = 0; this.ads = false; this.fov = 80;
     this.molotovCD = 0;
     this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; // null|'lighting'|'lit'
+    this._boltT = 0; this._boltDur = 0.72; this._boltEjected = false; this._boltClickOpen = false; this._boltClickClose = false;
+    this._reloadPlan = null; this._reloadMax = 0;
     this._bobT = 0; this._swing = 0;
     this.projectiles = [];
     this._tmp = new THREE.Vector3(); this._tmp2 = new THREE.Vector3();
@@ -846,6 +920,7 @@ export class WeaponSystem {
     for (const g of this.projectiles) { this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose(); if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); } }
     this.projectiles.length = 0;
     this.reloading = 0; this.cooldown = 0; this.grenadeCD = 0; this._swing = 0; this._bobT = 0;
+    this._clearMosinTransient();
     this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.ads = false;
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
@@ -886,6 +961,7 @@ export class WeaponSystem {
     if (this.isThrowLocked()) return;
     if (!this.owns(key) || key === this.cur) return;
     this.reloading = 0; // switching weapons (incl. auto-equip of loot/shop buys) cancels an in-progress reload
+    this._clearMosinTransient();
     this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
     this.cur = key;
     this.models[key].visible = true; if (this.magMeshes[key]) this.magMeshes[key].visible = true;
@@ -909,11 +985,103 @@ export class WeaponSystem {
     this.game.audio.reloadClick(); this.game.hud.setWeapon(this);
   }
 
+  _clearMosinTransient() {
+    this._boltT = 0; this._boltDur = 0.72; this._boltEjected = false; this._boltClickOpen = false; this._boltClickClose = false;
+    this._reloadPlan = null; this._reloadMax = 0;
+    const mos = this.models && this.models.mosin && this.models.mosin.userData.mosin;
+    if (!mos) return;
+    if (mos.bolt && mos.bolt.userData.basePos) {
+      mos.bolt.position.copy(mos.bolt.userData.basePos);
+      mos.bolt.rotation.set(0, 0, 0);
+    }
+    if (mos.clip) mos.clip.visible = false;
+    if (mos.round) mos.round.visible = false;
+  }
+
+  _beginBoltCycle(d) {
+    if (!d || !d.boltAction) return;
+    this._boltDur = 0.72;
+    this._boltT = this._boltDur;
+    this._boltEjected = false;
+    this._boltClickOpen = false;
+    this._boltClickClose = false;
+  }
+
+  _ejectMosinCase() {
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion).normalize();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
+    const pos = origin.clone().addScaledVector(fwd, 0.56).addScaledVector(right, 0.20).addScaledVector(up, -0.12);
+    this.game.effects.shell(pos, right, {
+      size: 0.046, color: 0xc9a64a, life: 1.8,
+      sideMin: 2.4, sideMax: 3.7, upMin: 1.0, upMax: 1.9,
+    });
+  }
+
   startReload() {
     if (this.isThrowLocked()) return;
     const d = this.def();
     if (d.melee || this.reloading > 0 || this.mag[this.cur] >= this.magMax[this.cur] || this.reserve[this.cur] <= 0) return;
+    if (d.reloadStyle === 'mosin') { this._startMosinReload(d); return; }
     this.reloading = d.reload * this.game.player.reloadMult; this.game.audio.reloadIn();
+  }
+  _startMosinReload(d) {
+    const key = this.cur;
+    const max = this.magMax[key] || d.mag || 1;
+    const need = Math.max(0, max - (this.mag[key] || 0));
+    const reserve = this.reserve[key];
+    const total = reserve === Infinity ? need : Math.min(need, Math.max(0, reserve || 0));
+    if (total <= 0) return;
+    if (this._boltT > 0 && !this._boltEjected) { this._ejectMosinCase(); this._boltEjected = true; }
+    this._boltT = 0;
+    const useClip = this.mag[key] === 0 && total >= Math.min(5, max);
+    const mult = this.game.player.reloadMult || 1;
+    const duration = useClip
+      ? (d.clipReload || d.reload || 2.0)
+      : (0.42 + total * (d.roundReload || 0.54) + 0.45);
+    this._reloadPlan = { key, kind: useClip ? 'clip' : 'single', total, loaded: 0, inserted: false };
+    this._reloadMax = Math.max(0.5, duration * mult);
+    this.reloading = this._reloadMax;
+    this.game.audio.reloadIn();
+  }
+  _addMosinReloadRounds(plan, amount, click = true) {
+    if (!plan || plan.key !== this.cur || amount <= 0) return 0;
+    const key = plan.key, max = this.magMax[key] || (WEAPONS[key] && WEAPONS[key].mag) || 1;
+    const room = Math.max(0, max - (this.mag[key] || 0));
+    const reserve = this.reserve[key];
+    const available = reserve === Infinity ? room : Math.max(0, reserve || 0);
+    const take = Math.min(amount, room, available);
+    if (take <= 0) return 0;
+    this.mag[key] = (this.mag[key] || 0) + take;
+    if (reserve !== Infinity) this.reserve[key] = Math.max(0, (this.reserve[key] || 0) - take);
+    plan.loaded += take;
+    if (click) this.game.audio.reloadClick();
+    this.game.hud.setWeapon(this);
+    return take;
+  }
+  _tickMosinReload(plan) {
+    if (!plan || plan.key !== this.cur) return;
+    const total = this._reloadMax || 1;
+    const p = clamp(1 - this.reloading / total, 0, 1);
+    if (plan.kind === 'clip') {
+      if (!plan.inserted && p >= 0.56) {
+        this._addMosinReloadRounds(plan, plan.total);
+        plan.inserted = true;
+      }
+      return;
+    }
+    const start = 0.24, end = 0.80;
+    const step = (end - start) / Math.max(1, plan.total);
+    while (plan.loaded < plan.total && p >= start + (plan.loaded + 1) * step) {
+      if (!this._addMosinReloadRounds(plan, 1)) break;
+    }
+  }
+  _finishMosinReload() {
+    if (this._reloadPlan && this._reloadPlan.loaded < this._reloadPlan.total) this._addMosinReloadRounds(this._reloadPlan, this._reloadPlan.total - this._reloadPlan.loaded, false);
+    this._reloadPlan = null; this._reloadMax = 0;
+    this.game.audio.reloadClick(); this.game.hud.setWeapon(this);
   }
   _finishReload() {
     const key = this.cur, need = this.magMax[key] - this.mag[key];
@@ -970,7 +1138,7 @@ export class WeaponSystem {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
     const muzzle = origin.clone().addScaledVector(fwd, 1.0).addScaledVector(right, 0.16).addScaledVector(up, -0.1);
     this.game.effects.muzzleFlash(muzzle, fwd, d.class === 'shotgun' || d.class === 'launcher' ? 1.6 : 1);
-    if (d.class !== 'launcher') this.game.effects.shell(muzzle.clone().addScaledVector(right, -0.08), right);
+    if (d.class !== 'launcher' && !d.boltAction) this.game.effects.shell(muzzle.clone().addScaledVector(right, -0.08), right);
     this.game.audio.gunshot(SOUND_BY_CLASS[d.class] || SOUND_BY_CLASS.pistol);
     if (d.class !== 'launcher') { const _mp = this.game.mp; if (_mp && _mp.active) _mp.net.broadcast('shot', { pid: _mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: d.class, col: d.accent }); } // teammates see/hear your gunfire (launchers show via the slow 'proj' rocket ghost instead of an instant tracer)
 
@@ -1013,6 +1181,7 @@ export class WeaponSystem {
     }
     // advance the feed magazine one round per shot (DP-28 pan indexes; full-auto = rapid steps)
     const sm = d.spinMag; if (sm && sm.step && this.magMeshes[this.cur]) this.magMeshes[this.cur]._targetRot += sm.step;
+    if (d.boltAction) this._beginBoltCycle(d);
     this.recoilKick = Math.min(this.recoilKick + d.recoil * 0.05, 0.3);
     this.recoilPitch += d.recoil * (0.6 + Math.random() * 0.5) * 0.01;
     this.game.hud.setWeapon(this);
@@ -1123,12 +1292,88 @@ export class WeaponSystem {
     return { ok: true, key };
   }
 
+  _smooth01(x) {
+    x = clamp(x, 0, 1);
+    return x * x * (3 - 2 * x);
+  }
+  _mosinBoltCurve(p) {
+    const e = (x) => this._smooth01(x);
+    if (p < 0.17) return { lift: e(p / 0.17), back: 0 };
+    if (p < 0.42) return { lift: 1, back: e((p - 0.17) / 0.25) };
+    if (p < 0.62) return { lift: 1, back: 1 };
+    if (p < 0.84) return { lift: 1, back: 1 - e((p - 0.62) / 0.22) };
+    return { lift: 1 - e((p - 0.84) / 0.16), back: 0 };
+  }
+  _mosinReloadBoltCurve(p) {
+    const e = (x) => this._smooth01(x);
+    if (p < 0.16) return { lift: e(p / 0.16), back: 0 };
+    if (p < 0.28) return { lift: 1, back: e((p - 0.16) / 0.12) };
+    if (p < 0.78) return { lift: 1, back: 1 };
+    if (p < 0.90) return { lift: 1, back: 1 - e((p - 0.78) / 0.12) };
+    return { lift: 1 - e((p - 0.90) / 0.10), back: 0 };
+  }
+  _applyMosinBolt(mos, pose) {
+    if (!mos || !mos.bolt || !mos.bolt.userData.basePos) return;
+    const base = mos.bolt.userData.basePos;
+    mos.bolt.position.set(base.x, base.y + pose.lift * 0.018, base.z + pose.back * 0.18);
+    mos.bolt.rotation.z = pose.lift * 0.96;
+  }
+  _updateMosinAnim(dt) {
+    const model = this.models && this.models.mosin;
+    const mos = model && model.userData.mosin;
+    if (!mos) return;
+    const isMosin = this.cur === 'mosin';
+    const clip = mos.clip, round = mos.round;
+    if (clip) clip.visible = false;
+    if (round) round.visible = false;
+
+    let pose = { lift: 0, back: 0 };
+    if (isMosin && this._reloadPlan) {
+      const p = clamp(1 - this.reloading / (this._reloadMax || 1), 0, 1);
+      pose = this._mosinReloadBoltCurve(p);
+      const plan = this._reloadPlan;
+      if (plan.kind === 'clip' && clip && p >= 0.15 && p <= 0.70) {
+        const down = this._smooth01((p - 0.22) / 0.34);
+        const out = this._smooth01((p - 0.58) / 0.12);
+        clip.visible = true;
+        clip.position.set(0.004 * Math.sin(p * Math.PI * 6), 0.250 - down * 0.150 + out * 0.085, -0.030 + down * 0.038);
+        clip.rotation.set(-0.30 + down * 0.18, 0, 0.08 * Math.sin(p * Math.PI * 2));
+      } else if (plan.kind === 'single' && round && plan.loaded < plan.total) {
+        const start = 0.20, end = 0.80;
+        const step = (end - start) / Math.max(1, plan.total);
+        const idx = Math.min(plan.loaded, plan.total - 1);
+        const u = clamp((p - (start + idx * step)) / step, 0, 1);
+        if (p >= start - 0.05 && p <= end + 0.08) {
+          const s = this._smooth01(u);
+          round.visible = true;
+          round.position.set(0.072 - s * 0.060, 0.238 - s * 0.145, -0.040 + s * 0.050);
+          round.rotation.set(-0.28 + s * 0.18, 0, 0.32 - s * 0.62);
+        }
+      }
+    } else if (isMosin && this._boltT > 0) {
+      this._boltT = Math.max(0, this._boltT - dt);
+      const p = clamp(1 - this._boltT / (this._boltDur || 0.72), 0, 1);
+      pose = this._mosinBoltCurve(p);
+      if (!this._boltClickOpen && p >= 0.18) { this._boltClickOpen = true; this.game.audio.reloadClick(); }
+      if (!this._boltEjected && p >= 0.36) { this._boltEjected = true; this._ejectMosinCase(); }
+      if (!this._boltClickClose && p >= 0.78) { this._boltClickClose = true; this.game.audio.reloadClick(); }
+    }
+    this._applyMosinBolt(mos, pose);
+  }
+
   update(dt) {
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.grenadeCD > 0) this.grenadeCD -= dt;
     if (this.molotovCD > 0) this.molotovCD -= dt;
     if (this._swing > 0) this._swing -= dt;
-    if (this.reloading > 0) { this.reloading -= dt; if (this.reloading <= 0) { this.reloading = 0; this._finishReload(); } }
+    if (this.reloading > 0) {
+      this.reloading = Math.max(0, this.reloading - dt);
+      if (this._reloadPlan) this._tickMosinReload(this._reloadPlan);
+      if (this.reloading <= 0) {
+        if (this._reloadPlan) this._finishMosinReload();
+        else this._finishReload();
+      }
+    }
     this.bloom = damp(this.bloom, 0, 6, dt);
     this.recoilKick = damp(this.recoilKick, 0, 12, dt);
     this.recoilPitch = damp(this.recoilPitch, 0, 10, dt);
@@ -1148,7 +1393,8 @@ export class WeaponSystem {
     this._bobT += dt * (moving ? 9 : 3);
     const bobX = Math.cos(this._bobT) * (moving ? 0.012 : 0.004);
     const bobY = Math.abs(Math.sin(this._bobT)) * (moving ? 0.016 : 0.004);
-    const reloadDip = this.reloading > 0 ? -0.12 * Math.sin((1 - this.reloading / (d.reload * pl.reloadMult)) * Math.PI) : 0;
+    const reloadTotal = this._reloadMax || (d.reload * pl.reloadMult) || 1;
+    const reloadDip = this.reloading > 0 ? -0.12 * Math.sin((1 - this.reloading / reloadTotal) * Math.PI) : 0;
     const adsX = this.ads ? -this.basePos.x : 0, adsY = this.ads ? 0.06 : 0, adsZ = this.ads ? 0.12 : 0;
     this.group.position.set(
       this.basePos.x + adsX + bobX - this.game.input.mouseDX * 0.00003,
@@ -1177,6 +1423,7 @@ export class WeaponSystem {
     // flashlight press-button: pops UP when the beam is off, sinks DOWN (pressed) when it's on
     const flBtn = this.models.flashlight && this.models.flashlight.userData.flashBtn;
     if (flBtn) { const t = (this.game.dayNight && this.game.dayNight.flashOn) ? flBtn.userData.downY : flBtn.userData.upY; flBtn.position.y = damp(flBtn.position.y, t, 22, dt); }
+    this._updateMosinAnim(dt);
 
     // grenades
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
