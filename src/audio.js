@@ -23,11 +23,22 @@ export class AudioManager {
     this._samplePromises = new Map();
     this._sampleIdx = {};
     this._m2SamplesPrimed = false;
+    this._mosinSamplesPrimed = false;
     this._m2 = {
       fireClose: Array.from({ length: 8 }, (_, i) => `sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_${String(i + 1).padStart(2, '0')}.wav`),
       brassHeavy: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_${String(i + 1).padStart(2, '0')}.wav`),
       brassTick: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_${String(i + 1).padStart(2, '0')}.wav`),
       charge: ['sounds/weapons/m2hb_v2/foley/m2hb_v2_charge_handle_real_01.wav'],
+    };
+    this._mosin = {
+      fireClose: Array.from({ length: 5 }, (_, i) => `sounds/weapons/mosin_9130/fire/mosin_9130_fire_close_${String(i + 1).padStart(2, '0')}.wav`),
+      boltOpen: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/foley/mosin_9130_bolt_open_${String(i + 1).padStart(2, '0')}.wav`),
+      boltClose: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/foley/mosin_9130_bolt_close_${String(i + 1).padStart(2, '0')}.wav`),
+      caseEject: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/brass/mosin_9130_case_eject_${String(i + 1).padStart(2, '0')}.wav`),
+      clipLoad: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/foley/mosin_9130_clip_load_${String(i + 1).padStart(2, '0')}.wav`),
+      roundInsert: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/foley/mosin_9130_round_insert_${String(i + 1).padStart(2, '0')}.wav`),
+      reloadStart: ['sounds/weapons/mosin_9130/foley/mosin_9130_reload_start_01.wav'],
+      reloadFinish: ['sounds/weapons/mosin_9130/foley/mosin_9130_reload_finish_01.wav'],
     };
   }
 
@@ -47,6 +58,7 @@ export class AudioManager {
     this.musicGain.connect(this.master);
     this._initCrewLine();
     this._primeM2Samples();
+    this._primeMosinSamples();
     if (!this.music) this.music = new MusicDirector(this);
     if (this._pendingScene) { this.music.setScene(this._pendingScene); this._pendingScene = null; }
   }
@@ -134,6 +146,21 @@ export class AudioManager {
     for (const p of [...this._m2.fireClose, ...this._m2.brassHeavy, ...this._m2.brassTick, ...this._m2.charge]) this._loadSample(p);
   }
 
+  _primeMosinSamples() {
+    if (!this.ctx || this._mosinSamplesPrimed) return;
+    this._mosinSamplesPrimed = true;
+    for (const p of [
+      ...this._mosin.fireClose,
+      ...this._mosin.boltOpen,
+      ...this._mosin.boltClose,
+      ...this._mosin.caseEject,
+      ...this._mosin.clipLoad,
+      ...this._mosin.roundInsert,
+      ...this._mosin.reloadStart,
+      ...this._mosin.reloadFinish,
+    ]) this._loadSample(p);
+  }
+
   _pickSample(key, paths) {
     if (!paths || !paths.length) return null;
     if (this._sampleIdx[key] == null) this._sampleIdx[key] = Math.floor(Math.random() * paths.length);
@@ -172,6 +199,11 @@ export class AudioManager {
   _playM2ChargeSample() {
     const path = this._pickSample('m2Charge', this._m2.charge);
     return this._playSample(path, { vol: 0.92, rate: 0.98 + Math.random() * 0.025 });
+  }
+
+  _playMosinSample(key, paths, { vol = 1, rate = 1 } = {}) {
+    const path = this._pickSample(key, paths);
+    return this._playSample(path, { vol, rate });
   }
 
   _noiseBuffer(dur) {
@@ -255,6 +287,56 @@ export class AudioManager {
   garandPing() { this.tone(2300, 0.55, 'triangle', 0.30); this.tone(3100, 0.45, 'sine', 0.16); this.tone(1750, 0.5, 'triangle', 0.10); } // en-bloc clip "ping"
   shellInsert() { this.noise(0.05, 0.3, 'lowpass', 600, 1); this.tone(210, 0.05, 'square', 0.16); } // a single shell pressed into the tube
   dryFire() { this.noise(0.03, 0.25, 'bandpass', 3200, 4); }
+
+  // ---- Mosin 91/30: recorded rifle shot + bolt/reload foley, with procedural fallback ----
+  mosinShot() {
+    if (!this.ctx) return;
+    if (this._playMosinSample('mosinFireClose', this._mosin.fireClose, { vol: 0.88 + Math.random() * 0.08, rate: 0.985 + Math.random() * 0.035 })) return;
+    const t0 = this.t;
+    this.gunshot({ body: 150, crack: 0.13, vol: 0.78, hp: 2300, bp: 820 });
+    this._burst(t0 + 0.018, 0.035, 0.18, 'bandpass', 1250, 0.9);
+  }
+  mosinBoltOpen() {
+    if (!this.ctx) return;
+    if (this._playMosinSample('mosinBoltOpen', this._mosin.boltOpen, { vol: 0.74, rate: 0.96 + Math.random() * 0.08 })) return;
+    const t0 = this.t;
+    this._burst(t0, 0.026, 0.18, 'bandpass', 1850, 2.2);
+    this._metalPing(t0 + 0.014, 3600 + Math.random() * 1100, 0.035, 0.07);
+  }
+  mosinBoltClose() {
+    if (!this.ctx) return;
+    if (this._playMosinSample('mosinBoltClose', this._mosin.boltClose, { vol: 0.78, rate: 0.965 + Math.random() * 0.07 })) return;
+    const t0 = this.t;
+    this._clank(t0, 0.20, 190 + Math.random() * 20);
+    this._burst(t0 + 0.018, 0.018, 0.09, 'highpass', 4500, 0.8);
+  }
+  mosinCaseEject() {
+    if (!this.ctx) return;
+    if (this._playMosinSample('mosinCaseEject', this._mosin.caseEject, { vol: 0.34, rate: 0.95 + Math.random() * 0.12 })) return;
+    const t0 = this.t;
+    this._metalPing(t0, 4300 + Math.random() * 1700, 0.04, 0.08);
+    this._burst(t0 + 0.012, 0.012, 0.04, 'highpass', 6200, 0.7);
+  }
+  mosinReloadStart(kind = 'single') {
+    if (!this.ctx) return;
+    const played = this._playMosinSample(`mosinReloadStart:${kind}`, this._mosin.reloadStart, { vol: kind === 'clip' ? 0.44 : 0.36, rate: 0.98 + Math.random() * 0.04 });
+    if (!played) this.reloadIn();
+  }
+  mosinClipLoad() {
+    if (!this.ctx) return;
+    if (this._playMosinSample('mosinClipLoad', this._mosin.clipLoad, { vol: 0.62, rate: 0.985 + Math.random() * 0.045 })) return;
+    this.reloadClick();
+  }
+  mosinRoundInsert() {
+    if (!this.ctx) return;
+    if (this._playMosinSample('mosinRoundInsert', this._mosin.roundInsert, { vol: 0.50, rate: 0.97 + Math.random() * 0.07 })) return;
+    this.reloadClick();
+  }
+  mosinReloadFinish() {
+    if (!this.ctx) return;
+    if (this._playMosinSample('mosinReloadFinish', this._mosin.reloadFinish, { vol: 0.40, rate: 0.985 + Math.random() * 0.035 })) return;
+    this.reloadClick();
+  }
 
   // ---- M2HB .50 cal: heavy industrial layered sound (close perspective) ----
   _burst(t0, dur, vol, filterType, freq, q = 1) { // filtered-noise burst scheduled at an absolute time
