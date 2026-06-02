@@ -51,10 +51,12 @@ export class Shop {
     this.confirmMsgEl = document.getElementById('shopConfirmMsg');
     this.activeCat = 'all'; this.search = ''; this.selected = null; this.returnTo = 'menu'; this._onConfirm = null;
     this._buildRail();
-    if (this.searchEl) this.searchEl.addEventListener('input', () => { this.search = this.searchEl.value || ''; const l = this._filteredCatalog(); this.selected = l.length ? l[0].key : null; this._renderCatalog(); this._renderDetail(); });
+    if (this.searchEl) this.searchEl.addEventListener('input', () => { this.search = this.searchEl.value || ''; const l = this._filteredCatalog(); if (!l.some((i) => i.key === this.selected)) this.selected = l.length ? l[0].key : null; this._renderCatalog(); this._renderDetail(); }); // keep an explicit click-selection while it still matches
     const yes = document.getElementById('shopConfirmYes'), no = document.getElementById('shopConfirmNo');
     if (yes) yes.addEventListener('click', () => { const fn = this._onConfirm; this._hideConfirm(); if (fn) fn(); });
     if (no) no.addEventListener('click', () => this._hideConfirm());
+    if (this.confirmEl) this.confirmEl.addEventListener('click', (e) => { if (e.target === this.confirmEl) this._hideConfirm(); }); // click backdrop = cancel
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.confirmEl && this.confirmEl.classList.contains('show')) this._hideConfirm(); }); // Esc = cancel the confirm
     const clr = document.getElementById('shopClearAll'); if (clr) clr.addEventListener('click', () => this._askClearAll());
     const start = document.getElementById('shopStartBtn'); if (start) start.addEventListener('click', () => { if (this.returnTo !== 'lobby') this.game.startGame('purge'); });
   }
@@ -74,9 +76,9 @@ export class Shop {
     if (WEAPONS[key]) { const d = WEAPONS[key]; return d.melee ? '🔪' : (d.class === 'tool' ? (d.zoom ? '🔭' : '🔦') : (d.class === 'launcher' ? '🚀' : '🔫')); }
     return (ITEM_DEFS[key] || {}).icon || '🎯';
   }
-  _nameOf(key) { if (WEAPONS[key]) return WEAPONS[key].name; const g = GADGETS.find((x) => x.key === key); return g ? g.name : key; }
+  _nameOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.name; return WEAPONS[key] ? WEAPONS[key].name : key; } // GADGETS first (flashlight/binoculars live in both registries)
   _descOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.desc; const w = WEAPONS[key]; return w ? (w.class + (w.melee ? ' · melee weapon' : ' · firearm')) : ''; }
-  _price(key) { if (WEAPONS[key]) return WEAPONS[key].price || 0; const g = GADGETS.find((x) => x.key === key); return g ? g.price : 0; }
+  _price(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.price; return WEAPONS[key] ? (WEAPONS[key].price || 0) : 0; } // GADGETS first: flashlight/binoculars have a price in GADGETS, none in WEAPONS
   _count(key) { return this._meta().loadout.filter((k) => k === key).length; }
 
   // ---- economy: unlock-once + paid duplicates ----
@@ -89,17 +91,18 @@ export class Shop {
   _clearSlot(idx) { const m = this._meta(); if (!m.loadout[idx]) return; this._refundSlot(idx); this.game.audio.uiClick(); this.game._saveMeta(); this._render(); }
   _clearAll() { const m = this._meta(); for (let i = 0; i < m.loadout.length; i++) this._refundSlot(i); this.game.audio.uiClick(); this.game._saveMeta(); this._render(); }
   _equipOwned(key) { if (this._placeFirstEmpty(key)) { this.game.audio.uiClick(); this.game._saveMeta(); this._render(); } } // free: placing an owned copy
-  _buy(key) { // unlock 1st copy + auto-equip
+  _buy(key) { // unlock 1st copy + auto-equip — needs a free slot; only charge once placed
     const m = this._meta(), price = this._price(key);
     if (m.bank < price) { this.game.audio.noMoney(); return; }
+    if (!this._placeFirstEmpty(key)) return;                  // loadout full → no charge (feedback already shown)
     m.bank -= price; if (!m.unlocked.includes(key)) m.unlocked.push(key);
-    this._placeFirstEmpty(key);
     this.game.audio.buy(); this.game._saveMeta(); this._render();
   }
-  _buyDuplicate(key) { // paid extra copy of something already owned
+  _buyDuplicate(key) { // paid extra copy of something already owned — needs a free slot; only charge once placed
     const m = this._meta(), price = this._price(key);
     if (m.bank < price) { this.game.audio.noMoney(); return; }
-    m.bank -= price; this._placeFirstEmpty(key);
+    if (!this._placeFirstEmpty(key)) return;                  // loadout full → no charge
+    m.bank -= price;
     this.game.audio.buy(); this.game._saveMeta(); this._render();
   }
   _sell(key) {
@@ -149,7 +152,7 @@ export class Shop {
     this._renderCatalog(); this._renderLoadoutBar(); this._renderDetail(); this._updateSummary();
   }
   _renderCatalog() {
-    if (!this.grid) return; const m = this._meta(); this.grid.innerHTML = '';
+    if (!this.grid) return; const m = this._meta(); const _st = this.grid.scrollTop; this.grid.innerHTML = '';
     const list = this._filteredCatalog();
     if (!list.length) { this.grid.innerHTML = '<div class="cat-empty">No gear matches your search.</div>'; return; }
     for (const it of list) {
@@ -164,9 +167,11 @@ export class Shop {
       el.addEventListener('click', () => { this.selected = it.key; this._renderCatalog(); this._renderDetail(); this.game.audio.uiClick(); });
       this.grid.appendChild(el);
     }
+    this.grid.scrollTop = _st; // preserve scroll across the full rebuild (clicking a tile re-renders the grid)
   }
   _setPreview(key) {
     const g = this.game;
+    if (g.preview && g.preview.setSize) g.preview.setSize(); // keep the WebGL buffer matched to the live canvas box
     if (key && WEAPONS[key] && g.preview) g.preview.show(key);
     else if (g.preview && g.preview.hide) g.preview.hide();
     if (this.nameEl) this.nameEl.textContent = key ? this._nameOf(key) : '';
@@ -180,13 +185,21 @@ export class Shop {
     if (!host) return;
     if (!key) { host.innerHTML = '<div class="det-hint">Pick a weapon to inspect.</div>'; return; }
     const owned = m.unlocked.includes(key), cnt = this._count(key), price = this._price(key), afford = m.bank >= price;
+    const full = m.loadout.indexOf(null) < 0; // adding needs a free slot
     let html = '';
     if (!owned) {
-      html += `<button class="det-btn buy" data-act="buy" ${afford ? '' : 'disabled'}>UNLOCK · $${price}</button>`;
+      html += `<button class="det-btn buy" data-act="buy" ${(afford && !full) ? '' : 'disabled'}>UNLOCK · $${price}</button>`;
       if (!afford) html += `<div class="det-warn">Need $${price - m.bank} more</div>`;
+      else if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
     } else {
-      if (cnt === 0) html += `<button class="det-btn equip" data-act="equip">EQUIP</button>`;
-      else { html += `<button class="det-btn dup" data-act="dup" ${(afford || price === 0) ? '' : 'disabled'}>ADD ANOTHER · $${price}</button><div class="det-incl">×${cnt} in loadout</div>`; }
+      if (cnt === 0) {
+        html += `<button class="det-btn equip" data-act="equip" ${full ? 'disabled' : ''}>EQUIP</button>`;
+        if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
+      } else {
+        html += `<button class="det-btn dup" data-act="dup" ${((afford || price === 0) && !full) ? '' : 'disabled'}>ADD ANOTHER · $${price}</button><div class="det-incl">×${cnt} in loadout</div>`;
+        if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
+        else if (!afford && price > 0) html += `<div class="det-warn">Need $${price - m.bank} more</div>`;
+      }
       if (key !== 'knife') { const refund = Math.round(price * 0.6) + Math.max(0, cnt - 1) * price; html += `<button class="det-btn sell" data-act="sell">SELL · +$${refund}</button>`; }
     }
     host.innerHTML = html;
@@ -197,7 +210,7 @@ export class Shop {
         if (act === 'buy') this._confirm(`Unlock ${nm} for $${price}?`, () => this._buy(key));
         else if (act === 'dup') this._confirm(`Add another ${nm} for $${price}?`, () => this._buyDuplicate(key));
         else if (act === 'equip') this._equipOwned(key);
-        else if (act === 'sell') { const refund = Math.round(price * 0.6) + Math.max(0, this._count(key) - 1) * price; this._confirm(`Sell ${nm}? You get $${refund} back and it leaves your loadout.`, () => this._sell(key)); }
+        else if (act === 'sell') { const c = this._count(key), refund = Math.round(price * 0.6) + Math.max(0, c - 1) * price; const msg = c > 1 ? `Sell ALL ×${c} ${nm} and give up the unlock? You get $${refund} back.` : `Sell ${nm}? You get $${refund} back and it leaves your loadout.`; this._confirm(msg, () => this._sell(key)); }
       });
     });
   }
@@ -277,9 +290,11 @@ export class Inventory {
       else if (k === 'molotov') { this.addItem('molotov'); }                            // 1 molotov per slot
       else if (k === 'flare') { this.addItem('flare'); }                                // 1 flare per slot
     }
-    if (!this.slots.some((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee)) { w.grant('knife'); this.addItem('knife'); } // a run always has a melee
+    if (!this.slots.some((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee)) { w.grant('knife'); if (!this.addItem('knife')) this.slots[this.slots.length - 1] = { kind: 'knife', value: 1 }; } // a run always has a melee (evict the last item if the backpack overflowed)
     this._activeSlot = -1; this._wheelIdx = 0;
-    const o = this.scrollOrder(); if (o.length) this._select(o[0], 0); else this._holdNothing();
+    const o = this.scrollOrder();
+    if (o.length) { let i = o.findIndex((e) => e.kind === w.cur); if (i < 0) i = 0; this._select(o[i], i); } // hold the computed weapon (first firearm), not just slot 0
+    else this._holdNothing();
     this.refreshHotbar();
   }
 
