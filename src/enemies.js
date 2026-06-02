@@ -365,6 +365,20 @@ export class EnemyManager {
       // heavy enemies crush a blocking structure instantly (no caging the boss) — after the boxes loop so the splice is safe
       if (e._blockStruct && (e.def.boss || e.def.tank || (e.def.scale || 1) >= 1.6)) { this.game.build.attackStructure(e._blockStruct, e._blockStruct.maxHp, e); e._blockStruct = null; }
 
+      // body-block vs the player: a regular mob can't interpenetrate the player capsule — shove the
+      // enemy back out to the contact ring so it stops at arm's length instead of clipping into the
+      // camera. (Boss Tolo is exempt — it's a scripted, immovable giant; tanks never reach this loop.)
+      if (!e.def.boss) {
+        const minD = e.radius + this.game.player.radius;
+        let bx = e.pos.x - tgt.x, bz = e.pos.z - tgt.z; const bd = Math.hypot(bx, bz);
+        if (bd < minD) {
+          if (bd > 1e-4) { bx /= bd; bz /= bd; }                  // normal: out along player→enemy
+          else if (Math.hypot(dx, dz) > 1e-4) { bx = -dx; bz = -dz; } // dead-center: shove back along approach
+          else { bx = 1; bz = 0; }                                // fully degenerate: any direction
+          e.pos.x = tgt.x + bx * minD; e.pos.z = tgt.z + bz * minD;
+        }
+      }
+
       // attack
       e.attackCD -= dt;
       if (dist < e.radius + this.game.player.radius + 0.6 && e.attackCD <= 0) {

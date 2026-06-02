@@ -1124,16 +1124,20 @@ export class WeaponSystem {
   refillAll() {
     for (const k of WEAPON_ORDER) {
       if (!this.owns(k) || WEAPONS[k].melee) continue;
-      this.reserve[k] = WEAPONS[k].reserveMax === Infinity ? Infinity : WEAPONS[k].reserveMax;
+      const rm = WEAPONS[k].reserveMax;
+      // top up to at least the base reserve, but NEVER strip ammo already hoarded past it
+      // (reserve is uncapped now — see refillHeld) so a refill consumable can't be a downgrade.
+      this.reserve[k] = rm === Infinity ? Infinity : Math.max(this.reserve[k] || 0, rm);
       this.mag[k] = this.magMax[k];
     }
     if (this.game.hud) this.game.hud.setWeapon(this);
   }
 
   // A ground-found ammo box tops up ONLY the weapon currently in hand — you choose which gun gets it
-  // by holding it when you grab the box. Adds 25% of that gun's max reserve, rounded UP to a whole
-  // number of magazines. Returns { ok:true, key } on a refill, or { ok:false, reason } so the caller
-  // can leave the box on the ground (melee/tool/infinite-ammo/already-full can't take it).
+  // by holding it when you grab the box. Adds 25% of that gun's base reserve, rounded UP to a whole
+  // number of magazines. Reserve is UNCAPPED — boxes keep stacking ammo with no ceiling, so the only
+  // rejects are melee/tool/builder/infinite-ammo (those can't use a box); a firearm is never "full".
+  // Returns { ok:true, key } on a refill, or { ok:false, reason } so the caller can leave the box.
   // non-mutating: can the gun currently in hand take more reserve ammo? (used as a co-op pre-grab guard so we
   // don't claim a shared ammo box we can't actually use). Mirrors refillHeld's reject conditions.
   heldRefillable() {
@@ -1141,18 +1145,16 @@ export class WeaponSystem {
     const key = held && held.kind, d = key && WEAPONS[key];
     if (!d || d.melee || d.class === 'tool' || d.class === 'builder') return false;
     if (this.reserve[key] === Infinity || d.reserveMax === Infinity) return false;
-    return this.reserve[key] < d.reserveMax;
+    return true; // reserve is uncapped — a firearm can always accept more ammo
   }
   refillHeld() {
     const held = this.game.inventory ? this.game.inventory.curItem() : null;
     const key = held && held.kind, d = key && WEAPONS[key];
     if (!d || d.melee || d.class === 'tool' || d.class === 'builder') return { ok: false, reason: 'noweapon' };
     if (this.reserve[key] === Infinity || d.reserveMax === Infinity) return { ok: false, reason: 'infinite' };
-    const max = d.reserveMax;
-    if (this.reserve[key] >= max) return { ok: false, reason: 'full' };
     const mag = this.magMax[key] || d.mag || 1;
-    const give = Math.ceil((max * 0.25) / mag) * mag;            // 25% of capacity, rounded up to whole mags
-    this.reserve[key] = Math.min(max, this.reserve[key] + give);
+    const give = Math.ceil((d.reserveMax * 0.25) / mag) * mag;   // 25% of base reserve, rounded up to whole mags
+    this.reserve[key] = (this.reserve[key] || 0) + give;         // uncapped — keep stacking ammo
     if (this.game.hud) this.game.hud.setWeapon(this);
     return { ok: true, key };
   }
