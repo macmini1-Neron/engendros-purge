@@ -12,7 +12,7 @@ import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
-import { Inventory, Shop } from './inventory.js';
+import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 10:01 WEST';
+const GAME_BUILD = '2026-06-02 17:04';
 
 class Game {
   constructor() {
@@ -566,15 +566,21 @@ class Game {
     if (typeof m.bank !== 'number') m.bank = 0;                                   // persistent money "account"
     if (!Array.isArray(m.unlocked)) m.unlocked = ['knife'];                       // permanently owned gear keys
     if (!m.unlocked.includes('knife')) m.unlocked.push('knife');                  // knife is always owned (cold start)
-    if (!m.loadout || typeof m.loadout !== 'object') m.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null };
-    // migrate the old single gadget slot → two gadget slots (backward-compatible)
-    if ('gadget' in m.loadout) { if (m.loadout.gadget1 == null) m.loadout.gadget1 = m.loadout.gadget; delete m.loadout.gadget; }
-    if (!('gadget1' in m.loadout)) m.loadout.gadget1 = null;
-    if (!('gadget2' in m.loadout)) m.loadout.gadget2 = null;
+    // Loadout is now a flat array of LOADOUT_SLOTS equal slots (any gear in any slot, duplicates OK).
+    // Migrate the old keyed forms losslessly: oldest {gadget}, then {primary,secondary,melee,gadget1,gadget2}.
+    if (Array.isArray(m.loadout)) {
+      m.loadout = m.loadout.slice(0, LOADOUT_SLOTS);
+    } else {
+      const old = (m.loadout && typeof m.loadout === 'object') ? m.loadout : {};
+      if ('gadget' in old && old.gadget1 == null) old.gadget1 = old.gadget;       // oldest single-gadget form
+      const arr = [];
+      for (const s of ['primary', 'secondary', 'melee', 'gadget1', 'gadget2']) { const k = old[s]; if (k && typeof k === 'string') arr.push(k); }
+      m.loadout = arr;
+    }
+    while (m.loadout.length < LOADOUT_SLOTS) m.loadout.push(null);                 // pad to fixed length
+    m.loadout = m.loadout.map((k) => (k && typeof k === 'string' && !/^build_/.test(k)) ? k : null); // drop junk/removed-builder keys
+    if (m.loadout.every((k) => !k)) m.loadout[0] = 'knife';                       // cold start / empty → knife in slot 0
     if (!m.playerId) { m.playerId = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); try { localStorage.setItem('engendros_meta', JSON.stringify(m)); } catch (e) {} } // stable per-device co-op identity — persist immediately so it survives reloads
-    if (!m.loadout.melee) m.loadout.melee = 'knife';                              // a run always has a melee
-    // drop removed builder keys from any loadout slot
-    for (const s of ['primary', 'secondary', 'melee', 'gadget1', 'gadget2']) { const k = m.loadout[s]; if (k && /^build_/.test(k)) m.loadout[s] = (s === 'melee' ? 'knife' : null); }
     return m;
   }
   _saveMeta() { try { localStorage.setItem('engendros_meta', JSON.stringify(this.meta)); } catch (e) {} }

@@ -437,7 +437,7 @@ export class MP {
       'ssl-unavailable': 'Secure connection failed.',
     })[t] || ('Connection error: ' + t);
   }
-  _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
+  _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || []; return Array.isArray(lo) ? lo.filter(Boolean) : []; } // flat equal-slot loadout array (empties dropped for the roster)
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
   toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }
   _renderRoster() {

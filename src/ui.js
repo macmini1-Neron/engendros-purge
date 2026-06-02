@@ -281,6 +281,7 @@ export class WeaponPreview {
     this.dist = Math.max(size.x, size.y, size.z) * 1.7 + 0.35;
     this.spin = 0.6;
   }
+  hide() { while (this.holder.children.length) { const c = this.holder.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); } this.cur = null; } // clear the model (gadgets with no 3D viewmodel)
   render(dt) {
     this.spin += dt * 0.7; this.holder.rotation.y = this.spin;
     const d = this.dist;

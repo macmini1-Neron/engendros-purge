@@ -801,7 +801,7 @@ export class WeaponSystem {
   constructor(game) {
     this.game = game;
     this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
-    this.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null }; this.slotOrder = ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'];
+    this.meleeKind = 'knife'; // the melee kind quick-melee (Q) jumps to — derived from the loadout each run
     this.cur = 'luger';
     this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0;
     this.grenadeCD = 0; this.ads = false; this.fov = 80;
@@ -850,12 +850,15 @@ export class WeaponSystem {
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
     for (const k of WEAPON_ORDER) { this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
-    // deploy the player's saved loadout (knife-only by default; gadgets deploy EMPTY — charge/material scavenged in-run)
-    const lo = (this.game.meta && this.game.meta.loadout) || { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null };
-    this.loadout = { primary: lo.primary || null, secondary: lo.secondary || null, melee: lo.melee || 'knife', gadget1: lo.gadget1 || null, gadget2: lo.gadget2 || null };
+    // deploy the player's saved loadout — now a flat array of EQUAL slots (any gear in any slot, duplicates OK)
+    const lo = (this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : ['knife'];
     this.flares = 0;
-    if (!this.loadout.melee || !WEAPONS[this.loadout.melee]) this.loadout.melee = 'knife'; // a run always has a valid melee
-    this.cur = this.loadout.primary || this.loadout.secondary || this.loadout.melee || 'knife';
+    // choose what to hold first: first firearm, else first melee, else the bare knife
+    this.cur = null;
+    for (const k of lo) { if (k && WEAPONS[k] && !WEAPONS[k].melee && WEAPONS[k].class !== 'tool') { this.cur = k; break; } }
+    if (!this.cur) for (const k of lo) { if (k && WEAPONS[k] && WEAPONS[k].melee) { this.cur = k; break; } }
+    if (!this.cur) this.cur = 'knife';
+    this.meleeKind = lo.find((k) => k && WEAPONS[k] && WEAPONS[k].melee) || 'knife'; // for quick-melee (Q)
     this.molotovCD = 0; this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
     // ownership + deploy now happen entirely in inventory.deployLoadout() (grant = ammo init; a slot confers ownership)
     if (this.molotovModel) { this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0); }
@@ -892,7 +895,11 @@ export class WeaponSystem {
     this.cooldown = 0.1; this.bloom = 0;
     this.game.hud.setWeapon(this); this.game.audio.reloadClick();
   }
-  quickMelee() { const k = this.loadout.melee; if (k && this.game.inventory) this.game.inventory.selectKind(k); else if (k && this.owns(k)) this.select(k); }
+  quickMelee() {
+    const inv = this.game.inventory; let k = this.meleeKind || 'knife';
+    if (inv && !inv.slots.some((s) => s && s.kind === k)) { const m = inv.slots.find((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee); if (m) k = m.kind; } // fall back to whatever melee is actually carried
+    if (inv) inv.selectKind(k); else if (this.owns(k)) this.select(k);
+  }
   cycle(dir) { this.game.inventory.cycleWheel(dir); } // the wheel scrolls the unified inventory (loadout weapons + backpack)
   // Fortification material — granted by supply drops as inventory items (1 item = 1 placement).
   grantBuildMats(amt) {
