@@ -6,7 +6,7 @@ export const RADIO_STATIONS = [
   { name: 'Evropa 2',      genre: 'CZ pop',     url: 'https://ice.actve.net/fm-evropa2-128' },
   { name: 'Power 181',     genre: 'US Top 40',  url: 'https://listen.181fm.com/181-power_128k.mp3' },
   { name: 'Highway 181',   genre: 'US country', url: 'https://listen.181fm.com/181-highway_128k.mp3' },
-  { name: 'The Mix 181',   genre: 'mainstream', url: 'https://listen.181fm.com/181-mix_128k.mp3' },
+  { name: 'Energy 98',     genre: 'US dance',   url: 'https://listen.181fm.com/181-energy98_128k.mp3' },
 ];
 
 export const RADIO_INNER = 3.5;   // full volume within this radius (m)
