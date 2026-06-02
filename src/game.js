@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 01:05 WEST';
+const GAME_BUILD = '2026-06-02 01:09 WEST';
 
 class Game {
   constructor() {
@@ -485,20 +485,32 @@ class Game {
     const root = document.documentElement; const after = () => { this.engine.resize(); this.input.requestLock(); };
     if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().then(after, after); else after();
   }
-  _mpGameOver() {
-    if (this.state === 'dead') return;
+  _mpGameOver(msg) {
+    this._mpReturnToLobby(msg || 'Squad wiped. Ready up and start again.');
+  }
+  _mpReturnToLobby(msg) {
+    if (this.state === 'menu' && !(this.mp && this.mp.active)) return;
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
-    this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this._bankRunMoney(); this._saveMeta(); // each player banks their own run money locally
+    if (this.mp && typeof this.mp.endRunToLobby === 'function') this.mp.endRunToLobby(msg);
+    this.state = 'menu'; this.mpMenuOpen = false;
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
-    this.audio.gameOver(); this.audio.stopMusic(); this.hud.show(false);
+    this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
+    this._clearFlares();
+    if (this._clearMolotovPools) this._clearMolotovPools();
+    this.dayNight.reset(this.mode === 'longnight');
+    this.audio.stopMusic(); this.hud.show(false);
+    this.hud.setBleed(-1); this.hud.hideBoss(); this.hud.clearWaveTag();
     const lab = document.getElementById('mp-labels'); if (lab) lab.style.display = 'none';
-    const rec = document.getElementById('goRecord'); if (rec) rec.innerHTML = 'the whole squad got unstuffed';
-    const gw = document.getElementById('goWave'); if (gw) gw.textContent = 'wave ' + this.waves.wave;
-    const gs = document.getElementById('goScore'); if (gs) gs.textContent = this.score;
-    const gk = document.getElementById('goKills'); if (gk) gk.textContent = this.kills;
-    this.ui.show('gameover');
+    this.ui.show('lobby');
+    this.mp._lobbyMsg(msg || 'Run ended. Ready up and start again.');
+    this.mp._renderRoster();
+    this.mp._renderLanMode();
+    this.mp._renderRelayMode();
+    this.mp._renderModeSel();
+    this.mp._renderRoomBrowser();
   }
   // _mpOpenShop removed — co-op has continuous waves with no between-wave shop.
   _hurtTarget(id, dmg) { if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dmg); else this.player.hurt(dmg); }

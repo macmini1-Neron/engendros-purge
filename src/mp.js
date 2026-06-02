@@ -364,6 +364,24 @@ export class MP {
     this._renderRoster();
     this._renderRoomBrowser();
   }
+  endRunToLobby(msg) {
+    this.active = false; this.frozen = false; this._spilledLoot = false; this.spectateTarget = null;
+    this._localDown = false; this._localDead = false; this._localWaiting = false; this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; this._bleedShown = false; this._bleedT = 0;
+    this.pstate.clear(); this.ghosts.clear(); this._clearGhostProjectiles();
+    if (this._lastXf) this._lastXf.clear();
+    for (const [, rp] of this.remotes) rp.dispose();
+    this.remotes.clear();
+    if (this.game.mountedGun) this.game.mountedGun.occupant = null;
+    if (this.isHost) {
+      for (const [id, r] of this.roster) r.ready = (id === 'host');
+      try { this.net.send('roster', this._rosterArr()); } catch (e) {}
+    } else {
+      this.ready = false;
+      const me = this.roster.get(this.myId);
+      if (me) me.ready = false;
+    }
+    this._lobbyMsg(msg || 'Run ended. Ready up and start again.');
+  }
   // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
   _dropPeer(peerId, opts) {
     if (peerId === 'host') return;
@@ -587,7 +605,7 @@ export class MP {
     n.on('pong', (d) => { this.myPing = Math.round(performance.now() - d.t); });
     n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
     n.on('feed', (d) => this.game.hud.kill(d.who + ' \u27a4 ' + d.what));
-    n.on('gameover', () => this.game._mpGameOver());
+    n.on('gameover', (d) => this.game._mpGameOver(d && d.reason));
     n.on('droppickup', (d) => { if (!d || typeof d.kind !== 'string' || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return; const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E (legacy local pile)
     // ---- host-authoritative SHARED ground loot (one pile for everyone, first grab claims it) ----
     n.on('pickup', (d) => { if (!this.isHost && d) g.loot._spawnPickup(d.kind, new THREE.Vector3(d.x, 0.55, d.z), d.value, d.life, d.id); });        // client spawns the EXACT shared pickup the host broadcast
@@ -810,10 +828,10 @@ export class MP {
     s.hp -= dmg;
     if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 3) s.dead = true; else { s.down = true; s.downT = 20; } } // 2 downs survivable, the 3rd is permanent death
     this._broadcastPState(id);
-    if (s.dead) this._checkGameOver();
+    if (s.dead || s.down || s.waiting) this._checkGameOver();
   }
   hostRevive(tid) { if (!this.isHost) return; const s = this.pstate.get(tid); if (!s || !s.down) return; s.down = false; s.downT = 0; s.hp = Math.round(s.maxHp * 0.5); this._broadcastPState(tid); }
-  _tickDowns() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); } else if (id === this.myId) this._bleedT = s.downT; else this.net.sendTo(id, 'bleed', { t: s.downT }); } } } // push authoritative remaining time so the on-screen bleed bar matches the host clock
+  _tickDowns() { if (!this.isHost) return; let changed = false; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); changed = true; } else if (id === this.myId) this._bleedT = s.downT; else this.net.sendTo(id, 'bleed', { t: s.downT }); } } if (changed) this._checkGameOver(); } // push authoritative remaining time so the on-screen bleed bar matches the host clock
   // host-authoritative, persistent player burn DoT: the molotov pool only refreshes s.burnT, so this is the SINGLE place DoT is applied (and it lingers after leaving the pool)
   _tickBurn() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.burnT > 0) { s.burnT -= 0.08; this.hostHurt(id, PLAYER_BURN_DPS * 0.08); if (id === this.myId) this.game.player.burnT = PLAYER_BURN_DUR; else this.net.sendTo(id, 'burn', {}); } } }
   respawnAll() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.waiting && !s.dead) { s.waiting = false; s.hp = s.maxHp; s.armor = 0; this._broadcastPState(id); } } }
@@ -896,9 +914,13 @@ export class MP {
   _hostGone() { if (!this.active) return; this.active = false; try { this.game.hud.bigMessage('HOST LEFT', 'returning to menu…'); } catch (e) {} this.leave(); this.game.toMenu(); }
   _checkGameOver() {
     if (!this.isHost || !this.active) return;
-    let any = false, allDead = true;
-    for (const [, s] of this.pstate) { any = true; if (!s.dead) allDead = false; }
-    if (any && allDead) { this.net.send('gameover', {}); this.game._mpGameOver(); }
+    let any = false, allOut = true;
+    for (const [, s] of this.pstate) { any = true; if (!(s.dead || s.waiting || s.down)) allOut = false; }
+    if (any && allOut) {
+      const reason = 'Squad wiped. Ready up and start again.';
+      this.net.send('gameover', { reason });
+      this.game._mpGameOver(reason);
+    }
   }
   feed(who, what) { this.game.hud.kill(who + ' \u27a4 ' + what); this.net.broadcast('feed', { who, what }); }
   revivePrompt(rp) {
