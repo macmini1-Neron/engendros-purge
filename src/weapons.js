@@ -1567,6 +1567,24 @@ export class MountedGun {
     this._playFiftyCharge();
     this._broadcastFiftySound('charge');
   }
+  // Reload the belt to full from a carried .50-cal ammo can. Host/solo apply it directly and
+  // (in co-op) sync the new belt to clients; a client asks the host (the gun is host-owned).
+  // Returns true when the can should be CONSUMED (a reload happened / was requested), false on reject.
+  reloadFromCan() {
+    if (this.ammo >= this.maxAmmo) return false;        // already full — keep the can
+    const mp = this.game.mp;
+    const hostSim = !mp || !mp.active || mp.isHost;
+    if (hostSim) {
+      this.setAmmo(this.maxAmmo);
+      this._primeCharge();                              // rack anim + foley (+ co-op: broadcasts 'fiftysound' charge)
+      if (mp && mp.active && mp.isHost) mp.net.send('fiftystate', { occ: this.occupant, ammo: this.ammo }); // push the refilled belt to clients
+    } else {
+      mp.net.send('fiftyrefill', {});                   // client → host: refill the host-owned gun (host echoes 'fiftystate' + 'fiftysound')
+      this.animateCharge(); this._playFiftyCharge();    // local responsiveness; ammo arrives via the host's 'fiftystate'
+    }
+    if (this.game.hud && this.game.hud.toast) this.game.hud.toast('.50 CAL · ' + this.maxAmmo + ' / ' + this.maxAmmo, 0xe8c84a);
+    return true;
+  }
   updateNearby(p) {
     const canUse = this.canMount(p);
     this._nearWas = canUse;
