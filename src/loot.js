@@ -25,6 +25,7 @@ export const ITEM_DEFS = {
   sandbag: { name: 'Sandbag',      class: 'material',   icon: '🧱', build: 'sandbag' },
   wire:    { name: 'Barbed Wire',  class: 'material',   icon: '🔩', build: 'wire' },
   wood:    { name: 'Barricade',    class: 'material',   icon: '🪵', build: 'wood' },
+  radio:   { name: 'Radio',        class: 'material',   icon: '📻', build: 'radio' },
 };
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js?u=3';
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
-import { buildBarbedWire, buildBarricade, buildSandbags } from './props.js';
+import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
 
 
 // ---------------------------------------------------------------------------
@@ -286,6 +286,7 @@ export class BuildManager {
     const sg = buildSandbags(), wg = buildBarbedWire(), dg = buildBarricade();
     this._geos = { sandbag: sg.geometry, wire: wg.geometry, wood: dg.geometry };
     sg.material.dispose(); wg.material.dispose(); dg.material.dispose();
+    this._geos.radio = new THREE.BoxGeometry(STRUCT_DEFS.radio.w, STRUCT_DEFS.radio.h, STRUCT_DEFS.radio.d).translate(0, STRUCT_DEFS.radio.h / 2, 0);
     this.ghostMat = new THREE.MeshLambertMaterial({ color: 0x35d05a, emissive: 0x0a3a14, transparent: true, opacity: 0.5, depthWrite: false });
     this.ghost = new THREE.Mesh(this._geos.sandbag, this.ghostMat);
     this.ghost.visible = false; this.ghost.renderOrder = 5; this.ghost.frustumCulled = false;
@@ -345,6 +346,8 @@ export class BuildManager {
 
   place() {
     const kind = this._curKind(); if (!kind) return;
+    const _cap = STRUCT_DEFS[kind].max;
+    if (_cap && this.structures.filter((s) => s.kind === kind).length >= _cap) { this.game.hud.toast(`Max ${_cap} ${STRUCT_DEFS[kind].label}`, 0xd23a2a); return; }
     if (!this._valid || !this._ghostPos) { this.game.audio.noMoney && this.game.audio.noMoney(); return; }
     const pos = this._ghostPos.clone(), yaw = this.ghostYaw, mp = this.game.mp;
     if (mp && mp.active && !mp.isHost) {
@@ -361,15 +364,16 @@ export class BuildManager {
 
   placeStructure(kind, pos, yaw, id) {
     const sd = STRUCT_DEFS[kind];
-    const mesh = new THREE.Mesh(this._geos[kind], voxelMaterial());
+    const mesh = sd.prop ? buildFieldRadio() : new THREE.Mesh(this._geos[kind], voxelMaterial());
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.position.set(pos.x, pos.y || 0, pos.z); mesh.rotation.y = yaw;
     this.scene.add(mesh);
-    const s = { id, kind, pos: new THREE.Vector3(pos.x, pos.y || 0, pos.z), yaw, mesh, hp: sd.hp, maxHp: sd.hp, box: null, hazard: null };
+    const s = { id, kind, pos: new THREE.Vector3(pos.x, pos.y || 0, pos.z), yaw, mesh, hp: sd.hp, maxHp: sd.hp, box: null, hazard: null,
+                on: false, station: 0, audio: null }; // on/station/audio used only by radio props
     const fp = this._footprint(kind, yaw);
     const aabb = (extraTag) => Object.assign({ min: new THREE.Vector3(pos.x - fp.hx, 0, pos.z - fp.hz), max: new THREE.Vector3(pos.x + fp.hx, (pos.y || 0) + sd.h, pos.z + fp.hz) }, extraTag);
     if (sd.hard) { s.box = aabb({ struct: true, _ref: s }); this.game.world.boxes.push(s.box); }
-    else { s.hazard = aabb({ ref: s }); }
+    else if (!sd.prop) { s.hazard = aabb({ ref: s }); } // props are NOT hazards; enemies ignore them
     this.structures.push(s);
     return s;
   }

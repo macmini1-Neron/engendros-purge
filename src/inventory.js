@@ -1,7 +1,7 @@
 // inventory.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
 import { MeshBuilder, rr, voxelMaterial } from './util.js?u=3';
-import { buildFlare } from './props.js';
+import { buildFlare, buildFieldRadio } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { WEAPON_LAYER } from './engine.js?e=2';
@@ -346,6 +346,7 @@ export class Inventory {
       sandbag: () => buildViewmodel({ shape: 'build_sandbag', color: 0xcdb887, accent: 0xb89a5e }),
       wire: () => buildViewmodel({ shape: 'build_wire', color: 0x8a8f98, accent: 0x5a4a32 }),
       wood: () => buildViewmodel({ shape: 'build_wood', color: 0x8a6a40, accent: 0x5a4026 }),
+      radio: () => buildFieldRadio(),
     };
     for (const kind in makers) {
       let obj; try { obj = makers[kind](); } catch (e) { obj = null; if (typeof console !== 'undefined') console.warn('[loot] held item model build failed: ' + kind, e); }

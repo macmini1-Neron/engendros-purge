@@ -37,7 +37,7 @@ export const SOUND_BY_CLASS = {
   fiftycal:{ body: 110, crack: 0.12, vol: 0.70, hp: 1500, bp: 650 }, // rooftop .50cal — mirrors MountedGun._fire() inline gunshot params
 };
 
-export const STRUCT_FX_COLOR = { sandbag: 0xcdb887, wire: 0x8a8f98, wood: 0x7a5530 };
+export const STRUCT_FX_COLOR = { sandbag: 0xcdb887, wire: 0x8a8f98, wood: 0x7a5530, radio: 0x4e6134 };
 
 // ---------------------------------------------------------------------------
 // Wave director
