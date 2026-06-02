@@ -128,6 +128,7 @@ class Game {
         else if (this.mountedGun.canMount(this.player.pos)) this.mountedGun.mount();
         // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
         else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
+        else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
         else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
         else if (this.loot.openNearby()) { /* claimed a landed supply drop */ }
         else if (this.inventory.isHoldingFlashlight()) this.dayNight.toggleFlashlight(); // nothing nearby to interact with → toggle the held flashlight beam
@@ -548,6 +549,7 @@ class Game {
         if (edge) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
       if (this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
+      this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
       this.player.update(dt);
       this.weapons.update(dt);
       this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
@@ -580,6 +582,9 @@ class Game {
       this.hud.setInteract('Press <b>E</b> to man the .50 cal — ∞ ammo, overheats');
     } else if (this.player._splintT > 0) {
       this.hud.setInteract(`Applying splint… ${this.player._splintT.toFixed(1)}s`);
+    } else if (this.build.radioTarget) {
+      const _r = this.build.radioTarget;
+      this.hud.setInteract(_r.on ? '←/→ stanice · <b>E</b> vypnout rádio' : 'Press <b>E</b> to turn on radio');
     } else if (this.loot.nearPickup) {
       this.hud.setInteract(this.loot.promptPickup());
     } else {

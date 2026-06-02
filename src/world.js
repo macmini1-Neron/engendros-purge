@@ -281,6 +281,7 @@ export class BuildManager {
     this.ghostYaw = 0;
     this._valid = false;
     this._ghostPos = null;
+    this.radioTarget = null;
     this._ghostKind = 'sandbag';
     this._tmpO = new THREE.Vector3();
     this._tmpF = new THREE.Vector3();
@@ -405,6 +406,56 @@ export class BuildManager {
       if (att > nearest) nearest = att;
     }
     if (a && a.setMusicDuck) a.setMusicDuck(1 - nearest * 0.85); // duck the procedural score near a playing radio
+  }
+
+  // Raycast the crosshair against radios within reach → this.radioTarget (or null).
+  // While an ON radio is targeted, consume ←/→ for tuning so they don't strafe.
+  updateRadioTarget() {
+    this.radioTarget = null;
+    if (this.game.state !== 'playing' || (this.game.mp && this.game.mp.frozen)) return;
+    if (this.game.player.inTank || this.game.player.mountedGun) return;
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const o = this._tmpO.setFromMatrixPosition(cam.matrixWorld);
+    const f = this._tmpF.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    let best = null, bestD = 4.0;
+    for (const s of this.structures) {
+      if (s.kind !== 'radio') continue;
+      const dx = s.pos.x - o.x, dz = s.pos.z - o.z, along = dx * f.x + dz * f.z;
+      if (along <= 0 || along > bestD) continue;                 // behind, or farther than current best
+      const px = o.x + f.x * along, pz = o.z + f.z * along;       // closest point on the aim ray (XZ)
+      if (Math.hypot(s.pos.x - px, s.pos.z - pz) < 1.1) { best = s; bestD = along; }
+    }
+    this.radioTarget = best;
+    if (best && best.on) {
+      const inp = this.game.input;
+      if (inp.wasPressed('ArrowRight')) this.cycleRadioStation(best, 1);
+      else if (inp.wasPressed('ArrowLeft')) this.cycleRadioStation(best, -1);
+      inp.down.delete('ArrowLeft'); inp.down.delete('ArrowRight'); // suppress strafe this frame while tuning
+    }
+  }
+  toggleRadio(s) {
+    if (!s) return;
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) { mp.net.send('radioreq', { id: s.id, on: !s.on, station: s.station }); return; }
+    this.applyRadioSet({ id: s.id, on: !s.on, station: s.station });               // host / solo
+    if (mp && mp.active && mp.isHost) mp.net.broadcast('radioset', { id: s.id, on: s.on, station: s.station });
+  }
+  cycleRadioStation(s, dir) {
+    if (!s) return;
+    const n = RADIO_STATIONS.length, st = ((s.station + dir) % n + n) % n, mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) { mp.net.send('radioreq', { id: s.id, on: true, station: st }); return; }
+    this.applyRadioSet({ id: s.id, on: true, station: st });
+    if (mp && mp.active && mp.isHost) mp.net.broadcast('radioset', { id: s.id, on: true, station: st });
+    if (this.game.hud) this.game.hud.toast('📻 ' + stationLabel(st), 0x6fd0e8);
+  }
+  // apply authoritative state to a radio (local audio follows). Used by host/solo + remote clients.
+  applyRadioSet(d) {
+    const s = this.structures.find((x) => x.id === d.id && x.kind === 'radio'); if (!s) return;
+    const changedStation = s.station !== d.station;
+    s.on = !!d.on; s.station = d.station | 0;
+    if (s.on) this._radioStart(s); else this._radioStop(s);
+    if (s.on && changedStation) this._radioStart(s); // retune (updates src + plays)
+    if (this.game.audio && this.game.audio.uiClick) this.game.audio.uiClick();
   }
 
   hazardAt(x, z) {
