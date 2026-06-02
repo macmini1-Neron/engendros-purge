@@ -628,8 +628,7 @@ export class MP {
     n.on('dropitem', (d, from) => { if (this.isHost && d) g.loot.spawnNetPickup(d.kind, d.x, d.z, d.value); });           // a client manually dropped an item → host makes it a shared pickup
     n.on('dropreq', () => { if (this.isHost) g.loot.requestSupplyDrop(); });                                              // client asked for a drop → host spawns + broadcasts it
     n.on('supplydrop', (d) => { if (!this.isHost && d) g.loot.callSupplyDrop({ id: d.id, tx: d.tx, tz: d.tz, ang: d.ang }); }); // mirror the host's flyby+crate (visual)
-    n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); g.loot._spillDropLoot(drop.pos, g.loot._rollGive(), from); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative: roll the gun + spawn ONE shared pile, cash to the opener
-    n.on('dropcash', (d) => { if (d && Number.isFinite(d.amount)) g.player.addMoney(d.amount); });                        // host → opener: the crate's instant cash payout (items arrive as shared 'pickup's)
+    n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); g.loot._spillDropLoot(drop.pos, g.loot._rollGive(), from); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative: roll the gun + spawn ONE shared pile (loot only, no cash)
     n.on('dropopened', (d) => { if (d) g.loot.removeDropById(d.id); });                                                   // someone claimed it → clear the visual crate everywhere
   }
   _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null })); }

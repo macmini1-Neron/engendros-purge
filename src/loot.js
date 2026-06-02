@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, pick, ri, rr, voxelMaterial } from './util.js';
 import { FOOD_RESTORE } from './tuning.js';
-import { KEY_CASH, SUPPLY_CASH } from './economy.js';
+import { KEY_CASH } from './economy.js';
 import { _strut, buildChuteRig, buildFieldRadio, buildFlare, buildSu24, buildSupplyCrate } from './props.js';
 import { FIREARM_KEYS, WEAPONS, buildViewmodel } from './weapons.js';
 
@@ -437,11 +437,6 @@ export class LootManager {
   }
 
   _rollGive() { const give = { sandbag: 0, wire: 0, wood: 0 }, ks = ['sandbag', 'wire', 'wood']; for (let i = 0; i < 2; i++) give[ks[Math.floor(Math.random() * 3)]]++; return give; } // RARE: ~2 random fort. mats
-  // Burst a landed crate open: scatter its contents as PHYSICAL ground pickups in a ring around the crate.
-  // HOST-authoritative in co-op — the host rolls the GUN and spawns each item via spawnNetPickup so all
-  // players see ONE shared pile (with ids). The opener's instant cash goes to that opener: locally for the
-  // host/solo opener, or via a 'dropcash' message for a client opener (`opener` = the client's peer id).
-  // Solo (mp inactive) keeps the old local spill + local cash.
   // Count radios currently in play — placed buildings + ground pickups + the (host/solo) backpack — so the
   // supply-drop roll never floods the field, yet a fresh one CAN drop again once the old one is gone/destroyed.
   // This is a LIVE count (not a one-shot "already dropped" flag), so destroying your radio re-enables drops.
@@ -452,8 +447,11 @@ export class LootManager {
     const inv = this.game.inventory; if (inv && inv.slots) n += inv.slots.filter((s) => s && s.kind === 'radio').length;
     return n;
   }
+  // Burst a landed crate open: scatter its contents as PHYSICAL ground pickups in a ring around the crate.
+  // HOST-authoritative in co-op — the host rolls the GUN and spawns each item via spawnNetPickup so all
+  // players see ONE shared pile (with ids). Loot only — supply drops give NO cash. (`opener` is unused now.)
   _spillDropLoot(pos, give, opener = null) {
-    const cx = pos.x, cz = pos.z, mp = this.game.mp;
+    const cx = pos.x, cz = pos.z;
     const gun = FIREARM_KEYS[Math.floor(Math.random() * FIREARM_KEYS.length)]; // 100%: one guaranteed random firearm, any kind (rolled on the host)
     const items = [[gun, 1], ['medkit', 60], ['medkit', 60], ['armor', 60], ['armor', 60], ['ammo', 1], ['ammo', 1], ['food', FOOD_RESTORE]];
     const g = give || {};
@@ -463,11 +461,8 @@ export class LootManager {
       const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
       this.spawnNetPickup(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, value, 75); // 75s life — shared (host) / local (solo)
     });
-    // instant cash → the OPENER only
-    if (mp && mp.active && opener && opener !== 'host' && opener !== mp.myId) mp.net.sendTo(opener, 'dropcash', { amount: SUPPLY_CASH });
-    else this.game.player.addMoney(SUPPLY_CASH);
     this.game.effects.stuffing(new THREE.Vector3(cx, 1.4, cz), 0xffc23a, 36, 8);
-    this.game.hud.toast(`📦 Supply drop burst open — grab the loot! +$${SUPPLY_CASH}`, 0xff8a3a);
+    this.game.hud.toast('📦 Supply drop burst open — grab the loot!', 0xff8a3a);
     this.game.hud.bigMessage('SUPPLY DROP', 'loot scattered on the ground — grab it with E');
     this.game.audio.buy();
   }
