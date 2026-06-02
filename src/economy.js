@@ -14,4 +14,6 @@ export const STRUCT_DEFS = {
   wood:    { hp: 420, w: 2.4, h: 1.5, d: 0.4, hard: true,  rotStep: Math.PI / 12, label: 'Barricade' },    // full wall, blocks LoS, breaks faster
   wire:    { hp: 260, w: 2.4, h: 0.8, d: 1.2, hard: false, rotStep: Math.PI / 12, label: 'Barbed Wire',    // hazard zone: slow + damage, trampled down under pressure
              slow: 0.35, dot: 14, trample: 35 },
+  radio:   { hp: 200, w: 1.25, h: 0.9, d: 0.7, hard: false, prop: true, audio: true,
+             rotStep: Math.PI / 12, label: 'Radio', max: 4 }, // diegetic music prop; enemies ignore it (hard:false)
 };

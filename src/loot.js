@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, pick, ri, rr, voxelMaterial } from './util.js';
 import { FOOD_RESTORE } from './tuning.js';
-import { KEY_CASH, SUPPLY_CASH } from './economy.js';
-import { _strut, buildChuteRig, buildFlare, buildSu24, buildSupplyCrate } from './props.js';
+import { KEY_CASH } from './economy.js';
+import { _strut, buildChuteRig, buildFieldRadio, buildFlare, buildSu24, buildSupplyCrate } from './props.js';
 import { FIREARM_KEYS, WEAPONS, buildViewmodel } from './weapons.js';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private; duplicated to avoid a cross-module import)
@@ -18,13 +18,14 @@ export const ITEM_DEFS = {
   armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50 },
   ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo' },
   splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint' },
-  radio:   { name: 'Radio',        class: 'callable',   icon: '📻', mesh: 'radio' },
+  airbeacon: { name: 'Vysílačka',  class: 'callable',   icon: '📡', mesh: 'airbeacon' },
   flare:   { name: 'Signal Flare', class: 'callable',   icon: '🔆', mesh: 'flare' },
   grenade: { name: 'Frag Grenade', class: 'throwable',  icon: '💣', mesh: 'grenade', fuse: 1.6 },
   molotov: { name: 'Molotov',      class: 'throwable',  icon: '🔥', mesh: 'molotov', ignite: 0.7 },
   sandbag: { name: 'Sandbag',      class: 'material',   icon: '🧱', build: 'sandbag' },
   wire:    { name: 'Barbed Wire',  class: 'material',   icon: '🔩', build: 'wire' },
   wood:    { name: 'Barricade',    class: 'material',   icon: '🪵', build: 'wood' },
+  radio:   { name: 'Radio',        class: 'material',   icon: '📻', build: 'radio' },
 };
 
 // ---------------------------------------------------------------------------
@@ -94,7 +95,8 @@ export class LootManager {
     const b = new MeshBuilder();
     if (WEAPONS[kind]) { const m = buildViewmodel(WEAPONS[kind]); m.position.set(0, 0, 0); m.rotation.set(0.3, 0.6, 0); m.scale.setScalar(0.5); return m; } // a dropped weapon, as a ground pickup
     if (kind === 'key') return this._keyMesh();
-    if (kind === 'radio') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
+    if (kind === 'radio') { const m = buildFieldRadio(); m.scale.multiplyScalar(0.5); return m; } // field-radio material as a ground pickup (from supply drops)
+    if (kind === 'airbeacon') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
       const olive = 0x3f4a2c, oHi = 0x515c39, oLo = 0x2c331d, blk = 0x16160f, metal = 0x8a8f86, scr = 0x9be86a, btn = 0x202018;
       b.box(0.34, 0.66, 0.16, 0, 0.05, 0, olive, { tint: 0.03 });            // body
       b.box(0.32, 0.07, 0.14, 0, 0.37, 0, oHi);                              // top bevel (lit)
@@ -349,14 +351,14 @@ export class LootManager {
   // via spawnNetPickup, so the radio reaches everyone); the cash-bonus branch is RETURNED so the caller can
   // grant it to the KILLER (not the host). Returns the rolled bonus cash (0 unless the cash branch hit).
   dropCourier(pos) {
-    this.spawnNetPickup('radio', pos.x, pos.z, 1);
+    this.spawnNetPickup('airbeacon', pos.x, pos.z, 1);
     const r = Math.random();
     let bonusCash = 0;
     if (r < 0.4) this.spawnNetPickup('medkit', pos.x, pos.z, 60);
     else if (r < 0.7) this.spawnNetPickup('ammo', pos.x, pos.z, 1);
     else if (r < 0.9) this.spawnNetPickup('armor', pos.x, pos.z, 60);
     else bonusCash = KEY_CASH;
-    this.game.hud.toast('📻 Radio dropped! (press T)', 0x6fd0e8);
+    this.game.hud.toast('📡 Vysílačka dropped! (press T)', 0x6fd0e8);
     return bonusCash;
   }
 
@@ -435,26 +437,32 @@ export class LootManager {
   }
 
   _rollGive() { const give = { sandbag: 0, wire: 0, wood: 0 }, ks = ['sandbag', 'wire', 'wood']; for (let i = 0; i < 2; i++) give[ks[Math.floor(Math.random() * 3)]]++; return give; } // RARE: ~2 random fort. mats
+  // Count radios currently in play — placed buildings + ground pickups + the (host/solo) backpack — so the
+  // supply-drop roll never floods the field, yet a fresh one CAN drop again once the old one is gone/destroyed.
+  // This is a LIVE count (not a one-shot "already dropped" flag), so destroying your radio re-enables drops.
+  _radiosInPlay() {
+    let n = 0;
+    const b = this.game.build; if (b && b.structures) n += b.structures.filter((s) => s.kind === 'radio').length;
+    if (this.pickups) n += this.pickups.filter((p) => p.kind === 'radio').length;
+    const inv = this.game.inventory; if (inv && inv.slots) n += inv.slots.filter((s) => s && s.kind === 'radio').length;
+    return n;
+  }
   // Burst a landed crate open: scatter its contents as PHYSICAL ground pickups in a ring around the crate.
   // HOST-authoritative in co-op — the host rolls the GUN and spawns each item via spawnNetPickup so all
-  // players see ONE shared pile (with ids). The opener's instant cash goes to that opener: locally for the
-  // host/solo opener, or via a 'dropcash' message for a client opener (`opener` = the client's peer id).
-  // Solo (mp inactive) keeps the old local spill + local cash.
+  // players see ONE shared pile (with ids). Loot only — supply drops give NO cash. (`opener` is unused now.)
   _spillDropLoot(pos, give, opener = null) {
-    const cx = pos.x, cz = pos.z, mp = this.game.mp;
+    const cx = pos.x, cz = pos.z;
     const gun = FIREARM_KEYS[Math.floor(Math.random() * FIREARM_KEYS.length)]; // 100%: one guaranteed random firearm, any kind (rolled on the host)
     const items = [[gun, 1], ['medkit', 60], ['medkit', 60], ['armor', 60], ['armor', 60], ['ammo', 1], ['ammo', 1], ['food', FOOD_RESTORE]];
     const g = give || {};
     for (const k of ['sandbag', 'wire', 'wood']) for (let n = 0; n < (g[k] || 0); n++) items.push([k, 1]); // ~2 random fort. mats
+    if (this._radiosInPlay() === 0 && chc(0.30)) items.push(['radio', 1]); // 📻 30% chance to drop a Radio — only when none is currently in play
     items.forEach(([kind, value], i) => {
       const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
       this.spawnNetPickup(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, value, 75); // 75s life — shared (host) / local (solo)
     });
-    // instant cash → the OPENER only
-    if (mp && mp.active && opener && opener !== 'host' && opener !== mp.myId) mp.net.sendTo(opener, 'dropcash', { amount: SUPPLY_CASH });
-    else this.game.player.addMoney(SUPPLY_CASH);
     this.game.effects.stuffing(new THREE.Vector3(cx, 1.4, cz), 0xffc23a, 36, 8);
-    this.game.hud.toast(`📦 Supply drop burst open — grab the loot! +$${SUPPLY_CASH}`, 0xff8a3a);
+    this.game.hud.toast('📦 Supply drop burst open — grab the loot!', 0xff8a3a);
     this.game.hud.bigMessage('SUPPLY DROP', 'loot scattered on the ground — grab it with E');
     this.game.audio.buy();
   }

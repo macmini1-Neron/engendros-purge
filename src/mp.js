@@ -552,6 +552,8 @@ export class MP {
     n.on('structrej', (d) => { if (!this.isHost && d && typeof d.kind === 'string') this.game.inventory.addItem(d.kind, 1); }); // host rejected → restore material
     n.on('structdie', (d) => g.build.applyRemoteDestroy(d.id));                // a structure was destroyed
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
+    n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
+    n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio
     n.on('edie', (d) => this._clientEnemyDie(d));
     n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
       if (d.e === 'expl') { const bp = V(d.p); eff.explosion(bp, d.s || 3); if (g.engine.shake) { const dist = bp.distanceTo(g.player.pos); if (dist < 18) g.engine.shake(Math.max(0.08, 0.5 * (1 - dist / 18))); } } // distance-scaled shake so a teammate's blast also rattles the viewer
@@ -626,8 +628,7 @@ export class MP {
     n.on('dropitem', (d, from) => { if (this.isHost && d) g.loot.spawnNetPickup(d.kind, d.x, d.z, d.value); });           // a client manually dropped an item → host makes it a shared pickup
     n.on('dropreq', () => { if (this.isHost) g.loot.requestSupplyDrop(); });                                              // client asked for a drop → host spawns + broadcasts it
     n.on('supplydrop', (d) => { if (!this.isHost && d) g.loot.callSupplyDrop({ id: d.id, tx: d.tx, tz: d.tz, ang: d.ang }); }); // mirror the host's flyby+crate (visual)
-    n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); g.loot._spillDropLoot(drop.pos, g.loot._rollGive(), from); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative: roll the gun + spawn ONE shared pile, cash to the opener
-    n.on('dropcash', (d) => { if (d && Number.isFinite(d.amount)) g.player.addMoney(d.amount); });                        // host → opener: the crate's instant cash payout (items arrive as shared 'pickup's)
+    n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); g.loot._spillDropLoot(drop.pos, g.loot._rollGive(), from); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative: roll the gun + spawn ONE shared pile (loot only, no cash)
     n.on('dropopened', (d) => { if (d) g.loot.removeDropById(d.id); });                                                   // someone claimed it → clear the visual crate everywhere
   }
   _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null })); }
@@ -966,6 +967,7 @@ export class MP {
     }
     if (snap.length) this.net.sendTo(pid, 'esnap', snap);                                   // immediate exact positions/HP (don't make the joiner wait ~80ms)
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
+    for (const s of this.game.build.structures) if (s.kind === 'radio' && s.on) this.net.sendTo(pid, 'radioset', { id: s.id, on: true, station: s.station }); // late-join: tune newcomers into playing radios
     for (const pu of this.game.loot.pickups) if (pu.id != null) this.net.sendTo(pid, 'pickup', { id: pu.id, kind: pu.kind, x: pu.mesh.position.x, z: pu.mesh.position.z, value: pu.value, life: pu.life }); // late-join: existing shared ground pickups
     let boss = null; for (const e of this.game.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
     if (boss) { const isTank = !!(boss.isTank || boss.def.tank); const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp); const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1; this.net.sendTo(pid, 'boss', { frac, name: boss.name, pip }); }   // late-join: current boss bar

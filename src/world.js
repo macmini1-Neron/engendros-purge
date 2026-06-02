@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
-import { buildBarbedWire, buildBarricade, buildSandbags } from './props.js';
+import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
+import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 
 
 // ---------------------------------------------------------------------------
@@ -280,12 +281,14 @@ export class BuildManager {
     this.ghostYaw = 0;
     this._valid = false;
     this._ghostPos = null;
+    this.radioTarget = null;
     this._ghostKind = 'sandbag';
     this._tmpO = new THREE.Vector3();
     this._tmpF = new THREE.Vector3();
     const sg = buildSandbags(), wg = buildBarbedWire(), dg = buildBarricade();
     this._geos = { sandbag: sg.geometry, wire: wg.geometry, wood: dg.geometry };
     sg.material.dispose(); wg.material.dispose(); dg.material.dispose();
+    this._geos.radio = new THREE.BoxGeometry(STRUCT_DEFS.radio.w, STRUCT_DEFS.radio.h, STRUCT_DEFS.radio.d).translate(0, STRUCT_DEFS.radio.h / 2, 0);
     this.ghostMat = new THREE.MeshLambertMaterial({ color: 0x35d05a, emissive: 0x0a3a14, transparent: true, opacity: 0.5, depthWrite: false });
     this.ghost = new THREE.Mesh(this._geos.sandbag, this.ghostMat);
     this.ghost.visible = false; this.ghost.renderOrder = 5; this.ghost.frustumCulled = false;
@@ -303,6 +306,7 @@ export class BuildManager {
 
   validateAt(pos, yaw, kind) { // host-authoritative: geometry/cap/overlap only (holding the material is a LOCAL check in place()/the ghost)
     if (this.structures.length >= STRUCT_CAP) return false;
+    if (STRUCT_DEFS[kind] && STRUCT_DEFS[kind].max && this.structures.filter((s) => s.kind === kind).length >= STRUCT_DEFS[kind].max) return false; // per-kind cap, host-authoritative (e.g. radio max 4)
     if (!pos) return false;
     const sd = STRUCT_DEFS[kind], fp = this._footprint(kind, yaw), top = pos.y + sd.h;
     for (const bx of this.game.world.boxes) {                            // map + placed hard structures
@@ -324,6 +328,7 @@ export class BuildManager {
   }
 
   update(dt) {
+    this._updateRadios(dt);
     const onFoot = this.game.state === 'playing' && !this.game.player.inTank && !this.game.player.mountedGun && !(this.game.mp && this.game.mp.frozen);
     const kind = onFoot ? this._curKind() : null;
     if (!kind) { this.ghost.visible = false; return; }
@@ -345,6 +350,8 @@ export class BuildManager {
 
   place() {
     const kind = this._curKind(); if (!kind) return;
+    const _cap = STRUCT_DEFS[kind].max;
+    if (_cap && this.structures.filter((s) => s.kind === kind).length >= _cap) { this.game.hud.toast(`Max ${_cap} ${STRUCT_DEFS[kind].label}`, 0xd23a2a); return; }
     if (!this._valid || !this._ghostPos) { this.game.audio.noMoney && this.game.audio.noMoney(); return; }
     const pos = this._ghostPos.clone(), yaw = this.ghostYaw, mp = this.game.mp;
     if (mp && mp.active && !mp.isHost) {
@@ -361,17 +368,99 @@ export class BuildManager {
 
   placeStructure(kind, pos, yaw, id) {
     const sd = STRUCT_DEFS[kind];
-    const mesh = new THREE.Mesh(this._geos[kind], voxelMaterial());
+    const mesh = sd.prop ? buildFieldRadio() : new THREE.Mesh(this._geos[kind], voxelMaterial());
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.position.set(pos.x, pos.y || 0, pos.z); mesh.rotation.y = yaw;
     this.scene.add(mesh);
-    const s = { id, kind, pos: new THREE.Vector3(pos.x, pos.y || 0, pos.z), yaw, mesh, hp: sd.hp, maxHp: sd.hp, box: null, hazard: null };
+    const s = { id, kind, pos: new THREE.Vector3(pos.x, pos.y || 0, pos.z), yaw, mesh, hp: sd.hp, maxHp: sd.hp, box: null, hazard: null,
+                on: false, station: 0, audio: null }; // on/station/audio used only by radio props
     const fp = this._footprint(kind, yaw);
     const aabb = (extraTag) => Object.assign({ min: new THREE.Vector3(pos.x - fp.hx, 0, pos.z - fp.hz), max: new THREE.Vector3(pos.x + fp.hx, (pos.y || 0) + sd.h, pos.z + fp.hz) }, extraTag);
     if (sd.hard) { s.box = aabb({ struct: true, _ref: s }); this.game.world.boxes.push(s.box); }
-    else { s.hazard = aabb({ ref: s }); }
+    else if (!sd.prop) { s.hazard = aabb({ ref: s }); } // props are NOT hazards; enemies ignore them
     this.structures.push(s);
     return s;
+  }
+
+  _radioStart(s) { // create/resume the <audio> for a radio at its current station
+    if (typeof Audio === 'undefined') return;
+    if (!s.audio) {
+      const el = new Audio(); el.preload = 'none';
+      el.addEventListener('error', () => { if (this.game.hud) this.game.hud.toast('📻 Station offline', 0xd23a2a); });
+      s.audio = el;
+    }
+    const st = stationByIndex(s.station); // handles the hidden ghost frequency too
+    if (st && s.audio.src !== st.url) s.audio.src = st.url;
+    const p = s.audio.play(); if (p && p.catch) p.catch(() => {}); // play() is invoked from a user gesture (E/place)
+  }
+  _radioStop(s) { if (s.audio) { try { s.audio.pause(); } catch (e) {} } }
+  _updateRadios(dt) {
+    const a = this.game.audio, pp = this.game.player.pos;
+    let nearest = 0; // max attenuation across ON radios → drives the music duck
+    for (const s of this.structures) {
+      if (s.kind !== 'radio') continue;
+      if (s.mesh && s.mesh.userData) animateFieldRadio(s.mesh, s, dt);
+      if (!s.on || !s.audio) continue;
+      const dist = Math.hypot(pp.x - s.pos.x, pp.z - s.pos.z);
+      const att = radioAttenuation(dist);
+      s.audio.volume = Math.max(0, Math.min(1, att * (a && a.musicVolume != null ? a.musicVolume : 0.5) * (a && a.muted ? 0 : 1)));
+      if (att > nearest) nearest = att;
+    }
+    if (a && a.setMusicDuck) a.setMusicDuck(1 - nearest * 0.85); // duck the procedural score near a playing radio
+  }
+
+  // Raycast the crosshair against radios within reach → this.radioTarget (or null).
+  // While an ON radio is targeted, consume ←/→ for tuning so they don't strafe.
+  updateRadioTarget() {
+    this.radioTarget = null;
+    if (this.game.state !== 'playing' || (this.game.mp && this.game.mp.frozen)) return;
+    if (this.game.player.inTank || this.game.player.mountedGun) return;
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const o = this._tmpO.setFromMatrixPosition(cam.matrixWorld);
+    const f = this._tmpF.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    let best = null, bestD = 4.0;
+    for (const s of this.structures) {
+      if (s.kind !== 'radio') continue;
+      const dx = s.pos.x - o.x, dz = s.pos.z - o.z, along = dx * f.x + dz * f.z;
+      if (along <= 0 || along > bestD) continue;                 // behind, or farther than current best
+      const px = o.x + f.x * along, pz = o.z + f.z * along;       // closest point on the aim ray (XZ)
+      if (Math.hypot(s.pos.x - px, s.pos.z - pz) < 1.1) { best = s; bestD = along; }
+    }
+    this.radioTarget = best;
+    if (best && best.on) {
+      const inp = this.game.input;
+      if (inp.wasPressed('ArrowRight')) this.cycleRadioStation(best, 1);
+      else if (inp.wasPressed('ArrowLeft')) this.cycleRadioStation(best, -1);
+      inp.down.delete('ArrowLeft'); inp.down.delete('ArrowRight'); // suppress strafe this frame while tuning
+    }
+  }
+  toggleRadio(s) {
+    if (!s) return;
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) { mp.net.send('radioreq', { id: s.id, on: !s.on, station: s.station }); return; }
+    this.applyRadioSet({ id: s.id, on: !s.on, station: s.station });               // host / solo
+    if (mp && mp.active && mp.isHost) mp.net.broadcast('radioset', { id: s.id, on: s.on, station: s.station });
+  }
+  cycleRadioStation(s, dir) {
+    if (!s) return;
+    const n = RADIO_STATIONS.length, mp = this.game.mp;
+    let st;
+    if (s.station === GHOST_STATION) st = dir > 0 ? 0 : n - 1;   // leaving the ghost → rejoin the normal rotation
+    else if (chc(0.10)) st = GHOST_STATION;                       // 🥚 easter egg: the dial occasionally catches the Soviet ghost frequency
+    else st = ((s.station + dir) % n + n) % n;
+    if (mp && mp.active && !mp.isHost) { mp.net.send('radioreq', { id: s.id, on: true, station: st }); return; }
+    this.applyRadioSet({ id: s.id, on: true, station: st });
+    if (mp && mp.active && mp.isHost) mp.net.broadcast('radioset', { id: s.id, on: true, station: st });
+    const ghost = st === GHOST_STATION;
+    if (this.game.hud) this.game.hud.toast((ghost ? '☭ ' : '📻 ') + stationLabel(st), ghost ? 0xd23a2a : 0x6fd0e8);
+    if (ghost && this.game.audio && this.game.audio.noise) this.game.audio.noise(0.35, 0.5, 'highpass', 2600, 0.5); // squelch/static as the ghost frequency catches
+  }
+  // apply authoritative state to a radio (local audio follows). Used by host/solo + remote clients.
+  applyRadioSet(d) {
+    const s = this.structures.find((x) => x.id === d.id && x.kind === 'radio'); if (!s) return;
+    s.on = !!d.on; s.station = d.station | 0;
+    if (s.on) this._radioStart(s); else this._radioStop(s); // _radioStart sets src on station change + plays — one call, no double play()
+    if (this.game.audio && this.game.audio.uiClick) this.game.audio.uiClick();
   }
 
   hazardAt(x, z) {
@@ -385,7 +474,7 @@ export class BuildManager {
     if (!s || s.hp <= 0) return;
     if (enemy && enemy.def && (enemy.def.boss || enemy.def.tank || (enemy.def.scale || 1) >= 1.6)) dmg = s.maxHp; // heavies crush
     s.hp -= dmg;
-    if (s.mesh && s.mesh.material.emissive) { const f = Math.max(0, s.hp / s.maxHp); s.mesh.material.emissive.setRGB((1 - f) * 0.22, 0, 0); }
+    if (s.mesh && s.mesh.material && s.mesh.material.emissive) { const f = Math.max(0, s.hp / s.maxHp); s.mesh.material.emissive.setRGB((1 - f) * 0.22, 0, 0); } // radio props are Groups (no single .material) — skip the hit-flash tint
     if (s.hp <= 0) this.destroyStructure(s, 'smash');
   }
 
@@ -397,11 +486,19 @@ export class BuildManager {
     else this.attackStructure(s, dmg, null);
   }
 
+  _disposeMesh(s) { // free a removed structure's GPU resources
+    if (!s.mesh) return;
+    this.scene.remove(s.mesh);
+    if (STRUCT_DEFS[s.kind] && STRUCT_DEFS[s.kind].prop) { // prop models (radio) own unique geometry/materials/CanvasTexture → deep-dispose
+      s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    } else if (s.mesh.material) { s.mesh.material.dispose(); } // sandbag/wire/wood share this._geos[kind] geometry → dispose only the per-instance material
+  }
   destroyStructure(s, cause) {
     const i = this.structures.indexOf(s); if (i < 0) return;
     this.structures.splice(i, 1);
+    this._radioStop(s); if (s.audio) { try { s.audio.src = ''; } catch (e) {} s.audio = null; } // radio prop: kill its stream on destroy
     if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
-    if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
+    this._disposeMesh(s);
     const fx = this.game.effects;
     if (fx) { fx.stuffing && fx.stuffing(s.pos, STRUCT_FX_COLOR[s.kind] || 0xcdb887, 12, 4); fx.impact && fx.impact(s.pos, new THREE.Vector3(0, 1, 0), 'dust'); }
     if (this.game.audio && this.game.audio.noise) this.game.audio.noise(0.2, 0.5, 'lowpass', 280, 1);
@@ -427,9 +524,11 @@ export class BuildManager {
   reset() {
     for (const s of this.structures) {
       if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
-      if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
+      this._disposeMesh(s);
+      if (s.audio) { try { s.audio.pause(); s.audio.src = ''; } catch (e) {} } // radio props: stop streams on run reset
     }
     this.structures.length = 0;
+    if (this.game.audio && this.game.audio.setMusicDuck) this.game.audio.setMusicDuck(1); // clear any radio music-duck
     this._idc = 1; this.ghostYaw = 0; this._valid = false; this._ghostPos = null;
     this.ghost.visible = false;
   }
