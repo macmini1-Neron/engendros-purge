@@ -239,7 +239,7 @@ export class Inventory {
     const def = ITEM_DEFS[c.kind]; if (!def) return;
     if (def.class === 'consumable') { if (edge === 'press') this._useConsumable(c.kind, c.slot); }
     else if (def.class === 'material') { if (edge === 'press') this.game.build.place(); }
-    else if (def.class === 'callable') { if (edge === 'press') { if (c.kind === 'radio') this._useRadio(c.slot); else this._throwFlare(c.slot); } }
+    else if (def.class === 'callable') { if (edge === 'press') { if (c.kind === 'airbeacon') this._useRadio(c.slot); else this._throwFlare(c.slot); } }
     else if (def.class === 'throwable') { this._armThrowable(c.kind, c.slot, edge); }
   }
   _useConsumable(kind, slotIdx) {
@@ -341,7 +341,7 @@ export class Inventory {
     const loot = this.game.loot, grp = this.game.weapons.group;
     const makers = {
       medkit: () => loot._pickupMesh('medkit'), food: () => loot._pickupMesh('food'), armor: () => loot._pickupMesh('armor'),
-      ammo: () => loot._pickupMesh('ammo'), splint: () => loot._pickupMesh('splint'), radio: () => loot._pickupMesh('radio'),
+      ammo: () => loot._pickupMesh('ammo'), splint: () => loot._pickupMesh('splint'), airbeacon: () => loot._pickupMesh('airbeacon'),
       molotov: () => loot._pickupMesh('molotov'), flare: () => buildFlare(), grenade: () => this._buildGrenadeModel(),
       sandbag: () => buildViewmodel({ shape: 'build_sandbag', color: 0xcdb887, accent: 0xb89a5e }),
       wire: () => buildViewmodel({ shape: 'build_wire', color: 0x8a8f98, accent: 0x5a4a32 }),

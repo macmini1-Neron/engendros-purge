@@ -122,7 +122,7 @@ export class Admin {
       { name: 'Su-34 p25-33 ducts/belly', sub: 'Jetworks guide part', make: () => buildSu34DuctBellyModule() },
       { name: 'Su-34 p34-40 upper/tails', sub: 'Jetworks guide part', make: () => buildSu34UpperTailExhaustModule() },
       { name: 'Su-34 p41-42 finish/photo', sub: 'guide finish pass', make: () => buildSu34FinishPhotoModule() },
-      { name: 'Radio (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('radio') },
+      { name: 'Vysílačka (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('airbeacon') },
       { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
       { name: 'Parachute rig', sub: 'air drop', make: () => this._chuteRig() },
       { name: 'Lootbox Key', sub: 'pickup', make: () => g.loot._keyMesh() },

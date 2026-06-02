@@ -18,7 +18,7 @@ export const ITEM_DEFS = {
   armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50 },
   ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo' },
   splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint' },
-  radio:   { name: 'Radio',        class: 'callable',   icon: '📻', mesh: 'radio' },
+  airbeacon: { name: 'Vysílačka',  class: 'callable',   icon: '📡', mesh: 'airbeacon' },
   flare:   { name: 'Signal Flare', class: 'callable',   icon: '🔆', mesh: 'flare' },
   grenade: { name: 'Frag Grenade', class: 'throwable',  icon: '💣', mesh: 'grenade', fuse: 1.6 },
   molotov: { name: 'Molotov',      class: 'throwable',  icon: '🔥', mesh: 'molotov', ignite: 0.7 },
@@ -94,7 +94,7 @@ export class LootManager {
     const b = new MeshBuilder();
     if (WEAPONS[kind]) { const m = buildViewmodel(WEAPONS[kind]); m.position.set(0, 0, 0); m.rotation.set(0.3, 0.6, 0); m.scale.setScalar(0.5); return m; } // a dropped weapon, as a ground pickup
     if (kind === 'key') return this._keyMesh();
-    if (kind === 'radio') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
+    if (kind === 'airbeacon') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
       const olive = 0x3f4a2c, oHi = 0x515c39, oLo = 0x2c331d, blk = 0x16160f, metal = 0x8a8f86, scr = 0x9be86a, btn = 0x202018;
       b.box(0.34, 0.66, 0.16, 0, 0.05, 0, olive, { tint: 0.03 });            // body
       b.box(0.32, 0.07, 0.14, 0, 0.37, 0, oHi);                              // top bevel (lit)
@@ -349,14 +349,14 @@ export class LootManager {
   // via spawnNetPickup, so the radio reaches everyone); the cash-bonus branch is RETURNED so the caller can
   // grant it to the KILLER (not the host). Returns the rolled bonus cash (0 unless the cash branch hit).
   dropCourier(pos) {
-    this.spawnNetPickup('radio', pos.x, pos.z, 1);
+    this.spawnNetPickup('airbeacon', pos.x, pos.z, 1);
     const r = Math.random();
     let bonusCash = 0;
     if (r < 0.4) this.spawnNetPickup('medkit', pos.x, pos.z, 60);
     else if (r < 0.7) this.spawnNetPickup('ammo', pos.x, pos.z, 1);
     else if (r < 0.9) this.spawnNetPickup('armor', pos.x, pos.z, 60);
     else bonusCash = KEY_CASH;
-    this.game.hud.toast('📻 Radio dropped! (press T)', 0x6fd0e8);
+    this.game.hud.toast('📡 Vysílačka dropped! (press T)', 0x6fd0e8);
     return bonusCash;
   }
 
