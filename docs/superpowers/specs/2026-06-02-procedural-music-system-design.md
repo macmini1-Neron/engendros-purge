@@ -105,7 +105,7 @@ Eight contexts. Boss ships as one generic theme with **optional** per-boss flavo
 
 | # | Context (game state / event) | Scene id | Genre / mood | Sketch | Adaptive behavior |
 |---|---|---|---|---|---|
-| 1 | Menu | `menu` | Synthwave, somber-heroic | A minor, ~70 BPM; warm saw pad Am–F–C–G, sub on root, sparse octave arp, distant brass swell every 8 bars | fixed low intensity (~0.3) |
+| 1 | Menu | `menu` | Soviet "pixel" chiptune | ~150 BPM; original arrangement of **Korobeiniki** (19th-c. Russian folk tune, public domain — famous from Tetris): square-wave lead + oom-pah bass + arcade hat. Fits the voxel/pixel + tongue-in-cheek tone. (Earlier draft was a synthwave theme; swapped per request.) | static (all in `step()`) |
 | 2 | Lobby (co-op) | `lobby` | Warm synth-ambient, anticipation | C minor, ~84 BPM; pad + softly pulsing eighth bass, gentle bell motif, light hat tick | gently pulsing (~0.4) |
 | 3 | Gameplay / waves | `gameplay` | Dread/survival → industrial | D-drone, ~120 BPM. **Core adaptive scene.** | **0–0.25** calm: low D drone + sub rumble + sparse heartbeat kick + occasional dissonant ping. **0.25–0.6** building: + quarter-note tom pulse + minor-2nd pad swell + slow root–♭2 bass ostinato. **0.6–1.0** peak: + driving 16th industrial hat/noise + syncopated bass + tense tritone lead stab + snare backbeat |
 | 4 | Boss wave (boss alive) | `boss` | Soviet/WW2 epic | E minor, ~100 BPM march; timpani 4-on-floor + fills, brass Em–C–D–B dotted march, low choir-ish drone, snare roll | base intensity high; ramps with `1 − bossHpFrac` (lower boss HP → faster timpani + piccolo-ish lead). **Variants:** `mitri` (tank: mechanical clank perc, heavier/slower brass) · `tolo` (3/4 grotesque waltz + music-box bell melody) |
