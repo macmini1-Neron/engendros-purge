@@ -143,6 +143,6 @@ export class Player {
     const cam = this.game.engine.camera;
     cam.rotation.order = 'YXZ';
     cam.position.set(this.pos.x, this._camY, this.pos.z);
-    cam.rotation.y = this.yaw; cam.rotation.x = this.pitch + this.game.weapons.recoilPitch; cam.rotation.z = 0;
+    cam.rotation.y = this.yaw + this.game.weapons.recoilYawKick; cam.rotation.x = this.pitch + this.game.weapons.recoilPitch; cam.rotation.z = 0;
   }
 }
