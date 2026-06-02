@@ -1,5 +1,5 @@
 // waves.js — extracted from game.js during the module split (mechanical move, no logic changes).
-import { chc, pick, rr, weightedPick } from './util.js?u=3';
+import { chc, pick, rr, weightedPick } from './util.js';
 import { BOSS_ROSTER, MINIBOSS_NAMES, WAVE_ADVANCE_SECS, WAVE_TYPES } from './tuning.js';
 import { ENEMY_TYPES } from './enemies.js';
 

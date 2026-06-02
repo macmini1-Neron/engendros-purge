@@ -1,12 +1,12 @@
 // mp.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, damp, rayAABB } from './util.js?u=3';
+import { TAU, clamp, damp, rayAABB } from './util.js';
 import { ENEMY_BURN_DUR, MOLO_GRAV, MOLO_MAX_FLIGHT, PLAYER_BURN_DPS, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
-import { KEY_CASH } from './economy.js';
+import { KILL_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
-import { Net, makeRoomCode } from './net.js?v=2';
+import { LanNet, Net, makeRoomCode } from './net.js';
 
 
 // ---------------------------------------------------------------------------
@@ -22,6 +22,8 @@ const MP_SKINS = [
   { skin: 0x49c6df, petal: 0xe85ba0 }, { skin: 0xe8a23a, petal: 0x6fcf4f },
   { skin: 0x9b6fe0, petal: 0xffd24a }, { skin: 0x5fd0a0, petal: 0xe8533a },
 ];
+const DOWN_SECONDS = 30;
+const REVIVE_CLICKS = 30;
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
@@ -41,6 +43,7 @@ class RemotePlayer {
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
     this.hp = 100; this.maxHp = 100; this.down = false; this.waiting = false; this.dead = false;
+    this._prone = false; this._proneYaw = 0;
     this.burnT = 0; this._burnFxT = 0; // on-fire flame (broadcast via xf bf flag); throttle for the body fire puff
     this._animT = 0; this._spd = 0; this._lastx = 0; this._lastz = 30;
     const wrap = document.getElementById('mp-labels');
@@ -50,7 +53,15 @@ class RemotePlayer {
     this._hpEl = this.label.querySelector('.mp-hp');
     if (wrap) wrap.appendChild(this.label);
   }
-  setTransform(s) { this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0; this._flashOn = (s.fl === undefined) ? true : !!s.fl; this._seat = s.seat ? 1 : 0; this.setBurn(s.bf ? PLAYER_BURN_DUR : 0); if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); } } // down/dead/waiting come authoritatively from pstate, NOT from xf (fl: flashlight beam toggled on; absent → legacy peer, assume on; bf: on-fire flag → show body flame; seat: manning the .50cal → hide held weapon)
+  setTransform(s) {
+    this.tpos.set(s.x, s.y || 0, s.z); this.tyaw = s.yaw; this.pitch = s.pitch || 0;
+    this._flashOn = (s.fl === undefined) ? true : !!s.fl; this._seat = s.seat ? 1 : 0;
+    if ('down' in s) this.down = !!s.down;
+    if ('dead' in s) this.dead = !!s.dead;
+    if ('waiting' in s) this.waiting = !!s.waiting;
+    this.setBurn(s.bf ? PLAYER_BURN_DUR : 0);
+    if (s.wep && s.wep !== this._wep) { this._wep = s.wep; this.setWeapon(s.wep); }
+  } // pstate is authoritative; xf mirrors down/dead/waiting as an immediate visual fallback for host/self state.
   setHP(hp, maxHp) { this.hp = hp; if (maxHp) this.maxHp = maxHp; }
   setBurn(t) { this.burnT = t; }
   update(dt, cam) {
@@ -64,9 +75,17 @@ class RemotePlayer {
     if (this.burnT > 0) { this._burnFxT -= dt; if (this._burnFxT <= 0) { this._burnFxT = 0.08; this.game.effects.firePool(this.pos, 0.45, 0.4); } }
     const o = this.obj, p = this.parts;
     o.position.set(this.pos.x, this.pos.y, this.pos.z);
-    if (this.dead || this.down || this.waiting) {
-      o.rotation.set(-Math.PI * 0.46, this.yaw + Math.PI, 0); o.position.y = this.pos.y + 0.35; // +PI: model faces +z, but look/move forward is -z
-      p.legL.rotation.x = p.legR.rotation.x = p.armL.rotation.x = p.armR.rotation.x = 0;
+    const prone = this.dead || this.down || this.waiting;
+    if (prone && !this._prone) this._proneYaw = this.yaw;
+    this._prone = prone;
+    if (prone) {
+      let headYaw = this.yaw - this._proneYaw; while (headYaw > Math.PI) headYaw -= TAU; while (headYaw < -Math.PI) headYaw += TAU;
+      o.rotation.set(-Math.PI * 0.5, this._proneYaw + Math.PI, this.dead ? -0.08 : 0.16, 'YXZ'); // fully prone; body yaw freezes, head still tracks look
+      o.position.y = this.pos.y + 0.28;
+      p.legL.rotation.x = 0.22; p.legR.rotation.x = -0.18;
+      p.armL.rotation.x = 0.75; p.armR.rotation.x = -0.55;
+      p.head.rotation.x = -0.18 + clamp(this.pitch, -0.45, 0.35) * 0.35;
+      p.head.rotation.y = clamp(headYaw, -0.55, 0.55);
       if (this.gunAnchor) this.gunAnchor.visible = false;
     } else {
       o.rotation.set(0, this.yaw + Math.PI, 0); // +PI: model faces +z, but look/move forward is -z
@@ -76,6 +95,7 @@ class RemotePlayer {
       p.legL.rotation.x = sw; p.legR.rotation.x = -sw;
       p.armL.rotation.x = -sw * 0.7; p.armR.rotation.x = sw * 0.7;
       p.head.rotation.x = clamp(this.pitch, -0.5, 0.5) * 0.5;
+      p.head.rotation.y = 0;
       o.position.y = this.pos.y + (moving ? Math.abs(Math.sin(this._animT)) * 0.06 : 0);
       if (this.gunAnchor) this.gunAnchor.visible = true;
     }
@@ -87,7 +107,8 @@ class RemotePlayer {
       this.flashTarget.position.set(hx + f.x * 10, hy + f.y * 10, hz + f.z * 10);
       this.flashLight.intensity = 7;
     } else this.flashLight.intensity = 0;
-    const hp = _v3a.set(this.pos.x, this.pos.y + 2.5, this.pos.z).project(cam);
+    const labelY = (this.dead || this.down || this.waiting) ? 0.95 : 2.5;
+    const hp = _v3a.set(this.pos.x, this.pos.y + labelY, this.pos.z).project(cam);
     if (hp.z > 1 || hp.z < -1) { this.label.style.display = 'none'; return; }
     this.label.style.display = 'block';
     this.label.style.left = ((hp.x * 0.5 + 0.5) * window.innerWidth) + 'px';
@@ -113,17 +134,19 @@ class RemotePlayer {
 
 export class MP {
   constructor(game) {
-    this.game = game; this.net = new Net();
+    this.game = game; this.net = this._makeNet();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
     this._ghostProjectiles = []; // VISUAL-ONLY thrown/launched projectiles from teammates (never deal damage)
     this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
-    this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
+    this._xfT = 0; this._snapT = 0; this._reviveClicks = 0; this._reviveTargetId = null; this._reviveActive = false; this._incomingRevive = null; this._reviveHostProgress = new Map(); this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
+    this.spectateTarget = null;
     this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
     this._joinHandshakeTimer = null;
+    this.diag = this._newDiag();
     this.myPing = 0; this._pingT = 0; this._pstatT = 0; this._sbOpen = false;
     this._wireNet(); this._wireScoreboard();
     this._hb = setInterval(() => { if (this.active && !this.isHost && (performance.now() - (this.net.lastRecv || 0)) > 7000) this._hostGone(); }, 2000);
@@ -133,13 +156,181 @@ export class MP {
     if (this._joinHandshakeTimer) clearTimeout(this._joinHandshakeTimer);
     this._joinHandshakeTimer = null;
   }
+  _setLobbyDiag(text) {
+    const el = document.getElementById('mp-netdiag');
+    if (el) el.textContent = text || '';
+  }
+  _lanMode() { try { return localStorage.getItem('engendros_lan_mode') === '1'; } catch (e) { return false; } }
+  _makeNet() { return this._lanMode() ? new LanNet() : new Net(); }
+  _newDiag(role = 'idle', room = '') {
+    return {
+      role, room, broker: false, data: false, helloSent: false, helloReceived: false,
+      joinokSent: false, joinokReceived: false, iceTypes: [], selectedType: '',
+      remoteType: '', iceMode: '', iceState: '', connectionState: '', last: 'Idle',
+      error: '', message: '', details: '', peerId: '',
+    };
+  }
+  _resetDiag(role = 'idle', room = '') {
+    this.diag = this._newDiag(role, room);
+    this._renderNetDiag();
+  }
+  _mergeIce(types) {
+    const set = new Set(this.diag.iceTypes || []);
+    for (const t of types || []) if (t) set.add(t);
+    this.diag.iceTypes = [...set].sort();
+  }
+  _onNetDiag(d) {
+    if (!d) return;
+    if (d.room) this.diag.room = d.room;
+    if (d.role) this.diag.role = d.role;
+    if (d.peerId) this.diag.peerId = d.peerId;
+    if (d.iceMode) this.diag.iceMode = d.iceMode;
+    if (d.phase === 'broker') { this.diag.broker = true; this.diag.last = 'Broker connected'; }
+    else if (d.phase === 'data') { this.diag.data = true; this.diag.last = 'Data channel open'; }
+    else if (d.phase === 'ice') {
+      this._mergeIce(d.candidateTypes);
+      if (d.selectedType) this.diag.selectedType = d.selectedType;
+      if (d.remoteType) this.diag.remoteType = d.remoteType;
+      if (d.iceState) this.diag.iceState = d.iceState;
+      if (d.connectionState) this.diag.connectionState = d.connectionState;
+    } else if (d.phase === 'closed') this.diag.last = 'Connection closed';
+    else if (d.phase === 'error') {
+      this.diag.error = d.code || 'error';
+      this.diag.message = d.message || '';
+      this.diag.details = d.details || '';
+      if (d.iceState) this.diag.iceState = d.iceState;
+      if (d.connectionState) this.diag.connectionState = d.connectionState;
+      this.diag.last = 'Error: ' + this.diag.error;
+    }
+    this._renderNetDiag();
+  }
+  _markDiag(fields, last) {
+    Object.assign(this.diag, fields || {});
+    if (last) this.diag.last = last;
+    this._renderNetDiag();
+  }
+  _diagAdvice(d) {
+    if (!d) return '';
+    if (d.error) {
+      if (d.error === 'negotiation-failed' || d.error === 'ice-failed' || d.error === 'connection-failed') {
+        return this._forceRelay()
+          ? 'ICE failed even with forced TURN. The relay is blocked/unreachable from this network, or the browser cannot use it.'
+          : 'ICE failed: broker is reachable, but the browsers found no usable route. Try same non-guest Wi-Fi/hotspot; if it repeats, use a dedicated TURN relay.';
+      }
+      if (d.error === 'connect-timeout' || d.error === 'connect-failed') return this._forceRelay() ? 'Forced TURN relay failed. The relay server is blocked or unavailable on this network.' : 'WebRTC route failed after a long attempt. Toggle RELAY: FORCE, re-host, and try again to isolate NAT/firewall from game code.';
+      if (d.error === 'peer-unavailable') return 'No host owns that code right now. Ask the host to re-host and share the fresh code.';
+      return 'Connection failed before the lobby handshake completed.';
+    }
+    if (!d.broker) return this._lanMode() ? 'Waiting for the LAN relay.' : 'Waiting for the PeerJS broker.';
+    if (d.broker && !d.data) {
+      return d.role === 'join'
+        ? (this._lanMode() ? 'LAN relay OK. Waiting for the host handshake.' : 'Broker OK, data WAIT: still trying WebRTC. This can take up to 45s on strict NAT/firewall.')
+        : (this._lanMode() ? 'LAN relay OK. Waiting for a player.' : 'Broker OK. Waiting for a player data channel.');
+    }
+    if (d.role === 'join' && d.data && d.helloSent && !d.joinokReceived) return 'Data OK, but host did not answer. This points to host cache/code or a stale room.';
+    if (d.role === 'host' && d.data && !d.helloReceived) return 'Data OK. Waiting for the joiner hello packet.';
+    if ((d.iceTypes || []).includes('relay') || d.selectedType === 'relay') return d.selectedType === 'relay' ? 'TURN relay route active.' : 'TURN relay available.';
+    if (d.data && (d.joinokReceived || d.joinokSent)) return 'Lobby handshake OK.';
+    return '';
+  }
+  _forceRelay() { try { return localStorage.getItem('engendros_force_relay') === '1'; } catch (e) { return false; } }
+  toggleLanMode() {
+    const on = !this._lanMode();
+    try { localStorage.setItem('engendros_lan_mode', on ? '1' : '0'); } catch (e) {}
+    this._setLobbyDiag(on ? 'LAN mode enabled. Start scripts/lan-server.js, host on this Mac, and have the squad open the Hamachi IP.' : 'WebRTC mode enabled.');
+    this._resetLobbyTransport();
+    this._resetDiag('idle', '');
+    this._renderLanMode();
+    this._renderRelayMode();
+    this._renderRoomBrowser();
+  }
+  _renderLanMode() {
+    const b = document.getElementById('mpLanBtn'); if (!b) return;
+    const on = this._lanMode();
+    b.textContent = on ? 'NET: LAN' : 'NET: WEBRTC';
+    b.classList.toggle('danger', on);
+  }
+  toggleRelayMode() {
+    const on = !this._forceRelay();
+    try { localStorage.setItem('engendros_force_relay', on ? '1' : '0'); } catch (e) {}
+    this._setLobbyDiag(on ? 'Relay test enabled. Host/join again to use TURN only.' : 'Relay test disabled. Host/join again to use automatic routing.');
+    this._renderRelayMode();
+    this._renderNetDiag();
+  }
+  _renderRelayMode() {
+    const b = document.getElementById('mpRelayBtn'); if (!b) return;
+    const on = this._forceRelay();
+    b.textContent = on ? 'RELAY: FORCE' : 'RELAY: AUTO';
+    b.classList.toggle('danger', on);
+    b.style.display = this._lanMode() ? 'none' : '';
+  }
+  _renderNetDiag() {
+    const el = document.getElementById('mp-diaggrid');
+    if (!el) return;
+    const d = this.diag || this._newDiag();
+    const yn = (ok) => ok ? '<b class="ok">OK</b>' : '<b class="wait">WAIT</b>';
+    const hello = d.helloSent ? 'sent' : (d.helloReceived ? 'received' : 'wait');
+    const joinok = d.joinokReceived ? 'received' : (d.joinokSent ? 'sent' : 'wait');
+    const ice = (d.iceTypes && d.iceTypes.length) ? d.iceTypes.join(' / ') : 'waiting';
+    const sel = d.selectedType || 'unknown';
+    const route = d.selectedType ? (d.remoteType ? `${d.selectedType}->${d.remoteType}` : d.selectedType) : 'unknown';
+    const mode = d.iceMode || (this._lanMode() ? 'lan-ws' : (this._forceRelay() ? 'force-relay' : 'auto-default'));
+    const detail = d.message || d.details || '';
+    el.innerHTML = `
+      <div><span>Broker</span>${yn(d.broker)}</div>
+      <div><span>Data</span>${yn(d.data)}</div>
+      <div><span>Hello</span><b>${mpEscape(hello)}</b></div>
+      <div><span>Join OK</span><b>${mpEscape(joinok)}</b></div>
+      <div><span>Mode</span><b>${mpEscape(mode)}</b></div>
+      <div><span>Route</span><b class="${sel === 'relay' ? 'ok' : ''}">${mpEscape(route)}</b></div>
+      <div><span>ICE</span><b>${mpEscape(ice)}</b></div>
+      <div class="wide"><span>State</span><b>${mpEscape([d.iceState, d.connectionState].filter(Boolean).join(' / ') || d.last || 'idle')}</b></div>
+      ${d.error ? `<div class="wide err"><span>Error</span><b>${mpEscape(d.error)}</b></div>` : ''}
+      ${detail ? `<div class="wide msg"><span>Message</span><b>${mpEscape(detail)}</b></div>` : ''}
+      ${this._diagAdvice(d) ? `<div class="wide advice">${mpEscape(this._diagAdvice(d))}</div>` : ''}`;
+  }
+  _renderRoomBrowser() {
+    this._renderNetDiag();
+    const list = document.getElementById('mp-roomlist');
+    const badge = document.getElementById('mp-public-state');
+    const close = document.getElementById('mpCloseRoomBtn');
+    if (close) close.style.display = (this.isHost && this.net && this.net.room) ? 'inline-block' : 'none';
+    if (badge) {
+      badge.textContent = (this.isHost && this.net && this.net.room) ? 'ROOM CODE' : 'CODE JOIN';
+      badge.classList.toggle('on', !!(this.isHost && this.net && this.net.room));
+    }
+    if (list) list.innerHTML = '<div class="mp-roomempty">Public room browser is disabled for this stabilization build. Host, copy the room code, and join manually.</div>';
+  }
+  _resetLobbyTransport() {
+    try { this.net && this.net.close(); } catch (e) {}
+    this.net = this._makeNet();
+    this._wireNet();
+    for (const [, rp] of this.remotes) rp.dispose();
+    this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
+    this._reviveHostProgress.clear();
+    if (this._lastXf) this._lastXf.clear();
+    this.active = false; this.isHost = false; this.ready = false; this.myId = null; this.spectateTarget = null; this._resetRevive(true);
+  }
+  closeRoom() {
+    const old = this.net && this.net.room;
+    if (!old) { this._lobbyMsg('No room is open.'); return; }
+    try { if (this.isHost) this.net.send('roomClosed', {}); } catch (e) {}
+    this.leave();
+    this._lobbyMsg(`Room <b>${old}</b> closed. Host again when ready.`);
+    this._setLobbyDiag('Room closed.');
+    this._resetDiag('idle', '');
+    this._renderRoomBrowser();
+  }
   startHost(name) {
     this._clearJoinHandshakeTimer();
+    this._setLobbyDiag('');
+    this._resetLobbyTransport();
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
     this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
-    this.net.onPeerOpen = (c) => this._lobbyMsg(`Room code: <b>${c}</b> — share it. Waiting for players…`, c);
-    this.net.onError = (t) => this._lobbyMsg(this._netErr(t));
+    this._resetDiag('host', code);
+    this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — copy it and send it to the squad.`, c); this._setLobbyDiag(this._lanMode() ? 'LAN room is open. Squad joins through the Hamachi IP and this code.' : 'Manual room is open. Share the code; no public-room scanner is running.'); this._renderRoomBrowser(); };
+    this.net.onError = (t) => { this._lobbyMsg(this._netErr(t)); };
     this.net.host(code); this._renderRoster();
   }
   startJoin(code, name) {
@@ -147,13 +338,17 @@ export class MP {
     if (!room) { this._lobbyMsg('Enter a room code.'); return; }
     if (room.length !== 5) { this._lobbyMsg('Room codes are 5 characters.'); return; }
     this._clearJoinHandshakeTimer();
+    this._setLobbyDiag('');
+    this._resetLobbyTransport();
+    this._resetDiag('join', room);
     this.name = name || 'Player'; this.isHost = false; this.myId = null;
-    this.net.onPeerOpen = () => this._lobbyMsg('Connecting to ' + room + '…');
+    this.net.onPeerOpen = () => this._lobbyMsg(this._lanMode() ? ('Connecting to LAN room ' + room + '…') : ('Connecting to ' + room + '… finding WebRTC route (can take up to 45s).'));
     this.net.onConnect = () => {
       this.myId = this.net.selfId; this.net.lastRecv = performance.now();
       this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
-      this._lobbyMsg('Connecting… handshaking with host…');
-      this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer. Ask the host to refresh/re-host.'), 9000);
+      this._markDiag({ helloSent: true }, 'Hello sent');
+      this._lobbyMsg('Connected… handshaking with host (waiting up to 25s).');
+      this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer after 25s. Ask the host to refresh/re-host.'), 25000);
     };
     this.net.onError = (t) => { this._clearJoinHandshakeTimer(); this._lobbyMsg(this._netErr(t)); };
     this.net.join(room);
@@ -166,11 +361,36 @@ export class MP {
     for (const [, rp] of this.remotes) rp.dispose();
     this._clearGhostProjectiles();
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
+    this._reviveHostProgress.clear();
     if (this._lastXf) this._lastXf.clear();
-    this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false;
-    this._localDown = false; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
+    this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false; this.spectateTarget = null;
+    this._localDown = false; this._localDead = false; this._localWaiting = false; this._resetRevive(true); this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
     if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
-    this.net = new Net(); this._wireNet();
+    this.net = this._makeNet(); this._wireNet();
+    const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
+    this._lobbyMsg('Host a room or paste a code.');
+    this._setLobbyDiag('');
+    this._resetDiag('idle', '');
+    this._renderRoster();
+    this._renderRoomBrowser();
+  }
+  endRunToLobby(msg) {
+    this.active = false; this.frozen = false; this._spilledLoot = false; this.spectateTarget = null;
+    this._localDown = false; this._localDead = false; this._localWaiting = false; this._resetRevive(true); this._bleedShown = false; this._bleedT = 0;
+    this.pstate.clear(); this.ghosts.clear(); this._clearGhostProjectiles(); this._reviveHostProgress.clear();
+    if (this._lastXf) this._lastXf.clear();
+    for (const [, rp] of this.remotes) rp.dispose();
+    this.remotes.clear();
+    if (this.game.mountedGun) this.game.mountedGun.occupant = null;
+    if (this.isHost) {
+      for (const [id, r] of this.roster) r.ready = (id === 'host');
+      try { this.net.send('roster', this._rosterArr()); } catch (e) {}
+    } else {
+      this.ready = false;
+      const me = this.roster.get(this.myId);
+      if (me) me.ready = false;
+    }
+    this._lobbyMsg(msg || 'Run ended. Ready up and start again.');
   }
   // host: fully remove a player (clean leave / disconnect / crash / kick) and tell everyone to despawn their character now
   _dropPeer(peerId, opts) {
@@ -191,9 +411,33 @@ export class MP {
     const c = this.net.conns.get(peerId); if (c) { try { c.close(); } catch (e) {} }   // stop them sending
     this._dropPeer(peerId);
   }
-  _lobbyMsg(html, code) { const el = document.getElementById('mp-status'); if (el) el.innerHTML = html; if (code) { const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = code; } }
-  _netErr(t) { return ({ 'unavailable-id': 'Code taken — pick another.', 'peer-unavailable': 'No room with that code.', 'connect-timeout': 'Connection timed out — try again, or have the host refresh/re-host.', 'connect-failed': 'WebRTC connection failed — try a fresh room code.', 'network': 'Network error — check your internet.', 'server-error': 'Matchmaking busy — try again.', 'socket-error': 'Connection lost — try again.', 'socket-closed': 'Connection closed — try again.', 'browser-incompatible': 'Your browser blocks WebRTC co-op.', 'ssl-unavailable': 'Secure connection failed.' })[t] || ('Connection error: ' + t); }
-  _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || {}; return ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'].map((s) => lo[s] || null); }
+  _lobbyMsg(html, code) {
+    const el = document.getElementById('mp-status'); if (el) el.innerHTML = html;
+    if (code) {
+      const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = code;
+      const bar = document.getElementById('mp-codebar'); if (bar) bar.classList.add('show');
+    }
+  }
+  _netErr(t) {
+    const forced = this._forceRelay();
+    return ({
+      'unavailable-id': 'Code taken — pick another.',
+      'peer-unavailable': 'No room with that code.',
+      'connect-timeout': forced ? 'Forced relay timed out after 45s — this relay is blocked or unavailable on this network.' : 'Connection timed out after 45s — toggle RELAY: FORCE, re-host, and try again to isolate NAT/firewall.',
+      'connect-failed': forced ? 'Forced relay failed — try AUTO again or use a dedicated TURN relay.' : 'WebRTC connection failed — try a fresh room code, or RELAY: FORCE if it repeats.',
+      'connection-failed': forced ? 'Forced relay connection failed — this relay is blocked or unavailable here.' : 'WebRTC connection state failed — broker is OK, but no browser-to-browser route worked.',
+      'ice-failed': forced ? 'Forced TURN ICE failed — the relay is blocked/unavailable on this network.' : 'WebRTC ICE failed — broker is OK, but the devices could not find a route.',
+      'negotiation-failed': forced ? 'Forced TURN negotiation failed — this relay is blocked/unavailable on this network.' : 'WebRTC negotiation failed — broker is OK, but ICE could not find a route.',
+      'network': 'Network error — check your internet.',
+      'server-error': 'Matchmaking busy — try again.',
+      'socket-error': 'Connection lost — try again.',
+      'socket-closed': 'Connection closed — try again.',
+      'lan-unavailable': 'LAN relay is not reachable — run: node scripts/lan-server.js --host 0.0.0.0',
+      'browser-incompatible': 'Your browser blocks WebRTC co-op.',
+      'ssl-unavailable': 'Secure connection failed.',
+    })[t] || ('Connection error: ' + t);
+  }
+  _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || []; return Array.isArray(lo) ? lo.filter(Boolean) : []; } // flat equal-slot loadout array (empties dropped for the roster)
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
   toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }
   _renderRoster() {
@@ -205,7 +449,7 @@ export class MP {
         const kick = (this.isHost && id !== 'host') ? ` <button class="mp-kick" data-peer="${mpEscape(id)}" title="Kick player" style="margin-left:6px;background:#5a2024;color:#fff;border:1px solid #a3434a;border-radius:4px;cursor:pointer;font-weight:800;padding:0 7px">✕</button>` : '';
         return `<div class="mp-rosteritem">🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
       });
-      el.innerHTML = rows.join('') || '<div class="mp-rosteritem">…</div>';
+      el.innerHTML = rows.join('');
       if (this.isHost) el.querySelectorAll('.mp-kick').forEach((b) => { b.onclick = () => this.hostKick(b.getAttribute('data-peer')); });
     }
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
@@ -214,6 +458,9 @@ export class MP {
     const rb = document.getElementById('mpReadyBtn');
     if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
     this._renderModeSel();
+    this._renderLanMode();
+    this._renderRelayMode();
+    this._renderRoomBrowser();
   }
   // ---- game-mode pick (host-authoritative; only the host simulates waves, so the host owns the mode) ----
   setMode(m) {
@@ -223,6 +470,7 @@ export class MP {
     this.game.mode = mode; this._lobbyMode = mode;
     if (this.isHost) this.net.send('mode', { mode });           // tell the squad (no-op with zero peers)
     this._renderModeSel();
+    this._renderRoomBrowser();
   }
   _renderModeSel() {
     const wrap = document.getElementById('mp-modes'); if (!wrap) return;
@@ -237,7 +485,7 @@ export class MP {
     if (note) note.textContent = (mode === 'longnight'
       ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
       : '⚔ Arcade waves — special waves & mini-bosses.')
-      + (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.');
+      + (this._lanMode() ? ' LAN mode uses Hamachi/WebSocket.' : (this._forceRelay() ? ' Relay test forces TURN only.' : (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.')));
   }
   hostStart() {
     if (!this.isHost) return;
@@ -245,19 +493,22 @@ export class MP {
     if (!allReady) { this._lobbyMsg('Waiting for all players to be READY…'); return; }
     const now = performance.now(); for (const [id] of this.roster) this._lastXf.set(id, now); // fresh heartbeat baseline so nobody is insta-timed-out
     const mode = this.game.mode || 'purge';
-    this.active = true; this._initHostStates(); this.net.send('start', { mode }); this.game._enterMP(mode);
+    this.active = true; this._renderRoomBrowser(); this._initHostStates(); this.net.send('start', { mode }); this.game._enterMP(mode);
+    this.sendWorldTime();
   }
   _initHostStates() { this.pstate.clear(); for (const [id, info] of this.roster) this.pstate.set(id, this._freshState(info)); }
   _freshState(info) { return { hp: 100, maxHp: 100, armor: 0, armorMax: 100, down: false, downT: 0, waiting: false, dead: false, downs: 0, burnT: 0, name: info.name, skin: info.skin }; }
   // ---- net wiring ----
   _wireNet() {
     const n = this.net, g = this.game;
+    n.onDiag = (d) => this._onNetDiag(d);
     n.onDisconnect = (pid) => {
       if (this.isHost) this._dropPeer(pid);
       else if (this.active) this._hostGone();
     };
     n.on('hello', (d, from) => {
       if (!this.isHost) return;
+      this._markDiag({ helloReceived: true }, 'Hello received');
       const nm = (d.name || 'Player').slice(0, 14), pid = (typeof d.pid === 'string') ? d.pid : null;
       // same player reconnecting (reload / 2nd tab / network blip) → drop the stale entry first (by stable id, else name)
       const dupe = [...this.roster].find(([id, r]) => id !== from && id !== 'host' && ((pid && r.pid === pid) || (r.name || '').toLowerCase() === nm.toLowerCase()));
@@ -268,11 +519,24 @@ export class MP {
       this._lastXf.set(from, performance.now());
       this.net.send('roster', this._rosterArr()); this._renderRoster();
       this.net.sendTo(from, 'joinok', {});
+      this._markDiag({ joinokSent: true }, 'Join OK sent');
       this.net.sendTo(from, 'mode', { mode: this.game.mode || 'purge' });   // so the joiner's lobby shows the chosen mode
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
     n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 4 players).'); try { this.net.close(); } catch (e) {} } });
-    n.on('joinok', () => { if (!this.isHost) { this._clearJoinHandshakeTimer(); this._lobbyMsg('Connected! Waiting for the host to start…'); } });
+    n.on('joinok', () => { if (!this.isHost) { this._clearJoinHandshakeTimer(); this._markDiag({ joinokReceived: true }, 'Join OK received'); this._lobbyMsg('Connected! Waiting for the host to start…'); } });
+    n.on('roomClosed', () => {
+      if (!this.isHost) {
+        this._clearJoinHandshakeTimer();
+        this._lobbyMsg('Host closed the room.');
+        this._setLobbyDiag('Room closed by host.');
+        this._resetDiag('idle', '');
+        try { this.net.close(); } catch (e) {}
+        this.net = this._makeNet(); this._wireNet();
+        this.ready = false; this.myId = null; this.roster.clear(); this.pstate.clear();
+        this._renderRoster();
+      }
+    });
     n.on('goodbye', (d, from) => { if (this.isHost) this._dropPeer(from); });                                  // client left cleanly
     n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
@@ -317,6 +581,8 @@ export class MP {
     n.on('fiftyclaim', (d, from) => { if (this.isHost && d) this._hostFiftyClaim(d.want, from); });               // client → host: request mount/dismount
     n.on('fiftystate', (d) => { if (!this.isHost && d) this._applyFiftyState(d); });                              // host → clients: who owns the seat now
     n.on('fiftyfire', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate firing the .50cal: muzzle + tracer + shot/brass sound (damage is host-authoritative)
+      if (g.mountedGun && typeof g.mountedGun.feedBeltShot === 'function') g.mountedGun.feedBeltShot();
+      if (Number.isFinite(d.ammo) && g.mountedGun && typeof g.mountedGun.setAmmo === 'function') g.mountedGun.setAmmo(d.ammo);
       const o = V(d.o), e = V(d.e);
       const dir = d.d ? V(d.d).normalize() : e.clone().sub(o).normalize();
       g.effects.muzzleFlash(o, dir, 2.2);
@@ -326,7 +592,7 @@ export class MP {
     n.on('fiftysound', (d) => { if (!d || d.pid === this.myId || !d.k) return; // non-shot .50cal foley: charging handle / overheat should be audible to nearby peers too
       if (d.k === 'charge') { if (g.mountedGun && typeof g.mountedGun.animateCharge === 'function') g.mountedGun.animateCharge(); if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
       else if (d.k === 'overheat') { if (g.audio && typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (g.audio && typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); } });
-    n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; }); // slew the barrel + mirror heat so everyone sees the glow + smoke + overheat
+    n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; if (gun && Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo); }); // slew the barrel + mirror heat/ammo so everyone sees the glow/smoke/empty box
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
@@ -345,11 +611,12 @@ export class MP {
     n.on('ignite', (d, from) => { if (this.isHost) { const s = this.pstate.get(from); if (s) s.burnT = PLAYER_BURN_DUR; } }); // client self-ignite (in-hand molotov shatter) → host owns the lingering burn DoT
     n.on('pstate', (d) => this._applyPState(d));
     n.on('revive', (d, from) => { if (this.isHost) this.hostRevive(d.tid, from); });
+    n.on('reviveprog', (d, from) => { if (this.isHost) this._hostReviveProgress(d, from); else this._applyReviveProgress(d); });
     n.on('ping', (d, from) => { if (this.isHost) this.net.sendTo(from, 'pong', d); });
     n.on('pong', (d) => { this.myPing = Math.round(performance.now() - d.t); });
     n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
     n.on('feed', (d) => this.game.hud.kill(d.who + ' \u27a4 ' + d.what));
-    n.on('gameover', () => this.game._mpGameOver());
+    n.on('gameover', (d) => this.game._mpGameOver(d && d.reason));
     n.on('droppickup', (d) => { if (!d || typeof d.kind !== 'string' || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return; const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E (legacy local pile)
     // ---- host-authoritative SHARED ground loot (one pile for everyone, first grab claims it) ----
     n.on('pickup', (d) => { if (!this.isHost && d) g.loot._spawnPickup(d.kind, new THREE.Vector3(d.x, 0.55, d.z), d.value, d.life, d.id); });        // client spawns the EXACT shared pickup the host broadcast
@@ -373,12 +640,13 @@ export class MP {
   // ---- rooftop .50cal seat (host-authoritative single occupant) ----
   _hostFiftyClaim(want, from) {
     if (!this.isHost) return; const gun = this.game.mountedGun; if (!gun) return;
-    if (want === 'mount') { if (gun.overheated) { this.net.sendTo(from, 'fiftystate', { occ: gun.occupant }); return; } if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { occ: gun.occupant }); return; } }
+    if (want === 'mount') { if (gun.overheated || gun.ammo <= 0) { this.net.sendTo(from, 'fiftystate', { occ: gun.occupant, ammo: gun.ammo }); return; } if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { occ: gun.occupant, ammo: gun.ammo }); return; } }
     else if (want === 'dismount') { if (gun.occupant === from) gun.occupant = null; }
-    this._applyFiftyState({ occ: gun.occupant }); this.net.send('fiftystate', { occ: gun.occupant });
+    this._applyFiftyState({ occ: gun.occupant, ammo: gun.ammo }); this.net.send('fiftystate', { occ: gun.occupant, ammo: gun.ammo });
   }
   _applyFiftyState(d) {
     const gun = this.game.mountedGun; if (!gun) return; gun.occupant = d.occ;
+    if (Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo);
     if (d.occ === this.myId) { if (this.game.player.mountedGun !== gun) gun._doMount(); }
     else if (this.game.player.mountedGun === gun) { gun._doDismount(); }   // someone else took/cleared it
   }
@@ -389,7 +657,7 @@ export class MP {
     this._xfT -= dt;
     if (this._xfT <= 0) {
       this._xfT = 0.066; const p = g.player;
-      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, wep: g.weapons.cur, fl: g.inventory.isHoldingFlashlight() && !!(g.dayNight && g.dayNight.flashOn), bf: (g.player.burnT > 0) ? 1 : 0, seat: (g.player.mountedGun ? 1 : 0) });
+      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, waiting: this._localWaiting, wep: g.weapons.cur, fl: g.inventory.isHoldingFlashlight() && !!(g.dayNight && g.dayNight.flashOn), bf: (g.player.burnT > 0) ? 1 : 0, seat: (g.player.mountedGun ? 1 : 0) });
     }
     for (const [, rp] of this.remotes) rp.update(dt, cam);
     this._updateGhostProjectiles(dt);
@@ -415,7 +683,7 @@ export class MP {
       this._clockT -= dt;
       if (this._clockT <= 0) { this._clockT = 0.5; const left = g.waves.active ? g.waves.toSpawn + g.enemies.aliveCount : g.enemies.aliveCount; this.net.send('clock', { t: g._surviveTime, left }); }
       this._nightT -= dt;
-      if (this._nightT <= 0) { this._nightT = 2; this.net.send('night', { t: g.dayNight.t, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon }); }
+      if (this._nightT <= 0) { this._nightT = 2; this.sendWorldTime(); }
     } else {
       for (const [, e] of this.ghosts) {
         if (!e.alive) continue;
@@ -428,8 +696,14 @@ export class MP {
     this._pingT -= dt; if (this._pingT <= 0) { this._pingT = 2; if (!this.isHost) this.net.send('ping', { t: performance.now() }); }
     this._pstatT -= dt; if (this._pstatT <= 0) { this._pstatT = 1; const myPing = this.isHost ? 0 : this.myPing, myMoney = g.player.money; const me = this.roster.get(this.myId); if (me) { me.ping = myPing; me.money = myMoney; } this.net.broadcast('pstat', { id: this.myId, ping: myPing, money: myMoney }); if (this._sbOpen) this.renderScoreboard(); }
     this._updateRevive(dt);
-    // local bleed-out bar: counts the downed player's 20s toward bleeding out
-    if (this._localDown) { this._bleedT = Math.max(0, (this._bleedT || 0) - dt); g.hud.setBleed(this._bleedT / 20); this._bleedShown = true; }
+    this.updateSpectator(dt);
+    // local bleed-out bar: counts the downed player's 30s toward bleeding out; revive progress temporarily takes over this bar.
+    if (this._localDown) {
+      this._bleedT = Math.max(0, (this._bleedT || 0) - dt);
+      const prog = this._incomingRevive && performance.now() < this._incomingRevive.until ? this._incomingRevive : null;
+      g.hud.setBleed(prog ? (prog.clicks / Math.max(1, prog.total)) : (this._bleedT / DOWN_SECONDS));
+      this._bleedShown = true;
+    }
     else if (this._bleedShown) { g.hud.setBleed(-1); this._bleedShown = false; }
   }
   // ---- ghost projectiles (visual-only mirror of a teammate's thrown/launched projectile) ----
@@ -504,19 +778,50 @@ export class MP {
   }
   // ---- combat ----
   claimHit(e, dmg, src) { this.net.send('hit', { eid: e.id, dmg, src }); }
-  creditKill(killerId, e, keyCash = 0) {
-    const reward = Math.round(e.def.reward);
-    // keyCash = the GROUND-loot key-cash the host rolled for this kill → forwarded so the KILLER gets it (the
-    // host already broadcast the shared ground items separately and does NOT keep the client's key-cash).
-    this.net.sendTo(killerId, 'kill', { reward, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0), keyCash });
+  creditKill(killerId, e) {
+    this.net.sendTo(killerId, 'kill', { reward: KILL_CASH, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0) });
     this.feed(((this.roster.get(killerId) || {}).name) || 'Player', e.name);
   }
   _clientKill(d) {
-    // Client's personal kill reward ONLY. Ground items are NO LONGER rolled here — they arrive as shared
-    // 'pickup' broadcasts from the host (host-authoritative). We add cash/score + key-cash + elite bonus.
+    // Client's personal kill reward ONLY. Ground items arrive as shared 'pickup' broadcasts from the host.
     const g = this.game; g.kills++; g.player.addMoney(d.reward); g.score += d.score; g.hud.setScore(g.score); g.hud.kill(d.name);
-    if (d.keyCash) g.player.addMoney(d.keyCash);
-    if (d.elite) g.player.addMoney(KEY_CASH * 2);
+  }
+  liveSpectateTargets() {
+    const out = [];
+    for (const [id, rp] of this.remotes) {
+      const s = this.pstate.get(id);
+      if ((!s || (!s.dead && !s.down && !s.waiting)) && !rp.dead && !rp.down && !rp.waiting) out.push(rp);
+    }
+    return out;
+  }
+  ensureSpectateTarget() {
+    if (!this._localDead) return null;
+    const live = this.liveSpectateTargets();
+    if (!live.length) { this.spectateTarget = null; return null; }
+    if (!this.spectateTarget || !live.some((rp) => rp.id === this.spectateTarget)) this.spectateTarget = live[0].id;
+    return live.find((rp) => rp.id === this.spectateTarget) || live[0];
+  }
+  cycleSpectate(dir = 1) {
+    if (!this._localDead) return;
+    const live = this.liveSpectateTargets();
+    if (!live.length) { this.spectateTarget = null; return; }
+    const cur = live.findIndex((rp) => rp.id === this.spectateTarget);
+    const next = (cur < 0 ? 0 : (cur + dir + live.length) % live.length);
+    this.spectateTarget = live[next].id;
+    this.game.hud.bigMessage('SPECTATING', live[next].name || 'teammate');
+  }
+  updateSpectator(dt) {
+    if (!this._localDead) return;
+    const rp = this.ensureSpectateTarget();
+    if (!rp) return;
+    const cam = this.game.engine.camera;
+    const k = 1 - Math.exp(-14 * dt);
+    cam.rotation.order = 'YXZ';
+    cam.position.lerp(_v3a.set(rp.pos.x, rp.pos.y + 1.62, rp.pos.z), k);
+    let dy = rp.yaw - cam.rotation.y; while (dy > Math.PI) dy -= TAU; while (dy < -Math.PI) dy += TAU;
+    cam.rotation.y += dy * k;
+    cam.rotation.x += (clamp(rp.pitch, -1.2, 1.2) - cam.rotation.x) * k;
+    cam.rotation.z += (0 - cam.rotation.z) * k;
   }
   rayHitPlayers(origin, dir, maxDist) {
     if (!this.friendlyFire) return null;   // co-op: gunfire passes through teammates (no accidental teamkills)
@@ -537,16 +842,25 @@ export class MP {
     const s = this.pstate.get(id); if (!s || s.dead || s.waiting || s.down) return;
     if (s.armor > 0) { const t = Math.min(s.armor, dmg); s.armor -= t; dmg -= t; }
     s.hp -= dmg;
-    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 3) s.dead = true; else { s.down = true; s.downT = 20; } } // 2 downs survivable, the 3rd is permanent death
+    if (s.hp <= 0) { s.hp = 0; s.downs++; if (s.downs >= 3) s.dead = true; else { s.down = true; s.downT = DOWN_SECONDS; } } // 2 downs survivable, the 3rd is permanent death
     this._broadcastPState(id);
-    if (s.dead) this._checkGameOver();
+    if (s.dead || s.down || s.waiting) this._checkGameOver();
   }
-  hostRevive(tid) { if (!this.isHost) return; const s = this.pstate.get(tid); if (!s || !s.down) return; s.down = false; s.downT = 0; s.hp = Math.round(s.maxHp * 0.5); this._broadcastPState(tid); }
-  _tickDowns() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); } else if (id === this.myId) this._bleedT = s.downT; else this.net.sendTo(id, 'bleed', { t: s.downT }); } } } // push authoritative remaining time so the on-screen bleed bar matches the host clock
+  hostRevive(tid, from = this.myId) {
+    if (!this.isHost) return;
+    const s = this.pstate.get(tid); if (!s || !s.down) return;
+    const key = (from || 'host') + ':' + tid;
+    if ((this._reviveHostProgress.get(key) || 0) < REVIVE_CLICKS) return;
+    this._hostReviveProgress({ tid, clicks: 0 }, from);
+    this._reviveHostProgress.delete(key);
+    s.down = false; s.downT = 0; s.hp = Math.round(s.maxHp * 0.5); this._broadcastPState(tid);
+  }
+  _tickDowns() { if (!this.isHost) return; let changed = false; for (const [id, s] of this.pstate) { if (s.down) { s.downT -= 0.08; if (s.downT <= 0) { s.down = false; s.waiting = true; this._broadcastPState(id); changed = true; } else if (id === this.myId) this._bleedT = s.downT; else this.net.sendTo(id, 'bleed', { t: s.downT }); } } if (changed) this._checkGameOver(); } // push authoritative remaining time so the on-screen bleed bar matches the host clock
   // host-authoritative, persistent player burn DoT: the molotov pool only refreshes s.burnT, so this is the SINGLE place DoT is applied (and it lingers after leaving the pool)
   _tickBurn() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.burnT > 0) { s.burnT -= 0.08; this.hostHurt(id, PLAYER_BURN_DPS * 0.08); if (id === this.myId) this.game.player.burnT = PLAYER_BURN_DUR; else this.net.sendTo(id, 'burn', {}); } } }
   respawnAll() { if (!this.isHost) return; for (const [id, s] of this.pstate) { if (s.waiting && !s.dead) { s.waiting = false; s.hp = s.maxHp; s.armor = 0; this._broadcastPState(id); } } }
-  _broadcastPState(id) { const s = this.pstate.get(id); if (!s) return; const d = { id, hp: s.hp, maxHp: s.maxHp, armor: s.armor, down: s.down, downT: s.downT, waiting: s.waiting, dead: s.dead, burn: s.burnT > 0 }; this._applyPState(d); if (id !== this.myId) this.net.send('pstate', d); }
+  _pStatePayload(id, s) { return { id, hp: s.hp, maxHp: s.maxHp, armor: s.armor, down: s.down, downT: s.downT, waiting: s.waiting, dead: s.dead, burn: s.burnT > 0 }; }
+  _broadcastPState(id) { const s = this.pstate.get(id); if (!s) return; const d = this._pStatePayload(id, s); this._applyPState(d); this.net.send('pstate', d); }
   _applyPState(d) {
     const g = this.game;
     if (d.id === this.myId) {
@@ -555,10 +869,11 @@ export class MP {
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
       this.frozen = d.down || d.dead || d.waiting;
       g.player.alive = !(d.dead || d.down || d.waiting); // pstate owns life-state so Player.hurt's `if(!this.alive)` guard stops re-killing a downed player
-      if (d.down) this._bleedT = d.downT || 20; // start/refresh the local bleed-out bar countdown
-      if (d.dead) { g.hud.bigMessage('YOU ARE OUT', 'no lives left'); if (!this._spilledLoot) { this._spilledLoot = true; g.inventory.spillAll(); } } // real death → spill your backpack for teammates
+      if (d.down) this._bleedT = d.downT || DOWN_SECONDS; // start/refresh the local bleed-out bar countdown
+      if (d.dead) { g.hud.bigMessage('YOU ARE OUT', 'spectating live squadmates'); if (!this._spilledLoot) { this._spilledLoot = true; g.inventory.spillAll(); } this.ensureSpectateTarget(); } // real death → spill your backpack for teammates
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
+      else { this.spectateTarget = null; this._incomingRevive = null; g.hud.setBleed(-1); }
     } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); } } // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
   }
   nearestPlayer(x, z) {
@@ -570,6 +885,44 @@ export class MP {
   }
   // ---- revive interaction ----
   _downedRemoteNear() { const p = this.game.player.pos; for (const [, rp] of this.remotes) if (rp.down && !rp.dead && Math.hypot(rp.pos.x - p.x, rp.pos.z - p.z) < 2.4) return rp; return null; }
+  _downedRemoteAimed() {
+    const cam = this.game.engine.camera, origin = new THREE.Vector3(), dir = new THREE.Vector3(0, 0, -1);
+    cam.updateMatrixWorld(); origin.setFromMatrixPosition(cam.matrixWorld); dir.applyQuaternion(cam.quaternion).normalize();
+    let best = 0.9, hit = null;
+    for (const [, rp] of this.remotes) {
+      if (!rp.down || rp.dead || rp.waiting) continue;
+      const target = _v3a.set(rp.pos.x, rp.pos.y + 0.45, rp.pos.z);
+      const to = target.clone().sub(origin), dist = to.length();
+      if (dist > 3.1 || dist < 0.2) continue;
+      const dot = dir.dot(to.normalize());
+      const side = Math.sqrt(Math.max(0, 1 - dot * dot)) * dist;
+      if (dot > best && side < 0.9) { best = dot; hit = rp; }
+    }
+    return hit;
+  }
+  reviveTargetNear() { return this._reviveActive ? this._reviveRemote() : this._downedRemoteAimed(); }
+  canStartRevive() { return !this.frozen && !!this._downedRemoteAimed(); }
+  tryStartRevive() {
+    if (!this.active || this.frozen) return false;
+    if (this.game.player.inTank || this.game.player.mountedGun) return false;
+    const rp = this._downedRemoteAimed();
+    if (!rp) return false;
+    this._reviveActive = true; this._reviveTargetId = rp.id; this._reviveClicks = 0;
+    this._sendReviveProgress(rp.id, 0);
+    this.game.hud.setBleed(0);
+    if (this.game.audio && typeof this.game.audio.reloadIn === 'function') this.game.audio.reloadIn();
+    return true;
+  }
+  _reviveRemote() {
+    const rp = this._reviveTargetId ? this.remotes.get(this._reviveTargetId) : null;
+    if (!rp || !rp.down || rp.dead || rp.waiting) return null;
+    if (Math.hypot(rp.pos.x - this.game.player.pos.x, rp.pos.z - this.game.player.pos.z) > 3.2) return null;
+    return rp;
+  }
+  _resetRevive(clearIncoming = false) {
+    this._reviveActive = false; this._reviveTargetId = null; this._reviveClicks = 0;
+    if (clearIncoming) this._incomingRevive = null;
+  }
   // ---- Tab scoreboard ----
   _wireScoreboard() {
     const toggle = (down) => (e) => {
@@ -606,24 +959,71 @@ export class MP {
     let boss = null; for (const e of this.game.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
     if (boss) { const isTank = !!(boss.isTank || boss.def.tank); const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp); const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1; this.net.sendTo(pid, 'boss', { frac, name: boss.name, pip }); }   // late-join: current boss bar
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
+    for (const [id, s] of this.pstate) this.net.sendTo(pid, 'pstate', this._pStatePayload(id, s)); // late-join: current down/dead/waiting states
+    this.sendWorldTime(pid); // late-join: current day/night + blood-moon state
+  }
+  worldTimeState() {
     const g = this.game;
-    this.net.sendTo(pid, 'night', { t: g.dayNight.t, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon }); // late-join: current day/night + blood-moon state
+    return { mode: g.mode || 'purge', active: !!(g.dayNight && g.dayNight.active), t: g.dayNight.t, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon };
+  }
+  sendWorldTime(pid = null) {
+    if (!this.active || !this.isHost) return;
+    const d = this.worldTimeState();
+    if (pid) this.net.sendTo(pid, 'night', d);
+    else this.net.send('night', d);
   }
   _hostGone() { if (!this.active) return; this.active = false; try { this.game.hud.bigMessage('HOST LEFT', 'returning to menu…'); } catch (e) {} this.leave(); this.game.toMenu(); }
   _checkGameOver() {
     if (!this.isHost || !this.active) return;
-    let any = false, allDead = true;
-    for (const [, s] of this.pstate) { any = true; if (!s.dead) allDead = false; }
-    if (any && allDead) { this.net.send('gameover', {}); this.game._mpGameOver(); }
+    let any = false, allOut = true;
+    for (const [, s] of this.pstate) { any = true; if (!(s.dead || s.waiting)) allOut = false; }
+    if (any && allOut) {
+      const reason = 'Squad wiped. Ready up and start again.';
+      this.net.send('gameover', { reason });
+      this.game._mpGameOver(reason);
+    }
   }
   feed(who, what) { this.game.hud.kill(who + ' \u27a4 ' + what); this.net.broadcast('feed', { who, what }); }
+  blocksWeaponUse() { return this._reviveActive || !!this._downedRemoteAimed(); }
+  revivePrompt(rp) {
+    if (this._reviveActive) return `CPR on <b>${rp.name}</b>: ${this._reviveClicks}/${REVIVE_CLICKS} clicks`;
+    return `Press <b>E</b> to start CPR on <b>${rp.name}</b>`;
+  }
+  _sendReviveProgress(tid, clicks) {
+    const d = { tid, clicks, total: REVIVE_CLICKS };
+    if (this.isHost) this._hostReviveProgress(d, this.myId);
+    else this.net.send('reviveprog', d);
+  }
+  _hostReviveProgress(d, from) {
+    if (!d || typeof d.tid !== 'string') return;
+    const clicks = clamp(Number(d.clicks) || 0, 0, REVIVE_CLICKS), total = REVIVE_CLICKS;
+    const s = this.pstate.get(d.tid);
+    if (!s || !s.down || s.dead || s.waiting) return;
+    this._reviveHostProgress.set((from || 'host') + ':' + d.tid, clicks);
+    const payload = { tid: d.tid, rid: from || 'host', clicks, total };
+    if (d.tid === this.myId) this._applyReviveProgress(payload);
+    else this.net.sendTo(d.tid, 'reviveprog', payload);
+  }
+  _applyReviveProgress(d) {
+    if (!d || d.tid !== this.myId) return;
+    this._incomingRevive = { clicks: clamp(Number(d.clicks) || 0, 0, Number(d.total) || REVIVE_CLICKS), total: Number(d.total) || REVIVE_CLICKS, until: performance.now() + 1200 };
+  }
   _updateRevive(dt) {
-    if (!this.active || this.frozen) { this._reviveT = 0; return; }
-    const rp = this._downedRemoteNear();
-    if (rp && this.game.input.isDown('KeyE')) {
-      this._reviveT += dt;
-      this.game.hud.setInteract(`Reviving <b>${rp.name}</b>… ${Math.max(0, 3.5 - this._reviveT).toFixed(1)}s`);
-      if (this._reviveT >= 3.5) { this._reviveT = 0; if (this.isHost) this.hostRevive(rp.id); else this.net.send('revive', { tid: rp.id }); }
-    } else { this._reviveT = 0; if (rp) this.game.hud.setInteract(`Hold <b>E</b> to revive <b>${rp.name}</b>`); }
+    if (!this.active || this.frozen) { if (this._reviveActive) this._sendReviveProgress(this._reviveTargetId, 0); this._resetRevive(); return; }
+    if (!this._reviveActive) return;
+    const rp = this._reviveRemote();
+    if (!rp) { this._sendReviveProgress(this._reviveTargetId, 0); this._resetRevive(); this.game.hud.setBleed(-1); return; }
+    if (this.game.input.buttonsPressed[0]) {
+      this._reviveClicks = Math.min(REVIVE_CLICKS, this._reviveClicks + 1);
+      this._sendReviveProgress(rp.id, this._reviveClicks);
+      this.game.hud.setBleed(this._reviveClicks / REVIVE_CLICKS);
+      if (this.game.audio && typeof this.game.audio.reloadIn === 'function') this.game.audio.reloadIn();
+    }
+    this.game.hud.setInteract(this.revivePrompt(rp));
+    if (this._reviveClicks >= REVIVE_CLICKS) {
+      this._sendReviveProgress(rp.id, REVIVE_CLICKS);
+      this._resetRevive(); this.game.hud.setBleed(-1);
+      if (this.isHost) this.hostRevive(rp.id); else this.net.send('revive', { tid: rp.id });
+    }
   }
 }

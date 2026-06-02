@@ -1,6 +1,6 @@
 // world.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildSandbags } from './props.js';
@@ -500,9 +500,9 @@ export class DayNight {
     const isNight = !day;
     if (isNight && !this._wasNight) {
       this.nightCount++; this.bloodMoon = this.nightCount > 1 && chc(0.25); this.game.onNightStart(this.nightCount, this.bloodMoon);
-      if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('night', { t: this.t, n: this.nightCount, blood: this.bloodMoon }); // host: announce night/blood-moon at this timing
+      if (this.game.mp.active && this.game.mp.isHost) this.game.mp.sendWorldTime(); // host: announce night/blood-moon at this timing
     }
-    else if (!isNight && this._wasNight) { this.game.onDayStart(); if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('night', { t: this.t, n: this.nightCount, blood: this.bloodMoon }); } // host: announce dawn transition
+    else if (!isNight && this._wasNight) { this.game.onDayStart(); if (this.game.mp.active && this.game.mp.isHost) this.game.mp.sendWorldTime(); } // host: announce dawn transition
     this._wasNight = isNight;
     this._render();
   }
@@ -510,11 +510,24 @@ export class DayNight {
   // Host-authoritative state push (clients only): adopt the host's clock + night/blood-moon, then render that sky without advancing time.
   applyNetState(d) {
     if (!d) return;
+    const mode = d.mode === 'longnight' ? 'longnight' : 'purge';
+    const active = typeof d.active === 'boolean' ? d.active : mode === 'longnight';
+    this.game.mode = mode;
+    if (this.game.hud) this.game.hud.setNightMode(active);
+    if (!active) {
+      this.active = false; this.t = 0; this.nightCount = 0; this.bloodMoon = false; this._wasNight = false;
+      this.cel.visible = false;
+      this._apply(1.0, Math.PI / 2, true);
+      return;
+    }
     const prevNight = this.nightCount, prevBlood = this.bloodMoon;
-    this.t = d.t; this.nightCount = d.n; this.bloodMoon = d.blood;
+    this.active = true; this.cel.visible = true;
+    this.t = Number.isFinite(d.t) ? d.t : 0;
+    this.nightCount = Number.isFinite(d.n) ? d.n : 0;
+    this.bloodMoon = !!d.blood;
     this._wasNight = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE >= DAY_FRAC;
     this._render();
-    if (this.nightCount > prevNight || this.bloodMoon !== prevBlood) this.game.onNightStart(this.nightCount, this.bloodMoon); // mirror the host's NIGHT/BLOOD MOON banner
+    if (this._wasNight && (this.nightCount > prevNight || (this.bloodMoon && !prevBlood))) this.game.onNightStart(this.nightCount, this.bloodMoon); // mirror the host's NIGHT/BLOOD MOON banner
   }
 
   // Apply the sky for the CURRENT this.t / this.bloodMoon (no time advance) — shared by update() and applyNetState().

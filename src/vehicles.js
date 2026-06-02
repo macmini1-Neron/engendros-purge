@@ -1,6 +1,6 @@
 // vehicles.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, rng, rr } from './util.js?u=3';
+import { clamp, rng, rr } from './util.js';
 import { _tankWrecks, animateTank, buildTankWreck, tankGroundFX, updateTankLights } from './bosstank.js';
 
 

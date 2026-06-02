@@ -1,9 +1,9 @@
 // weapons.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js?u=3';
+import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js';
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
-import { WEAPON_LAYER } from './engine.js?e=2';
+import { WEAPON_LAYER } from './engine.js';
 
 
 // ---------------------------------------------------------------------------
@@ -801,7 +801,7 @@ export class WeaponSystem {
   constructor(game) {
     this.game = game;
     this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
-    this.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null }; this.slotOrder = ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'];
+    this.meleeKind = 'knife'; // the melee kind quick-melee (Q) jumps to — derived from the loadout each run
     this.cur = 'luger';
     this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0;
     this.grenadeCD = 0; this.ads = false; this.fov = 80;
@@ -850,12 +850,15 @@ export class WeaponSystem {
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
     for (const k of WEAPON_ORDER) { this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
-    // deploy the player's saved loadout (knife-only by default; gadgets deploy EMPTY — charge/material scavenged in-run)
-    const lo = (this.game.meta && this.game.meta.loadout) || { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null };
-    this.loadout = { primary: lo.primary || null, secondary: lo.secondary || null, melee: lo.melee || 'knife', gadget1: lo.gadget1 || null, gadget2: lo.gadget2 || null };
+    // deploy the player's saved loadout — now a flat array of EQUAL slots (any gear in any slot, duplicates OK)
+    const lo = (this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : ['knife'];
     this.flares = 0;
-    if (!this.loadout.melee || !WEAPONS[this.loadout.melee]) this.loadout.melee = 'knife'; // a run always has a valid melee
-    this.cur = this.loadout.primary || this.loadout.secondary || this.loadout.melee || 'knife';
+    // choose what to hold first: first firearm, else first melee, else the bare knife
+    this.cur = null;
+    for (const k of lo) { if (k && WEAPONS[k] && !WEAPONS[k].melee && WEAPONS[k].class !== 'tool') { this.cur = k; break; } }
+    if (!this.cur) for (const k of lo) { if (k && WEAPONS[k] && WEAPONS[k].melee) { this.cur = k; break; } }
+    if (!this.cur) this.cur = 'knife';
+    this.meleeKind = lo.find((k) => k && WEAPONS[k] && WEAPONS[k].melee) || 'knife'; // for quick-melee (Q)
     this.molotovCD = 0; this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
     // ownership + deploy now happen entirely in inventory.deployLoadout() (grant = ammo init; a slot confers ownership)
     if (this.molotovModel) { this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0); }
@@ -892,7 +895,11 @@ export class WeaponSystem {
     this.cooldown = 0.1; this.bloom = 0;
     this.game.hud.setWeapon(this); this.game.audio.reloadClick();
   }
-  quickMelee() { const k = this.loadout.melee; if (k && this.game.inventory) this.game.inventory.selectKind(k); else if (k && this.owns(k)) this.select(k); }
+  quickMelee() {
+    const inv = this.game.inventory; let k = this.meleeKind || 'knife';
+    if (inv && !inv.slots.some((s) => s && s.kind === k)) { const m = inv.slots.find((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee); if (m) k = m.kind; } // fall back to whatever melee is actually carried
+    if (inv) inv.selectKind(k); else if (this.owns(k)) this.select(k);
+  }
   cycle(dir) { this.game.inventory.cycleWheel(dir); } // the wheel scrolls the unified inventory (loadout weapons + backpack)
   // Fortification material — granted by supply drops as inventory items (1 item = 1 placement).
   grantBuildMats(amt) {
@@ -1237,6 +1244,7 @@ export class MountedGun {
     this.base = pos.clone();
     this.baseYaw = yaw; this.yaw = yaw; this.pitch = 0;
     this.heat = 0; this.overheated = false; this.cd = 0; this.readyToFire = true;
+    this.maxAmmo = 250; this.ammo = this.maxAmmo;
     this.dmg = 65; this.rpm = 600; this.range = 380; this.spread = 0.012;
     this.pivot = pos.clone(); this.pivot.y += 1.05;
     this.beltRounds = []; this._smokeT = 0;
@@ -1328,11 +1336,19 @@ export class MountedGun {
     gb.box(0.30, 0.05, 0.04, -0.42, -0.05, 0.385, oLo);                        // front-face shadow band
     for (let i = 0; i < 7; i++) gb.box(0.022, 0.026, 0.006, -0.55 + i * 0.038, -0.05, 0.388, stencil); // "CAL .50" stencil
     gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.10, bBright, { rz: 0.3 }); gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.22, bBright, { rz: 0.3 }); gb.box(0.075, 0.02, 0.02, -0.64, 0.05, 0.16, bBright); // folding wire bail handle
-    { // linked live .50 BMG rounds packed inside: brass case, rim/groove, dark link, copper bullet
-      for (let i = 0; i < 5; i++) { const cx = -0.51 + i * 0.046;
-        addFiftyLiveRound(gb, cx, -0.05, 0.19, { axis: 'z-', scale: 0.82, link: true });
-      } }
     this.body = new THREE.Mesh(gb.build(), voxelMaterial()); this.body.castShadow = true; this.gun.add(this.body);
+
+    this.ammoBoxRounds = new THREE.Group(); this.gun.add(this.ammoBoxRounds);
+    { // linked live .50 BMG rounds packed inside: separate so the can visibly empties at 0 ammo
+      const boxRoundBuilder = new MeshBuilder();
+      addFiftyLiveRound(boxRoundBuilder, 0, 0, 0, { axis: 'z-', scale: 0.82, link: true });
+      this._boxRoundGeo = boxRoundBuilder.build(); this._boxRoundMat = voxelMaterial();
+      for (let i = 0; i < 5; i++) {
+        const r = new THREE.Mesh(this._boxRoundGeo, this._boxRoundMat);
+        r.position.set(-0.51 + i * 0.046, -0.05, 0.19);
+        this.ammoBoxRounds.add(r);
+      }
+    }
 
     // ---- barrel: separate mesh on barrelMat — it glows / colour-shifts with heat (see update()) ----
     this.barrelMat = voxelMaterial();
@@ -1378,7 +1394,8 @@ export class MountedGun {
     // ring centre, the crosshair and the bullet path are always collinear.
     this._sightCenter = new THREE.Vector3(sx, sy, sz);
     this._camLocal = new THREE.Vector3(sx, sy, sz + 0.98); // eye sits behind the gun (stand behind it, not in it)
-    this._layoutBelt();
+	    this._layoutBelt();
+	    this._updateAmmoVisuals();
     this._solidBoxes = this._makeCollisionBoxes();
     this.game.world.boxes.push(...this._solidBoxes);
     this.updateCollisionBoxes();
@@ -1438,6 +1455,12 @@ export class MountedGun {
 
   _beltPos(t, out) { const climb = Math.min(1, t / 0.4); return out.set(-0.40 + t * 0.29, -0.02 + 0.16 * climb + Math.sin(t * Math.PI) * 0.02, 0.14 - t * 0.16); } // starts DOWN inside the box, climbs out, feeds right into the throat
   _layoutBelt() { const v = new THREE.Vector3(); for (const r of this.beltRounds) { this._beltPos(r.t, v); r.mesh.position.copy(v); r.mesh.rotation.set(-Math.PI / 2, 0, 0); } } // cartridges lined up across the belt, bullets pointing forward
+  _advanceBelt(amount) {
+    if (!this.beltRounds || !this.beltRounds.length || this.ammo <= 0) return;
+    const v = new THREE.Vector3();
+    for (const r of this.beltRounds) { r.t += amount; if (r.t > 1) r.t -= 1; this._beltPos(r.t, v); r.mesh.position.copy(v); }
+  }
+  feedBeltShot() { this._advanceBelt(1 / Math.max(1, this.beltRounds.length)); }
 
   near(p) { return Math.hypot(p.x - this.base.x, p.z - this.base.z) < 2.4 && Math.abs(p.y - this.base.y) < 2.8; }
   lookingAt(maxDist = 3.6) {
@@ -1455,7 +1478,7 @@ export class MountedGun {
     const first = this.game.world.rayHit(origin, dir, maxDist);
     return !first || this._solidBoxes.includes(first.box) || first.dist + 0.03 >= direct;
   }
-  canMount(p) { return !this.overheated && this.near(p) && this.lookingAt(); }
+	  canMount(p) { return this.ammo > 0 && !this.overheated && this.near(p) && this.lookingAt(); }
 
   idleCool(dt) { if (this.heat > 0 || this._chargeAnimT >= 0) this.update(dt, false); } // the .50 keeps cooling/animating even when nobody local is manning it
 
@@ -1516,25 +1539,37 @@ export class MountedGun {
     this._nearWas = canUse;
     return canUse;
   }
-  _netVec(v, digits = 2) { return [+v.x.toFixed(digits), +v.y.toFixed(digits), +v.z.toFixed(digits)]; }
+	  _netVec(v, digits = 2) { return [+v.x.toFixed(digits), +v.y.toFixed(digits), +v.z.toFixed(digits)]; }
+	  setAmmo(n) {
+	    this.ammo = clamp(Math.round(Number.isFinite(n) ? n : 0), 0, this.maxAmmo);
+	    this._updateAmmoVisuals();
+	    if (this.game.player && this.game.player.mountedGun === this && this.game.hud) this.game.hud.setMountedGun(this.ammo, this.maxAmmo);
+	  }
+	  _updateAmmoVisuals() {
+	    const hasAmmo = this.ammo > 0;
+	    if (this.belt) this.belt.visible = hasAmmo;
+	    if (this.ammoBoxRounds) this.ammoBoxRounds.visible = hasAmmo;
+	  }
   _muzzleWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0, 0.02, -2.38)); }
   _ejectPortWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0.22, 0.0, 0.12)); }
   _forwardWorld() { this.gun.updateMatrixWorld(); return new THREE.Vector3(0, 0, -1).applyQuaternion(this.gun.getWorldQuaternion(new THREE.Quaternion())).normalize(); }
   _rightWorld() { this.gun.updateMatrixWorld(); return new THREE.Vector3(1, 0, 0).applyQuaternion(this.gun.getWorldQuaternion(new THREE.Quaternion())).normalize(); }
 
   // real seating (no claim check) — pin player to the gun, hide held weapon
-  _doMount() {
-    this.game.player.mountedGun = this;
+	  _doMount() {
+	    if (this.ammo <= 0) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('.50 CAL EMPTY', 0xd23a2a); return; }
+	    this.game.player.mountedGun = this;
     this.game.weapons.group.visible = false;
     this.game.player.pos.set(this.base.x + Math.sin(this.baseYaw) * 0.9, this.base.y, this.base.z + Math.cos(this.baseYaw) * 0.9); // stand BEHIND the gun
     this.yaw = this.baseYaw; this.pitch = 0;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0'; // hide the white crosshair on the .50 — the ring sight is the reticle
     this._primeCharge();
-    this.game.hud.setMountedGun();
-  }
+	    this.game.hud.setMountedGun(this.ammo, this.maxAmmo);
+	  }
   // claim-gated entry: solo seats immediately; co-op asks the host (host grants on first-come)
   mount() {
-    if (this.overheated) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED', 0xd23a2a); return; }
+	    if (this.ammo <= 0) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('.50 CAL EMPTY', 0xd23a2a); return; }
+	    if (this.overheated) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED', 0xd23a2a); return; }
     const mp = this.game.mp;
     if (!mp || !mp.active) { this._doMount(); return; }          // solo: seat immediately (unchanged)
     if (mp.isHost) mp._hostFiftyClaim('mount', 'host');           // host: claim locally
@@ -1564,9 +1599,10 @@ export class MountedGun {
     this._doDismount();
     if (mp && mp.active && wasMe) { if (mp.isHost) mp._hostFiftyClaim('dismount', 'host'); else mp.net.send('fiftyclaim', { want: 'dismount' }); }
     this.occupant = null; // session/round reset clears the seat everywhere
-    this._nearWas = false;
-    this._roundSeq = 0;
-    this.heat = 0; this.overheated = false; this.readyToFire = true; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
+	    this._nearWas = false;
+	    this._roundSeq = 0;
+	    this.setAmmo(this.maxAmmo);
+	    this.heat = 0; this.overheated = false; this.readyToFire = true; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
     this._chargeAnimT = -1; this._updateChargeHandle(0);
     this.updateCollisionBoxes();
     if (this.game.hud) { this.game.hud.hideHeat(); if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = ''; }
@@ -1580,7 +1616,7 @@ export class MountedGun {
     this.pitch = clamp(this.pitch, -0.45, 0.45);
     this.gun.rotation.set(this.pitch, this.yaw, 0);
     this.updateCollisionBoxes();
-    { const mp = this.game.mp; if (mp && mp.active) { this._aimT = (this._aimT || 0) - dt; if (this._aimT <= 0) { this._aimT = 0.1; mp.net.broadcast('fiftyaim', { pid: mp.myId, yaw: +this.yaw.toFixed(3), pitch: +this.pitch.toFixed(3), heat: +this.heat.toFixed(2) }); } } } // co-op: slew the barrel + share heat (glow/smoke) on every screen (~10Hz)
+	    { const mp = this.game.mp; if (mp && mp.active) { this._aimT = (this._aimT || 0) - dt; if (this._aimT <= 0) { this._aimT = 0.1; mp.net.broadcast('fiftyaim', { pid: mp.myId, yaw: +this.yaw.toFixed(3), pitch: +this.pitch.toFixed(3), heat: +this.heat.toFixed(2), ammo: this.ammo }); } } } // co-op: slew the barrel + share heat/ammo (glow/smoke) on every screen (~10Hz)
     const cam = this.game.engine.camera; cam.rotation.order = 'YXZ';
     // Place the eye rigidly on the gun's firing axis, behind the ring sight, and
     // rotate it WITH the gun (about the pivot). Eye + ring centre + muzzle now
@@ -1593,10 +1629,11 @@ export class MountedGun {
     cam.rotation.set(this.pitch + (Math.random() - 0.5) * _sh, this.yaw + (Math.random() - 0.5) * _sh, (Math.random() - 0.5) * _sh * 0.6);
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
     if (this.cd > 0) this.cd -= dt;
-    const firing = input.buttons[0] && this.readyToFire && !this.overheated;
+	    const firing = input.buttons[0] && this.readyToFire && !this.overheated && this.ammo > 0;
     if (firing && this.cd <= 0) this._fire();
     this.update(dt, firing);
-    this.game.hud.setHeat(this.heat, this.overheated);
+	    this.game.hud.setHeat(this.heat, this.overheated);
+	    this.game.hud.setMountedGun(this.ammo, this.maxAmmo);
     if (this.overheated) this._overheatEject(); // barrel maxed -> boot the gunner off, POV left looking at the gun
   }
 
@@ -1610,8 +1647,10 @@ export class MountedGun {
     if (this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED — get off it!', 0xd23a2a);
   }
 
-  _fire() {
-    this.cd = 60 / this.rpm;
+	  _fire() {
+	    if (this.ammo <= 0) { this._updateAmmoVisuals(); return; }
+	    this.setAmmo(this.ammo - 1);
+	    this.cd = 60 / this.rpm;
     this.heat = Math.min(1, this.heat + 0.02);
     this._roundSeq = (this._roundSeq || 0) + 1;
     const tracerColor = (this._roundSeq % 3 === 0) ? 0xff2418 : 0xffe08a;
@@ -1648,7 +1687,7 @@ export class MountedGun {
       if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
     } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzleFx, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
     else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzleFx, end, tracerColor); }
-    if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(muzzleFx), d: this._netVec(barrelFwd, 3), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor, rs: caseSeed }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
+    if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(muzzleFx), d: this._netVec(barrelFwd, 3), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor, rs: caseSeed, ammo: this.ammo }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
   }
 
   update(dt, firing) {
@@ -1667,6 +1706,6 @@ export class MountedGun {
         this.game.effects._spawn({ pos: tip, vel: new THREE.Vector3(rr(-0.2, 0.2), rr(0.8, 1.8), rr(-0.2, 0.2)), life: rr(0.7, 1.5), size: rr(0.12, 0.28), grav: 1.4, drag: 1.0, color: new THREE.Color(h > 0.85 ? 0x888888 : 0x666666), bounce: 0, floorY: -999, shrink: true });
       }
     }
-    if (firing) { const v = new THREE.Vector3(); for (const r of this.beltRounds) { r.t += dt * 1.1; if (r.t > 1) r.t -= 1; this._beltPos(r.t, v); r.mesh.position.copy(v); } }
+    if (firing) this._advanceBelt(dt * 1.1);
   }
 }

@@ -1,6 +1,6 @@
 // player.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, damp } from './util.js?u=3';
+import { clamp, damp } from './util.js';
 import { FALL_ARMOR_BYPASS, FALL_DMG_BONUS_AT_LETHAL, FALL_DMG_PER_VY, FALL_LETHAL, FALL_SAFE, HUNGER_DRAIN_PER_SEC, HUNGER_LOW, HUNGER_LOW_SPEED_MULT, HUNGER_MAX, LEG_BREAK_VY, LIMP_SPEED_MULT, PLAYER_BURN_DPS, PLAYER_BURN_TICK, SPLINT_APPLY_TIME, STARVE_TICK_DMG, STARVE_TICK_TIME } from './tuning.js';
 
 
@@ -105,25 +105,45 @@ export class Player {
 
   update(dt) {
     const input = this.game.input;
-    this.yaw -= input.mouseDX * this.sens;
-    this.pitch -= input.mouseDY * this.sens; this.pitch = clamp(this.pitch, -1.45, 1.45);
+    const mp = this.game.mp;
+    const frozen = mp && mp.active && mp.frozen;
+    const controlsPaused = mp && mp.active && this.game.mpMenuOpen;
+    const lookScale = frozen ? 0.35 : 1;
+    this.yaw -= input.mouseDX * this.sens * lookScale;
+    this.pitch -= input.mouseDY * this.sens * lookScale;
+    this.pitch = frozen ? clamp(this.pitch, -0.45, 0.32) : clamp(this.pitch, -1.45, 1.45);
+
+    if (frozen) {
+      this.vel.x = 0; this.vel.z = 0;
+      this.vel.y -= 22 * dt; this._fallVel = this.vel.y;
+      const wasAir = !this.onGround;
+      this.onGround = this.game.world.collide(this.pos, this.vel, this.radius, this.height, dt);
+      if (this.onGround && wasAir && this._fallVel < -6) this.game.audio.land(false);
+      this._footT = 0;
+      this._camY = damp(this._camY, this.pos.y + 0.34, 10, dt);
+      const cam = this.game.engine.camera;
+      cam.rotation.order = 'YXZ';
+      cam.position.set(this.pos.x, this._camY, this.pos.z);
+      cam.rotation.y = this.yaw; cam.rotation.x = this.pitch - 0.08; cam.rotation.z = damp(cam.rotation.z || 0, 0.72, 8, dt);
+      return;
+    }
 
     const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    const sprint = (input.isDown('ShiftLeft') || input.isDown('ShiftRight')) && !this.legBroken && this._splintT <= 0;
+    const sprint = !controlsPaused && (input.isDown('ShiftLeft') || input.isDown('ShiftRight')) && !this.legBroken && this._splintT <= 0;
     let survMult = 1;
     if (this.legBroken) survMult *= LIMP_SPEED_MULT;
     if (this.hunger < HUNGER_LOW) survMult *= HUNGER_LOW_SPEED_MULT;
     if (this._splintT > 0) survMult = 0; // immobile while binding the splint
     const speed = (sprint ? 7.6 : 5.2) * this.moveSpeedMult * survMult;
-    const wish = new THREE.Vector3().addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
+    const wish = controlsPaused ? new THREE.Vector3() : new THREE.Vector3().addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
     if (wish.lengthSq() > 1) wish.normalize();
     wish.multiplyScalar(speed);
     const accel = this.onGround ? 6 : 1.2;
     this.vel.x = damp(this.vel.x, wish.x, accel, dt);
     this.vel.z = damp(this.vel.z, wish.z, accel, dt);
 
-    if (this.onGround && input.wasPressed('Space') && !this.legBroken && this._splintT <= 0) { this.vel.y = 7.2; this.onGround = false; this.game.audio.jump(); }
+    if (!controlsPaused && this.onGround && input.wasPressed('Space') && !this.legBroken && this._splintT <= 0) { this.vel.y = 7.2; this.onGround = false; this.game.audio.jump(); }
     this.vel.y -= 22 * dt; this._fallVel = this.vel.y;
     const wasAir = !this.onGround;
     this.onGround = this.game.world.collide(this.pos, this.vel, this.radius, this.height, dt);
