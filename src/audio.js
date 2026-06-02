@@ -81,22 +81,28 @@ export class AudioManager {
     return (el.duration && isFinite(el.duration)) ? el.duration : 1.8;
   }
 
-  // Real jet roar (assets/jet.mp3) for the Su-24 fly-by: smooth fade-in; .stop(fade) fades out (no abrupt cut).
+  // Real jet roar (assets/jet.mp3) for the Su-24 fly-by: fade-in + .set(level) distance swell; .stop(fade) fades out (no abrupt cut).
   // Returns null if the clip can't load/play; callers consult _jetFailed and degrade to the procedural startJet().
   startJetClip() {
     if (typeof Audio === 'undefined' || !this.ctx || this._jetFailed) return null;
     try {
       const el = new Audio('assets/jet.mp3'); el.preload = 'auto'; el.loop = true;
-      el.addEventListener('error', () => { this._jetFailed = true; if (typeof console !== 'undefined') console.warn('[audio] jet.mp3 load failed — using procedural jet'); });
+      // stop()'s `el.src=''` makes the element fire a spurious 'error' (and can reject the play() promise) — a `tearing`
+      // guard keeps that self-inflicted teardown from setting _jetFailed, which used to mute the jet on EVERY drop after the first.
+      let tearing = false;
+      const onErr = () => { if (tearing) return; this._jetFailed = true; if (typeof console !== 'undefined') console.warn('[audio] jet.mp3 load failed — using procedural jet'); };
+      el.addEventListener('error', onErr);
       const src = this.ctx.createMediaElementSource(el);
       const g = this.ctx.createGain(); g.gain.value = 0.0001;
       src.connect(g); g.connect(this.sfxGain);
       const t = this.t, peak = Math.max(0.0002, (this.volume || 0.8) * 0.9);
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(peak, t + 0.9); // fade-in
-      const p = el.play(); if (p && p.catch) p.catch(() => { this._jetFailed = true; if (typeof console !== 'undefined') console.warn('[audio] jet.mp3 play blocked — using procedural jet'); });
+      const p = el.play(); if (p && p.catch) p.catch(() => { if (tearing) return; this._jetFailed = true; if (typeof console !== 'undefined') console.warn('[audio] jet.mp3 play blocked — using procedural jet'); });
       return {
-        stop: (fade = 1.4) => { const tt = this.t; try { g.gain.cancelScheduledValues(tt); g.gain.setTargetAtTime(0.0001, tt, Math.max(0.05, fade / 3)); } catch (e) {} setTimeout(() => { try { el.pause(); el.src = ''; } catch (e) {} }, (fade + 0.3) * 1000); },
+        src, // keep the MediaElementSource referenced so it isn't GC'd mid-fly-by
+        set: (level) => { g.gain.setTargetAtTime(Math.max(0.0002, level * peak), this.t, 0.1); }, // approach/recede swell, driven each frame by _updatePlane (same contract as the procedural jet)
+        stop: (fade = 1.4) => { tearing = true; el.removeEventListener('error', onErr); const tt = this.t; try { g.gain.cancelScheduledValues(tt); g.gain.setTargetAtTime(0.0001, tt, Math.max(0.05, fade / 3)); } catch (e) {} setTimeout(() => { try { el.pause(); el.src = ''; } catch (e) {} }, (fade + 0.3) * 1000); },
       };
     } catch (e) { this._jetFailed = true; return null; }
   }
