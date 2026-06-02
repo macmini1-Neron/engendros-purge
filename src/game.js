@@ -203,11 +203,20 @@ class Game {
       else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
       else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.inventory.selectSlotN(n); }
     });
+
+    // Prime Web Audio on the first user gesture so menu/lobby/shop music can start
+    // (browsers block audio until a gesture). One-shot; safe if already inited.
+    const _primeMusic = () => {
+      window.removeEventListener('pointerdown', _primeMusic); window.removeEventListener('keydown', _primeMusic);
+      this.audio.init();
+      if (this.state === 'menu' && this.audio.music) this.audio.music.setScene(this._lobbyVisible() ? 'lobby' : 'menu');
+    };
+    window.addEventListener('pointerdown', _primeMusic); window.addEventListener('keydown', _primeMusic);
   }
 
   startGame(mode = 'purge') {
     this.mode = mode === 'longnight' ? 'longnight' : 'purge';
-    this.audio.init(); this.audio.startMusic();
+    this.audio.init(); this.audio.music.setScene('gameplay');
     this._intentionalUnlock = false;
     this.reset();
     this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
@@ -411,6 +420,7 @@ class Game {
     this.ui.hideAll();
     if (lockPointer && this.state === 'playing') this.input.requestLock();
   }
+  _lobbyVisible() { const el = document.getElementById('lobby'); return !!(el && el.classList.contains('show')); }
   toMenu() {
     if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();
@@ -419,7 +429,7 @@ class Game {
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
-    this.enemies.clearAll(); this.audio.stopMusic(); this.hud.show(false);
+    this.enemies.clearAll(); if (this.audio.music) this.audio.music.setScene('menu'); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
   }
   // Dev/preview: drop a Flopo avatar into the scene (returns the rigged Group).
@@ -430,7 +440,7 @@ class Game {
     return o;
   }
 
-  openAdmin() { this.state = 'admin'; if (this.admin) this.admin.open(); }
+  openAdmin() { this.state = 'admin'; if (this.audio.music) this.audio.music.stop(); if (this.admin) this.admin.open(); }
   beginNextWave() {
     if (this.state !== 'shop') return;
     if (this.mp.active && !this.mp.isHost) { this.ui.hideAll(); this.hud.bigMessage('READY', 'waiting for the host…'); return; }
@@ -478,10 +488,11 @@ class Game {
     this.mp._renderRelayMode();
     this.mp._renderModeSel();
     this.mp._renderRoomBrowser();
+    if (this.audio.music) { this.audio.music.setScene('lobby'); this.audio.music.setIntensity(0.7); }
   }
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
-    this.audio.init(); this.audio.startMusic(); this._intentionalUnlock = false;
+    this.audio.init(); this.audio.music.setScene('gameplay'); this._intentionalUnlock = false;
     this.mpMenuOpen = false;
     if (this.mp) { this.mp._spilledLoot = false; this.mp.spectateTarget = null; } // fresh run → loot can spill again on the next real death
     this.reset(); this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
@@ -506,7 +517,7 @@ class Game {
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
     this.dayNight.reset(this.mode === 'longnight');
-    this.audio.stopMusic(); this.hud.show(false);
+    if (this.audio.music) { this.audio.music.setScene('lobby'); this.audio.music.setIntensity(0.7); } this.hud.show(false);
     this.hud.setBleed(-1); this.hud.hideBoss(); this.hud.clearWaveTag();
     const lab = document.getElementById('mp-labels'); if (lab) lab.style.display = 'none';
     this.ui.show('lobby');
@@ -527,7 +538,7 @@ class Game {
     else hurt(this.player.pos.x, this.player.pos.z, 'host');
   }
   onWaveCleared(n) {
-    this.audio.waveClear(); this.player.addMoney(150 + n * 25);
+    this.audio.waveClear(); if (this.audio.music) this.audio.music.sting('victory', 'small'); this.player.addMoney(150 + n * 25);
     if (this.mp.active && this.mp.isHost) this.mp.net.send('waveclear', { n: this.waves.wave });
     this.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); this._waveBreak = WAVE_BREATHER; // pure breather, auto-advances (no shop)
   }
@@ -543,7 +554,7 @@ class Game {
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
     this.mountedGun.forceReset();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
-    this.audio.gameOver(); this.audio.stopMusic(); this.hud.show(false);
+    if (this.audio.music) { this.audio.music.setScene('gameover'); this.audio.music.setIntensity(0.85); this.audio.music.setStress(0); } this.hud.show(false);
     // persistent meta (per mode) + lifetime tallies
     const m = this.meta; m.kills = (m.kills || 0) + this.kills; m.runs = (m.runs || 0) + 1;
     const rec = document.getElementById('goRecord');
@@ -602,10 +613,38 @@ class Game {
     el.textContent = parts.length ? 'Best — ' + parts.join(' · ') : '';
   }
 
+  // Adaptive score driver (client-local, cosmetic): pick scene from local threat,
+  // ramp intensity, fire the boss-down victory sting. Smoothing/scheduling live in MusicDirector.
+  _updateAdaptiveMusic() {
+    const m = this.audio.music; if (!m) return;
+    const en = this.enemies;
+    let boss = null;
+    for (const e of en.active) { if (e.alive && e.def && (e.def.boss || e.def.tank)) { boss = e; break; } }
+    if (boss) {
+      if (m.sceneName !== 'boss') m.setScene('boss', { variant: boss.def.tank ? 'mitri' : 'tolo' });
+      const frac = Math.max(0, Math.min(1, boss.hp / (boss.maxHp || 1)));
+      m.setIntensity(0.65 + (1 - frac) * 0.35);
+      this._bossMusic = true;
+    } else {
+      if (this._bossMusic) { this._bossMusic = false; m.sting('victory', 'big'); m.setScene('gameplay'); }
+      if (m.sceneName === 'gameplay') {
+        const pp = this.player.pos; let near = 0;
+        for (const e of en.active) { if (!e.alive) continue; if (Math.hypot(e.pos.x - pp.x, e.pos.z - pp.z) < 14) near++; }
+        const aliveFrac = Math.min(1, en.aliveCount / 18);
+        const nearFrac = Math.min(1, near / 8);
+        const waveBonus = (this._waveBreak > 0) ? 0 : 0.15;
+        m.setIntensity(Math.min(1, 0.05 + nearFrac * 0.6 + aliveFrac * 0.3 + waveBonus));
+      }
+    }
+    const hpFrac = this.player.maxHp ? this.player.hp / this.player.maxHp : 1;
+    m.setStress(Math.max(0, Math.min(1, (0.35 - hpFrac) / 0.35)));
+  }
+
   _frame(t) {
     requestAnimationFrame(this._bound);
     let dt = (t - this._last) / 1000; this._last = t;
     if (!(dt > 0)) dt = 0.0001; dt = Math.min(dt, 0.05);
+    if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
     if (this.state === 'playing') this._updatePlaying(dt);
     this.engine.update(dt); this.engine.render();
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
@@ -648,6 +687,7 @@ class Game {
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (hostSim) this.waves.update(dt);
     this.mp.update(dt);
+    this._updateAdaptiveMusic();
     if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
     this._updateFlares(dt);       // flare is a deployable gadget in EVERY mode → tick gravity/burn/smoke unconditionally (mirrors _updateMolotovPools), else a flare thrown in purge hangs in mid-air
     this._updateMolotovPools(dt);
