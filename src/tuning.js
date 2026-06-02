@@ -13,7 +13,7 @@ export const LEG_BREAK_VY = FALL_HURT;      // any damaging fall also breaks the
 export const LIMP_SPEED_MULT = 0.55;        // walk speed while leg broken (no sprint at all)
 export const SPLINT_APPLY_TIME = 3.0;       // seconds immobile while binding a splint
 export const HUNGER_MAX = 100;
-export const HUNGER_DRAIN_PER_SEC = 0.45;   // 100 -> 0 in ~3.7 min
+export const HUNGER_DRAIN_PER_SEC = 0.15;   // 100 -> 0 in ~11 min (3x slower — food lasts ~300% longer)
 export const HUNGER_LOW = 25;               // below this: walk slowed + HP regen disabled
 export const HUNGER_LOW_SPEED_MULT = 0.7;   // walk speed while starving
 export const STARVE_TICK_TIME = 2.0;        // seconds between starvation damage ticks at hunger<=0
