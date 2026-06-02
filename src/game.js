@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 00:57 WEST';
+const GAME_BUILD = '2026-06-02 01:01 WEST';
 
 class Game {
   constructor() {
@@ -93,11 +93,12 @@ class Game {
     click('mpHostBtn', () => this.mp.startHost((document.getElementById('mp-name') || {}).value || 'Host'));
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
     click('mpCloseRoomBtn', () => this.mp.closeRoom());
-    click('mpCopyCodeBtn', () => {
+    click('mpCopyCodeBtn', async () => {
       const code = ((document.getElementById('mp-mycode') || {}).textContent || '').trim();
       if (!code || code === '-----') return;
-      try { navigator.clipboard && navigator.clipboard.writeText(code); } catch (e) {}
-      this.mp._setLobbyDiag('Room code copied.');
+      const ok = await this._copyText(code);
+      this.mp._setLobbyDiag(ok ? 'Room code copied.' : 'Copy failed. Select the room code and copy it manually.');
+      if (this.hud && this.hud.toast) this.hud.toast(ok ? 'Room code copied' : 'Copy failed', ok ? 0x7fd06a : 0xd23a2a);
     });
     click('mpStartBtn', () => this.mp.hostStart());
     click('mpReadyBtn', () => this.mp.toggleReady());
@@ -118,6 +119,29 @@ class Game {
     this.input.on('lock', () => { if (this.mpMenuOpen) this._closeMpMenu(false); else if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
     this.input.on('unlock', () => { if (this._intentionalUnlock) { this._intentionalUnlock = false; return; } if (this._invOpen) { this._closeInventory(); return; } if (this.state === 'playing') this.pause(); });
     document.addEventListener('fullscreenchange', () => this.engine.resize());
+  }
+
+  async _copyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) {}
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    return ok;
   }
 
   _wireInput() {
