@@ -968,6 +968,11 @@ export class WeaponSystem {
       e.pos.x += (dx / (dist || 1)) * d.knock; e.pos.z += (dz / (dist || 1)) * d.knock;
       if (this.game.enemies.damage(e, d.dmg * mult, 'melee')) killed = true;
     }
+    if (this.game.mp.active) { // co-op: an active swing also strikes upright teammates (host-authoritative friendly fire)
+      for (const id of this.game.mp.meleeHitPlayers(origin, fwd, d.range, d.arcCos)) {
+        this.game.mp.claimPlayerHit(id, d.dmg * mult); hitAny = true;
+      }
+    }
     for (const s of this.game.build.structures) {                                  // melee also smashes fortifications
       const sx = s.pos.x - origin.x, sz = s.pos.z - origin.z, sd = Math.hypot(sx, sz);
       if (sd > d.range + 1.2) continue;                                            // slack: structures are wide
