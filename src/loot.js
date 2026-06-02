@@ -1,6 +1,6 @@
 // loot.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, chc, clamp, pick, ri, rr, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, TAU, chc, clamp, pick, ri, rr, voxelMaterial } from './util.js';
 import { FOOD_RESTORE } from './tuning.js';
 import { KEY_CASH, SUPPLY_CASH } from './economy.js';
 import { _strut, buildChuteRig, buildFlare, buildSu24, buildSupplyCrate } from './props.js';

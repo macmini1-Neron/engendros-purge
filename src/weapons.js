@@ -1,9 +1,9 @@
 // weapons.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js?u=3';
+import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js';
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
-import { WEAPON_LAYER } from './engine.js?e=2';
+import { WEAPON_LAYER } from './engine.js';
 
 
 // ---------------------------------------------------------------------------
@@ -16,28 +16,28 @@ export const WEAPONS = {
   cleaver:  { name: 'Meat Cleaver',  class: 'melee', shape: 'cleaver', melee: true, dmg: 88,  rate: 0.52, range: 2.3, arcCos: 0.45, knock: 4, price: 800,  loot: 6, color: 0xd8dde2, accent: 0x6b3a1a },
   shovel:   { name: 'Trench Shovel', class: 'melee', shape: 'shovel',  melee: true, dmg: 120, rate: 0.66, range: 2.7, arcCos: 0.5, knock: 9,  price: 1000, loot: 5, color: 0x8a8f95, accent: 0x5a3a1c },
   // --- pistols ---
-  luger:    { name: 'Luger P08',  class: 'pistol', shape: 'pistol',  dmg: 30, rpm: 360, auto: false, mag: 8,  reserveMax: Infinity, reload: 1.0, spread: 0.012, bloom: 0.012, pellets: 1, recoil: 0.9, range: 200, adsFov: 60, price: 400,  color: 0x33373d, accent: 0xd8c089 },
-  revolver: { name: 'Peacemaker', class: 'pistol', shape: 'revolver',dmg: 72, rpm: 150, auto: false, mag: 6,  reserveMax: 60,       reload: 1.6, spread: 0.01,  bloom: 0.01,  pellets: 1, recoil: 1.6, range: 220, adsFov: 58, price: 900,  loot: 9, color: 0x4a3320, accent: 0xc9a04a },
+  luger:    { name: 'Luger P08',  class: 'pistol', shape: 'pistol',  dmg: 28, rpm: 300, auto: false, mag: 8,  reserveMax: 32,       reload: 1.8, spread: 0.010, bloom: 0.012, pellets: 1, recoil: 0.7, range: 120, adsFov: 60, price: 400,  color: 0x33373d, accent: 0xd8c089 },
+  revolver: { name: 'Peacemaker', class: 'pistol', shape: 'revolver',dmg: 70, rpm: 110, auto: false, mag: 6,  reserveMax: 30,       reload: 2.6, spread: 0.008, bloom: 0.010, pellets: 1, recoil: 1.5, range: 130, adsFov: 58, price: 900,  loot: 9, color: 0x4a3320, accent: 0xc9a04a },
   // --- SMGs ---
-  thompson: { name: 'Thompson',   class: 'smg', shape: 'smg',  dmg: 18, rpm: 700, auto: true,  mag: 30, reserveMax: 270, reload: 1.7, spread: 0.022, bloom: 0.02, pellets: 1, recoil: 0.5,  range: 150, adsFov: 62, price: 1200, loot: 12, color: 0x3a2a1c, accent: 0x9c6a32 },
-  ppsh:     { name: 'PPSh-41',    class: 'smg', shape: 'drum', dmg: 16, rpm: 1000, auto: true,  mag: 71, reserveMax: 213, reload: 2.4, spread: 0.03,  bloom: 0.02, pellets: 1, recoil: 0.45, range: 140, adsFov: 64, price: 1600, loot: 8,  color: 0x2f2218, accent: 0xb88a3a },
+  thompson: { name: 'Thompson',   class: 'smg', shape: 'smg',  dmg: 20, rpm: 700, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.024, bloom: 0.03, pellets: 1, recoil: 0.7,  range: 130, adsFov: 62, price: 1200, loot: 12, recoilClimb: 0.08, recoilYaw: 0.10, color: 0x3a2a1c, accent: 0x9c6a32 },
+  ppsh:     { name: 'PPSh-41',    class: 'smg', shape: 'drum', dmg: 16, rpm: 1000, auto: true,  mag: 71, reserveMax: 142, reload: 3.2, spread: 0.028,  bloom: 0.022, pellets: 1, recoil: 0.45, range: 150, adsFov: 64, price: 1600, loot: 8,  recoilClimb: 0.04, recoilYaw: 0.55, color: 0x2f2218, accent: 0xb88a3a },
   // --- rifles ---
-  carbine:  { name: 'M1 Carbine', class: 'rifle', shape: 'carbine', dmg: 34, rpm: 400, auto: false, mag: 15, reserveMax: 120, reload: 1.5, spread: 0.01,  bloom: 0.012, pellets: 1, recoil: 0.8, range: 260, adsFov: 55, price: 1100, loot: 10, color: 0x4a3422, accent: 0x2a2a30 },
-  garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 78, rpm: 250, auto: false, mag: 8,  reserveMax: 64,  reload: 1.4, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.4, range: 320, adsFov: 50, price: 2000, loot: 7,  color: 0x52371f, accent: 0x222226 },
-  stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 33, rpm: 550, auto: true,  mag: 30, reserveMax: 240, reload: 2.0, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.82, range: 240, adsFov: 54, price: 2400, loot: 6,  color: 0x33373d, accent: 0x6e4a28 },
+  carbine:  { name: 'M1 Carbine', class: 'rifle', shape: 'carbine', dmg: 32, rpm: 400, auto: false, mag: 15, reserveMax: 90, reload: 1.7, spread: 0.01,  bloom: 0.012, pellets: 1, recoil: 0.55, range: 240, adsFov: 55, price: 1100, loot: 10, color: 0x4a3422, accent: 0x2a2a30 },
+  garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 80, rpm: 270, auto: false, mag: 8,  reserveMax: 64,  reload: 2.6, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.6, range: 340, adsFov: 48, price: 2000, loot: 7,  enBloc: true, color: 0x52371f, accent: 0x222226 },
+  stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 38, rpm: 560, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.85, range: 260, adsFov: 54, price: 2400, loot: 6,  recoilClimb: 0.03, recoilYaw: 0.10, color: 0x33373d, accent: 0x6e4a28 },
   // --- shotguns ---
-  shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 12, rpm: 80,  auto: false, mag: 6, reserveMax: 48, reload: 2.0, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.8, range: 60, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
-  sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 170, auto: false, mag: 2, reserveMax: 24, reload: 1.4, spread: 0.13,  bloom: 0, pellets: 12, recoil: 2.6, range: 38, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
+  shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 0.45, shellReload: true, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
+  sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 200, auto: false, mag: 2, reserveMax: 18, reload: 1.6, spread: 0.14,  bloom: 0, pellets: 12, recoil: 2.9, range: 30, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
   // --- sniper ---
-  kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 155, rpm: 50, auto: false, mag: 5, reserveMax: 30, reload: 2.1, spread: 0.002, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, color: 0x20242a, accent: 0x6fa8e8 },
+  kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 165, rpm: 50, auto: false, mag: 5, reserveMax: 35, reload: 2.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 2.7, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, boltCycle: 1.2, color: 0x20242a, accent: 0x6fa8e8 },
   // --- extra arsenal (loot + shop) ---
-  magnum:   { name: '.44 Magnum',  class: 'pistol', shape: 'magnum', dmg: 98, rpm: 120, auto: false, mag: 6, reserveMax: 48, reload: 1.8, spread: 0.01, bloom: 0.01, pellets: 1, recoil: 2.0, range: 220, adsFov: 58, price: 1400, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a },
-  mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 19, rpm: 500, auto: true, mag: 32, reserveMax: 256, reload: 1.8, spread: 0.02, bloom: 0.018, pellets: 1, recoil: 0.5, range: 150, adsFov: 62, price: 1300, loot: 11, color: 0x2e3036, accent: 0x3a3a3a },
-  grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 23, rpm: 450, auto: true, mag: 30, reserveMax: 240, reload: 1.9, spread: 0.024, bloom: 0.02, pellets: 1, recoil: 0.55, range: 140, adsFov: 62, price: 1250, loot: 9, color: 0x3a3d42, accent: 0x262626 },
-  bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 42, rpm: 550, auto: true, mag: 20, reserveMax: 160, reload: 2.4, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.1, range: 260, adsFov: 55, price: 2600, loot: 6, color: 0x3a3128, accent: 0x26262a },
-  dp28:     { name: 'DP-28',       class: 'rifle', shape: 'dp28', dmg: 31, rpm: 540, auto: true, mag: 47, reserveMax: 188, reload: 2.8, spread: 0.018, bloom: 0.018, pellets: 1, recoil: 0.7, range: 240, adsFov: 56, price: 2700, loot: 5, color: 0x3a352c, accent: 0x4a4a50, spinMag: { shape: 'pan', x: 0, y: 0.2, z: -0.3, r: 0.28, axis: 'y', step: TAU / 47 } },
-  mosin:    { name: 'Mosin-Nagant', class: 'sniper', shape: 'mosin', dmg: 165, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0022, bloom: 0, pellets: 1, recoil: 2.7, range: 480, adsFov: 26, scope: true, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54 },
-  bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 30, auto: false, mag: 1, reserveMax: 8, reload: 2.8, spread: 0.004, bloom: 0, pellets: 1, recoil: 2.6, range: 300, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
+  magnum:   { name: '.44 Magnum',  class: 'pistol', shape: 'magnum', dmg: 98, rpm: 95, auto: false, mag: 6, reserveMax: 24, reload: 2.4, spread: 0.009, bloom: 0.014, pellets: 1, recoil: 2.2, range: 140, adsFov: 58, price: 1400, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a },
+  mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 18, rpm: 500, auto: true, mag: 32, reserveMax: 160, reload: 2.0, spread: 0.018, bloom: 0.014, pellets: 1, recoil: 0.4, range: 150, adsFov: 62, price: 1300, loot: 11, recoilClimb: 0.015, recoilYaw: 0.05, color: 0x2e3036, accent: 0x3a3a3a },
+  grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 22, rpm: 450, auto: true, mag: 30, reserveMax: 150, reload: 2.2, spread: 0.026, bloom: 0.02, pellets: 1, recoil: 0.5, range: 120, adsFov: 62, price: 1250, loot: 9, recoilClimb: 0.02, recoilYaw: 0.10, color: 0x3a3d42, accent: 0x262626 },
+  bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 52, rpm: 500, auto: true, mag: 20, reserveMax: 120, reload: 3.0, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.6, range: 300, adsFov: 55, price: 2600, loot: 6, recoilClimb: 0.10, recoilYaw: 0.15, color: 0x3a3128, accent: 0x26262a },
+  dp28:     { name: 'DP-28',       class: 'rifle', shape: 'dp28', dmg: 33, rpm: 550, auto: true, mag: 47, reserveMax: 141, reload: 3.6, spread: 0.018, bloom: 0.020, pellets: 1, recoil: 0.9, range: 280, adsFov: 56, price: 2700, loot: 5, recoilClimb: 0.05, recoilYaw: 0.20, color: 0x3a352c, accent: 0x4a4a50, spinMag: { shape: 'pan', x: 0, y: 0.2, z: -0.3, r: 0.28, axis: 'y', step: TAU / 47 } },
+  mosin:    { name: 'Mosin-Nagant', class: 'sniper', shape: 'mosin', dmg: 175, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.8, spread: 0.0020, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 24, scope: true, price: 2400, loot: 5, boltCycle: 1.4, color: 0x6e4a28, accent: 0x4a4e54 },
+  bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 24, auto: false, mag: 1, reserveMax: 5, reload: 4.0, spread: 0.004, bloom: 0, pellets: 1, recoil: 0.6, range: 250, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
   flashlight: { name: 'Flashlight', class: 'tool', shape: 'flashlight', color: 0x9aa0a6, accent: 0xc23a2a },
@@ -801,9 +801,9 @@ export class WeaponSystem {
   constructor(game) {
     this.game = game;
     this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
-    this.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null }; this.slotOrder = ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'];
+    this.meleeKind = 'knife'; // the melee kind quick-melee (Q) jumps to — derived from the loadout each run
     this.cur = 'luger';
-    this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0;
+    this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.recoilYawKick = 0; this._recoilStreak = 0; this._boltLock = 0;
     this.grenadeCD = 0; this.ads = false; this.fov = 80;
     this.molotovCD = 0;
     this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; // null|'lighting'|'lit'
@@ -845,17 +845,20 @@ export class WeaponSystem {
     // clear any in-flight grenades and all transient state (survives restarts otherwise)
     for (const g of this.projectiles) { this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose(); if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); } }
     this.projectiles.length = 0;
-    this.reloading = 0; this.cooldown = 0; this.grenadeCD = 0; this._swing = 0; this._bobT = 0;
-    this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.ads = false;
+    this.reloading = 0; this.cooldown = 0; this._boltLock = 0; this.grenadeCD = 0; this._swing = 0; this._bobT = 0;
+    this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.recoilYawKick = 0; this._recoilStreak = 0; this.ads = false;
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
     for (const k of WEAPON_ORDER) { this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
-    // deploy the player's saved loadout (knife-only by default; gadgets deploy EMPTY — charge/material scavenged in-run)
-    const lo = (this.game.meta && this.game.meta.loadout) || { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null };
-    this.loadout = { primary: lo.primary || null, secondary: lo.secondary || null, melee: lo.melee || 'knife', gadget1: lo.gadget1 || null, gadget2: lo.gadget2 || null };
+    // deploy the player's saved loadout — now a flat array of EQUAL slots (any gear in any slot, duplicates OK)
+    const lo = (this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : ['knife'];
     this.flares = 0;
-    if (!this.loadout.melee || !WEAPONS[this.loadout.melee]) this.loadout.melee = 'knife'; // a run always has a valid melee
-    this.cur = this.loadout.primary || this.loadout.secondary || this.loadout.melee || 'knife';
+    // choose what to hold first: first firearm, else first melee, else the bare knife
+    this.cur = null;
+    for (const k of lo) { if (k && WEAPONS[k] && !WEAPONS[k].melee && WEAPONS[k].class !== 'tool') { this.cur = k; break; } }
+    if (!this.cur) for (const k of lo) { if (k && WEAPONS[k] && WEAPONS[k].melee) { this.cur = k; break; } }
+    if (!this.cur) this.cur = 'knife';
+    this.meleeKind = lo.find((k) => k && WEAPONS[k] && WEAPONS[k].melee) || 'knife'; // for quick-melee (Q)
     this.molotovCD = 0; this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0;
     // ownership + deploy now happen entirely in inventory.deployLoadout() (grant = ammo init; a slot confers ownership)
     if (this.molotovModel) { this.molotovModel.visible = false; this.molotovRagFlame.scale.setScalar(0); }
@@ -889,10 +892,14 @@ export class WeaponSystem {
     this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
     this.cur = key;
     this.models[key].visible = true; if (this.magMeshes[key]) this.magMeshes[key].visible = true;
-    this.cooldown = 0.1; this.bloom = 0;
+    this.cooldown = 0.1; this.bloom = 0; this._boltLock = 0; this._recoilStreak = 0; // a fresh weapon doesn't inherit the last gun's bolt-cycle lock or recoil climb
     this.game.hud.setWeapon(this); this.game.audio.reloadClick();
   }
-  quickMelee() { const k = this.loadout.melee; if (k && this.game.inventory) this.game.inventory.selectKind(k); else if (k && this.owns(k)) this.select(k); }
+  quickMelee() {
+    const inv = this.game.inventory; let k = this.meleeKind || 'knife';
+    if (inv && !inv.slots.some((s) => s && s.kind === k)) { const m = inv.slots.find((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee); if (m) k = m.kind; } // fall back to whatever melee is actually carried
+    if (inv) inv.selectKind(k); else if (this.owns(k)) this.select(k);
+  }
   cycle(dir) { this.game.inventory.cycleWheel(dir); } // the wheel scrolls the unified inventory (loadout weapons + backpack)
   // Fortification material — granted by supply drops as inventory items (1 item = 1 placement).
   grantBuildMats(amt) {
@@ -916,7 +923,19 @@ export class WeaponSystem {
     this.reloading = d.reload * this.game.player.reloadMult; this.game.audio.reloadIn();
   }
   _finishReload() {
-    const key = this.cur, need = this.magMax[key] - this.mag[key];
+    const key = this.cur, d = WEAPONS[key];
+    if (d.shellReload) { // pump shotgun: seat one shell, then re-arm for the next unless full / empty / interrupted
+      if (this.mag[key] < this.magMax[key] && this.reserve[key] > 0) {
+        this.mag[key]++; this.reserve[key]--; this.game.audio.shellInsert();
+        if (this.mag[key] < this.magMax[key] && this.reserve[key] > 0) this.reloading = WEAPONS[key].reload * this.game.player.reloadMult;
+      }
+      this.game.hud.setWeapon(this); return;
+    }
+    if (d.enBloc) { // en-bloc clip: load a fresh full clip and discard any partial mag (can't top off)
+      const take = Math.min(this.magMax[key], this.reserve[key]); this.reserve[key] -= take; this.mag[key] = take;
+      this.game.audio.reloadClick(); this.game.hud.setWeapon(this); return;
+    }
+    const need = this.magMax[key] - this.mag[key];
     if (this.reserve[key] === Infinity) this.mag[key] = this.magMax[key];
     else { const take = Math.min(need, this.reserve[key]); this.mag[key] += take; this.reserve[key] -= take; }
     this.game.audio.reloadClick(); this.game.hud.setWeapon(this);
@@ -926,7 +945,11 @@ export class WeaponSystem {
     if (this.isThrowLocked()) return;
     const d = this.def();
     if (d.class === 'tool' || d.class === 'builder') return; // held tools don't fire (flashlight; builders place via build.place)
-    if (this.reloading > 0 || this.cooldown > 0) return;
+    if (this.reloading > 0) { // per-shell shotgun reload is interruptible: a press with ≥1 shell chambered cancels it and fires
+      if (d.shellReload && edge === 'press' && this.mag[this.cur] > 0) this.reloading = 0;
+      else return;
+    }
+    if (this.cooldown > 0 || this._boltLock > 0) return;
     if (d.melee) { if (edge === 'press' || d.rate) this._melee(d); return; }
     const auto = d.auto && !this.semi[this.cur];
     if (!auto && edge !== 'press') return;
@@ -952,6 +975,11 @@ export class WeaponSystem {
       e.pos.x += (dx / (dist || 1)) * d.knock; e.pos.z += (dz / (dist || 1)) * d.knock;
       if (this.game.enemies.damage(e, d.dmg * mult, 'melee')) killed = true;
     }
+    if (this.game.mp.active) { // co-op: an active swing also strikes upright teammates (host-authoritative friendly fire)
+      for (const id of this.game.mp.meleeHitPlayers(origin, fwd, d.range, d.arcCos)) {
+        this.game.mp.claimPlayerHit(id, d.dmg * mult); hitAny = true;
+      }
+    }
     for (const s of this.game.build.structures) {                                  // melee also smashes fortifications
       const sx = s.pos.x - origin.x, sz = s.pos.z - origin.z, sd = Math.hypot(sx, sz);
       if (sd > d.range + 1.2) continue;                                            // slack: structures are wide
@@ -962,7 +990,10 @@ export class WeaponSystem {
   }
 
   _fire(d) {
-    this.mag[this.cur]--; this.cooldown = 60 / d.rpm; this.bloom = Math.min(this.bloom + d.bloom, 0.06);
+    this.mag[this.cur]--; this.cooldown = 60 / d.rpm;
+    if (d.enBloc && this.mag[this.cur] <= 0) this.game.audio.garandPing(); // empty clip ejects with the iconic ping
+    const _climb = 1 + this._recoilStreak * (d.recoilClimb || 0);
+    this.bloom = Math.min(this.bloom + d.bloom * _climb, 0.09);
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const fwd = this._tmp.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
@@ -1013,8 +1044,11 @@ export class WeaponSystem {
     }
     // advance the feed magazine one round per shot (DP-28 pan indexes; full-auto = rapid steps)
     const sm = d.spinMag; if (sm && sm.step && this.magMeshes[this.cur]) this.magMeshes[this.cur]._targetRot += sm.step;
-    this.recoilKick = Math.min(this.recoilKick + d.recoil * 0.05, 0.3);
-    this.recoilPitch += d.recoil * (0.6 + Math.random() * 0.5) * 0.01;
+    this.recoilKick = Math.min(this.recoilKick + d.recoil * 0.05 * _climb, 0.35);
+    this.recoilPitch += d.recoil * (0.6 + Math.random() * 0.5) * 0.01 * _climb;
+    if (d.recoilYaw) this.recoilYawKick += (Math.random() < 0.5 ? -1 : 1) * d.recoil * d.recoilYaw * 0.004 * _climb;
+    this._recoilStreak = Math.min(this._recoilStreak + 1, 30);
+    if (d.boltCycle) { this._boltLock = d.boltCycle; this.game.audio.boltCycle(); }
     this.game.hud.setWeapon(this);
   }
 
@@ -1125,6 +1159,7 @@ export class WeaponSystem {
 
   update(dt) {
     if (this.cooldown > 0) this.cooldown -= dt;
+    if (this._boltLock > 0) this._boltLock -= dt;
     if (this.grenadeCD > 0) this.grenadeCD -= dt;
     if (this.molotovCD > 0) this.molotovCD -= dt;
     if (this._swing > 0) this._swing -= dt;
@@ -1132,10 +1167,13 @@ export class WeaponSystem {
     this.bloom = damp(this.bloom, 0, 6, dt);
     this.recoilKick = damp(this.recoilKick, 0, 12, dt);
     this.recoilPitch = damp(this.recoilPitch, 0, 10, dt);
+    this.recoilYawKick = damp(this.recoilYawKick, 0, 10, dt);
+    this._recoilStreak = Math.max(0, this._recoilStreak - dt * 8);
 
     // ADS / scope
     const d = this.def();
     this.ads = this.game.input.buttons[2] && !d.melee && d.class !== 'builder' && (d.class !== 'tool' || d.zoom); // binoculars (zoom tool) can ADS; flashlight can't
+    if (this._boltLock > 0 && d.scope) this.ads = false; // working the bolt kicks you out of the scope until the cycle finishes
     const baseFov = (this.game.settings && this.game.settings.data.fov) || 80;
     const targetFov = this.ads ? (d.adsFov || 60) : baseFov;
     this.fov = damp(this.fov, targetFov, 16, dt);
@@ -1237,6 +1275,7 @@ export class MountedGun {
     this.base = pos.clone();
     this.baseYaw = yaw; this.yaw = yaw; this.pitch = 0;
     this.heat = 0; this.overheated = false; this.cd = 0; this.readyToFire = true;
+    this.maxAmmo = 250; this.ammo = this.maxAmmo;
     this.dmg = 65; this.rpm = 600; this.range = 380; this.spread = 0.012;
     this.pivot = pos.clone(); this.pivot.y += 1.05;
     this.beltRounds = []; this._smokeT = 0;
@@ -1328,11 +1367,19 @@ export class MountedGun {
     gb.box(0.30, 0.05, 0.04, -0.42, -0.05, 0.385, oLo);                        // front-face shadow band
     for (let i = 0; i < 7; i++) gb.box(0.022, 0.026, 0.006, -0.55 + i * 0.038, -0.05, 0.388, stencil); // "CAL .50" stencil
     gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.10, bBright, { rz: 0.3 }); gb.box(0.02, 0.10, 0.02, -0.605, 0.0, 0.22, bBright, { rz: 0.3 }); gb.box(0.075, 0.02, 0.02, -0.64, 0.05, 0.16, bBright); // folding wire bail handle
-    { // linked live .50 BMG rounds packed inside: brass case, rim/groove, dark link, copper bullet
-      for (let i = 0; i < 5; i++) { const cx = -0.51 + i * 0.046;
-        addFiftyLiveRound(gb, cx, -0.05, 0.19, { axis: 'z-', scale: 0.82, link: true });
-      } }
     this.body = new THREE.Mesh(gb.build(), voxelMaterial()); this.body.castShadow = true; this.gun.add(this.body);
+
+    this.ammoBoxRounds = new THREE.Group(); this.gun.add(this.ammoBoxRounds);
+    { // linked live .50 BMG rounds packed inside: separate so the can visibly empties at 0 ammo
+      const boxRoundBuilder = new MeshBuilder();
+      addFiftyLiveRound(boxRoundBuilder, 0, 0, 0, { axis: 'z-', scale: 0.82, link: true });
+      this._boxRoundGeo = boxRoundBuilder.build(); this._boxRoundMat = voxelMaterial();
+      for (let i = 0; i < 5; i++) {
+        const r = new THREE.Mesh(this._boxRoundGeo, this._boxRoundMat);
+        r.position.set(-0.51 + i * 0.046, -0.05, 0.19);
+        this.ammoBoxRounds.add(r);
+      }
+    }
 
     // ---- barrel: separate mesh on barrelMat — it glows / colour-shifts with heat (see update()) ----
     this.barrelMat = voxelMaterial();
@@ -1378,7 +1425,8 @@ export class MountedGun {
     // ring centre, the crosshair and the bullet path are always collinear.
     this._sightCenter = new THREE.Vector3(sx, sy, sz);
     this._camLocal = new THREE.Vector3(sx, sy, sz + 0.98); // eye sits behind the gun (stand behind it, not in it)
-    this._layoutBelt();
+	    this._layoutBelt();
+	    this._updateAmmoVisuals();
     this._solidBoxes = this._makeCollisionBoxes();
     this.game.world.boxes.push(...this._solidBoxes);
     this.updateCollisionBoxes();
@@ -1438,6 +1486,12 @@ export class MountedGun {
 
   _beltPos(t, out) { const climb = Math.min(1, t / 0.4); return out.set(-0.40 + t * 0.29, -0.02 + 0.16 * climb + Math.sin(t * Math.PI) * 0.02, 0.14 - t * 0.16); } // starts DOWN inside the box, climbs out, feeds right into the throat
   _layoutBelt() { const v = new THREE.Vector3(); for (const r of this.beltRounds) { this._beltPos(r.t, v); r.mesh.position.copy(v); r.mesh.rotation.set(-Math.PI / 2, 0, 0); } } // cartridges lined up across the belt, bullets pointing forward
+  _advanceBelt(amount) {
+    if (!this.beltRounds || !this.beltRounds.length || this.ammo <= 0) return;
+    const v = new THREE.Vector3();
+    for (const r of this.beltRounds) { r.t += amount; if (r.t > 1) r.t -= 1; this._beltPos(r.t, v); r.mesh.position.copy(v); }
+  }
+  feedBeltShot() { this._advanceBelt(1 / Math.max(1, this.beltRounds.length)); }
 
   near(p) { return Math.hypot(p.x - this.base.x, p.z - this.base.z) < 2.4 && Math.abs(p.y - this.base.y) < 2.8; }
   lookingAt(maxDist = 3.6) {
@@ -1455,7 +1509,7 @@ export class MountedGun {
     const first = this.game.world.rayHit(origin, dir, maxDist);
     return !first || this._solidBoxes.includes(first.box) || first.dist + 0.03 >= direct;
   }
-  canMount(p) { return !this.overheated && this.near(p) && this.lookingAt(); }
+	  canMount(p) { return this.ammo > 0 && !this.overheated && this.near(p) && this.lookingAt(); }
 
   idleCool(dt) { if (this.heat > 0 || this._chargeAnimT >= 0) this.update(dt, false); } // the .50 keeps cooling/animating even when nobody local is manning it
 
@@ -1516,25 +1570,37 @@ export class MountedGun {
     this._nearWas = canUse;
     return canUse;
   }
-  _netVec(v, digits = 2) { return [+v.x.toFixed(digits), +v.y.toFixed(digits), +v.z.toFixed(digits)]; }
+	  _netVec(v, digits = 2) { return [+v.x.toFixed(digits), +v.y.toFixed(digits), +v.z.toFixed(digits)]; }
+	  setAmmo(n) {
+	    this.ammo = clamp(Math.round(Number.isFinite(n) ? n : 0), 0, this.maxAmmo);
+	    this._updateAmmoVisuals();
+	    if (this.game.player && this.game.player.mountedGun === this && this.game.hud) this.game.hud.setMountedGun(this.ammo, this.maxAmmo);
+	  }
+	  _updateAmmoVisuals() {
+	    const hasAmmo = this.ammo > 0;
+	    if (this.belt) this.belt.visible = hasAmmo;
+	    if (this.ammoBoxRounds) this.ammoBoxRounds.visible = hasAmmo;
+	  }
   _muzzleWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0, 0.02, -2.38)); }
   _ejectPortWorld() { this.gun.updateMatrixWorld(); return this.gun.localToWorld(new THREE.Vector3(0.22, 0.0, 0.12)); }
   _forwardWorld() { this.gun.updateMatrixWorld(); return new THREE.Vector3(0, 0, -1).applyQuaternion(this.gun.getWorldQuaternion(new THREE.Quaternion())).normalize(); }
   _rightWorld() { this.gun.updateMatrixWorld(); return new THREE.Vector3(1, 0, 0).applyQuaternion(this.gun.getWorldQuaternion(new THREE.Quaternion())).normalize(); }
 
   // real seating (no claim check) — pin player to the gun, hide held weapon
-  _doMount() {
-    this.game.player.mountedGun = this;
+	  _doMount() {
+	    if (this.ammo <= 0) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('.50 CAL EMPTY', 0xd23a2a); return; }
+	    this.game.player.mountedGun = this;
     this.game.weapons.group.visible = false;
     this.game.player.pos.set(this.base.x + Math.sin(this.baseYaw) * 0.9, this.base.y, this.base.z + Math.cos(this.baseYaw) * 0.9); // stand BEHIND the gun
     this.yaw = this.baseYaw; this.pitch = 0;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0'; // hide the white crosshair on the .50 — the ring sight is the reticle
     this._primeCharge();
-    this.game.hud.setMountedGun();
-  }
+	    this.game.hud.setMountedGun(this.ammo, this.maxAmmo);
+	  }
   // claim-gated entry: solo seats immediately; co-op asks the host (host grants on first-come)
   mount() {
-    if (this.overheated) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED', 0xd23a2a); return; }
+	    if (this.ammo <= 0) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('.50 CAL EMPTY', 0xd23a2a); return; }
+	    if (this.overheated) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED', 0xd23a2a); return; }
     const mp = this.game.mp;
     if (!mp || !mp.active) { this._doMount(); return; }          // solo: seat immediately (unchanged)
     if (mp.isHost) mp._hostFiftyClaim('mount', 'host');           // host: claim locally
@@ -1564,9 +1630,10 @@ export class MountedGun {
     this._doDismount();
     if (mp && mp.active && wasMe) { if (mp.isHost) mp._hostFiftyClaim('dismount', 'host'); else mp.net.send('fiftyclaim', { want: 'dismount' }); }
     this.occupant = null; // session/round reset clears the seat everywhere
-    this._nearWas = false;
-    this._roundSeq = 0;
-    this.heat = 0; this.overheated = false; this.readyToFire = true; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
+	    this._nearWas = false;
+	    this._roundSeq = 0;
+	    this.setAmmo(this.maxAmmo);
+	    this.heat = 0; this.overheated = false; this.readyToFire = true; this.yaw = this.baseYaw; this.pitch = 0; this.gun.rotation.set(0, this.baseYaw, 0);
     this._chargeAnimT = -1; this._updateChargeHandle(0);
     this.updateCollisionBoxes();
     if (this.game.hud) { this.game.hud.hideHeat(); if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = ''; }
@@ -1580,7 +1647,7 @@ export class MountedGun {
     this.pitch = clamp(this.pitch, -0.45, 0.45);
     this.gun.rotation.set(this.pitch, this.yaw, 0);
     this.updateCollisionBoxes();
-    { const mp = this.game.mp; if (mp && mp.active) { this._aimT = (this._aimT || 0) - dt; if (this._aimT <= 0) { this._aimT = 0.1; mp.net.broadcast('fiftyaim', { pid: mp.myId, yaw: +this.yaw.toFixed(3), pitch: +this.pitch.toFixed(3), heat: +this.heat.toFixed(2) }); } } } // co-op: slew the barrel + share heat (glow/smoke) on every screen (~10Hz)
+	    { const mp = this.game.mp; if (mp && mp.active) { this._aimT = (this._aimT || 0) - dt; if (this._aimT <= 0) { this._aimT = 0.1; mp.net.broadcast('fiftyaim', { pid: mp.myId, yaw: +this.yaw.toFixed(3), pitch: +this.pitch.toFixed(3), heat: +this.heat.toFixed(2), ammo: this.ammo }); } } } // co-op: slew the barrel + share heat/ammo (glow/smoke) on every screen (~10Hz)
     const cam = this.game.engine.camera; cam.rotation.order = 'YXZ';
     // Place the eye rigidly on the gun's firing axis, behind the ring sight, and
     // rotate it WITH the gun (about the pivot). Eye + ring centre + muzzle now
@@ -1593,10 +1660,11 @@ export class MountedGun {
     cam.rotation.set(this.pitch + (Math.random() - 0.5) * _sh, this.yaw + (Math.random() - 0.5) * _sh, (Math.random() - 0.5) * _sh * 0.6);
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
     if (this.cd > 0) this.cd -= dt;
-    const firing = input.buttons[0] && this.readyToFire && !this.overheated;
+	    const firing = input.buttons[0] && this.readyToFire && !this.overheated && this.ammo > 0;
     if (firing && this.cd <= 0) this._fire();
     this.update(dt, firing);
-    this.game.hud.setHeat(this.heat, this.overheated);
+	    this.game.hud.setHeat(this.heat, this.overheated);
+	    this.game.hud.setMountedGun(this.ammo, this.maxAmmo);
     if (this.overheated) this._overheatEject(); // barrel maxed -> boot the gunner off, POV left looking at the gun
   }
 
@@ -1610,8 +1678,10 @@ export class MountedGun {
     if (this.game.hud.toast) this.game.hud.toast('BARREL OVERHEATED — get off it!', 0xd23a2a);
   }
 
-  _fire() {
-    this.cd = 60 / this.rpm;
+	  _fire() {
+	    if (this.ammo <= 0) { this._updateAmmoVisuals(); return; }
+	    this.setAmmo(this.ammo - 1);
+	    this.cd = 60 / this.rpm;
     this.heat = Math.min(1, this.heat + 0.02);
     this._roundSeq = (this._roundSeq || 0) + 1;
     const tracerColor = (this._roundSeq % 3 === 0) ? 0xff2418 : 0xffe08a;
@@ -1648,7 +1718,7 @@ export class MountedGun {
       if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
     } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzleFx, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
     else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzleFx, end, tracerColor); }
-    if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(muzzleFx), d: this._netVec(barrelFwd, 3), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor, rs: caseSeed }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
+    if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(muzzleFx), d: this._netVec(barrelFwd, 3), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor, rs: caseSeed, ammo: this.ammo }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
   }
 
   update(dt, firing) {
@@ -1667,6 +1737,6 @@ export class MountedGun {
         this.game.effects._spawn({ pos: tip, vel: new THREE.Vector3(rr(-0.2, 0.2), rr(0.8, 1.8), rr(-0.2, 0.2)), life: rr(0.7, 1.5), size: rr(0.12, 0.28), grav: 1.4, drag: 1.0, color: new THREE.Color(h > 0.85 ? 0x888888 : 0x666666), bounce: 0, floorY: -999, shrink: true });
       }
     }
-    if (firing) { const v = new THREE.Vector3(); for (const r of this.beltRounds) { r.t += dt * 1.1; if (r.t > 1) r.t -= 1; this._beltPos(r.t, v); r.mesh.position.copy(v); } }
+    if (firing) this._advanceBelt(dt * 1.1);
   }
 }

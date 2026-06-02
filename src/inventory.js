@@ -1,10 +1,10 @@
 // inventory.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, rr, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, rr, voxelMaterial } from './util.js';
 import { buildFlare, buildFieldRadio } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
-import { WEAPON_LAYER } from './engine.js?e=2';
+import { WEAPON_LAYER } from './engine.js';
 
 
 // ---------------------------------------------------------------------------
@@ -13,129 +13,235 @@ import { WEAPON_LAYER } from './engine.js?e=2';
 // ---------------------------------------------------------------------------
 // (SHOP_ITEMS removed — the lobby Shop/Armory replaces the between-wave shop; consumables are scavenged in-run.)
 
-// Typed loadout slots + the gadget catalogue (molotov/grenade are virtual; tools/builders live in WEAPONS).
-const ARMORY_SLOTS = [
-  { id: 'primary',   label: 'Primary',   classes: ['rifle', 'smg', 'shotgun', 'sniper', 'launcher'] },
-  { id: 'secondary', label: 'Secondary', classes: ['pistol'] },
-  { id: 'melee',     label: 'Melee',     classes: ['melee'] },
-  { id: 'gadget1',   label: 'Gadget 1',  classes: null },
-  { id: 'gadget2',   label: 'Gadget 2',  classes: null },
-];
+// Buyable gadgets (grenade/molotov/flare are virtual items; flashlight/binoculars also live in WEAPONS as tools).
 export const GADGETS = [
-  { key: 'grenade',    name: 'Frag Grenades', price: 400, desc: 'Hold in hand · hold LMB to cook, release to throw. Deploy with 2; scavenge more.' },
-  { key: 'molotov',    name: 'Molotov',       price: 350, desc: 'Hold in hand · hold LMB to light, then throw a fire pool. Deploy with 1; scavenge more.' },
+  { key: 'grenade',    name: 'Frag Grenades', price: 400, desc: 'Hold LMB to cook, release to throw. Each loadout slot deploys 2.' },
+  { key: 'molotov',    name: 'Molotov',       price: 350, desc: 'Hold LMB to light, then throw a fire pool. Each loadout slot deploys 1.' },
   { key: 'flashlight', name: 'Flashlight',    price: 600, desc: 'Hold it out — the beam lights the dark while held.' },
   { key: 'binoculars', name: 'Binoculars 8×', price: 450, desc: 'Hold RMB to glass the horizon at 8×.' },
+  { key: 'flare',      name: 'Signal Flare',  price: 250, desc: 'Throw a burning marker that lights the dark. Each loadout slot deploys 1.' },
 ];
 
-// The lobby/menu SHOP: spend the persistent bank to permanently unlock gear, then build the 5-slot loadout.
+// Pre-run loadout = a flat list of LOADOUT_SLOTS EQUAL slots (any gear in any slot, duplicates OK).
+export const LOADOUT_SLOTS = 10;
+// Catalog category rail — id matches a weapon `.class`, plus 'gadget' for the gadget registry.
+const SHOP_CATS = [
+  { id: 'all', label: 'All' }, { id: 'rifle', label: 'Rifles' }, { id: 'smg', label: 'SMG' },
+  { id: 'pistol', label: 'Pistols' }, { id: 'shotgun', label: 'Shotguns' }, { id: 'sniper', label: 'Snipers' },
+  { id: 'launcher', label: 'Heavy' }, { id: 'melee', label: 'Melee' }, { id: 'gadget', label: 'Gadgets' },
+];
+
+// The lobby/menu ARMORY: spend the persistent bank to permanently UNLOCK gear (unlock-once), then build a flat
+// LOADOUT_SLOTS-slot equal-slot loadout (any gear in any slot). Each DUPLICATE copy placed costs again (refunded
+// on removal). 3-column UI: category rail | catalog | detail (3D preview + stats + BUY/EQUIP/SELL, confirm-gated).
 // (Class kept named "Shop" so existing `this.shop` references stay valid.)
 export class Shop {
   constructor(game) {
     this.game = game;
     this.grid = document.getElementById('shopGrid');
-    this.tabsEl = document.getElementById('shopTabs');
+    this.rail = document.getElementById('shopRail');
+    this.searchEl = document.getElementById('shopSearch');
     this.bankEl = document.getElementById('bankAmt');
     this.stripEl = document.getElementById('loadoutStrip');
-    this.tab = 'primary';
-    this.returnTo = 'menu';
-    this._buildTabs();
-  }
-  _buildTabs() {
-    this.tabsEl.innerHTML = '';
-    for (const s of ARMORY_SLOTS) {
-      const t = document.createElement('div'); t.className = 'tab' + (s.id === this.tab ? ' on' : ''); t.dataset.tab = s.id; t.textContent = s.label;
-      t.addEventListener('click', () => { this.tab = s.id; this._render(); });
-      t.addEventListener('mouseenter', () => this.game.audio.uiHover());
-      this.tabsEl.appendChild(t);
-    }
+    this.summaryEl = document.getElementById('shopSummary');
+    this.warnEl = document.getElementById('shopWarning');
+    this.nameEl = document.getElementById('previewName');
+    this.statsEl = document.getElementById('previewStats');
+    this.confirmEl = document.getElementById('shopConfirm');
+    this.confirmMsgEl = document.getElementById('shopConfirmMsg');
+    this.activeCat = 'all'; this.search = ''; this.selected = null; this.returnTo = 'menu'; this._onConfirm = null;
+    this._buildRail();
+    if (this.searchEl) this.searchEl.addEventListener('input', () => { this.search = this.searchEl.value || ''; const l = this._filteredCatalog(); if (!l.some((i) => i.key === this.selected)) this.selected = l.length ? l[0].key : null; this._renderCatalog(); this._renderDetail(); }); // keep an explicit click-selection while it still matches
+    const yes = document.getElementById('shopConfirmYes'), no = document.getElementById('shopConfirmNo');
+    if (yes) yes.addEventListener('click', () => { const fn = this._onConfirm; this._hideConfirm(); if (fn) fn(); });
+    if (no) no.addEventListener('click', () => this._hideConfirm());
+    if (this.confirmEl) this.confirmEl.addEventListener('click', (e) => { if (e.target === this.confirmEl) this._hideConfirm(); }); // click backdrop = cancel
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.confirmEl && this.confirmEl.classList.contains('show')) this._hideConfirm(); }); // Esc = cancel the confirm
+    const clr = document.getElementById('shopClearAll'); if (clr) clr.addEventListener('click', () => this._askClearAll());
+    const start = document.getElementById('shopStartBtn'); if (start) start.addEventListener('click', () => { if (this.returnTo !== 'lobby') this.game.startGame('purge'); });
   }
   open(returnTo) {
     this.returnTo = returnTo || 'menu';
     this.game.state = 'shop';
+    this._hideConfirm();
+    const list = this._filteredCatalog(); this.selected = list.length ? list[0].key : null;
     this._render(); this.game.ui.show('shop');
     if (this.game.preview) this.game.preview.setSize();
+    const start = document.getElementById('shopStartBtn'); if (start) start.style.display = (this.returnTo === 'lobby') ? 'none' : '';
   }
   _meta() { return this.game.meta; }
-  _slotList(slot) {
-    if (slot === 'gadget1' || slot === 'gadget2') return GADGETS.map((gd) => ({ key: gd.key, name: gd.name, price: gd.price, desc: gd.desc, pk: WEAPONS[gd.key] ? gd.key : null }));
-    const classes = ARMORY_SLOTS.find((s) => s.id === slot).classes;
-    return WEAPON_ORDER.filter((k) => WEAPONS[k] && classes.includes(WEAPONS[k].class))
-      .map((k) => ({ key: k, name: WEAPONS[k].name, price: WEAPONS[k].price || 0, desc: WEAPONS[k].class, pk: k }));
+
+  // ---- small helpers ----
+  _icon(key) {
+    if (WEAPONS[key]) { const d = WEAPONS[key]; return d.melee ? '🔪' : (d.class === 'tool' ? (d.zoom ? '🔭' : '🔦') : (d.class === 'launcher' ? '🚀' : '🔫')); }
+    return (ITEM_DEFS[key] || {}).icon || '🎯';
+  }
+  _nameOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.name; return WEAPONS[key] ? WEAPONS[key].name : key; } // GADGETS first (flashlight/binoculars live in both registries)
+  _descOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.desc; const w = WEAPONS[key]; return w ? (w.class + (w.melee ? ' · melee weapon' : ' · firearm')) : ''; }
+  _price(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.price; return WEAPONS[key] ? (WEAPONS[key].price || 0) : 0; } // GADGETS first: flashlight/binoculars have a price in GADGETS, none in WEAPONS
+  _count(key) { return this._meta().loadout.filter((k) => k === key).length; }
+
+  // ---- economy: unlock-once + paid duplicates ----
+  _placeFirstEmpty(key) {
+    const m = this._meta(); const idx = m.loadout.indexOf(null);
+    if (idx < 0) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('Loadout full — clear a slot first', 0xd23a2a); this.game.audio.noMoney(); return false; }
+    m.loadout[idx] = key; return true;
+  }
+  _refundSlot(idx) { const m = this._meta(); const key = m.loadout[idx]; if (!key) return; if (this._count(key) >= 2) m.bank += this._price(key); m.loadout[idx] = null; } // refund only paid duplicates
+  _clearSlot(idx) { const m = this._meta(); if (!m.loadout[idx]) return; this._refundSlot(idx); this.game.audio.uiClick(); this.game._saveMeta(); this._render(); }
+  _clearAll() { const m = this._meta(); for (let i = 0; i < m.loadout.length; i++) this._refundSlot(i); this.game.audio.uiClick(); this.game._saveMeta(); this._render(); }
+  _equipOwned(key) { if (this._placeFirstEmpty(key)) { this.game.audio.uiClick(); this.game._saveMeta(); this._render(); } } // free: placing an owned copy
+  _buy(key) { // unlock 1st copy + auto-equip — needs a free slot; only charge once placed
+    const m = this._meta(), price = this._price(key);
+    if (m.bank < price) { this.game.audio.noMoney(); return; }
+    if (!this._placeFirstEmpty(key)) return;                  // loadout full → no charge (feedback already shown)
+    m.bank -= price; if (!m.unlocked.includes(key)) m.unlocked.push(key);
+    this.game.audio.buy(); this.game._saveMeta(); this._render();
+  }
+  _buyDuplicate(key) { // paid extra copy of something already owned — needs a free slot; only charge once placed
+    const m = this._meta(), price = this._price(key);
+    if (m.bank < price) { this.game.audio.noMoney(); return; }
+    if (!this._placeFirstEmpty(key)) return;                  // loadout full → no charge
+    m.bank -= price;
+    this.game.audio.buy(); this.game._saveMeta(); this._render();
+  }
+  _sell(key) {
+    if (key === 'knife') return; // bare knife is free + permanent
+    const m = this._meta(), price = this._price(key), dupes = Math.max(0, this._count(key) - 1);
+    m.bank += Math.round(price * 0.6) + dupes * price; // 60% for ownership + full price per paid duplicate
+    m.unlocked = m.unlocked.filter((k) => k !== key);
+    for (let i = 0; i < m.loadout.length; i++) if (m.loadout[i] === key) m.loadout[i] = null;
+    this.game.audio.buy(); this.game._saveMeta(); this._render();
+  }
+
+  // ---- confirm modal (reserved for spends + sells; free actions never confirm) ----
+  _confirm(msg, onYes) { this._onConfirm = onYes; if (this.confirmMsgEl) this.confirmMsgEl.textContent = msg; if (this.confirmEl) this.confirmEl.classList.add('show'); this.game.audio.uiHover(); }
+  _hideConfirm() { this._onConfirm = null; if (this.confirmEl) this.confirmEl.classList.remove('show'); }
+  _askClearAll() { const n = this._meta().loadout.filter(Boolean).length; if (!n) return; this._confirm(`Clear all ${n} loadout slot${n > 1 ? 's' : ''}? (duplicate purchases are refunded)`, () => this._clearAll()); }
+
+  // ---- catalog data ----
+  _catalogItems() {
+    const out = [];
+    for (const k of WEAPON_ORDER) { const w = WEAPONS[k]; if (!w || w.class === 'tool') continue; out.push({ key: k, name: w.name, price: w.price || 0, cat: w.class }); }
+    for (const g of GADGETS) out.push({ key: g.key, name: g.name, price: g.price, cat: 'gadget' });
+    return out;
+  }
+  _filteredCatalog() {
+    let items = this._catalogItems();
+    if (this.activeCat !== 'all') items = items.filter((i) => i.cat === this.activeCat);
+    const q = (this.search || '').trim().toLowerCase();
+    if (q) items = items.filter((i) => i.name.toLowerCase().includes(q) || i.cat.includes(q));
+    return items;
+  }
+
+  // ---- render ----
+  _buildRail() {
+    if (!this.rail) return; this.rail.innerHTML = '';
+    for (const c of SHOP_CATS) {
+      const b = document.createElement('button');
+      b.className = 'shop-cat' + (c.id === this.activeCat ? ' on' : ''); b.dataset.cat = c.id; b.textContent = c.label;
+      b.addEventListener('click', () => { this.activeCat = c.id; const l = this._filteredCatalog(); this.selected = l.length ? l[0].key : null; this._render(); });
+      b.addEventListener('mouseenter', () => this.game.audio.uiHover());
+      this.rail.appendChild(b);
+    }
   }
   _render() {
-    const g = this.game, m = this._meta();
-    if (this.bankEl) this.bankEl.textContent = '$' + m.bank;
-    for (const t of this.tabsEl.children) t.classList.toggle('on', t.dataset.tab === this.tab);
-    this.grid.innerHTML = '';
-    const slot = this.tab, list = this._slotList(slot);
-    const nameEl = document.getElementById('previewName');
-    const cards = [];
-    const preview = (pk, el) => { if (pk && g.preview) { g.preview.show(pk); if (nameEl) nameEl.textContent = WEAPONS[pk].name; } for (const c of cards) c.classList.toggle('previewing', c === el); };
-    let firstPk = null, firstEl = null;
-    for (const it of list) {
-      const el = this._card(it, this._meta().unlocked.includes(it.key), m.loadout[slot] === it.key, slot);
-      cards.push(el);
-      if (it.pk) { el.addEventListener('mouseenter', () => preview(it.pk, el)); el.addEventListener('click', () => preview(it.pk, el)); if (!firstPk) { firstPk = it.pk; firstEl = el; } }
-    }
-    const pw = document.getElementById('previewWrap'); if (pw) pw.style.display = firstPk ? 'block' : 'none';
-    if (firstPk) preview(firstPk, firstEl);
-    this._renderStrip();
-  }
-  _card(it, unlocked, equipped, slot) {
-    const g = this.game, m = this._meta();
-    const el = document.createElement('div'); el.className = 'item' + (equipped ? ' equipped' : (unlocked ? ' owned' : ''));
-    const canSell = unlocked && !(slot === 'melee' && it.key === 'knife'); // the knife is free + un-sellable (always a melee)
-    let costHtml, btns = '';
-    if (!unlocked) {
-      const afford = m.bank >= it.price;
-      costHtml = '$' + it.price;
-      btns = `<button class="buy" data-act="unlock" ${afford ? '' : 'disabled'}>UNLOCK</button>`;
-    } else if (equipped) {
-      costHtml = '✓ equipped';
-      if (canSell) btns = `<button class="buy sell" data-act="sell">SELL</button>`;
-    } else {
-      costHtml = 'owned';
-      btns = `<button class="buy" data-act="equip">EQUIP</button>` + (canSell ? ` <button class="buy sell" data-act="sell">SELL</button>` : '');
-    }
-    el.innerHTML = `<div class="nm">${it.name}</div><div class="ds">${it.desc || ''}</div>
-      <div class="row"><span class="cost">${costHtml}</span><span class="acts">${btns}</span></div>`;
-    el.querySelectorAll('.buy').forEach((btn) => {
-      btn.addEventListener('mouseenter', () => g.audio.uiHover());
-      btn.addEventListener('click', (e) => { e.stopPropagation(); this._action(btn.dataset.act, it, slot); });
-    });
-    this.grid.appendChild(el);
-    return el;
-  }
-  _action(act, it, slot) {
-    const g = this.game, m = this._meta();
-    if (act === 'unlock') {
-      if (m.bank < it.price) { g.audio.noMoney(); return; }
-      m.bank -= it.price; if (!m.unlocked.includes(it.key)) m.unlocked.push(it.key);
-      m.loadout[slot] = it.key; // auto-equip on unlock for convenience
-      g.audio.buy();
-    } else if (act === 'equip') {
-      m.loadout[slot] = it.key; g.audio.uiClick();
-    } else if (act === 'sell') {
-      if (slot === 'melee' && it.key === 'knife') return;
-      m.bank += Math.round((it.price || 0) * 0.6); // 60% refund
-      m.unlocked = m.unlocked.filter((k) => k !== it.key);
-      if (m.loadout[slot] === it.key) m.loadout[slot] = (slot === 'melee' ? 'knife' : null); // unequip (melee falls back to knife)
-      g.audio.buy();
-    }
-    // a gadget can occupy only one of the two gadget slots — clear it from the other
-    if ((slot === 'gadget1' || slot === 'gadget2') && (act === 'unlock' || act === 'equip')) {
-      const other = slot === 'gadget1' ? 'gadget2' : 'gadget1';
-      if (m.loadout[other] === it.key) m.loadout[other] = null;
-    }
-    g._saveMeta();
-    this._render();
-  }
-  _renderStrip() {
-    if (!this.stripEl) return;
     const m = this._meta();
-    const nm = (k) => !k ? '— empty —' : (WEAPONS[k] ? WEAPONS[k].name : ((GADGETS.find((x) => x.key === k) || {}).name || k));
-    this.stripEl.innerHTML = ARMORY_SLOTS.map((s) => `<div class="lo-slot${m.loadout[s.id] ? ' on' : ''}"><span class="lo-lbl">${s.label}</span><span class="lo-nm">${nm(m.loadout[s.id])}</span></div>`).join('');
+    if (this.bankEl) this.bankEl.textContent = '$' + m.bank;
+    if (this.rail) for (const b of this.rail.children) b.classList.toggle('on', b.dataset.cat === this.activeCat);
+    this._renderCatalog(); this._renderLoadoutBar(); this._renderDetail(); this._updateSummary();
+  }
+  _renderCatalog() {
+    if (!this.grid) return; const m = this._meta(); const _st = this.grid.scrollTop; this.grid.innerHTML = '';
+    const list = this._filteredCatalog();
+    if (!list.length) { this.grid.innerHTML = '<div class="cat-empty">No gear matches your search.</div>'; return; }
+    for (const it of list) {
+      const owned = m.unlocked.includes(it.key), cnt = this._count(it.key);
+      const afford = owned ? true : m.bank >= it.price;
+      const el = document.createElement('div');
+      el.className = 'cat-item' + (it.key === this.selected ? ' sel' : '') + (owned ? ' owned' : (afford ? '' : ' dim'));
+      el.dataset.key = it.key;
+      const tag = owned ? '<span class="cat-owned">OWNED</span>' : `<span class="cat-price">$${it.price}</span>`;
+      const badge = cnt > 0 ? `<span class="cat-badge">×${cnt}</span>` : '';
+      el.innerHTML = `${badge}<div class="cat-ico">${this._icon(it.key)}</div><div class="cat-nm">${it.name}</div>${tag}`;
+      el.addEventListener('click', () => { this.selected = it.key; this._renderCatalog(); this._renderDetail(); this.game.audio.uiClick(); });
+      this.grid.appendChild(el);
+    }
+    this.grid.scrollTop = _st; // preserve scroll across the full rebuild (clicking a tile re-renders the grid)
+  }
+  _setPreview(key) {
+    const g = this.game;
+    if (g.preview && g.preview.setSize) g.preview.setSize(); // keep the WebGL buffer matched to the live canvas box
+    if (key && WEAPONS[key] && g.preview) g.preview.show(key);
+    else if (g.preview && g.preview.hide) g.preview.hide();
+    if (this.nameEl) this.nameEl.textContent = key ? this._nameOf(key) : '';
+    if (this.statsEl) { const w = WEAPONS[key]; const p = []; if (w) { if (w.dmg) p.push('DMG ' + w.dmg); if (w.rpm) p.push(w.rpm + ' RPM'); if (w.mag) p.push(w.mag + ' mag'); if (w.melee) p.push('melee'); } this.statsEl.textContent = w ? p.join('  ·  ') : (key ? 'gadget' : ''); }
+  }
+  _renderDetail() {
+    this._setPreview(this.selected);
+    const host = document.getElementById('shopActions'); const desc = document.getElementById('previewDesc');
+    const m = this._meta(), key = this.selected;
+    if (desc) desc.textContent = key ? this._descOf(key) : '';
+    if (!host) return;
+    if (!key) { host.innerHTML = '<div class="det-hint">Pick a weapon to inspect.</div>'; return; }
+    const owned = m.unlocked.includes(key), cnt = this._count(key), price = this._price(key), afford = m.bank >= price;
+    const full = m.loadout.indexOf(null) < 0; // adding needs a free slot
+    let html = '';
+    if (!owned) {
+      html += `<button class="det-btn buy" data-act="buy" ${(afford && !full) ? '' : 'disabled'}>UNLOCK · $${price}</button>`;
+      if (!afford) html += `<div class="det-warn">Need $${price - m.bank} more</div>`;
+      else if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
+    } else {
+      if (cnt === 0) {
+        html += `<button class="det-btn equip" data-act="equip" ${full ? 'disabled' : ''}>EQUIP</button>`;
+        if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
+      } else {
+        html += `<button class="det-btn dup" data-act="dup" ${((afford || price === 0) && !full) ? '' : 'disabled'}>ADD ANOTHER · $${price}</button><div class="det-incl">×${cnt} in loadout</div>`;
+        if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
+        else if (!afford && price > 0) html += `<div class="det-warn">Need $${price - m.bank} more</div>`;
+      }
+      if (key !== 'knife') { const refund = Math.round(price * 0.6) + Math.max(0, cnt - 1) * price; html += `<button class="det-btn sell" data-act="sell">SELL · +$${refund}</button>`; }
+    }
+    host.innerHTML = html;
+    host.querySelectorAll('.det-btn').forEach((b) => {
+      b.addEventListener('mouseenter', () => this.game.audio.uiHover());
+      b.addEventListener('click', () => {
+        const act = b.dataset.act, nm = this._nameOf(key);
+        if (act === 'buy') this._confirm(`Unlock ${nm} for $${price}?`, () => this._buy(key));
+        else if (act === 'dup') this._confirm(`Add another ${nm} for $${price}?`, () => this._buyDuplicate(key));
+        else if (act === 'equip') this._equipOwned(key);
+        else if (act === 'sell') { const c = this._count(key), refund = Math.round(price * 0.6) + Math.max(0, c - 1) * price; const msg = c > 1 ? `Sell ALL ×${c} ${nm} and give up the unlock? You get $${refund} back.` : `Sell ${nm}? You get $${refund} back and it leaves your loadout.`; this._confirm(msg, () => this._sell(key)); }
+      });
+    });
+  }
+  _renderLoadoutBar() {
+    if (!this.stripEl) return; const m = this._meta(); this.stripEl.innerHTML = '';
+    for (let i = 0; i < LOADOUT_SLOTS; i++) {
+      const key = m.loadout[i];
+      const cell = document.createElement('div'); cell.className = 'lo-cell' + (key ? ' filled' : ' empty'); cell.dataset.slot = i;
+      if (key) {
+        cell.draggable = true;
+        cell.innerHTML = `<button class="lo-clear" title="Remove">✕</button><div class="lo-ico">${this._icon(key)}</div><div class="lo-nm">${this._nameOf(key)}</div>`;
+        cell.querySelector('.lo-clear').addEventListener('click', (e) => { e.stopPropagation(); this._clearSlot(i); });
+        cell.addEventListener('click', () => { this.selected = key; this._renderCatalog(); this._renderDetail(); });
+        cell.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', String(i)); e.dataTransfer.effectAllowed = 'move'; cell.classList.add('dragging'); });
+        cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
+      } else cell.innerHTML = '<div class="lo-plus">+</div>';
+      cell.addEventListener('dragover', (e) => { e.preventDefault(); cell.classList.add('drag-over'); });
+      cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
+      cell.addEventListener('drop', (e) => { e.preventDefault(); cell.classList.remove('drag-over'); const from = parseInt(e.dataTransfer.getData('text/plain'), 10); if (!isNaN(from) && from !== i) { const a = m.loadout[from]; m.loadout[from] = m.loadout[i]; m.loadout[i] = a; this.game.audio.uiClick(); this.game._saveMeta(); this._render(); } });
+      this.stripEl.appendChild(cell);
+    }
+  }
+  _updateSummary() {
+    const m = this._meta(), filled = m.loadout.filter(Boolean), value = filled.reduce((s, k) => s + this._price(k), 0);
+    if (this.summaryEl) this.summaryEl.textContent = `${filled.length}/${LOADOUT_SLOTS} slots · value $${value}`;
+    if (this.warnEl) {
+      let warn = '';
+      if (!filled.length) warn = '⚠ Empty loadout — you spawn with just a knife';
+      else if (!filled.some((k) => WEAPONS[k] && !WEAPONS[k].melee && WEAPONS[k].class !== 'tool')) warn = '⚠ No firearm equipped — melee only out there';
+      this.warnEl.textContent = warn; this.warnEl.classList.toggle('show', !!warn);
+    }
   }
 }
 
@@ -174,16 +280,21 @@ export class Inventory {
   // deploy the meta loadout into the flat inventory at run start (called from WeaponSystem.resetLoadout after the weapons are granted)
   deployLoadout() {
     this.slots.fill(null);
-    const w = this.game.weapons, lo = w.loadout;
-    for (const s of ['primary', 'secondary', 'melee', 'gadget1', 'gadget2']) {
-      const k = lo[s]; if (!k) continue;
-      if (WEAPONS[k]) { w.grant(k); this.addItem(k); }                                  // weapon/tool: grant = ammo init, the slot = ownership
-      else if (k === 'grenade') { this.addItem('grenade'); this.addItem('grenade'); }   // throwable start-stock
-      else if (k === 'molotov') { this.addItem('molotov'); }
+    const w = this.game.weapons;
+    const lo = (this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : []; // flat array of equal slots
+    const granted = new Set();                                                          // grant() is ammo-init (idempotent) — once per weapon kind
+    for (const k of lo) {
+      if (!k) continue;
+      if (WEAPONS[k]) { if (!granted.has(k)) { w.grant(k); granted.add(k); } this.addItem(k); } // weapon/tool: each slot = one backpack entry
+      else if (k === 'grenade') { this.addItem('grenade'); this.addItem('grenade'); }   // 2 frags per loadout slot
+      else if (k === 'molotov') { this.addItem('molotov'); }                            // 1 molotov per slot
+      else if (k === 'flare') { this.addItem('flare'); }                                // 1 flare per slot
     }
-    if (!this.slots.some((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee)) { w.grant('knife'); this.addItem('knife'); } // a run always has a melee
+    if (!this.slots.some((s) => s && WEAPONS[s.kind] && WEAPONS[s.kind].melee)) { w.grant('knife'); if (!this.addItem('knife')) this.slots[this.slots.length - 1] = { kind: 'knife', value: 1 }; } // a run always has a melee (evict the last item if the backpack overflowed)
     this._activeSlot = -1; this._wheelIdx = 0;
-    const o = this.scrollOrder(); if (o.length) this._select(o[0], 0); else this._holdNothing();
+    const o = this.scrollOrder();
+    if (o.length) { let i = o.findIndex((e) => e.kind === w.cur); if (i < 0) i = 0; this._select(o[i], i); } // hold the computed weapon (first firearm), not just slot 0
+    else this._holdNothing();
     this.refreshHotbar();
   }
 

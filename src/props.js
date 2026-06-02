@@ -1,6 +1,6 @@
 // props.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, ri, rr, shade, voxelMaterial } from './util.js?u=3';
+import { MeshBuilder, TAU, ri, rr, shade, voxelMaterial } from './util.js';
 
 
 // ---------------------------------------------------------------------------

@@ -179,15 +179,64 @@
     .mp-label .mp-hpwrap { display: inline-block; width: 64px; height: 6px; background: rgba(0,0,0,.55); border-radius: 3px; overflow: hidden; margin-top: 2px; border: 1px solid rgba(0,0,0,.4); }
     .mp-label .mp-hp { display: block; height: 100%; width: 100%; background: linear-gradient(90deg,#7fd06a,#bff0a0); transition: width .15s; }
     .mp-label.down .mp-name { color: #ff7a6a; } .mp-label.down .mp-hp { background: #b03a2a; }
-    .mp-input { display: block; margin: 6px auto; width: 220px; max-width: 80%; padding: 10px 12px; font-family: var(--font-body); font-size: 15px; font-weight: 600; text-align: center; border-radius: var(--r-sm); border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--paper); outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+    #lobby .card { width: min(96vw, 980px); max-width: 980px; padding: 32px 36px; }
+    .mp-lobby-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr); gap: 18px; align-items: start; text-align: left; }
+    .mp-col { min-width: 0; }
+    .mp-sectionbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; margin: 4px 0 9px; padding-bottom: 7px; border-bottom: 1px solid var(--line-soft); font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: 2px; color: var(--ink-dim); text-transform: uppercase; }
+    .mp-pill { min-width: 92px; text-align: center; padding: 4px 8px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--ink-dim); background: rgba(0,0,0,.18); font-size: 10px; letter-spacing: 1.4px; }
+    .mp-pill.on { color: #142006; background: linear-gradient(180deg,#a8e67c,#6dbb48); border-color: rgba(170,235,120,.55); }
+    .mp-input { display: block; margin: 0; width: 100%; max-width: none; padding: 10px 12px; font-family: var(--font-body); font-size: 15px; font-weight: 600; text-align: center; border-radius: var(--r-sm); border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--paper); outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
     .mp-input:focus { border-color: var(--line-gold); box-shadow: 0 0 0 3px rgba(255,207,92,.12); }
     .mp-input::placeholder { color: var(--ink-dim); opacity: .7; }
     .mp-row { display: flex; gap: 8px; align-items: center; justify-content: center; margin: 10px 0; flex-wrap: wrap; }
     .mp-row .btn { margin: 0; }
     .mp-or { opacity: .55; font-size: 13px; }
-    .mp-status { margin: 8px 0; font-size: 13px; opacity: .85; min-height: 18px; }
-    .mp-roster { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 8px 0; }
-    .mp-rosteritem { background: rgba(255,255,255,.08); border: 1px solid rgba(255,207,92,.25); border-radius: 8px; padding: 4px 12px; font-weight: 700; font-size: 14px; }
+    .mp-hostline, .mp-joinline { display: grid; gap: 8px; align-items: stretch; margin: 8px 0; }
+    .mp-hostline { grid-template-columns: minmax(112px, .42fr) minmax(0, 1fr); }
+    .mp-joinline { grid-template-columns: minmax(0, 1fr) minmax(104px, .35fr); }
+    .mp-hostline .btn, .mp-joinline .btn, .mp-actions .btn, .mp-room .btn { margin: 0; width: 100%; }
+    .mp-codebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 8px 9px 8px 13px; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(0,0,0,.22); }
+    .mp-codebar span { font-family: var(--font-display); font-size: 10px; letter-spacing: 2px; color: var(--ink-dim); }
+    .mp-codebar b { font-family: var(--font-display); font-size: 20px; letter-spacing: 2px; color: var(--gold); flex: 1; text-align: center; }
+    .mp-codebar .btn { width: auto; min-width: 62px; flex: 0 0 auto; }
+    .btn.mini { padding: 8px 12px; font-size: 13px; letter-spacing: 1px; border-radius: 8px; box-shadow: 0 2px 0 var(--gold-deep), var(--shadow-1); }
+    .btn.danger { background: linear-gradient(180deg,#c85a48,#7f2d24); color: #ffe8dc; border-color: rgba(255,120,90,.45); box-shadow: 0 2px 0 #4a1712, var(--shadow-1); }
+    .btn.mini:disabled, .btn:disabled { cursor: default; opacity: .48; transform: none; filter: saturate(.5); }
+    .mp-status { margin: 8px 0; font-size: 13px; opacity: .85; min-height: 18px; text-align: center; }
+    .mp-diag { min-height: 17px; margin-top: 9px; font-size: 12px; color: var(--ink-dim); text-align: center; }
+    .mp-diagbox { margin: 8px 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(0,0,0,.18); }
+    .mp-diagtitle { margin-bottom: 7px; font-family: var(--font-display); font-size: 10px; letter-spacing: 1.8px; color: var(--ink-dim); text-transform: uppercase; text-align: center; }
+    .mp-diaggrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 8px; font-size: 11px; }
+    .mp-diaggrid > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 4px 7px; border: 1px solid var(--line-soft); border-radius: 6px; background: rgba(255,255,255,.03); }
+    .mp-diaggrid > div.wide { grid-column: 1 / -1; }
+    .mp-diaggrid span { color: var(--ink-dim); letter-spacing: .7px; text-transform: uppercase; }
+    .mp-diaggrid b { color: var(--paper); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mp-diaggrid .ok { color: var(--green); }
+    .mp-diaggrid .wait { color: var(--gold); }
+    .mp-diaggrid .err b { color: var(--red); }
+    .mp-diaggrid .msg b { white-space: normal; text-align: right; line-height: 1.25; }
+    .mp-diaggrid .advice { justify-content: center; color: var(--ink); text-align: center; line-height: 1.3; }
+    .mp-roster { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; margin: 8px 0; }
+    .mp-rosteritem { background: rgba(255,255,255,.08); border: 1px solid rgba(255,207,92,.25); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 14px; max-width: 100%; }
+    .mp-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .mp-actions .wide { grid-column: 1 / -1; }
+    .mp-roomlist { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding-right: 3px; }
+    .mp-room { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(0,0,0,.22); }
+    .mp-room.run { border-color: rgba(111,168,232,.35); }
+    .mp-room-main { min-width: 0; }
+    .mp-room-main b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 16px; letter-spacing: .8px; color: var(--paper); }
+    .mp-room-main span { font-size: 11px; letter-spacing: 1.2px; color: var(--gold); }
+    .mp-room-meta { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--ink-dim); letter-spacing: .6px; }
+    .mp-room-meta span, .mp-room-meta code { border: 1px solid var(--line-soft); border-radius: 999px; padding: 2px 8px; background: rgba(255,255,255,.03); }
+    .mp-room-meta code { color: var(--paper); font-family: var(--font-display); letter-spacing: 1.4px; }
+    .mp-roomempty { border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 18px 14px; text-align: center; color: var(--ink-dim); background: rgba(0,0,0,.16); }
+    @media (max-width: 780px) {
+      #lobby .card { padding: 28px 22px; }
+      .mp-lobby-grid { grid-template-columns: 1fr; }
+      .mp-hostline, .mp-joinline, .mp-actions { grid-template-columns: 1fr; }
+      .mp-actions .wide { grid-column: auto; }
+      .mp-roomlist { max-height: 240px; }
+    }
     #mp-scoreboard { position: fixed; inset: 0; z-index: 30; display: none; align-items: flex-start; justify-content: center; pointer-events: none; }
     #mp-scoreboard.show { display: flex; }
     #mp-scoreboard .sb-card { margin-top: 8vh; min-width: 440px; max-width: 84vw; background: rgba(20,14,8,.86); border: 2px solid rgba(255,207,92,.4); border-radius: 12px; padding: 14px 18px 10px; backdrop-filter: blur(3px); box-shadow: 0 10px 40px rgba(0,0,0,.5); }
@@ -283,6 +332,88 @@
     #loadoutStrip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0 6px; }
     .lo-slot { background: var(--surface-1); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 8px; text-align: center; transition: border-color var(--t-fast); }
     .lo-slot.on { border-color: var(--line-gold); background: rgba(40,28,8,.5); }
+    /* ======================= Armory v2 — 3-column (rail | catalog | detail) + confirm ======================= */
+    #shop .shop-card { display: flex; flex-direction: column; gap: 12px; max-width: min(96vw, 1180px); width: min(96vw, 1180px); max-height: 92vh; padding: 22px 26px; overflow: hidden; text-align: left; }
+    .shop-top { display: flex; align-items: center; gap: 16px; }
+    .shop-title { font-size: 34px; margin: 0; line-height: 1; }
+    .shop-search { flex: 1; max-width: 360px; background: var(--glass); border: 1px solid var(--line-soft); border-radius: var(--r-sm); color: var(--paper); padding: 9px 13px; font-family: var(--font-body); font-size: 15px; font-weight: 600; outline: none; }
+    .shop-search:focus { border-color: var(--line-gold); }
+    .shop-search::placeholder { color: var(--ink-dim); }
+    .shop-bank { margin-left: auto; font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: .5px; color: var(--gold); white-space: nowrap; text-shadow: 0 1px 2px #000, 0 0 12px rgba(255,207,92,.35); }
+    .shop-main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 148px 1fr 296px; gap: 14px; }
+    /* category rail */
+    .shop-rail { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 4px; }
+    .shop-cat { cursor: pointer; pointer-events: auto; text-align: left; padding: 9px 12px; border-radius: var(--r-sm); font-family: var(--font-display); text-transform: uppercase; font-weight: 600; letter-spacing: 1px; font-size: 13px; color: var(--ink-dim); background: rgba(0,0,0,.22); border: 1px solid transparent; transition: background var(--t-fast), color var(--t-fast); }
+    .shop-cat:hover { color: var(--paper); background: rgba(255,255,255,.06); }
+    .shop-cat.on { color: #2a1a06; background: linear-gradient(180deg,#ffd877,#e0a134); box-shadow: 0 2px 8px rgba(255,207,92,.3); }
+    /* catalog grid */
+    .shop-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); grid-auto-rows: min-content; gap: 8px; overflow-y: auto; align-content: start; padding-right: 8px; scrollbar-width: thin; scrollbar-color: rgba(255,207,92,.55) rgba(0,0,0,.25); }
+    .shop-catalog::-webkit-scrollbar { width: 9px; }
+    .shop-catalog::-webkit-scrollbar-thumb { background: rgba(255,207,92,.5); border-radius: 5px; }
+    .shop-catalog::-webkit-scrollbar-track { background: rgba(0,0,0,.22); border-radius: 5px; }
+    .cat-empty { grid-column: 1 / -1; text-align: center; color: var(--ink-dim); padding: 30px; font-size: 14px; }
+    .cat-item { position: relative; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 11px 9px 9px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.35); transition: border-color .1s, box-shadow .1s, transform .1s, filter .1s; }
+    .cat-item:hover { transform: translateY(-2px); border-color: var(--line-gold); }
+    .cat-item.owned { border-color: rgba(127,208,106,.4); }
+    .cat-item.dim { filter: grayscale(.5) brightness(.6); }
+    .cat-item.sel { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold), 0 0 16px rgba(255,207,92,.35); }
+    .cat-ico { font-size: 30px; line-height: 1.05; }
+    .cat-nm { font-family: var(--font-display); font-size: 13.5px; font-weight: 600; letter-spacing: .3px; line-height: 1.05; text-align: center; }
+    .cat-price { font-family: var(--font-display); font-size: 14px; font-weight: 700; color: var(--gold); letter-spacing: .5px; text-shadow: 0 1px 1px #000; }
+    .cat-owned { font-family: var(--font-display); font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--green); }
+    .cat-badge { position: absolute; top: 5px; right: 5px; background: var(--gold); color: #1a0a00; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; box-shadow: 0 1px 2px rgba(0,0,0,.5); }
+    /* detail panel */
+    .shop-detail { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px; }
+    #shop #previewWrap { display: block; margin: 0; flex: 0 0 auto; }
+    #shop #previewCanvas { width: 100%; height: 188px; display: block; image-rendering: auto; background: radial-gradient(ellipse at 50% 42%, rgba(255,223,150,.12), rgba(0,0,0,.4) 75%); border: 1px solid var(--line); border-radius: var(--r-sm); }
+    #shop #previewName { margin: 2px 0 0; font-family: var(--font-display); font-size: 20px; font-weight: 700; text-transform: uppercase; color: var(--gold); letter-spacing: 1px; text-shadow: 0 1px 2px #000; }
+    #previewStats { font-size: 12.5px; font-weight: 600; color: var(--steel); letter-spacing: .5px; }
+    #previewDesc { font-size: 12px; color: var(--ink-dim); line-height: 1.4; min-height: 30px; }
+    #shopActions { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+    .det-btn { cursor: pointer; pointer-events: auto; width: 100%; font-family: var(--font-display); text-transform: uppercase; letter-spacing: .8px; font-weight: 700; font-size: 14px; padding: 11px; border-radius: var(--r-sm); border: 1px solid transparent; transition: filter var(--t-fast), transform var(--t-fast); }
+    .det-btn:hover { filter: brightness(1.08); } .det-btn:active { transform: translateY(1px); }
+    .det-btn:disabled { filter: grayscale(.7) brightness(.55); cursor: not-allowed; }
+    .det-btn.buy, .det-btn.dup { background: linear-gradient(180deg,#7fd06a,#4ea63c); color: #0c2a06; box-shadow: 0 3px 0 #2f6a22; }
+    .det-btn.equip { background: linear-gradient(180deg,#ffd877,#e0a134); color: #2a1a06; box-shadow: 0 3px 0 var(--gold-deep); }
+    .det-btn.sell { background: linear-gradient(180deg,#d98a4a,#a8542c); color: #2a1206; box-shadow: 0 3px 0 #6a3418; font-size: 12.5px; padding: 8px; }
+    .det-warn { color: var(--red); font-size: 12px; font-weight: 700; text-align: center; }
+    .det-incl { color: var(--gold); font-size: 11.5px; font-weight: 700; text-align: center; letter-spacing: .5px; }
+    .det-hint { color: var(--ink-dim); font-size: 13px; text-align: center; padding: 10px 0; }
+    /* warning + loadout header */
+    .shop-warning { display: none; padding: 7px 13px; background: rgba(232,83,58,.16); border: 1px solid rgba(232,83,58,.45); border-radius: var(--r-sm); color: #ffb09e; font-size: 13px; font-weight: 700; }
+    .shop-warning.show { display: block; }
+    .shop-lo-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .shop-lo-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--gold); text-shadow: 0 1px 2px #000; }
+    .shop-lo-sub { font-size: 11px; color: var(--ink-dim); }
+    .shop-summary { margin-left: auto; font-family: var(--font-display); font-size: 13.5px; font-weight: 600; color: var(--paper); letter-spacing: .5px; }
+    .shop-mini { margin: 0; padding: 6px 12px; font-size: 11px; }
+    /* loadout bar */
+    #shop #loadoutStrip.lo-bar { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin: 0; }
+    .lo-cell { position: relative; background: var(--surface-2); border: 1px dashed var(--line-soft); border-radius: var(--r-sm); min-height: 74px; padding: 6px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; transition: border-color var(--t-fast), background var(--t-fast); }
+    .lo-cell.filled { border-style: solid; border-color: rgba(255,207,92,.35); background: rgba(40,28,8,.45); cursor: grab; }
+    .lo-cell.filled:hover { border-color: var(--gold); }
+    .lo-cell.filled:active { cursor: grabbing; }
+    .lo-cell.dragging { opacity: .4; }
+    .lo-cell.drag-over { border-style: solid; border-color: var(--gold); background: rgba(60,42,12,.6); box-shadow: inset 0 0 0 1px var(--gold); }
+    .lo-cell .lo-ico { font-size: 23px; line-height: 1; }
+    .lo-cell .lo-nm { font-size: 10px; font-weight: 700; text-align: center; color: var(--paper); line-height: 1.05; }
+    .lo-cell .lo-plus { font-size: 24px; color: var(--ink-dim); opacity: .3; }
+    .lo-clear { position: absolute; top: 2px; right: 2px; width: 17px; height: 17px; border-radius: 50%; border: 0; background: rgba(220,50,30,.8); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+    .lo-clear:hover { background: rgba(245,75,45,1); }
+    /* confirm modal */
+    .shop-confirm { position: absolute; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; background: rgba(4,3,2,.7); }
+    .shop-confirm.show { display: flex; }
+    .shop-confirm-box { background: linear-gradient(180deg, rgba(46,32,19,.99), rgba(20,13,8,.99)); border: 1px solid var(--line-gold); border-radius: var(--r-lg); padding: 26px 30px; max-width: 420px; box-shadow: var(--shadow-card); text-align: center; }
+    .shop-confirm-msg { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--paper); line-height: 1.4; margin-bottom: 18px; }
+    .shop-confirm-btns { display: flex; gap: 10px; justify-content: center; }
+    .shop-confirm-btns .btn { margin: 0; }
+    @media (max-width: 900px) {
+      #shop .shop-card { width: min(96vw, 720px); max-width: min(96vw, 720px); }
+      .shop-main { grid-template-columns: 1fr; grid-auto-rows: auto; overflow-y: auto; }
+      .shop-rail { flex-direction: row; flex-wrap: wrap; }
+      #shop #previewWrap { display: none; } /* save vertical space; keep buy/equip/sell actions reachable */
+      #shop #loadoutStrip.lo-bar { grid-template-columns: repeat(5, 1fr); }
+    }
     /* survival inventory hotbar (right edge, vertical) — wheel scrolls it, selected is gold */
     #hotbar { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 4px; pointer-events: none; z-index: 4; }
     .hb-slot { width: 44px; height: 44px; border: 2px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(10,8,4,.5); display: flex; align-items: center; justify-content: center; position: relative; transition: border-color .1s, box-shadow .1s, transform .1s; }
@@ -502,16 +633,43 @@
   </div>
 
   <div id="shop" class="overlay">
-    <div class="card">
-      <div class="title" style="font-size:36px;">SHOP</div>
-      <div class="shopmoney">💰 Bank: <span id="bankAmt">$0</span></div>
-      <div class="subtitle" style="margin:4px 0 12px;">Unlock gear &amp; build your 5-slot loadout — you deploy with what you equip here.</div>
-      <div class="shoptabs" id="shopTabs"></div>
-      <div id="previewWrap"><canvas id="previewCanvas"></canvas><div id="previewName"></div><div id="previewHint">Hover an item to preview</div></div>
-      <div class="shopgrid" id="shopGrid"></div>
-      <div id="loadoutStrip"></div>
+    <div class="card shop-card">
+      <div class="shop-top">
+        <div class="title shop-title">ARMORY</div>
+        <input id="shopSearch" class="shop-search" type="text" placeholder="Search gear…" autocomplete="off" spellcheck="false" />
+        <div class="shop-bank">💰 <span id="bankAmt">$0</span></div>
+      </div>
+      <div class="shop-main">
+        <div class="shop-rail" id="shopRail"></div>
+        <div class="shop-catalog" id="shopGrid"></div>
+        <div class="shop-detail" id="shopDetail">
+          <div id="previewWrap"><canvas id="previewCanvas"></canvas></div>
+          <div id="previewName"></div>
+          <div id="previewStats"></div>
+          <div id="previewDesc"></div>
+          <div id="shopActions"></div>
+        </div>
+      </div>
+      <div class="shop-warning" id="shopWarning"></div>
+      <div class="shop-lo-head">
+        <span class="shop-lo-title">LOADOUT</span>
+        <span class="shop-lo-sub">click gear to equip · drag to reorder · ✕ to remove · duplicates cost extra</span>
+        <span id="shopSummary" class="shop-summary"></span>
+        <button class="btn sec shop-mini" id="shopClearAll">✕ CLEAR ALL</button>
+      </div>
+      <div class="lo-bar" id="loadoutStrip"></div>
       <div class="armory-actions">
         <button class="btn" id="armoryBackBtn">← BACK</button>
+        <button class="btn" id="shopStartBtn">▶ START PURGE</button>
+      </div>
+    </div>
+    <div class="shop-confirm" id="shopConfirm">
+      <div class="shop-confirm-box">
+        <div id="shopConfirmMsg" class="shop-confirm-msg"></div>
+        <div class="shop-confirm-btns">
+          <button class="btn sec" id="shopConfirmNo">CANCEL</button>
+          <button class="btn" id="shopConfirmYes">CONFIRM</button>
+        </div>
       </div>
     </div>
   </div>
@@ -533,31 +691,51 @@
   <div id="lobby" class="overlay">
     <div class="card">
       <div class="title" style="font-size:38px;">CO-OP LOBBY</div>
-      <div class="subtitle" style="margin:2px 0 12px;">Play with 2–4 friends over the internet — no install, just share a room code.</div>
-      <input id="mp-name" class="mp-input" maxlength="14" placeholder="Your name" />
-      <div class="mp-row">
-        <button class="btn" id="mpHostBtn">⚔ HOST</button>
-        <span class="mp-or">— or —</span>
-        <input id="mp-code" class="mp-input" maxlength="12" placeholder="CODE" style="text-transform:uppercase;width:120px;margin:0;" />
-        <button class="btn" id="mpJoinBtn">👥 JOIN</button>
+      <div class="subtitle" style="margin:2px 0 16px;">Host a room and share the code, or paste a room code.</div>
+      <div class="mp-lobby-grid">
+        <div class="mp-col">
+          <div class="mp-sectionbar"><span>SQUAD SETUP</span><span id="mp-public-state" class="mp-pill">CODE JOIN</span></div>
+          <input id="mp-name" class="mp-input" maxlength="14" placeholder="Your name" />
+          <div class="mp-hostline">
+            <button class="btn" id="mpHostBtn">⚔ HOST</button>
+            <div id="mp-codebar" class="mp-codebar"><span>ROOM</span><b id="mp-mycode">-----</b><button class="btn sec mini" id="mpCopyCodeBtn">COPY</button><button class="btn danger mini" id="mpCloseRoomBtn" style="display:none;">CLOSE</button></div>
+          </div>
+          <div class="mp-joinline">
+            <input id="mp-code" class="mp-input" maxlength="12" placeholder="ROOM CODE" style="text-transform:uppercase;" />
+            <button class="btn" id="mpJoinBtn">👥 JOIN</button>
+          </div>
+          <div class="mp-skins" id="mp-skins">
+            <button class="mp-skinpick sel" data-skin="0" style="background:#49c6df;border-color:#e85ba0"></button>
+            <button class="mp-skinpick" data-skin="1" style="background:#e8a23a;border-color:#6fcf4f"></button>
+            <button class="mp-skinpick" data-skin="2" style="background:#9b6fe0;border-color:#ffd24a"></button>
+            <button class="mp-skinpick" data-skin="3" style="background:#5fd0a0;border-color:#e8533a"></button>
+          </div>
+          <div class="shoptabs" id="mp-modes" style="margin:8px 0 4px;">
+            <button class="tab on" id="mp-mode-purge" data-mode="purge">⚔ PURGE</button>
+            <button class="tab" id="mp-mode-night" data-mode="longnight">🌙 THE LONG NIGHT</button>
+          </div>
+          <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">⚔ Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
+          <div id="mp-status" class="mp-status">Host a room or paste a code.</div>
+          <div class="mp-diagbox">
+            <div class="mp-diagtitle">CONNECTION CHECK</div>
+            <div id="mp-diaggrid" class="mp-diaggrid"></div>
+          </div>
+          <div id="mp-roster" class="mp-roster"></div>
+        </div>
+        <div class="mp-col">
+          <div class="mp-sectionbar"><span>MANUAL JOIN</span></div>
+          <div id="mp-roomlist" class="mp-roomlist"><div class="mp-roomempty">Public room browser is disabled for this stabilization build. Host, copy the room code, and join manually.</div></div>
+          <div id="mp-netdiag" class="mp-diag"></div>
+        </div>
       </div>
-      <div class="mp-skins" id="mp-skins">
-        <button class="mp-skinpick sel" data-skin="0" style="background:#49c6df;border-color:#e85ba0"></button>
-        <button class="mp-skinpick" data-skin="1" style="background:#e8a23a;border-color:#6fcf4f"></button>
-        <button class="mp-skinpick" data-skin="2" style="background:#9b6fe0;border-color:#ffd24a"></button>
-        <button class="mp-skinpick" data-skin="3" style="background:#5fd0a0;border-color:#e8533a"></button>
+      <div class="mp-actions">
+          <button class="btn wide" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
+          <button class="btn sec wide" id="mpReadyBtn" style="display:none;">☐ CLICK WHEN READY</button>
+          <button class="btn sec" id="mpLanBtn">NET: WEBRTC</button>
+          <button class="btn sec" id="mpRelayBtn">RELAY: AUTO</button>
+          <button class="btn sec" id="lobbyArmoryBtn">🔫 SHOP</button>
+          <button class="btn sec" id="mpBackBtn">← BACK</button>
       </div>
-      <div class="shoptabs" id="mp-modes" style="max-width:440px;margin:8px auto 4px;">
-        <button class="tab on" id="mp-mode-purge" data-mode="purge">⚔ PURGE</button>
-        <button class="tab" id="mp-mode-night" data-mode="longnight">🌙 THE LONG NIGHT</button>
-      </div>
-      <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">⚔ Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
-      <div id="mp-status" class="mp-status">Host a room, or enter a friend's code and Join.</div>
-      <div id="mp-roster" class="mp-roster"></div>
-      <button class="btn" id="mpStartBtn" style="display:none;">▶ START CO-OP</button>
-      <button class="btn sec" id="mpReadyBtn" style="display:none;">☐ CLICK WHEN READY</button>
-      <button class="btn sec" id="lobbyArmoryBtn">🔫 SHOP — buy &amp; equip</button>
-      <button class="btn sec" id="mpBackBtn">← BACK</button>
     </div>
     <div id="lobby-version" title="Build version &amp; release time"></div>
   </div>
@@ -602,6 +780,6 @@
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/game.js?v=173"></script>
+  <script type="module" src="./src/game.js?v=194"></script>
 </body>
 </html>
