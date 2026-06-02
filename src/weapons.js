@@ -889,7 +889,7 @@ export class WeaponSystem {
     this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
     this.cur = key;
     this.models[key].visible = true; if (this.magMeshes[key]) this.magMeshes[key].visible = true;
-    this.cooldown = 0.1; this.bloom = 0;
+    this.cooldown = 0.1; this.bloom = 0; this._boltLock = 0; this._recoilStreak = 0; // a fresh weapon doesn't inherit the last gun's bolt-cycle lock or recoil climb
     this.game.hud.setWeapon(this); this.game.audio.reloadClick();
   }
   quickMelee() { const k = this.loadout.melee; if (k && this.game.inventory) this.game.inventory.selectKind(k); else if (k && this.owns(k)) this.select(k); }
