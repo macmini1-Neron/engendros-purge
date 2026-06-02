@@ -1,6 +1,6 @@
 // ui.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, hex } from './util.js?u=3';
+import { clamp, hex } from './util.js';
 import { HUNGER_LOW, HUNGER_MAX, PLAYER_BURN_DUR } from './tuning.js';
 import { WEAPONS, buildMag, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
@@ -54,10 +54,10 @@ export class HUD {
     else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
     if (this.el.molotov) { const mc = this.game.inventory ? this.game.inventory.count('molotov') : 0; this.el.molotov.innerHTML = mc > 0 ? `🔥 ×${mc}` : ''; }
   }
-  setMountedGun() { // shown in the weapon slot while manning the .50 cal (M2HB)
+  setMountedGun(ammo = 0, maxAmmo = 250) { // shown in the weapon slot while manning the .50 cal (M2HB)
     this.el.wepname.textContent = '.50 CAL M2HB'; this.el.wepname.style.color = 'var(--gold)';
-    this.el.wepclass.textContent = 'mounted · ∞ ammo · overheats · E: dismount';
-    this.el.ammonum.innerHTML = `<span style="font-size:22px">∞</span>`;
+    this.el.wepclass.textContent = 'mounted · overheats · E: dismount';
+    this.el.ammonum.innerHTML = `${Math.max(0, Math.round(ammo))}<span class="res"> / ${maxAmmo}</span>`;
     if (this.el.molotov) this.el.molotov.innerHTML = '';
   }
   setHeldItem(def, slot) {
@@ -281,6 +281,7 @@ export class WeaponPreview {
     this.dist = Math.max(size.x, size.y, size.z) * 1.7 + 0.35;
     this.spin = 0.6;
   }
+  hide() { while (this.holder.children.length) { const c = this.holder.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); } this.cur = null; } // clear the model (gadgets with no 3D viewmodel)
   render(dt) {
     this.spin += dt * 0.7; this.holder.rotation.y = this.spin;
     const d = this.dist;

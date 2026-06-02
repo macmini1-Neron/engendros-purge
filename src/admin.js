@@ -1,6 +1,6 @@
 // admin.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { clamp, voxelMaterial } from './util.js?u=3';
+import { clamp, voxelMaterial } from './util.js';
 import { buildTank, buildTankWreck } from './bosstank.js';
 import { buildBarbedWire, buildBarricade, buildChuteRig, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
