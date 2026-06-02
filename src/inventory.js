@@ -5,6 +5,7 @@ import { buildFlare, buildFieldRadio } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { WEAPON_LAYER } from './engine.js';
+import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
 
 
 // ---------------------------------------------------------------------------
@@ -73,8 +74,13 @@ export class Shop {
 
   // ---- small helpers ----
   _icon(key) {
-    if (WEAPONS[key]) { const d = WEAPONS[key]; return d.melee ? '🔪' : (d.class === 'tool' ? (d.zoom ? '🔭' : '🔦') : (d.class === 'launcher' ? '🚀' : '🔫')); }
-    return (ITEM_DEFS[key] || {}).icon || '🎯';
+    if (WEAPONS[key]) {
+      const d = WEAPONS[key];
+      if (d.melee) return icon(KEY_ICON[key] || 'knife');
+      if (d.class === 'tool') return icon(d.zoom ? 'binoculars' : 'flashlight');
+      return icon(WEAPON_ICON[d.class] || 'rifle');
+    }
+    return icon(ITEM_ICON[key] || 'crate');
   }
   _nameOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.name; return WEAPONS[key] ? WEAPONS[key].name : key; } // GADGETS first (flashlight/binoculars live in both registries)
   _descOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.desc; const w = WEAPONS[key]; return w ? (w.class + (w.melee ? ' · melee weapon' : ' · firearm')) : ''; }
@@ -221,12 +227,12 @@ export class Shop {
       const cell = document.createElement('div'); cell.className = 'lo-cell' + (key ? ' filled' : ' empty'); cell.dataset.slot = i;
       if (key) {
         cell.draggable = true;
-        cell.innerHTML = `<button class="lo-clear" title="Remove">✕</button><div class="lo-ico">${this._icon(key)}</div><div class="lo-nm">${this._nameOf(key)}</div>`;
+        cell.innerHTML = `<span class="lo-num">${String(i + 1).padStart(2, '0')}</span><button class="lo-clear" title="Remove">✕</button><div class="lo-ico">${this._icon(key)}</div><div class="lo-nm">${this._nameOf(key)}</div>`;
         cell.querySelector('.lo-clear').addEventListener('click', (e) => { e.stopPropagation(); this._clearSlot(i); });
         cell.addEventListener('click', () => { this.selected = key; this._renderCatalog(); this._renderDetail(); });
         cell.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', String(i)); e.dataTransfer.effectAllowed = 'move'; cell.classList.add('dragging'); });
         cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
-      } else cell.innerHTML = '<div class="lo-plus">+</div>';
+      } else cell.innerHTML = `<span class="lo-num">${String(i + 1).padStart(2, '0')}</span><div class="lo-plus">+</div>`;
       cell.addEventListener('dragover', (e) => { e.preventDefault(); cell.classList.add('drag-over'); });
       cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
       cell.addEventListener('drop', (e) => { e.preventDefault(); cell.classList.remove('drag-over'); const from = parseInt(e.dataTransfer.getData('text/plain'), 10); if (!isNaN(from) && from !== i) { const a = m.loadout[from]; m.loadout[from] = m.loadout[i]; m.loadout[i] = a; this.game.audio.uiClick(); this.game._saveMeta(); this._render(); } });
