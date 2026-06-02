@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 01:01 WEST';
+const GAME_BUILD = '2026-06-02 01:05 WEST';
 
 class Game {
   constructor() {
@@ -606,7 +606,8 @@ class Game {
     } else {
       if (!this.mp.frozen) {
         const edge = this.input.buttonsPressed[0] ? 'press' : (this.input.buttons[0] ? 'hold' : null);
-        if (edge) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
+        const reviving = this.mp.active && this.mp.reviveTargetNear && this.mp.reviveTargetNear();
+        if (edge && !reviving) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
       if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
       this.player.update(dt);
@@ -632,6 +633,10 @@ class Game {
       const rp = this.mp.ensureSpectateTarget();
       this.hud.setInteract(rp ? `Spectating <b>${rp.name}</b> · Q/E switch` : 'No live squadmate to spectate');
       return;
+    }
+    if (this.mp.active && !this.mp.frozen && this.mp.reviveTargetNear) {
+      const rp = this.mp.reviveTargetNear();
+      if (rp) { this.hud.setInteract(this.mp.revivePrompt(rp)); return; }
     }
     const _ct = this.capturedTank;
     const _nearMountedGun = !this.player.inTank && this.mountedGun.updateNearby(this.player.pos);

@@ -22,6 +22,7 @@ const MP_SKINS = [
   { skin: 0x49c6df, petal: 0xe85ba0 }, { skin: 0xe8a23a, petal: 0x6fcf4f },
   { skin: 0x9b6fe0, petal: 0xffd24a }, { skin: 0x5fd0a0, petal: 0xe8533a },
 ];
+const REVIVE_SECONDS = 10;
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
@@ -131,7 +132,7 @@ export class MP {
     this._ghostProjectiles = []; // VISUAL-ONLY thrown/launched projectiles from teammates (never deal damage)
     this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
-    this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
+    this._xfT = 0; this._snapT = 0; this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this.spectateTarget = null;
@@ -353,7 +354,7 @@ export class MP {
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
     if (this._lastXf) this._lastXf.clear();
     this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false; this.spectateTarget = null;
-    this._localDown = false; this._localDead = false; this._localWaiting = false; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
+    this._localDown = false; this._localDead = false; this._localWaiting = false; this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
     if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
     this.net = this._makeNet(); this._wireNet();
     const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
@@ -842,6 +843,7 @@ export class MP {
   }
   // ---- revive interaction ----
   _downedRemoteNear() { const p = this.game.player.pos; for (const [, rp] of this.remotes) if (rp.down && !rp.dead && Math.hypot(rp.pos.x - p.x, rp.pos.z - p.z) < 2.4) return rp; return null; }
+  reviveTargetNear() { return this._downedRemoteNear(); }
   // ---- Tab scoreboard ----
   _wireScoreboard() {
     const toggle = (down) => (e) => {
@@ -899,13 +901,30 @@ export class MP {
     if (any && allDead) { this.net.send('gameover', {}); this.game._mpGameOver(); }
   }
   feed(who, what) { this.game.hud.kill(who + ' \u27a4 ' + what); this.net.broadcast('feed', { who, what }); }
+  revivePrompt(rp) {
+    const left = Math.max(0, REVIVE_SECONDS - this._reviveT);
+    return `Click <b>LMB</b> to resuscitate <b>${rp.name}</b>… ${left.toFixed(1)}s`;
+  }
   _updateRevive(dt) {
-    if (!this.active || this.frozen) { this._reviveT = 0; return; }
+    if (!this.active || this.frozen) { this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; return; }
     const rp = this._downedRemoteNear();
-    if (rp && this.game.input.isDown('KeyE')) {
+    if (!rp) { this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null; return; }
+    if (this._reviveTargetId !== rp.id) { this._reviveTargetId = rp.id; this._reviveT = 0; this._revivePulseT = 0; }
+    if (this.game.input.buttonsPressed[0]) {
+      this._revivePulseT = 0.28;
+      if (this.game.audio && typeof this.game.audio.reloadIn === 'function') this.game.audio.reloadIn();
+    }
+    if (this._revivePulseT > 0) {
+      this._revivePulseT = Math.max(0, this._revivePulseT - dt);
       this._reviveT += dt;
-      this.game.hud.setInteract(`Reviving <b>${rp.name}</b>… ${Math.max(0, 3.5 - this._reviveT).toFixed(1)}s`);
-      if (this._reviveT >= 3.5) { this._reviveT = 0; if (this.isHost) this.hostRevive(rp.id); else this.net.send('revive', { tid: rp.id }); }
-    } else { this._reviveT = 0; if (rp) this.game.hud.setInteract(`Hold <b>E</b> to revive <b>${rp.name}</b>`); }
+    } else {
+      this._reviveT = Math.max(0, this._reviveT - dt * 0.45);
+    }
+    this._reviveT = Math.min(REVIVE_SECONDS, this._reviveT);
+    this.game.hud.setInteract(this.revivePrompt(rp));
+    if (this._reviveT >= REVIVE_SECONDS) {
+      this._reviveT = 0; this._revivePulseT = 0; this._reviveTargetId = null;
+      if (this.isHost) this.hostRevive(rp.id); else this.net.send('revive', { tid: rp.id });
+    }
   }
 }
