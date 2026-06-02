@@ -27,7 +27,9 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 17:56';
+const GAME_BUILD = '2026-06-02 18:44';
+
+const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
 class Game {
   constructor() {
@@ -283,7 +285,8 @@ class Game {
     this.audio.uiClick();
   }
   _updateFlares(dt) {
-    const t = this._surviveTime;
+    if (!this.flares.length) return;
+    const t = performance.now() * 0.001;   // mode-independent clock for flicker (matches _updateMolotovPools); _surviveTime only advances in longnight, freezing the flame in purge
     for (let i = this.flares.length - 1; i >= 0; i--) {
       const f = this.flares[i];
       if (!f.grounded) {
@@ -645,7 +648,8 @@ class Game {
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (hostSim) this.waves.update(dt);
     this.mp.update(dt);
-    if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this._updateFlares(dt); this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
+    if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
+    this._updateFlares(dt);       // flare is a deployable gadget in EVERY mode → tick gravity/burn/smoke unconditionally (mirrors _updateMolotovPools), else a flare thrown in purge hangs in mid-air
     this._updateMolotovPools(dt);
     if (hostSim) this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount); // clients get the authoritative count via 'clock'
     this.effects.update(dt);
