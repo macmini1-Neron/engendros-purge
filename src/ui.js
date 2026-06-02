@@ -5,6 +5,7 @@ import { HUNGER_LOW, HUNGER_MAX, PLAYER_BURN_DUR } from './tuning.js';
 import { WEAPONS, buildMag, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { mpEscape } from './mp.js';
+import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
 
 
 // ---------------------------------------------------------------------------
@@ -35,14 +36,14 @@ export class HUD {
   setHealth(hp, max) { const f = clamp(hp / max, 0, 1); this.el.hpfill.style.width = (f * 100) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.el.vignette.style.boxShadow = `inset 0 0 200px 40px rgba(200,30,20,${(1 - f) * 0.5})`; }
   setArmor(a, max) { this.el.armorfill.style.width = clamp(a / max, 0, 1) * 100 + '%'; }
   setHunger(h) { if (!this.el.hungerfill) return; this.el.hungerfill.style.width = clamp(h / HUNGER_MAX, 0, 1) * 100 + '%'; this.el.hungerfill.style.filter = h < HUNGER_LOW ? 'saturate(1.7) brightness(1.2)' : 'none'; }
-  setSurvival(p) { if (!this.el.survival) return; let s = ''; if (p.legBroken) s += '<span class="leg">🦵 LEG BROKEN — X to splint</span> '; if (p.splints > 0) s += `<span class="spl">🩹 ×${p.splints}</span>`; this.el.survival.innerHTML = s; }
+  setSurvival(p) { if (!this.el.survival) return; let s = ''; if (p.legBroken) s += `<span class="leg">${icon('leg')} LEG BROKEN — X to splint</span> `; if (p.splints > 0) s += `<span class="spl">${icon('splint')} ×${p.splints}</span>`; this.el.survival.innerHTML = s; }
   setWeapon(w) {
     const key = w.cur, d = WEAPONS[key];
     this.el.wepname.textContent = d.name.toUpperCase();
     this.el.wepname.style.color = 'var(--gold)';
     if (d.class === 'tool') { // flashlight / binoculars: no ammo
-      if (d.zoom) { this.el.wepclass.textContent = 'optics · RMB to zoom'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔭 6×</span>`; }
-      else { const on = this.game.dayNight && this.game.dayNight.flashOn; this.el.wepclass.textContent = 'tool · E: toggle beam'; this.el.ammonum.innerHTML = `<span style="font-size:20px">🔦 ${on ? 'ON' : 'off'}</span>`; }
+      if (d.zoom) { this.el.wepclass.textContent = 'optics · RMB to zoom'; this.el.ammonum.innerHTML = `<span style="font-size:20px">${icon('binoculars')} 6×</span>`; }
+      else { const on = this.game.dayNight && this.game.dayNight.flashOn; this.el.wepclass.textContent = 'tool · E: toggle beam'; this.el.ammonum.innerHTML = `<span style="font-size:20px">${icon('flashlight')} ${on ? 'ON' : 'off'}</span>`; }
       if (this.el.molotov) this.el.molotov.innerHTML = '';
       return;
     }
@@ -52,7 +53,7 @@ export class HUD {
     this.el.wepclass.textContent = `${d.class}${slot ? ' · slot ' + slot : ''}${mode}`;
     if (d.melee) this.el.ammonum.innerHTML = `<span style="font-size:22px">MELEE</span>`;
     else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
-    if (this.el.molotov) { const mc = this.game.inventory ? this.game.inventory.count('molotov') : 0; this.el.molotov.innerHTML = mc > 0 ? `🔥 ×${mc}` : ''; }
+    if (this.el.molotov) { const mc = this.game.inventory ? this.game.inventory.count('molotov') : 0; this.el.molotov.innerHTML = mc > 0 ? `${icon('molotov')} ×${mc}` : ''; }
   }
   setMountedGun(ammo = 0, maxAmmo = 250) { // shown in the weapon slot while manning the .50 cal (M2HB)
     this.el.wepname.textContent = '.50 CAL M2HB'; this.el.wepname.style.color = 'var(--gold)';
@@ -65,7 +66,7 @@ export class HUD {
     this.el.wepname.textContent = (def.name || '').toUpperCase(); this.el.wepname.style.color = 'var(--gold)';
     const hint = def.class === 'throwable' ? 'hold LMB to throw' : def.class === 'material' ? 'LMB to build' : 'LMB to use';
     this.el.wepclass.textContent = def.class + ' · ' + hint;
-    this.el.ammonum.innerHTML = `<span style="font-size:22px">${def.icon}</span>`;
+    this.el.ammonum.innerHTML = `<span style="font-size:22px">${this._itemIcon(slot && slot.kind)}</span>`;
     if (this.el.molotov) this.el.molotov.innerHTML = '';
   }
   refreshHotbar(inv) {
@@ -73,22 +74,27 @@ export class HUD {
     const order = inv.scrollOrder(), sel = inv._curIndexInOrder();
     let html = '';
     for (let i = 0; i < order.length; i++) {
-      const o = order[i]; let icon = '?', badge = '', cls = 'hb-slot';
+      const o = order[i]; let badge = '', cls = 'hb-slot';
+      const glyph = this._itemIcon(o.kind);
       if (WEAPONS[o.kind]) {
         const d = WEAPONS[o.kind];
-        icon = d.melee ? '🔪' : (d.class === 'tool' ? (d.zoom ? '🔭' : '🔦') : (d.class === 'launcher' ? '🚀' : '🔫'));
         if (!d.melee && d.class !== 'tool' && inv.game.weapons.mag[o.kind] != null) badge = String(inv.game.weapons.mag[o.kind]);
-      } else { const def = ITEM_DEFS[o.kind]; icon = def ? def.icon : '?'; }
+      }
       if (i === sel) cls += ' hb-sel';
-      html += `<div class="${cls}"><span class="hb-ico">${icon}</span>${badge ? `<span class="hb-badge">${badge}</span>` : ''}</div>`;
+      html += `<div class="${cls}"><span class="hb-ico">${glyph}</span>${badge ? `<span class="hb-badge">${badge}</span>` : ''}</div>`;
     }
     el.innerHTML = html;
   }
   openInventory(inv) { this._renderInventory(inv); const el = document.getElementById('inventory'); if (el) el.classList.add('show'); }
   closeInventory() { const el = document.getElementById('inventory'); if (el) el.classList.remove('show'); }
   _itemIcon(kind) {
-    if (WEAPONS[kind]) { const d = WEAPONS[kind]; return d.melee ? '🔪' : (d.class === 'tool' ? (d.zoom ? '🔭' : '🔦') : (d.class === 'launcher' ? '🚀' : '🔫')); }
-    return (ITEM_DEFS[kind] || {}).icon || '?';
+    if (WEAPONS[kind]) {
+      const d = WEAPONS[kind];
+      if (d.melee) return icon(KEY_ICON[kind] || 'knife');
+      if (d.class === 'tool') return icon(d.zoom ? 'binoculars' : 'flashlight');
+      return icon(WEAPON_ICON[d.class] || 'rifle');
+    }
+    return icon(ITEM_ICON[kind] || 'crate');
   }
   _renderInventory(inv) {
     const grid = document.getElementById('inv-grid'); if (!grid) return;
@@ -115,7 +121,7 @@ export class HUD {
     });
   }
   setMoney(m) { this.el.money.textContent = '$' + m; }
-  setRadios(n) { if (this.el.radios) this.el.radios.textContent = n > 0 ? '📻 ' + n : ''; }
+  setRadios(n) { if (this.el.radios) this.el.radios.innerHTML = n > 0 ? `${icon('radio')} ${n}` : ''; }
   setWaveTag(tags) {
     const el = this.el.wavetag; if (!el) return;
     if (!tags || !tags.length) { el.classList.remove('show'); el.innerHTML = ''; return; }
@@ -131,14 +137,14 @@ export class HUD {
   setClock(info, survive) {
     if (!this.el.clock) return;
     const s = Math.floor(survive), mm = Math.floor(s / 60), ss = String(s % 60).padStart(2, '0');
-    const icon = info.blood ? '🔴' : (info.night ? '🌙' : '☀');
+    const glyph = info.blood ? icon('blood') : (info.night ? icon('moon') : icon('sun'));
     const label = info.blood ? 'BLOOD MOON' : (info.night ? 'Night ' + info.n : 'Day');
-    this.el.clock.innerHTML = `${icon} ${label} <b>·</b> ${mm}:${ss}`;
+    this.el.clock.innerHTML = `${glyph} ${label} <b>·</b> ${mm}:${ss}`;
   }
   setNightGear(g) {
     if (!this.el.nightgear) return;
     const w = g.weapons;
-    const fl = w.owns('flashlight'); this.el.nightgear.innerHTML = `<span class="ng${fl ? ' on' : ' off'}">🔦 ${fl ? (g.dayNight.flashOn ? 'ON' : 'off') : '—'}</span><span class="ng">🟠 ×${w.flares}</span>`;
+    const fl = w.owns('flashlight'); this.el.nightgear.innerHTML = `<span class="ng${fl ? ' on' : ' off'}">${icon('flashlight')} ${fl ? (g.dayNight.flashOn ? 'ON' : 'off') : '—'}</span><span class="ng">${icon('flare')} ×${w.flares}</span>`;
   }
   setScore(s) { this.el.score.textContent = s; }
   setWave(n) { this.el.wave.textContent = 'WAVE ' + n; }
@@ -176,7 +182,7 @@ export class HUD {
     if (this.el.firepov) this.el.firepov.classList.add('on');
   }
   bigMessage(text, sub = '') { this.el.msg.innerHTML = text + (sub ? `<small>${sub}</small>` : ''); this.el.msg.classList.add('show'); this._msgT = 2.2; }
-  kill(name) { const d = document.createElement('div'); d.textContent = '☠ ' + name; this.el.killfeed.appendChild(d); setTimeout(() => d.remove(), 2400); }
+  kill(name) { const d = document.createElement('div'); d.innerHTML = `${icon('skull')} ${mpEscape(name)}`; this.el.killfeed.appendChild(d); setTimeout(() => d.remove(), 2400); }
   toast(text, color = 0xffffff, tag = '') {
     const d = document.createElement('div');
     const hex = '#' + color.toString(16).padStart(6, '0');
