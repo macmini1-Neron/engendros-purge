@@ -66,7 +66,7 @@ export class Shop {
     this.game.state = 'shop';
     this._hideConfirm();
     const list = this._filteredCatalog(); this.selected = list.length ? list[0].key : null;
-    this._render(); this.game.ui.show('shop');
+    this._render(); this.game.ui.show('shop'); if (this.game.audio.music) { this.game.audio.music.setScene('shop'); this.game.audio.music.setIntensity(0.7); }
     if (this.game.preview) this.game.preview.setSize();
     const start = document.getElementById('shopStartBtn'); if (start) start.style.display = (this.returnTo === 'lobby') ? 'none' : '';
   }

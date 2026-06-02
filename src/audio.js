@@ -1,5 +1,7 @@
 // audio.js — Web Audio SFX + music. Most sounds are procedural; selected hero
 // weapon sounds use recorded-source WAV assets with procedural fallback.
+import { MusicDirector } from './music.js';
+
 export class AudioManager {
   constructor() {
     this.ctx = null;
@@ -12,6 +14,8 @@ export class AudioManager {
     this.muted = false;
     this._musicTimer = null;
     this._started = false;
+    this.music = null; // MusicDirector, created in init() once ctx exists
+    this._pendingScene = null; // scene requested before init() (no ctx yet)
     // real recorded crew-radio line (assets/crew-lines.mp3), wired through a comms-band filter in init()
     this._crewEl = null; this._crewSrc = null; this._crewGain = null; this._crewFailed = false;
     this._jetFailed = false; // real jet.mp3 may fail async (404/decode/autoplay) — callers degrade to procedural startJet()
@@ -43,6 +47,8 @@ export class AudioManager {
     this.musicGain.connect(this.master);
     this._initCrewLine();
     this._primeM2Samples();
+    if (!this.music) this.music = new MusicDirector(this);
+    if (this._pendingScene) { this.music.setScene(this._pendingScene); this._pendingScene = null; }
   }
 
   // Load the real recorded crew-radio line and route it through a telephone/radio band
@@ -571,31 +577,8 @@ export class AudioManager {
     [392, 330, 262, 196].forEach((f, i) => setTimeout(() => this.tone(f, 0.4, 'sawtooth', 0.3), i * 220));
   }
 
-  // ---- ambient tension music: slow arpeggio drone ----
-  startMusic() {
-    if (!this.ctx || this._started) return;
-    this._started = true;
-    const scale = [55, 65.41, 73.42, 82.41, 98, 110]; // low A minor-ish
-    let step = 0;
-    const tick = () => {
-      if (!this._started) return;
-      const f = scale[step % scale.length];
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type = 'sine'; o.frequency.value = f * (step % 6 === 0 ? 1 : 2);
-      o.connect(g); g.connect(this.musicGain);
-      const t0 = this.t;
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.6);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
-      o.start(t0); o.stop(t0 + 1.8);
-      step++;
-      this._musicTimer = setTimeout(tick, 900);
-    };
-    tick();
-  }
-  stopMusic() {
-    this._started = false;
-    if (this._musicTimer) clearTimeout(this._musicTimer);
-  }
+  // Legacy shims — the procedural score now lives in MusicDirector (music.js).
+  // Kept so old call sites + console keep working. Scene selection is done by game.js.
+  startMusic() { if (this.music) this.music.setScene('gameplay'); else this._pendingScene = 'gameplay'; }
+  stopMusic() { if (this.music) this.music.stop(); }
 }
