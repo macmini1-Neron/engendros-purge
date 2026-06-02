@@ -469,7 +469,7 @@ export class BuildManager {
     if (!s || s.hp <= 0) return;
     if (enemy && enemy.def && (enemy.def.boss || enemy.def.tank || (enemy.def.scale || 1) >= 1.6)) dmg = s.maxHp; // heavies crush
     s.hp -= dmg;
-    if (s.mesh && s.mesh.material.emissive) { const f = Math.max(0, s.hp / s.maxHp); s.mesh.material.emissive.setRGB((1 - f) * 0.22, 0, 0); }
+    if (s.mesh && s.mesh.material && s.mesh.material.emissive) { const f = Math.max(0, s.hp / s.maxHp); s.mesh.material.emissive.setRGB((1 - f) * 0.22, 0, 0); } // radio props are Groups (no single .material) — skip the hit-flash tint
     if (s.hp <= 0) this.destroyStructure(s, 'smash');
   }
 
