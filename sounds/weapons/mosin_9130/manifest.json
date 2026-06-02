@@ -4,17 +4,24 @@
   "generatedAt": "2026-06-02",
   "notes": [
     "Final WAV files are trimmed, mono 44.1 kHz game-ready edits made from recorded-source files.",
-    "Fire samples preserve the real Mosin report tail while avoiding the long raw sequence.",
+    "Fire samples are based on the selected candidate 01_real_mosin_clean/fire_03.wav: a real Mosin Nagant 7.62x54 mid-distance recording from The Free Firearm Sound Library, then compressed/EQ'd for louder and more present in-game playback.",
     "Bolt/reload cues are split so the viewmodel animation can trigger open, eject, insert, close, and finish sounds separately."
   ],
   "sources": [
     {
       "asset": "mosin_9130_fire_close_*.wav",
-      "derivedFrom": "mosin.wav from OpenGameArt Gunshot Sounds",
-      "sourceUrl": "https://opengameart.org/content/gunshot-sounds",
-      "sourcePageLicense": "CC0",
-      "archiveCreditFile": "Copyright (c) 2009 Vincent Sevedge, Creative Commons Attribution 3.0 Unported",
-      "attribution": "Vince Sevedge / Tabasco"
+      "derivedFrom": "Prepared SFX Library/Mosin Nagant/M_26P.wav",
+      "description": "Mosin Nagant, rifle, bolt action, 7.62x54, gunshot, mid distance, front of shooter, forward, back, stereo",
+      "sourceUrl": "https://opengameart.org/content/the-free-firearm-sound-library",
+      "license": "CC0",
+      "attribution": "The Free Firearm Sound Library / OpenGameArt"
+    },
+    {
+      "asset": "mosin_9130_bolt_open_*.wav, mosin_9130_bolt_close_*.wav",
+      "derivedFrom": "Mosin Nagant Bolt Action Cycle by Zott820, Freesound sound 370345 preview",
+      "sourceUrl": "https://freesound.org/people/Zott820/sounds/370345/",
+      "license": "Creative Commons 0",
+      "attribution": "Zott820 optional attribution"
     },
     {
       "asset": "mosin_9130_clip_load_*.wav, mosin_9130_round_insert_*.wav",
@@ -31,7 +38,7 @@
       "attribution": "SpringySpringo optional credit"
     },
     {
-      "asset": "mosin_9130_bolt_open_*.wav, mosin_9130_bolt_close_*.wav, mosin_9130_case_eject_*.wav",
+      "asset": "mosin_9130_case_eject_*.wav",
       "derivedFrom": "equipment_clicks3.wav from OpenGameArt equipment clicks III",
       "sourceUrl": "https://opengameart.org/content/equipment-clicks-iii",
       "license": "CC0",

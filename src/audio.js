@@ -291,28 +291,26 @@ export class AudioManager {
   // ---- Mosin 91/30: recorded rifle shot + bolt/reload foley, with procedural fallback ----
   mosinShot() {
     if (!this.ctx) return;
-    if (this._playMosinSample('mosinFireClose', this._mosin.fireClose, { vol: 0.88 + Math.random() * 0.08, rate: 0.985 + Math.random() * 0.035 })) return;
-    const t0 = this.t;
-    this.gunshot({ body: 150, crack: 0.13, vol: 0.78, hp: 2300, bp: 820 });
-    this._burst(t0 + 0.018, 0.035, 0.18, 'bandpass', 1250, 0.9);
+    if (this._playMosinSample('mosinFireClose', this._mosin.fireClose, { vol: 1.10 + Math.random() * 0.08, rate: 0.985 + Math.random() * 0.03 })) return;
+    this.gunshot({ body: 145, crack: 0.13, vol: 0.78, hp: 2400, bp: 820 });
   }
   mosinBoltOpen() {
     if (!this.ctx) return;
-    if (this._playMosinSample('mosinBoltOpen', this._mosin.boltOpen, { vol: 0.74, rate: 0.96 + Math.random() * 0.08 })) return;
+    if (this._playMosinSample('mosinBoltOpen', this._mosin.boltOpen, { vol: 0.78, rate: 0.96 + Math.random() * 0.08 })) return;
     const t0 = this.t;
     this._burst(t0, 0.026, 0.18, 'bandpass', 1850, 2.2);
     this._metalPing(t0 + 0.014, 3600 + Math.random() * 1100, 0.035, 0.07);
   }
   mosinBoltClose() {
     if (!this.ctx) return;
-    if (this._playMosinSample('mosinBoltClose', this._mosin.boltClose, { vol: 0.78, rate: 0.965 + Math.random() * 0.07 })) return;
+    if (this._playMosinSample('mosinBoltClose', this._mosin.boltClose, { vol: 0.82, rate: 0.965 + Math.random() * 0.07 })) return;
     const t0 = this.t;
     this._clank(t0, 0.20, 190 + Math.random() * 20);
     this._burst(t0 + 0.018, 0.018, 0.09, 'highpass', 4500, 0.8);
   }
   mosinCaseEject() {
     if (!this.ctx) return;
-    if (this._playMosinSample('mosinCaseEject', this._mosin.caseEject, { vol: 0.34, rate: 0.95 + Math.random() * 0.12 })) return;
+    if (this._playMosinSample('mosinCaseEject', this._mosin.caseEject, { vol: 0.38, rate: 0.95 + Math.random() * 0.12 })) return;
     const t0 = this.t;
     this._metalPing(t0, 4300 + Math.random() * 1700, 0.04, 0.08);
     this._burst(t0 + 0.012, 0.012, 0.04, 'highpass', 6200, 0.7);
