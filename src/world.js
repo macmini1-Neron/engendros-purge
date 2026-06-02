@@ -4,6 +4,7 @@ import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, s
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
+import { RADIO_STATIONS, radioAttenuation, stationLabel } from './radio.js';
 
 
 // ---------------------------------------------------------------------------
@@ -325,6 +326,7 @@ export class BuildManager {
   }
 
   update(dt) {
+    this._updateRadios(dt);
     const onFoot = this.game.state === 'playing' && !this.game.player.inTank && !this.game.player.mountedGun && !(this.game.mp && this.game.mp.frozen);
     const kind = onFoot ? this._curKind() : null;
     if (!kind) { this.ghost.visible = false; return; }
@@ -376,6 +378,33 @@ export class BuildManager {
     else if (!sd.prop) { s.hazard = aabb({ ref: s }); } // props are NOT hazards; enemies ignore them
     this.structures.push(s);
     return s;
+  }
+
+  _radioStart(s) { // create/resume the <audio> for a radio at its current station
+    if (typeof Audio === 'undefined') return;
+    if (!s.audio) {
+      const el = new Audio(); el.preload = 'none';
+      el.addEventListener('error', () => { if (this.game.hud) this.game.hud.toast('📻 Station offline', 0xd23a2a); });
+      s.audio = el;
+    }
+    const n = RADIO_STATIONS.length, st = RADIO_STATIONS[((s.station % n) + n) % n];
+    if (st && s.audio.src !== st.url) s.audio.src = st.url;
+    const p = s.audio.play(); if (p && p.catch) p.catch(() => {}); // play() is invoked from a user gesture (E/place)
+  }
+  _radioStop(s) { if (s.audio) { try { s.audio.pause(); } catch (e) {} } }
+  _updateRadios(dt) {
+    const a = this.game.audio, pp = this.game.player.pos;
+    let nearest = 0; // max attenuation across ON radios → drives the music duck
+    for (const s of this.structures) {
+      if (s.kind !== 'radio') continue;
+      if (s.mesh && s.mesh.userData) animateFieldRadio(s.mesh, s, dt);
+      if (!s.on || !s.audio) continue;
+      const dist = Math.hypot(pp.x - s.pos.x, pp.z - s.pos.z);
+      const att = radioAttenuation(dist);
+      s.audio.volume = Math.max(0, Math.min(1, att * (a && a.musicVolume != null ? a.musicVolume : 0.5) * (a && a.muted ? 0 : 1)));
+      if (att > nearest) nearest = att;
+    }
+    if (a && a.setMusicDuck) a.setMusicDuck(1 - nearest * 0.85); // duck the procedural score near a playing radio
   }
 
   hazardAt(x, z) {

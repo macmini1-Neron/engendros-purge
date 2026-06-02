@@ -8,6 +8,7 @@ export class AudioManager {
     this.musicGain = null;
     this.volume = 0.8;
     this.musicVolume = 0.5;
+    this._musicDuck = 1;
     this.muted = false;
     this._musicTimer = null;
     this._started = false;
@@ -95,7 +96,9 @@ export class AudioManager {
   }
 
   setVolume(v) { this.volume = v; if (this.sfxGain) this.sfxGain.gain.value = v; }
-  setMusicVolume(v) { this.musicVolume = v; if (this.musicGain) this.musicGain.gain.value = v; }
+  setMusicVolume(v) { this.musicVolume = v; this._applyMusicGain(); }
+  setMusicDuck(d) { this._musicDuck = Math.max(0, Math.min(1, d)); this._applyMusicGain(); } // 1 = full, ~0.15 = radio nearby
+  _applyMusicGain() { if (this.musicGain) this.musicGain.gain.value = this.musicVolume * (this._musicDuck == null ? 1 : this._musicDuck); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 1; }
 
   get t() { return this.ctx ? this.ctx.currentTime : 0; }
