@@ -498,6 +498,7 @@ export class LootManager {
     const g = give || {};
     for (const k of ['sandbag', 'wire', 'wood']) for (let n = 0; n < (g[k] || 0); n++) items.push([k, 1]); // ~2 random fort. mats
     if (this._radiosInPlay() === 0 && chc(0.30)) items.push(['radio', 1]); // 📻 30% chance to drop a Radio — only when none is currently in play
+    if (chc(0.40)) items.push(['fiftyammo', 1]); // 🟩 40% chance: a .50-cal ammo can to resupply the rooftop M2HB
     items.forEach(([kind, value], i) => {
       const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
       this.spawnNetPickup(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, value, 75); // 75s life — shared (host) / local (solo)
