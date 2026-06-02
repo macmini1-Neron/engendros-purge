@@ -26,7 +26,7 @@ export const WEAPONS = {
   garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 80, rpm: 270, auto: false, mag: 8,  reserveMax: 64,  reload: 2.6, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.6, range: 340, adsFov: 48, price: 2000, loot: 7,  enBloc: true, color: 0x52371f, accent: 0x222226 },
   stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 38, rpm: 560, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.85, range: 260, adsFov: 54, price: 2400, loot: 6,  recoilClimb: 0.03, recoilYaw: 0.10, color: 0x33373d, accent: 0x6e4a28 },
   // --- shotguns ---
-  shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 2.6, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
+  shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 0.45, shellReload: true, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
   sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 200, auto: false, mag: 2, reserveMax: 18, reload: 1.6, spread: 0.14,  bloom: 0, pellets: 12, recoil: 2.9, range: 30, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
   // --- sniper ---
   kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 165, rpm: 50, auto: false, mag: 5, reserveMax: 35, reload: 2.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 2.7, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, boltCycle: 1.2, color: 0x20242a, accent: 0x6fa8e8 },
@@ -917,6 +917,13 @@ export class WeaponSystem {
   }
   _finishReload() {
     const key = this.cur, d = WEAPONS[key];
+    if (d.shellReload) { // pump shotgun: seat one shell, then re-arm for the next unless full / empty / interrupted
+      if (this.mag[key] < this.magMax[key] && this.reserve[key] > 0) {
+        this.mag[key]++; this.reserve[key]--; this.game.audio.shellInsert();
+        if (this.mag[key] < this.magMax[key] && this.reserve[key] > 0) this.reloading = WEAPONS[key].reload * this.game.player.reloadMult;
+      }
+      this.game.hud.setWeapon(this); return;
+    }
     if (d.enBloc) { // en-bloc clip: load a fresh full clip and discard any partial mag (can't top off)
       const take = Math.min(this.magMax[key], this.reserve[key]); this.reserve[key] -= take; this.mag[key] = take;
       this.game.audio.reloadClick(); this.game.hud.setWeapon(this); return;
@@ -931,7 +938,11 @@ export class WeaponSystem {
     if (this.isThrowLocked()) return;
     const d = this.def();
     if (d.class === 'tool' || d.class === 'builder') return; // held tools don't fire (flashlight; builders place via build.place)
-    if (this.reloading > 0 || this.cooldown > 0 || this._boltLock > 0) return;
+    if (this.reloading > 0) { // per-shell shotgun reload is interruptible: a press with ≥1 shell chambered cancels it and fires
+      if (d.shellReload && edge === 'press' && this.mag[this.cur] > 0) this.reloading = 0;
+      else return;
+    }
+    if (this.cooldown > 0 || this._boltLock > 0) return;
     if (d.melee) { if (edge === 'press' || d.rate) this._melee(d); return; }
     const auto = d.auto && !this.semi[this.cur];
     if (!auto && edge !== 'press') return;
