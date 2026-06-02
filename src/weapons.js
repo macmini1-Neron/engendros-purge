@@ -29,14 +29,14 @@ export const WEAPONS = {
   shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 2.6, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
   sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 200, auto: false, mag: 2, reserveMax: 18, reload: 1.6, spread: 0.14,  bloom: 0, pellets: 12, recoil: 2.9, range: 30, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
   // --- sniper ---
-  kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 165, rpm: 50, auto: false, mag: 5, reserveMax: 35, reload: 2.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 2.7, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, color: 0x20242a, accent: 0x6fa8e8 },
+  kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 165, rpm: 50, auto: false, mag: 5, reserveMax: 35, reload: 2.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 2.7, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, boltCycle: 1.2, color: 0x20242a, accent: 0x6fa8e8 },
   // --- extra arsenal (loot + shop) ---
   magnum:   { name: '.44 Magnum',  class: 'pistol', shape: 'magnum', dmg: 98, rpm: 95, auto: false, mag: 6, reserveMax: 24, reload: 2.4, spread: 0.009, bloom: 0.014, pellets: 1, recoil: 2.2, range: 140, adsFov: 58, price: 1400, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a },
   mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 18, rpm: 500, auto: true, mag: 32, reserveMax: 160, reload: 2.0, spread: 0.018, bloom: 0.014, pellets: 1, recoil: 0.4, range: 150, adsFov: 62, price: 1300, loot: 11, recoilClimb: 0.015, recoilYaw: 0.05, color: 0x2e3036, accent: 0x3a3a3a },
   grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 22, rpm: 450, auto: true, mag: 30, reserveMax: 150, reload: 2.2, spread: 0.026, bloom: 0.02, pellets: 1, recoil: 0.5, range: 120, adsFov: 62, price: 1250, loot: 9, recoilClimb: 0.02, recoilYaw: 0.10, color: 0x3a3d42, accent: 0x262626 },
   bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 52, rpm: 500, auto: true, mag: 20, reserveMax: 120, reload: 3.0, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.6, range: 300, adsFov: 55, price: 2600, loot: 6, recoilClimb: 0.10, recoilYaw: 0.15, color: 0x3a3128, accent: 0x26262a },
   dp28:     { name: 'DP-28',       class: 'rifle', shape: 'dp28', dmg: 33, rpm: 550, auto: true, mag: 47, reserveMax: 141, reload: 3.6, spread: 0.018, bloom: 0.020, pellets: 1, recoil: 0.9, range: 280, adsFov: 56, price: 2700, loot: 5, recoilClimb: 0.05, recoilYaw: 0.20, color: 0x3a352c, accent: 0x4a4a50, spinMag: { shape: 'pan', x: 0, y: 0.2, z: -0.3, r: 0.28, axis: 'y', step: TAU / 47 } },
-  mosin:    { name: 'Mosin-Nagant', class: 'sniper', shape: 'mosin', dmg: 175, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.8, spread: 0.0020, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 24, scope: true, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54 },
+  mosin:    { name: 'Mosin-Nagant', class: 'sniper', shape: 'mosin', dmg: 175, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.8, spread: 0.0020, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 24, scope: true, price: 2400, loot: 5, boltCycle: 1.4, color: 0x6e4a28, accent: 0x4a4e54 },
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 24, auto: false, mag: 1, reserveMax: 5, reload: 4.0, spread: 0.004, bloom: 0, pellets: 1, recoil: 0.6, range: 250, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
@@ -803,7 +803,7 @@ export class WeaponSystem {
     this.mag = {}; this.reserve = {}; this.magMax = {}; this.semi = {};
     this.loadout = { primary: null, secondary: null, melee: 'knife', gadget1: null, gadget2: null }; this.slotOrder = ['primary', 'secondary', 'melee', 'gadget1', 'gadget2'];
     this.cur = 'luger';
-    this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.recoilYawKick = 0; this._recoilStreak = 0;
+    this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.recoilYawKick = 0; this._recoilStreak = 0; this._boltLock = 0;
     this.grenadeCD = 0; this.ads = false; this.fov = 80;
     this.molotovCD = 0;
     this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; // null|'lighting'|'lit'
@@ -845,7 +845,7 @@ export class WeaponSystem {
     // clear any in-flight grenades and all transient state (survives restarts otherwise)
     for (const g of this.projectiles) { this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose(); if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); } }
     this.projectiles.length = 0;
-    this.reloading = 0; this.cooldown = 0; this.grenadeCD = 0; this._swing = 0; this._bobT = 0;
+    this.reloading = 0; this.cooldown = 0; this._boltLock = 0; this.grenadeCD = 0; this._swing = 0; this._bobT = 0;
     this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.recoilYawKick = 0; this._recoilStreak = 0; this.ads = false;
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
@@ -926,7 +926,7 @@ export class WeaponSystem {
     if (this.isThrowLocked()) return;
     const d = this.def();
     if (d.class === 'tool' || d.class === 'builder') return; // held tools don't fire (flashlight; builders place via build.place)
-    if (this.reloading > 0 || this.cooldown > 0) return;
+    if (this.reloading > 0 || this.cooldown > 0 || this._boltLock > 0) return;
     if (d.melee) { if (edge === 'press' || d.rate) this._melee(d); return; }
     const auto = d.auto && !this.semi[this.cur];
     if (!auto && edge !== 'press') return;
@@ -1019,6 +1019,7 @@ export class WeaponSystem {
     this.recoilPitch += d.recoil * (0.6 + Math.random() * 0.5) * 0.01 * _climb;
     if (d.recoilYaw) this.recoilYawKick += (Math.random() < 0.5 ? -1 : 1) * d.recoil * d.recoilYaw * 0.004 * _climb;
     this._recoilStreak = Math.min(this._recoilStreak + 1, 30);
+    if (d.boltCycle) { this._boltLock = d.boltCycle; this.game.audio.boltCycle(); }
     this.game.hud.setWeapon(this);
   }
 
@@ -1129,6 +1130,7 @@ export class WeaponSystem {
 
   update(dt) {
     if (this.cooldown > 0) this.cooldown -= dt;
+    if (this._boltLock > 0) this._boltLock -= dt;
     if (this.grenadeCD > 0) this.grenadeCD -= dt;
     if (this.molotovCD > 0) this.molotovCD -= dt;
     if (this._swing > 0) this._swing -= dt;
@@ -1142,6 +1144,7 @@ export class WeaponSystem {
     // ADS / scope
     const d = this.def();
     this.ads = this.game.input.buttons[2] && !d.melee && d.class !== 'builder' && (d.class !== 'tool' || d.zoom); // binoculars (zoom tool) can ADS; flashlight can't
+    if (this._boltLock > 0 && d.scope) this.ads = false; // working the bolt kicks you out of the scope until the cycle finishes
     const baseFov = (this.game.settings && this.game.settings.data.fov) || 80;
     const targetFov = this.ads ? (d.adsFov || 60) : baseFov;
     this.fov = damp(this.fov, targetFov, 16, dt);

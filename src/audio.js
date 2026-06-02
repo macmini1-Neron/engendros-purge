@@ -236,6 +236,7 @@ export class AudioManager {
 
   reloadClick() { this.noise(0.04, 0.3, 'bandpass', 2600, 3); }
   reloadIn() { this.tone(180, 0.08, 'square', 0.25); this.noise(0.05, 0.25, 'lowpass', 500, 1); }
+  boltCycle() { this.noise(0.05, 0.28, 'bandpass', 1700, 4); setTimeout(() => { this.noise(0.06, 0.32, 'bandpass', 2200, 5); this.tone(150, 0.05, 'square', 0.14); }, 130); } // bolt lift-pull then push-lock
   dryFire() { this.noise(0.03, 0.25, 'bandpass', 3200, 4); }
 
   // ---- M2HB .50 cal: heavy industrial layered sound (close perspective) ----
