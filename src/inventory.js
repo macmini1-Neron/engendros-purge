@@ -378,16 +378,20 @@ export class Inventory {
     }
     if (used) this._consumeSlot(slotIdx);
   }
-  // E at the rooftop .50-cal while holding a .50-cal ammo can: reload the gun, consume the can.
-  // Returns true if it handled the press (so the E chain stops before trying to mount).
+  // E at the rooftop .50-cal while holding a .50-cal ammo can. Holding the can at the gun ALWAYS
+  // claims the press — refill the belt if it's low, or just a "full" hint — so you never mount with
+  // a can in hand (switch to a weapon to man it). Returns true if it handled the press.
   tryReloadFiftyCan() {
     const c = this.curItem();
     if (!c || c.kind !== 'fiftyammo') return false;
     const gun = this.game.mountedGun;
-    if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(this.game.player.pos) || gun.ammo >= gun.maxAmmo) return false;
-    if (gun.reloadFromCan()) { this._consumeSlot(c.slot); return true; }
-    return false;
+    if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(this.game.player.pos)) return false;
+    if (gun.ammo >= gun.maxAmmo) { this.game.hud.toast('.50 cal ammo full', 0xb88a3a); return true; } // claim the press → no mount
+    if (gun.reloadFromCan()) this._consumeSlot(c.slot);
+    return true;
   }
+  // holding a .50-cal ammo can right now? (swaps the gun's mount prompt for a refill prompt)
+  isHoldingFiftyCan() { const c = this.curItem(); return !!(c && c.kind === 'fiftyammo'); }
   _useRadio(slotIdx) { this.game.loot.requestSupplyDrop(); this.game.audio.buy(); this.game.hud.toast('Supply drop inbound!', 0x6fd0e8); this._consumeSlot(slotIdx); }
   _throwFlare(slotIdx) { this.game.weapons.flares = (this.game.weapons.flares || 0) + 1; this.game.throwFlare(true); this._consumeSlot(slotIdx); }
   // throwables: hold LMB to arm (committed -> can't scroll away), release to throw

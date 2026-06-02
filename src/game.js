@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 22:05';
+const GAME_BUILD = '2026-06-02 22:14';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -723,6 +723,11 @@ class Game {
       this.hud.setInteract('E exit · Q seat' + seatHint);
     } else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) {
       this.hud.setInteract('Press <b>E</b> to commandeer the T-90M');
+    } else if (this.inventory.isHoldingFiftyCan() && this.mountedGun.near(this.player.pos)) {
+      // holding the ammo can at the gun: refill, never mount (switch to a weapon to man it)
+      this.hud.setInteract(this.mountedGun.ammo >= this.mountedGun.maxAmmo
+        ? '.50 cal full — switch weapon to man it'
+        : 'Press <b>E</b> to refill the .50 cal');
     } else if (_nearMountedGun) {
       this.hud.setInteract('Press <b>E</b> to man the .50 cal — 250 rounds, overheats');
     } else if (this.player._splintT > 0) {
