@@ -267,11 +267,11 @@ export class LootManager {
       // ---- lid hinge (back, along X) + knuckles ----
       const hg = new THREE.CylinderGeometry(0.012, 0.012, 0.46, 8); b.geo(hg, 0, 0.12, -0.105, mt, { rz: Math.PI / 2 }); hg.dispose();
       for (const hx of [-0.18, 0, 0.18]) b.box(0.04, 0.04, 0.03, hx, 0.12, -0.10, mtDk);
-      // ---- front toggle latch (center of the lid lip) ----
-      b.box(0.11, 0.06, 0.04, 0, 0.10, 0.108, mt);                      // latch backplate
-      b.box(0.08, 0.05, 0.05, 0, 0.118, 0.118, mtHi);                   // upper catch (lit)
-      b.box(0.07, 0.10, 0.03, 0, 0.05, 0.13, mtDk, { rz: 0.06 });       // toggle lever hanging down
-      b.box(0.06, 0.025, 0.045, 0, -0.005, 0.126, mtHi);                // hook tip
+      // ---- toggle latch on the RIGHT end (like the real M2A1) — clear of the front stencil ----
+      b.box(0.05, 0.22, 0.10, 0.246, -0.01, 0, mt);                     // latch backplate on the right end face
+      b.box(0.055, 0.05, 0.07, 0.256, 0.075, 0, mtHi);                  // upper catch (lit)
+      b.box(0.045, 0.12, 0.05, 0.262, -0.04, 0, mtDk, { rz: 0.1 });     // toggle lever
+      b.box(0.04, 0.03, 0.06, 0.256, -0.12, 0, mtHi);                   // hook tip
       // ---- folding wire bail handle (pivots at back-top corners, arches forward over the lid) ----
       b.box(0.035, 0.05, 0.035, -0.215, 0.165, -0.05, mt);             // left pivot post
       b.box(0.035, 0.05, 0.035, 0.215, 0.165, -0.05, mt);             // right pivot post
