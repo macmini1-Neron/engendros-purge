@@ -23,7 +23,7 @@ export const WEAPONS = {
   ppsh:     { name: 'PPSh-41',    class: 'smg', shape: 'drum', dmg: 16, rpm: 1000, auto: true,  mag: 71, reserveMax: 142, reload: 3.2, spread: 0.028,  bloom: 0.022, pellets: 1, recoil: 0.45, range: 150, adsFov: 64, price: 1600, loot: 8,  recoilClimb: 0.04, recoilYaw: 0.55, color: 0x2f2218, accent: 0xb88a3a },
   // --- rifles ---
   carbine:  { name: 'M1 Carbine', class: 'rifle', shape: 'carbine', dmg: 32, rpm: 400, auto: false, mag: 15, reserveMax: 90, reload: 1.7, spread: 0.01,  bloom: 0.012, pellets: 1, recoil: 0.55, range: 240, adsFov: 55, price: 1100, loot: 10, color: 0x4a3422, accent: 0x2a2a30 },
-  garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 80, rpm: 270, auto: false, mag: 8,  reserveMax: 64,  reload: 2.6, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.6, range: 340, adsFov: 48, price: 2000, loot: 7,  color: 0x52371f, accent: 0x222226 },
+  garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 80, rpm: 270, auto: false, mag: 8,  reserveMax: 64,  reload: 2.6, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.6, range: 340, adsFov: 48, price: 2000, loot: 7,  enBloc: true, color: 0x52371f, accent: 0x222226 },
   stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 38, rpm: 560, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.85, range: 260, adsFov: 54, price: 2400, loot: 6,  recoilClimb: 0.03, recoilYaw: 0.10, color: 0x33373d, accent: 0x6e4a28 },
   // --- shotguns ---
   shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 2.6, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
@@ -916,7 +916,12 @@ export class WeaponSystem {
     this.reloading = d.reload * this.game.player.reloadMult; this.game.audio.reloadIn();
   }
   _finishReload() {
-    const key = this.cur, need = this.magMax[key] - this.mag[key];
+    const key = this.cur, d = WEAPONS[key];
+    if (d.enBloc) { // en-bloc clip: load a fresh full clip and discard any partial mag (can't top off)
+      const take = Math.min(this.magMax[key], this.reserve[key]); this.reserve[key] -= take; this.mag[key] = take;
+      this.game.audio.reloadClick(); this.game.hud.setWeapon(this); return;
+    }
+    const need = this.magMax[key] - this.mag[key];
     if (this.reserve[key] === Infinity) this.mag[key] = this.magMax[key];
     else { const take = Math.min(need, this.reserve[key]); this.mag[key] += take; this.reserve[key] -= take; }
     this.game.audio.reloadClick(); this.game.hud.setWeapon(this);
@@ -963,6 +968,7 @@ export class WeaponSystem {
 
   _fire(d) {
     this.mag[this.cur]--; this.cooldown = 60 / d.rpm;
+    if (d.enBloc && this.mag[this.cur] <= 0) this.game.audio.garandPing(); // empty clip ejects with the iconic ping
     const _climb = 1 + this._recoilStreak * (d.recoilClimb || 0);
     this.bloom = Math.min(this.bloom + d.bloom * _climb, 0.09);
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
