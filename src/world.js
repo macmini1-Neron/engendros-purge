@@ -306,6 +306,7 @@ export class BuildManager {
 
   validateAt(pos, yaw, kind) { // host-authoritative: geometry/cap/overlap only (holding the material is a LOCAL check in place()/the ghost)
     if (this.structures.length >= STRUCT_CAP) return false;
+    if (STRUCT_DEFS[kind] && STRUCT_DEFS[kind].max && this.structures.filter((s) => s.kind === kind).length >= STRUCT_DEFS[kind].max) return false; // per-kind cap, host-authoritative (e.g. radio max 4)
     if (!pos) return false;
     const sd = STRUCT_DEFS[kind], fp = this._footprint(kind, yaw), top = pos.y + sd.h;
     for (const bx of this.game.world.boxes) {                            // map + placed hard structures
@@ -451,10 +452,8 @@ export class BuildManager {
   // apply authoritative state to a radio (local audio follows). Used by host/solo + remote clients.
   applyRadioSet(d) {
     const s = this.structures.find((x) => x.id === d.id && x.kind === 'radio'); if (!s) return;
-    const changedStation = s.station !== d.station;
     s.on = !!d.on; s.station = d.station | 0;
-    if (s.on) this._radioStart(s); else this._radioStop(s);
-    if (s.on && changedStation) this._radioStart(s); // retune (updates src + plays)
+    if (s.on) this._radioStart(s); else this._radioStop(s); // _radioStart sets src on station change + plays — one call, no double play()
     if (this.game.audio && this.game.audio.uiClick) this.game.audio.uiClick();
   }
 
@@ -481,12 +480,19 @@ export class BuildManager {
     else this.attackStructure(s, dmg, null);
   }
 
+  _disposeMesh(s) { // free a removed structure's GPU resources
+    if (!s.mesh) return;
+    this.scene.remove(s.mesh);
+    if (STRUCT_DEFS[s.kind] && STRUCT_DEFS[s.kind].prop) { // prop models (radio) own unique geometry/materials/CanvasTexture → deep-dispose
+      s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    } else if (s.mesh.material) { s.mesh.material.dispose(); } // sandbag/wire/wood share this._geos[kind] geometry → dispose only the per-instance material
+  }
   destroyStructure(s, cause) {
     const i = this.structures.indexOf(s); if (i < 0) return;
     this.structures.splice(i, 1);
     this._radioStop(s); if (s.audio) { try { s.audio.src = ''; } catch (e) {} s.audio = null; } // radio prop: kill its stream on destroy
     if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
-    if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
+    this._disposeMesh(s);
     const fx = this.game.effects;
     if (fx) { fx.stuffing && fx.stuffing(s.pos, STRUCT_FX_COLOR[s.kind] || 0xcdb887, 12, 4); fx.impact && fx.impact(s.pos, new THREE.Vector3(0, 1, 0), 'dust'); }
     if (this.game.audio && this.game.audio.noise) this.game.audio.noise(0.2, 0.5, 'lowpass', 280, 1);
@@ -512,7 +518,7 @@ export class BuildManager {
   reset() {
     for (const s of this.structures) {
       if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
-      if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
+      this._disposeMesh(s);
       if (s.audio) { try { s.audio.pause(); s.audio.src = ''; } catch (e) {} } // radio props: stop streams on run reset
     }
     this.structures.length = 0;
