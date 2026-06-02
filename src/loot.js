@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, pick, ri, rr, voxelMaterial } from './util.js';
 import { FOOD_RESTORE } from './tuning.js';
 import { KEY_CASH, SUPPLY_CASH } from './economy.js';
-import { _strut, buildChuteRig, buildFlare, buildSu24, buildSupplyCrate } from './props.js';
+import { _strut, buildChuteRig, buildFieldRadio, buildFlare, buildSu24, buildSupplyCrate } from './props.js';
 import { FIREARM_KEYS, WEAPONS, buildViewmodel } from './weapons.js';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private; duplicated to avoid a cross-module import)
@@ -95,6 +95,7 @@ export class LootManager {
     const b = new MeshBuilder();
     if (WEAPONS[kind]) { const m = buildViewmodel(WEAPONS[kind]); m.position.set(0, 0, 0); m.rotation.set(0.3, 0.6, 0); m.scale.setScalar(0.5); return m; } // a dropped weapon, as a ground pickup
     if (kind === 'key') return this._keyMesh();
+    if (kind === 'radio') { const m = buildFieldRadio(); m.scale.multiplyScalar(0.5); return m; } // field-radio material as a ground pickup (from supply drops)
     if (kind === 'airbeacon') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
       const olive = 0x3f4a2c, oHi = 0x515c39, oLo = 0x2c331d, blk = 0x16160f, metal = 0x8a8f86, scr = 0x9be86a, btn = 0x202018;
       b.box(0.34, 0.66, 0.16, 0, 0.05, 0, olive, { tint: 0.03 });            // body
@@ -441,12 +442,23 @@ export class LootManager {
   // players see ONE shared pile (with ids). The opener's instant cash goes to that opener: locally for the
   // host/solo opener, or via a 'dropcash' message for a client opener (`opener` = the client's peer id).
   // Solo (mp inactive) keeps the old local spill + local cash.
+  // Count radios currently in play — placed buildings + ground pickups + the (host/solo) backpack — so the
+  // supply-drop roll never floods the field, yet a fresh one CAN drop again once the old one is gone/destroyed.
+  // This is a LIVE count (not a one-shot "already dropped" flag), so destroying your radio re-enables drops.
+  _radiosInPlay() {
+    let n = 0;
+    const b = this.game.build; if (b && b.structures) n += b.structures.filter((s) => s.kind === 'radio').length;
+    if (this.pickups) n += this.pickups.filter((p) => p.kind === 'radio').length;
+    const inv = this.game.inventory; if (inv && inv.slots) n += inv.slots.filter((s) => s && s.kind === 'radio').length;
+    return n;
+  }
   _spillDropLoot(pos, give, opener = null) {
     const cx = pos.x, cz = pos.z, mp = this.game.mp;
     const gun = FIREARM_KEYS[Math.floor(Math.random() * FIREARM_KEYS.length)]; // 100%: one guaranteed random firearm, any kind (rolled on the host)
     const items = [[gun, 1], ['medkit', 60], ['medkit', 60], ['armor', 60], ['armor', 60], ['ammo', 1], ['ammo', 1], ['food', FOOD_RESTORE]];
     const g = give || {};
     for (const k of ['sandbag', 'wire', 'wood']) for (let n = 0; n < (g[k] || 0); n++) items.push([k, 1]); // ~2 random fort. mats
+    if (this._radiosInPlay() === 0 && chc(0.30)) items.push(['radio', 1]); // 📻 30% chance to drop a Radio — only when none is currently in play
     items.forEach(([kind, value], i) => {
       const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
       this.spawnNetPickup(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, value, 75); // 75s life — shared (host) / local (solo)
