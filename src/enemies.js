@@ -5,6 +5,7 @@ import { ENEMY_BURN_SLOW } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { _tankWrecks, animateTank, buildTank, buildTankWreck, tankGroundFX, updateTankLights } from './bosstank.js';
 import { CapturedTank } from './vehicles.js';
+import { buildNavGrid, findPath } from './pathing.js';
 
 
 // ---------------------------------------------------------------------------
@@ -217,6 +218,7 @@ class Enemy {
     this.baseSpeed = speed;   // phase speed scaling multiplies this (p1 ×1.0, p2 ×1.12, p3 ×1.20)
     this.shotsLeft = 0; this.shotCD = 0; this._chargeDur = 0.85; // phase-1 blaster burst
     this.sweepT = 0; this.sweepActive = false; this.sweepBase = 0; this.sweepPass = 0; // phase-2/3 sweep (later step)
+    this._path = null; this._pathIdx = 0; this._pathT = 0; // boss grid-A* nav state (Tolo)
     if (this.mesh.material && this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
     this.mesh.visible = true; this.mesh.scale.setScalar(def.scale); this.mesh.position.copy(pos);
     if (def.tank) {
@@ -245,6 +247,7 @@ export class EnemyManager {
     this._ghostBeam = null; // CLIENT visual-only sweep beam
     this._ghostFires = []; // CLIENT visual-only fire-zone flicker markers
     this._ghostAimRing = null; // CLIENT visual-only tank cannon aim ring
+    this._navGrid = null; // boss A* occupancy grid (built once, lazily, on first boss spawn)
   }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
@@ -271,6 +274,7 @@ export class EnemyManager {
       e.mesh = e.tankGroup; e.isTank = true;
     }
     e.spawn(typeKey, def, col, name, pos, hp, speed);
+    if (typeKey === 'boss' && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once Tolo arrives
     e.id = ++this._idc;
     this.active.push(e);
     this.game.audio.enemyGrowl();
@@ -315,6 +319,11 @@ export class EnemyManager {
       let tgt = pp, tgtId = 'host'; const _mp = this.game.mp; if (_mp && _mp.active && _mp.isHost) { const _np = _mp.nearestPlayer(e.pos.x, e.pos.z); if (_np) { tgt = _np.pos; tgtId = _np.id; } } e._tgtId = tgtId;
       let dx = tgt.x - e.pos.x, dz = tgt.z - e.pos.z;
       const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;
+
+      // BOSS TOLO: grid-A* navigation — steer toward the next waypoint so the
+      // giant routes AROUND buildings instead of wedging in a corner. Falls back
+      // to the direct heading (below) when close or in clear line of sight.
+      if (e.def.boss) { const wp = this._bossWaypoint(e, tgt, dist, dt); if (wp) { const wxp = wp.x - e.pos.x, wzp = wp.z - e.pos.z, wlp = Math.hypot(wxp, wzp) || 1; dx = wxp / wlp; dz = wzp / wlp; } }
 
       // separation
       let sx = 0, sz = 0;
@@ -628,6 +637,34 @@ export class EnemyManager {
     if (hitPoint) this.game.effects.stuffing(hitPoint, e.col.body, 2, 2);
     if (Math.random() < 0.25) this.game.audio.tone(420, 0.04, 'square', 0.16);
   }
+  // Tolo no longer has hard immunity: a bullseye-in-window hit OR a bazooka does FULL/near-full
+  // damage ("effective"), everything else only chips (0.2×). Give the player a clear cue — a
+  // satisfying thunk + a yellow crosshair flash — routed to whoever actually landed the hit.
+  _bossHit(e, hitPoint, effective, attacker) {
+    if (!effective) { this._bossDeflect(e, hitPoint); return; }           // weak chip — reuse the tink/puff
+    if (hitPoint) this.game.effects.stuffing(hitPoint, e.col.body, 6, 4);  // bigger stuffing burst (host-side visual)
+    if (attacker === 'host') { this.game.audio.bossHit(); this.game.hud.bossHitCue(); } // solo / host's own hit
+    else { const mp = this.game.mp; if (mp && mp.active && mp.isHost && mp.net) mp.net.sendTo(attacker, 'bosshit', {}); } // co-op: cue the shooter's client
+  }
+  // BOSS TOLO grid-A* steering target. Returns the next waypoint to walk toward, or null to
+  // fall back to the direct beeline (when close, in clear line of sight, or no path exists).
+  _bossWaypoint(e, tgt, dist, dt) {
+    if (dist < 6) { e._path = null; return null; }                        // close — let direct steering + collision finish
+    const o = this._navEye || (this._navEye = new THREE.Vector3());
+    const d = this._navDir || (this._navDir = new THREE.Vector3());
+    o.set(e.pos.x, 1.6, e.pos.z); d.set(tgt.x - e.pos.x, 0, tgt.z - e.pos.z).normalize();
+    if (!this.world.rayHit(o, d, dist - 0.5)) { e._path = null; return null; } // clear shot to the player → beeline
+    e._pathT -= dt;
+    if (e._pathT <= 0 || !e._path || e._pathIdx >= e._path.length) {       // recompute periodically / when consumed
+      e._pathT = 0.5;
+      if (!this._navGrid) this._navGrid = buildNavGrid(this.world);
+      e._path = findPath(this._navGrid, e.pos.x, e.pos.z, tgt.x, tgt.z); e._pathIdx = 0;
+    }
+    if (!e._path || !e._path.length) return null;
+    const reach = this._navGrid.cell * 0.9;
+    while (e._pathIdx < e._path.length) { const w = e._path[e._pathIdx]; if (Math.hypot(w.x - e.pos.x, w.z - e.pos.z) < reach) e._pathIdx++; else break; }
+    return e._pathIdx < e._path.length ? e._path[e._pathIdx] : null;
+  }
 
   // Phase 2/3: lock the player's position, then sweep a continuous beam through a 45° wedge.
   // The player must run out of the wedge. Range = 80% (p2) / 100% (p3) of the arena width.
@@ -666,7 +703,7 @@ export class EnemyManager {
     const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
     const dir = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
     let len = e.sweepLen;
-    if (e.phase !== 3) { const wh = this.game.world.rayHit(belly, dir, len); if (wh) len = Math.max(2, belly.distanceTo(wh.point) - 0.2); } // phases 1/2 can't burn through walls (phase 3 does)
+    { const wh = this.game.world.rayHit(belly, dir, len); if (wh) len = Math.max(2, belly.distanceTo(wh.point) - 0.2); } // all phases stop at walls — cover always works
     const end = belly.clone().addScaledVector(dir, len);
     const thick = e.phase === 3 ? 0.9 : 0.55;
     e._beam.position.copy(belly).add(end).multiplyScalar(0.5);
@@ -688,7 +725,7 @@ export class EnemyManager {
     const beamHit = (pid, px, pz) => {
       const t = clamp((px - belly.x) * dir.x + (pz - belly.z) * dir.z, 0, len);
       const dl = Math.hypot(px - (belly.x + dir.x * t), pz - (belly.z + dir.z * t));
-      if (dl < reach && !(cds[pid] > 0)) { cds[pid] = 0.7; this.game._hurtTarget(pid, e.phase === 3 ? 200 : 55); }
+      if (dl < reach && !(cds[pid] > 0)) { cds[pid] = 0.7; this.game._hurtTarget(pid, e.phase === 3 ? 85 : 55); }
     };
     const mp = this.game.mp;
     if (mp && mp.active && mp.isHost) {
@@ -1071,15 +1108,19 @@ export class EnemyManager {
       }
       return false; // 'contact' n/a for the tank
     }
-    // BOSS TOLO: immune everywhere & always EXCEPT a hit on the belly bullseye while it is charging a shot.
+    // BOSS TOLO: no hard immunity (except brief phase-change i-frames). A bullseye hit while it
+    // charges = full damage; the bazooka ('rocket') = near-full (0.9×, the one anti-Tolo weapon);
+    // everything else only chips (0.2×). Headshot ×2 is suppressed on the boss in weapons.js.
     if (e.def.boss) {
-      if (e.invuln > 0) { this._bossDeflect(e, hitPoint); return false; }      // phase-change i-frames
+      if (e.invuln > 0) { this._bossDeflect(e, hitPoint); return false; }      // phase-change i-frames: still immune
       let onTarget = false;
       if (e.charging > 0 && hitPoint && e._tolGlow) {
         const tp = e._tolGlow.getWorldPosition(this._tv || (this._tv = new THREE.Vector3()));
         onTarget = hitPoint.distanceTo(tp) < 1.4 * e.scale;
       }
-      if (!onTarget) { this._bossDeflect(e, hitPoint); return false; }         // bounced off the plush
+      const effective = onTarget || source === 'rocket';
+      amount *= onTarget ? 1 : (source === 'rocket' ? 0.9 : 0.2);             // bullseye=1 · bazooka=0.9 · else=0.2
+      this._bossHit(e, hitPoint, effective, attacker);                        // thunk + yellow crosshair, or weak tink
     }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
     if (e.hp <= 0) {
@@ -1112,11 +1153,11 @@ export class EnemyManager {
     return false;
   }
 
-  damageInRadius(center, radius, dmg, except = null) {
+  damageInRadius(center, radius, dmg, except = null, source = 'explosion') {
     for (const e of [...this.active]) {
       if (!e.alive || e === except) continue;
       const d = Math.hypot(e.pos.x - center.x, e.pos.z - center.z);
-      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), 'explosion', center.clone ? center.clone() : center);
+      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center);
     }
   }
   // --- Tank damage helpers (Task 4) ---

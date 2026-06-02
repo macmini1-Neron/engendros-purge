@@ -586,6 +586,7 @@ export class MP {
         case 'shake': if (g.engine.shake) g.engine.shake(d.a || 0.2); break;
       }
     });
+    n.on('bosshit', () => { g.audio.bossHit(); g.hud.bossHitCue(); }); // host → THIS shooter: your hit on Tolo was effective (yellow crosshair + thunk)
     n.on('shot', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate's gunfire: muzzle + tracer + shot sound
       const muzzle = V(d.p), dir = V(d.d).normalize();
       g.effects.muzzleFlash(muzzle, dir, (d.cls === 'shotgun' || d.cls === 'launcher') ? 1.6 : 1);

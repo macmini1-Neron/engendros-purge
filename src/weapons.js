@@ -1218,10 +1218,11 @@ export class WeaponSystem {
         this.game.mp.claimPlayerHit(pHit.id, d.dmg * mult * (pHit.head ? 2.0 : 1.0));
         this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
       } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
-        const dmg = d.dmg * mult * (eHit.head ? 2.0 : 1.0);
+        const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss — head = body
+        const dmg = d.dmg * mult * (hs ? 2.0 : 1.0);
         const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
         this.game.effects.tracer(muzzle, eHit.point, d.accent);
-        if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
+        if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
         else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
       } else if (wHit) {
         this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
@@ -1522,7 +1523,7 @@ export class WeaponSystem {
           this.game._spawnMolotovPool(mpos);
         } else {
           this.game.effects.explosion(g.mesh.position.clone(), g.radius);
-          this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg);
+          this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg, null, g.rocket ? 'rocket' : 'explosion'); // bazooka does near-full dmg to Tolo (0.9×), grenades chip like bullets (0.2×)
           // explosive Full-FF: grenades/rockets damage self + teammates (host-authoritative). No 'fx' broadcast — other players see the boom via their 'proj' ghost detonation.
           const _mp = this.game.mp; const gp = g.mesh.position;
           if (!_mp.active || _mp.isHost) { this.game._explodeHurt(gp.clone(), g.radius, g.dmg); this.game.loot.clearPickupsInRadius(gp.x, gp.z, g.radius); } // host/solo: nuke ground items in the blast (client thrower clears via the host 'splash' path)
@@ -2344,11 +2345,12 @@ export class MountedGun {
       this.game.effects.tracer(muzzleFx, end, tracerColor);
       this.game.hud.hitmarker(false);
     } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
-      const dmg = this.dmg * (eHit.head ? 1.6 : 1) * this.game.player.damageMult;
+      const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss
+      const dmg = this.dmg * (hs ? 1.6 : 1) * this.game.player.damageMult;
       const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
       end = eHit.point;
       this.game.effects.tracer(muzzleFx, end, tracerColor);
-      if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
+      if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
     } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzleFx, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) this.game.world.hitFAB(wHit.box.explodable, this.dmg, wHit.point); }
     else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzleFx, end, tracerColor); }
     if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, g: this.id, o: this._netVec(muzzleFx), d: this._netVec(barrelFwd, 3), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor, rs: caseSeed, ammo: this.ammo }); // teammates see/hear the fixed MG from the physical barrel/ejection port; damage stays host-authoritative

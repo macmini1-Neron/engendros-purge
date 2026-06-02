@@ -172,7 +172,12 @@ export class HUD {
     const f = clamp(frac, 0, 1); this.el.tankhpfill.style.width = f * 100 + '%';
     this.el.tankhpfill.style.background = f > 0.5 ? 'linear-gradient(90deg,#4caf50,#cddc39)' : (f > 0.25 ? 'linear-gradient(90deg,#ffb300,#ffd54f)' : 'linear-gradient(90deg,#e53935,#ff7043)');
   }
-  hitmarker(kill) { const h = this.el.hitmarker; h.classList.toggle('kill', !!kill); h.style.transition = 'none'; h.style.opacity = '1'; this._hitT = 0.12; }
+  hitmarker(kill) { const h = this.el.hitmarker; h.classList.remove('boss'); h.classList.toggle('kill', !!kill); h.style.transition = 'none'; h.style.opacity = '1'; this._hitT = 0.12; }
+  // Effective hit on boss Tolo (bullseye-in-window / bazooka): yellow hitmarker + a brief yellow crosshair tint.
+  bossHitCue() {
+    const h = this.el.hitmarker; h.classList.remove('kill'); h.classList.add('boss'); h.style.transition = 'none'; h.style.opacity = '1'; this._hitT = 0.18;
+    const c = this.el.cross; if (c) { c.classList.add('boss-hit'); clearTimeout(this._crossT); this._crossT = setTimeout(() => c.classList.remove('boss-hit'), 180); }
+  }
   damageFlash() { this.el.vignette.style.transition = 'box-shadow .05s'; this.el.vignette.style.boxShadow = 'inset 0 0 220px 60px rgba(220,30,20,0.55)'; setTimeout(() => { this.el.vignette.style.transition = 'box-shadow .4s'; this.setHealth(this.game.player.hp, this.game.player.maxHp); }, 60); }
   setBurn(burnT) {
     if (!this.el.firevig) return;
@@ -192,7 +197,7 @@ export class HUD {
   }
   setInteract(text) { if (text) { this.el.interact.innerHTML = text; this.el.interact.classList.add('show'); } else this.el.interact.classList.remove('show'); }
   update(dt) {
-    if (this._hitT > 0) { this._hitT -= dt; if (this._hitT <= 0) { this.el.hitmarker.style.transition = 'opacity .25s'; this.el.hitmarker.style.opacity = '0'; } }
+    if (this._hitT > 0) { this._hitT -= dt; if (this._hitT <= 0) { this.el.hitmarker.style.transition = 'opacity .25s'; this.el.hitmarker.style.opacity = '0'; this.el.hitmarker.classList.remove('boss'); } }
     if (this._msgT > 0) { this._msgT -= dt; if (this._msgT <= 0) this.el.msg.classList.remove('show'); }
   }
 }

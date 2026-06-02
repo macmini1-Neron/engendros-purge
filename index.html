@@ -117,6 +117,8 @@
     #hitmarker .h { top: 50%; width: 100%; height: 3px; transform: translateY(-50%); }
     #hitmarker .v { left: 50%; width: 3px; height: 100%; transform: translateX(-50%); }
     #hitmarker.kill i { background: var(--red); }
+    #hitmarker.boss i { background: #ffd23f; box-shadow: 0 0 6px #b8860b; } /* effective hit on boss Tolo */
+    #cross.boss-hit i, #cross.boss-hit .dot { background: #ffd23f; box-shadow: 0 0 5px #b8860b; }
 
     /* scope overlay (sniper ADS) */
     #scope { position: fixed; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .12s;

@@ -569,6 +569,8 @@ export class AudioManager {
 
   hitMarker() { this.tone(1400, 0.04, 'square', 0.2); }
   headshot() { this.tone(2000, 0.05, 'square', 0.3); this.tone(2600, 0.05, 'square', 0.2); }
+  // Effective hit on boss Tolo (bullseye-in-window or bazooka) — a meaty thunk + bright ding.
+  bossHit() { this.tone(180, 0.09, 'sawtooth', 0.32); this.tone(880, 0.07, 'triangle', 0.26); this.tone(1320, 0.06, 'sine', 0.2); }
 
   enemyHurt() {
     // squeaky plush "oof"
