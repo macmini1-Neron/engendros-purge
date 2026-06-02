@@ -452,7 +452,7 @@ export class Inventory {
     const loot = this.game.loot, grp = this.game.weapons.group;
     const makers = {
       medkit: () => loot._pickupMesh('medkit'), food: () => loot._pickupMesh('food'), armor: () => loot._pickupMesh('armor'),
-      ammo: () => loot._pickupMesh('ammo'), splint: () => loot._pickupMesh('splint'), airbeacon: () => loot._pickupMesh('airbeacon'),
+      ammo: () => loot._pickupMesh('ammo'), fiftyammo: () => loot._pickupMesh('fiftyammo'), splint: () => loot._pickupMesh('splint'), airbeacon: () => loot._pickupMesh('airbeacon'),
       molotov: () => loot._pickupMesh('molotov'), flare: () => buildFlare(), grenade: () => this._buildGrenadeModel(),
       sandbag: () => buildViewmodel({ shape: 'build_sandbag', color: 0xcdb887, accent: 0xb89a5e }),
       wire: () => buildViewmodel({ shape: 'build_wire', color: 0x8a8f98, accent: 0x5a4a32 }),
