@@ -360,6 +360,12 @@ export class Inventory {
     else if (kind === 'food') { used = p.eatFood(val); }
     else if (kind === 'armor') { if (p.armor >= p.armorMax) { this.game.hud.toast('Armor full', 0x6fa8e8); used = false; } else { p.armor = Math.min(p.armorMax, p.armor + val); this.game.hud.setArmor(p.armor, p.armorMax); this.game.audio.buy(); this.game.hud.toast('+' + val + ' Armor', 0x6fa8e8); } }
     else if (kind === 'ammo') { this.game.weapons.refillAll(); this.game.audio.reloadClick(); this.game.hud.toast('Ammo refilled', 0xb88a3a); }
+    else if (kind === 'fiftyammo') {
+      const gun = this.game.mountedGun;
+      if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(p.pos)) { this.game.hud.toast('Stand at the .50 cal to reload it', 0xd23a2a); used = false; }
+      else if (gun.ammo >= gun.maxAmmo) { this.game.hud.toast('.50 cal ammo full', 0xb88a3a); used = false; }
+      else { used = gun.reloadFromCan(); }   // success toasts + racks inside reloadFromCan
+    }
     else if (kind === 'splint') {
       if (!p.legBroken) { this.game.hud.toast('Leg is fine -- saved', 0x7fd06a); used = false; }
       else { p.splints = (p.splints || 0) + 1; const t0 = p._splintT; p.applySplint(); used = p._splintT > t0; if (!used) p.splints -= 1; }
