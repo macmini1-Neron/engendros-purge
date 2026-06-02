@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 21:35';
+const GAME_BUILD = '2026-06-02 22:05';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -173,6 +173,7 @@ class Game {
         if (_ct && this.player.inTank === _ct) { _ct.leave(); return; }
         // ---- .50 cal + loot ----
         if (this.player.mountedGun) this.player.mountedGun.dismount();
+        else if (this.inventory.tryReloadFiftyCan()) { /* reloaded the .50-cal from a carried ammo can */ }
         else if (this.mountedGun.canMount(this.player.pos)) this.mountedGun.mount();
         // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
         else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }

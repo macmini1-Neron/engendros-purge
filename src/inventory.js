@@ -366,11 +366,27 @@ export class Inventory {
     else if (kind === 'food') { used = p.eatFood(val); }
     else if (kind === 'armor') { if (p.armor >= p.armorMax) { this.game.hud.toast('Armor full', 0x6fa8e8); used = false; } else { p.armor = Math.min(p.armorMax, p.armor + val); this.game.hud.setArmor(p.armor, p.armorMax); this.game.audio.buy(); this.game.hud.toast('+' + val + ' Armor', 0x6fa8e8); } }
     else if (kind === 'ammo') { this.game.weapons.refillAll(); this.game.audio.reloadClick(); this.game.hud.toast('Ammo refilled', 0xb88a3a); }
+    else if (kind === 'fiftyammo') {
+      const gun = this.game.mountedGun;
+      if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(p.pos)) { this.game.hud.toast('Stand at the .50 cal to reload it', 0xd23a2a); used = false; }
+      else if (gun.ammo >= gun.maxAmmo) { this.game.hud.toast('.50 cal ammo full', 0xb88a3a); used = false; }
+      else { used = gun.reloadFromCan(); }   // success toasts + racks inside reloadFromCan
+    }
     else if (kind === 'splint') {
       if (!p.legBroken) { this.game.hud.toast('Leg is fine -- saved', 0x7fd06a); used = false; }
       else { p.splints = (p.splints || 0) + 1; const t0 = p._splintT; p.applySplint(); used = p._splintT > t0; if (!used) p.splints -= 1; }
     }
     if (used) this._consumeSlot(slotIdx);
+  }
+  // E at the rooftop .50-cal while holding a .50-cal ammo can: reload the gun, consume the can.
+  // Returns true if it handled the press (so the E chain stops before trying to mount).
+  tryReloadFiftyCan() {
+    const c = this.curItem();
+    if (!c || c.kind !== 'fiftyammo') return false;
+    const gun = this.game.mountedGun;
+    if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(this.game.player.pos) || gun.ammo >= gun.maxAmmo) return false;
+    if (gun.reloadFromCan()) { this._consumeSlot(c.slot); return true; }
+    return false;
   }
   _useRadio(slotIdx) { this.game.loot.requestSupplyDrop(); this.game.audio.buy(); this.game.hud.toast('Supply drop inbound!', 0x6fd0e8); this._consumeSlot(slotIdx); }
   _throwFlare(slotIdx) { this.game.weapons.flares = (this.game.weapons.flares || 0) + 1; this.game.throwFlare(true); this._consumeSlot(slotIdx); }
@@ -458,7 +474,7 @@ export class Inventory {
     const loot = this.game.loot, grp = this.game.weapons.group;
     const makers = {
       medkit: () => loot._pickupMesh('medkit'), food: () => loot._pickupMesh('food'), armor: () => loot._pickupMesh('armor'),
-      ammo: () => loot._pickupMesh('ammo'), splint: () => loot._pickupMesh('splint'), airbeacon: () => loot._pickupMesh('airbeacon'),
+      ammo: () => loot._pickupMesh('ammo'), fiftyammo: () => loot._pickupMesh('fiftyammo'), splint: () => loot._pickupMesh('splint'), airbeacon: () => loot._pickupMesh('airbeacon'),
       molotov: () => loot._pickupMesh('molotov'), flare: () => buildFlare(), grenade: () => this._buildGrenadeModel(),
       sandbag: () => buildViewmodel({ shape: 'build_sandbag', color: 0xcdb887, accent: 0xb89a5e }),
       wire: () => buildViewmodel({ shape: 'build_wire', color: 0x8a8f98, accent: 0x5a4a32 }),

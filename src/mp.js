@@ -595,6 +595,7 @@ export class MP {
       if (d.k === 'charge') { if (g.mountedGun && typeof g.mountedGun.animateCharge === 'function') g.mountedGun.animateCharge(); if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
       else if (d.k === 'overheat') { if (g.audio && typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (g.audio && typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); } });
     n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; if (gun && Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo); }); // slew the barrel + mirror heat/ammo so everyone sees the glow/smoke/empty box
+    n.on('fiftyrefill', (d, from) => { if (this.isHost) this._hostFiftyRefill(from); }); // client → host: reload the host-owned .50cal from a carried can
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
@@ -644,6 +645,14 @@ export class MP {
     if (want === 'mount') { if (gun.overheated || gun.ammo <= 0) { this.net.sendTo(from, 'fiftystate', { occ: gun.occupant, ammo: gun.ammo }); return; } if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { occ: gun.occupant, ammo: gun.ammo }); return; } }
     else if (want === 'dismount') { if (gun.occupant === from) gun.occupant = null; }
     this._applyFiftyState({ occ: gun.occupant, ammo: gun.ammo }); this.net.send('fiftystate', { occ: gun.occupant, ammo: gun.ammo });
+  }
+  _hostFiftyRefill(from) {
+    if (!this.isHost) return; const gun = this.game.mountedGun; if (!gun) return;
+    if (gun.ammo >= gun.maxAmmo) return;                                  // already full — the client wasted nothing it can detect; ignore
+    gun.setAmmo(gun.maxAmmo);
+    if (typeof gun.animateCharge === 'function') gun.animateCharge();     // host-local rack anim
+    this.net.send('fiftystate', { occ: gun.occupant, ammo: gun.ammo });  // sync the new belt to all clients
+    this.net.broadcast('fiftysound', { pid: this.myId, k: 'charge' });   // everyone hears/sees the rack
   }
   _applyFiftyState(d) {
     const gun = this.game.mountedGun; if (!gun) return; gun.occupant = d.occ;

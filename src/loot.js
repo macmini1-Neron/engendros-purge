@@ -17,6 +17,7 @@ export const ITEM_DEFS = {
   food:    { name: 'Field Ration', class: 'consumable', icon: '🥫', mesh: 'food',   food: 40 },
   armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50 },
   ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo' },
+  fiftyammo: { name: '.50 Cal Ammo Can', class: 'consumable', icon: '🟩', mesh: 'fiftyammo' }, // resupplies the rooftop .50-cal (M2HB) — used at the gun, not on hand weapons
   splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint' },
   airbeacon: { name: 'Vysílačka',  class: 'callable',   icon: '📡', mesh: 'airbeacon' },
   flare:   { name: 'Signal Flare', class: 'callable',   icon: '🔆', mesh: 'flare' },
@@ -239,6 +240,46 @@ export class LootManager {
       b.box(0.225, 0.07, 0.225, 0, 0, 0, label); b.box(0.20, 0.02, 0.205, 0.012, 0.06, 0, tinHi);
       return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x101808, emissiveIntensity: 0.45 }));
     }
+    if (kind === 'fiftyammo') { // US M2A1 .50-cal ammo can: olive-drab steel, hinged lid + front toggle latch, folding wire bail, yellow stencil rows
+      const od = 0x4a5a2e, odHi = 0x6a7c42, odLo = 0x32401d, odSlot = 0x1f280f, odEdge = 0x808e4c; // olive-drab steel
+      const mt = 0x6f7563, mtHi = 0x909686, mtDk = 0x383b2f;                                       // bare-steel fittings (latch/hinge)
+      const wire = 0x2b2e22;                                                                       // dark-steel wire bail handle
+      const stencil = 0xd8c038, stencilHi = 0xeede5a;                                              // yellow stencil paint
+      // ---- body ----
+      b.box(0.52, 0.32, 0.20, 0, -0.02, 0, od, { tint: 0.025 });        // main body
+      b.box(0.50, 0.05, 0.20, 0, 0.155, 0, odHi);                       // lit lid top
+      b.box(0.532, 0.035, 0.212, 0, -0.195, 0, odLo);                   // shadow base
+      b.box(0.522, 0.016, 0.205, 0, 0.10, 0, odSlot);                   // lid seam (recess)
+      b.box(0.51, 0.02, 0.205, 0, 0.125, 0, odHi);                      // lid lip (lit)
+      b.box(0.016, 0.30, 0.022, -0.255, -0.02, 0.095, odEdge);          // front-left edge highlight
+      b.box(0.016, 0.30, 0.022, 0.255, -0.02, 0.095, odEdge);          // front-right edge highlight
+      b.box(0.44, 0.24, 0.012, 0, -0.05, 0.103, odLo, { tint: 0.02 }); // recessed front stencil panel (darker inset)
+      // ---- yellow stencil rows (segmented blocks read as M2A1 markings) ----
+      const rows = [
+        { y: 0.045, segs: [[-0.13, 0.09], [-0.005, 0.05], [0.10, 0.10]] }, // 100 CRTG .50 CAL
+        { y: 0.005, segs: [[-0.04, 0.14]] },                               // LINK M9
+        { y: -0.035, segs: [[-0.08, 0.06], [0.04, 0.10]] },                // 4-BALL M33
+        { y: -0.075, segs: [[-0.10, 0.07], [0.03, 0.12]] },                // 1-TRACER M17
+        { y: -0.115, segs: [[-0.06, 0.20]] },                              // LC- lot number
+      ];
+      for (const row of rows) for (const [sx, sw] of row.segs) b.box(sw, 0.018, 0.006, sx, row.y, 0.112, stencil);
+      b.box(0.09, 0.018, 0.006, -0.13, 0.045, 0.1125, stencilHi);       // brightest highlight on the top "100" group
+      // ---- lid hinge (back, along X) + knuckles ----
+      const hg = new THREE.CylinderGeometry(0.012, 0.012, 0.46, 8); b.geo(hg, 0, 0.12, -0.105, mt, { rz: Math.PI / 2 }); hg.dispose();
+      for (const hx of [-0.18, 0, 0.18]) b.box(0.04, 0.04, 0.03, hx, 0.12, -0.10, mtDk);
+      // ---- toggle latch on the RIGHT end (like the real M2A1) — clear of the front stencil ----
+      b.box(0.05, 0.22, 0.10, 0.246, -0.01, 0, mt);                     // latch backplate on the right end face
+      b.box(0.055, 0.05, 0.07, 0.256, 0.075, 0, mtHi);                  // upper catch (lit)
+      b.box(0.045, 0.12, 0.05, 0.262, -0.04, 0, mtDk, { rz: 0.1 });     // toggle lever
+      b.box(0.04, 0.03, 0.06, 0.256, -0.12, 0, mtHi);                   // hook tip
+      // ---- folding wire bail handle (pivots at back-top corners, arches forward over the lid) ----
+      b.box(0.035, 0.05, 0.035, -0.215, 0.165, -0.05, mt);             // left pivot post
+      b.box(0.035, 0.05, 0.035, 0.215, 0.165, -0.05, mt);             // right pivot post
+      b.box(0.022, 0.12, 0.022, -0.205, 0.225, 0.0, wire, { rx: -0.45 }); // left bail leg
+      b.box(0.022, 0.12, 0.022, 0.205, 0.225, 0.0, wire, { rx: -0.45 });  // right bail leg
+      b.box(0.45, 0.022, 0.022, 0, 0.275, 0.045, wire);               // bail cross-bar (grip)
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x1a2410, emissiveIntensity: 0.5 }));
+    }
     // armor plate
     b.box(0.3, 0.34, 0.16, 0, 0, 0, 0x4f8fe0); b.box(0.16, 0.16, 0.06, 0, 0.02, 0.1, 0x9fd0ff);
     return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x002040, emissiveIntensity: 0.5 }));
@@ -457,6 +498,7 @@ export class LootManager {
     const g = give || {};
     for (const k of ['sandbag', 'wire', 'wood']) for (let n = 0; n < (g[k] || 0); n++) items.push([k, 1]); // ~2 random fort. mats
     if (this._radiosInPlay() === 0 && chc(0.30)) items.push(['radio', 1]); // 📻 30% chance to drop a Radio — only when none is currently in play
+    if (chc(0.40)) items.push(['fiftyammo', 1]); // 🟩 40% chance: a .50-cal ammo can to resupply the rooftop M2HB
     items.forEach(([kind, value], i) => {
       const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
       this.spawnNetPickup(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, value, 75); // 75s life — shared (host) / local (solo)
