@@ -836,6 +836,17 @@ export class MP {
     return { id: hit, dist: best, point: hp, head: hp.y >= this.remotes.get(hit).pos.y + 1.5 };
   }
   claimPlayerHit(id, dmg) { if (this.isHost) this.hostHurt(id, dmg, this.myId); else this.net.send('phit', { tid: id, dmg }); }
+  meleeHitPlayers(origin, fwd, range, arcCos) { // co-op melee FF: ids of upright teammates inside the swing arc (always-on, like explosive Full-FF)
+    const out = [];
+    for (const [id, rp] of this.remotes) {
+      if (rp.dead || rp.down || rp.waiting) continue;               // never melee a downed/dead/waiting ally (you revive them, not hit them)
+      const dx = rp.pos.x - origin.x, dz = rp.pos.z - origin.z, dist = Math.hypot(dx, dz);
+      if (dist > range + 0.5) continue;
+      if ((dx / (dist || 1)) * fwd.x + (dz / (dist || 1)) * fwd.z < arcCos) continue;
+      out.push(id);
+    }
+    return out;
+  }
   // ---- player HP / knockdown / revive (host-authoritative) ----
   hostHurt(id, dmg, attacker) {
     if (!this.isHost) return;
