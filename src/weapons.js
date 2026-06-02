@@ -1007,6 +1007,19 @@ export class WeaponSystem {
     this._boltClickClose = false;
   }
 
+  _broadcastMosinFoley(k) {
+    const mp = this.game && this.game.mp;
+    if (!k || !mp || !mp.active || !mp.net) return;
+    mp.net.broadcast('weaponfoley', { pid: mp.myId, w: 'mosin', k });
+  }
+
+  _playMosinCue(method, eventKey, fallback, ...args) {
+    const audio = this.game && this.game.audio;
+    if (audio && typeof audio[method] === 'function') audio[method](...args);
+    else if (audio && fallback && typeof audio[fallback] === 'function') audio[fallback]();
+    this._broadcastMosinFoley(eventKey);
+  }
+
   _ejectMosinCase() {
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
     const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
@@ -1018,6 +1031,7 @@ export class WeaponSystem {
       size: 0.046, color: 0xc9a64a, life: 1.8,
       sideMin: 2.4, sideMax: 3.7, upMin: 1.0, upMax: 1.9,
     });
+    this._playMosinCue('mosinCaseEject', 'caseEject', 'reloadClick');
   }
 
   startReload() {
@@ -1041,10 +1055,12 @@ export class WeaponSystem {
     const duration = useClip
       ? (d.clipReload || d.reload || 2.0)
       : (0.42 + total * (d.roundReload || 0.54) + 0.45);
+    this._boltClickOpen = false;
+    this._boltClickClose = false;
     this._reloadPlan = { key, kind: useClip ? 'clip' : 'single', total, loaded: 0, inserted: false };
     this._reloadMax = Math.max(0.5, duration * mult);
     this.reloading = this._reloadMax;
-    this.game.audio.reloadIn();
+    this._playMosinCue('mosinReloadStart', 'reloadStart', 'reloadIn', useClip ? 'clip' : 'single');
   }
   _addMosinReloadRounds(plan, amount, click = true) {
     if (!plan || plan.key !== this.cur || amount <= 0) return 0;
@@ -1057,7 +1073,10 @@ export class WeaponSystem {
     this.mag[key] = (this.mag[key] || 0) + take;
     if (reserve !== Infinity) this.reserve[key] = Math.max(0, (this.reserve[key] || 0) - take);
     plan.loaded += take;
-    if (click) this.game.audio.reloadClick();
+    if (click) {
+      if (plan.kind === 'clip') this._playMosinCue('mosinClipLoad', 'clipLoad', 'reloadClick');
+      else this._playMosinCue('mosinRoundInsert', 'roundInsert', 'reloadClick');
+    }
     this.game.hud.setWeapon(this);
     return take;
   }
@@ -1081,7 +1100,7 @@ export class WeaponSystem {
   _finishMosinReload() {
     if (this._reloadPlan && this._reloadPlan.loaded < this._reloadPlan.total) this._addMosinReloadRounds(this._reloadPlan, this._reloadPlan.total - this._reloadPlan.loaded, false);
     this._reloadPlan = null; this._reloadMax = 0;
-    this.game.audio.reloadClick(); this.game.hud.setWeapon(this);
+    this._playMosinCue('mosinReloadFinish', 'reloadFinish', 'reloadClick'); this.game.hud.setWeapon(this);
   }
   _finishReload() {
     const key = this.cur, need = this.magMax[key] - this.mag[key];
@@ -1139,8 +1158,9 @@ export class WeaponSystem {
     const muzzle = origin.clone().addScaledVector(fwd, 1.0).addScaledVector(right, 0.16).addScaledVector(up, -0.1);
     this.game.effects.muzzleFlash(muzzle, fwd, d.class === 'shotgun' || d.class === 'launcher' ? 1.6 : 1);
     if (d.class !== 'launcher' && !d.boltAction) this.game.effects.shell(muzzle.clone().addScaledVector(right, -0.08), right);
-    this.game.audio.gunshot(SOUND_BY_CLASS[d.class] || SOUND_BY_CLASS.pistol);
-    if (d.class !== 'launcher') { const _mp = this.game.mp; if (_mp && _mp.active) _mp.net.broadcast('shot', { pid: _mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: d.class, col: d.accent }); } // teammates see/hear your gunfire (launchers show via the slow 'proj' rocket ghost instead of an instant tracer)
+    if (this.cur === 'mosin' && this.game.audio && typeof this.game.audio.mosinShot === 'function') this.game.audio.mosinShot();
+    else this.game.audio.gunshot(SOUND_BY_CLASS[d.class] || SOUND_BY_CLASS.pistol);
+    if (d.class !== 'launcher') { const _mp = this.game.mp; if (_mp && _mp.active) _mp.net.broadcast('shot', { pid: _mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: d.class, w: this.cur, col: d.accent }); } // teammates see/hear your gunfire (launchers show via the slow 'proj' rocket ghost instead of an instant tracer)
 
     if (d.class === 'launcher') { // fire a rocket projectile that explodes on impact
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.55), new THREE.MeshLambertMaterial({ color: 0x394b2e }));
@@ -1332,6 +1352,8 @@ export class WeaponSystem {
       const p = clamp(1 - this.reloading / (this._reloadMax || 1), 0, 1);
       pose = this._mosinReloadBoltCurve(p);
       const plan = this._reloadPlan;
+      if (!this._boltClickOpen && p >= 0.12) { this._boltClickOpen = true; this._playMosinCue('mosinBoltOpen', 'boltOpen', 'reloadClick'); }
+      if (!this._boltClickClose && p >= 0.86) { this._boltClickClose = true; this._playMosinCue('mosinBoltClose', 'boltClose', 'reloadClick'); }
       if (plan.kind === 'clip' && clip && p >= 0.15 && p <= 0.70) {
         const down = this._smooth01((p - 0.22) / 0.34);
         const out = this._smooth01((p - 0.58) / 0.12);
@@ -1354,9 +1376,9 @@ export class WeaponSystem {
       this._boltT = Math.max(0, this._boltT - dt);
       const p = clamp(1 - this._boltT / (this._boltDur || 0.72), 0, 1);
       pose = this._mosinBoltCurve(p);
-      if (!this._boltClickOpen && p >= 0.18) { this._boltClickOpen = true; this.game.audio.reloadClick(); }
+      if (!this._boltClickOpen && p >= 0.18) { this._boltClickOpen = true; this._playMosinCue('mosinBoltOpen', 'boltOpen', 'reloadClick'); }
       if (!this._boltEjected && p >= 0.36) { this._boltEjected = true; this._ejectMosinCase(); }
-      if (!this._boltClickClose && p >= 0.78) { this._boltClickClose = true; this.game.audio.reloadClick(); }
+      if (!this._boltClickClose && p >= 0.78) { this._boltClickClose = true; this._playMosinCue('mosinBoltClose', 'boltClose', 'reloadClick'); }
     }
     this._applyMosinBolt(mos, pose);
   }

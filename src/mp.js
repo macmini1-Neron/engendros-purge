@@ -312,7 +312,18 @@ export class MP {
       g.effects.muzzleFlash(muzzle, dir, (d.cls === 'shotgun' || d.cls === 'launcher') ? 1.6 : 1);
       const wh = g.world.rayHit(muzzle, dir, 120); const end = wh ? wh.point : muzzle.clone().addScaledVector(dir, 120);
       g.effects.tracer(muzzle, end, d.col != null ? d.col : 0xffd27f);
-      g.audio.gunshot(SOUND_BY_CLASS[d.cls] || SOUND_BY_CLASS.pistol); });
+      if (d.w === 'mosin' && g.audio && typeof g.audio.mosinShot === 'function') g.audio.mosinShot();
+      else g.audio.gunshot(SOUND_BY_CLASS[d.cls] || SOUND_BY_CLASS.pistol); });
+    n.on('weaponfoley', (d) => { if (!d || d.pid === this.myId || d.w !== 'mosin') return; // teammate Mosin bolt/reload foley
+      const a = g.audio; if (!a) return;
+      if (d.k === 'boltOpen' && typeof a.mosinBoltOpen === 'function') a.mosinBoltOpen();
+      else if (d.k === 'boltClose' && typeof a.mosinBoltClose === 'function') a.mosinBoltClose();
+      else if (d.k === 'caseEject' && typeof a.mosinCaseEject === 'function') a.mosinCaseEject();
+      else if (d.k === 'reloadStart' && typeof a.mosinReloadStart === 'function') a.mosinReloadStart();
+      else if (d.k === 'clipLoad' && typeof a.mosinClipLoad === 'function') a.mosinClipLoad();
+      else if (d.k === 'roundInsert' && typeof a.mosinRoundInsert === 'function') a.mosinRoundInsert();
+      else if (d.k === 'reloadFinish' && typeof a.mosinReloadFinish === 'function') a.mosinReloadFinish();
+      else if (typeof a.reloadClick === 'function') a.reloadClick(); });
     // ---- rooftop .50cal (single shared MountedGun): seat claim + fire FX + barrel slew ----
     n.on('fiftyclaim', (d, from) => { if (this.isHost && d) this._hostFiftyClaim(d.want, from); });               // client → host: request mount/dismount
     n.on('fiftystate', (d) => { if (!this.isHost && d) this._applyFiftyState(d); });                              // host → clients: who owns the seat now

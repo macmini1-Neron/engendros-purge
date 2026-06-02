@@ -1,0 +1,41 @@
+{
+  "weapon": "Mosin 91/30",
+  "createdFor": "ENGENDROS PURGE",
+  "generatedAt": "2026-06-02",
+  "notes": [
+    "Final WAV files are trimmed, mono 44.1 kHz game-ready edits made from recorded-source files.",
+    "Fire samples preserve the real Mosin report tail while avoiding the long raw sequence.",
+    "Bolt/reload cues are split so the viewmodel animation can trigger open, eject, insert, close, and finish sounds separately."
+  ],
+  "sources": [
+    {
+      "asset": "mosin_9130_fire_close_*.wav",
+      "derivedFrom": "mosin.wav from OpenGameArt Gunshot Sounds",
+      "sourceUrl": "https://opengameart.org/content/gunshot-sounds",
+      "sourcePageLicense": "CC0",
+      "archiveCreditFile": "Copyright (c) 2009 Vincent Sevedge, Creative Commons Attribution 3.0 Unported",
+      "attribution": "Vince Sevedge / Tabasco"
+    },
+    {
+      "asset": "mosin_9130_clip_load_*.wav, mosin_9130_round_insert_*.wav",
+      "derivedFrom": "clipload1.wav, clipload2.wav, singlebullet1.wav from OpenGameArt Gun Reload Sound Effects",
+      "sourceUrl": "https://opengameart.org/content/gun-reload-sound-effects",
+      "license": "CC0",
+      "attribution": "BMacZero / Brian MacIntosh optional credit"
+    },
+    {
+      "asset": "mosin_9130_reload_start_01.wav, mosin_9130_reload_finish_01.wav",
+      "derivedFrom": "gunreload1.wav from OpenGameArt Gun reload sounds",
+      "sourceUrl": "https://opengameart.org/content/gun-reload-sounds",
+      "license": "CC0",
+      "attribution": "SpringySpringo optional credit"
+    },
+    {
+      "asset": "mosin_9130_bolt_open_*.wav, mosin_9130_bolt_close_*.wav, mosin_9130_case_eject_*.wav",
+      "derivedFrom": "equipment_clicks3.wav from OpenGameArt equipment clicks III",
+      "sourceUrl": "https://opengameart.org/content/equipment-clicks-iii",
+      "license": "CC0",
+      "attribution": "LFA optional credit"
+    }
+  ]
+}

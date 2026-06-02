@@ -7,7 +7,7 @@ import { TAU, randRange } from './util.js?u=3';
 import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER } from './tuning.js';
 import { KEY_CASH } from './economy.js';
 import { buildFlare, buildFlopo } from './props.js';
-import { MountedGun, WeaponSystem } from './weapons.js?v=13';
+import { MountedGun, WeaponSystem } from './weapons.js?v=14';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
@@ -16,10 +16,10 @@ import { Inventory, Shop } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
-import { MP } from './mp.js?v=10';
+import { MP } from './mp.js?v=11';
 import { Engine } from './engine.js?e=2';
 import { Input } from './input.js';
-import { AudioManager } from './audio.js?v=151';
+import { AudioManager } from './audio.js?v=152';
 import { Effects } from './effects.js?v=7';
 
 // --- build identity (shown bottom-right in the co-op lobby) ---
@@ -27,7 +27,7 @@ import { Effects } from './effects.js?v=7';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-02 13:50';
+const GAME_BUILD = '2026-06-02 14:21';
 
 class Game {
   constructor() {
