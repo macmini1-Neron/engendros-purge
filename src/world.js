@@ -484,6 +484,7 @@ export class BuildManager {
   destroyStructure(s, cause) {
     const i = this.structures.indexOf(s); if (i < 0) return;
     this.structures.splice(i, 1);
+    this._radioStop(s); if (s.audio) { try { s.audio.src = ''; } catch (e) {} s.audio = null; } // radio prop: kill its stream on destroy
     if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
     if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
     const fx = this.game.effects;
@@ -512,8 +513,10 @@ export class BuildManager {
     for (const s of this.structures) {
       if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
       if (s.mesh) { this.scene.remove(s.mesh); if (s.mesh.material) s.mesh.material.dispose(); }
+      if (s.audio) { try { s.audio.pause(); s.audio.src = ''; } catch (e) {} } // radio props: stop streams on run reset
     }
     this.structures.length = 0;
+    if (this.game.audio && this.game.audio.setMusicDuck) this.game.audio.setMusicDuck(1); // clear any radio music-duck
     this._idc = 1; this.ghostYaw = 0; this._valid = false; this._ghostPos = null;
     this.ghost.visible = false;
   }

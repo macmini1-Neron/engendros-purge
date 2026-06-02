@@ -152,6 +152,7 @@ export class Admin {
       ['Footstep', () => a.footstep()], ['Jump', () => a.jump()], ['Land (hard)', () => a.land(true)],
       ['UI click', () => a.uiClick()], ['UI hover', () => a.uiHover()], ['Buy', () => a.buy()], ['No money', () => a.noMoney()],
       ['Wave start', () => a.waveStart()], ['Wave clear', () => a.waveClear()], ['Game over', () => a.gameOver()],
+      ['📻 Grant Radio x2 (dev)', () => { this.game.inventory.addItem('radio', 2); this.game.inventory.refreshHotbar(); this.game.hud.toast('Granted 2 Radios — select & place (LMB)', 0x6fd0e8); }], // temp acquisition until shop (misc) wiring post-fix/shop
     ];
   }
   _render() {
