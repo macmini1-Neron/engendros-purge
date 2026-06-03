@@ -218,17 +218,21 @@ export const SCENES = {
 
   // ═══ Soviet chiptune jukebox (title-screen playlist) — 32-bit takes on WW2-era classics ═══
 
-  // Катюша — M. Blanter (1938). In the score's key: D minor, 4/4 (1 flat). Verse = phrase A (×2)
-  // then a lifted answer peaking at the minor-3rd (F5) before resolving home to the tonic D.
+  // Катюша — M. Blanter (1938). A minor, 2/4 feel, with the authentic dotted-quarter+eighth lilt
+  // (♩.♪) of the tune — NOT flat eighths. Arch verse (×2) → lifted answer (peak C6) → resolve to A.
   katyusha: chiptune({
-    bpm: 132, style: 'folk', leadVol: 0.18,
+    bpm: 116, style: 'folk', leadVol: 0.18,
     lead: [
-      ['A4', 2], ['A4', 2], ['As4', 2], ['C5', 2], ['D5', 2], ['D5', 2], ['C5', 2], ['As4', 2], ['A4', 8], [0, 8], // phrase 1 (5 5 6 7 8 8 7 6 5)
-      ['A4', 2], ['A4', 2], ['As4', 2], ['C5', 2], ['D5', 2], ['D5', 2], ['C5', 2], ['As4', 2], ['A4', 8], [0, 8], // phrase 2 (repeat)
-      ['D5', 2], ['D5', 2], ['D5', 2], ['E5', 2], ['F5', 2], ['E5', 2], ['D5', 2], ['C5', 2], ['D5', 8], [0, 8], // phrase 3 (lift, peak F5)
-      ['C5', 2], ['C5', 2], ['As4', 2], ['C5', 2], ['D5', 2], ['C5', 2], ['As4', 2], ['A4', 2], ['D5', 8], [0, 8], // phrase 4 (descend, resolve to tonic D)
+      ['E5', 6], ['E5', 2], ['F5', 6], ['G5', 2],                                     // line 1a (dotted lilt rising)
+      ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 4], ['E5', 4],               // line 1b (settle back to E)
+      ['E5', 6], ['E5', 2], ['F5', 6], ['G5', 2],                                     // line 2a
+      ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8],                          // line 2b (hold)
+      ['A5', 6], ['A5', 2], ['B5', 6], ['C6', 2],                                     // line 3a (lift, peak C6)
+      ['B5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8],                          // line 3b (descend, hold)
+      ['E5', 6], ['F5', 2], ['G5', 6], ['F5', 2],                                     // line 4a
+      ['E5', 2], ['D5', 2], ['C5', 2], ['B4', 2], ['A4', 8],                          // line 4b (resolve to tonic A)
     ],
-    chords: ['D2', 'A2', 'D2', 'A2', 'D2', 'A2', 'A2', 'D2'],
+    chords: ['A2', 'E2', 'A2', 'E2', 'A2', 'E2', 'E2', 'A2'],
   }),
 
   // Полюшко-поле (Cavalry of the Steppe) — L. Knipper (1933). E-minor; galloping canter bass.
