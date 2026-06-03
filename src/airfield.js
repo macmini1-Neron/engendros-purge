@@ -490,6 +490,18 @@ function buildFloodlight(world, b, cx, cz, ry = 0) {                     // пр
   collider(world, cx, cz, 0.4, 0, H);
 }
 
+// ⑧ runway/taxiway lighting — raised edge lights (warm), green threshold bars, a PAPI box-row per end.
+// Bright voxels (read as fixtures by day; stay light under the night cycle) → the strip looks operable.
+function buildRunwayLights(world, b, cx, cz, L, W) {
+  const x0 = cx - L / 2, x1 = cx + L / 2, ez = W / 2, WARM = 0xf8f0c8, GRN = 0x46c264, RED = 0xe04632, BASE = 0x232327;
+  for (let x = x0 + 7; x < x1; x += 11) for (const s of [-1, 1]) { const z = cz + s * (ez - 0.6); b.box(0.5, 0.28, 0.5, x, 0.14, z, BASE); b.box(0.34, 0.34, 0.34, x, 0.44, z, WARM); } // edge light = dark base + lens
+  for (const [ex, dir] of [[x0, 1], [x1, -1]]) {
+    for (let z = -ez + 2.5; z <= ez - 2.5; z += 2.4) { b.box(0.55, 0.26, 0.55, ex + dir * 1.4, 0.13, cz + z, BASE); b.box(0.4, 0.36, 0.4, ex + dir * 1.4, 0.45, cz + z, GRN); } // threshold bar
+    for (let i = 0; i < 4; i++) { const px = ex + dir * (5 + i * 1.0); b.box(0.6, 0.26, 0.6, px, 0.13, cz - ez - 1.6, BASE); b.box(0.46, 0.4, 0.46, px, 0.46, cz - ez - 1.6, i < 2 ? RED : WARM); } // PAPI
+    for (let i = 1; i <= 3; i++) b.box(2.6, 0.16, 0.45, ex - dir * i * 4.5, 0.2, cz, WARM); // approach centreline bars
+  }
+}
+
 // =====================================================================
 // Entry — assemble the airfield surface + perimeter (structures added in later passes).
 // =====================================================================
@@ -499,6 +511,7 @@ export function buildAirfield(world, ox, oz) {
   const RUNX = ox - 130, RUNZ = oz + 160, RUNL = 180, RUNW = 40;          // runway centre + size
 
   buildRunway(world, b, RUNX, RUNZ, RUNL, RUNW, rng);
+  buildRunwayLights(world, b, RUNX, RUNZ, RUNL, RUNW);
   buildTaxiways(world, b, RUNX, RUNZ, RUNZ - RUNW / 2);
   buildPerimeter(world, b, ox - 235, oz + 85, ox - 35, oz + 195, { at: ox - 135, w: 9 }); // КПП gap on S
   buildKPP(world, b, ox - 139, oz + 85);
