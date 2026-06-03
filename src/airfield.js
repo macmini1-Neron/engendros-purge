@@ -149,6 +149,75 @@ function buildKPP(world, b, gx, gz) {
 }
 
 // =====================================================================
+// ЗС / АУ-13 — hardened aircraft shelter. Semicircular concrete arch (span 12.8, crown ~6.4 m) under an
+// earth+grass berm (hill-like); 2-leaf olive blast doors (parted → walkable), rear 3×3 gas duct + deflector
+// + soot, white shelter №. Front (doors) faces −Z (the apron). Research: АУ-13 = 12.9×28, 0.6 m concrete.
+// =====================================================================
+function buildArchShelter(world, b, cx, cz, num) {
+  const R = 6.6, len = 26, hz0 = cz - len / 2, hz1 = cz + len / 2, N = 16, segH = (Math.PI * (R + 2) / N) * 1.1;
+  // earth + grass HILL (the dominant exterior — covers the concrete arch, like a real ЗС)
+  for (let i = 0; i < N; i++) {
+    const a = Math.PI * (i + 0.5) / N, c = Math.cos(a), s = Math.sin(a), pal = s > 0.5 ? SOD : EARTH;   // earth flanks → grass crown
+    b.box(3.4, segH, len + 0.4, cx + c * (R + 1.3), s * (R + 1.3), cz, i % 2 ? pal.mid : pal.lo, { rz: a, tint: 0.03 }); // overlapping → continuous hill
+  }
+  b.box(3.6, 0.5, len + 0.5, cx, R + 2.6, cz, SOD.hi, { tint: 0.06 });                                    // grass crown ridge
+  b.box(R * 2 - 2, R * 1.5, len - 1.5, cx, R * 0.72, cz - 0.2, 0x16140f);                                 // dark interior cavity (seen through the mouth)
+  // concrete arch-ring FACE at the front mouth (hz0) + lintel
+  for (let i = 0; i < N; i++) {
+    const a = Math.PI * (i + 0.5) / N, c = Math.cos(a), s = Math.sin(a);
+    b.box(1.5, segH, 0.9, cx + c * R, s * R, hz0 + 0.1, i % 2 ? CONC.mid : CONC.hi, { rz: a, tint: 0.02 });
+  }
+  // collidable side walls + rear wall (3 m gas-duct gap on +X)
+  for (const sx of [-1, 1]) collider(world, cx + sx * (R - 0.2), cz, 0.6, 0, 3.8, len / 2);
+  world._solid(b, R * 2 - 4, 3.8, 0.7, cx - 1, 1.9, hz1, CONC.lo, { tint: 0.03 });
+  b.box(3, 3, 1.0, cx + R - 2.2, 1.5, hz1 + 0.7, IRON); b.box(2.2, 1.1, 1.1, cx + R - 2.2, 3.9, hz1 + 0.6, shade(IRON, -0.02)); // duct + soot
+  b.box(0.6, 3.8, 3.4, cx + R - 0.3, 1.9, hz1 + 1.9, CONC.lo);                                            // blast deflector
+  // 2 olive blast doors (parted ~1.8 m → walk in) + colliders ; white shelter №
+  for (const sx of [-1, 1]) { const dx = cx + sx * (R / 2 + 0.5);
+    b.box(R - 1.1, 5.6, 0.45, dx, 2.8, hz0 - 0.35, 0x3a4a2a, { tint: 0.03 }); b.box(R - 1.3, 0.4, 0.5, dx, 5.5, hz0 - 0.35, 0x46582f);
+    collider(world, dx, hz0 - 0.35, (R - 1.1) / 2, 0, 5.6, 0.3); }
+  signPlane(world, num, cx - (R / 2 + 0.5), 3.3, hz0 - 0.62, 1.6, 1.6, Math.PI, { color: '#e8e6dd', size: 130 });
+  b.box(R * 2 + 1, 0.07, 9, cx, 0.05, hz0 - 5.5, CONC.lo, { tint: 0.02 });                                // apron/taxi spur in front
+}
+
+// open earth+concrete revetment (капонир / обвалование) — U open toward −Z (apron)
+function buildCaponier(world, b, cx, cz) {
+  const W = 16, D = 24, H = 3.4;
+  b.box(W, 0.08, D, cx, 0.05, cz, CONC.mid, { tint: 0.02 });                                             // concrete pad
+  world._solid(b, W, H, 1.0, cx, H / 2, cz + D / 2, CONC.lo, { tint: 0.03 });                            // back wall
+  b.box(W + 3, H, 3, cx, H / 2, cz + D / 2 + 1.6, EARTH.mid); b.box(W + 3, 0.4, 3, cx, H + 0.1, cz + D / 2 + 1.6, SOD.mid);
+  for (const sx of [-1, 1]) {                                                                             // side walls + earth berm + grass
+    world._solid(b, 1.0, H, D, cx + sx * W / 2, H / 2, cz, CONC.lo, { tint: 0.03 });
+    b.box(3, H, D + 3, cx + sx * (W / 2 + 1.6), H / 2, cz, EARTH.mid); b.box(3, 0.4, D + 3, cx + sx * (W / 2 + 1.6), H + 0.1, cz, SOD.mid);
+  }
+}
+
+// =====================================================================
+// КДП (командно-диспетчерский пункт) — the airfield control tower + LANDMARK. ~20 m banded concrete shaft
+// (red/white 3 m bands) + glazed control cab with the defining 15°-outward-tilted glazing, balcony, rotating
+// beacon + whip antennas, «КДП» + red star. Research: tower-type, cab glazing 15° to vertical (anti-glare).
+// =====================================================================
+function buildTower(world, b, cx, cz) {
+  const W = 9, baseH = 15;
+  for (let i = 0; i < baseH / 3; i++) world._solid(b, W, 3, W, cx, i * 3 + 1.5, cz, i % 2 ? WMARK : RED, { tint: 0.03 }); // banded shaft (collidable)
+  b.box(W + 0.7, 0.6, W + 0.7, cx, baseH + 0.1, cz, CONC.hi);                                    // cornice
+  b.box(2.2, 4.4, 0.2, cx, 2.4, cz - W / 2 - 0.05, IRON);                                        // entrance door (S)
+  // glazed control cab (фонарь) — 15° outward-tilted glazing
+  const cy = baseH + 2.3, cw = 8, gh = 3.4, tilt = 0.26;
+  b.box(cw + 0.9, 0.5, cw + 0.9, cx, baseH + 0.55, cz, CONC.lo);                                 // cab floor / balcony slab
+  for (const [dz, rr] of [[cw / 2, -tilt], [-cw / 2, tilt]]) b.box(cw - 0.4, gh, 0.16, cx, cy, cz + dz, 0x9fb6bc, { rx: rr });
+  for (const [dx, rr] of [[cw / 2, tilt], [-cw / 2, -tilt]]) b.box(0.16, gh, cw - 0.4, cx + dx, cy, cz, 0x9fb6bc, { rz: rr });
+  for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.box(0.32, gh + 0.6, 0.32, cx + dx * cw / 2, cy, cz + dz * cw / 2, 0x2b2b30); // corner mullions
+  b.box(cw + 1.3, 0.5, cw + 1.3, cx, cy + gh / 2 + 0.3, cz, CONC.hi);                            // cab roof
+  for (const [sx, sz, ww, dd] of [[cw / 2 + 0.35, 0, 0.1, cw], [-cw / 2 - 0.35, 0, 0.1, cw], [0, cw / 2 + 0.35, cw, 0.1], [0, -cw / 2 - 0.35, cw, 0.1]]) b.box(ww, 0.7, dd, cx + sx, baseH + 1.2, cz + sz, 0x3a3a3e); // balcony rail
+  cyl(b, 0.4, 0.5, cx, cy + gh / 2 + 0.85, cz, 0xd23a2a, { seg: 8 });                            // rotating beacon
+  for (const [dx, dz, hh] of [[-2, -2, 3], [2, 2, 2.4], [0, 2, 3.6]]) b.box(0.1, hh, 0.1, cx + dx, cy + gh / 2 + hh / 2 + 0.4, cz + dz, 0x8a8680); // whip antennas
+  collider(world, cx, cz, cw / 2 + 0.6, baseH, cy + gh / 2 + 0.6, cw / 2 + 0.6);
+  signPlane(world, 'КДП', cx, baseH - 4.5, cz - W / 2 - 0.06, 4, 1.6, Math.PI, { color: '#1a1a1a', size: 110 });
+  b.box(1.0, 1.0, 0.06, cx, baseH - 1.6, cz - W / 2 - 0.05, RED); signPlane(world, '★', cx, baseH - 1.6, cz - W / 2 - 0.09, 0.9, 0.9, Math.PI, { color: '#f4ecd8', size: 110 });
+}
+
+// =====================================================================
 // Entry — assemble the airfield surface + perimeter (structures added in later passes).
 // =====================================================================
 export function buildAirfield(world, ox, oz) {
@@ -160,6 +229,13 @@ export function buildAirfield(world, ox, oz) {
   buildTaxiways(world, b, RUNX, RUNZ, RUNZ - RUNW / 2);
   buildPerimeter(world, b, ox - 235, oz + 85, ox - 35, oz + 195, { at: ox - 135, w: 9 }); // КПП gap on S
   buildKPP(world, b, ox - 139, oz + 85);
+
+  // ② arch shelters (ЗС/АУ-13) dispersed in a row N of the apron, doors facing −Z; + a caponier
+  [-185, -143, -101, -59].forEach((sx, i) => buildArchShelter(world, b, ox + sx, oz + 114, '2' + (i + 1)));
+  buildCaponier(world, b, ox - 217, oz + 114);
+
+  // ③ КДП control tower (landmark) — apron side, midfield
+  buildTower(world, b, ox - 112, oz + 91);
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }
