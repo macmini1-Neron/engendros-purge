@@ -328,6 +328,66 @@ function buildSu25(world, b, cx, cz, bort) {
 }
 
 // =====================================================================
+// ⑥ ПВО (air defense) — С-75 «Двина» SAM site («цветок»: 6 launchers in a hexagon + central Fan-Song radar),
+// ЗСУ-23-4 «Шилка» SPAAG, П-18 «Терек» radar (Yagi billboard), ЗУ-23-2 towed twin AA. All 4БО green.
+// =====================================================================
+const G4BO = { hi: 0x6a7a42, mid: 0x55632e, lo: 0x3e4a1f };               // защитный 4БО
+
+function buildSAMLauncher(world, b, lx, lz, phi) {                        // SM-63-1 rail + V-750 missile @60°, pointing outward
+  const GRY = 0xb8b4aa, IRX = 0x2a2a2e, by = 1.1;
+  cyl(b, 1.3, 0.5, lx, 0.25, lz, IRX, { seg: 10 }); cyl(b, 0.7, 0.8, lx, 0.7, lz, G4BO.lo, { seg: 8 }); // turntable + pivot
+  const ax = Math.sin(phi) * 0.5, ay = 0.866, az = Math.cos(phi) * 0.5;
+  for (let t = 0; t < 9; t += 0.8) b.box(0.55, 0.16, 0.55, lx + ax * t, by + ay * t - 0.42, lz + az * t, IRX, { ry: phi }); // rail
+  for (let t = 0.3; t < 10; t += 0.5) { const fat = t < 2.7, r = fat ? 0.38 : 0.27; b.box(r * 2, 0.62, r * 2, lx + ax * t, by + ay * t, lz + az * t, fat ? G4BO.mid : GRY, { ry: phi, tint: 0.02 }); }
+  b.box(0.2, 0.7, 0.2, lx + ax * 10, by + ay * 10, lz + az * 10, GRY);    // nose
+  for (let k = 0; k < 4; k++) { const fa = phi + k * Math.PI / 2; b.box(1.3, 0.1, 0.5, lx + ax * 1.7 + Math.cos(fa) * 0.5, by + ay * 1.7, lz + az * 1.7 + Math.sin(fa) * 0.5, G4BO.lo, { ry: fa }); } // booster fins
+  collider(world, lx, lz, 1.4, 0, 1.3);
+}
+function buildFanSong(world, b, cx, cz) {                                 // СНР-75 guidance radar (2 perpendicular trough antennas)
+  world._solid(b, 3, 2.4, 6, cx, 1.2, cz, G4BO.mid, { tint: 0.03 });
+  b.box(0.4, 4, 0.4, cx, 2.4, cz, 0x2a2a2e);
+  b.box(5.5, 3.4, 0.3, cx, 4.6, cz - 1.2, 0x9a958b, { tint: 0.02 }); b.box(0.3, 3.6, 3.4, cx + 1.8, 4.6, cz + 1.0, 0x9a958b, { tint: 0.02 });
+}
+function buildSAMSite(world, b, cx, cz) {
+  buildFanSong(world, b, cx, cz);
+  const R = 22;
+  for (let k = 0; k < 6; k++) { const phi = k * Math.PI / 3, lx = cx + Math.sin(phi) * R, lz = cz + Math.cos(phi) * R;
+    b.box(3.5, 0.06, R - 4, cx + Math.sin(phi) * R / 2, 0.05, cz + Math.cos(phi) * R / 2, CONC.lo, { ry: phi }); // petal road
+    for (let a = 0; a < 8; a++) { const ra = a * Math.PI / 4; b.box(2.6, 1.5, 2.6, lx + Math.cos(ra) * 4.2, 0.75, lz + Math.sin(ra) * 4.2, a % 2 ? EARTH.mid : EARTH.lo, { ry: ra, tint: 0.03 }); b.box(2.4, 0.3, 2.4, lx + Math.cos(ra) * 4.2, 1.5, lz + Math.sin(ra) * 4.2, SOD.mid); } // revetment berm + grass
+    buildSAMLauncher(world, b, lx, lz, phi);
+  }
+}
+function buildShilka(world, b, cx, cz, ry = 0) {
+  const IRX = 0x2a2a2e;
+  world._solid(b, 3.1, 1.4, 6.5, cx, 0.95, cz, G4BO.mid, { tint: 0.03, ry });
+  for (const sx of [-1, 1]) b.box(0.65, 0.75, 6.6, cx + sx * 1.45, 0.38, cz, IRX, { ry });
+  world._solid(b, 2.7, 1.1, 2.9, cx, 2.15, cz - 0.3, G4BO.lo, { tint: 0.03, ry });           // box turret
+  b.box(1.5, 0.7, 0.6, cx, 2.4, cz - 1.7, G4BO.hi, { ry, tint: 0.03 });                      // gun mantlet/cradle (proud, lit)
+  for (const dx of [-0.55, -0.2, 0.2, 0.55]) { b.box(0.17, 0.17, 4.0, cx + dx, 2.6, cz - 3.6, 0x4a4a50, { ry }); b.box(0.22, 0.22, 0.4, cx + dx, 2.6, cz - 5.5, 0x32323a, { ry }); } // 4 long 23 mm barrels (lighter) + muzzle tips
+  cyl(b, 0.7, 0.18, cx + 0.2, 3.25, cz + 1.1, 0xa49f93, { rx: 0.4, seg: 12, tint: 0.03 });   // Gun-Dish radar (RPK-2)
+  b.box(0.18, 1.1, 0.18, cx + 0.2, 2.65, cz + 1.0, IRX, { ry });                              // radar pedestal
+  collider(world, cx, cz, 1.7, 0, 3.2, 3.4);
+}
+function buildRadarP18(world, b, cx, cz) {                                // П-18 «Spoon Rest» Yagi billboard radar
+  const IRX = 0x2a2a2e, ROD = 0x9a958b;
+  world._solid(b, 2.6, 1.5, 5, cx, 0.95, cz, G4BO.mid, { tint: 0.03 });
+  b.box(0.4, 5, 0.4, cx, 3.6, cz, IRX);                                                       // mast
+  b.box(0.22, 6, 0.22, cx - 7, 8, cz, IRX); b.box(0.22, 6, 0.22, cx + 7, 8, cz, IRX); b.box(14, 0.22, 0.22, cx, 11, cz, IRX); b.box(14, 0.22, 0.22, cx, 5, cz, IRX); // frame
+  for (let y = 5.6; y < 10.8; y += 0.7) for (const row of [-0.45, 0.45]) b.box(13, 0.08, 0.08, cx, y, cz + row, ROD); // Yagi rows
+  for (let x = -6; x <= 6; x += 1.2) b.box(0.08, 5.4, 0.08, cx + x, 8, cz, ROD);
+  collider(world, cx, cz, 1.5, 0, 11, 2.6);
+}
+function buildZU23(world, b, cx, cz) {                                    // ЗУ-23-2 towed twin 23 mm
+  const IRX = 0x2a2a2e;
+  b.box(2.8, 0.35, 2.8, cx, 0.42, cz, G4BO.mid, { tint: 0.03 });
+  for (const sx of [-1, 1]) cyl(b, 0.42, 0.2, cx + sx * 1.5, 0.42, cz, IRX, { rx: Math.PI / 2, seg: 8 }); // folded wheels
+  b.box(0.9, 0.7, 0.9, cx, 1.05, cz, G4BO.lo);                                                // cradle
+  for (const dx of [-0.17, 0.17]) b.box(0.11, 0.11, 2.4, cx + dx, 1.25, cz - 1.4, IRX);        // twin barrels
+  b.box(1.3, 0.8, 0.1, cx, 1.35, cz + 0.6, G4BO.lo);                                           // shield
+  collider(world, cx, cz, 1.5, 0, 1.6);
+}
+
+// =====================================================================
 // Entry — assemble the airfield surface + perimeter (structures added in later passes).
 // =====================================================================
 export function buildAirfield(world, ox, oz) {
@@ -353,6 +413,12 @@ export function buildAirfield(world, ox, oz) {
   buildMiG21(world, b, ox - 59, oz + 112, '15');
   buildMiG23(world, b, ox - 118, oz + 100, '31');
   buildSu25(world, b, ox - 82, oz + 99, '25');
+
+  // ⑥ ПВО — С-75 SAM site (N, outside the perimeter) + Шилка ×2 (corners) + П-18 radar + ЗУ-23-2 ×2
+  buildSAMSite(world, b, ox - 90, oz + 222);
+  buildShilka(world, b, ox - 224, oz + 188, 0.3); buildShilka(world, b, ox - 46, oz + 188, -0.3);
+  buildRadarP18(world, b, ox - 150, oz + 212);
+  buildZU23(world, b, ox - 156, oz + 92); buildZU23(world, b, ox - 46, oz + 106);
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }

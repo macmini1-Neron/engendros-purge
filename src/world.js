@@ -229,7 +229,7 @@ export class World {
       if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
       if ((x > -84 && x < 84 && z > -104 && z < 12) || Math.hypot(x - 96, z - 18) < 22) continue; // keep the kombinát yard + slag heap clear
       if (Math.hypot(x + 150, z + 90) < 48) continue; // keep the field strongpoint clear
-      if (x > -238 && x < -32 && z > 82 && z < 198) continue; // keep the airfield (NW) clear
+      if (x > -238 && x < -32 && z > 82 && z < 246) continue; // keep the airfield (NW) + its N SAM site/radar clear
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
