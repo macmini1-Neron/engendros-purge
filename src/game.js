@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-03 22:56';
+const GAME_BUILD = '2026-06-03 23:31';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -184,6 +184,7 @@ class Game {
         else if (this.mountedGun.canMount(this.player.pos)) this.mountedGun.mount();
         // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
         else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
+        else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
         else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
         else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
         else if (this.loot.openNearby()) { /* claimed a landed supply drop */ }
@@ -703,6 +704,7 @@ class Game {
       }
       if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
+      if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)
       this.player.update(dt);
       this.weapons.update(dt);
       this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
@@ -761,6 +763,9 @@ class Game {
       this.hud.setInteract('Press <b>E</b> to man the .50 cal — 250 rounds, overheats');
     } else if (this.player._splintT > 0) {
       this.hud.setInteract(`Applying splint… ${this.player._splintT.toFixed(1)}s`);
+    } else if (this.world.gateTarget) {
+      const _open = this.world._slideGate && this.world._slideGate.open;
+      this.hud.setInteract('Press <b>E</b> to ' + (_open ? 'CLOSE' : 'OPEN') + ' the gate · ВОРОТА');
     } else if (this.build.radioTarget) {
       const _r = this.build.radioTarget;
       this.hud.setInteract(_r.on ? '←/→ stanice · <b>E</b> vypnout rádio' : 'Press <b>E</b> to turn on radio');
