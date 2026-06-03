@@ -109,6 +109,79 @@ export function buildGasholder(world, b, x, z, R, H, rng) {
 }
 
 // =====================================================================
+// OBJECT 3 — Main production hall (главный цех). Real: 48×28×14 m section,
+// steel/RC portal frame, RED BRICK walls on a concrete plinth, 6 m bays with
+// pilaster ribs + tall industrial windows, projecting cornice, a SAW-TOOTH
+// (north-light, шедовая) roof of 4 glazed monitors, a rail gate on each gable
+// (→ walkable interior, 2 exits), and an overhead YELLOW bridge crane (мостовой
+// кран) on wall corbels at ~10.8 m. (Research dossier 2026-06-03.)
+// One vertex-coloured mesh (brick/concrete/glass/steel) = one draw call.
+// =====================================================================
+export function buildMainHall(world, cx, cz) {
+  const b = new MeshBuilder();
+  const L2 = 24, W2 = 14, EH = 14, PH = 0.8, T = 0.6, bays = 8, bw = (L2 * 2) / bays;
+  const BR = { hi: 0xa04a36, mid: 0x8b3a2a, lo: 0x6a2a1e, slot: 0x3a1810 };
+  const CC = { hi: 0x9a958b, mid: 0x7c776d };
+  const GLASS = 0x8fa6ad, FRAME = 0x45474a, ROOF = 0x2f2c28, CRANE = 0xf3a505, STEEL = 0x6c6c66;
+
+  // ---- long brick walls (run along X at z = cz ± W2) ----
+  for (const sz of [cz - W2, cz + W2]) {
+    const out = sz < cz ? -1 : 1;                                       // exterior normal in Z
+    world._solid(b, L2 * 2, EH, T, cx, EH / 2, sz, BR.mid, { tint: 0.05 }); // brick body (collider)
+    b.box(L2 * 2, 0.5, T + 0.06, cx, EH - 0.3, sz, BR.hi);             // lit top strip
+    b.box(L2 * 2, PH, T + 0.08, cx, PH / 2, sz, CC.mid);              // concrete plinth
+    b.box(L2 * 2 + 0.5, 0.55, T + 0.3, cx, EH - 0.05, sz, CC.hi);     // cornice
+    for (let i = 0; i < bays; i++) {
+      const x = cx - L2 + bw * i;
+      b.box(0.9, EH - PH - 0.2, T + 0.34, x, (EH + PH) / 2, sz, BR.hi, { tint: 0.04 }); // pilaster rib (proud)
+      const wx = x + bw / 2, wy = 5.6, wh = 5, ww = bw * 0.5;
+      b.box(ww, wh, 0.1, wx, wy, sz + out * (T / 2 + 0.03), GLASS);   // window glass (proud, exterior)
+      b.box(ww + 0.14, wh + 0.14, 0.06, wx, wy, sz + out * (T / 2 + 0.01), FRAME); // window frame behind glass
+      b.box(0.12, wh, 0.12, wx, wy, sz + out * (T / 2 + 0.05), FRAME);// centre mullion
+    }
+    b.box(0.9, EH - PH - 0.2, T + 0.34, cx + L2, (EH + PH) / 2, sz, BR.hi, { tint: 0.04 }); // last pilaster
+  }
+
+  // ---- gable walls (along Z at x = cx ± L2) with a 6×7 m rail gate gap ----
+  const gw = 6, gh = 7, segW = (W2 * 2 - gw) / 2;
+  for (const sx of [cx - L2, cx + L2]) {
+    for (const side of [-1, 1]) {
+      const segCz = cz + side * (gw / 2 + segW / 2);
+      world._solid(b, T, EH, segW, sx, EH / 2, segCz, BR.mid, { tint: 0.05 });
+      b.box(T + 0.08, PH, segW, sx, PH / 2, segCz, CC.mid);          // plinth
+    }
+    world._solid(b, T, EH - gh, gw, sx, gh + (EH - gh) / 2, cz, BR.mid, { tint: 0.05 }); // lintel over gate
+    b.box(T + 0.3, 0.55, W2 * 2 + 0.5, sx, EH - 0.05, cz, CC.hi);    // gable cornice
+    b.box(T + 0.14, gh, 0.3, sx, gh / 2, cz - gw / 2, 0x2d4a2a);     // gate jamb L (green)
+    b.box(T + 0.14, gh, 0.3, sx, gh / 2, cz + gw / 2, 0x2d4a2a);     // gate jamb R
+    b.box(T + 0.22, 1.5, 5.0, sx, gh + 2.4, cz, 0x2a2622);          // signage plate (ЦЕХ №1 — text in signage pass)
+  }
+
+  // ---- saw-tooth north-light roof: base slab + 4 glazed monitors ----
+  const teeth = 4, tw = (W2 * 2) / teeth;
+  b.box(L2 * 2 + 0.6, 0.4, W2 * 2 + 0.6, cx, EH + 0.2, cz, ROOF);    // opaque roof deck
+  for (let t = 0; t < teeth; t++) {
+    const z0 = cz - W2 + tw * t;
+    b.box(L2 * 2, 3.0, 0.5, cx, EH + 1.9, z0 + 0.35, GLASS);         // glazed vertical face
+    b.box(L2 * 2, 3.0, 0.12, cx, EH + 1.9, z0 + 0.62, FRAME);        // mullion frame
+    b.box(L2 * 2, 0.35, tw - 0.7, cx, EH + 3.3, z0 + tw / 2 + 0.35, ROOF); // tooth top cap
+  }
+
+  // ---- overhead bridge crane (мостовой кран), yellow, on wall corbels ----
+  const cy = 10.8, bx = cx + 5;
+  for (const sz of [cz - W2 + 1.2, cz + W2 - 1.2]) b.box(L2 * 2, 0.35, 0.5, cx, cy, sz, STEEL); // runway rails
+  b.box(1.0, 0.9, W2 * 2 - 2.2, bx, cy + 0.8, cz, CRANE, { tint: 0.03 });        // girder 1
+  b.box(1.0, 0.9, W2 * 2 - 2.2, bx - 1.8, cy + 0.8, cz, CRANE, { tint: 0.03 });  // girder 2
+  for (const ez of [cz - W2 + 1.2, cz + W2 - 1.2]) b.box(2.6, 1.1, 1.6, bx - 0.9, cy + 0.7, ez, 0x1a1a1a); // end trucks
+  b.box(1.8, 0.8, 2.2, bx - 0.9, cy + 1.5, cz + 3, CRANE);          // trolley
+  b.box(0.16, 2.6, 0.16, bx - 0.9, cy - 0.6, cz + 3, 0x2a2a2a);     // hoist cable
+  b.box(0.7, 0.55, 0.7, bx - 0.9, cy - 2.0, cz + 3, STEEL);         // hook block
+
+  const m = new THREE.Mesh(b.build(), voxelMaterial());
+  m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
+}
+
+// =====================================================================
 // Entry — assembles the kombinát. Objects are added incrementally per the
 // build plan (barrels → tanks → buildings → infra → fence → signs → misc).
 // =====================================================================
@@ -132,4 +205,7 @@ export function buildIndustrial(world, ox, oz) {
   const m = new THREE.Mesh(metal.build(), voxelMaterial());
   m.castShadow = true; m.receiveShadow = true;
   world.scene.add(m);
+
+  // --- OBJECT 3: main production hall (главный цех) — its own merged mesh ---
+  buildMainHall(world, ox - 28, oz + 8); // world centre (-28, -32)
 }
