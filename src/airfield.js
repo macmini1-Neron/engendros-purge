@@ -388,6 +388,109 @@ function buildZU23(world, b, cx, cz) {                                    // З�
 }
 
 // =====================================================================
+// ⑦ SUPPORT INFRASTRUCTURE — fuel farm ГСМ (РВС tanks + bund + ТЗ-22 bowser), ammo bunkers (earth-covered,
+// ОПАСНО), barracks/штаб (ochre, СЛАВА СОВЕТСКОЙ АРМИИ + flag), windsock, fire station (+АЦ-40), watchtowers,
+// floodlight masts. Makes the base read as actually operable.
+// =====================================================================
+const SILV = { hi: 0xccd0d4, mid: 0xb8bcc0, lo: 0x8c9094 };               // bare steel tank/skin
+
+function buildBowser(world, b, cx, cz) {                                  // ТЗ-22 refueller (KrAZ-255 tractor + 8 m fuel tank), along X
+  const KH = 0x47532f, IRX = 0x2a2a2e;
+  b.box(11, 0.5, 2.4, cx, 1.0, cz, IRX);                                  // chassis
+  for (const wx of [-4, -1, 4]) for (const sz of [-1, 1]) cyl(b, 0.7, 0.5, cx + wx, 0.6, cz + sz * 1.25, IRX, { rx: Math.PI / 2, seg: 10 });
+  world._solid(b, 2.6, 2.2, 2.4, cx + 4.3, 2.3, cz, KH, { tint: 0.03 });  // KrAZ cab
+  b.box(2.0, 0.85, 2.45, cx + 4.3, 2.95, cz, 0x1a2433);                   // windscreen
+  cyl(b, 1.25, 8, cx - 1.4, 2.1, cz, SILV.mid, { rz: Math.PI / 2, seg: 14, tint: 0.04 }); // fuel tank
+  b.box(0.4, 2.5, 2.5, cx - 5.4, 2.1, cz, SILV.lo);                       // rear cap
+  collider(world, cx, cz, 6, 0, 3.4, 1.5);
+}
+function buildFuelFarm(world, b, cx, cz) {                                // ГСМ — vertical РВС tanks inside an earth bund
+  for (let s = -1; s <= 1; s += 2) { b.box(20, 1.4, 2.2, cx, 0.7, cz + s * 9, EARTH.mid, { tint: 0.03 }); b.box(2.2, 1.4, 20, cx + s * 10, 0.7, cz, EARTH.mid, { tint: 0.03 }); }
+  for (let s = -1; s <= 1; s += 2) { b.box(20, 0.22, 2.2, cx, 1.45, cz + s * 9, SOD.mid); b.box(2.2, 0.22, 20, cx + s * 10, 1.45, cz, SOD.mid); }
+  for (const [dx, dz] of [[-6, -5], [-6, 5], [6, -5], [6, 5]]) {          // 4 РВС tanks Ø6.4 h6
+    const x = cx + dx, z = cz + dz;
+    cyl(b, 3.2, 6, x, 3, z, SILV.mid, { seg: 16, tint: 0.05 });
+    cyl(b, 3.26, 0.6, x, 4.3, z, YMARK, { seg: 16 });                     // yellow hazard band
+    cyl(b, 3.3, 0.35, x, 6.05, z, SILV.hi, { seg: 16 }); b.box(6.5, 0.28, 0.3, x, 6.15, z, SILV.lo);
+    collider(world, x, z, 3.35, 0, 6.2);
+  }
+  world._solid(b, 4, 3, 4.5, cx, 1.5, cz - 14, CONC.mid, { tint: 0.03 }); // pump house
+  b.box(4.3, 0.4, 4.8, cx, 3.2, cz - 14, CONC.lo);
+  buildBowser(world, b, cx + 15, cz - 10);
+  signPlane(world, 'ГСМ', cx - 10.1, 3, cz, 4.5, 2.2, -Math.PI / 2, { panel: '#3a4a2a', border: '#c9b048', color: '#e8e0cc' });
+  signPlane(world, 'ОГНЕОПАСНО', cx, 2.3, cz - 9.2, 8, 1.5, 0, { panel: '#7a1a1a', color: '#f0e0d0', size: 50 });
+}
+function buildAmmoBunker(world, b, cx, cz, num) {                         // earth-covered concrete magazine (front faces +Z)
+  const OLIVE = 0x3a4a2a;
+  world._solid(b, 12, 4, 7, cx, 2, cz, CONC.lo, { tint: 0.03 });         // concrete core
+  for (let i = 0; i < 5; i++) b.box(12 - i * 1.7, 0.85, 7 - i * 1.05, cx, 4.2 + i * 0.7, cz, i % 2 ? EARTH.mid : EARTH.lo, { tint: 0.03 }); // earth mound
+  b.box(9.5, 0.28, 5, cx, 7.7, cz, SOD.mid);                             // grass cap
+  b.box(12.4, 4, 0.6, cx, 2, cz + 3.5, CONC.mid, { tint: 0.03 });        // headwall
+  for (const s of [-1, 1]) b.box(2.5, 3.1, 0.4, cx + s * 1.5, 1.65, cz + 3.85, OLIVE, { tint: 0.04 }); // 2-leaf blast door
+  b.box(0.3, 3.1, 0.5, cx, 1.65, cz + 3.86, CONC.slot);
+  for (const vx of [-3.5, 3.5]) cyl(b, 0.3, 1.3, cx + vx, 8.3, cz, IRON, { seg: 8 }); // vent stacks
+  signPlane(world, 'ОПАСНО', cx, 3.5, cz + 3.95, 4.4, 1.2, 0, { panel: '#7a1a1a', color: '#f0e0d0', size: 54 });
+  signPlane(world, '№' + num, cx, 1.5, cz + 3.95, 1.3, 1.0, 0, { color: '#e8e0cc', size: 64 });
+  collider(world, cx, cz, 6.2, 0, 8, 3.9);
+}
+function buildBarracks(world, b, cx, cz) {                                // штаб / казарма — 2-storey ochre render, front +Z
+  world._solid(b, 18, 7, 10, cx, 3.5, cz, OCH.mid, { tint: 0.03 });
+  b.box(18.4, 1.1, 10.4, cx, 0.55, cz, CONC.lo, { tint: 0.03 });         // plinth
+  b.box(18.5, 0.5, 10.5, cx, 7.05, cz, OCH.lo); b.box(18.7, 0.5, 10.7, cx, 7.5, cz, CONC.mid); // cornice + roof
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 6; c++) { const wx = cx - 7 + c * 2.8, wy = 2.5 + r * 2.8;
+    b.box(1.5, 1.9, 0.22, wx, wy, cz - 5.04, OCH.hi); b.box(1.15, 1.55, 0.14, wx, wy, cz - 5.12, 0x2a3340); } // windows face S (gate)
+  world._solid(b, 4, 3, 2.2, cx, 1.5, cz - 6, OCH.lo, { tint: 0.03 });   // porch
+  b.box(2.2, 2.5, 0.3, cx, 1.35, cz - 7.15, 0x3a2e1f);                   // door
+  signPlane(world, '★', cx, 5.7, cz - 5.1, 1.7, 1.7, Math.PI, { color: '#c1272d', size: 130 });
+  signPlane(world, 'СЛАВА СОВЕТСКОЙ АРМИИ!', cx, 8.6, cz - 4.8, 16, 1.5, Math.PI, { panel: '#8a1f1f', border: '#e8d8a0', color: '#f0e8d0', size: 56 });
+  cyl(b, 0.18, 11, cx - 10.5, 5.5, cz - 1, SILV.hi, { seg: 8 });         // flagpole
+  b.box(0.12, 1.9, 3, cx - 10.0, 9.6, cz - 1, RED);                      // Soviet flag (red)
+  b.box(0.13, 0.7, 0.7, cx - 9.7, 9.95, cz - 2.0, YMARK);               // hammer & sickle hint
+  collider(world, cx, cz, 9.2, 0, 7.5, 5.2);
+}
+function buildWindsock(world, b, cx, cz) {                               // ветроуказатель — orange/white cone on a mast
+  cyl(b, 0.22, 6, cx, 3, cz, SILV.lo, { seg: 8 });
+  cyl(b, 0.45, 0.3, cx, 6, cz, IRON, { seg: 10 });
+  for (let i = 0; i < 5; i++) cyl(b, 0.72 - i * 0.11, 0.95, cx + 0.8 + i * 0.95, 6, cz, i % 2 ? 0xd86a1e : 0xe8e0d0, { rz: Math.PI / 2, seg: 12 });
+  collider(world, cx, cz, 0.5, 0, 6.3);
+}
+function buildFireTruck(world, b, cx, cz) {                              // АЦ-40 (ЗИЛ-131) — red, along X
+  const FR = 0xb03020, IRX = 0x2a2a2e;
+  b.box(8, 0.5, 2.4, cx, 0.95, cz, IRX);
+  for (const wx of [-2.5, 1, 3]) for (const sz of [-1, 1]) cyl(b, 0.62, 0.45, cx + wx, 0.6, cz + sz * 1.2, IRX, { rx: Math.PI / 2, seg: 10 });
+  world._solid(b, 2.4, 2.0, 2.3, cx + 2.8, 2.1, cz, FR, { tint: 0.03 }); b.box(1.9, 0.8, 2.4, cx + 2.8, 2.55, cz, 0x1a2433);
+  b.box(5, 2.2, 2.3, cx - 1, 2.2, cz, FR, { tint: 0.03 }); b.box(5.1, 0.55, 2.42, cx - 1, 1.4, cz, 0xd8d0c0); // body + locker band
+  collider(world, cx, cz, 4, 0, 3.2, 1.4);
+}
+function buildFireStation(world, b, cx, cz) {                            // пожарное депо — red, apparatus bay door (front +Z)
+  const FR = { hi: 0xc0402e, mid: 0xa3301f, lo: 0x7e2416 };
+  world._solid(b, 12, 5, 8, cx, 2.5, cz, FR.mid, { tint: 0.03 });
+  b.box(12.4, 0.6, 8.4, cx, 5.2, cz, FR.lo); b.box(12.6, 0.4, 8.6, cx, 5.5, cz, CONC.mid);
+  b.box(5, 4, 0.3, cx - 2.5, 2, cz - 4.05, 0xd8d0c0); for (let y = 0.6; y < 4; y += 0.6) b.box(5, 0.1, 0.35, cx - 2.5, y, cz - 4.12, 0xaaa294); // roller door faces S
+  b.box(1.5, 2.4, 0.3, cx + 4, 1.3, cz - 4.05, 0x3a2e1f);
+  signPlane(world, 'ПОЖАРНОЕ ДЕПО', cx, 5.0, cz - 4.0, 8, 1.0, Math.PI, { color: '#f0e8d0', size: 48 });
+  buildFireTruck(world, b, cx + 8.5, cz - 3);
+  collider(world, cx, cz, 6.2, 0, 5.5, 4.2);
+}
+function buildWatchtower(world, b, cx, cz) {                             // вышка охраны — 4-leg timber tower + cabin
+  const H = 6;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { b.box(0.3, H, 0.3, cx + sx * 1.2, H / 2, cz + sz * 1.2, PLANK, { tint: 0.04 }); }
+  for (const sz of [-1, 1]) b.box(2.7, 0.2, 0.2, cx, 3, cz + sz * 1.2, PLANK); for (const sx of [-1, 1]) b.box(0.2, 0.2, 2.7, cx + sx * 1.2, 3.6, cz, PLANK);
+  b.box(3.5, 2.3, 3.5, cx, H + 1.15, cz, PLANK, { tint: 0.05 });
+  b.box(3.9, 0.5, 3.9, cx, H + 2.5, cz, 0x4a3a24);                       // roof
+  for (const [dx, dz] of [[0, 1.78], [1.78, 0], [0, -1.78], [-1.78, 0]]) b.box(dx ? 0.2 : 2.5, 0.9, dz ? 0.2 : 2.5, cx + dx, H + 1.4, cz + dz, 0x14140f);
+  b.box(0.12, H, 0.7, cx, H / 2, cz - 1.35, IRON);                       // ladder
+  collider(world, cx, cz, 1.7, 0, H + 2.6);
+}
+function buildFloodlight(world, b, cx, cz, ry = 0) {                     // прожекторная мачта
+  const H = 11;
+  cyl(b, 0.24, H, cx, H / 2, cz, FENCE.mid, { seg: 8 });
+  b.box(4, 0.3, 0.3, cx, H, cz, IRON, { ry });
+  for (let i = -1; i <= 1; i++) b.box(0.9, 0.7, 0.55, cx + i * 1.4 * Math.cos(ry), H + 0.4, cz + i * 1.4 * Math.sin(ry), 0xf4ecc0, { ry });
+  collider(world, cx, cz, 0.4, 0, H);
+}
+
+// =====================================================================
 // Entry — assemble the airfield surface + perimeter (structures added in later passes).
 // =====================================================================
 export function buildAirfield(world, ox, oz) {
@@ -418,7 +521,19 @@ export function buildAirfield(world, ox, oz) {
   buildSAMSite(world, b, ox - 90, oz + 222);
   buildShilka(world, b, ox - 224, oz + 188, 0.3); buildShilka(world, b, ox - 46, oz + 188, -0.3);
   buildRadarP18(world, b, ox - 150, oz + 212);
-  buildZU23(world, b, ox - 156, oz + 92); buildZU23(world, b, ox - 46, oz + 106);
+  buildZU23(world, b, ox - 168, oz + 92); buildZU23(world, b, ox - 44, oz + 100);
+
+  // ⑦ support — штаб + fire depo (S edge, W cluster), fuel farm + ammo magazines (dispersed), windsock,
+  // watchtowers (corners), floodlight masts (apron/taxiway edges)
+  buildBarracks(world, b, ox - 186, oz + 92);
+  buildFireStation(world, b, ox - 158, oz + 92);
+  buildFuelFarm(world, b, ox - 78, oz + 93);
+  buildAmmoBunker(world, b, ox - 122, oz + 114, '1');  // dispersed among the shelters
+  buildAmmoBunker(world, b, ox - 60, oz + 92, '2');
+  buildAmmoBunker(world, b, ox - 44, oz + 134, '3');
+  buildWindsock(world, b, ox - 37, oz + 172);
+  [[-232, 90], [-38, 92], [-232, 170]].forEach(([sx, sz]) => buildWatchtower(world, b, ox + sx, oz + sz));
+  [[-180, 98, 0], [-120, 98, 0], [-70, 98, 0], [-150, 135, 0], [-90, 135, 0]].forEach(([sx, sz, ry]) => buildFloodlight(world, b, ox + sx, oz + sz, ry));
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }
