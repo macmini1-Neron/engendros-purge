@@ -310,6 +310,93 @@ function buildSilo(world, b, x, z, R, H) {
   collider(world, x, z, R, 0, H);
 }
 
+// ---- armored railway wagon (military green, ribbed) ----
+function wagon(world, b, x, z) {
+  const C = { hi: 0x5a6450, mid: 0x46503e, lo: 0x33392b };
+  b.box(7, 0.5, 2.6, x, 0.55, z, 0x3a3a3a);                 // underframe
+  b.box(7, 2.4, 2.6, x, 2.0, z, C.mid, { tint: 0.03 });     // body
+  b.box(7.1, 0.4, 2.7, x, 3.2, z, C.hi);                    // roof lip (lit)
+  for (let i = -2; i <= 2; i++) b.box(0.2, 2.3, 2.72, x + i * 1.4, 2.0, z, C.lo); // ribs (proud)
+  for (const wx of [x - 2.4, x + 2.4]) for (const dz of [-1.1, 1.1]) { const g = new THREE.CylinderGeometry(0.5, 0.5, 0.3, 10); b.geo(g, wx, 0.5, z + dz, 0x2a2a2a, { rx: Math.PI / 2 }); g.dispose(); }
+  collider(world, x, z, 3.5, 0, 3.4, 1.4);
+}
+// ---- rail spur: ballast + 2 rails + ties + loading platform + 2 wagons ----
+function buildRailSpur(world, b, x0, x1, z) {
+  const len = Math.abs(x1 - x0), cx = (x0 + x1) / 2, lo = Math.min(x0, x1);
+  b.box(len, 0.15, 3.0, cx, 0.08, z, 0x5a564e);             // ballast bed
+  for (const dz of [-0.7, 0.7]) b.box(len, 0.12, 0.12, cx, 0.22, z + dz, 0x8a8680); // rails
+  for (let xx = lo + 1; xx < lo + len; xx += 1.2) b.box(0.3, 0.1, 2.4, xx, 0.12, z, 0x4a3a28); // ties
+  b.box(8, 0.6, 4, lo + 6, 0.3, z + 3.6, 0x8a857a); collider(world, lo + 6, z + 3.6, 4, 0, 0.6, 2); // loading platform
+  wagon(world, b, cx - 4, z); wagon(world, b, cx + 10, z);
+}
+// ---- elevated X-aligned pipe rack (эстакада): bents + pipes (walk under) ----
+function buildPipeRackX(world, b, x0, x1, z, h) {
+  h = h || 4.5; const len = Math.abs(x1 - x0), cx = (x0 + x1) / 2, lo = Math.min(x0, x1), n = Math.max(2, Math.round(len / 6));
+  for (let i = 0; i <= n; i++) { const px = lo + (len * i) / n; b.box(0.3, h, 0.3, px, h / 2, z - 0.6, 0x6c727a); b.box(0.3, h, 0.3, px, h / 2, z + 0.6, 0x6c727a); b.box(1.8, 0.25, 0.25, px, h - 0.2, z, 0x5c584f); collider(world, px, z, 0.3, 0, h - 1.2, 0.9); }
+  for (const dz of [-0.45, 0, 0.45]) { const g = new THREE.CylinderGeometry(0.28, 0.28, len, 8); b.geo(g, cx, h + 0.1, z + dz, dz === 0 ? 0x9a948a : 0x8a857a, { rz: Math.PI / 2 }); g.dispose(); }
+}
+// ---- substation (подстанция): transformers + lattice pylon + insulators ----
+function buildSubstation(world, b, x, z) {
+  for (const dx of [-3.2, 3.2]) {
+    b.box(2.4, 2.6, 2.0, x + dx, 1.3, z, 0x7c776d, { tint: 0.03 });            // transformer body
+    for (let i = -2; i <= 2; i++) b.box(2.6, 0.12, 0.12, x + dx, 1.3 + i * 0.45, z + 1.05, 0x5c584f); // cooling fins
+    b.box(0.3, 1.2, 0.3, x + dx, 3.2, z, 0x4a4a4a);                            // bushing
+    collider(world, x + dx, z, 1.4, 0, 2.6, 1.1);
+  }
+  for (const c of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.box(0.18, 7, 0.18, x + c[0] * 1.2, 3.5, z + c[1] * 1.2, 0x6c727a); // pylon legs
+  for (const ry of [2.2, 4.4, 6.4]) { b.box(2.6, 0.14, 0.14, x, ry, z - 1.2, 0x6c727a); b.box(2.6, 0.14, 0.14, x, ry, z + 1.2, 0x6c727a); }
+  b.box(5, 0.2, 0.2, x, 7, z, 0x6c727a);                                       // crossarm
+  for (const dx of [-2, 0, 2]) b.box(0.18, 0.7, 0.18, x + dx, 6.6, z, 0xb8c0c8); // insulators
+}
+// ---- slag heap (террикон): stepped dark cone, a landmark hill ----
+function buildTerrikon(world, b, x, z, R, H) {
+  const segs = 8;
+  for (let i = 0; i < segs; i++) { const t = i / segs, r = R * (1 - t * 0.9); cyl(b, r, H / segs + 0.25, x, (H / segs) * (i + 0.5), z, i % 2 ? 0x3a342b : 0x463f33, { seg: 10, tint: 0.05 }); }
+  collider(world, x, z, R * 0.66, 0, H);
+}
+// ---- cooling/settling pond (concrete rim + water) ----
+function buildCoolingPond(b, x, z, W, D) {
+  b.box(W + 1.4, 0.5, D + 1.4, x, 0.25, z, 0x7c776d);  // concrete rim
+  b.box(W, 0.3, D, x, 0.34, z, 0x2b5a66);              // water
+}
+
+// ---- perimeter fence: concrete posts + panels, with gate GAPS ----
+function buildFence(world, b, cx, cz, W, D, gates) {
+  const H = 3, postC = 0x6c6760, panC = 0x8a857a, panLo = 0x6a655c, step = 6;
+  const inGate = (side, p) => gates.some((g) => g.side === side && Math.abs(p - g.at) < g.w / 2);
+  const run = (axis, fixed, from, to, side) => {
+    for (let p = from; p < to - 0.1; p += step) {
+      const segEnd = Math.min(p + step, to), mid = (p + segEnd) / 2, segLen = segEnd - p;
+      if (axis === 'x') b.box(0.4, H + 0.5, 0.4, p, (H + 0.5) / 2, fixed, postC); else b.box(0.4, H + 0.5, 0.4, fixed, (H + 0.5) / 2, p, postC); // post
+      if (inGate(side, mid)) continue;
+      if (axis === 'x') { world._solid(b, segLen - 0.42, H, 0.25, mid, H / 2, fixed, panC, { tint: 0.03 }); b.box(segLen - 0.42, 0.3, 0.3, mid, H - 0.15, fixed, panLo); }
+      else { world._solid(b, 0.25, H, segLen - 0.42, fixed, H / 2, mid, panC, { tint: 0.03 }); b.box(0.3, 0.3, segLen - 0.42, fixed, H - 0.15, mid, panLo); }
+    }
+    if (axis === 'x') b.box(0.4, H + 0.5, 0.4, to, (H + 0.5) / 2, fixed, postC); else b.box(0.4, H + 0.5, 0.4, fixed, (H + 0.5) / 2, to, postC); // end post
+  };
+  const x0 = cx - W / 2, x1 = cx + W / 2, z0 = cz - D / 2, z1 = cz + D / 2;
+  run('x', z0, x0, x1, 'S'); run('x', z1, x0, x1, 'N');
+  run('z', x0, z0, z1, 'W'); run('z', x1, z0, z1, 'E');
+}
+
+// ---- misc dressing: light poles, pallet+crate stacks, pipe heaps ----
+function buildMisc(world, b, rng) {
+  for (const [x, z] of [[-40, -28], [22, -50], [56, -18], [-12, -76], [38, -82], [-52, -48]]) { // lamp posts
+    b.box(0.3, 7, 0.3, x, 3.5, z, 0x4c5158); b.box(1.4, 0.3, 0.5, x, 6.85, z + 0.5, 0x4c5158);
+    b.box(0.7, 0.25, 0.4, x, 6.7, z + 0.85, 0xffe39a); collider(world, x, z, 0.3, 0, 6.4);
+  }
+  for (const [x, z] of [[-44, -22], [14, -44], [50, -30], [-18, -80], [30, -60]]) { // pallets + crates
+    for (let i = 0; i < 3; i++) {
+      const px = x + randRange(-2.2, 2.2, rng), pz = z + randRange(-2.2, 2.2, rng);
+      b.box(1.6, 0.18, 1.2, px, 0.1, pz, 0x6a5230, { ry: randRange(0, TAU, rng) });
+      if (randRange(0, 1, rng) < 0.6) { const s = randRange(0.8, 1.3, rng); b.box(s, s, s, px, 0.2 + s / 2, pz, 0x7a5a34, { tint: 0.05, ry: randRange(-0.3, 0.3, rng) }); collider(world, px, pz, s / 2, 0, 0.2 + s); }
+    }
+  }
+  for (const [x, z] of [[-46, -12], [44, -46]]) { // pipe heaps (lying)
+    for (let i = 0; i < 4; i++) { const g = new THREE.CylinderGeometry(0.3, 0.3, 4, 8); b.geo(g, x + randRange(-1, 1, rng), 0.35 + (i % 2) * 0.62, z + i * 0.7 - 1, 0x6c727a, { rx: Math.PI / 2, tint: 0.04 }); g.dispose(); }
+  }
+}
+
 // =====================================================================
 // Entry — assembles the kombinát. Objects are added incrementally per the
 // build plan (barrels → tanks → buildings → infra → fence → signs → misc).
@@ -362,4 +449,17 @@ export function buildIndustrial(world, ox, oz) {
   buildSilo(world, sup, ox - 48, oz - 40, 3, 12); buildSilo(world, sup, ox - 43, oz - 44, 3, 12); buildSilo(world, sup, ox - 53, oz - 44, 3, 12);
   const supm = new THREE.Mesh(sup.build(), voxelMaterial());
   supm.castShadow = true; supm.receiveShadow = true; world.scene.add(supm);
+
+  // --- OBJECT 6 + 7: infrastructure + perimeter fence + misc dressing ---
+  const infra = new MeshBuilder();
+  buildRailSpur(world, infra, ox + 75, ox + 5, oz - 2);     // rail from E gate, z=-42
+  buildPipeRackX(world, infra, ox + 0, ox + 28, oz - 6, 4.5);   // pipe rack (0..28, -46)
+  buildPipeRackX(world, infra, ox + 38, ox + 62, oz - 26, 4.5); // pipe rack (38..62, -66)
+  buildSubstation(world, infra, ox + 16, oz - 34);          // (16, -74)
+  buildTerrikon(world, infra, ox + 58, oz + 42, 16, 14);    // slag heap (58, 2) NE
+  buildCoolingPond(infra, ox + 48, oz - 46, 24, 16);        // (48, -86)
+  buildFence(world, infra, ox + 0, oz - 40, 150, 110, [{ side: 'S', at: 0, w: 8 }, { side: 'E', at: -42, w: 8 }, { side: 'W', at: 10, w: 6 }]);
+  buildMisc(world, infra, rng);
+  const im = new THREE.Mesh(infra.build(), voxelMaterial());
+  im.castShadow = true; im.receiveShadow = true; world.scene.add(im);
 }
