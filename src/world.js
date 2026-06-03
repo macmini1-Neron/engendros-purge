@@ -19,8 +19,13 @@ export class World {
     this.boxes = [];
     this.spawns = [];
     this.lootSpots = [];
-    this.scene.fog.near = 95; this.scene.fog.far = 640; // wider haze for the larger compound
-    this._build();
+    this.mapId = (game.mapId === 'steppe') ? 'steppe' : 'arena';
+    if (this.mapId === 'steppe') {
+      this._buildSteppe();
+    } else {
+      this.scene.fog.near = 95; this.scene.fog.far = 640; // wider haze for the larger compound
+      this._build();
+    }
   }
 
   _solid(builder, w, h, d, x, y, z, color, opts = {}) {
@@ -180,6 +185,53 @@ export class World {
       new THREE.Vector3(0, 0, 16), new THREE.Vector3(-34, 0, -22), new THREE.Vector3(26, 0, -38),
       new THREE.Vector3(30, 0, 30), new THREE.Vector3(-40, 0, 24), new THREE.Vector3(0, 0, -34),
     ];
+  }
+
+  // Bare open-world scaffold (Phase 1): flat 500×500 steppe with an impassable
+  // voxel mountain border. Districts/terrain/POIs land in later plans.
+  _buildSteppe() {
+    this.HALF = 250;
+    const H = this.HALF;
+    const rng = makeRNG(0x57E9);
+    this.scene.fog.near = 120; this.scene.fog.far = 900; // open horizon
+
+    // ground
+    const g = new THREE.PlaneGeometry(H * 2 + 120, H * 2 + 120); g.rotateX(-Math.PI / 2);
+    const gm = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x8a9152 })); // dry steppe
+    gm.receiveShadow = true; this.scene.add(gm);
+
+    // sparse ground detail
+    const tb = new MeshBuilder();
+    for (let i = 0; i < 220; i++) {
+      const x = randRange(-H, H, rng), z = randRange(-H, H, rng), s = randRange(4, 12, rng);
+      tb.box(s, 0.05, s, x, 0.03, z, shade(0x7c8a4e, randRange(-0.1, 0.06, rng)), { ry: randRange(0, TAU, rng) });
+    }
+    const tiles = new THREE.Mesh(tb.build(), voxelMaterial()); tiles.receiveShadow = true; this.scene.add(tiles);
+
+    // mountain border (impassable: MH=26 >> step-up 0.62) + boulders, one merged mesh
+    const mb = new MeshBuilder();
+    const rock = 0x6a6258, rock2 = 0x534c43, MH = 26, t = 8, span = H * 2 + t * 2;
+    this._solid(mb, span, MH, t, 0, MH / 2, -H - t / 2, rock, { tint: 0.06 });
+    this._solid(mb, span, MH, t, 0, MH / 2,  H + t / 2, rock, { tint: 0.06 });
+    this._solid(mb, t, MH, span, -H - t / 2, MH / 2, 0, rock, { tint: 0.06 });
+    this._solid(mb, t, MH, span,  H + t / 2, MH / 2, 0, rock, { tint: 0.06 });
+    for (let i = 0; i < 64; i++) { // jagged peaks (visual only — sit atop the impassable base)
+      const edge = i % 4, f = randRange(-H, H, rng), peakH = randRange(8, 24, rng), pw = randRange(10, 28, rng);
+      const x = edge < 2 ? f : (edge === 2 ? -H - t / 2 : H + t / 2);
+      const z = edge < 2 ? (edge === 0 ? -H - t / 2 : H + t / 2) : f;
+      mb.box(pw, peakH, pw, x, MH + peakH / 2 - 5, z, shade(rock2, randRange(-0.05, 0.05, rng)), { ry: randRange(0, TAU, rng), tint: 0.08 });
+    }
+    for (let i = 0; i < 24; i++) { // boulders on open ground (cover + collision sanity)
+      const x = randRange(-H + 30, H - 30, rng), z = randRange(-H + 30, H - 30, rng);
+      if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
+      const s = randRange(2.5, 5.5, rng);
+      this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
+    }
+    const rocks = new THREE.Mesh(mb.build(), voxelMaterial()); rocks.castShadow = true; rocks.receiveShadow = true; this.scene.add(rocks);
+
+    // scaled spawn ring + open loot spots
+    for (let i = 0; i < 32; i++) { const a = (i / 32) * TAU; this.spawns.push(new THREE.Vector3(Math.cos(a) * (H - 12), 0, Math.sin(a) * (H - 12))); }
+    this.lootSpots = [ new THREE.Vector3(0, 0, 30), new THREE.Vector3(40, 0, -40), new THREE.Vector3(-50, 0, 20), new THREE.Vector3(30, 0, 60), new THREE.Vector3(-40, 0, -50) ];
   }
 
   _mesh(builder) {
