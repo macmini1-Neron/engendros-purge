@@ -225,7 +225,7 @@ export class World {
     for (let i = 0; i < 24; i++) { // boulders on open ground (cover + collision sanity)
       const x = randRange(-H + 30, H - 30, rng), z = randRange(-H + 30, H - 30, rng);
       if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
-      if (Math.abs(x) < 80 && Math.abs(z + 40) < 62) continue; // keep the kombinát yard clear
+      if ((x > -84 && x < 84 && z > -104 && z < 12) || Math.hypot(x - 96, z - 18) < 22) continue; // keep the kombinát yard + slag heap clear
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
@@ -234,7 +234,7 @@ export class World {
     // scaled spawn ring + open loot spots
     for (let i = 0; i < 32; i++) { const a = (i / 32) * TAU; this.spawns.push(new THREE.Vector3(Math.cos(a) * (H - 12), 0, Math.sin(a) * (H - 12))); }
     this.lootSpots = [ new THREE.Vector3(0, 0, 40), new THREE.Vector3(90, 0, -40), new THREE.Vector3(-90, 0, -40), new THREE.Vector3(40, 0, 70), new THREE.Vector3(-50, 0, 30) ]; // open ground, clear of the kombinát yard
-    buildIndustrial(this, 0, -40); // Soviet kombinát district (object-by-object — see industrial.js)
+    buildIndustrial(this, 0, 0); // Soviet kombinát district (world coords now; object-by-object — see industrial.js)
   }
 
   _mesh(builder) {
