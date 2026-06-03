@@ -36,6 +36,7 @@ export class Player {
   }
 
   hurt(dmg, bypassArmor = 0) {
+    if (this.game.freecam) return;            // observation/fly-cam: invulnerable
     if (!this.alive) return;
     if (this.inTank && this.inTank.shielded && this.inTank.shielded()) return; // protected by tank armor (enemy fire hits the tank instead — see captured-tank HP)
     const mp = this.game.mp;
@@ -71,6 +72,7 @@ export class Player {
   }
   // Survival timers — called every frame from _updatePlaying so they keep ticking on foot, on the .50 cal, or in the tank.
   survivalTick(dt) {
+    if (this.game.freecam) return;            // observation/fly-cam: no hunger/burn/regen
     const mp = this.game.mp;
     const frozen = mp.active && mp.frozen;
     if (this._wasFrozen && !frozen) { this.game.hud.setHunger(this.hunger); this.game.hud.setSurvival(this); } // refresh HUD after an MP revive/respawn
@@ -104,8 +106,35 @@ export class Player {
   addMoney(n) { this.money += Math.round(n); this.game.hud.setMoney(this.money); }
   spend(n) { if (this.money >= n) { this.money -= n; this.game.hud.setMoney(this.money); return true; } return false; }
 
+  // Dev fly-cam (noclip). Solo only; toggled with N or ?fly=1. Moves the eye directly in 3D, ignoring
+  // collision/gravity/survival so the whole 500 m map can be inspected. `game.freecam` gates damage + spawns.
+  _freecamUpdate(dt, input) {
+    const controlsPaused = this.game.mpMenuOpen;
+    if (!controlsPaused) {
+      this.yaw -= input.mouseDX * this.sens;
+      this.pitch -= input.mouseDY * this.sens;
+    }
+    this.pitch = clamp(this.pitch, -1.54, 1.54); // allow near-straight-down for top-downs
+    const cp = Math.cos(this.pitch);
+    const fwd = new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const boost = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+    const move = new THREE.Vector3().addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
+    if (input.isDown('Space')) move.y += 1;
+    if (input.isDown('ControlLeft') || input.isDown('ControlRight') || input.isDown('KeyC')) move.y -= 1;
+    if (controlsPaused) move.set(0, 0, 0);
+    if (move.lengthSq() > 1) move.normalize();
+    this.pos.addScaledVector(move, (boost ? 65 : 22) * dt);
+    this.vel.set(0, 0, 0); this.onGround = false; this._fallVel = 0; this._camY = this.pos.y;
+    const cam = this.game.engine.camera;
+    cam.rotation.order = 'YXZ';
+    cam.position.set(this.pos.x, this.pos.y, this.pos.z);
+    cam.rotation.y = this.yaw; cam.rotation.x = this.pitch; cam.rotation.z = 0;
+  }
+
   update(dt) {
     const input = this.game.input;
+    if (this.game.freecam) return this._freecamUpdate(dt, input); // dev noclip fly-cam (solo only)
     const mp = this.game.mp;
     const frozen = mp && mp.active && mp.frozen;
     const controlsPaused = mp && mp.active && this.game.mpMenuOpen;

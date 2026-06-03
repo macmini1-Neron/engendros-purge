@@ -360,39 +360,108 @@ function buildCoolingPond(b, x, z, W, D) {
   b.box(W, 0.3, D, x, 0.34, z, 0x2b5a66);              // water
 }
 
-// ---- perimeter fence: concrete posts + panels, with gate GAPS ----
+// ---- perimeter fence: concrete posts + panels. Gates split each side into solid SPANS,
+// so panels stop exactly at the gate edges and no post ever stands inside an opening. ----
 function buildFence(world, b, cx, cz, W, D, gates) {
   const H = 3, postC = 0x6c6760, panC = 0x8a857a, panLo = 0x6a655c, step = 6;
-  const inGate = (side, p) => gates.some((g) => g.side === side && Math.abs(p - g.at) < g.w / 2);
-  const run = (axis, fixed, from, to, side) => {
-    for (let p = from; p < to - 0.1; p += step) {
-      const segEnd = Math.min(p + step, to), mid = (p + segEnd) / 2, segLen = segEnd - p;
-      if (axis === 'x') b.box(0.4, H + 0.5, 0.4, p, (H + 0.5) / 2, fixed, postC); else b.box(0.4, H + 0.5, 0.4, fixed, (H + 0.5) / 2, p, postC); // post
-      if (inGate(side, mid)) continue;
-      if (axis === 'x') { world._solid(b, segLen - 0.42, H, 0.25, mid, H / 2, fixed, panC, { tint: 0.03 }); b.box(segLen - 0.42, 0.3, 0.3, mid, H - 0.15, fixed, panLo); }
-      else { world._solid(b, 0.25, H, segLen - 0.42, fixed, H / 2, mid, panC, { tint: 0.03 }); b.box(0.3, 0.3, segLen - 0.42, fixed, H - 0.15, mid, panLo); }
+  const post = (axis, fixed, p) => { if (axis === 'x') b.box(0.4, H + 0.5, 0.4, p, (H + 0.5) / 2, fixed, postC); else b.box(0.4, H + 0.5, 0.4, fixed, (H + 0.5) / 2, p, postC); };
+  const panel = (axis, fixed, mid, len) => {
+    if (axis === 'x') { world._solid(b, len - 0.42, H, 0.25, mid, H / 2, fixed, panC, { tint: 0.03 }); b.box(len - 0.42, 0.3, 0.3, mid, H - 0.15, fixed, panLo); }
+    else { world._solid(b, 0.25, H, len - 0.42, fixed, H / 2, mid, panC, { tint: 0.03 }); b.box(0.3, 0.3, len - 0.42, fixed, H - 0.15, mid, panLo); }
+  };
+  const side = (axis, fixed, lo, hi, name) => {
+    const gaps = gates.filter((g) => g.side === name).map((g) => [g.at - g.w / 2, g.at + g.w / 2]).sort((a, c) => a[0] - c[0]);
+    const spans = []; let cur = lo;
+    for (const [ga, gb] of gaps) { if (ga > cur) spans.push([cur, Math.min(ga, hi)]); cur = Math.max(cur, gb); }
+    if (cur < hi) spans.push([cur, hi]);
+    for (const [s0, s1] of spans) {
+      const n = Math.max(1, Math.round((s1 - s0) / step)), sl = (s1 - s0) / n;
+      for (let i = 0; i <= n; i++) post(axis, fixed, s0 + sl * i);            // posts incl. exact span ends
+      for (let i = 0; i < n; i++) panel(axis, fixed, s0 + sl * (i + 0.5), sl); // panels clipped to the span
     }
-    if (axis === 'x') b.box(0.4, H + 0.5, 0.4, to, (H + 0.5) / 2, fixed, postC); else b.box(0.4, H + 0.5, 0.4, fixed, (H + 0.5) / 2, to, postC); // end post
   };
   const x0 = cx - W / 2, x1 = cx + W / 2, z0 = cz - D / 2, z1 = cz + D / 2;
-  run('x', z0, x0, x1, 'S'); run('x', z1, x0, x1, 'N');
-  run('z', x0, z0, z1, 'W'); run('z', x1, z0, z1, 'E');
+  side('x', z0, x0, x1, 'S'); side('x', z1, x0, x1, 'N');
+  side('z', x0, z0, z1, 'W'); side('z', x1, z0, z1, 'E');
+}
+
+// ---- one sliding gate leaf as its OWN animated mesh (local origin = leaf centre):
+// maroon panelled steel with stiles/rails, raised panels both faces, and 2 ground wheels. ----
+function buildGateLeaf(W, H) {
+  const lb = new MeshBuilder();
+  const MAROON = 0x6a2526, MA_HI = 0x803232, MA_LO = 0x481818, FR = 0x57201f;
+  lb.box(W, H, 0.16, 0, 0, 0, MAROON, { tint: 0.03 });                            // slab
+  lb.box(W, 0.3, 0.22, 0, H / 2 - 0.15, 0, MA_HI);                                // top rail (lit)
+  lb.box(W, 0.3, 0.22, 0, -H / 2 + 0.15, 0, MA_LO);                               // bottom rail
+  for (const sx of [-1, 1]) lb.box(0.22, H, 0.22, sx * (W / 2 - 0.11), 0, 0, FR); // stiles
+  lb.box(0.18, H, 0.2, 0, 0, 0, FR);                                              // centre mullion
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                           // raised panels (both faces)
+    const px = sx * W * 0.24, py = sy * H * 0.22;
+    lb.box(W * 0.32, H * 0.3, 0.06, px, py, 0.11, MA_LO);
+    lb.box(W * 0.32, H * 0.3, 0.06, px, py, -0.11, MA_LO);
+  }
+  for (const wx of [-W * 0.32, W * 0.32]) {                                        // 2 ground wheels (roll along X)
+    let g = new THREE.CylinderGeometry(0.22, 0.22, 0.16, 12); lb.geo(g, wx, -H / 2 - 0.05, 0, 0x222222, { rz: Math.PI / 2 }); g.dispose();
+    g = new THREE.CylinderGeometry(0.09, 0.09, 0.2, 8); lb.geo(g, wx, -H / 2 - 0.05, 0, 0x8a8680, { rz: Math.PI / 2 }); g.dispose(); // hub
+  }
+  const m = new THREE.Mesh(lb.build(), voxelMaterial());
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+// ---- main works gate (реальная предлога): 2 weathered concrete pillars, a yellow rail/beam
+// bolted on with black brackets, the name board (added in buildSignage), a ground track, and
+// TWO bi-parting SLIDING leaves on wheels that auto-open when a player nears. Walkable. ----
+function buildGate(world, b, gx, gz, opening) {
+  const C = CONCRETE, half = opening / 2, PW = 1.6, PH = 5.0, PD = 1.4, px = half + 0.9, railY = 3.6;
+  for (const sx of [-1, 1]) {
+    const x = gx + sx * px;
+    world._solid(b, PW, PH, PD, x, PH / 2, gz, C.mid, { tint: 0.05 });             // concrete pillar (collider)
+    b.box(PW + 0.14, 0.45, PD + 0.14, x, PH - 0.15, gz, C.hi);                     // lit cap
+    b.box(PW + 0.06, PH - 1.2, 0.18, x, PH * 0.5, gz - PD / 2 - 0.03, C.lo);       // weather streak (proud)
+    b.box(0.75, 1.5, 0.95, x, railY, gz, 0x1e1e1e);                                // black bracket: beam ↔ pillar joint
+  }
+  const beamW = opening + PW * 2 + 1.0;
+  b.box(beamW, 0.5, 0.5, gx, railY, gz, 0xe0b020, { tint: 0.04 });                 // yellow rail/beam
+  b.box(beamW, 0.14, 0.56, gx, railY + 0.23, gz, 0xf4d24a);                        // lit top flange
+  for (const sx of [-2.6, 0, 2.6]) b.box(0.12, 1.4, 0.12, gx + sx, railY + 0.95, gz, 0x262626); // name-board mount struts
+  b.box(opening + 1.2, 0.13, 0.13, gx, railY + 1.6, gz, 0x262626);                 // top rail
+  // ground track the leaves roll on (flat → walkable, no collider)
+  const trackW = opening + 2 * (half + 1);
+  b.box(trackW, 0.12, 0.34, gx, 0.06, gz - 0.85, 0x39362f);
+  b.box(trackW, 0.07, 0.12, gx, 0.13, gz - 0.85, 0x7c776d);                        // rail head
+  // --- two bi-parting sliding leaves (own meshes; no collider → the auto-open keeps it passable) ---
+  const W = half, H = 3.3, cy = 1.9, dz = gz - 0.85, travel = half + 0.4;          // leaves run in front of the pillars
+  const leftClosed = gx - half / 2, rightClosed = gx + half / 2;
+  const left = buildGateLeaf(W, H), right = buildGateLeaf(W, H);
+  left.position.set(leftClosed, cy, dz); right.position.set(rightClosed, cy, dz);
+  world.scene.add(left); world.scene.add(right);
+  world._slideGate = { left, right, gx, gz, leftClosed, rightClosed, travel, amt: 0 };
+  // proximity auto-open (cosmetic, local player) — ticked from the game loop via world.updateGate
+  world.updateGate = function (dt, ppos) {
+    const G = this._slideGate; if (!G || !ppos) return;
+    const near = Math.hypot(ppos.x - G.gx, ppos.z - G.gz) < 12;
+    G.amt += ((near ? 1 : 0) - G.amt) * Math.min(1, dt * 2.6);                     // smooth open/close
+    const t = G.travel * G.amt;
+    G.left.position.x = G.leftClosed - t;
+    G.right.position.x = G.rightClosed + t;
+  };
 }
 
 // ---- misc dressing: light poles, pallet+crate stacks, pipe heaps ----
 function buildMisc(world, b, rng) {
-  for (const [x, z] of [[-40, -28], [22, -50], [56, -18], [-12, -76], [38, -82], [-52, -48]]) { // lamp posts
+  for (const [x, z] of [[-44, -12], [18, -6], [58, -26], [-30, -66], [34, -58], [-2, -84]]) { // lamp posts
     b.box(0.3, 7, 0.3, x, 3.5, z, 0x4c5158); b.box(1.4, 0.3, 0.5, x, 6.85, z + 0.5, 0x4c5158);
     b.box(0.7, 0.25, 0.4, x, 6.7, z + 0.85, 0xffe39a); collider(world, x, z, 0.3, 0, 6.4);
   }
-  for (const [x, z] of [[-44, -22], [14, -44], [50, -30], [-18, -80], [30, -60]]) { // pallets + crates
+  for (const [x, z] of [[-44, -26], [22, -54], [-30, -72], [8, -68]]) { // pallets + crates
     for (let i = 0; i < 3; i++) {
       const px = x + randRange(-2.2, 2.2, rng), pz = z + randRange(-2.2, 2.2, rng);
       b.box(1.6, 0.18, 1.2, px, 0.1, pz, 0x6a5230, { ry: randRange(0, TAU, rng) });
       if (randRange(0, 1, rng) < 0.6) { const s = randRange(0.8, 1.3, rng); b.box(s, s, s, px, 0.2 + s / 2, pz, 0x7a5a34, { tint: 0.05, ry: randRange(-0.3, 0.3, rng) }); collider(world, px, pz, s / 2, 0, 0.2 + s); }
     }
   }
-  for (const [x, z] of [[-46, -12], [44, -46]]) { // pipe heaps (lying)
+  for (const [x, z] of [[-48, -24], [44, -58]]) { // pipe heaps (lying)
     for (let i = 0; i < 4; i++) { const g = new THREE.CylinderGeometry(0.3, 0.3, 4, 8); b.geo(g, x + randRange(-1, 1, rng), 0.35 + (i % 2) * 0.62, z + i * 0.7 - 1, 0x6c727a, { rx: Math.PI / 2, tint: 0.04 }); g.dispose(); }
   }
 }
@@ -419,17 +488,98 @@ function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
   world.scene.add(m);
 }
 function buildSignage(world) {
-  // ЦЕХ №1 — east gable of the main hall (faces +X, toward the yard)
-  signPlane(world, 'ЦЕХ №1', -3.55, 9.4, -32, 4.6, 1.3, Math.PI / 2, { color: '#e8e0cc' });
-  // СЛАВА ТРУДУ! — red banner along the main hall's south long wall (faces −Z)
-  signPlane(world, 'СЛАВА ТРУДУ!', -28, 11.6, -46.55, 24, 1.9, Math.PI, { panel: '#9a2b22', color: '#f2e9d6', size: 92, border: '#d8cfb8' });
-  // ОГНЕОПАСНО — hazard sign by the gasholders (yellow/black)
-  signPlane(world, 'ОГНЕОПАСНО', 36, 9, -48.6, 6, 1.4, Math.PI, { panel: '#c9a23a', color: '#1a1a1a', size: 70, border: '#1a1a1a' });
-  // ПРОХОДНАЯ — over the gatehouse south door
-  signPlane(world, 'ПРОХОДНАЯ', 0, 4.4, -94.6, 5, 1.1, Math.PI, { panel: '#2d4a2a', color: '#e8e0cc', size: 64 });
-  // ЗАВОДОУПРАВЛЕНИЕ + ★ — admin south face
-  signPlane(world, 'ЗАВОДОУПРАВЛЕНИЕ', -22, 5.7, -88.62, 12, 1.2, Math.PI, { color: '#f2e9d6', size: 56 });
-  signPlane(world, '★', -22, 7.0, -88.62, 1.4, 1.4, Math.PI, { color: '#cc2b22', size: 110 });
+  // ЦЕХ №1 — east gable of the main hall (x=8 gable, faces +X toward the yard)
+  signPlane(world, 'ЦЕХ №1', 8.45, 9.4, -18, 4.6, 1.3, Math.PI / 2, { color: '#e8e0cc' });
+  // СЛАВА ТРУДУ! — red banner along the main hall's south long wall (z=-32, faces −Z)
+  signPlane(world, 'СЛАВА ТРУДУ!', -16, 11.6, -32.55, 24, 1.9, Math.PI, { panel: '#9a2b22', color: '#f2e9d6', size: 92, border: '#d8cfb8' });
+  // ОГНЕОПАСНО — hazard sign at the fuel zone (yellow/black, faces +Z into the yard)
+  signPlane(world, 'ОГНЕОПАСНО', 40, 9, -64.5, 6, 1.4, 0, { panel: '#c9a23a', color: '#1a1a1a', size: 70, border: '#1a1a1a' });
+  // ПРОХОДНАЯ — over the checkpoint booth's south door (booth at z=-91)
+  signPlane(world, 'ПРОХОДНАЯ', 0, 4.4, -93.6, 5, 1.1, Math.PI, { panel: '#2d4a2a', color: '#e8e0cc', size: 64 });
+  // ОКТЯБРЬ — name board over the main gate (faded white/grey enamel plaque, faces −Z)
+  signPlane(world, 'ОКТЯБРЬ', 0, 4.55, -98.18, 8.6, 1.5, Math.PI, { panel: '#c7c3b5', border: '#9a9486', color: '#7a2a26', size: 122, cw: 1100, ch: 220 });
+  // (заводоуправление name board + ★ star are built into buildAdmin now — on the HQ itself)
+}
+
+// =====================================================================
+// ЗАВОДОУПРАВЛЕНИЕ — factory administration HQ (remodel via the voxel-building skill + a
+// research dossier). Stalinist 2-storey block on a granite plinth, pale-ochre render, 7-bay
+// tall 6-pane white windows (ground floor taller), a central portico, a 3-D red star + name
+// board on the parapet, and a WALKABLE interior (lobby + reception desk + 2 columns + honor
+// board, a stair up to a floor-2 meeting room). Faces SOUTH, toward the gate. cx,cz = centre.
+// =====================================================================
+function buildAdmin(world, cx, cz) {
+  const b = new MeshBuilder();
+  const W = 18, D = 11, GF = 4.0, UF = 3.6, EH = GF + UF, T = 0.6;
+  const OCH = { hi: 0xe6d2a0, mid: 0xdcc488, lo: 0xc6ac6e };
+  const GRAN = 0x6e6a63, WHITE = 0xece8dd, GLASS = 0x8fb0b6, CORN = 0xd6cdb6, ROOF = 0x46423a;
+  const RED = 0xc1272d, IFLOOR = 0x9a958b, FLOOR2 = 0xb39c74, WOOD = 0x6a4a2a;
+  const sz = cz - D / 2, nz = cz + D / 2, wx = cx - W / 2, ex = cx + W / 2;
+
+  // --- perimeter walls (solid colliders); S & N get a ground doorway (2 walkable exits) ---
+  world._wall(b, cx, sz, W, GF, 0, 'x', OCH.mid, { width: 3.2, height: 3.2 });
+  world._solid(b, W, UF, T, cx, GF + UF / 2, sz, OCH.mid, { tint: 0.03 });
+  world._wall(b, cx, nz, W, GF, 0, 'x', OCH.mid, { width: 2.4, height: 2.8 });
+  world._solid(b, W, UF, T, cx, GF + UF / 2, nz, OCH.mid, { tint: 0.03 });
+  world._solid(b, T, EH, D, wx, EH / 2, cz, OCH.mid, { tint: 0.03 });
+  world._solid(b, T, EH, D, ex, EH / 2, cz, OCH.mid, { tint: 0.03 });
+
+  // --- interior floor, 2nd-floor slab (hole over the stair), roof slab, stair to floor 2 ---
+  world._floor(b, cx, cz, W - T, D - T, 0.12, IFLOOR);
+  const stx = wx + 2.0, stz0 = sz + 1.4, steps = 12, run = 0.5, rise = GF / steps, runLen = steps * run;
+  const hole = { x: stx, z: stz0 + (runLen - run) / 2, w: 2.9, d: runLen + 0.5 };
+  world._floor(b, cx, cz, W, D, GF, FLOOR2, hole);
+  world._floor(b, cx, cz, W, D, EH, ROOF);
+  world._stairs(b, stx, stz0, 0, 1, steps, 0xb98a4e, 0.12, rise, run, 2.3);
+
+  // --- granite plinth (split at the doors), projecting cornice, parapet ---
+  for (const zz of [sz, nz]) { b.box(7.3, 1.0, T + 0.3, cx - 5.35, 0.5, zz, GRAN); b.box(7.3, 1.0, T + 0.3, cx + 5.35, 0.5, zz, GRAN); }
+  for (const xx of [wx, ex]) b.box(T + 0.3, 1.0, D + 0.4, xx, 0.5, cz, GRAN);
+  b.box(W + 0.9, 0.5, T + 0.5, cx, EH - 0.1, sz, CORN); b.box(W + 0.9, 0.5, T + 0.5, cx, EH - 0.1, nz, CORN);
+  b.box(T + 0.5, 0.5, D + 0.9, wx, EH - 0.1, cz, CORN); b.box(T + 0.5, 0.5, D + 0.9, ex, EH - 0.1, cz, CORN);
+  b.box(W + 0.5, 0.9, 0.45, cx, EH + 0.45, sz, OCH.hi); b.box(W + 0.5, 0.9, 0.45, cx, EH + 0.45, nz, OCH.hi);
+  b.box(0.45, 0.9, D + 0.5, wx, EH + 0.45, cz, OCH.hi); b.box(0.45, 0.9, D + 0.5, ex, EH + 0.45, cz, OCH.hi);
+
+  // --- windows: tall, vertical, white-framed, 6-pane (ground floor taller) ---
+  const winZ = (x, y, zz, out, w, h) => { const zo = zz + out * (T / 2);
+    b.box(w + 0.26, h + 0.26, 0.1, x, y, zo + out * 0.03, WHITE); b.box(w, h, 0.08, x, y, zo + out * 0.06, GLASS);
+    b.box(0.09, h, 0.1, x, y, zo + out * 0.08, WHITE); b.box(w, 0.09, 0.1, x, y + h * 0.17, zo + out * 0.08, WHITE); b.box(w, 0.09, 0.1, x, y - h * 0.17, zo + out * 0.08, WHITE); };
+  const winX = (z, y, xx, out, w, h) => { const xo = xx + out * (T / 2);
+    b.box(0.1, h + 0.26, w + 0.26, xo + out * 0.03, y, z, WHITE); b.box(0.08, h, w, xo + out * 0.06, y, z, GLASS);
+    b.box(0.1, h, 0.09, xo + out * 0.08, y, z, WHITE); b.box(0.1, 0.09, w, xo + out * 0.08, y + h * 0.17, z, WHITE); b.box(0.1, 0.09, w, xo + out * 0.08, y - h * 0.17, z, WHITE); };
+  const bays = 7, bp = W / bays;
+  for (let i = 0; i < bays; i++) { const x = wx + (i + 0.5) * bp;
+    if (i < 2 || i > 4) winZ(x, 2.2, sz, -1, 1.35, 2.6);   // S ground: skip central 3 bays (portico)
+    if (i !== 3) winZ(x, 2.2, nz, 1, 1.35, 2.6);            // N ground: skip the door bay
+    winZ(x, 5.8, sz, -1, 1.35, 2.2); winZ(x, 5.8, nz, 1, 1.35, 2.2); } // upper floor: every bay
+  const bpD = D / 4;
+  for (let j = 0; j < 4; j++) { const z = sz + (j + 0.5) * bpD;
+    winX(z, 2.2, wx, -1, 1.2, 2.5); winX(z, 2.2, ex, 1, 1.2, 2.5); winX(z, 5.8, wx, -1, 1.2, 2.1); winX(z, 5.8, ex, 1, 1.2, 2.1); }
+
+  // --- central portico over the south entrance + entrance apron ---
+  b.box(6.4, 0.45, 3.2, cx, 3.5, sz - 1.4, CORN); b.box(6.6, 0.18, 3.4, cx, 3.78, sz - 1.4, OCH.hi); // canopy + lit lip
+  for (const dx of [-2.8, 2.8]) b.box(0.45, 3.5, 0.45, cx + dx, 1.75, sz - 2.85, GRAN);              // 2 posts
+  b.box(7.0, 0.2, 1.6, cx, 0.1, sz - 1.5, GRAN);                                                     // entrance apron
+
+  // --- interior: 2 columns, reception counter, floor-2 meeting table + a stairwell rail ---
+  for (const dx of [-3.6, 3.6]) { world._solid(b, 0.7, GF, 0.7, cx + dx, GF / 2, cz - 1.0, IFLOOR, { tint: 0.03 });
+    b.box(0.95, 0.3, 0.95, cx + dx, GF - 0.16, cz - 1.0, CORN); b.box(0.95, 0.3, 0.95, cx + dx, 0.27, cz - 1.0, GRAN); }
+  world._solid(b, 4.0, 1.1, 1.0, cx + 4.5, 0.66, sz + 2.6, WOOD, { tint: 0.03 }); b.box(4.3, 0.16, 1.2, cx + 4.5, 1.24, sz + 2.6, 0x8a6a3a);          // reception counter
+  world._solid(b, 5.0, 0.85, 1.5, cx, GF + 0.55, sz + 2.6, 0x7a2a26, { tint: 0.03 }); b.box(5.2, 0.14, 1.7, cx, GF + 1.0, sz + 2.6, 0x9a3a32);       // floor-2 meeting table
+  b.box(0.1, 1.0, hole.d, hole.x + hole.w / 2 + 0.12, GF + 0.5, hole.z, 0x4a4a4a);                    // stairwell rail (open east side)
+
+  // --- 3-D red star on a short pylon at the south parapet centre ---
+  const star = new THREE.Shape();
+  for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? 0.42 : 1.05, px = Math.cos(a) * rad, py = Math.sin(a) * rad; if (i === 0) star.moveTo(px, py); else star.lineTo(px, py); }
+  star.closePath();
+  const sg = new THREE.ExtrudeGeometry(star, { depth: 0.35, bevelEnabled: false }); b.geo(sg, cx, EH + 2.1, sz + 0.35, RED); sg.dispose();
+  for (const dx of [-0.7, 0.7]) b.box(0.12, 2.3, 0.12, cx + dx, EH + 1.05, sz + 0.45, 0x2a2a2a);
+
+  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
+
+  // --- signage (own textured planes) ---
+  signPlane(world, 'ЗАВОДОУПРАВЛЕНИЕ', cx, EH + 0.5, sz - 0.45, 13, 0.95, Math.PI, { panel: '#2a2622', border: '#c8a24a', color: '#e8dca0', size: 60, cw: 1400, ch: 150 });
+  signPlane(world, 'ДОСКА ПОЧЁТА', cx - 5, 2.4, nz - 0.42, 3.6, 1.9, Math.PI, { panel: '#9a2b22', border: '#c8a24a', color: '#f2e9d6', size: 52, cw: 512, ch: 280 });
 }
 
 // =====================================================================
@@ -440,60 +590,68 @@ export function buildIndustrial(world, ox, oz) {
   const rng = makeRNG(0x1AD05);
   const metal = new MeshBuilder(); // merged mesh bucket for metal props (one draw call)
 
-  // --- OBJECT 1: fuel drums at the fuelling points (local coords + origin) ---
-  buildFuelDrums(world, metal, ox + 56, oz - 30, 9, rng); // by the fuel tanks (E)
-  buildFuelDrums(world, metal, ox + 6,  oz - 4,  6, rng); // by the rail loading platform
-  buildFuelDrums(world, metal, ox - 26, oz + 6,  5, rng); // by the main hall
+  // Re-laid-out 2026-06-03: called with ox=oz=0, so every coord below is WORLD metres
+  // (+X = east, +Z = north). Structures are spread with clear walking lanes and the
+  // fence re-centred on the built mass (≈ x[-79,79], z[-98,6]); all the earlier overlaps
+  // are gone — blast furnaces clear of the мартен wall, tanks clear of the pond, the rail
+  // clear of the cooling tower, drums out of the hall — and the terrikon sits OUTSIDE the
+  // fence (NE) as a realistic waste heap.
 
-  // --- OBJECT 2: storage tanks (резервуары) + gasholders (газгольдеры) ---
-  buildTank(world, metal, ox + 58, oz - 32, 5,   8, GREY, rng);
-  buildTank(world, metal, ox + 67, oz - 27, 4,   7, RUST, rng);
-  buildTank(world, metal, ox + 60, oz - 41, 4.5, 8, GREY, rng);
-  buildGasholder(world, metal, ox + 36, oz - 16, 7,   16, rng);
-  buildGasholder(world, metal, ox + 54, oz - 18, 6,   14, rng);
-  buildGasholder(world, metal, ox + 45, oz - 28, 6.5, 15, rng);
+  // --- OBJECT 1: fuel drums at the fuelling points ---
+  buildFuelDrums(world, metal, ox + 52, oz - 82, 9, rng); // tank farm (SE)
+  buildFuelDrums(world, metal, ox + 24, oz - 56, 6, rng); // rail loading platform
+  buildFuelDrums(world, metal, ox - 46, oz - 30, 5, rng); // by the furnace hall
+
+  // --- OBJECT 2: storage tanks (резервуары) + gasholders (газгольдеры) — fuel zone (SE) ---
+  buildTank(world, metal, ox + 64, oz - 72, 5,   8, GREY, rng);
+  buildTank(world, metal, ox + 70, oz - 86, 4,   7, RUST, rng);
+  buildTank(world, metal, ox + 58, oz - 90, 4.5, 8, GREY, rng);
+  buildGasholder(world, metal, ox + 32, oz - 74, 7,   16, rng);
+  buildGasholder(world, metal, ox + 50, oz - 72, 6,   14, rng);
+  buildGasholder(world, metal, ox + 40, oz - 88, 6.5, 15, rng);
 
   const m = new THREE.Mesh(metal.build(), voxelMaterial());
   m.castShadow = true; m.receiveShadow = true;
   world.scene.add(m);
 
-  // --- OBJECT 3: main production hall (главный цех) — its own merged mesh ---
-  buildMainHall(world, ox - 28, oz + 8); // world centre (-28, -32)
+  // --- OBJECT 3: main production hall (главный цех) — north-centre landmark ---
+  buildMainHall(world, ox - 16, oz - 18); // world centre (-16, -18)
 
   // --- OBJECT 4: powerhouse (ТЭЦ + chimneys + cooling tower) + furnace hall + blast furnaces ---
   const struct = new MeshBuilder();
-  buildBuilding(world, struct, ox + 20, oz + 12, 26, 16, 12, { windows: true, doors: [{ side: 'S', w: 4, h: 4 }, { side: 'N', w: 4, h: 4 }] }); // ТЭЦ boiler house
-  buildChimney(world, struct, ox + 26, oz + 14, 1.6, 30);
-  buildChimney(world, struct, ox + 30, oz + 12, 1.6, 33);
-  buildChimney(world, struct, ox + 34, oz + 10, 1.5, 28);
-  buildCoolingTower(world, struct, ox + 52, oz + 6, 12, 28);
-  buildBuilding(world, struct, ox - 30, oz - 22, 36, 20, 12, { windows: true, doors: [{ side: 'W', w: 5, h: 5 }, { side: 'E', w: 6, h: 6 }] }); // furnace hall (мартен)
-  buildBlastFurnace(world, struct, ox - 12, oz - 22, 4.5, 18);
-  buildBlastFurnace(world, struct, ox - 12, oz - 14, 4, 16);
+  buildBuilding(world, struct, ox + 40, oz - 20, 26, 16, 12, { windows: true, doors: [{ side: 'S', w: 4, h: 4 }, { side: 'W', w: 4, h: 4 }] }); // ТЭЦ boiler house
+  buildChimney(world, struct, ox + 34, oz - 20, 1.6, 30);
+  buildChimney(world, struct, ox + 40, oz - 20, 1.6, 33);
+  buildChimney(world, struct, ox + 46, oz - 20, 1.5, 28);
+  buildCoolingTower(world, struct, ox + 62, oz - 46, 12, 28);
+  buildBuilding(world, struct, ox - 52, oz - 46, 36, 20, 12, { windows: true, doors: [{ side: 'E', w: 5, h: 5 }, { side: 'S', w: 6, h: 6 }] }); // furnace hall (мартен)
+  buildBlastFurnace(world, struct, ox - 24, oz - 42, 4.5, 18);
+  buildBlastFurnace(world, struct, ox - 24, oz - 54, 4, 16);
   const sm = new THREE.Mesh(struct.build(), voxelMaterial());
   sm.castShadow = true; sm.receiveShadow = true; world.scene.add(sm);
 
   // --- OBJECT 5: support buildings (admin, gatehouse, warehouses, canteen, water tower, silos) ---
   const sup = new MeshBuilder();
-  buildBuilding(world, sup, ox - 22, oz - 44, 16, 9, 7, { pal: RENDER, windows: true, bayW: 4, doors: [{ side: 'S', w: 2.6, h: 3.2 }] }); // заводоуправление
-  buildBuilding(world, sup, ox + 0, oz - 52, 8, 5, 4, { pal: BRICK, doors: [{ side: 'S', w: 2.4, h: 3 }, { side: 'N', w: 2.4, h: 3 }] });   // проходная (pass-through)
-  buildBuilding(world, sup, ox - 58, oz - 30, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 1
-  buildBuilding(world, sup, ox - 58, oz - 16, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 2
-  buildBuilding(world, sup, ox + 10, oz - 46, 9, 6, 4, { pal: RENDER, windows: true, bayW: 3, doors: [{ side: 'N', w: 2.2, h: 3 }] });      // столовая
-  buildWaterTower(world, sup, ox - 60, oz + 38, 22);
-  buildSilo(world, sup, ox - 48, oz - 40, 3, 12); buildSilo(world, sup, ox - 43, oz - 44, 3, 12); buildSilo(world, sup, ox - 53, oz - 44, 3, 12);
+  buildAdmin(world, ox - 24, oz - 72); // заводоуправление — detailed 2-floor HQ facing the gate (own mesh + signage)
+  buildBuilding(world, sup, ox + 0, oz - 91, 8, 5, 4, { pal: BRICK, doors: [{ side: 'S', w: 2.4, h: 3 }, { side: 'N', w: 2.4, h: 3 }] });   // проходная (checkpoint booth, inside the main gate)
+  buildBuilding(world, sup, ox - 60, oz - 72, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 1
+  buildBuilding(world, sup, ox - 60, oz - 86, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 2
+  buildBuilding(world, sup, ox + 16, oz - 92, 9, 6, 4, { pal: RENDER, windows: true, bayW: 3, doors: [{ side: 'N', w: 2.2, h: 3 }] });      // столовая
+  buildWaterTower(world, sup, ox - 66, oz - 16, 22); // NW landmark
+  buildSilo(world, sup, ox - 40, oz - 80, 3, 12); buildSilo(world, sup, ox - 46, oz - 84, 3, 12); buildSilo(world, sup, ox - 36, oz - 86, 3, 12);
   const supm = new THREE.Mesh(sup.build(), voxelMaterial());
   supm.castShadow = true; supm.receiveShadow = true; world.scene.add(supm);
 
   // --- OBJECT 6 + 7: infrastructure + perimeter fence + misc dressing ---
   const infra = new MeshBuilder();
-  buildRailSpur(world, infra, ox + 75, ox + 5, oz - 2);     // rail from E gate, z=-42
-  buildPipeRackX(world, infra, ox + 0, ox + 28, oz - 6, 4.5);   // pipe rack (0..28, -46)
-  buildPipeRackX(world, infra, ox + 38, ox + 62, oz - 26, 4.5); // pipe rack (38..62, -66)
-  buildSubstation(world, infra, ox + 16, oz - 34);          // (16, -74)
-  buildTerrikon(world, infra, ox + 58, oz + 42, 16, 14);    // slag heap (58, 2) NE
-  buildCoolingPond(infra, ox + 48, oz - 46, 24, 16);        // (48, -86)
-  buildFence(world, infra, ox + 0, oz - 40, 150, 110, [{ side: 'S', at: 0, w: 8 }, { side: 'E', at: -42, w: 8 }, { side: 'W', at: 10, w: 6 }]);
+  buildRailSpur(world, infra, ox + 79, ox + 12, oz - 62);       // rail from the E gate (z=-62)
+  buildPipeRackX(world, infra, ox + 9, ox + 26, oz - 18, 4.5);  // pipe rack: main hall ↔ ТЭЦ
+  buildPipeRackX(world, infra, ox + 24, ox + 46, oz - 42, 4.5); // pipe rack: ТЭЦ ↔ cooling/fuel
+  buildSubstation(world, infra, ox + 16, oz - 46);             // (16, -46)
+  buildTerrikon(world, infra, ox + 96, oz + 18, 16, 14);       // slag heap OUTSIDE the fence (NE)
+  buildCoolingPond(infra, ox + 6, oz - 78, 24, 16);           // settling pond (S-centre)
+  buildFence(world, infra, ox + 0, oz - 46, 158, 104, [{ side: 'S', at: 0, w: 12 }, { side: 'E', at: -62, w: 8 }, { side: 'W', at: -30, w: 6 }]); // S gap widened to clear the gate pillars
+  buildGate(world, infra, ox + 0, oz - 98, 8);                  // grand works gate at the main S gate
   buildMisc(world, infra, rng);
   const im = new THREE.Mesh(infra.build(), voxelMaterial());
   im.castShadow = true; im.receiveShadow = true; world.scene.add(im);
