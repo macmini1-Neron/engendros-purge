@@ -494,8 +494,8 @@ function buildSignage(world) {
   signPlane(world, 'СЛАВА ТРУДУ!', -16, 11.6, -32.55, 24, 1.9, Math.PI, { panel: '#9a2b22', color: '#f2e9d6', size: 92, border: '#d8cfb8' });
   // ОГНЕОПАСНО — hazard sign at the fuel zone (yellow/black, faces +Z into the yard)
   signPlane(world, 'ОГНЕОПАСНО', 40, 9, -64.5, 6, 1.4, 0, { panel: '#c9a23a', color: '#1a1a1a', size: 70, border: '#1a1a1a' });
-  // ПРОХОДНАЯ — over the guard booth's west door (booth at x=10, z=-93; faces the entrance lane, −X)
-  signPlane(world, 'ПРОХОДНАЯ', 8.02, 3.3, -93, 4.2, 0.9, -Math.PI / 2, { panel: '#2d4a2a', color: '#e8e0cc', size: 60 });
+  // ПРОХОДНАЯ — over the guard booth's west door (booth at x=8, z=-94; faces the entrance lane, −X)
+  signPlane(world, 'ПРОХОДНАЯ', 6.22, 3.0, -94, 3.4, 0.8, -Math.PI / 2, { panel: '#2d4a2a', color: '#e8e0cc', size: 56 });
   // ОКТЯБРЬ — name board over the main gate (faded white/grey enamel plaque, faces −Z)
   signPlane(world, 'ОКТЯБРЬ', 0, 4.55, -98.18, 8.6, 1.5, Math.PI, { panel: '#c7c3b5', border: '#9a9486', color: '#7a2a26', size: 122, cw: 1100, ch: 220 });
   // (заводоуправление name board + ★ star are built into buildAdmin now — on the HQ itself)
@@ -645,7 +645,7 @@ export function buildIndustrial(world, ox, oz) {
   // --- OBJECT 5: support buildings (admin, gatehouse, warehouses, canteen, water tower, silos) ---
   const sup = new MeshBuilder();
   buildAdmin(world, ox - 24, oz - 72, -90); // заводоуправление — 2-floor HQ rotated to face the gate/entrance lane (grand facade now faces +X) (own mesh + signage)
-  buildBuilding(world, sup, ox + 10, oz - 93, 4, 6, 4, { pal: BRICK, doors: [{ side: 'W', w: 2.2, h: 3 }, { side: 'N', w: 2.2, h: 3 }] });   // проходная (guard booth — beside the gate on the right, rotated 90°, door faces the entrance lane)
+  buildBuilding(world, sup, ox + 8, oz - 94, 3.6, 4, 4, { pal: BRICK, doors: [{ side: 'W', w: 1.8, h: 2.6 }, { side: 'N', w: 1.8, h: 2.6 }] });   // проходная (guard booth — in the clear gap east of the gate, between the gate pillar (x≈5) and the столовая (x≥11.5); door to the lane)
   buildBuilding(world, sup, ox - 60, oz - 72, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 1
   buildBuilding(world, sup, ox - 60, oz - 86, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 2
   buildBuilding(world, sup, ox + 16, oz - 92, 9, 6, 4, { pal: RENDER, windows: true, bayW: 3, doors: [{ side: 'N', w: 2.2, h: 3 }] });      // столовая
