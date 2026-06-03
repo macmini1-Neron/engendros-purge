@@ -39,6 +39,8 @@ class Game {
     this.input = new Input(this.canvas);
     this.audio = new AudioManager();
     this.effects = new Effects(this);
+    // Map selection (dev: ?map=steppe). World reads game.mapId in its constructor, so this MUST precede `new World`.
+    this.mapId = (() => { try { return new URLSearchParams(location.search).get('map') === 'steppe' ? 'steppe' : 'arena'; } catch (e) { return 'arena'; } })();
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
