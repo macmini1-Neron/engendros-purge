@@ -218,17 +218,17 @@ export const SCENES = {
 
   // ═══ Soviet chiptune jukebox (title-screen playlist) — 32-bit takes on WW2-era classics ═══
 
-  // Катюша — M. Blanter (1938). A-minor folk tune. Verse = phrase A (×2) then a lifted
-  // answer that peaks at the minor-3rd (C6) and resolves home to the tonic.
+  // Катюша — M. Blanter (1938). In the score's key: D minor, 4/4 (1 flat). Verse = phrase A (×2)
+  // then a lifted answer peaking at the minor-3rd (F5) before resolving home to the tonic D.
   katyusha: chiptune({
     bpm: 132, style: 'folk', leadVol: 0.18,
     lead: [
-      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // phrase 1 (5 5 6 7 8 8 7 6 5)
-      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // phrase 2 (repeat)
-      ['A5', 2], ['A5', 2], ['A5', 2], ['B5', 2], ['C6', 2], ['B5', 2], ['A5', 2], ['G5', 2], ['A5', 8], [0, 8], // phrase 3 (lift, peak C6)
-      ['G5', 2], ['G5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 2], ['A4', 8], [0, 8], // phrase 4 (descend, resolve to tonic A)
+      ['A4', 2], ['A4', 2], ['As4', 2], ['C5', 2], ['D5', 2], ['D5', 2], ['C5', 2], ['As4', 2], ['A4', 8], [0, 8], // phrase 1 (5 5 6 7 8 8 7 6 5)
+      ['A4', 2], ['A4', 2], ['As4', 2], ['C5', 2], ['D5', 2], ['D5', 2], ['C5', 2], ['As4', 2], ['A4', 8], [0, 8], // phrase 2 (repeat)
+      ['D5', 2], ['D5', 2], ['D5', 2], ['E5', 2], ['F5', 2], ['E5', 2], ['D5', 2], ['C5', 2], ['D5', 8], [0, 8], // phrase 3 (lift, peak F5)
+      ['C5', 2], ['C5', 2], ['As4', 2], ['C5', 2], ['D5', 2], ['C5', 2], ['As4', 2], ['A4', 2], ['D5', 8], [0, 8], // phrase 4 (descend, resolve to tonic D)
     ],
-    chords: ['A2', 'E2', 'A2', 'E2', 'A2', 'E2', 'E2', 'A2'],
+    chords: ['D2', 'A2', 'D2', 'A2', 'D2', 'A2', 'A2', 'D2'],
   }),
 
   // Полюшко-поле (Cavalry of the Steppe) — L. Knipper (1933). E-minor; galloping canter bass.
