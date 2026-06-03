@@ -494,8 +494,8 @@ function buildSignage(world) {
   signPlane(world, 'СЛАВА ТРУДУ!', -16, 11.6, -32.55, 24, 1.9, Math.PI, { panel: '#9a2b22', color: '#f2e9d6', size: 92, border: '#d8cfb8' });
   // ОГНЕОПАСНО — hazard sign at the fuel zone (yellow/black, faces +Z into the yard)
   signPlane(world, 'ОГНЕОПАСНО', 40, 9, -64.5, 6, 1.4, 0, { panel: '#c9a23a', color: '#1a1a1a', size: 70, border: '#1a1a1a' });
-  // ПРОХОДНАЯ — over the checkpoint booth's south door (booth at z=-91)
-  signPlane(world, 'ПРОХОДНАЯ', 0, 4.4, -93.6, 5, 1.1, Math.PI, { panel: '#2d4a2a', color: '#e8e0cc', size: 64 });
+  // ПРОХОДНАЯ — over the guard booth's west door (booth at x=10, z=-93; faces the entrance lane, −X)
+  signPlane(world, 'ПРОХОДНАЯ', 8.02, 3.3, -93, 4.2, 0.9, -Math.PI / 2, { panel: '#2d4a2a', color: '#e8e0cc', size: 60 });
   // ОКТЯБРЬ — name board over the main gate (faded white/grey enamel plaque, faces −Z)
   signPlane(world, 'ОКТЯБРЬ', 0, 4.55, -98.18, 8.6, 1.5, Math.PI, { panel: '#c7c3b5', border: '#9a9486', color: '#7a2a26', size: 122, cw: 1100, ch: 220 });
   // (заводоуправление name board + ★ star are built into buildAdmin now — on the HQ itself)
@@ -508,7 +508,11 @@ function buildSignage(world) {
 // board on the parapet, and a WALKABLE interior (lobby + reception desk + 2 columns + honor
 // board, a stair up to a floor-2 meeting room). Faces SOUTH, toward the gate. cx,cz = centre.
 // =====================================================================
-function buildAdmin(world, cx, cz) {
+function buildAdmin(world, cx, cz, deg = 0) {
+  // Build at LOCAL origin into a proxy world (colliders collected locally), then rotate+place the whole
+  // HQ as a unit — lets it face any cardinal direction with correct axis-aligned AABB colliders.
+  const ax = cx, az = cz; cx = 0; cz = 0;
+  const PW = Object.create(world); PW.boxes = [];
   const b = new MeshBuilder();
   const W = 18, D = 11, GF = 4.0, UF = 3.6, EH = GF + UF, T = 0.6;
   const OCH = { hi: 0xe6d2a0, mid: 0xdcc488, lo: 0xc6ac6e };
@@ -517,20 +521,20 @@ function buildAdmin(world, cx, cz) {
   const sz = cz - D / 2, nz = cz + D / 2, wx = cx - W / 2, ex = cx + W / 2;
 
   // --- perimeter walls (solid colliders); S & N get a ground doorway (2 walkable exits) ---
-  world._wall(b, cx, sz, W, GF, 0, 'x', OCH.mid, { width: 3.2, height: 3.2 });
-  world._solid(b, W, UF, T, cx, GF + UF / 2, sz, OCH.mid, { tint: 0.03 });
-  world._wall(b, cx, nz, W, GF, 0, 'x', OCH.mid, { width: 2.4, height: 2.8 });
-  world._solid(b, W, UF, T, cx, GF + UF / 2, nz, OCH.mid, { tint: 0.03 });
-  world._solid(b, T, EH, D, wx, EH / 2, cz, OCH.mid, { tint: 0.03 });
-  world._solid(b, T, EH, D, ex, EH / 2, cz, OCH.mid, { tint: 0.03 });
+  PW._wall(b, cx, sz, W, GF, 0, 'x', OCH.mid, { width: 3.2, height: 3.2 });
+  PW._solid(b, W, UF, T, cx, GF + UF / 2, sz, OCH.mid, { tint: 0.03 });
+  PW._wall(b, cx, nz, W, GF, 0, 'x', OCH.mid, { width: 2.4, height: 2.8 });
+  PW._solid(b, W, UF, T, cx, GF + UF / 2, nz, OCH.mid, { tint: 0.03 });
+  PW._solid(b, T, EH, D, wx, EH / 2, cz, OCH.mid, { tint: 0.03 });
+  PW._solid(b, T, EH, D, ex, EH / 2, cz, OCH.mid, { tint: 0.03 });
 
   // --- interior floor, 2nd-floor slab (hole over the stair), roof slab, stair to floor 2 ---
-  world._floor(b, cx, cz, W - T, D - T, 0.12, IFLOOR);
+  PW._floor(b, cx, cz, W - T, D - T, 0.12, IFLOOR);
   const stx = wx + 2.0, stz0 = sz + 1.4, steps = 12, run = 0.5, rise = GF / steps, runLen = steps * run;
   const hole = { x: stx, z: stz0 + (runLen - run) / 2, w: 2.9, d: runLen + 0.5 };
-  world._floor(b, cx, cz, W, D, GF, FLOOR2, hole);
-  world._floor(b, cx, cz, W, D, EH, ROOF);
-  world._stairs(b, stx, stz0, 0, 1, steps, 0xb98a4e, 0.12, rise, run, 2.3);
+  PW._floor(b, cx, cz, W, D, GF, FLOOR2, hole);
+  PW._floor(b, cx, cz, W, D, EH, ROOF);
+  PW._stairs(b, stx, stz0, 0, 1, steps, 0xb98a4e, 0.12, rise, run, 2.3);
 
   // --- granite plinth (split at the doors), projecting cornice, parapet ---
   for (const zz of [sz, nz]) { b.box(7.3, 1.0, T + 0.3, cx - 5.35, 0.5, zz, GRAN); b.box(7.3, 1.0, T + 0.3, cx + 5.35, 0.5, zz, GRAN); }
@@ -562,10 +566,10 @@ function buildAdmin(world, cx, cz) {
   b.box(7.0, 0.2, 1.6, cx, 0.1, sz - 1.5, GRAN);                                                     // entrance apron
 
   // --- interior: 2 columns, reception counter, floor-2 meeting table + a stairwell rail ---
-  for (const dx of [-3.6, 3.6]) { world._solid(b, 0.7, GF, 0.7, cx + dx, GF / 2, cz - 1.0, IFLOOR, { tint: 0.03 });
+  for (const dx of [-3.6, 3.6]) { PW._solid(b, 0.7, GF, 0.7, cx + dx, GF / 2, cz - 1.0, IFLOOR, { tint: 0.03 });
     b.box(0.95, 0.3, 0.95, cx + dx, GF - 0.16, cz - 1.0, CORN); b.box(0.95, 0.3, 0.95, cx + dx, 0.27, cz - 1.0, GRAN); }
-  world._solid(b, 4.0, 1.1, 1.0, cx + 4.5, 0.66, sz + 2.6, WOOD, { tint: 0.03 }); b.box(4.3, 0.16, 1.2, cx + 4.5, 1.24, sz + 2.6, 0x8a6a3a);          // reception counter
-  world._solid(b, 5.0, 0.85, 1.5, cx, GF + 0.55, sz + 2.6, 0x7a2a26, { tint: 0.03 }); b.box(5.2, 0.14, 1.7, cx, GF + 1.0, sz + 2.6, 0x9a3a32);       // floor-2 meeting table
+  PW._solid(b, 4.0, 1.1, 1.0, cx + 4.5, 0.66, sz + 2.6, WOOD, { tint: 0.03 }); b.box(4.3, 0.16, 1.2, cx + 4.5, 1.24, sz + 2.6, 0x8a6a3a);          // reception counter
+  PW._solid(b, 5.0, 0.85, 1.5, cx, GF + 0.55, sz + 2.6, 0x7a2a26, { tint: 0.03 }); b.box(5.2, 0.14, 1.7, cx, GF + 1.0, sz + 2.6, 0x9a3a32);       // floor-2 meeting table
   b.box(0.1, 1.0, hole.d, hole.x + hole.w / 2 + 0.12, GF + 0.5, hole.z, 0x4a4a4a);                    // stairwell rail (open east side)
 
   // --- 3-D red star on a short pylon at the south parapet centre ---
@@ -575,11 +579,19 @@ function buildAdmin(world, cx, cz) {
   const sg = new THREE.ExtrudeGeometry(star, { depth: 0.35, bevelEnabled: false }); b.geo(sg, cx, EH + 2.1, sz + 0.35, RED); sg.dispose();
   for (const dx of [-0.7, 0.7]) b.box(0.12, 2.3, 0.12, cx + dx, EH + 1.05, sz + 0.45, 0x2a2a2a);
 
-  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
-
-  // --- signage (own textured planes) ---
-  signPlane(world, 'ЗАВОДОУПРАВЛЕНИЕ', cx, EH + 0.5, sz - 0.45, 13, 0.95, Math.PI, { panel: '#2a2622', border: '#c8a24a', color: '#e8dca0', size: 60, cw: 1400, ch: 150 });
-  signPlane(world, 'ДОСКА ПОЧЁТА', cx - 5, 2.4, nz - 0.42, 3.6, 1.9, Math.PI, { panel: '#9a2b22', border: '#c8a24a', color: '#f2e9d6', size: 52, cw: 512, ch: 280 });
+  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true;
+  const rad = deg * Math.PI / 180; m.rotation.y = rad; m.position.set(ax, 0, az); world.scene.add(m);
+  // rotate+translate the local colliders into the real world (90° multiples keep AABBs axis-aligned)
+  const cs = Math.cos(rad), sn = Math.sin(rad), odd = Math.abs(Math.round(deg / 90)) % 2 === 1;
+  for (const bx of PW.boxes) {
+    const lx = (bx.min.x + bx.max.x) / 2, lz = (bx.min.z + bx.max.z) / 2, hx = (bx.max.x - bx.min.x) / 2, hz = (bx.max.z - bx.min.z) / 2;
+    const rx = lx * cs + lz * sn, rz = -lx * sn + lz * cs, nhx = odd ? hz : hx, nhz = odd ? hx : hz;
+    world.boxes.push({ min: new THREE.Vector3(ax + rx - nhx, bx.min.y, az + rz - nhz), max: new THREE.Vector3(ax + rx + nhx, bx.max.y, az + rz + nhz) });
+  }
+  // --- signage (own textured planes; transformed with the building) ---
+  const sp = (text, lx, ly, lz, w, h, lry, o) => { const rx = lx * cs + lz * sn, rz = -lx * sn + lz * cs; signPlane(world, text, ax + rx, ly, az + rz, w, h, lry + rad, o); };
+  sp('ЗАВОДОУПРАВЛЕНИЕ', cx, EH + 0.5, sz - 0.45, 13, 0.95, Math.PI, { panel: '#2a2622', border: '#c8a24a', color: '#e8dca0', size: 60, cw: 1400, ch: 150 });
+  sp('ДОСКА ПОЧЁТА', cx - 5, 2.4, nz - 0.42, 3.6, 1.9, Math.PI, { panel: '#9a2b22', border: '#c8a24a', color: '#f2e9d6', size: 52, cw: 512, ch: 280 });
 }
 
 // =====================================================================
@@ -632,8 +644,8 @@ export function buildIndustrial(world, ox, oz) {
 
   // --- OBJECT 5: support buildings (admin, gatehouse, warehouses, canteen, water tower, silos) ---
   const sup = new MeshBuilder();
-  buildAdmin(world, ox - 24, oz - 72); // заводоуправление — detailed 2-floor HQ facing the gate (own mesh + signage)
-  buildBuilding(world, sup, ox + 0, oz - 91, 8, 5, 4, { pal: BRICK, doors: [{ side: 'S', w: 2.4, h: 3 }, { side: 'N', w: 2.4, h: 3 }] });   // проходная (checkpoint booth, inside the main gate)
+  buildAdmin(world, ox - 24, oz - 72, -90); // заводоуправление — 2-floor HQ rotated to face the gate/entrance lane (grand facade now faces +X) (own mesh + signage)
+  buildBuilding(world, sup, ox + 10, oz - 93, 4, 6, 4, { pal: BRICK, doors: [{ side: 'W', w: 2.2, h: 3 }, { side: 'N', w: 2.2, h: 3 }] });   // проходная (guard booth — beside the gate on the right, rotated 90°, door faces the entrance lane)
   buildBuilding(world, sup, ox - 60, oz - 72, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 1
   buildBuilding(world, sup, ox - 60, oz - 86, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 2
   buildBuilding(world, sup, ox + 16, oz - 92, 9, 6, 4, { pal: RENDER, windows: true, bayW: 3, doors: [{ side: 'N', w: 2.2, h: 3 }] });      // столовая
