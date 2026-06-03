@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-03 23:53';
+const GAME_BUILD = '2026-06-04 00:33';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -50,7 +50,13 @@ class Game {
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
-    this.mountedGun = new MountedGun(this, new THREE.Vector3(0, 3.4, 46), 0); // .50 cal on the bunker roof
+    const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
+    const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
+    const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
+    this.m2MountedGun = new MountedGun(this, m2Pos, 0, { variant: 'm2hb', id: 'm2hb' });
+    this.dshkMountedGun = new MountedGun(this, dshkPos, dshkYaw, { variant: 'dshk', id: 'dshk' });
+    this.mountedGuns = [this.m2MountedGun, this.dshkMountedGun];
+    this.mountedGun = this.m2MountedGun; // compatibility alias for older .50-cal code paths; direct interactions use mountedGuns
     this.capturedTank = null; // set by _tankCaptured; cleared on reset
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
@@ -170,7 +176,7 @@ class Game {
       }
       if (this.weapons.isThrowLocked() && code !== 'KeyM') return; // committed molotov: only the LMB throw (and mute) work
       if (this.mp.active && this.mp.frozen) return; // downed/dead/waiting: no reload/melee/mount/board/loot/weapon-switch
-      if (this.player.mountedGun && code !== 'KeyE' && code !== 'KeyF' && code !== 'KeyM') return; // on the .50 cal: only dismount / fullscreen / mute — no weapon or inventory switching
+      if (this.player.mountedGun && code !== 'KeyE' && code !== 'KeyF' && code !== 'KeyM') return; // on the mounted gun: only dismount / fullscreen / mute — no weapon or inventory switching
       if (code === 'KeyR') this.weapons.startReload();
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
@@ -178,17 +184,20 @@ class Game {
         // ---- CapturedTank: exit when aboard ----
         const _ct = this.capturedTank;
         if (_ct && this.player.inTank === _ct) { _ct.leave(); return; }
-        // ---- .50 cal + loot ----
+        // ---- fixed heavy MG + loot ----
         if (this.player.mountedGun) this.player.mountedGun.dismount();
-        else if (this.inventory.tryReloadFiftyCan()) { /* reloaded the .50-cal from a carried ammo can */ }
-        else if (this.mountedGun.canMount(this.player.pos)) this.mountedGun.mount();
-        // ---- CapturedTank: board (gate by proximity, not currently on .50 cal) ----
-        else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
-        else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
-        else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
-        else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
-        else if (this.loot.openNearby()) { /* claimed a landed supply drop */ }
-        else if (this.inventory.isHoldingFlashlight()) this.dayNight.toggleFlashlight(); // nothing nearby to interact with → toggle the held flashlight beam
+        else if (this.inventory.tryReloadFiftyCan()) { /* reloaded the mounted heavy MG from a carried ammo can */ }
+        else {
+          const gun = this.nearestMountedGun(this.player.pos, (g) => g.canMount(this.player.pos));
+          if (gun) gun.mount();
+          // ---- CapturedTank: board (gate by proximity, not currently on mounted gun) ----
+          else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) { _ct.enter('driver'); }
+          else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
+          else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
+          else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
+          else if (this.loot.openNearby()) { /* claimed a landed supply drop */ }
+          else if (this.inventory.isHoldingFlashlight()) this.dayNight.toggleFlashlight(); // nothing nearby to interact with → toggle the held flashlight beam
+        }
       }
       else if (code === 'KeyQ') {
         // CapturedTank: switch driver ↔ gunner seat
@@ -262,11 +271,32 @@ class Game {
     }
   }
 
+  _mountedGunList() {
+    return (Array.isArray(this.mountedGuns) && this.mountedGuns.length) ? this.mountedGuns : (this.mountedGun ? [this.mountedGun] : []);
+  }
+  mountedGunById(id) {
+    const key = id || (this.mountedGun && this.mountedGun.id);
+    return this._mountedGunList().find((gun) => gun && gun.id === key) || this.mountedGun || null;
+  }
+  nearestMountedGun(pos, predicate = null) {
+    let best = null, bestD = Infinity;
+    for (const gun of this._mountedGunList()) {
+      if (!gun) continue;
+      if (predicate && !predicate(gun)) continue;
+      const d = Math.hypot(pos.x - gun.base.x, pos.z - gun.base.z);
+      if (d < bestD) { best = gun; bestD = d; }
+    }
+    return best;
+  }
+  resetMountedGuns() {
+    for (const gun of this._mountedGunList()) if (gun && typeof gun.forceReset === 'function') gun.forceReset();
+  }
+
   reset() {
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
-    this.mountedGun.forceReset();
+    this.resetMountedGuns();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
@@ -456,7 +486,7 @@ class Game {
     const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
     this.mpMenuOpen = false;
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
-    this.mountedGun.forceReset();
+    this.resetMountedGuns();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.enemies.clearAll(); if (this.audio.music) this.audio.music.setPlaylist('menu'); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
@@ -540,7 +570,7 @@ class Game {
     this._bankRunMoney(); this._saveMeta(); // each player banks their own run money locally
     if (this.mp && typeof this.mp.endRunToLobby === 'function') this.mp.endRunToLobby(msg);
     this.state = 'menu'; this.mpMenuOpen = false;
-    this.mountedGun.forceReset();
+    this.resetMountedGuns();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
     this._clearFlares();
@@ -582,7 +612,7 @@ class Game {
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
-    this.mountedGun.forceReset();
+    this.resetMountedGuns();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
     if (this.audio.music) { this.audio.music.setScene('gameover'); this.audio.music.setIntensity(0.85); this.audio.music.setStress(0); } this.hud.show(false);
     // persistent meta (per mode) + lifetime tallies
@@ -710,8 +740,8 @@ class Game {
       this.weapons.update(dt);
       this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
     }
-    if (this.player.mountedGun !== this.mountedGun) this.mountedGun.idleCool(dt); // the .50 cools down even when nobody is manning it
-    this.player.survivalTick(dt); // survival timers tick in every seat (on foot, .50 cal, tank)
+    for (const gun of this._mountedGunList()) if (this.player.mountedGun !== gun) gun.idleCool(dt); // fixed MGs cool down even when nobody is manning them
+    this.player.survivalTick(dt); // survival timers tick in every seat (on foot, mounted MG, tank)
     if (this.world.updateGate) this.world.updateGate(dt, this.player.pos); // steppe: animate the sliding works gate
     if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
@@ -728,7 +758,7 @@ class Game {
     if (hostSim) this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount); // clients get the authoritative count via 'clock'
     this.effects.update(dt);
     this.hud.update(dt);
-    // ---- Interact prompt priority: tank crew > .50 cal > loot ----
+    // ---- Interact prompt priority: tank crew > mounted MG > loot ----
     if (this.mp.active && this.mp._localDead) {
       const rp = this.mp.ensureSpectateTarget();
       this.hud.setInteract(rp ? `Spectating <b>${rp.name}</b> · Q/E switch` : 'No live squadmate to spectate');
@@ -748,21 +778,24 @@ class Game {
       if (rp) { this.hud.setInteract(this.mp.revivePrompt(rp)); return; }
     }
     const _ct = this.capturedTank;
-    const _nearMountedGun = !this.player.inTank && this.mountedGun.updateNearby(this.player.pos);
+    const _nearMountedGun = !this.player.inTank ? this.nearestMountedGun(this.player.pos, (gun) => gun.updateNearby(this.player.pos)) : null;
+    const _reloadGun = !this.player.inTank ? this.nearestMountedGun(this.player.pos, (gun) => gun.near(this.player.pos)) : null;
+    const activeGun = this.player.mountedGun || _nearMountedGun || _reloadGun;
+    const mgName = activeGun && activeGun.displayName ? activeGun.displayName : 'mounted gun';
     if (this.player.mountedGun) {
-      this.hud.setInteract('Press <b>E</b> to leave the .50 cal');
+      this.hud.setInteract(`Press <b>E</b> to leave the ${mgName}`);
     } else if (_ct && this.player.inTank === _ct) {
       const seatHint = _ct.active === 'gunner' ? ' · T thermal · C peek' : '';
       this.hud.setInteract('E exit · Q seat' + seatHint);
     } else if (_ct && _ct.near(this.player.pos) && !this.player.mountedGun) {
       this.hud.setInteract('Press <b>E</b> to commandeer the T-90M');
-    } else if (this.inventory.isHoldingFiftyCan() && this.mountedGun.near(this.player.pos)) {
+    } else if (this.inventory.isHoldingFiftyCan() && _reloadGun) {
       // holding the ammo can at the gun: refill, never mount (switch to a weapon to man it)
-      this.hud.setInteract(this.mountedGun.ammo >= this.mountedGun.maxAmmo
-        ? '.50 cal full — switch weapon to man it'
-        : 'Press <b>E</b> to refill the .50 cal');
+      this.hud.setInteract(_reloadGun.ammo >= _reloadGun.maxAmmo
+        ? `${mgName} full — switch weapon to man it`
+        : `Press <b>E</b> to refill the ${mgName}`);
     } else if (_nearMountedGun) {
-      this.hud.setInteract('Press <b>E</b> to man the .50 cal — 250 rounds, overheats');
+      this.hud.setInteract(`Press <b>E</b> to man the ${mgName} — ${_nearMountedGun.maxAmmo} rounds, overheats`);
     } else if (this.player._splintT > 0) {
       this.hud.setInteract(`Applying splint… ${this.player._splintT.toFixed(1)}s`);
     } else if (this.world.gateTarget) {
