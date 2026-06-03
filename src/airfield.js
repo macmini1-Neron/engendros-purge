@@ -279,6 +279,54 @@ function buildMiG21(world, b, cx, cz, bort) {
   collider(world, cx, cz + 1, 3.4, 0, 2.4, 7);
 }
 
+// MiG-23MLD «Flogger»: variable-geometry (parked 45°), fixed glove fairings, side intakes, single tall fin +
+// ventral, pointed solid radome, light-grey interceptor, red ★ + blue bort. Research: L 16.7, span 13.97/7.78.
+function buildMiG23(world, b, cx, cz, bort) {
+  const GRY = { hi: 0xc6c4be, mid: 0xb0aea6, lo: 0x94928a }, DRK = 0x46464a, RAD = 0x42424a, IRX = 0x2a2a2e, gy = 1.6;
+  cyl(b, 0.6, 11, cx, gy, cz + 1, GRY.mid, { rx: Math.PI / 2, seg: 12, tint: 0.03 });
+  cyl(b, 0.52, 3.4, cx, gy, cz + 6.5, GRY.lo, { rx: Math.PI / 2, seg: 12 }); cyl(b, 0.5, 0.5, cx, gy, cz + 8.4, IRX, { rx: Math.PI / 2, seg: 12 });
+  { const g = new THREE.CylinderGeometry(0.06, 0.55, 3.2, 12); b.geo(g, cx, gy, cz - 5.0, RAD, { rx: -Math.PI / 2 }); g.dispose(); } // radome
+  b.box(0.78, 0.55, 2.0, cx, gy + 0.62, cz - 2.2, 0x222e34); b.box(0.66, 0.46, 1.7, cx, gy + 0.7, cz - 2.2, 0x3a5560); // canopy
+  for (const sx of [-1, 1]) { b.box(0.72, 0.95, 3.0, cx + sx * 0.85, gy + 0.1, cz - 0.2, GRY.lo, { tint: 0.02 }); b.box(0.16, 0.9, 2.9, cx + sx * 1.22, gy + 0.1, cz - 0.2, DRK); } // side intakes
+  for (const sx of [-1, 1]) {                                                                            // glove + 45°-swept wing
+    b.box(1.2, 0.2, 2.6, cx + sx * 1.0, gy - 0.08, cz + 1.0, GRY.mid);
+    b.box(4.4, 0.16, 1.6, cx + sx * 3.5, gy - 0.14, cz + 2.7, GRY.mid, { ry: sx * 0.78, tint: 0.02 });
+    b.box(4.4, 0.08, 1.5, cx + sx * 3.5, gy - 0.23, cz + 2.7, GRY.hi, { ry: sx * 0.78 });
+  }
+  for (const sx of [-1, 1]) b.box(2.2, 0.14, 1.5, cx + sx * 1.6, gy + 0.05, cz + 6.8, GRY.mid, { ry: sx * 0.5 }); // stabilators
+  b.box(0.22, 2.9, 3.0, cx, gy + 1.6, cz + 6.2, GRY.mid, { tint: 0.02 }); b.box(0.24, 0.5, 1.6, cx, gy + 3.0, cz + 7.0, GRY.hi); // fin
+  b.box(0.14, 1.1, 1.5, cx, gy - 1.0, cz + 7.0, GRY.lo);                                                 // ventral fin
+  for (const [lx, lz] of [[0, -3.2], [1.0, 2.0], [-1.0, 2.0]]) { b.box(0.12, gy, 0.12, cx + lx, gy / 2, cz + lz, IRX); cyl(b, 0.3, 0.2, cx + lx, 0.3, cz + lz, IRX, { rx: Math.PI / 2, seg: 8 }); }
+  for (const sx of [-1, 1]) signPlane(world, '★', cx + sx * 0.62, gy + 0.1, cz + 4.0, 0.7, 0.7, sx > 0 ? Math.PI / 2 : -Math.PI / 2, { color: '#d22', size: 100 });
+  signPlane(world, '★', cx + 0.13, gy + 1.9, cz + 6.2, 0.6, 0.6, Math.PI / 2, { color: '#d22', size: 100 });
+  for (const sx of [-1, 1]) signPlane(world, bort, cx + sx * 0.63, gy + 0.2, cz - 1.0, 1.0, 0.7, sx > 0 ? Math.PI / 2 : -Math.PI / 2, { color: '#3050c0', size: 90 });
+  collider(world, cx, cz + 1.5, 4.4, 0, 2.6, 8);
+}
+
+// Su-25 «Грач»: straight high-aspect wing, twin rear side nacelles, bubble canopy forward, green/brown camo.
+// Research: L 15.5, span 14.36, height 4.8.
+function buildSu25(world, b, cx, cz, bort) {
+  const GRN = { hi: 0x4a5530, mid: 0x3a4424, lo: 0x2c3419 }, BRN = 0x5a4a2e, BLU = 0x8aabb8, RAD = 0xcfccbe, IRX = 0x2a2a2e, gy = 1.7;
+  cyl(b, 0.72, 10, cx, gy, cz + 1, GRN.mid, { rx: Math.PI / 2, seg: 12, tint: 0.03 });
+  { const g = new THREE.CylinderGeometry(0.2, 0.62, 3.0, 12); b.geo(g, cx, gy, cz - 4.8, RAD, { rx: -Math.PI / 2 }); g.dispose(); } // blunt nose
+  b.box(0.88, 0.62, 1.7, cx, gy + 0.72, cz - 2.6, 0x222e34); b.box(0.74, 0.5, 1.4, cx, gy + 0.8, cz - 2.6, 0x3a5560); // bubble canopy
+  for (const sx of [-1, 1]) {                                                                            // straight wing (slight sweep) + tip pod + pylons
+    b.box(6.4, 0.18, 2.2, cx + sx * 3.9, gy + 0.32, cz + 1.5, sx > 0 ? GRN.mid : GRN.hi, { ry: sx * 0.2, tint: 0.02 });
+    b.box(6.4, 0.08, 2.1, cx + sx * 3.9, gy + 0.23, cz + 1.5, BLU, { ry: sx * 0.2 });
+    b.box(0.3, 0.5, 1.7, cx + sx * 7.0, gy + 0.32, cz + 2.0, IRX, { ry: sx * 0.2 });
+    for (let p = 0; p < 2; p++) b.box(0.42, 0.5, 1.7, cx + sx * (2.6 + p * 1.7), gy - 0.05, cz + 1.5, IRX);
+  }
+  for (const sx of [-1, 1]) { cyl(b, 0.42, 4.0, cx + sx * 0.78, gy, cz + 4.6, GRN.lo, { rx: Math.PI / 2, seg: 10 }); cyl(b, 0.38, 0.5, cx + sx * 0.78, gy, cz + 6.7, IRX, { rx: Math.PI / 2, seg: 10 }); } // twin nacelles
+  b.box(0.2, 2.4, 2.4, cx, gy + 1.5, cz + 5.8, GRN.mid, { tint: 0.02 }); b.box(0.22, 0.4, 1.3, cx, gy + 2.6, cz + 6.4, GRN.hi); // fin
+  for (const sx of [-1, 1]) b.box(2.0, 0.14, 1.4, cx + sx * 1.4, gy + 0.5, cz + 6.0, GRN.mid);           // stabilizers
+  for (const [lx, lz] of [[0, -3], [1.3, 2.2], [-1.3, 2.2]]) { b.box(0.14, gy, 0.14, cx + lx, gy / 2, cz + lz, IRX); cyl(b, 0.32, 0.22, cx + lx, 0.32, cz + lz, IRX, { rx: Math.PI / 2, seg: 8 }); }
+  for (let i = 0; i < 4; i++) b.box(1.4, 0.05, 1.8, cx + (i - 1.5) * 1.1, gy + 0.74, cz + (i % 2 ? 2 : 5), BRN); // brown camo patches
+  for (const sx of [-1, 1]) signPlane(world, '★', cx + sx * 0.74, gy + 0.1, cz + 3.4, 0.7, 0.7, sx > 0 ? Math.PI / 2 : -Math.PI / 2, { color: '#d22', size: 100 });
+  signPlane(world, '★', cx + 0.13, gy + 1.7, cz + 5.8, 0.6, 0.6, Math.PI / 2, { color: '#d22', size: 100 });
+  for (const sx of [-1, 1]) signPlane(world, bort, cx + sx * 0.6, gy + 0.2, cz - 3.2, 1.0, 0.7, sx > 0 ? Math.PI / 2 : -Math.PI / 2, { color: '#e03020', size: 90 });
+  collider(world, cx, cz + 1.5, 7.4, 0, 2.6, 7);
+}
+
 // =====================================================================
 // Entry — assemble the airfield surface + perimeter (structures added in later passes).
 // =====================================================================
@@ -302,8 +350,9 @@ export function buildAirfield(world, ox, oz) {
 
   // ⑤ aircraft — MiG-21bis parked on the apron + one in a shelter
   buildMiG21(world, b, ox - 152, oz + 102, '12');
-  buildMiG21(world, b, ox - 88, oz + 102, '07');
   buildMiG21(world, b, ox - 59, oz + 112, '15');
+  buildMiG23(world, b, ox - 118, oz + 100, '31');
+  buildSu25(world, b, ox - 82, oz + 99, '25');
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }
