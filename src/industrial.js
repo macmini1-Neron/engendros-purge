@@ -13,14 +13,14 @@ const GREY  = { hi: 0x9a958b, mid: 0x7c776d, lo: 0x5c584f, slot: 0x39362f }; // 
 const DRUM_PALS = [GREEN, RUST, GREY, GREEN]; // green weighted (most common)
 
 // ---- helpers ----
-// vertical cylinder (CylinderGeometry axis is +Y); dispose after build.
-function cyl(b, r, h, x, y, z, color, opts = {}) {
+// vertical cylinder (CylinderGeometry axis is +Y); dispose after build. (shared w/ kolkhoz.js)
+export function cyl(b, r, h, x, y, z, color, opts = {}) {
   const g = new THREE.CylinderGeometry(r, r, h, opts.seg || 12);
   b.geo(g, x, y, z, color, opts);
   g.dispose();
 }
-// push an AABB collider to world.boxes WITHOUT drawing a box (cylinders draw via b.geo).
-function collider(world, x, z, halfW, y0, y1, halfD) {
+// push an AABB collider to world.boxes WITHOUT drawing a box (cylinders draw via b.geo). (shared w/ kolkhoz.js)
+export function collider(world, x, z, halfW, y0, y1, halfD) {
   world.boxes.push({ min: new THREE.Vector3(x - halfW, y0, z - (halfD ?? halfW)), max: new THREE.Vector3(x + halfW, y1, z + (halfD ?? halfW)) });
 }
 
@@ -480,7 +480,7 @@ function signTex(text, opts = {}) {
   ctx.fillText(text, W / 2, H / 2 + 4);
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
-function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
+export function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
   const tex = signTex(text, { cw: Math.max(256, Math.round(w * 48)), ch: Math.max(96, Math.round(h * 64)), ...opts });
   const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: !opts.panel, alphaTest: opts.panel ? 0 : 0.5, emissive: 0x0c0c0c, emissiveIntensity: 1, side: THREE.DoubleSide });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);

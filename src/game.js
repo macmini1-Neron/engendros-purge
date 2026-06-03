@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-03 18:14';
+const GAME_BUILD = '2026-06-03 23:28';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -564,6 +564,7 @@ class Game {
     const hurt = (px, pz, id) => { const d = Math.hypot(px - pos.x, pz - pos.z); if (d < radius) { const dd = dmg * (1 - d / radius); if (this.mp.active && this.mp.isHost) this.mp.hostHurt(id, dd); else this.player.hurt(dd); } };
     if (this.mp.active && this.mp.isHost) { hurt(this.player.pos.x, this.player.pos.z, 'host'); for (const [id, rp] of this.mp.remotes) hurt(rp.pos.x, rp.pos.z, id); }
     else hurt(this.player.pos.x, this.player.pos.z, 'host');
+    if (this.world.igniteFABsNear) this.world.igniteFABsNear(pos, radius); // any blast sets off nearby kolkhoz FAB-500s (chain)
   }
   onWaveCleared(n) {
     this.audio.waveClear(); if (this.audio.music) this.audio.music.sting('victory', 'small'); this.player.addMoney(150 + n * 25);
@@ -710,6 +711,7 @@ class Game {
     if (this.player.mountedGun !== this.mountedGun) this.mountedGun.idleCool(dt); // the .50 cools down even when nobody is manning it
     this.player.survivalTick(dt); // survival timers tick in every seat (on foot, .50 cal, tank)
     if (this.world.updateGate) this.world.updateGate(dt, this.player.pos); // steppe: animate the sliding works gate
+    if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     this.dayNight.flash.intensity = (!this.player.inTank && !this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);

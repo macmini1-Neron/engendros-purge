@@ -1226,6 +1226,7 @@ export class WeaponSystem {
       } else if (wHit) {
         this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
         if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); } // shoot down fortifications
+        else if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(wHit.box.explodable, d.dmg * mult, wHit.point); this.game.hud.hitmarker(false); } // shoot the FAB-500 → detonate
       } else {
         this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
       }
@@ -2005,7 +2006,7 @@ export class MountedGun {
       end = eHit.point;
       this.game.effects.tracer(muzzleFx, end, tracerColor);
       if (eHit.head) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
-    } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzleFx, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); }
+    } else if (wHit) { end = wHit.point; this.game.effects.tracer(muzzleFx, end, tracerColor); this.game.effects.impact(wHit.point, wHit.normal, 'spark'); if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) this.game.world.hitFAB(wHit.box.explodable, this.dmg, wHit.point); }
     else { end = muzzle.clone().addScaledVector(dir, this.range); this.game.effects.tracer(muzzleFx, end, tracerColor); }
     if (mp && mp.active) mp.net.broadcast('fiftyfire', { pid: mp.myId, o: this._netVec(muzzleFx), d: this._netVec(barrelFwd, 3), e: this._netVec(end), s: this._netVec(ejectPort), r: this._netVec(ejectRight, 3), c: tracerColor, rs: caseSeed, ammo: this.ammo }); // teammates see/hear the .50cal from the physical barrel/ejection port; damage stays host-authoritative
   }
