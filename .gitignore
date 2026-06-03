@@ -35,3 +35,6 @@ assets/ref-t90m-blueprint.png
 assets/modely/*.orig.glb
 # stray empty file
 /game
+
+# brainstorm visual-companion sessions
+.superpowers/
