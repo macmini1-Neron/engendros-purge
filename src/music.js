@@ -6,6 +6,76 @@
 // look-ahead note scheduler. Scenes are data: { bpm, drones[], step() }. game.js sets
 // the scene per game-state and pushes per-frame intensity/stress during play.
 
+// ---- Soviet chiptune classics (32-bit-style arrangements of WW2-era melodies) -------------
+// note-name → frequency (equal-temperament, A4 = 440). Names: C Cs D Ds E F Fs G Gs A As B
+// (sharps only; write flats as their sharp twin — Bb=As, Eb=Ds, Ab=Gs). `0` is a rest.
+const NF = (() => {
+  const names = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B'];
+  const t = { 0: 0 };
+  for (let oct = 1; oct <= 6; oct++)
+    for (let i = 0; i < 12; i++) t[names[i] + oct] = 440 * Math.pow(2, ((oct + 1) * 12 + i - 69) / 12);
+  return t;
+})();
+const FIFTH = 1.4983; // equal-tempered perfect-fifth ratio (for oom-pah "pah" notes)
+
+// Expand an event list [[noteName|0, durSteps], …] into a per-16th-step array. Each onset slot
+// holds { f, dur } (dur in steps); sustained/rest slots are null. Length = sum of durations.
+function buildLead(events) {
+  const arr = [];
+  for (const [name, dur] of events) {
+    const f = NF[name] || 0;
+    arr.push(f ? { f, dur } : null);
+    for (let k = 1; k < dur; k++) arr.push(null);
+  }
+  return arr;
+}
+
+// Accompaniment patterns keyed by style. Each schedules bass/drums for one 16th step `step`,
+// given the bar's chord `root` (Hz). `spb` = steps per bar (16 = 4/4, 12 = 3/4).
+const ACCOMP = {
+  folk(M, bus, when, step, spb, root) {                        // oom-pah: root on 1&3, fifth on 2&4
+    if (step === 0 || step === 8) M.note(bus, when, root, 0.13, 0.14, 'square');
+    else if (step === 4 || step === 12) M.note(bus, when, root * FIFTH, 0.11, 0.10, 'square');
+    if (step % 4 === 2) M.hat(bus, when, 0.05, 0.02);
+  },
+  march(M, bus, when, step, spb, root) {                       // driving: kick 1&3, snare 2&4, bass each beat
+    if (step === 0 || step === 8) M.kick(bus, when, 0.5);
+    if (step === 4 || step === 12) M.snare(bus, when, 0.26);
+    if (step % 4 === 0) M.note(bus, when, root, 0.12, 0.13, 'square');
+    if (step % 2 === 0) M.hat(bus, when, 0.045, 0.02);
+  },
+  gallop(M, bus, when, step, spb, root) {                      // cavalry canter: trotting eighths + tom pulse
+    if (step % 2 === 0) M.note(bus, when, step % 4 === 0 ? root : root * FIFTH, 0.09, 0.12, 'square');
+    if (step % 4 === 0) M.tom(bus, when, root * 2, 0.18);
+    if (step === 4 || step === 12) M.snare(bus, when, 0.16);
+  },
+  ballad(M, bus, when, step, spb, root) {                      // slow & sparse: soft root + shimmer, no drums
+    if (step === 0) M.note(bus, when, root, 0.6, 0.11, 'triangle');
+    else if (step === 8) M.note(bus, when, root * FIFTH, 0.45, 0.08, 'triangle');
+    if (step === 6 || step === 14) M.bell(bus, when, root * 3, 0.5, 0.05);
+  },
+  waltz(M, bus, when, step, spb, root) {                       // 3/4 BOOM-pah-pah (spb 12): root+timpani on 1, fifth on 2&3
+    if (step === 0) { M.note(bus, when, root, 0.18, 0.16, 'square'); M.timpani(bus, when, root, 0.3); }
+    else if (step === 4 || step === 8) { M.note(bus, when, root * FIFTH, 0.13, 0.10, 'square'); M.hat(bus, when, 0.04, 0.02); }
+  },
+};
+
+// Build a looping chiptune scene from a melody event-list + per-bar chord roots. Returns a scene
+// object (bpm/stepsPerBar/bars/drones/step) the MusicDirector engine + playlist understand.
+function chiptune({ bpm, spb = 16, lead, chords, style = 'folk', leadType = 'square', leadVol = 0.18, drones = [] }) {
+  const L = buildLead(lead);
+  const bars = Math.round(L.length / spb);
+  return {
+    bpm, stepsPerBar: spb, bars, drones,
+    step(M, bus, when, bar, step) {
+      const stepSec = 60 / bpm / 4;
+      const ev = L[(bar * spb + step) % L.length];
+      if (ev) M.note(bus, when, ev.f, ev.dur * stepSec * 0.92, leadVol, leadType);
+      ACCOMP[style](M, bus, when, step, spb, NF[chords[bar % chords.length]]);
+    },
+  };
+}
+
 // Scene registry. Each scene:
 //   { bpm, drones:[{ id, min, max, gain, build(M,bus)->droneHandle }], step(M,bus,when,bar,step,I) }
 // `build` returns a drone handle (see MusicDirector.drone); the engine ramps handle.gain
@@ -142,6 +212,80 @@ export const SCENES = {
       if (step === 0 && bar % 2 === 0) { M.bell(bus, when, 220, 1.4, 0.14); M.timpani(bus, when, 73, 0.35); }
     },
   },
+
+  // ═══ Soviet chiptune jukebox (title-screen playlist) — 32-bit takes on WW2-era classics ═══
+
+  // Катюша — M. Blanter (1938). A-minor folk waltz-of-spring. (5-5-6-7-8 rising hook.)
+  katyusha: chiptune({
+    bpm: 132, style: 'folk', leadVol: 0.18,
+    lead: [
+      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // Rastsvetali yabloni i grushi
+      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // Poplyli tumany nad rekoy
+      ['A5', 2], ['A5', 2], ['G5', 2], ['A5', 2], ['B5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // Vykhodila na bereg Katyusha (lift)
+      ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 2], ['D5', 2], ['E5', 2], ['F5', 2], ['E5', 2], ['A4', 8], [0, 8], // Na vysokiy bereg na krutoy (resolve to tonic)
+    ],
+    chords: ['A2', 'E2', 'A2', 'E2', 'A2', 'E2', 'D2', 'A2'],
+  }),
+
+  // Полюшко-поле (Cavalry of the Steppe) — L. Knipper (1933). E-minor; galloping canter bass.
+  polyushko: chiptune({
+    bpm: 112, style: 'gallop', leadVol: 0.18,
+    lead: [
+      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['Fs4', 8], [0, 8],            // Polyushko, pole
+      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 4], // Polyushko, shiroko pole
+      ['D5', 4], ['B4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 8],            // Yedut po polyu geroi
+      ['B4', 4], ['A4', 4], ['G4', 4], ['Fs4', 4], ['E4', 8], [0, 8],          // Ekh, da krasnoy armii geroi (resolve)
+    ],
+    chords: ['E2', 'B2', 'E2', 'B2', 'E2', 'B2', 'B2', 'E2'],
+  }),
+
+  // Марш защитников Москвы — B. Mokrousov (1941). D-minor brisk defenders' march.
+  defenceMoscow: chiptune({
+    bpm: 124, style: 'march', leadVol: 0.17,
+    lead: [
+      ['D5', 4], ['D5', 4], ['E5', 4], ['F5', 4], ['E5', 8], ['D5', 4], [0, 4],   // My ne drognem v boyu
+      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 8], ['D5', 8],           // za stolitsu svoyu
+      ['F5', 4], ['F5', 4], ['G5', 4], ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 4], // nam rodnaya Moskva doroga
+      ['D5', 8], ['C5', 4], ['D5', 4], ['D5', 16],                                // (cadence + final)
+    ],
+    chords: ['D2', 'A2', 'G2', 'A2', 'F2', 'D2', 'A2', 'D2'],
+  }),
+
+  // Тёмная ночь — N. Bogoslovsky (1943). G-minor tender ballad; sparse, no drums.
+  darkNight: chiptune({
+    bpm: 72, style: 'ballad', leadType: 'triangle', leadVol: 0.20,
+    drones: [{ id: 'pad', min: 0, max: 1, gain: 0.10, build: (M, bus) => M.drone(bus, [NF.G2, NF.D3], { cutoff: 600 }) }],
+    lead: [
+      ['D5', 4], ['C5', 2], ['As4', 2], ['A4', 4], ['G4', 4], ['G4', 8], [0, 8],                 // Tyomnaya noch'
+      ['D5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 4], ['C5', 8], [0, 8],     // tolko puli svistyat po stepi
+      ['As4', 4], ['C5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 8], [0, 8],    // tolko veter gudit v provodakh
+      ['A4', 4], ['As4', 2], ['C5', 2], ['A4', 4], ['G4', 4], ['G4', 16],                        // tusklo zvyozdy mertsayut (resolve)
+    ],
+    chords: ['G2', 'D2', 'C3', 'D2', 'Ds3', 'D2', 'D2', 'G2'],
+  }),
+
+  // Священная война — A. Alexandrov (1941). D-minor 3/4 anthem; heavy BOOM-pah-pah waltz-march.
+  sacredWar: chiptune({
+    bpm: 80, spb: 12, style: 'waltz', leadVol: 0.18,
+    drones: [
+      { id: 'choir', min: 0, max: 1, gain: 0.10, build: (M, bus) => M.drone(bus, [NF.D3, NF.A3], { cutoff: 520 }) },
+      { id: 'sub', min: 0, max: 1, gain: 0.12, build: (M, bus) => M.drone(bus, [NF.D2], { cutoff: 180, type: 'sine' }) },
+    ],
+    lead: [
+      ['A4', 4], ['D5', 4], ['D5', 4], ['C5', 4], ['D5', 4], ['F5', 4],   // Vstavay, strana ogromnaya
+      ['E5', 4], ['D5', 4], ['A4', 4], ['D5', 12],                        // vstavay na smertnyy boy
+      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['A5', 4], ['G5', 4],   // Pust' yarost' blagorodnaya
+      ['F5', 4], ['E5', 4], ['D5', 4], ['D5', 12],                        // vskipaet, kak volna (resolve)
+    ],
+    chords: ['D2', 'D2', 'A2', 'D2', 'D2', 'As2', 'A2', 'D2'],
+  }),
+};
+
+// Title-screen jukebox order: Korobeiniki (the existing 'menu' chiptune) then the 5 classics,
+// sequenced for mood variety (folk → anthem → folk → gallop → ballad → march). The MusicDirector
+// playlist auto-advances when each track finishes its loops. Keep names in sync with SCENES.
+const PLAYLISTS = {
+  menu: ['menu', 'sacredWar', 'katyusha', 'polyushko', 'darkNight', 'defenceMoscow'],
 };
 
 export class MusicDirector {
@@ -158,6 +302,7 @@ export class MusicDirector {
     this.drones = [];          // [{ def, handle }] sustained layers of the active scene
     this.scene = null;         // active scene def
     this.variant = null;       // optional scene flavor (e.g. boss 'mitri'/'tolo')
+    this.playlist = null;      // active jukebox { id, members[], idx, fade } or null (single-scene mode)
 
     this.intensity = 0; this._intTarget = 0;
     this.stress = 0; this._stressTarget = 0;
@@ -297,7 +442,28 @@ export class MusicDirector {
   }
 
   // ---- scene control ----
-  setScene(name, { fade = 1.2, variant = null } = {}) {
+  // Public scene change: any explicit setScene leaves jukebox (playlist) mode.
+  setScene(name, opts = {}) { this.playlist = null; this._applyScene(name, opts); }
+
+  // Start (or no-op if already running) a named jukebox from PLAYLISTS: plays each member scene
+  // for its loops, then auto-advances (see the scheduler). game.js points the title menu here.
+  setPlaylist(id, { fade = 1.6 } = {}) {
+    if (!this.ctx) return;
+    const members = (PLAYLISTS[id] || []).filter((n) => SCENES[n]);
+    if (!members.length) return;
+    if (this.playlist && this.playlist.id === id) return;     // already running this jukebox
+    this.playlist = { id, members, idx: 0, fade };
+    this._applyScene(members[0], { fade });
+  }
+
+  _advancePlaylist() {
+    const pl = this.playlist;
+    if (!pl || pl.members.length < 2) return;                 // single-member playlist just loops
+    pl.idx = (pl.idx + 1) % pl.members.length;
+    this._applyScene(pl.members[pl.idx], { fade: pl.fade });   // _applyScene leaves this.playlist intact
+  }
+
+  _applyScene(name, { fade = 1.2, variant = null } = {}) {
     if (!this.ctx) { this._pending = name; return; }
     this.variant = variant;
     if (name === this.sceneName) return;
@@ -346,7 +512,7 @@ export class MusicDirector {
     if (bus) bus.gain.setTargetAtTime(0.0001, t, fade / 3);
     for (const d of this.drones) if (d.handle) d.handle.stop(t + fade);
     setTimeout(() => { try { bus && bus.disconnect(); } catch (e) {} }, (fade + 1) * 1000);
-    this.sceneBus = null; this.scene = null; this.sceneName = null; this.drones = [];
+    this.sceneBus = null; this.scene = null; this.sceneName = null; this.drones = []; this.playlist = null;
     if (this._sched) { clearTimeout(this._sched); this._sched = null; }
   }
 
@@ -359,7 +525,11 @@ export class MusicDirector {
       while (this.scene && this._nextNoteTime < this.t + LOOKAHEAD) {
         try { this.scene.step(this, this.sceneBus, this._nextNoteTime, this._bar, this._step, this.intensity); } catch (e) {}
         if (this.stress > 0.02) this._heartbeat(this._nextNoteTime, this._step);
-        this._step = (this._step + 1) % 16; if (this._step === 0) this._bar++;
+        this._step = (this._step + 1) % (this.scene.stepsPerBar || 16);
+        if (this._step === 0) {
+          this._bar++;
+          if (this.playlist && this._bar >= (this.scene.bars || 8) * (this.scene.loops || 2)) this._advancePlaylist();
+        }
         this._nextNoteTime += stepDur;
       }
       this._sched = setTimeout(loop, TICK);
