@@ -277,6 +277,39 @@ function buildBlastFurnace(world, b, x, z, R, H) {
   collider(world, x, z, R * 1.28, 0, H);
 }
 
+const RENDER = { hi: 0xc2bbab, mid: 0xa49d8c, lo: 0x847d6c, slot: 0x55503f }; // plastered/rendered
+const CORRUG = { hi: 0x8a9098, mid: 0x6c727a, lo: 0x4c5158, slot: 0x2e3136 }; // corrugated steel
+
+// ---- elevated water tower (водонапорная башня): 4 legs + tank + cone cap ----
+function buildWaterTower(world, b, x, z, H) {
+  const S = 0x6c727a, Sl = 0x4c5158, tankR = 3.5, tankH = 4.5, leg = 3.0, legTop = H - tankH;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const lx = x + sx * leg, lz = z + sz * leg;
+    b.box(0.4, legTop, 0.4, lx, legTop / 2, lz, S, { tint: 0.03 });
+    collider(world, lx, lz, 0.3, 0, legTop);
+  }
+  for (const ry of [legTop * 0.4, legTop * 0.78]) { // bracing rings
+    b.box(leg * 2 + 0.4, 0.22, 0.22, x, ry, z - leg, Sl); b.box(leg * 2 + 0.4, 0.22, 0.22, x, ry, z + leg, Sl);
+    b.box(0.22, 0.22, leg * 2 + 0.4, x - leg, ry, z, Sl); b.box(0.22, 0.22, leg * 2 + 0.4, x + leg, ry, z, Sl);
+  }
+  const ty = legTop + tankH / 2;
+  cyl(b, tankR, tankH, x, ty, z, S, { seg: 14, tint: 0.03 });
+  cyl(b, tankR * 1.02, 0.4, x, legTop + 0.2, z, Sl, { seg: 14 });       // bottom rim
+  cyl(b, tankR * 1.02, 0.4, x, ty + tankH / 2 - 0.2, z, 0x8a9098, { seg: 14 }); // lit top rim
+  { const g = new THREE.CylinderGeometry(0.3, tankR, 2.0, 14); b.geo(g, x, ty + tankH / 2 + 1.0, z, Sl); g.dispose(); } // cone cap
+  ladder(b, x, z + tankR + 0.02, 0, ty + tankH / 2, Sl);
+  collider(world, x, z, tankR, legTop, H + 2);
+}
+
+// ---- concrete silo: cylinder + cone roof ----
+function buildSilo(world, b, x, z, R, H) {
+  const C = CONCRETE;
+  cyl(b, R, H, x, H / 2, z, C.mid, { seg: 14, tint: 0.02 });
+  cyl(b, R * 1.02, 0.4, x, H - 0.2, z, C.hi, { seg: 14 });
+  { const g = new THREE.CylinderGeometry(R * 0.15, R, R * 0.6, 14); b.geo(g, x, H + R * 0.3, z, C.lo); g.dispose(); } // cone roof
+  collider(world, x, z, R, 0, H);
+}
+
 // =====================================================================
 // Entry — assembles the kombinát. Objects are added incrementally per the
 // build plan (barrels → tanks → buildings → infra → fence → signs → misc).
@@ -317,4 +350,16 @@ export function buildIndustrial(world, ox, oz) {
   buildBlastFurnace(world, struct, ox - 12, oz - 14, 4, 16);
   const sm = new THREE.Mesh(struct.build(), voxelMaterial());
   sm.castShadow = true; sm.receiveShadow = true; world.scene.add(sm);
+
+  // --- OBJECT 5: support buildings (admin, gatehouse, warehouses, canteen, water tower, silos) ---
+  const sup = new MeshBuilder();
+  buildBuilding(world, sup, ox - 22, oz - 44, 16, 9, 7, { pal: RENDER, windows: true, bayW: 4, doors: [{ side: 'S', w: 2.6, h: 3.2 }] }); // заводоуправление
+  buildBuilding(world, sup, ox + 0, oz - 52, 8, 5, 4, { pal: BRICK, doors: [{ side: 'S', w: 2.4, h: 3 }, { side: 'N', w: 2.4, h: 3 }] });   // проходная (pass-through)
+  buildBuilding(world, sup, ox - 58, oz - 30, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 1
+  buildBuilding(world, sup, ox - 58, oz - 16, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 2
+  buildBuilding(world, sup, ox + 10, oz - 46, 9, 6, 4, { pal: RENDER, windows: true, bayW: 3, doors: [{ side: 'N', w: 2.2, h: 3 }] });      // столовая
+  buildWaterTower(world, sup, ox - 60, oz + 38, 22);
+  buildSilo(world, sup, ox - 48, oz - 40, 3, 12); buildSilo(world, sup, ox - 43, oz - 44, 3, 12); buildSilo(world, sup, ox - 53, oz - 44, 3, 12);
+  const supm = new THREE.Mesh(sup.build(), voxelMaterial());
+  supm.castShadow = true; supm.receiveShadow = true; world.scene.add(supm);
 }
