@@ -41,6 +41,9 @@ class Game {
     this.effects = new Effects(this);
     // Map selection (dev: ?map=steppe). World reads game.mapId in its constructor, so this MUST precede `new World`.
     this.mapId = (() => { try { return new URLSearchParams(location.search).get('map') === 'steppe' ? 'steppe' : 'arena'; } catch (e) { return 'arena'; } })();
+    // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
+    this.freecam = false;
+    this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })();
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
@@ -151,6 +154,8 @@ class Game {
   _wireInput() {
     this.input.on('key', (code) => {
       if (this.state !== 'playing') return;
+      // dev fly-cam toggle (solo only): N, or Ctrl+F
+      if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
       if (this.mpMenuOpen) {
         if (code === 'KeyF') this.toggleFullscreen();
         else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
@@ -224,6 +229,8 @@ class Game {
     this.reset();
     this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
     this.state = 'playing'; this._startCountdown = 0.6;
+    this.freecam = !!this._flyStart; // ?fly=1 → boot straight into the fly-cam (no enemies until you press N)
+    if (this.freecam) this.hud.bigMessage('🚁 FREECAM', 'WASD fly · Space up · Ctrl/C down · Shift boost · N toggle');
     // Go real-fullscreen on this user gesture, then resize & grab the pointer.
     const root = document.documentElement;
     const after = () => { this.engine.resize(); this.input.requestLock(); };
@@ -234,6 +241,24 @@ class Game {
   toggleFullscreen() {
     if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen(); }
     else { const r = document.documentElement; if (r.requestFullscreen) r.requestFullscreen().then(() => this.engine.resize(), () => {}); }
+  }
+  // Dev fly-cam toggle (solo only). On: dismount, clear enemies, suspend spawns (see the `sim` gate in
+  // _updatePlaying) and fly noclip/invulnerable. Off: drop velocity and let waves resume.
+  toggleFreecam() {
+    if (this.mp && this.mp.active) { this.hud.bigMessage('FREECAM', 'solo only'); return; }
+    if (this.state !== 'playing') return;
+    this.freecam = !this.freecam;
+    if (this.freecam) {
+      if (this.player.mountedGun) this.player.mountedGun.dismount();
+      if (this.player.inTank) this.player.inTank.leave();
+      this.weapons.cancelMolotov();
+      this.enemies.clearAll(); // clean, empty map to inspect
+      this.hud.bigMessage('🚁 FREECAM', 'WASD fly · Space up · Ctrl/C down · Shift boost · N exit');
+    } else {
+      this.player.vel.set(0, 0, 0);
+      if (!this.waves.active && this._waveBreak <= 0 && this._startCountdown <= 0) this._waveBreak = 0.8; // kick spawns back on
+      this.hud.bigMessage('FREECAM OFF', 'normal play resumed');
+    }
   }
 
   reset() {
@@ -657,8 +682,9 @@ class Game {
 
   _updatePlaying(dt) {
     const hostSim = !this.mp.active || this.mp.isHost; // clients don't simulate enemies/waves
-    if (hostSim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
-    if (hostSim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._waveBreak = 0; this.waves.startWave(this.waves.wave + 1); } } // continuous: breather → next wave (no shop, stay 'playing')
+    const sim = hostSim && !this.freecam;              // fly-cam = pure observation: no countdown/spawns/enemies
+    if (sim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
+    if (sim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._waveBreak = 0; this.waves.startWave(this.waves.wave + 1); } } // continuous: breather → next wave (no shop, stay 'playing')
 
     if (this.mp.active && this.mp.frozen) {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
@@ -673,7 +699,7 @@ class Game {
       if (!this.mp.frozen) {
         const edge = this.input.buttonsPressed[0] ? 'press' : (this.input.buttons[0] ? 'hold' : null);
         const reviving = this.mp.active && this.mp.blocksWeaponUse && this.mp.blocksWeaponUse();
-        if (edge && !reviving) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
+        if (edge && !reviving && !this.freecam) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
       if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
@@ -683,12 +709,13 @@ class Game {
     }
     if (this.player.mountedGun !== this.mountedGun) this.mountedGun.idleCool(dt); // the .50 cools down even when nobody is manning it
     this.player.survivalTick(dt); // survival timers tick in every seat (on foot, .50 cal, tank)
+    if (this.world.updateGate) this.world.updateGate(dt, this.player.pos); // steppe: animate the sliding works gate
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     this.dayNight.flash.intensity = (!this.player.inTank && !this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
-    if (hostSim) this.enemies.update(dt);
+    if (sim) this.enemies.update(dt);
     this.loot.update(dt);
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
-    if (hostSim) this.waves.update(dt);
+    if (sim) this.waves.update(dt);
     this.mp.update(dt);
     this._updateAdaptiveMusic();
     if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
