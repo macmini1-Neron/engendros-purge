@@ -251,6 +251,35 @@ function buildHangar(world, b, cx, cz) {
 }
 
 // =====================================================================
+// ⑤ AIRCRAFT — custom voxel Soviet jets parked on the apron / in shelters. Nose faces −Z.
+// MiG-21bis «Fishbed»: cropped-delta, nose shock-cone intake, tall fin + ventral fin, green/blue camo, red ★ + bort.
+// Research: L 14.1, span 7.15, height 4.1, fuselage Ø1.24.
+// =====================================================================
+function buildMiG21(world, b, cx, cz, bort) {
+  const GRN = { hi: 0x4a5c30, mid: 0x3c4d26, lo: 0x2e3a1c }, BLU = 0x8aabb8, GRY = 0x45454b, IRX = 0x2a2a2e, gy = 1.45;
+  cyl(b, 0.58, 9.4, cx, gy, cz + 0.7, GRN.mid, { rx: Math.PI / 2, seg: 12, tint: 0.03 });               // fuselage tube
+  cyl(b, 0.5, 3.2, cx, gy, cz + 5.6, GRN.lo, { rx: Math.PI / 2, seg: 12 });                             // rear taper
+  cyl(b, 0.46, 0.5, cx, gy, cz + 7.25, IRX, { rx: Math.PI / 2, seg: 12 });                              // exhaust nozzle
+  { const g = new THREE.CylinderGeometry(0.46, 0.52, 1.2, 12); b.geo(g, cx, gy, cz - 4.8, GRY, { rx: Math.PI / 2 }); g.dispose(); }      // intake lip
+  { const g = new THREE.CylinderGeometry(0.03, 0.32, 1.9, 12); b.geo(g, cx, gy, cz - 5.7, GRY, { rx: -Math.PI / 2 }); g.dispose(); }     // nose shock-cone (point −Z)
+  b.box(0.72, 0.5, 1.9, cx, gy + 0.55, cz - 2.6, 0x222e34); b.box(0.6, 0.42, 1.6, cx, gy + 0.62, cz - 2.6, 0x3a5560); // canopy
+  b.box(0.4, 0.45, 6, cx, gy + 0.5, cz + 1.6, GRN.mid, { tint: 0.02 });                                 // dorsal spine
+  for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) {                                                // cropped-delta wing (stepped)
+    const chord = 4.2 - i * 0.85, span = 0.85, wx = cx + sx * (0.55 + i * 0.85 + span / 2), wz = cz + 1.5 + i * 0.55;
+    b.box(span, 0.16, chord, wx, gy - 0.34, wz, i % 2 ? GRN.mid : GRN.hi, { tint: 0.02 });
+    b.box(span, 0.08, chord * 0.95, wx, gy - 0.44, wz, BLU);
+  }
+  for (const sx of [-1, 1]) b.box(1.7, 0.13, 1.5, cx + sx * 1.25, gy - 0.05, cz + 6.0, GRN.mid);         // stabilators
+  b.box(0.2, 2.5, 2.9, cx, gy + 1.45, cz + 5.5, GRN.mid, { tint: 0.02 }); b.box(0.22, 0.5, 1.5, cx, gy + 2.6, cz + 6.1, GRN.hi); // fin + tip
+  b.box(0.14, 1.0, 1.4, cx, gy - 0.95, cz + 6.3, GRN.lo);                                                // ventral fin
+  for (const [lx, lz] of [[0, -3], [1.25, 1.6], [-1.25, 1.6]]) { b.box(0.12, gy, 0.12, cx + lx, gy / 2, cz + lz, IRX); cyl(b, 0.28, 0.2, cx + lx, 0.28, cz + lz, IRX, { rx: Math.PI / 2, seg: 8 }); }
+  for (const sx of [-1, 1]) signPlane(world, '★', cx + sx * 0.6, gy + 0.05, cz + 3.4, 0.7, 0.7, sx > 0 ? Math.PI / 2 : -Math.PI / 2, { color: '#d22', size: 100 }); // fuselage stars
+  signPlane(world, '★', cx + 0.12, gy + 1.7, cz + 5.5, 0.6, 0.6, Math.PI / 2, { color: '#d22', size: 100 });                              // fin star
+  for (const sx of [-1, 1]) signPlane(world, bort, cx + sx * 0.61, gy + 0.15, cz - 1.0, 1.0, 0.7, sx > 0 ? Math.PI / 2 : -Math.PI / 2, { color: '#e03020', size: 90 }); // bort №
+  collider(world, cx, cz + 1, 3.4, 0, 2.4, 7);
+}
+
+// =====================================================================
 // Entry — assemble the airfield surface + perimeter (structures added in later passes).
 // =====================================================================
 export function buildAirfield(world, ox, oz) {
@@ -270,6 +299,11 @@ export function buildAirfield(world, ox, oz) {
   // ③ КДП control tower (landmark) — apron side, midfield ; ④ ТЭЧ hangar — W side
   buildTower(world, b, ox - 112, oz + 91);
   buildHangar(world, b, ox - 210, oz + 104);
+
+  // ⑤ aircraft — MiG-21bis parked on the apron + one in a shelter
+  buildMiG21(world, b, ox - 152, oz + 102, '12');
+  buildMiG21(world, b, ox - 88, oz + 102, '07');
+  buildMiG21(world, b, ox - 59, oz + 112, '15');
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }
