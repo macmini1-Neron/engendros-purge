@@ -181,6 +181,102 @@ export function buildMainHall(world, cx, cz) {
   m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }
 
+// ---- reusable rectangular building: plinth + clad walls (collidable) +
+// windows + cornice + flat roof, with optional door GAPS (walkable). Reused
+// for ТЭЦ, furnace hall, warehouses, admin, gatehouse, canteen. ----
+const BRICK = { hi: 0x8c4a36, mid: 0x743a2a, lo: 0x542a1e, slot: 0x331a12 };
+const CONCRETE = { hi: 0x9a958b, mid: 0x7c776d, lo: 0x5c584f };
+function buildBuilding(world, b, cx, cz, W, D, H, opts = {}) {
+  const pal = opts.pal || BRICK, CC = CONCRETE, T = 0.6, PH = 0.7, GLASS = 0x8fa6ad, FRAME = 0x45474a;
+  const doors = opts.doors || [];
+  const doorOn = (s) => doors.find((d) => d.side === s);
+  const wall = (axis, fixed, len, sideName) => {
+    const door = doorOn(sideName), half = len / 2;
+    if (!door) {
+      if (axis === 'x') world._solid(b, len, H, T, cx, H / 2, fixed, pal.mid, { tint: 0.05 });
+      else world._solid(b, T, H, len, fixed, H / 2, cz, pal.mid, { tint: 0.05 });
+    } else {
+      const dw = door.w, dh = door.h, off = door.off || 0, lintH = H - dh;
+      const lSeg = half + off - dw / 2, rSeg = half - off - dw / 2;
+      if (axis === 'x') {
+        if (lSeg > 0.1) world._solid(b, lSeg, H, T, cx - half + lSeg / 2, H / 2, fixed, pal.mid, { tint: 0.05 });
+        if (rSeg > 0.1) world._solid(b, rSeg, H, T, cx + half - rSeg / 2, H / 2, fixed, pal.mid, { tint: 0.05 });
+        if (lintH > 0.1) world._solid(b, dw, lintH, T, cx + off, dh + lintH / 2, fixed, pal.mid, { tint: 0.05 });
+      } else {
+        if (lSeg > 0.1) world._solid(b, T, H, lSeg, fixed, H / 2, cz - half + lSeg / 2, pal.mid, { tint: 0.05 });
+        if (rSeg > 0.1) world._solid(b, T, H, rSeg, fixed, H / 2, cz + half - rSeg / 2, pal.mid, { tint: 0.05 });
+        if (lintH > 0.1) world._solid(b, T, lintH, dw, fixed, dh + lintH / 2, cz + off, pal.mid, { tint: 0.05 });
+      }
+    }
+    // plinth + lit top strip + cornice (visual, proud) — layered shading
+    if (axis === 'x') {
+      b.box(len, PH, T + 0.08, cx, PH / 2, fixed, CC.mid);
+      b.box(len, 0.4, T + 0.05, cx, H - 0.5, fixed, pal.hi);
+      b.box(len + 0.4, 0.5, T + 0.28, cx, H - 0.1, fixed, CC.hi);
+    } else {
+      b.box(T + 0.08, PH, len, fixed, PH / 2, cz, CC.mid);
+      b.box(T + 0.05, 0.4, len, fixed, H - 0.5, cz, pal.hi);
+      b.box(T + 0.28, 0.5, len + 0.4, fixed, H - 0.1, cz, CC.hi);
+    }
+  };
+  wall('x', cz - D / 2, W, 'S'); wall('x', cz + D / 2, W, 'N');
+  wall('z', cx - W / 2, D, 'W'); wall('z', cx + W / 2, D, 'E');
+  if (opts.windows) {
+    const bayW = opts.bayW || 6, bays = Math.max(1, Math.round(W / bayW));
+    for (const sz of [cz - D / 2, cz + D / 2]) {
+      const out = sz < cz ? -1 : 1;
+      for (let i = 0; i < bays; i++) {
+        const wx = cx - W / 2 + (i + 0.5) * (W / bays), wy = H * 0.52, wh = Math.min(4, H * 0.5), ww = (W / bays) * 0.5;
+        b.box(ww, wh, 0.1, wx, wy, sz + out * (T / 2 + 0.03), GLASS);
+        b.box(ww + 0.12, wh + 0.12, 0.05, wx, wy, sz + out * (T / 2 + 0.01), FRAME);
+      }
+    }
+  }
+  b.box(W + 0.5, 0.4, D + 0.5, cx, H + 0.2, cz, opts.roof || 0x3a3631); // flat roof deck (above reach)
+  for (const d of doors) { // green door jambs
+    if (d.side === 'S' || d.side === 'N') { const fz = d.side === 'S' ? cz - D / 2 : cz + D / 2, dx = cx + (d.off || 0); b.box(0.3, d.h, 0.25, dx - d.w / 2, d.h / 2, fz, 0x2d4a2a); b.box(0.3, d.h, 0.25, dx + d.w / 2, d.h / 2, fz, 0x2d4a2a); }
+    else { const fx = d.side === 'W' ? cx - W / 2 : cx + W / 2, dz = cz + (d.off || 0); b.box(0.25, d.h, 0.3, fx, d.h / 2, dz - d.w / 2, 0x2d4a2a); b.box(0.25, d.h, 0.3, fx, d.h / 2, dz + d.w / 2, 0x2d4a2a); }
+  }
+}
+
+// ---- tapered brick chimney with white/red top bands (landmark) ----
+function buildChimney(world, b, x, z, R, H) {
+  const segs = 6, sh = H / segs;
+  for (let i = 0; i < segs; i++) { const r = R * (1 - 0.36 * (i / segs)); cyl(b, r, sh + 0.06, x, sh * (i + 0.5), z, i % 2 ? BRICK.mid : BRICK.hi, { seg: 12, tint: 0.03 }); }
+  const rt = R * 0.64;
+  cyl(b, rt + 0.07, 0.8, x, H - 1.1, z, 0xd8d0c0, { seg: 12 });   // white band
+  cyl(b, rt + 0.07, 0.8, x, H - 2.6, z, BRICK.lo, { seg: 12 });   // dark band
+  cyl(b, rt * 1.06, 0.35, x, H, z, 0x2a2622, { seg: 12 });        // sooty cap
+  collider(world, x, z, R * 0.9, 0, H);
+}
+
+// ---- hyperbolic concrete cooling tower (градирня) — the big landmark ----
+function buildCoolingTower(world, b, x, z, R, H) {
+  const C = CONCRETE, segs = 12, waist = 0.6;
+  for (let i = 0; i < segs; i++) {
+    const t = i / (segs - 1);
+    const prof = t <= waist ? 0.58 + 0.42 * Math.pow((waist - t) / waist, 2) : 0.58 + 0.22 * Math.pow((t - waist) / (1 - waist), 2);
+    cyl(b, R * prof, H / segs + 0.12, x, (H / segs) * (i + 0.5), z, i % 2 ? C.mid : C.hi, { seg: 20, tint: 0.02 });
+  }
+  cyl(b, R * 0.80, 0.5, x, H - 0.2, z, C.lo, { seg: 20 });   // top rim
+  cyl(b, R * 0.66, 0.4, x, H + 0.1, z, 0x2a2826, { seg: 20 }); // dark throat
+  // base A-frame supports (ring of short angled posts)
+  const legs = 14; for (let i = 0; i < legs; i++) { const a = (i / legs) * TAU; b.box(0.4, 3.0, 0.4, x + Math.cos(a) * R * 0.92, 1.4, z + Math.sin(a) * R * 0.92, C.lo, { ry: -a, rz: 0.18 }); }
+  collider(world, x, z, R * 0.95, 0, H);
+}
+
+// ---- blast furnace (домна): rusted stack with a wider bosh + downcomer ----
+function buildBlastFurnace(world, b, x, z, R, H) {
+  const M = { hi: 0x8a5a34, mid: 0x6e4526, lo: 0x4e301a };
+  cyl(b, R * 1.05, 0.5, x, 0.25, z, M.lo, { seg: 12 });               // base
+  cyl(b, R, H * 0.62, x, H * 0.34, z, M.mid, { seg: 12, tint: 0.03 });// stack
+  cyl(b, R * 1.28, H * 0.18, x, H * 0.66, z, M.hi, { seg: 12 });      // bosh (bulge)
+  cyl(b, R * 0.78, H * 0.2, x, H * 0.86, z, M.lo, { seg: 12 });       // throat
+  b.box(0.5, H * 0.85, 0.5, x + R + 0.4, H * 0.42, z, 0x5c584f);      // downcomer pipe
+  b.box(0.5, 0.5, R + 1.0, x + R * 0.6, H * 0.5, z + R * 0.6, 0x5c584f); // cross pipe
+  collider(world, x, z, R * 1.28, 0, H);
+}
+
 // =====================================================================
 // Entry — assembles the kombinát. Objects are added incrementally per the
 // build plan (barrels → tanks → buildings → infra → fence → signs → misc).
@@ -208,4 +304,17 @@ export function buildIndustrial(world, ox, oz) {
 
   // --- OBJECT 3: main production hall (главный цех) — its own merged mesh ---
   buildMainHall(world, ox - 28, oz + 8); // world centre (-28, -32)
+
+  // --- OBJECT 4: powerhouse (ТЭЦ + chimneys + cooling tower) + furnace hall + blast furnaces ---
+  const struct = new MeshBuilder();
+  buildBuilding(world, struct, ox + 20, oz + 12, 26, 16, 12, { windows: true, doors: [{ side: 'S', w: 4, h: 4 }, { side: 'N', w: 4, h: 4 }] }); // ТЭЦ boiler house
+  buildChimney(world, struct, ox + 26, oz + 14, 1.6, 30);
+  buildChimney(world, struct, ox + 30, oz + 12, 1.6, 33);
+  buildChimney(world, struct, ox + 34, oz + 10, 1.5, 28);
+  buildCoolingTower(world, struct, ox + 52, oz + 6, 12, 28);
+  buildBuilding(world, struct, ox - 30, oz - 22, 36, 20, 12, { windows: true, doors: [{ side: 'W', w: 5, h: 5 }, { side: 'E', w: 6, h: 6 }] }); // furnace hall (мартен)
+  buildBlastFurnace(world, struct, ox - 12, oz - 22, 4.5, 18);
+  buildBlastFurnace(world, struct, ox - 12, oz - 14, 4, 16);
+  const sm = new THREE.Mesh(struct.build(), voxelMaterial());
+  sm.castShadow = true; sm.receiveShadow = true; world.scene.add(sm);
 }
