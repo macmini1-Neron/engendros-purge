@@ -66,7 +66,10 @@ function chiptune({ bpm, spb = 16, lead, chords, style = 'folk', leadType = 'squ
   const L = buildLead(lead);
   const bars = Math.round(L.length / spb);
   return {
-    bpm, stepsPerBar: spb, bars, drones,
+    bpm, stepsPerBar: spb, bars,
+    // chiptune drones are part of a FIXED arrangement, not adaptive layers — force an intensity
+    // band that keeps _ramp01 pinned at 1 so they sound at the menu's default intensity (0).
+    drones: drones.map((d) => ({ ...d, min: -1, max: -0.5 })),
     step(M, bus, when, bar, step) {
       const stepSec = 60 / bpm / 4;
       const ev = L[(bar * spb + step) % L.length];
