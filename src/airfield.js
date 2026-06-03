@@ -218,6 +218,39 @@ function buildTower(world, b, cx, cz) {
 }
 
 // =====================================================================
+// ТЭЧ ангар — aircraft maintenance hangar. Large-span shed: concrete-panel lower + sage corrugated-steel
+// upper (rusted), low gable roof, 2-leaf sliding steel doors (~20 m, parted → walkable), ribbon windows,
+// overhead crane + inspection pit, «СЛАВА КПСС» facade + «АНГАР №1». Research: ~30×60, eave 9 / ridge 11.
+// =====================================================================
+function buildHangar(world, b, cx, cz) {
+  const W = 28, D = 36, eave = 8.5, ridge = 10.5, T = 0.6;
+  const ST = { hi: 0x8a9082, mid: 0x6c7266, lo: 0x4c5148 };                                // sage corrugated steel
+  const sz = cz - D / 2, nz = cz + D / 2, wx = cx - W / 2, ex = cx + W / 2;
+  for (const fx of [wx, ex]) {                                                              // long walls: concrete lower + steel upper + ribbon window + ribs
+    const out = fx < cx ? -1 : 1;
+    world._solid(b, T, 3, D, fx, 1.5, cz, CONC.mid, { tint: 0.04 });
+    world._solid(b, T, eave - 3, D, fx, 3 + (eave - 3) / 2, cz, ST.mid, { tint: 0.04 });
+    b.box(0.12, 1.3, D - 3, fx + out * (T / 2 + 0.05), 5.6, cz, 0x55636a);                  // ribbon window
+    for (let z = -D / 2 + 3; z < D / 2; z += 3.5) b.box(0.1, eave - 3.2, 0.12, fx + out * (T / 2 + 0.06), 3 + (eave - 3) / 2, cz + z, shade(ST.lo, -0.02));
+  }
+  world._wall(b, cx, nz, W, 3, 0, 'x', CONC.mid, { width: 2.2, height: 2.8 });              // rear wall + personnel door
+  world._solid(b, W, eave - 3, T, cx, 3 + (eave - 3) / 2, nz, ST.mid, { tint: 0.04 });
+  world._wall(b, cx, sz, W, eave, 0, 'x', CONC.mid, { width: 20, height: 7.6 });            // front jambs + lintel (big opening)
+  for (const sx of [-1, 1]) { const dx = cx + sx * 9;                                        // 2 sliding door leaves (parted ~4 m) + colliders
+    b.box(8, 7.4, 0.4, dx, 3.7, sz - 0.4, ST.lo, { tint: 0.03 });
+    for (let k = 0; k < 8; k++) b.box(8.1, 0.1, 0.45, dx, 0.6 + k * 0.95, sz - 0.4, ST.hi);
+    collider(world, dx, sz - 0.4, 4, 0, 7.4, 0.3); }
+  const ang = Math.atan2(ridge - eave, W / 2), sl = Math.hypot(W / 2, ridge - eave);        // low gable roof
+  b.box(sl, 0.3, D + 1.2, cx - W / 4, (ridge + eave) / 2, cz, 0x8a8680, { rz: -ang, tint: 0.03 });
+  b.box(sl, 0.3, D + 1.2, cx + W / 4, (ridge + eave) / 2, cz, 0x8a8680, { rz: ang, tint: 0.03 });
+  b.box(0.6, 0.35, D + 1.2, cx, ridge + 0.12, cz, 0x6c6760);
+  b.box(W - 2, 0.6, 1.0, cx, 7.0, cz - 4, 0xf3a505, { tint: 0.03 }); b.box(2.6, 0.9, 1.5, cx, 6.4, cz - 4, 0xf0a000); b.box(0.16, 2.2, 0.16, cx, 5.2, cz - 4, IRON); // overhead crane
+  b.box(1.4, 0.1, 18, cx, 0.06, cz, 0x16140f);                                              // inspection pit
+  signPlane(world, 'СЛАВА КПСС', cx, eave + 0.7, sz - 0.45, 16, 1.4, Math.PI, { panel: '#9a2b22', border: '#e8dca0', color: '#f2e9d6', size: 78, cw: 1200 });
+  signPlane(world, 'АНГАР №1', cx, eave + 1.0, nz + 0.36, 6, 1.0, 0, { color: '#e8e0cc', size: 64 });
+}
+
+// =====================================================================
 // Entry — assemble the airfield surface + perimeter (structures added in later passes).
 // =====================================================================
 export function buildAirfield(world, ox, oz) {
@@ -232,10 +265,11 @@ export function buildAirfield(world, ox, oz) {
 
   // ② arch shelters (ЗС/АУ-13) dispersed in a row N of the apron, doors facing −Z; + a caponier
   [-185, -143, -101, -59].forEach((sx, i) => buildArchShelter(world, b, ox + sx, oz + 114, '2' + (i + 1)));
-  buildCaponier(world, b, ox - 217, oz + 114);
+  buildCaponier(world, b, ox - 52, oz + 114);
 
-  // ③ КДП control tower (landmark) — apron side, midfield
+  // ③ КДП control tower (landmark) — apron side, midfield ; ④ ТЭЧ hangar — W side
   buildTower(world, b, ox - 112, oz + 91);
+  buildHangar(world, b, ox - 210, oz + 104);
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }
