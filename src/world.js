@@ -6,6 +6,7 @@ import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
 import { buildIndustrial } from './industrial.js';
 import { buildStrongpoint } from './strongpoint.js';
+import { buildAirfield } from './airfield.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 
 
@@ -228,6 +229,7 @@ export class World {
       if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
       if ((x > -84 && x < 84 && z > -104 && z < 12) || Math.hypot(x - 96, z - 18) < 22) continue; // keep the kombinát yard + slag heap clear
       if (Math.hypot(x + 150, z + 90) < 48) continue; // keep the field strongpoint clear
+      if (x > -238 && x < -32 && z > 82 && z < 198) continue; // keep the airfield (NW) clear
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
@@ -238,6 +240,7 @@ export class World {
     this.lootSpots = [ new THREE.Vector3(0, 0, 40), new THREE.Vector3(90, 0, -40), new THREE.Vector3(-90, 0, -40), new THREE.Vector3(40, 0, 70), new THREE.Vector3(-50, 0, 30) ]; // open ground, clear of the kombinát yard
     buildIndustrial(this, 0, 0); // Soviet kombinát district (world coords now; object-by-object — see industrial.js)
     buildStrongpoint(this, -150, -90); // WW2 field strongpoint home base (object-by-object — see strongpoint.js)
+    buildAirfield(this, 0, 0); // Soviet military airfield (NW district — object-by-object — see airfield.js)
   }
 
   _mesh(builder) {
