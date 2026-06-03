@@ -218,26 +218,27 @@ export const SCENES = {
 
   // ═══ Soviet chiptune jukebox (title-screen playlist) — 32-bit takes on WW2-era classics ═══
 
-  // Катюша — M. Blanter (1938). A-minor folk waltz-of-spring. (5-5-6-7-8 rising hook.)
+  // Катюша — M. Blanter (1938). A-minor folk tune. Verse = phrase A (×2) then a lifted
+  // answer that peaks at the minor-3rd (C6) and resolves home to the tonic.
   katyusha: chiptune({
     bpm: 132, style: 'folk', leadVol: 0.18,
     lead: [
-      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // Rastsvetali yabloni i grushi
-      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // Poplyli tumany nad rekoy
-      ['A5', 2], ['A5', 2], ['G5', 2], ['A5', 2], ['B5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // Vykhodila na bereg Katyusha (lift)
-      ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 2], ['D5', 2], ['E5', 2], ['F5', 2], ['E5', 2], ['A4', 8], [0, 8], // Na vysokiy bereg na krutoy (resolve to tonic)
+      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // phrase 1 (5 5 6 7 8 8 7 6 5)
+      ['E5', 2], ['E5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8], [0, 8], // phrase 2 (repeat)
+      ['A5', 2], ['A5', 2], ['A5', 2], ['B5', 2], ['C6', 2], ['B5', 2], ['A5', 2], ['G5', 2], ['A5', 8], [0, 8], // phrase 3 (lift, peak C6)
+      ['G5', 2], ['G5', 2], ['F5', 2], ['G5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 2], ['A4', 8], [0, 8], // phrase 4 (descend, resolve to tonic A)
     ],
-    chords: ['A2', 'E2', 'A2', 'E2', 'A2', 'E2', 'D2', 'A2'],
+    chords: ['A2', 'E2', 'A2', 'E2', 'A2', 'E2', 'E2', 'A2'],
   }),
 
   // Полюшко-поле (Cavalry of the Steppe) — L. Knipper (1933). E-minor; galloping canter bass.
   polyushko: chiptune({
     bpm: 112, style: 'gallop', leadVol: 0.18,
     lead: [
-      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['Fs4', 8], [0, 8],            // Polyushko, pole
-      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 4], // Polyushko, shiroko pole
-      ['D5', 4], ['B4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 8],            // Yedut po polyu geroi
-      ['B4', 4], ['A4', 4], ['G4', 4], ['Fs4', 4], ['E4', 8], [0, 8],          // Ekh, da krasnoy armii geroi (resolve)
+      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['Fs4', 8], [0, 8],            // phrase 1 (descending Em triad)
+      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 4], // phrase 2
+      ['D5', 4], ['B4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 8],            // phrase 3 (lift)
+      ['B4', 4], ['A4', 4], ['G4', 4], ['Fs4', 4], ['E4', 8], [0, 8],          // phrase 4 (resolve to tonic)
     ],
     chords: ['E2', 'B2', 'E2', 'B2', 'E2', 'B2', 'B2', 'E2'],
   }),
@@ -246,10 +247,10 @@ export const SCENES = {
   defenceMoscow: chiptune({
     bpm: 124, style: 'march', leadVol: 0.17,
     lead: [
-      ['D5', 4], ['D5', 4], ['E5', 4], ['F5', 4], ['E5', 8], ['D5', 4], [0, 4],   // My ne drognem v boyu
-      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 8], ['D5', 8],           // za stolitsu svoyu
-      ['F5', 4], ['F5', 4], ['G5', 4], ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 4], // nam rodnaya Moskva doroga
-      ['D5', 8], ['C5', 4], ['D5', 4], ['D5', 16],                                // (cadence + final)
+      ['D5', 4], ['D5', 4], ['E5', 4], ['F5', 4], ['E5', 8], ['D5', 4], [0, 4],   // phrase 1
+      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 8], ['D5', 8],           // phrase 2
+      ['F5', 4], ['F5', 4], ['G5', 4], ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 4], // phrase 3
+      ['D5', 8], ['C5', 4], ['D5', 4], ['D5', 16],                                // phrase 4 (cadence + final)
     ],
     chords: ['D2', 'A2', 'G2', 'A2', 'F2', 'D2', 'A2', 'D2'],
   }),
@@ -259,10 +260,10 @@ export const SCENES = {
     bpm: 72, style: 'ballad', leadType: 'triangle', leadVol: 0.20,
     drones: [{ id: 'pad', min: 0, max: 1, gain: 0.10, build: (M, bus) => M.drone(bus, [NF.G2, NF.D3], { cutoff: 600 }) }],
     lead: [
-      ['D5', 4], ['C5', 2], ['As4', 2], ['A4', 4], ['G4', 4], ['G4', 8], [0, 8],                 // Tyomnaya noch'
-      ['D5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 4], ['C5', 8], [0, 8],     // tolko puli svistyat po stepi
-      ['As4', 4], ['C5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 8], [0, 8],    // tolko veter gudit v provodakh
-      ['A4', 4], ['As4', 2], ['C5', 2], ['A4', 4], ['G4', 4], ['G4', 16],                        // tusklo zvyozdy mertsayut (resolve)
+      ['D5', 4], ['C5', 2], ['As4', 2], ['A4', 4], ['G4', 4], ['G4', 8], [0, 8],                 // phrase 1 (descending)
+      ['D5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 4], ['C5', 8], [0, 8],     // phrase 2
+      ['As4', 4], ['C5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 8], [0, 8],    // phrase 3
+      ['A4', 4], ['As4', 2], ['C5', 2], ['A4', 4], ['G4', 4], ['G4', 16],                        // phrase 4 (resolve)
     ],
     chords: ['G2', 'D2', 'C3', 'D2', 'Ds3', 'D2', 'D2', 'G2'],
   }),
@@ -275,10 +276,10 @@ export const SCENES = {
       { id: 'sub', min: 0, max: 1, gain: 0.12, build: (M, bus) => M.drone(bus, [NF.D2], { cutoff: 180, type: 'sine' }) },
     ],
     lead: [
-      ['A4', 4], ['D5', 4], ['D5', 4], ['C5', 4], ['D5', 4], ['F5', 4],   // Vstavay, strana ogromnaya
-      ['E5', 4], ['D5', 4], ['A4', 4], ['D5', 12],                        // vstavay na smertnyy boy
-      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['A5', 4], ['G5', 4],   // Pust' yarost' blagorodnaya
-      ['F5', 4], ['E5', 4], ['D5', 4], ['D5', 12],                        // vskipaet, kak volna (resolve)
+      ['A4', 4], ['D5', 4], ['D5', 4], ['C5', 4], ['D5', 4], ['F5', 4],   // phrase 1 (the call, rising to F5)
+      ['E5', 4], ['D5', 4], ['A4', 4], ['D5', 12],                        // phrase 2 (held tonic)
+      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['A5', 4], ['G5', 4],   // phrase 3 (higher answer)
+      ['F5', 4], ['E5', 4], ['D5', 4], ['D5', 12],                        // phrase 4 (resolve)
     ],
     chords: ['D2', 'D2', 'A2', 'D2', 'D2', 'As2', 'A2', 'D2'],
   }),
