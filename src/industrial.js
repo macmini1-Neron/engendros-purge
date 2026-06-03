@@ -397,6 +397,41 @@ function buildMisc(world, b, rng) {
   }
 }
 
+// ---- OBJECT 8: Cyrillic signage (азбука) via CanvasTexture planes ----
+// Lambert + alphaTest in the OPAQUE pass (so the depthTest-off viewmodel still
+// draws over it), offset proud of the wall to avoid z-fighting. Mirrors the
+// T-90M weak-point poster pattern in world.js.
+function signTex(text, opts = {}) {
+  const W = opts.cw || 512, H = opts.ch || 128, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
+  if (opts.panel) { ctx.fillStyle = opts.panel; ctx.fillRect(0, 0, W, H); if (opts.border) { ctx.strokeStyle = opts.border; ctx.lineWidth = 8; ctx.strokeRect(4, 4, W - 8, H - 8); } }
+  ctx.fillStyle = opts.color || '#e8e0cc';
+  ctx.font = `bold ${opts.size || 78}px "Russo One", Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, W / 2, H / 2 + 4);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
+  const tex = signTex(text, { cw: Math.max(256, Math.round(w * 48)), ch: Math.max(96, Math.round(h * 64)), ...opts });
+  const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: !opts.panel, alphaTest: opts.panel ? 0 : 0.5, emissive: 0x0c0c0c, emissiveIntensity: 1, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  m.position.set(x, y, z); m.rotation.y = ry; m.renderOrder = 4; m.frustumCulled = true;
+  world.scene.add(m);
+}
+function buildSignage(world) {
+  // ЦЕХ №1 — east gable of the main hall (faces +X, toward the yard)
+  signPlane(world, 'ЦЕХ №1', -3.55, 9.4, -32, 4.6, 1.3, Math.PI / 2, { color: '#e8e0cc' });
+  // СЛАВА ТРУДУ! — red banner along the main hall's south long wall (faces −Z)
+  signPlane(world, 'СЛАВА ТРУДУ!', -28, 11.6, -46.55, 24, 1.9, Math.PI, { panel: '#9a2b22', color: '#f2e9d6', size: 92, border: '#d8cfb8' });
+  // ОГНЕОПАСНО — hazard sign by the gasholders (yellow/black)
+  signPlane(world, 'ОГНЕОПАСНО', 36, 9, -48.6, 6, 1.4, Math.PI, { panel: '#c9a23a', color: '#1a1a1a', size: 70, border: '#1a1a1a' });
+  // ПРОХОДНАЯ — over the gatehouse south door
+  signPlane(world, 'ПРОХОДНАЯ', 0, 4.4, -94.6, 5, 1.1, Math.PI, { panel: '#2d4a2a', color: '#e8e0cc', size: 64 });
+  // ЗАВОДОУПРАВЛЕНИЕ + ★ — admin south face
+  signPlane(world, 'ЗАВОДОУПРАВЛЕНИЕ', -22, 5.7, -88.62, 12, 1.2, Math.PI, { color: '#f2e9d6', size: 56 });
+  signPlane(world, '★', -22, 7.0, -88.62, 1.4, 1.4, Math.PI, { color: '#cc2b22', size: 110 });
+}
+
 // =====================================================================
 // Entry — assembles the kombinát. Objects are added incrementally per the
 // build plan (barrels → tanks → buildings → infra → fence → signs → misc).
@@ -462,4 +497,7 @@ export function buildIndustrial(world, ox, oz) {
   buildMisc(world, infra, rng);
   const im = new THREE.Mesh(infra.build(), voxelMaterial());
   im.castShadow = true; im.receiveShadow = true; world.scene.add(im);
+
+  // --- OBJECT 8: Cyrillic signage (азбука) — own textured planes ---
+  buildSignage(world);
 }
