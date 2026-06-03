@@ -5,6 +5,7 @@ import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
 import { buildIndustrial } from './industrial.js';
+import { buildStrongpoint } from './strongpoint.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 
 
@@ -226,6 +227,7 @@ export class World {
       const x = randRange(-H + 30, H - 30, rng), z = randRange(-H + 30, H - 30, rng);
       if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
       if (Math.abs(x) < 80 && Math.abs(z + 40) < 62) continue; // keep the kombinát yard clear
+      if (Math.hypot(x + 150, z + 90) < 48) continue; // keep the field strongpoint clear
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
@@ -235,6 +237,7 @@ export class World {
     for (let i = 0; i < 32; i++) { const a = (i / 32) * TAU; this.spawns.push(new THREE.Vector3(Math.cos(a) * (H - 12), 0, Math.sin(a) * (H - 12))); }
     this.lootSpots = [ new THREE.Vector3(0, 0, 40), new THREE.Vector3(90, 0, -40), new THREE.Vector3(-90, 0, -40), new THREE.Vector3(40, 0, 70), new THREE.Vector3(-50, 0, 30) ]; // open ground, clear of the kombinát yard
     buildIndustrial(this, 0, -40); // Soviet kombinát district (object-by-object — see industrial.js)
+    buildStrongpoint(this, -150, -90); // WW2 field strongpoint home base (object-by-object — see strongpoint.js)
   }
 
   _mesh(builder) {

@@ -31,6 +31,7 @@ export class Player {
   }
   reset() {
     this.pos.set(0, 0, 30); this.vel.set(0, 0, 0); this.yaw = Math.PI; this.pitch = 0;
+    if (this.game && this.game.mapId === 'steppe') { this.pos.set(-150, 0, -72); this.yaw = Math.PI; } // spawn in the field strongpoint (home base), facing the command bunker
     this.onGround = true; this._regenT = 0; this.resetStats();
   }
 
