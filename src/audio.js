@@ -44,7 +44,8 @@ export class AudioManager {
       burstTail: ['sounds/weapons/dshk/burst/dshk_burst_tail_01.wav'],
     };
     this._mosin = {
-      fireClose: Array.from({ length: 5 }, (_, i) => `sounds/weapons/mosin_9130/fire/mosin_9130_fire_close_${String(i + 1).padStart(2, '0')}.wav`),
+      fireClose: ['assets/vystrel.mp3'],
+      fireFallback: Array.from({ length: 5 }, (_, i) => `sounds/weapons/mosin_9130/fire/mosin_9130_fire_close_${String(i + 1).padStart(2, '0')}.wav`),
       boltOpen: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/foley/mosin_9130_bolt_open_${String(i + 1).padStart(2, '0')}.wav`),
       boltClose: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/foley/mosin_9130_bolt_close_${String(i + 1).padStart(2, '0')}.wav`),
       caseEject: Array.from({ length: 2 }, (_, i) => `sounds/weapons/mosin_9130/brass/mosin_9130_case_eject_${String(i + 1).padStart(2, '0')}.wav`),
@@ -178,6 +179,7 @@ export class AudioManager {
     this._mosinSamplesPrimed = true;
     for (const p of [
       ...this._mosin.fireClose,
+      ...this._mosin.fireFallback,
       ...this._mosin.boltOpen,
       ...this._mosin.boltClose,
       ...this._mosin.caseEject,
@@ -364,7 +366,8 @@ export class AudioManager {
   // ---- Mosin 91/30: recorded rifle shot + bolt/reload foley, with procedural fallback ----
   mosinShot() {
     if (!this.ctx) return;
-    if (this._playMosinSample('mosinFireClose', this._mosin.fireClose, { vol: 1.10 + Math.random() * 0.08, rate: 0.985 + Math.random() * 0.03 })) return;
+    if (this._playMosinSample('mosinSingleShot', this._mosin.fireClose, { vol: 1.06 + Math.random() * 0.08, rate: 0.985 + Math.random() * 0.03 })) return;
+    if (this._playMosinSample('mosinFireCloseFallback', this._mosin.fireFallback, { vol: 1.10 + Math.random() * 0.08, rate: 0.985 + Math.random() * 0.03 })) return;
     this.gunshot({ body: 145, crack: 0.13, vol: 0.78, hp: 2400, bp: 820 });
   }
   mosinBoltOpen() {
