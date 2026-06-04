@@ -1206,26 +1206,30 @@
       ];
       const slogan = document.getElementById('heroSlogan');
       if (slogan) {
-        let last = -1; const ribbon = slogan.closest('.hero-ribbon');
+        let last = -1, revealT = 0; const ribbon = slogan.closest('.hero-ribbon');
         const rollSlogan = (first) => {
           if (ribbon) ribbon.querySelectorAll('.plaque.falling').forEach((el) => el.remove());  // never let clones pile up
+          clearTimeout(revealT);
           let n; do { n = Math.floor(Math.random() * SLOGANS.length); } while (n === last && SLOGANS.length > 1); last = n;
-          // only do the falling-page animation when the tab is actually visible (a hidden tab pauses CSS
-          // animations → animationend never fires → clones would stack); otherwise just swap the text.
-          const animate = !first && ribbon && document.visibilityState === 'visible';
-          if (animate) {
-            // pin a clone to the CURRENT slogan's exact box, THEN swap the text — so a longer/2-line next
-            // slogan reflows freely without dragging the falling layer out of place (both stay centred)
-            const r = slogan.getBoundingClientRect(), rr = ribbon.getBoundingClientRect();
-            const fall = slogan.cloneNode(true); fall.removeAttribute('id'); fall.classList.add('falling');
-            fall.style.left = (r.left - rr.left) + 'px'; fall.style.top = (r.top - rr.top) + 'px'; fall.style.width = r.width + 'px';
-            ribbon.appendChild(fall);
-            const kill = () => fall.remove();
-            fall.addEventListener('animationend', kill, { once: true });
-            setTimeout(kill, 1400);                       // hard fallback: a clone always disappears
+          const next = SLOGANS[n];
+          // no animation on first paint, with no ribbon, or on a hidden tab (CSS anims pause → would stack)
+          if (first || !ribbon || document.visibilityState !== 'visible') {
+            slogan.textContent = next; slogan.style.visibility = ''; slogan.classList.remove('dropin'); return;
           }
-          slogan.textContent = SLOGANS[n];
-          slogan.classList.remove('dropin'); void slogan.offsetWidth; if (animate) slogan.classList.add('dropin');
+          // 1) peel the CURRENT slogan into a falling clone, pinned to its exact box (so the next slogan's
+          //    size can't shift the layers). It falls ALONE — the live slogan is hidden until it lands.
+          const r = slogan.getBoundingClientRect(), rr = ribbon.getBoundingClientRect();
+          const fall = slogan.cloneNode(true); fall.removeAttribute('id'); fall.classList.add('falling');
+          fall.style.left = (r.left - rr.left) + 'px'; fall.style.top = (r.top - rr.top) + 'px'; fall.style.width = r.width + 'px';
+          ribbon.appendChild(fall);
+          const kill = () => fall.remove();
+          fall.addEventListener('animationend', kill, { once: true }); setTimeout(kill, 1500);  // always cleans up
+          // 2) hide the live line while the old one drops, then reveal the NEW one as it lands
+          slogan.classList.remove('dropin'); slogan.style.visibility = 'hidden';
+          revealT = setTimeout(() => {
+            slogan.textContent = next; slogan.style.visibility = '';
+            void slogan.offsetWidth; slogan.classList.add('dropin');   // forced reflow → the drop-in replays every time
+          }, 600);
         };
         rollSlogan(true); setInterval(rollSlogan, 10000);
       }
