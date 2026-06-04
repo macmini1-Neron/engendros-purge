@@ -22,6 +22,15 @@ function cyl(b, r, h, x, y, z, color, opts = {}) {
   const g = new THREE.CylinderGeometry(r, r, h, opts.seg || 12);
   b.geo(g, x, y, z, color, opts); g.dispose();
 }
+// real extruded 5-point Soviet star (the font ★ glyph reads cocked / wrong-proportioned) — points up,
+// flat in XY extruding +Z; aim at a wall face with opts.ry (π → faces −Z). Same recipe as industrial.js HQ.
+function star3D(b, x, y, z, size, color, opts = {}) {
+  const sh = new THREE.Shape();
+  for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + i * Math.PI / 5, rad = (i % 2 ? 0.40 : 1) * size, px = Math.cos(a) * rad, py = Math.sin(a) * rad; i ? sh.lineTo(px, py) : sh.moveTo(px, py); }
+  sh.closePath();
+  const g = new THREE.ExtrudeGeometry(sh, { depth: opts.depth || 0.16, bevelEnabled: false });
+  b.geo(g, x, y, z, color, opts); g.dispose();
+}
 function collider(world, x, z, halfW, y0, y1, halfD) {
   world.boxes.push({ min: new THREE.Vector3(x - halfW, y0, z - (halfD ?? halfW)), max: new THREE.Vector3(x + halfW, y1, z + (halfD ?? halfW)) });
 }
@@ -137,8 +146,7 @@ function buildKPP(world, b, gx, gz) {
   b.box(6.6, 0.4, 3.6, gx - 4, 3.15, gz, 0x6a4a32);                     // roof
   for (const dx of [-1.6, 1.6]) { b.box(1.1, 1.2, 0.1, gx - 4 + dx, 1.7, gz - 1.5 - 0.02, 0x6a7f86); } // windows (S)
   b.box(0.1, 2.2, 1.2, gx - 1.0, 1.1, gz, 0x2d4a2a);                    // green door (E, toward the lane)
-  b.box(0.6, 0.6, 0.06, gx - 4, 2.5, gz - 1.55, RED);                   // red star plate
-  signPlane(world, '★', gx - 4, 2.5, gz - 1.58, 0.5, 0.5, 0, { color: '#f4ecd8', size: 110 });
+  star3D(b, gx - 4, 2.55, gz - 1.55, 0.4, RED, { ry: Math.PI, depth: 0.09 }); // proper 3-D red star on the gable
   // gate pillars + шлагбаум barrier (counterweighted red/white pole) across the lane
   for (const dx of [-0.2, 5.5]) { world._solid(b, 0.5, 2.2, 0.5, gx + dx, 1.1, gz, FENCE.lo); b.box(0.62, 0.3, 0.62, gx + dx, 2.2, gz, FENCE.hi); }
   const bar = new THREE.CylinderGeometry(0.1, 0.1, 5.2, 8); b.geo(bar, gx + 2.7, 1.4, gz, WMARK, { rz: Math.PI / 2 }); bar.dispose();
@@ -333,20 +341,32 @@ function buildSu25(world, b, cx, cz, bort) {
 // =====================================================================
 const G4BO = { hi: 0x6a7a42, mid: 0x55632e, lo: 0x3e4a1f };               // защитный 4БО
 
-function buildSAMLauncher(world, b, lx, lz, phi) {                        // SM-63-1 rail + V-750 missile @60°, pointing outward
-  const GRY = 0xb8b4aa, IRX = 0x2a2a2e, by = 1.1;
-  cyl(b, 1.3, 0.5, lx, 0.25, lz, IRX, { seg: 10 }); cyl(b, 0.7, 0.8, lx, 0.7, lz, G4BO.lo, { seg: 8 }); // turntable + pivot
-  const ax = Math.sin(phi) * 0.5, ay = 0.866, az = Math.cos(phi) * 0.5;
-  for (let t = 0; t < 9; t += 0.8) b.box(0.55, 0.16, 0.55, lx + ax * t, by + ay * t - 0.42, lz + az * t, IRX, { ry: phi }); // rail
-  for (let t = 0.3; t < 10; t += 0.5) { const fat = t < 2.7, r = fat ? 0.38 : 0.27; b.box(r * 2, 0.62, r * 2, lx + ax * t, by + ay * t, lz + az * t, fat ? G4BO.mid : GRY, { ry: phi, tint: 0.02 }); }
-  b.box(0.2, 0.7, 0.2, lx + ax * 10, by + ay * 10, lz + az * 10, GRY);    // nose
-  for (let k = 0; k < 4; k++) { const fa = phi + k * Math.PI / 2; b.box(1.3, 0.1, 0.5, lx + ax * 1.7 + Math.cos(fa) * 0.5, by + ay * 1.7, lz + az * 1.7 + Math.sin(fa) * 0.5, G4BO.lo, { ry: fa }); } // booster fins
-  collider(world, lx, lz, 1.4, 0, 1.3);
+function buildSAMLauncher(world, b, lx, lz, phi) {                        // СМ-90 open-rail launcher + V-750 «Двина» missile, ~28° elevation
+  const M = G4BO, IRX = 0x2a2a2e, NOSE = 0xcdc8ba, by = 1.25;
+  cyl(b, 1.5, 0.4, lx, 0.2, lz, IRX, { seg: 14 }); cyl(b, 0.85, 1.0, lx, 0.8, lz, M.lo, { seg: 10, tint: 0.03 }); // turntable ring + pivot
+  const el = 0.49, ce = Math.cos(el), ax = Math.sin(phi) * ce, ay = Math.sin(el), az = Math.cos(phi) * ce;
+  const A = (t, r) => [lx + ax * t + Math.cos(phi) * r, by + ay * t, lz + az * t - Math.sin(phi) * r]; // t = along missile axis, r = sideways
+  for (const r of [-0.28, 0.28]) for (let t = 0.2; t < 8.6; t += 0.7) { const [px, py, pz] = A(t, r); b.box(0.13, 0.13, 0.6, px, py - 0.5, pz, IRX, { ry: phi }); } // twin I-beam rail
+  for (let t = 1; t < 8; t += 1.6) { const [px, py, pz] = A(t, 0); b.box(0.75, 0.1, 0.18, px, py - 0.5, pz, IRX, { ry: phi }); }                            // cross-ties
+  for (let t = 0.5; t < 2.5; t += 0.4) { const [px, py, pz] = A(t, 0); b.box(0.72, 0.5, 0.72, px, py, pz, M.lo, { ry: phi, tint: 0.02 }); }                  // booster (fat Ø)
+  { const [px, py, pz] = A(2.6, 0); b.box(0.66, 0.5, 0.66, px, py, pz, M.mid, { ry: phi }); }                                                                // interstage frustum
+  for (let t = 2.9; t < 9.4; t += 0.42) { const [px, py, pz] = A(t, 0); b.box(0.5, 0.45, 0.5, px, py, pz, t < 6 ? M.mid : M.hi, { ry: phi, tint: 0.02 }); }  // sustainer (slim Ø)
+  { const [px, py, pz] = A(9.7, 0); b.box(0.34, 0.45, 0.34, px, py, pz, NOSE, { ry: phi }); const [qx, qy, qz] = A(10.05, 0); b.box(0.16, 0.4, 0.16, qx, qy, qz, NOSE, { ry: phi }); } // ogive nose
+  for (let k = 0; k < 4; k++) { const fa = phi + k * Math.PI / 2; const [px, py, pz] = A(1.5, 0); b.box(1.1, 0.1, 1.0, px + Math.cos(fa) * 0.9, py, pz + Math.sin(fa) * 0.9, M.lo, { ry: fa, tint: 0.02 }); } // 4 BIG booster delta fins
+  for (let k = 0; k < 4; k++) { const fa = phi + Math.PI / 4 + k * Math.PI / 2; const [px, py, pz] = A(3.1, 0); b.box(0.7, 0.08, 0.55, px + Math.cos(fa) * 0.5, py, pz + Math.sin(fa) * 0.5, M.mid, { ry: fa }); } // 4 smaller sustainer fins
+  collider(world, lx, lz, 1.6, 0, 1.5);
 }
-function buildFanSong(world, b, cx, cz) {                                 // СНР-75 guidance radar (2 perpendicular trough antennas)
-  world._solid(b, 3, 2.4, 6, cx, 1.2, cz, G4BO.mid, { tint: 0.03 });
-  b.box(0.4, 4, 0.4, cx, 2.4, cz, 0x2a2a2e);
-  b.box(5.5, 3.4, 0.3, cx, 4.6, cz - 1.2, 0x9a958b, { tint: 0.02 }); b.box(0.3, 3.6, 3.4, cx + 1.8, 4.6, cz + 1.0, 0x9a958b, { tint: 0.02 });
+function buildFanSong(world, b, cx, cz) {                                 // СНР-75 «Fan Song» — TWO perpendicular trough antennas forming a +
+  const M = G4BO, A = 0x8d8a80, RIB = 0x66635c, IRX = 0x2a2a2e;
+  world._solid(b, 3.4, 2.2, 5.5, cx, 1.1, cz, M.mid, { tint: 0.03 });     // operator van
+  cyl(b, 0.9, 1.4, cx, 2.5, cz, IRX, { seg: 12 });                        // rotating pedestal
+  b.box(6.8, 1.6, 0.45, cx, 4.3, cz - 0.3, A, { tint: 0.02 });            // horizontal trough (elevation scan) — wide bar
+  for (let i = -3; i <= 3; i++) b.box(0.12, 1.6, 0.5, cx + i * 0.98, 4.3, cz - 0.33, RIB);
+  b.box(1.6, 6.8, 0.45, cx, 4.5, cz - 0.3, A, { tint: 0.02 });            // vertical trough (azimuth scan) — tall bar, crossing the first
+  for (let i = -3; i <= 3; i++) b.box(1.6, 0.12, 0.5, cx, 4.5 + i * 0.98, cz - 0.33, RIB);
+  cyl(b, 0.55, 0.22, cx + 3.4, 4.3, cz - 0.3, A, { rx: -Math.PI / 2, seg: 12 });  // LORO dish (H bar tip)
+  cyl(b, 0.55, 0.22, cx, 7.9, cz - 0.3, A, { rx: -Math.PI / 2, seg: 12 });        // LORO dish (V bar tip)
+  collider(world, cx, cz, 1.8, 0, 2.2, 2.9);
 }
 function buildSAMSite(world, b, cx, cz) {
   buildFanSong(world, b, cx, cz);
@@ -357,34 +377,48 @@ function buildSAMSite(world, b, cx, cz) {
     buildSAMLauncher(world, b, lx, lz, phi);
   }
 }
-function buildShilka(world, b, cx, cz, ry = 0) {
-  const IRX = 0x2a2a2e;
-  world._solid(b, 3.1, 1.4, 6.5, cx, 0.95, cz, G4BO.mid, { tint: 0.03, ry });
-  for (const sx of [-1, 1]) b.box(0.65, 0.75, 6.6, cx + sx * 1.45, 0.38, cz, IRX, { ry });
-  world._solid(b, 2.7, 1.1, 2.9, cx, 2.15, cz - 0.3, G4BO.lo, { tint: 0.03, ry });           // box turret
-  b.box(1.5, 0.7, 0.6, cx, 2.4, cz - 1.7, G4BO.hi, { ry, tint: 0.03 });                      // gun mantlet/cradle (proud, lit)
-  for (const dx of [-0.55, -0.2, 0.2, 0.55]) { b.box(0.17, 0.17, 4.0, cx + dx, 2.6, cz - 3.6, 0x4a4a50, { ry }); b.box(0.22, 0.22, 0.4, cx + dx, 2.6, cz - 5.5, 0x32323a, { ry }); } // 4 long 23 mm barrels (lighter) + muzzle tips
-  cyl(b, 0.7, 0.18, cx + 0.2, 3.25, cz + 1.1, 0xa49f93, { rx: 0.4, seg: 12, tint: 0.03 });   // Gun-Dish radar (RPK-2)
-  b.box(0.18, 1.1, 0.18, cx + 0.2, 2.65, cz + 1.0, IRX, { ry });                              // radar pedestal
-  collider(world, cx, cz, 1.7, 0, 3.2, 3.4);
+function buildShilka(world, b, cx, cz, ry = 0) {                          // ЗСУ-23-4 «Шилка» — squat box turret, 2×2 water-jacketed barrels, Gun-Dish at rear
+  const c = Math.cos(ry), s = Math.sin(ry), P = (dx, dz) => [cx + dx * c - dz * s, cz + dx * s + dz * c];
+  const IRX = 0x2a2a2e, TRK = 0x23231f, WHL = 0x18181a, GUN = 0x36363c, DISH = 0x9a958b;
+  world._solid(b, 3.1, 1.25, 6.5, cx, 0.95, cz, G4BO.mid, { tint: 0.03, ry });                 // hull
+  { const [x, z] = P(0, -2.9); b.box(3.0, 0.7, 1.4, x, 1.2, z, G4BO.lo, { ry, tint: 0.02 }); }  // sloped glacis (front −Z)
+  for (const sx of [-1, 1]) {                                                                    // tracks (flat top, no return rollers) + 6 road wheels
+    const [tx, tz] = P(sx * 1.5, 0); b.box(0.5, 0.8, 6.6, tx, 0.42, tz, TRK, { ry });
+    for (let i = 0; i < 6; i++) { const [wx, wz] = P(sx * 1.5, -2.5 + i * 1.0); cyl(b, 0.4, 0.16, wx, 0.42, wz, WHL, { rx: Math.PI / 2, ry, seg: 10 }); }
+  }
+  { const [x, z] = P(0, -0.2); world._solid(b, 2.7, 0.9, 2.4, x, 1.92, z, G4BO.lo, { tint: 0.03, ry }); } // squat box turret
+  { const [x, z] = P(0, -1.45); b.box(2.4, 0.72, 0.7, x, 1.95, z, G4BO.mid, { ry, tint: 0.03 }); }        // sloped front / mantlet
+  for (const ox of [-0.3, 0.3]) for (const oy of [-0.26, 0.26]) {                               // 2×2 water-jacketed AZP-23 barrels
+    const [x, z] = P(ox, -3.3); cyl(b, 0.13, 3.0, x, 2.0 + oy, z, GUN, { rx: Math.PI / 2, ry, seg: 8 });
+    const [mx, mz] = P(ox, -4.95); cyl(b, 0.075, 1.0, mx, 2.0 + oy, mz, IRX, { rx: Math.PI / 2, ry, seg: 6 });
+  }
+  { const [a1x, a1z] = P(-0.4, 1.05), [a2x, a2z] = P(0.4, 1.05); b.box(0.16, 1.0, 0.16, a1x, 2.85, a1z, IRX, { ry }); b.box(0.16, 1.0, 0.16, a2x, 2.85, a2z, IRX, { ry }); } // dish arms
+  { const [x, z] = P(0, 1.25); cyl(b, 0.8, 0.22, x, 3.45, z, DISH, { rx: -0.55, ry, seg: 14, tint: 0.03 }); b.box(0.5, 0.5, 0.22, x, 3.4, z, 0x6a6760, { ry }); } // RPK-2 «Gun Dish» (rear, deployed up)
+  collider(world, cx, cz, 1.7, 0, 3.0, 3.3);
 }
-function buildRadarP18(world, b, cx, cz) {                                // П-18 «Spoon Rest» Yagi billboard radar
-  const IRX = 0x2a2a2e, ROD = 0x9a958b;
-  world._solid(b, 2.6, 1.5, 5, cx, 0.95, cz, G4BO.mid, { tint: 0.03 });
-  b.box(0.4, 5, 0.4, cx, 3.6, cz, IRX);                                                       // mast
-  b.box(0.22, 6, 0.22, cx - 7, 8, cz, IRX); b.box(0.22, 6, 0.22, cx + 7, 8, cz, IRX); b.box(14, 0.22, 0.22, cx, 11, cz, IRX); b.box(14, 0.22, 0.22, cx, 5, cz, IRX); // frame
-  for (let y = 5.6; y < 10.8; y += 0.7) for (const row of [-0.45, 0.45]) b.box(13, 0.08, 0.08, cx, y, cz + row, ROD); // Yagi rows
-  for (let x = -6; x <= 6; x += 1.2) b.box(0.08, 5.4, 0.08, cx + x, 8, cz, ROD);
-  collider(world, cx, cz, 1.5, 0, 11, 2.6);
+function buildRadarP18(world, b, cx, cz) {                                // П-18 «Spoon Rest» — flat 16-Yagi billboard (wider than tall, ~3:1), static cabin (no truck)
+  const IRX = 0x2a2a2e, ROD = 0x9a958b, M = G4BO, HW = 6, FY = 7;
+  world._solid(b, 3.2, 2.2, 4, cx, 1.1, cz, M.mid, { tint: 0.03 });                             // electronics cabin
+  cyl(b, 0.7, 3.6, cx, 3.4, cz, IRX, { seg: 10 });                                              // rotating mast
+  b.box(0.18, 4.2, 0.18, cx - HW, FY, cz, IRX); b.box(0.18, 4.2, 0.18, cx + HW, FY, cz, IRX);   // frame sides
+  b.box(2 * HW + 0.2, 0.18, 0.18, cx, FY + 2, cz, IRX); b.box(2 * HW + 0.2, 0.18, 0.18, cx, FY - 2, cz, IRX); // frame top/bottom
+  for (const row of [FY - 1, FY + 1]) for (let i = 0; i < 8; i++) { const x = cx - HW + 0.75 + i * 1.5;       // 16 Yagi = 2 rows × 8 (horizontal comb)
+    b.box(0.09, 0.09, 1.7, x, row, cz + 0.95, ROD);
+    for (const e of [0.2, 0.55, 0.9, 1.25]) b.box(1.0 - e * 0.45, 0.07, 0.07, x, row, cz + 0.3 + e, ROD); }
+  collider(world, cx, cz, 1.7, 0, FY + 2, 2);
 }
-function buildZU23(world, b, cx, cz) {                                    // ЗУ-23-2 towed twin 23 mm
-  const IRX = 0x2a2a2e;
-  b.box(2.8, 0.35, 2.8, cx, 0.42, cz, G4BO.mid, { tint: 0.03 });
-  for (const sx of [-1, 1]) cyl(b, 0.42, 0.2, cx + sx * 1.5, 0.42, cz, IRX, { rx: Math.PI / 2, seg: 8 }); // folded wheels
-  b.box(0.9, 0.7, 0.9, cx, 1.05, cz, G4BO.lo);                                                // cradle
-  for (const dx of [-0.17, 0.17]) b.box(0.11, 0.11, 2.4, cx + dx, 1.25, cz - 1.4, IRX);        // twin barrels
-  b.box(1.3, 0.8, 0.1, cx, 1.35, cz + 0.6, G4BO.lo);                                           // shield
-  collider(world, cx, cz, 1.5, 0, 1.6);
+function buildZU23(world, b, cx, cz, ry = 0) {                            // ЗУ-23-2 — signature perpendicular side ammo boxes + muzzle suppressors, deployed on jacks
+  const c = Math.cos(ry), s = Math.sin(ry), P = (dx, dz) => [cx + dx * c - dz * s, cz + dx * s + dz * c];
+  const IRX = 0x2a2a2e, M = G4BO;
+  b.box(2.4, 0.28, 2.4, cx, 0.32, cz, M.mid, { ry, tint: 0.03 });                               // low platform
+  for (const [jx, jz] of [[0, -1.1], [-1.05, 1.0], [1.05, 1.0]]) { const [x, z] = P(jx, jz); b.box(0.28, 0.5, 0.28, x, 0.25, z, IRX, { ry }); } // 3 leveling jacks (deployed)
+  for (const sx of [-1, 1]) { const [x, z] = P(sx * 1.25, 0.35); cyl(b, 0.45, 0.22, x, 0.95, z, IRX, { rx: Math.PI / 2, ry, seg: 10 }); }       // wheels raised (folded up)
+  b.box(0.8, 0.7, 0.8, cx, 0.85, cz, M.lo, { ry });                                             // pivot/yoke
+  for (const ox of [-0.28, 0.28]) { const [x, z] = P(ox, -1.5); cyl(b, 0.085, 2.4, x, 1.2, z, IRX, { rx: Math.PI / 2, ry, seg: 6 });           // twin barrels (wide)
+    const [mx, mz] = P(ox, -2.85); cyl(b, 0.16, 0.55, mx, 1.2, mz, 0x3a3a40, { rx: Math.PI / 2, ry, seg: 8 }); }                               // muzzle suppressors
+  for (const sx of [-1, 1]) { const [x, z] = P(sx * 1.15, 0.25); b.box(0.9, 0.55, 0.6, x, 1.25, z, M.mid, { ry, tint: 0.02 }); }                // SIGNATURE side ammo boxes (perpendicular)
+  { const [x, z] = P(0, -0.55); b.box(1.5, 0.85, 0.1, x, 1.4, z, M.lo, { ry }); }                                                              // trapezoidal gun shield
+  collider(world, cx, cz, 1.6, 0, 1.6);
 }
 
 // =====================================================================
@@ -394,16 +428,6 @@ function buildZU23(world, b, cx, cz) {                                    // З�
 // =====================================================================
 const SILV = { hi: 0xccd0d4, mid: 0xb8bcc0, lo: 0x8c9094 };               // bare steel tank/skin
 
-function buildBowser(world, b, cx, cz) {                                  // ТЗ-22 refueller (KrAZ-255 tractor + 8 m fuel tank), along X
-  const KH = 0x47532f, IRX = 0x2a2a2e;
-  b.box(11, 0.5, 2.4, cx, 1.0, cz, IRX);                                  // chassis
-  for (const wx of [-4, -1, 4]) for (const sz of [-1, 1]) cyl(b, 0.7, 0.5, cx + wx, 0.6, cz + sz * 1.25, IRX, { rx: Math.PI / 2, seg: 10 });
-  world._solid(b, 2.6, 2.2, 2.4, cx + 4.3, 2.3, cz, KH, { tint: 0.03 });  // KrAZ cab
-  b.box(2.0, 0.85, 2.45, cx + 4.3, 2.95, cz, 0x1a2433);                   // windscreen
-  cyl(b, 1.25, 8, cx - 1.4, 2.1, cz, SILV.mid, { rz: Math.PI / 2, seg: 14, tint: 0.04 }); // fuel tank
-  b.box(0.4, 2.5, 2.5, cx - 5.4, 2.1, cz, SILV.lo);                       // rear cap
-  collider(world, cx, cz, 6, 0, 3.4, 1.5);
-}
 function buildFuelFarm(world, b, cx, cz) {                                // ГСМ — vertical РВС tanks inside an earth bund
   for (let s = -1; s <= 1; s += 2) { b.box(20, 1.4, 2.2, cx, 0.7, cz + s * 9, EARTH.mid, { tint: 0.03 }); b.box(2.2, 1.4, 20, cx + s * 10, 0.7, cz, EARTH.mid, { tint: 0.03 }); }
   for (let s = -1; s <= 1; s += 2) { b.box(20, 0.22, 2.2, cx, 1.45, cz + s * 9, SOD.mid); b.box(2.2, 0.22, 20, cx + s * 10, 1.45, cz, SOD.mid); }
@@ -416,7 +440,6 @@ function buildFuelFarm(world, b, cx, cz) {                                // Г�
   }
   world._solid(b, 4, 3, 4.5, cx, 1.5, cz - 14, CONC.mid, { tint: 0.03 }); // pump house
   b.box(4.3, 0.4, 4.8, cx, 3.2, cz - 14, CONC.lo);
-  buildBowser(world, b, cx + 15, cz - 10);
   signPlane(world, 'ГСМ', cx - 10.1, 3, cz, 4.5, 2.2, -Math.PI / 2, { panel: '#3a4a2a', border: '#c9b048', color: '#e8e0cc' });
   signPlane(world, 'ОГНЕОПАСНО', cx, 2.3, cz - 9.2, 8, 1.5, 0, { panel: '#7a1a1a', color: '#f0e0d0', size: 50 });
 }
@@ -441,7 +464,7 @@ function buildBarracks(world, b, cx, cz) {                                // ш�
     b.box(1.5, 1.9, 0.22, wx, wy, cz - 5.04, OCH.hi); b.box(1.15, 1.55, 0.14, wx, wy, cz - 5.12, 0x2a3340); } // windows face S (gate)
   world._solid(b, 4, 3, 2.2, cx, 1.5, cz - 6, OCH.lo, { tint: 0.03 });   // porch
   b.box(2.2, 2.5, 0.3, cx, 1.35, cz - 7.15, 0x3a2e1f);                   // door
-  signPlane(world, '★', cx, 5.7, cz - 5.1, 1.7, 1.7, Math.PI, { color: '#c1272d', size: 130 });
+  star3D(b, cx, 5.7, cz - 5.0, 0.95, RED, { ry: Math.PI, depth: 0.18 }); // proper 3-D red star
   signPlane(world, 'СЛАВА СОВЕТСКОЙ АРМИИ!', cx, 8.6, cz - 4.8, 16, 1.5, Math.PI, { panel: '#8a1f1f', border: '#e8d8a0', color: '#f0e8d0', size: 56 });
   cyl(b, 0.18, 11, cx - 10.5, 5.5, cz - 1, SILV.hi, { seg: 8 });         // flagpole
   b.box(0.12, 1.9, 3, cx - 10.0, 9.6, cz - 1, RED);                      // Soviet flag (red)
@@ -454,14 +477,6 @@ function buildWindsock(world, b, cx, cz) {                               // ве
   for (let i = 0; i < 5; i++) cyl(b, 0.72 - i * 0.11, 0.95, cx + 0.8 + i * 0.95, 6, cz, i % 2 ? 0xd86a1e : 0xe8e0d0, { rz: Math.PI / 2, seg: 12 });
   collider(world, cx, cz, 0.5, 0, 6.3);
 }
-function buildFireTruck(world, b, cx, cz) {                              // АЦ-40 (ЗИЛ-131) — red, along X
-  const FR = 0xb03020, IRX = 0x2a2a2e;
-  b.box(8, 0.5, 2.4, cx, 0.95, cz, IRX);
-  for (const wx of [-2.5, 1, 3]) for (const sz of [-1, 1]) cyl(b, 0.62, 0.45, cx + wx, 0.6, cz + sz * 1.2, IRX, { rx: Math.PI / 2, seg: 10 });
-  world._solid(b, 2.4, 2.0, 2.3, cx + 2.8, 2.1, cz, FR, { tint: 0.03 }); b.box(1.9, 0.8, 2.4, cx + 2.8, 2.55, cz, 0x1a2433);
-  b.box(5, 2.2, 2.3, cx - 1, 2.2, cz, FR, { tint: 0.03 }); b.box(5.1, 0.55, 2.42, cx - 1, 1.4, cz, 0xd8d0c0); // body + locker band
-  collider(world, cx, cz, 4, 0, 3.2, 1.4);
-}
 function buildFireStation(world, b, cx, cz) {                            // пожарное депо — red, apparatus bay door (front +Z)
   const FR = { hi: 0xc0402e, mid: 0xa3301f, lo: 0x7e2416 };
   world._solid(b, 12, 5, 8, cx, 2.5, cz, FR.mid, { tint: 0.03 });
@@ -469,7 +484,6 @@ function buildFireStation(world, b, cx, cz) {                            // по
   b.box(5, 4, 0.3, cx - 2.5, 2, cz - 4.05, 0xd8d0c0); for (let y = 0.6; y < 4; y += 0.6) b.box(5, 0.1, 0.35, cx - 2.5, y, cz - 4.12, 0xaaa294); // roller door faces S
   b.box(1.5, 2.4, 0.3, cx + 4, 1.3, cz - 4.05, 0x3a2e1f);
   signPlane(world, 'ПОЖАРНОЕ ДЕПО', cx, 5.0, cz - 4.0, 8, 1.0, Math.PI, { color: '#f0e8d0', size: 48 });
-  buildFireTruck(world, b, cx + 8.5, cz - 3);
   collider(world, cx, cz, 6.2, 0, 5.5, 4.2);
 }
 function buildWatchtower(world, b, cx, cz) {                             // вышка охраны — 4-leg timber tower + cabin
