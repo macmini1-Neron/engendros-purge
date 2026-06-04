@@ -148,24 +148,28 @@ export const SCENES = {
 //     the owner's own Katyusha). Each is a "sample scene" — the MusicDirector plays the MP3 and
 //     segues to the next on end; no synth. The title menu points at the `soviet` playlist. ---
 const SONGS = [
-  ['katyusha', 'Катюша'],
-  ['katyusha_frontline', 'Фронтовая Катюша'],
-  ['vzemlyanke', 'В землянке'],
-  ['podmoskovnye', 'Подмосковные вечера'],
-  ['smuglyanka', 'Смуглянка'],
-  ['platochek', 'Синий платочек'],
-  ['dorogi', 'Эх, дороги'],
-  ['vysote', 'На безымянной высоте'],
-  ['rodina', 'Широка страна моя родная'],
-  ['khotyat', 'Хотят ли русские войны'],
-  ['solnce', 'Пусть всегда будет солнце'],
-  ['srodina', 'С чего начинается Родина'],
-  ['zhuravli', 'Журавли'],
-  ['nezhnost', 'Нежность'],
-  ['peremen', 'Хочу перемен'],
-  ['million_roz', 'Миллион алых роз'],
+  ['slavyanka', 'Прощание славянки', 1912],
+  ['aviamarsh', 'Марш авиаторов', 1923],
+  ['rodina', 'Широка страна моя родная', 1936],
+  ['katyusha', 'Катюша', 1938],
+  ['katyusha_frontline', 'Фронтовая Катюша', 1938],
+  ['svyashchennaya_voyna', 'Священная война', 1941],
+  ['vzemlyanke', 'В землянке', 1942],
+  ['platochek', 'Синий платочек', 1942],
+  ['smuglyanka', 'Смуглянка', 1944],
+  ['dorogi', 'Эх, дороги', 1945],
+  ['podmoskovnye', 'Подмосковные вечера', 1956],
+  ['khotyat', 'Хотят ли русские войны', 1962],
+  ['solnce', 'Пусть всегда будет солнце', 1962],
+  ['vysote', 'На безымянной высоте', 1963],
+  ['nezhnost', 'Нежность', 1965],
+  ['srodina', 'С чего начинается Родина', 1968],
+  ['zhuravli', 'Журавли', 1969],
+  ['den_pobedy', 'День Победы', 1975],
+  ['million_roz', 'Миллион алых роз', 1982],
+  ['peremen', 'Хочу перемен', 1987],
 ];
-for (const [slug, title] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, bpm: 120, drones: [], step() {} };
+for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
 const PLAYLISTS = { soviet: SONGS.map((s) => s[0]) };
 
 export class MusicDirector {
@@ -365,6 +369,46 @@ export class MusicDirector {
     if (!pl) return;
     pl.idx = (pl.idx + 1) % pl.members.length;
     this._applyScene(pl.members[pl.idx], { fade: pl.fade });   // _applyScene leaves this.playlist intact
+  }
+
+  // ---- jukebox player API (drives the asset-viewer "Music" tab, Spotify-style) ----
+  jukeboxTracks() {
+    return (PLAYLISTS.soviet || []).map((slug) => ({ slug, title: SCENES[slug].title || slug, year: SCENES[slug].year || null }));
+  }
+  jukeboxPlayAt(index, { fade = 0.5 } = {}) {
+    const members = PLAYLISTS.soviet || [];
+    if (!members.length) return;
+    const i = ((index % members.length) + members.length) % members.length;
+    this.playlist = { id: 'soviet', members, idx: i, fade: 1.4 };
+    this._applyScene(members[i], { fade });
+  }
+  jukeboxNext() { if (this.playlist && this.playlist.id === 'soviet') this._advancePlaylist(); else this.jukeboxPlayAt(0); }
+  jukeboxPrev() {
+    const pl = this.playlist;
+    if (!pl || pl.id !== 'soviet') return this.jukeboxPlayAt(0);
+    pl.idx = (pl.idx - 1 + pl.members.length) % pl.members.length;
+    this._applyScene(pl.members[pl.idx], { fade: 0.5 });
+  }
+  jukeboxToggle() {                                            // returns true if now playing
+    const el = this._sampleEl;
+    if (!el) { this.jukeboxPlayAt(this.playlist && this.playlist.id === 'soviet' ? this.playlist.idx : 0); return true; }
+    if (el.paused) { el.play().catch(() => {}); return true; }
+    el.pause(); return false;
+  }
+  jukeboxSeek(frac) { const el = this._sampleEl; if (el && isFinite(el.duration)) el.currentTime = Math.max(0, Math.min(1, frac)) * el.duration; }
+  jukeboxStatus() {
+    const pl = this.playlist, el = this._sampleEl;
+    const on = !!(pl && pl.id === 'soviet' && this.sceneIsSample);
+    return {
+      active: on,
+      index: on ? pl.idx : -1,
+      slug: on ? pl.members[pl.idx] : null,
+      title: on ? (SCENES[pl.members[pl.idx]].title || pl.members[pl.idx]) : null,
+      year: on ? (SCENES[pl.members[pl.idx]].year || null) : null,
+      paused: el ? el.paused : true,
+      time: el ? (el.currentTime || 0) : 0,
+      duration: el && isFinite(el.duration) ? el.duration : 0,
+    };
   }
 
   _applyScene(name, { fade = 1.2, variant = null } = {}) {
