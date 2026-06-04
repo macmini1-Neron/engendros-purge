@@ -1,6 +1,7 @@
 // world.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
+import { SpatialGrid } from './grid.js';
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
@@ -22,6 +23,7 @@ export class World {
     this.scene = game.engine.scene;
     this.HALF = 70;
     this.boxes = [];
+    this.grid = new SpatialGrid();   // spatial index over `boxes` (built after the map, addBox on runtime adds)
     this.spawns = [];
     this.lootSpots = [];
     this.mapId = (game.mapId === 'steppe') ? 'steppe' : 'arena';
@@ -31,6 +33,7 @@ export class World {
       this.scene.fog.near = 95; this.scene.fog.far = 640; // wider haze for the larger compound
       this._build();
     }
+    this.grid.build(this.boxes);     // index every collider the map pushed
   }
 
   _solid(builder, w, h, d, x, y, z, color, opts = {}) {
@@ -332,7 +335,7 @@ export class World {
 
   addWreckObstacle(pos, yaw) {
     const hw = 2.0, hl = 3.6, h = 1.6;
-    this.boxes.push({ min: new THREE.Vector3(pos.x - hw, 0, pos.z - hl), max: new THREE.Vector3(pos.x + hw, h, pos.z + hl), wreck: true });
+    const _wreckBox = { min: new THREE.Vector3(pos.x - hw, 0, pos.z - hl), max: new THREE.Vector3(pos.x + hw, h, pos.z + hl), wreck: true }; this.boxes.push(_wreckBox); this.grid.addBox(_wreckBox);
   }
   clearWrecks() { this.boxes = this.boxes.filter(b => !b.wreck); }
 }
@@ -445,7 +448,7 @@ export class BuildManager {
                 on: false, station: 0, audio: null }; // on/station/audio used only by radio props
     const fp = this._footprint(kind, yaw);
     const aabb = (extraTag) => Object.assign({ min: new THREE.Vector3(pos.x - fp.hx, 0, pos.z - fp.hz), max: new THREE.Vector3(pos.x + fp.hx, (pos.y || 0) + sd.h, pos.z + fp.hz) }, extraTag);
-    if (sd.hard) { s.box = aabb({ struct: true, _ref: s }); this.game.world.boxes.push(s.box); }
+    if (sd.hard) { s.box = aabb({ struct: true, _ref: s }); this.game.world.boxes.push(s.box); this.game.world.grid.addBox(s.box); }
     else if (!sd.prop) { s.hazard = aabb({ ref: s }); } // props are NOT hazards; enemies ignore them
     this.structures.push(s);
     return s;
