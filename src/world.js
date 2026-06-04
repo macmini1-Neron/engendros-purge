@@ -242,6 +242,9 @@ export class World {
       if ((Math.abs(x - 150) < 6 && z > -445 && z < 218) || (Math.abs(z + 300) < 6 && x > -290 && x < 261) ||
           (Math.abs(z - 210) < 6 && x > 8 && x < 162) || (Math.abs(z - 150) < 6 && x > 140 && x < 344) ||
           (Math.abs(z + 40) < 6 && x > 82 && x < 158)) continue;
+      // keep the roadside POIs clear (АЗС, bus stop, КПП, convoy wreck, well — see openworld.js)
+      if (Math.hypot(x - 170, z - 96) < 14 || Math.hypot(x - 159, z + 188) < 6 || Math.hypot(x - 150, z + 388) < 9 ||
+          Math.hypot(x + 95, z + 296) < 17 || Math.hypot(x - 206, z + 212) < 9) continue;
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
