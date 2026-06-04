@@ -81,7 +81,7 @@ export class Admin {
   }
   _buildTabs() {
     this.tabsEl.innerHTML = '';
-    for (const [id, label] of [['weapons', 'Weapons'], ['enemies', 'Enemies / Skins'], ['props', 'Props'], ['sounds', 'Sounds']]) {
+    for (const [id, label] of [['weapons', 'Weapons'], ['enemies', 'Enemies / Skins'], ['props', 'Props'], ['sounds', 'Sounds'], ['music', '🎵 Music']]) {
       const t = document.createElement('div'); t.className = 'tab' + (id === this.tab ? ' on' : ''); t.textContent = label;
       t.addEventListener('click', () => { this.tab = id; for (const c of this.tabsEl.children) c.classList.toggle('on', c.textContent === label); this._render(); });
       this.tabsEl.appendChild(t);
@@ -156,7 +156,10 @@ export class Admin {
     ];
   }
   _render() {
+    this._stopMusicTick();
     this.listEl.innerHTML = '';
+    const hint = document.getElementById('adminHint'); if (hint) hint.style.display = (this.tab === 'sounds' || this.tab === 'music') ? 'none' : '';
+    if (this.tab === 'music') { this._renderMusic(); return; }
     const isSound = this.tab === 'sounds';
     this.povBtn.style.display = this.tab === 'weapons' ? '' : 'none';
     this.viewer.canvas.style.display = isSound ? 'none' : '';
@@ -172,6 +175,57 @@ export class Admin {
     });
     if (this._cache.length) this._select(0);
   }
+  // --- Spotify-style jukebox player (Music tab) ---
+  _renderMusic() {
+    const m = this.game.audio.music;
+    this.povBtn.style.display = 'none';
+    this.viewer.canvas.style.display = 'none';
+    if (!m) { this.nameEl.textContent = 'Audio not ready — click anywhere first.'; return; }
+    this.nameEl.innerHTML =
+      '<div class="mplayer">' +
+        '<div class="mp-now" id="mp-now">— select a track —</div>' +
+        '<div class="mp-ctl">' +
+          '<button class="mp-btn" id="mp-prev" title="Previous">⏮</button>' +
+          '<button class="mp-btn mp-big" id="mp-play" title="Play / Pause">▶</button>' +
+          '<button class="mp-btn" id="mp-next" title="Next">⏭</button>' +
+          '<div class="mp-bar" id="mp-bar"><div class="mp-fill" id="mp-fill"></div></div>' +
+          '<span class="mp-time" id="mp-time">0:00 / 0:00</span>' +
+        '</div>' +
+      '</div>';
+    this.listEl.innerHTML = '';
+    this._mpRows = m.jukeboxTracks().map((t, i) => {
+      const el = document.createElement('div'); el.className = 'arow snd mp-row';
+      el.innerHTML = `<span><b>${i + 1}.</b> ${t.title}</span><small>${t.year || ''}</small>`;
+      el.addEventListener('click', () => m.jukeboxPlayAt(i));
+      this.listEl.appendChild(el); return el;
+    });
+    const $ = (id) => document.getElementById(id);
+    $('mp-prev').onclick = () => m.jukeboxPrev();
+    $('mp-next').onclick = () => m.jukeboxNext();
+    $('mp-play').onclick = () => m.jukeboxToggle();
+    $('mp-bar').onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); m.jukeboxSeek((e.clientX - r.left) / r.width); };
+    this._startMusicTick();
+  }
+  _fmt(s) { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  _startMusicTick() {
+    this._stopMusicTick();
+    const m = this.game.audio.music;
+    const tick = () => {
+      if (this.game.state !== 'admin' || this.tab !== 'music') { this._stopMusicTick(); return; }
+      const s = m.jukeboxStatus();
+      const now = document.getElementById('mp-now'), play = document.getElementById('mp-play');
+      const fill = document.getElementById('mp-fill'), time = document.getElementById('mp-time');
+      if (now) now.innerHTML = s.active ? `<span class="mp-dot ${s.paused ? '' : 'on'}"></span><b>${s.title}</b>${s.year ? ' · ' + s.year : ''}` : '— select a track —';
+      if (play) play.textContent = (s.active && !s.paused) ? '⏸' : '▶';
+      if (fill) fill.style.width = (s.duration ? (s.time / s.duration * 100) : 0) + '%';
+      if (time) time.textContent = this._fmt(s.time) + ' / ' + this._fmt(s.duration);
+      if (this._mpRows) this._mpRows.forEach((r, i) => r.classList.toggle('on', i === s.index));
+    };
+    tick();
+    this._musicTimer = setInterval(tick, 250);
+  }
+  _stopMusicTick() { if (this._musicTimer) { clearInterval(this._musicTimer); this._musicTimer = null; } }
+
   _select(i) {
     if (!this._cache || !this._cache[i]) return;
     this.curIdx = i; this._rows.forEach((r, j) => r.classList.toggle('on', j === i));
