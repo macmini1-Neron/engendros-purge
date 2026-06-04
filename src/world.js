@@ -192,10 +192,10 @@ export class World {
     ];
   }
 
-  // Bare open-world scaffold (Phase 1): flat 500×500 steppe with an impassable
-  // voxel mountain border. Districts/terrain/POIs land in later plans.
+  // Open-world steppe: flat 1000×1000 ground with an impassable voxel mountain border;
+  // 5 districts spread across it + roadside POIs + a SpatialGrid over all colliders.
   _buildSteppe() {
-    this.HALF = 250;
+    this.HALF = 500;
     const H = this.HALF;
     const rng = makeRNG(0x57E9);
     this.scene.fog.near = 120; this.scene.fog.far = 900; // open horizon

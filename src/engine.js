@@ -35,7 +35,7 @@ export class Engine {
     this.scene.fog = new THREE.Fog(0xdfd6bd, 70, 320);
     this.scene.background = this.skyColor.clone();
 
-    this.camera = new THREE.PerspectiveCamera(80, 1, 0.05, 1000);
+    this.camera = new THREE.PerspectiveCamera(80, 1, 0.05, 1200);
     this.camera.position.set(0, 1.7, 0);
 
     this._buildSky();
