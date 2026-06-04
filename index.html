@@ -688,6 +688,11 @@
       font-family: var(--font-title); letter-spacing: 5px; font-size: clamp(13px, 2vw, 19px); color: #ffe9c4;
       text-transform: uppercase; text-shadow: 0 2px 0 #4a0a06; }
     .hero-ribbon .plaque b { color: #ffd06a; font-weight: 400; }
+    /* slogan ribbon — longer text, so tighter tracking + wrap to 2 lines, with a quick fade-up on change */
+    .hero-ribbon .plaque.slogan { letter-spacing: 2px; font-size: clamp(12px, 1.7vw, 17px); line-height: 1.32;
+      max-width: min(82vw, 780px); white-space: normal; text-wrap: balance; }
+    .hero-ribbon .plaque.flip { animation: sloganIn .5s ease both; }
+    @keyframes sloganIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
     .hero-ribbon .en { display: block; margin-top: 7px; font-family: var(--font-stencil), var(--font-display);
       font-size: 11px; letter-spacing: 4px; color: #d8b888; opacity: .82; text-transform: uppercase; }
     /* scene caption swaps with the active scene */
@@ -873,7 +878,7 @@
       <div class="hero-haze"></div>
       <div class="hero-embers" id="heroEmbers"></div>
       <div class="hero-vig"></div>
-      <div class="hero-ribbon"><span class="plaque" id="heroPlaque">РОДИНА-МАТЬ ЗОВЁТ</span><span class="en" id="heroPlaqueEn">The Motherland Calls</span></div>
+      <div class="hero-ribbon"><span class="plaque slogan" id="heroSlogan">WORKERS OF ALL COUNTRIES, UNITE!</span></div>
       <div class="hero-star3d l"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
       <div class="hero-star3d r"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
     </div>
@@ -1111,15 +1116,12 @@
       // scene cycler — advance the monument IN STEP WITH THE JUKEBOX (each track is a different length),
       // with a slow fallback so a silent / pre-interaction menu still rotates.
       const scenes = Array.from(document.querySelectorAll('#hero .hero-scene'));
-      const plaque = document.getElementById('heroPlaque'), plaqueEn = document.getElementById('heroPlaqueEn');
       let i = 0, lastChange = performance.now();
       function advance() {
         if (scenes.length < 2) return;
         scenes[i].classList.remove('on');
         i = (i + 1) % scenes.length;
-        const sc = scenes[i]; sc.classList.add('on');
-        if (plaque) plaque.textContent = sc.dataset.cap || '';
-        if (plaqueEn) plaqueEn.textContent = sc.dataset.en || '';
+        scenes[i].classList.add('on');
         lastChange = performance.now();
       }
       // primary: switch the monument when a song ends → the next track begins
@@ -1146,6 +1148,59 @@
       document.addEventListener('jukebox-track', () => setTimeout(syncTitle, 60));
       setInterval(() => { if (!_volSynced) syncVol(); syncTitle(); }, 1500);
       syncVol(); syncTitle();
+
+      // ---- the red ribbon cycles ~100 REAL Soviet propaganda slogans (English), one every 10s ----
+      const SLOGANS = [
+        'WORKERS OF ALL COUNTRIES, UNITE!', 'PROLETARIANS OF ALL LANDS, UNITE!', 'ALL POWER TO THE SOVIETS!',
+        'PEACE, LAND, BREAD!', 'PEACE, LABOUR, MAY!', 'LONG LIVE THE FIRST OF MAY!',
+        'COMMUNISM IS SOVIET POWER PLUS THE ELECTRIFICATION OF THE WHOLE COUNTRY',
+        'THE PARTY IS THE MIND, HONOUR AND CONSCIENCE OF OUR EPOCH', 'GLORY TO THE CPSU!',
+        'GLORY TO THE GREAT LENIN!', 'GLORY TO THE COMMUNIST PARTY!', 'LENIN LIVED, LENIN LIVES, LENIN WILL LIVE!',
+        'LENIN IS MORE ALIVE THAN ALL THE LIVING', 'THE PEOPLE AND THE PARTY ARE UNITED!',
+        'THE PARTY OF LENIN LEADS US TO COMMUNISM!', 'UNDER THE BANNER OF LENIN, FORWARD TO COMMUNISM!',
+        'FORWARD TO THE VICTORY OF COMMUNISM!', 'OUR GOAL IS COMMUNISM!', 'COMMUNISM — THE BRIGHT FUTURE OF MANKIND!',
+        'THE PRESENT GENERATION SHALL LIVE UNDER COMMUNISM!', 'WORK, LIVE AND STRUGGLE IN A COMMUNIST WAY!',
+        'LONG LIVE THE GREAT OCTOBER SOCIALIST REVOLUTION!', 'LONG LIVE THE SOVIET UNION!',
+        'LONG LIVE PEACE THROUGHOUT THE WORLD!', 'LONG LIVE THE FRIENDSHIP OF THE PEOPLES!',
+        'LONG LIVE THE UNION OF WORKERS AND PEASANTS!', 'LONG LIVE PROLETARIAN SOLIDARITY!',
+        'STUDY, STUDY, AND STUDY AGAIN!', 'CADRES DECIDE EVERYTHING!', 'KNOWLEDGE IS POWER',
+        'HE WHO DOES NOT WORK SHALL NOT EAT', 'FROM EACH ACCORDING TO HIS ABILITY, TO EACH ACCORDING TO HIS WORK',
+        'RELIGION IS THE OPIUM OF THE PEOPLE', 'LABOUR IN THE USSR IS A MATTER OF HONOUR AND GLORY',
+        'GLORY TO LABOUR!', 'GLORY TO THE HEROES OF LABOUR!', 'GLORY TO THE SOVIET PEOPLE!',
+        'HONOUR AND GLORY TO THE WORKING MAN!', 'THROUGH LABOUR — TO COMMUNISM!', 'PEACE THROUGH LABOUR!',
+        'THE FIVE-YEAR PLAN IN FOUR YEARS!', 'THE FIVE-YEAR PLAN — INTO LIFE!',
+        'THE PLAN IS LAW, FULFILMENT IS DUTY, OVERFULFILMENT IS HONOUR!', 'WE WILL FULFIL AND OVERFULFIL THE PLAN!',
+        'HIGHER LABOUR PRODUCTIVITY!', 'MORE METAL FOR THE MOTHERLAND!', 'MORE COAL FOR THE COUNTRY!',
+        'ONWARD TO NEW VICTORIES OF LABOUR!', 'DECISIONS OF THE PARTY CONGRESS — INTO LIFE!',
+        'THE ECONOMY MUST BE ECONOMICAL', 'SOVIET MEANS EXCELLENT!', 'QUALITY IS EVERYONE’S CONCERN!',
+        'CATCH UP AND OVERTAKE AMERICA!', 'LIFE HAS BECOME BETTER, LIFE HAS BECOME MORE JOYFUL',
+        'THE MOTHERLAND CALLS!', 'EVERYTHING FOR THE FRONT, EVERYTHING FOR VICTORY!',
+        'OUR CAUSE IS JUST — THE ENEMY WILL BE CRUSHED, VICTORY WILL BE OURS!', 'NOT A STEP BACK!',
+        'FOR THE MOTHERLAND! FOR HONOUR! FOR FREEDOM!', 'DEATH TO THE FASCIST INVADERS!',
+        'WE WILL DEFEND MOSCOW!', 'RAISE THE BANNER OF VICTORY OVER BERLIN!', 'WARRIOR, SAVE US!',
+        'THE MOTHERLAND WILL NOT FORGET ITS HEROES!', 'GLORY TO THE VICTORIOUS SOVIET PEOPLE!',
+        'NAPOLEON WAS SMASHED — SO WILL HITLER BE!', 'FOR OUR SOVIET MOTHERLAND!',
+        'LONG LIVE THE INVINCIBLE SOVIET ARMY!', 'GLORY TO THE ARMED FORCES OF THE USSR!',
+        'THE RED ARMY IS THE ARMY OF THE WORKERS AND PEASANTS', 'WORKERS AND PEASANTS, DEFEND SOVIET POWER!',
+        'WE ARE FOR PEACE!', 'PEACE TO THE WORLD!', 'PEACE WILL DEFEAT WAR!', 'DOWN WITH THE WARMONGERS!',
+        'DOWN WITH IMPERIALISM!', 'YANKEE, GO HOME!', 'PROLETARIAN INTERNATIONALISM IS OUR BANNER!',
+        'THE ATOM MUST BE A WORKER, NOT A SOLDIER', 'NO TO THE ATOMIC BOMB!',
+        'GLORY TO SOVIET SCIENCE!', 'THE ROAD TO THE STARS IS OPEN!', 'ONWARD TO THE STARS!',
+        'GLORY TO THE CONQUERORS OF SPACE!', 'DOWN WITH KITCHEN SLAVERY!', 'WOMAN, LEARN TO READ AND WRITE!',
+        'THE ILLITERATE IS LIKE A BLIND MAN', 'EMANCIPATED WOMAN, BUILD SOCIALISM!',
+        'CONQUER THE VIRGIN LANDS!', 'BREAD TO THE MOTHERLAND!', 'MAKE THE EARTH BLOOM!',
+        'PEASANT, JOIN THE COLLECTIVE FARM!', 'BE PREPARED! — ALWAYS PREPARED!', 'YOUTH — TO THE FRONT OF LABOUR!',
+        'THE YOUNG ARE OUR FUTURE!', 'THANK YOU, COMRADE, FOR OUR HAPPY CHILDHOOD!',
+        'LENIN IS WITH US!', 'LENIN — OCTOBER — COMMUNISM!', 'OUR STRENGTH IS IN UNITY!',
+        'BUILD SOCIALISM!', 'TO THE BRIGHT FUTURE!', 'THE REVOLUTION CONTINUES!', 'DARE TO STRUGGLE, DARE TO WIN!',
+      ];
+      const slogan = document.getElementById('heroSlogan');
+      if (slogan) {
+        let last = -1;
+        const rollSlogan = () => { let n; do { n = Math.floor(Math.random() * SLOGANS.length); } while (n === last && SLOGANS.length > 1); last = n;
+          slogan.classList.remove('flip'); void slogan.offsetWidth; slogan.textContent = SLOGANS[n]; slogan.classList.add('flip'); };
+        rollSlogan(); setInterval(rollSlogan, 10000);
+      }
     })();
   </script>
   <script type="module" src="./src/game.js?v=231"></script>
