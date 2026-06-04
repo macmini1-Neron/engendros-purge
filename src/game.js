@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-04 14:37';
+const GAME_BUILD = '2026-06-04 14:39';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -267,7 +267,7 @@ class Game {
     const _primeMusic = () => {
       window.removeEventListener('pointerdown', _primeMusic); window.removeEventListener('keydown', _primeMusic);
       this.audio.init();
-      if (this.state === 'menu' && this.audio.music) { if (this._lobbyVisible()) this.audio.music.setScene('lobby'); else this.audio.music.setPlaylist('soviet'); }
+      if (this.state === 'menu' && this.audio.music) this.audio.music.setPlaylist('soviet'); // menu + co-op lobby share the shuffled jukebox
     };
     window.addEventListener('pointerdown', _primeMusic); window.addEventListener('keydown', _primeMusic);
   }
@@ -587,7 +587,7 @@ class Game {
     this.mp._renderRelayMode();
     this.mp._renderModeSel();
     this.mp._renderRoomBrowser();
-    if (this.audio.music) { this.audio.music.setScene('lobby'); this.audio.music.setIntensity(0.7); }
+    if (this.audio.music) this.audio.music.setPlaylist('soviet'); // lobby plays the shuffled song jukebox
   }
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
@@ -616,7 +616,7 @@ class Game {
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
     this.dayNight.reset(this.mode === 'longnight');
-    if (this.audio.music) { this.audio.music.setScene('lobby'); this.audio.music.setIntensity(0.7); } this.hud.show(false);
+    if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false); // lobby plays the shuffled song jukebox
     this.hud.setBleed(-1); this.hud.hideBoss(); this.hud.clearWaveTag();
     const lab = document.getElementById('mp-labels'); if (lab) lab.style.display = 'none';
     this.ui.show('lobby');
