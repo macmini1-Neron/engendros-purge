@@ -367,9 +367,12 @@ export class Inventory {
     else if (kind === 'armor') { if (p.armor >= p.armorMax) { this.game.hud.toast('Armor full', 0x6fa8e8); used = false; } else { p.armor = Math.min(p.armorMax, p.armor + val); this.game.hud.setArmor(p.armor, p.armorMax); this.game.audio.buy(); this.game.hud.toast('+' + val + ' Armor', 0x6fa8e8); } }
     else if (kind === 'ammo') { this.game.weapons.refillAll(); this.game.audio.reloadClick(); this.game.hud.toast('Ammo refilled', 0xb88a3a); }
     else if (kind === 'fiftyammo') {
-      const gun = this.game.mountedGun;
-      if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(p.pos)) { this.game.hud.toast('Stand at the .50 cal to reload it', 0xd23a2a); used = false; }
-      else if (gun.ammo >= gun.maxAmmo) { this.game.hud.toast('.50 cal ammo full', 0xb88a3a); used = false; }
+      const gun = typeof this.game.nearestMountedGun === 'function'
+        ? this.game.nearestMountedGun(p.pos, (g) => g.near(p.pos))
+        : this.game.mountedGun;
+      const name = gun && gun.displayName ? gun.displayName : 'mounted gun';
+      if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(p.pos)) { this.game.hud.toast('Stand at the ' + name + ' to reload it', 0xd23a2a); used = false; }
+      else if (gun.ammo >= gun.maxAmmo) { this.game.hud.toast(name + ' ammo full', 0xb88a3a); used = false; }
       else { used = gun.reloadFromCan(); }   // success toasts + racks inside reloadFromCan
     }
     else if (kind === 'splint') {
@@ -384,9 +387,12 @@ export class Inventory {
   tryReloadFiftyCan() {
     const c = this.curItem();
     if (!c || c.kind !== 'fiftyammo') return false;
-    const gun = this.game.mountedGun;
+    const gun = typeof this.game.nearestMountedGun === 'function'
+      ? this.game.nearestMountedGun(this.game.player.pos, (g) => g.near(this.game.player.pos))
+      : this.game.mountedGun;
     if (!gun || typeof gun.reloadFromCan !== 'function' || !gun.near(this.game.player.pos)) return false;
-    if (gun.ammo >= gun.maxAmmo) { this.game.hud.toast('.50 cal ammo full', 0xb88a3a); return true; } // claim the press → no mount
+    const name = gun.displayName || 'mounted gun';
+    if (gun.ammo >= gun.maxAmmo) { this.game.hud.toast(name + ' ammo full', 0xb88a3a); return true; } // claim the press → no mount
     if (gun.reloadFromCan()) this._consumeSlot(c.slot);
     return true;
   }

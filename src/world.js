@@ -7,6 +7,8 @@ import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animat
 import { buildIndustrial } from './industrial.js';
 import { buildStrongpoint } from './strongpoint.js';
 import { buildAirfield } from './airfield.js';
+import { buildKolkhoz } from './kolkhoz.js';
+import { buildSecretBunker } from './bunker.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 
 
@@ -230,6 +232,8 @@ export class World {
       if ((x > -84 && x < 84 && z > -104 && z < 12) || Math.hypot(x - 96, z - 18) < 22) continue; // keep the kombinát yard + slag heap clear
       if (Math.hypot(x + 150, z + 90) < 48) continue; // keep the field strongpoint clear
       if (x > -232 && x < 112 && z > 46 && z < 250) continue; // keep the enlarged N airfield (+ its N SAM site/radar) clear
+      if (x > -46 && x < 46 && z > -199 && z < -111) continue; // keep the kolkhoz «Красный степной» yard clear (moved S, off the airfield)
+      if (x > 150 && x < 190 && z > -8 && z < 38) continue; // keep the secret bunker «Объект 1180» berm clear
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
@@ -240,7 +244,10 @@ export class World {
     this.lootSpots = [ new THREE.Vector3(0, 0, 40), new THREE.Vector3(90, 0, -40), new THREE.Vector3(-90, 0, -40), new THREE.Vector3(40, 0, 70), new THREE.Vector3(-50, 0, 30) ]; // open ground, clear of the kombinát yard
     buildIndustrial(this, 0, 0); // Soviet kombinát district (world coords now; object-by-object — see industrial.js)
     buildStrongpoint(this, -150, -90); // WW2 field strongpoint home base (object-by-object — see strongpoint.js)
-    buildAirfield(this, 0, 0); // Soviet military airfield (NW district — object-by-object — see airfield.js)
+    buildAirfield(this, 0, 0); // Soviet military airfield (N district — object-by-object — see airfield.js)
+    buildKolkhoz(this, 0, -165); // kolkhoz «Красный степной» + crashed Su-24 POI — moved to the S open steppe (was NW, clashed with the airfield)
+    buildSecretBunker(this, 170, 15); // «Объект 1180» secret command bunker POI, remote E steppe (see bunker.js)
+    this.lootSpots.push(new THREE.Vector3(18, 0, -175), new THREE.Vector3(0, 0, -149)); // farm yard + by the wreck (moved with the kolkhoz)
   }
 
   _mesh(builder) {

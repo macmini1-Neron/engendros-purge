@@ -5,6 +5,7 @@
 // Entry: buildIndustrial(world, ox, oz) — ox/oz = yard centre in world coords.
 import * as THREE from 'three';
 import { MeshBuilder, TAU, makeRNG, randRange, shade, voxelMaterial } from './util.js';
+import { buildGatehouse, buildWorksGate } from './gatehouse.js';
 
 // ---- layered-shading palettes (Hi/Mid/Lo/Slot; never near-black main) ----
 const GREEN = { hi: 0x5a7a3a, mid: 0x46602e, lo: 0x33471f, slot: 0x202d12 }; // Soviet army green
@@ -13,14 +14,14 @@ const GREY  = { hi: 0x9a958b, mid: 0x7c776d, lo: 0x5c584f, slot: 0x39362f }; // 
 const DRUM_PALS = [GREEN, RUST, GREY, GREEN]; // green weighted (most common)
 
 // ---- helpers ----
-// vertical cylinder (CylinderGeometry axis is +Y); dispose after build.
-function cyl(b, r, h, x, y, z, color, opts = {}) {
+// vertical cylinder (CylinderGeometry axis is +Y); dispose after build. (shared w/ kolkhoz.js)
+export function cyl(b, r, h, x, y, z, color, opts = {}) {
   const g = new THREE.CylinderGeometry(r, r, h, opts.seg || 12);
   b.geo(g, x, y, z, color, opts);
   g.dispose();
 }
-// push an AABB collider to world.boxes WITHOUT drawing a box (cylinders draw via b.geo).
-function collider(world, x, z, halfW, y0, y1, halfD) {
+// push an AABB collider to world.boxes WITHOUT drawing a box (cylinders draw via b.geo). (shared w/ kolkhoz.js)
+export function collider(world, x, z, halfW, y0, y1, halfD) {
   world.boxes.push({ min: new THREE.Vector3(x - halfW, y0, z - (halfD ?? halfW)), max: new THREE.Vector3(x + halfW, y1, z + (halfD ?? halfW)) });
 }
 
@@ -385,68 +386,8 @@ function buildFence(world, b, cx, cz, W, D, gates) {
   side('z', x0, z0, z1, 'W'); side('z', x1, z0, z1, 'E');
 }
 
-// ---- one sliding gate leaf as its OWN animated mesh (local origin = leaf centre):
-// maroon panelled steel with stiles/rails, raised panels both faces, and 2 ground wheels. ----
-function buildGateLeaf(W, H) {
-  const lb = new MeshBuilder();
-  const MAROON = 0x6a2526, MA_HI = 0x803232, MA_LO = 0x481818, FR = 0x57201f;
-  lb.box(W, H, 0.16, 0, 0, 0, MAROON, { tint: 0.03 });                            // slab
-  lb.box(W, 0.3, 0.22, 0, H / 2 - 0.15, 0, MA_HI);                                // top rail (lit)
-  lb.box(W, 0.3, 0.22, 0, -H / 2 + 0.15, 0, MA_LO);                               // bottom rail
-  for (const sx of [-1, 1]) lb.box(0.22, H, 0.22, sx * (W / 2 - 0.11), 0, 0, FR); // stiles
-  lb.box(0.18, H, 0.2, 0, 0, 0, FR);                                              // centre mullion
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                           // raised panels (both faces)
-    const px = sx * W * 0.24, py = sy * H * 0.22;
-    lb.box(W * 0.32, H * 0.3, 0.06, px, py, 0.11, MA_LO);
-    lb.box(W * 0.32, H * 0.3, 0.06, px, py, -0.11, MA_LO);
-  }
-  for (const wx of [-W * 0.32, W * 0.32]) {                                        // 2 ground wheels (roll along X)
-    let g = new THREE.CylinderGeometry(0.22, 0.22, 0.16, 12); lb.geo(g, wx, -H / 2 - 0.05, 0, 0x222222, { rz: Math.PI / 2 }); g.dispose();
-    g = new THREE.CylinderGeometry(0.09, 0.09, 0.2, 8); lb.geo(g, wx, -H / 2 - 0.05, 0, 0x8a8680, { rz: Math.PI / 2 }); g.dispose(); // hub
-  }
-  const m = new THREE.Mesh(lb.build(), voxelMaterial());
-  m.castShadow = true; m.receiveShadow = true;
-  return m;
-}
-
-// ---- main works gate (реальная предлога): 2 weathered concrete pillars, a yellow rail/beam
-// bolted on with black brackets, the name board (added in buildSignage), a ground track, and
-// TWO bi-parting SLIDING leaves on wheels that auto-open when a player nears. Walkable. ----
-function buildGate(world, b, gx, gz, opening) {
-  const C = CONCRETE, half = opening / 2, PW = 1.6, PH = 5.0, PD = 1.4, px = half + 0.9, railY = 3.6;
-  for (const sx of [-1, 1]) {
-    const x = gx + sx * px;
-    world._solid(b, PW, PH, PD, x, PH / 2, gz, C.mid, { tint: 0.05 });             // concrete pillar (collider)
-    b.box(PW + 0.14, 0.45, PD + 0.14, x, PH - 0.15, gz, C.hi);                     // lit cap
-    b.box(PW + 0.06, PH - 1.2, 0.18, x, PH * 0.5, gz - PD / 2 - 0.03, C.lo);       // weather streak (proud)
-    b.box(0.75, 1.5, 0.95, x, railY, gz, 0x1e1e1e);                                // black bracket: beam ↔ pillar joint
-  }
-  const beamW = opening + PW * 2 + 1.0;
-  b.box(beamW, 0.5, 0.5, gx, railY, gz, 0xe0b020, { tint: 0.04 });                 // yellow rail/beam
-  b.box(beamW, 0.14, 0.56, gx, railY + 0.23, gz, 0xf4d24a);                        // lit top flange
-  for (const sx of [-2.6, 0, 2.6]) b.box(0.12, 1.4, 0.12, gx + sx, railY + 0.95, gz, 0x262626); // name-board mount struts
-  b.box(opening + 1.2, 0.13, 0.13, gx, railY + 1.6, gz, 0x262626);                 // top rail
-  // ground track the leaves roll on (flat → walkable, no collider)
-  const trackW = opening + 2 * (half + 1);
-  b.box(trackW, 0.12, 0.34, gx, 0.06, gz - 0.85, 0x39362f);
-  b.box(trackW, 0.07, 0.12, gx, 0.13, gz - 0.85, 0x7c776d);                        // rail head
-  // --- two bi-parting sliding leaves (own meshes; no collider → the auto-open keeps it passable) ---
-  const W = half, H = 3.3, cy = 1.9, dz = gz - 0.85, travel = half + 0.4;          // leaves run in front of the pillars
-  const leftClosed = gx - half / 2, rightClosed = gx + half / 2;
-  const left = buildGateLeaf(W, H), right = buildGateLeaf(W, H);
-  left.position.set(leftClosed, cy, dz); right.position.set(rightClosed, cy, dz);
-  world.scene.add(left); world.scene.add(right);
-  world._slideGate = { left, right, gx, gz, leftClosed, rightClosed, travel, amt: 0 };
-  // proximity auto-open (cosmetic, local player) — ticked from the game loop via world.updateGate
-  world.updateGate = function (dt, ppos) {
-    const G = this._slideGate; if (!G || !ppos) return;
-    const near = Math.hypot(ppos.x - G.gx, ppos.z - G.gz) < 12;
-    G.amt += ((near ? 1 : 0) - G.amt) * Math.min(1, dt * 2.6);                     // smooth open/close
-    const t = G.travel * G.amt;
-    G.left.position.x = G.leftClosed - t;
-    G.right.position.x = G.rightClosed + t;
-  };
-}
+// (the sliding works gate + its leaves moved to gatehouse.js as buildWorksGate —
+//  it's now BUTTON-controlled from the booth console instead of proximity auto-open.)
 
 // ---- misc dressing: light poles, pallet+crate stacks, pipe heaps ----
 function buildMisc(world, b, rng) {
@@ -480,7 +421,7 @@ function signTex(text, opts = {}) {
   ctx.fillText(text, W / 2, H / 2 + 4);
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
-function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
+export function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
   const tex = signTex(text, { cw: Math.max(256, Math.round(w * 48)), ch: Math.max(96, Math.round(h * 64)), ...opts });
   const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: !opts.panel, alphaTest: opts.panel ? 0 : 0.5, emissive: 0x0c0c0c, emissiveIntensity: 1, side: THREE.DoubleSide });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
@@ -494,8 +435,7 @@ function buildSignage(world) {
   signPlane(world, 'СЛАВА ТРУДУ!', -16, 11.6, -32.55, 24, 1.9, Math.PI, { panel: '#9a2b22', color: '#f2e9d6', size: 92, border: '#d8cfb8' });
   // ОГНЕОПАСНО — hazard sign at the fuel zone (yellow/black, faces +Z into the yard)
   signPlane(world, 'ОГНЕОПАСНО', 40, 9, -64.5, 6, 1.4, 0, { panel: '#c9a23a', color: '#1a1a1a', size: 70, border: '#1a1a1a' });
-  // ПРОХОДНАЯ — over the guard booth's west door (booth at x=8, z=-94; faces the entrance lane, −X)
-  signPlane(world, 'ПРОХОДНАЯ', 6.22, 3.0, -94, 3.4, 0.8, -Math.PI / 2, { panel: '#2d4a2a', color: '#e8e0cc', size: 56 });
+  // (ПРОХОДНАЯ sign is now placed by buildGatehouse over the booth's yard door — gatehouse.js)
   // ОКТЯБРЬ — name board over the main gate (faded white/grey enamel plaque, faces −Z)
   signPlane(world, 'ОКТЯБРЬ', 0, 4.55, -98.18, 8.6, 1.5, Math.PI, { panel: '#c7c3b5', border: '#9a9486', color: '#7a2a26', size: 122, cw: 1100, ch: 220 });
   // (заводоуправление name board + ★ star are built into buildAdmin now — on the HQ itself)
@@ -645,7 +585,7 @@ export function buildIndustrial(world, ox, oz) {
   // --- OBJECT 5: support buildings (admin, gatehouse, warehouses, canteen, water tower, silos) ---
   const sup = new MeshBuilder();
   buildAdmin(world, ox - 24, oz - 72, -90); // заводоуправление — 2-floor HQ rotated to face the gate/entrance lane (grand facade now faces +X) (own mesh + signage)
-  buildBuilding(world, sup, ox + 8, oz - 94, 3.6, 4, 4, { pal: BRICK, doors: [{ side: 'W', w: 1.8, h: 2.6 }, { side: 'N', w: 1.8, h: 2.6 }] });   // проходная (guard booth — in the clear gap east of the gate, between the gate pillar (x≈5) and the столовая (x≥11.5); door to the lane)
+  buildGatehouse(world, sup, ox + 8, oz - 94);   // проходная (guard booth) — ultra-detailed walkable interior + WORKING gate-control console (see gatehouse.js); sits in the clear gap east of the gate, west of the столовая (x≥11.5)
   buildBuilding(world, sup, ox - 60, oz - 72, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 1
   buildBuilding(world, sup, ox - 60, oz - 86, 18, 10, 6, { pal: CORRUG, doors: [{ side: 'E', w: 6, h: 5 }] }); // warehouse 2
   buildBuilding(world, sup, ox + 16, oz - 92, 9, 6, 4, { pal: RENDER, windows: true, bayW: 3, doors: [{ side: 'N', w: 2.2, h: 3 }] });      // столовая
@@ -663,7 +603,7 @@ export function buildIndustrial(world, ox, oz) {
   buildTerrikon(world, infra, ox + 96, oz + 18, 16, 14);       // slag heap OUTSIDE the fence (NE)
   buildCoolingPond(infra, ox + 6, oz - 78, 24, 16);           // settling pond (S-centre)
   buildFence(world, infra, ox + 0, oz - 46, 158, 104, [{ side: 'S', at: 0, w: 12 }, { side: 'E', at: -62, w: 8 }, { side: 'W', at: -30, w: 6 }]); // S gap widened to clear the gate pillars
-  buildGate(world, infra, ox + 0, oz - 98, 8);                  // grand works gate at the main S gate
+  buildWorksGate(world, infra, ox + 0, oz - 98, 8);            // grand works gate — BUTTON-controlled from the booth console (gatehouse.js); no more proximity auto-open
   buildMisc(world, infra, rng);
   const im = new THREE.Mesh(infra.build(), voxelMaterial());
   im.castShadow = true; im.receiveShadow = true; world.scene.add(im);

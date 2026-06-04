@@ -22,13 +22,27 @@ export class AudioManager {
     this._sampleBuffers = new Map();
     this._samplePromises = new Map();
     this._sampleIdx = {};
+    this._activeLoops = {};
+    this._gunshotSamplesPrimed = false;
     this._m2SamplesPrimed = false;
     this._mosinSamplesPrimed = false;
+    this._dshkSamplesPrimed = false;
+    this._dshkLooping = false;
+    this._gunshot = {
+      fire: [],
+    };
     this._m2 = {
       fireClose: Array.from({ length: 8 }, (_, i) => `sounds/weapons/m2hb_v2/fire/m2hb_v2_fire_heavy_close_${String(i + 1).padStart(2, '0')}.wav`),
       brassHeavy: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_heavy_roof_${String(i + 1).padStart(2, '0')}.wav`),
       brassTick: Array.from({ length: 10 }, (_, i) => `sounds/weapons/m2hb_v2/brass/m2hb_v2_brass_short_tick_${String(i + 1).padStart(2, '0')}.wav`),
       charge: ['sounds/weapons/m2hb_v2/foley/m2hb_v2_charge_handle_real_01.wav'],
+    };
+    this._dshk = {
+      singleShot: ['assets/vystrel.mp3'],
+      fireClose: Array.from({ length: 12 }, (_, i) => `sounds/weapons/dshk/fire/dshk_fire_close_${String(i + 1).padStart(2, '0')}.wav`),
+      burstStart: ['sounds/weapons/dshk/burst/dshk_burst_start_01.wav'],
+      burstLoop: ['sounds/weapons/dshk/burst/dshk_burst_loop_01.wav'],
+      burstTail: ['sounds/weapons/dshk/burst/dshk_burst_tail_01.wav'],
     };
     this._mosin = {
       fireClose: Array.from({ length: 5 }, (_, i) => `sounds/weapons/mosin_9130/fire/mosin_9130_fire_close_${String(i + 1).padStart(2, '0')}.wav`),
@@ -57,7 +71,9 @@ export class AudioManager {
     this.musicGain.gain.value = this.musicVolume;
     this.musicGain.connect(this.master);
     this._initCrewLine();
+    this._primeGunshotSamples();
     this._primeM2Samples();
+    this._primeDshkSamples();
     this._primeMosinSamples();
     if (!this.music) this.music = new MusicDirector(this);
     if (this._pendingScene) { this.music.setScene(this._pendingScene); this._pendingScene = null; }
@@ -140,10 +156,22 @@ export class AudioManager {
     return p;
   }
 
+  _primeGunshotSamples() {
+    if (!this.ctx || this._gunshotSamplesPrimed) return;
+    this._gunshotSamplesPrimed = true;
+    for (const p of this._gunshot.fire) this._loadSample(p);
+  }
+
   _primeM2Samples() {
     if (!this.ctx || this._m2SamplesPrimed) return;
     this._m2SamplesPrimed = true;
     for (const p of [...this._m2.fireClose, ...this._m2.brassHeavy, ...this._m2.brassTick, ...this._m2.charge]) this._loadSample(p);
+  }
+
+  _primeDshkSamples() {
+    if (!this.ctx || this._dshkSamplesPrimed) return;
+    this._dshkSamplesPrimed = true;
+    for (const p of [...this._dshk.singleShot, ...this._dshk.fireClose, ...this._dshk.burstStart, ...this._dshk.burstLoop, ...this._dshk.burstTail]) this._loadSample(p);
   }
 
   _primeMosinSamples() {
@@ -182,9 +210,50 @@ export class AudioManager {
     return true;
   }
 
+  _startLoopSample(key, path, { vol = 1, rate = 1, dest = null, fade = 0.06 } = {}) {
+    if (!this.ctx || !path) return false;
+    if (this._activeLoops[key]) return true;
+    const buf = this._sampleBuffers.get(path);
+    if (!buf) { this._loadSample(path); return false; }
+    const src = this.ctx.createBufferSource();
+    const g = this.ctx.createGain();
+    const t = this.t;
+    src.buffer = buf;
+    src.loop = true;
+    src.playbackRate.value = Math.max(0.25, rate);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + fade);
+    src.connect(g); g.connect(dest || this.sfxGain);
+    src.start(t);
+    this._activeLoops[key] = { src, gain: g };
+    return true;
+  }
+
+  _stopLoopSample(key, { fade = 0.08 } = {}) {
+    const loop = this._activeLoops[key];
+    if (!loop || !this.ctx) return false;
+    delete this._activeLoops[key];
+    const t = this.t;
+    try {
+      loop.gain.gain.cancelScheduledValues(t);
+      loop.gain.gain.setValueAtTime(Math.max(0.0002, loop.gain.gain.value || 0.0002), t);
+      loop.gain.gain.exponentialRampToValueAtTime(0.0001, t + fade);
+      loop.src.stop(t + fade + 0.04);
+    } catch (e) {}
+    return true;
+  }
+
   _playM2CloseShot() {
     const path = this._pickSample('m2FireClose', this._m2.fireClose);
     return this._playSample(path, { vol: 0.78 + Math.random() * 0.12, rate: 0.985 + Math.random() * 0.03 });
+  }
+
+  _playDshkCloseShot() {
+    const loopTrim = this._dshkLooping ? 0.12 : 0;
+    const single = this._pickSample('dshkSingleShot', this._dshk.singleShot);
+    if (this._playSample(single, { vol: 0.92 - loopTrim + Math.random() * 0.08, rate: 0.985 + Math.random() * 0.03 })) return true;
+    const path = this._pickSample('dshkFireClose', this._dshk.fireClose);
+    return this._playSample(path, { vol: 0.82 - loopTrim + Math.random() * 0.09, rate: 0.975 + Math.random() * 0.045 });
   }
 
   _playM2BrassSample(scale, bounceIndex) {
@@ -204,6 +273,12 @@ export class AudioManager {
   _playMosinSample(key, paths, { vol = 1, rate = 1 } = {}) {
     const path = this._pickSample(key, paths);
     return this._playSample(path, { vol, rate });
+  }
+
+  _playRecordedGunshot(profile = {}) {
+    const path = this._pickSample('recordedGunshot', this._gunshot.fire);
+    const vol = Math.min(1.08, Math.max(0.32, (profile.vol || 0.5) * 1.12));
+    return this._playSample(path, { vol, rate: 0.965 + Math.random() * 0.07 });
   }
 
   _noiseBuffer(dur) {
@@ -249,6 +324,7 @@ export class AudioManager {
   // ---- gunshots: parameterized by weapon "punch" ----
   gunshot(profile = {}) {
     if (!this.ctx) return;
+    if (this._playRecordedGunshot(profile)) return;
     const t0 = this.t;
     const body = profile.body || 220;   // low thump freq
     const crack = profile.crack || 0.07; // hi crack duration
@@ -395,6 +471,35 @@ export class AudioManager {
     const or = this.ctx.createOscillator(), gr = this.ctx.createGain();
     or.type = 'triangle'; or.frequency.setValueAtTime(125, t0); or.frequency.exponentialRampToValueAtTime(78, t0 + 0.18);
     or.connect(gr); gr.connect(this.sfxGain); this._env(gr, t0 + 0.004, 0.16 * vv, 0.004, 0.18); or.start(t0); or.stop(t0 + 0.24);
+  }
+  dshkShot() {
+    if (!this.ctx) return;
+    if (this._playDshkCloseShot()) return;
+    this.fiftyShot();
+  }
+  dshkSustain(firing) {
+    if (!this.ctx) return;
+    if (!firing) { this.dshkStopSustain(true); return; }
+    const loopPath = this._dshk.burstLoop[0];
+    if (!this._dshkLooping) {
+      this._dshkLooping = true;
+      const startPath = this._pickSample('dshkBurstStart', this._dshk.burstStart);
+      this._playSample(startPath, { vol: 0.52, rate: 0.985 + Math.random() * 0.025 });
+    }
+    this._startLoopSample('dshkBurstLoop', loopPath, {
+      vol: 0.34,
+      rate: 0.985 + Math.random() * 0.018,
+      fade: 0.055,
+    });
+  }
+  dshkStopSustain(tail = true) {
+    if (!this.ctx || (!this._dshkLooping && !this._activeLoops.dshkBurstLoop)) return;
+    this._dshkLooping = false;
+    this._stopLoopSample('dshkBurstLoop', { fade: 0.075 });
+    if (tail) {
+      const tailPath = this._pickSample('dshkBurstTail', this._dshk.burstTail);
+      this._playSample(tailPath, { vol: 0.50, rate: 0.985 + Math.random() * 0.035 });
+    }
   }
   fiftyCharge() { // M2HB load/charge: two vigorous pull-release cycles, heavy spring + bolt + loose receiver rattle
     if (!this.ctx) return;

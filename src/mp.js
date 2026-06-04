@@ -365,7 +365,7 @@ export class MP {
     if (this._lastXf) this._lastXf.clear();
     this.active = false; this.isHost = false; this.frozen = false; this._spilledLoot = false; this.spectateTarget = null;
     this._localDown = false; this._localDead = false; this._localWaiting = false; this._resetRevive(true); this._bleedShown = false; if (this.game.hud) this.game.hud.setBleed(-1); // clear the bleed-out bar on leave
-    if (this.game.mountedGun) this.game.mountedGun.occupant = null; // free the rooftop .50cal seat on session end
+    for (const gun of (this.game._mountedGunList ? this.game._mountedGunList() : [this.game.mountedGun])) if (gun) gun.occupant = null; // free fixed MG seats on session end
     this.net = this._makeNet(); this._wireNet();
     const ci = document.getElementById('mp-mycode'); if (ci) ci.textContent = '-----';
     this._lobbyMsg('Host a room or paste a code.');
@@ -381,7 +381,7 @@ export class MP {
     if (this._lastXf) this._lastXf.clear();
     for (const [, rp] of this.remotes) rp.dispose();
     this.remotes.clear();
-    if (this.game.mountedGun) this.game.mountedGun.occupant = null;
+    for (const gun of (this.game._mountedGunList ? this.game._mountedGunList() : [this.game.mountedGun])) if (gun) gun.occupant = null;
     if (this.isHost) {
       for (const [id, r] of this.roster) r.ready = (id === 'host');
       try { this.net.send('roster', this._rosterArr()); } catch (e) {}
@@ -554,6 +554,8 @@ export class MP {
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio
+    n.on('gateset', (d) => { if (d && g.world.applyGateSet) g.world.applyGateSet(d.open); });                         // authoritative works-gate open/close (host → clients)
+    n.on('gatereq', (d, from) => { if (this.isHost && d && g.world.applyGateSet) { g.world.applyGateSet(d.open); n.broadcast('gateset', { open: !!d.open }); } }); // client asks host to open/close the gate
     n.on('edie', (d) => this._clientEnemyDie(d));
     n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
       if (d.e === 'expl') { const bp = V(d.p); eff.explosion(bp, d.s || 3); if (g.engine.shake) { const dist = bp.distanceTo(g.player.pos); if (dist < 18) g.engine.shake(Math.max(0.08, 0.5 * (1 - dist / 18))); } } // distance-scaled shake so a teammate's blast also rattles the viewer
@@ -590,23 +592,26 @@ export class MP {
       else if (d.k === 'roundInsert' && typeof a.mosinRoundInsert === 'function') a.mosinRoundInsert();
       else if (d.k === 'reloadFinish' && typeof a.mosinReloadFinish === 'function') a.mosinReloadFinish();
       else if (typeof a.reloadClick === 'function') a.reloadClick(); });
-    // ---- rooftop .50cal (single shared MountedGun): seat claim + fire FX + barrel slew ----
-    n.on('fiftyclaim', (d, from) => { if (this.isHost && d) this._hostFiftyClaim(d.want, from); });               // client → host: request mount/dismount
+    // ---- rooftop fixed heavy MGs: seat claim + fire FX + barrel slew ----
+    n.on('fiftyclaim', (d, from) => { if (this.isHost && d) this._hostFiftyClaim(d.want, from, d.g); });           // client → host: request mount/dismount
     n.on('fiftystate', (d) => { if (!this.isHost && d) this._applyFiftyState(d); });                              // host → clients: who owns the seat now
     n.on('fiftyfire', (d) => { if (!d || d.pid === this.myId) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // a teammate firing the .50cal: muzzle + tracer + shot/brass sound (damage is host-authoritative)
-      if (g.mountedGun && typeof g.mountedGun.feedBeltShot === 'function') g.mountedGun.feedBeltShot();
-      if (Number.isFinite(d.ammo) && g.mountedGun && typeof g.mountedGun.setAmmo === 'function') g.mountedGun.setAmmo(d.ammo);
+      const gun = g.mountedGunById ? g.mountedGunById(d.g) : g.mountedGun;
+      if (gun && typeof gun.feedBeltShot === 'function') gun.feedBeltShot();
+      if (Number.isFinite(d.ammo) && gun && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo);
       const o = V(d.o), e = V(d.e);
       const dir = d.d ? V(d.d).normalize() : e.clone().sub(o).normalize();
-      g.effects.muzzleFlash(o, dir, 2.2);
+      g.effects.muzzleFlash(o, dir, (gun && gun.muzzleFlashScale) || 2.2);
       g.effects.tracer(o, e, d.c != null ? d.c : 0xffe08a);
       if (d.s && d.r) g.effects.shell(V(d.s), V(d.r).normalize(), { mesh: 'fiftyCase', size: 1, color: 0xcaa64a, sound: 'fiftyBrass', life: 5, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1, seed: d.rs });
-      if (g.audio && typeof g.audio.fiftyShot === 'function') g.audio.fiftyShot(); else if (g.audio && typeof g.audio.gunshot === 'function') g.audio.gunshot(SOUND_BY_CLASS.fiftycal); });
+      if (gun && gun.variant === 'dshk' && g.audio && typeof g.audio.dshkShot === 'function') g.audio.dshkShot();
+      else if (g.audio && typeof g.audio.fiftyShot === 'function') g.audio.fiftyShot(); else if (g.audio && typeof g.audio.gunshot === 'function') g.audio.gunshot(SOUND_BY_CLASS.fiftycal); });
     n.on('fiftysound', (d) => { if (!d || d.pid === this.myId || !d.k) return; // non-shot .50cal foley: charging handle / overheat should be audible to nearby peers too
-      if (d.k === 'charge') { if (g.mountedGun && typeof g.mountedGun.animateCharge === 'function') g.mountedGun.animateCharge(); if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
+      const gun = g.mountedGunById ? g.mountedGunById(d.g) : g.mountedGun;
+      if (d.k === 'charge') { if (gun && typeof gun.animateCharge === 'function') gun.animateCharge(); if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
       else if (d.k === 'overheat') { if (g.audio && typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (g.audio && typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); } });
-    n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; if (gun && Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo); }); // slew the barrel + mirror heat/ammo so everyone sees the glow/smoke/empty box
-    n.on('fiftyrefill', (d, from) => { if (this.isHost) this._hostFiftyRefill(from); }); // client → host: reload the host-owned .50cal from a carried can
+    n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGunById ? g.mountedGunById(d.g) : g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; if (gun && Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo); }); // slew the barrel + mirror heat/ammo so everyone sees the glow/smoke/empty box
+    n.on('fiftyrefill', (d, from) => { if (this.isHost) this._hostFiftyRefill(from, d && d.g); }); // client → host: reload the host-owned fixed MG from a carried can
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
@@ -650,23 +655,23 @@ export class MP {
     return this.remotes.get(id);
   }
   _syncRemoteObjs() { for (const [id, info] of this.roster) if (id !== this.myId && !this.remotes.has(id)) this.remotes.set(id, new RemotePlayer(this.game, id, info.name, info.skin)); }
-  // ---- rooftop .50cal seat (host-authoritative single occupant) ----
-  _hostFiftyClaim(want, from) {
-    if (!this.isHost) return; const gun = this.game.mountedGun; if (!gun) return;
-    if (want === 'mount') { if (gun.overheated || gun.ammo <= 0) { this.net.sendTo(from, 'fiftystate', { occ: gun.occupant, ammo: gun.ammo }); return; } if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { occ: gun.occupant, ammo: gun.ammo }); return; } }
+  // ---- rooftop fixed MG seats (host-authoritative occupants) ----
+  _hostFiftyClaim(want, from, gid) {
+    if (!this.isHost) return; const gun = this.game.mountedGunById ? this.game.mountedGunById(gid) : this.game.mountedGun; if (!gun) return;
+    if (want === 'mount') { if (gun.overheated || gun.ammo <= 0) { this.net.sendTo(from, 'fiftystate', { g: gun.id, occ: gun.occupant, ammo: gun.ammo }); return; } if (gun.occupant == null) { gun.occupant = from; } else if (gun.occupant !== from) { /* occupied: deny — just tell the asker the current owner */ this.net.sendTo(from, 'fiftystate', { g: gun.id, occ: gun.occupant, ammo: gun.ammo }); return; } }
     else if (want === 'dismount') { if (gun.occupant === from) gun.occupant = null; }
-    this._applyFiftyState({ occ: gun.occupant, ammo: gun.ammo }); this.net.send('fiftystate', { occ: gun.occupant, ammo: gun.ammo });
+    this._applyFiftyState({ g: gun.id, occ: gun.occupant, ammo: gun.ammo }); this.net.send('fiftystate', { g: gun.id, occ: gun.occupant, ammo: gun.ammo });
   }
-  _hostFiftyRefill(from) {
-    if (!this.isHost) return; const gun = this.game.mountedGun; if (!gun) return;
+  _hostFiftyRefill(from, gid) {
+    if (!this.isHost) return; const gun = this.game.mountedGunById ? this.game.mountedGunById(gid) : this.game.mountedGun; if (!gun) return;
     if (gun.ammo >= gun.maxAmmo) return;                                  // already full — the client wasted nothing it can detect; ignore
     gun.setAmmo(gun.maxAmmo);
     if (typeof gun.animateCharge === 'function') gun.animateCharge();     // host-local rack anim
-    this.net.send('fiftystate', { occ: gun.occupant, ammo: gun.ammo });  // sync the new belt to all clients
-    this.net.broadcast('fiftysound', { pid: this.myId, k: 'charge' });   // everyone hears/sees the rack
+    this.net.send('fiftystate', { g: gun.id, occ: gun.occupant, ammo: gun.ammo }); // sync the new belt to all clients
+    this.net.broadcast('fiftysound', { pid: this.myId, g: gun.id, k: 'charge' });  // everyone hears/sees the rack
   }
   _applyFiftyState(d) {
-    const gun = this.game.mountedGun; if (!gun) return; gun.occupant = d.occ;
+    const gun = this.game.mountedGunById ? this.game.mountedGunById(d && d.g) : this.game.mountedGun; if (!gun) return; gun.occupant = d.occ;
     if (Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo);
     if (d.occ === this.myId) { if (this.game.player.mountedGun !== gun) gun._doMount(); }
     else if (this.game.player.mountedGun === gun) { gun._doDismount(); }   // someone else took/cleared it
@@ -988,6 +993,7 @@ export class MP {
     if (snap.length) this.net.sendTo(pid, 'esnap', snap);                                   // immediate exact positions/HP (don't make the joiner wait ~80ms)
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
     for (const s of this.game.build.structures) if (s.kind === 'radio' && s.on) this.net.sendTo(pid, 'radioset', { id: s.id, on: true, station: s.station }); // late-join: tune newcomers into playing radios
+    if (this.game.world._slideGate) this.net.sendTo(pid, 'gateset', { open: !!this.game.world._slideGate.open }); // late-join: current works-gate state
     for (const pu of this.game.loot.pickups) if (pu.id != null) this.net.sendTo(pid, 'pickup', { id: pu.id, kind: pu.kind, x: pu.mesh.position.x, z: pu.mesh.position.z, value: pu.value, life: pu.life }); // late-join: existing shared ground pickups
     let boss = null; for (const e of this.game.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
     if (boss) { const isTank = !!(boss.isTank || boss.def.tank); const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp); const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1; this.net.sendTo(pid, 'boss', { frac, name: boss.name, pip }); }   // late-join: current boss bar
