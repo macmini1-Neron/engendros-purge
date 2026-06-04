@@ -53,6 +53,14 @@ function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
   const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: !opts.panel, alphaTest: opts.panel ? 0 : 0.5, emissive: 0x0c0c0c, emissiveIntensity: 1, side: THREE.DoubleSide });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); m.rotation.y = ry; m.renderOrder = 4; world.scene.add(m);
 }
+// REAL see-through glass pane (separate transparent mesh, like the gatehouse glazing) — you can look
+// through it into a lit interior. tilt with opts.rx/ry/rz. Drawn after the opaque world (renderOrder).
+function glassPane(world, w, h, x, y, z, opts = {}) {
+  const mat = new THREE.MeshLambertMaterial({ color: opts.color || 0x9fc6cf, transparent: true, opacity: opts.opacity ?? 0.3, side: THREE.DoubleSide, depthWrite: false, emissive: 0x1c2a2e, emissiveIntensity: 0.3 });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  m.position.set(x, y, z); m.rotation.set(opts.rx || 0, opts.ry || 0, opts.rz || 0);
+  m.renderOrder = 3; world.scene.add(m);
+}
 // big runway number/marking painted FLAT on the ground
 function groundText(world, text, x, z, w, h, rot, opts = {}) {
   const tex = signTex(text, { cw: 512, ch: 512, color: '#e8e6dd', size: 300, ...opts });
@@ -204,23 +212,54 @@ function buildCaponier(world, b, cx, cz) {
 // beacon + whip antennas, «КДП» + red star. Research: tower-type, cab glazing 15° to vertical (anti-glare).
 // =====================================================================
 function buildTower(world, b, cx, cz) {
-  const W = 9, baseH = 15;
-  for (let i = 0; i < baseH / 3; i++) world._solid(b, W, 3, W, cx, i * 3 + 1.5, cz, i % 2 ? WMARK : RED, { tint: 0.03 }); // banded shaft (collidable)
-  b.box(W + 0.7, 0.6, W + 0.7, cx, baseH + 0.1, cz, CONC.hi);                                    // cornice
-  b.box(2.2, 4.4, 0.2, cx, 2.4, cz - W / 2 - 0.05, IRON);                                        // entrance door (S)
-  // glazed control cab (фонарь) — 15° outward-tilted glazing
-  const cy = baseH + 2.3, cw = 8, gh = 3.4, tilt = 0.26;
-  b.box(cw + 0.9, 0.5, cw + 0.9, cx, baseH + 0.55, cz, CONC.lo);                                 // cab floor / balcony slab
-  for (const [dz, rr] of [[cw / 2, -tilt], [-cw / 2, tilt]]) b.box(cw - 0.4, gh, 0.16, cx, cy, cz + dz, 0x9fb6bc, { rx: rr });
-  for (const [dx, rr] of [[cw / 2, tilt], [-cw / 2, -tilt]]) b.box(0.16, gh, cw - 0.4, cx + dx, cy, cz, 0x9fb6bc, { rz: rr });
-  for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.box(0.32, gh + 0.6, 0.32, cx + dx * cw / 2, cy, cz + dz * cw / 2, 0x2b2b30); // corner mullions
-  b.box(cw + 1.3, 0.5, cw + 1.3, cx, cy + gh / 2 + 0.3, cz, CONC.hi);                            // cab roof
-  for (const [sx, sz, ww, dd] of [[cw / 2 + 0.35, 0, 0.1, cw], [-cw / 2 - 0.35, 0, 0.1, cw], [0, cw / 2 + 0.35, cw, 0.1], [0, -cw / 2 - 0.35, cw, 0.1]]) b.box(ww, 0.7, dd, cx + sx, baseH + 1.2, cz + sz, 0x3a3a3e); // balcony rail
-  cyl(b, 0.4, 0.5, cx, cy + gh / 2 + 0.85, cz, 0xd23a2a, { seg: 8 });                            // rotating beacon
-  for (const [dx, dz, hh] of [[-2, -2, 3], [2, 2, 2.4], [0, 2, 3.6]]) b.box(0.1, hh, 0.1, cx + dx, cy + gh / 2 + hh / 2 + 0.4, cz + dz, 0x8a8680); // whip antennas
-  collider(world, cx, cz, cw / 2 + 0.6, baseH, cy + gh / 2 + 0.6, cw / 2 + 0.6);
-  signPlane(world, 'КДП', cx, baseH - 4.5, cz - W / 2 - 0.06, 4, 1.6, Math.PI, { color: '#1a1a1a', size: 110 });
-  b.box(1.0, 1.0, 0.06, cx, baseH - 1.6, cz - W / 2 - 0.05, RED); signPlane(world, '★', cx, baseH - 1.6, cz - W / 2 - 0.09, 0.9, 0.9, Math.PI, { color: '#f4ecd8', size: 110 });
+  const W = 7.5, SH = 6, T = 0.5, RW = 0xc1272d, WH = 0xece4d2, WOOD = 0x6a4a2a, IFL = 0x9a958b, DESK = 0x39414f;
+  const sz = cz - W / 2, nz = cz + W / 2, wx = cx - W / 2, ex = cx + W / 2;
+  // --- banded hollow shaft (collidable walls); red/white 1 m bands; S entrance over bands 0-2 ---
+  for (let band = 0; band < SH; band++) { const y = band + 0.5, col = band % 2 ? WH : RW;
+    if (band < 3) world._wall(b, cx, sz, W, 1, band, 'x', col, { width: 2.4, height: 1 });
+    else world._solid(b, W, 1, T, cx, y, sz, col, { tint: 0.03 });
+    world._solid(b, W, 1, T, cx, y, nz, col, { tint: 0.03 });
+    world._solid(b, T, 1, W, wx, y, cz, col, { tint: 0.03 });
+    world._solid(b, T, 1, W, ex, y, cz, col, { tint: 0.03 });
+  }
+  // --- interior: ground slab, straight stair up to the cab, cab floor with the stairwell hole ---
+  b.box(W - T, 0.12, W - T, cx, 0.06, cz, IFL);
+  const steps = 12, run = 0.42, rise = SH / steps, sStart = sz + 0.9;
+  world._stairs(b, cx, sStart, 0, 1, steps, WOOD, 0, rise, run, 2.6);
+  const cw = 10, gh = 3.2, cy = SH, ry0 = cy + gh, tilt = 0.26, topOut = Math.tan(tilt) * gh, sillH = 0.9;
+  world._floor(b, cx, cz, cw, cw, cy, IFL, { x: cx, z: sStart + steps * run / 2, w: 3.0, d: steps * run + 0.5 }); // cab floor + stair hole
+  b.box(cw + 0.7, 0.4, cw + 0.7, cx, cy - 0.32, cz, CONC.lo, { tint: 0.03 });                    // balcony-edge cornice
+  // ground-floor equipment-room detail (radio rack + bench)
+  b.box(1.0, 1.9, 0.7, ex - 0.8, 0.95, cz + 1.6, DESK); b.box(2.0, 0.8, 0.8, cx - 1.4, 0.4, sz + 1.6, DESK); b.box(2.0, 0.12, 0.85, cx - 1.4, 0.86, sz + 1.6, 0x55607a);
+  // --- solid collidable sill (lower cab wall, contains the player) ---
+  world._solid(b, cw, sillH, 0.3, cx, cy + sillH / 2, cz - cw / 2, CONC.mid, { tint: 0.03 });
+  world._solid(b, cw, sillH, 0.3, cx, cy + sillH / 2, cz + cw / 2, CONC.mid, { tint: 0.03 });
+  world._solid(b, 0.3, sillH, cw, cx - cw / 2, cy + sillH / 2, cz, CONC.mid, { tint: 0.03 });
+  world._solid(b, 0.3, sillH, cw, cx + cw / 2, cy + sillH / 2, cz, CONC.mid, { tint: 0.03 });
+  // --- REAL see-through glass above the sill (tilted 15° outward) + corner mullions ---
+  const gy = cy + sillH + (gh - sillH) / 2, ghh = gh - sillH;
+  glassPane(world, cw - 0.4, ghh, cx, gy, cz - cw / 2 - topOut / 2, { rx: tilt });
+  glassPane(world, cw - 0.4, ghh, cx, gy, cz + cw / 2 + topOut / 2, { rx: -tilt });
+  glassPane(world, cw - 0.4, ghh, cx - cw / 2 - topOut / 2, gy, cz, { ry: Math.PI / 2, rx: tilt });
+  glassPane(world, cw - 0.4, ghh, cx + cw / 2 + topOut / 2, gy, cz, { ry: Math.PI / 2, rx: -tilt });
+  for (const [sx2, sz2] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.box(0.22, gh + 0.3, 0.22, cx + sx2 * (cw / 2 + topOut / 2), cy + sillH + ghh / 2, cz + sz2 * (cw / 2 + topOut / 2), 0x2b2b30);
+  // --- cab roof (overhangs the splayed glazing) + ceiling light ---
+  b.box(cw + 1.8 + topOut, 0.5, cw + 1.8 + topOut, cx, ry0 + 0.25, cz, CONC.hi);
+  b.box(cw - 1.6, 0.2, cw - 1.6, cx, ry0 - 0.35, cz, 0xfaf3d2);
+  // --- catwalk/balcony rail around the cab floor ---
+  for (const [sx2, sz2] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) b.box(sx2 ? 0.1 : cw + 1.2, 0.55, sz2 ? 0.1 : cw + 1.2, cx + sx2 * (cw / 2 + 0.55), cy + 0.45, cz + sz2 * (cw / 2 + 0.55), 0x3a3a3e);
+  // === cab interior — L-consoles (N/E/W, facing out), radar scope, 2 chairs, radio rack ===
+  for (const [dx, dz] of [[0, 1], [-1, 0], [1, 0]]) { const rot = dx !== 0, px = cx + dx * (cw / 2 - 1.3), pz = cz + dz * (cw / 2 - 1.3);
+    b.box(rot ? 1.1 : 4.4, 0.9, rot ? 4.4 : 1.1, px, cy + 0.55, pz, DESK); b.box(rot ? 1.0 : 4.2, 0.4, rot ? 4.2 : 1.0, px - dx * 0.12, cy + 1.05, pz - dz * 0.12, 0x556084); }
+  cyl(b, 0.7, 0.35, cx + 1.9, cy + 1.05, cz + 1.7, 0x14140f, { seg: 14 }); b.box(1.0, 0.08, 1.0, cx + 1.9, cy + 1.24, cz + 1.7, 0x12401e); // radar scope (green screen)
+  for (const sx2 of [-1, 1]) { cyl(b, 0.3, 0.5, cx + sx2 * 1.4, cy + 0.45, cz + 0.2, 0x222226, { seg: 10 }); b.box(0.55, 0.7, 0.5, cx + sx2 * 1.4, cy + 0.95, cz + 0.2, 0x33333a); } // 2 swivel chairs
+  b.box(0.8, 1.8, 0.8, cx - cw / 2 + 1.1, cy + 1.0, cz + cw / 2 - 1.1, 0x2c3038);                // radio rack
+  // --- beacon + whip antennas (red/white-banded) on the roof ---
+  cyl(b, 0.4, 0.55, cx, ry0 + 0.75, cz, 0xd23a2a, { seg: 8 });
+  for (const [dx, dz, hh] of [[-2.6, -2.6, 3.2], [2.6, 2.6, 2.6], [0, 2.6, 3.8]]) { b.box(0.1, hh, 0.1, cx + dx, ry0 + 0.5 + hh / 2, cz + dz, 0x8a8680); for (let k = 0; k < hh - 0.4; k += 0.8) b.box(0.14, 0.4, 0.14, cx + dx, ry0 + 0.7 + k, cz + dz, ((k / 0.8) | 0) % 2 ? RW : WH); }
+  // --- signage: «КДП» + 3-D red star (no more cocked font glyph) ---
+  signPlane(world, 'КДП', cx, SH - 1.5, sz - 0.05, 3.6, 1.3, Math.PI, { panel: '#1c1c1c', color: '#ece4d2', size: 90 });
+  star3D(b, cx, 4.3, sz - 0.05, 0.5, RW, { ry: Math.PI, depth: 0.1 });
 }
 
 // =====================================================================
