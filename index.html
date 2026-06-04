@@ -657,10 +657,10 @@
     .hero-scene.wide > svg { height: auto; width: 104%; bottom: 0; }
     /* pre-cropped transparent monument photos — shown NORMAL (their own dark stone tone) over the sunburst,
        a touch of contrast + a grounding shadow; no darkening so the sculptural detail reads. */
-    .hero-scene > .sil-img { position: absolute; left: 50%; bottom: -1%; transform: translateX(-50%); height: 97%; width: auto;
+    .hero-scene > .sil-img { position: absolute; left: 50%; bottom: -1%; transform: translateX(-50%); height: 73%; width: auto; max-width: 62vw; object-fit: contain; object-position: bottom;
       mix-blend-mode: normal; filter: contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5));
       animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
-    @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-2%) scale(1.06); } }
+    @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-1.2%) scale(1.025); } }
     .sil { fill: #170402; }                          /* silhouette body */
     .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
     .silr { fill: #3a0a06; }                          /* rim-lit edge tone */
