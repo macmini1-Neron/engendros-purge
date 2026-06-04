@@ -10,6 +10,7 @@ import { buildStrongpoint } from './strongpoint.js';
 import { buildAirfield } from './airfield.js';
 import { buildKolkhoz } from './kolkhoz.js';
 import { buildSecretBunker } from './bunker.js';
+import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 
 
@@ -237,6 +238,10 @@ export class World {
       if (x > -232 && x < 112 && z > 290 && z < 500) continue; // keep the airfield (far N) + its N SAM site clear
       if (x > 254 && x < 346 && z > -334 && z < -246) continue; // keep the kolkhoz (far SE) yard clear
       if (x > 340 && x < 380 && z > 127 && z < 173) continue; // keep the secret bunker (far E) berm clear
+      // keep the dirt-road corridors clear (spine + south road + 3 spurs — see openworld.js)
+      if ((Math.abs(x - 150) < 6 && z > -445 && z < 218) || (Math.abs(z + 300) < 6 && x > -290 && x < 261) ||
+          (Math.abs(z - 210) < 6 && x > 8 && x < 162) || (Math.abs(z - 150) < 6 && x > 140 && x < 344) ||
+          (Math.abs(z + 40) < 6 && x > 82 && x < 158)) continue;
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
@@ -252,6 +257,7 @@ export class World {
     buildKolkhoz(this, 300, -300); // kolkhoz «Красный степной» + Su-24 wreck — far SE (kolkhoz.js)
     buildSecretBunker(this, 360, 150); // «Объект 1180» secret bunker — far E/NE (bunker.js)
     this.lootSpots.push(new THREE.Vector3(318, 0, -310), new THREE.Vector3(300, 0, -284)); // farm yard + by the wreck (moved with the kolkhoz)
+    buildOpenWorld(this); // dirt roads + ЛЭП poles + roadside POIs linking the districts (openworld.js)
   }
 
   _mesh(builder) {
