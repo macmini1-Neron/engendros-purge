@@ -567,6 +567,8 @@ export class MP {
     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio
     n.on('gateset', (d) => { if (d && g.world.applyGateSet) g.world.applyGateSet(d.open); });                         // authoritative works-gate open/close (host → clients)
     n.on('gatereq', (d, from) => { if (this.isHost && d && g.world.applyGateSet) { g.world.applyGateSet(d.open); n.broadcast('gateset', { open: !!d.open }); } }); // client asks host to open/close the gate
+    n.on('doorset', (d) => { if (d && g.world.applyDoorSet) g.world.applyDoorSet(d.id, d.open); });                   // authoritative bunker гермодверь open/closed (host → clients)
+    n.on('doorreq', (d, from) => { if (this.isHost && d && g.world.applyDoorSet) { g.world.applyDoorSet(d.id, d.open); n.broadcast('doorset', { id: d.id, open: !!d.open }); } }); // client asks host to swing a blast door
     n.on('edie', (d) => this._clientEnemyDie(d));
     n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
       if (d.e === 'expl') { const bp = V(d.p); eff.explosion(bp, d.s || 3); if (g.engine.shake) { const dist = bp.distanceTo(g.player.pos); if (dist < 18) g.engine.shake(Math.max(0.08, 0.5 * (1 - dist / 18))); } } // distance-scaled shake so a teammate's blast also rattles the viewer
@@ -1006,6 +1008,7 @@ export class MP {
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
     for (const s of this.game.build.structures) if (s.kind === 'radio' && s.on) this.net.sendTo(pid, 'radioset', { id: s.id, on: true, station: s.station }); // late-join: tune newcomers into playing radios
     if (this.game.world._slideGate) this.net.sendTo(pid, 'gateset', { open: !!this.game.world._slideGate.open }); // late-join: current works-gate state
+    if (this.game.world._doors) for (const dr of this.game.world._doors) this.net.sendTo(pid, 'doorset', { id: dr.id, open: !!dr.open }); // late-join: current bunker гермодверь states
     for (const pu of this.game.loot.pickups) if (pu.id != null) this.net.sendTo(pid, 'pickup', { id: pu.id, kind: pu.kind, x: pu.mesh.position.x, z: pu.mesh.position.z, value: pu.value, life: pu.life }); // late-join: existing shared ground pickups
     let boss = null; for (const e of this.game.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
     if (boss) { const isTank = !!(boss.isTank || boss.def.tank); const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp); const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1; this.net.sendTo(pid, 'boss', { frac, name: boss.name, pip }); }   // late-join: current boss bar

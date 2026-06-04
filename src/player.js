@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { clamp, damp } from './util.js';
 import { FALL_ARMOR_BYPASS, FALL_DMG_BONUS_AT_LETHAL, FALL_DMG_PER_VY, FALL_LETHAL, FALL_SAFE, HUNGER_DRAIN_PER_SEC, HUNGER_LOW, HUNGER_LOW_SPEED_MULT, HUNGER_MAX, LEG_BREAK_VY, LIMP_SPEED_MULT, PLAYER_BURN_DPS, PLAYER_BURN_TICK, SPLINT_APPLY_TIME, STARVE_TICK_DMG, STARVE_TICK_TIME } from './tuning.js';
 
+const CLIMB_SPEED = 3.7; // m/s on a ladder/скоб-трап (escape shaft + bunker tower)
+
 
 // ---------------------------------------------------------------------------
 // Player
@@ -132,6 +134,19 @@ export class Player {
     cam.rotation.y = this.yaw; cam.rotation.x = this.pitch; cam.rotation.z = 0;
   }
 
+  // Is the player's body column inside any registered ladder zone? (bunker escape shaft / tower скоб-трап)
+  _onLadder() {
+    const zones = this.game.world && this.game.world._ladders;
+    if (!zones || !zones.length) return false;
+    const x = this.pos.x, z = this.pos.z, fy = this.pos.y, hy = this.pos.y + this.height;
+    for (const a of zones) {
+      if (x < a.minX || x > a.maxX || z < a.minZ || z > a.maxZ) continue;
+      if (hy < a.bottom || fy > a.top) continue;
+      return true;
+    }
+    return false;
+  }
+
   update(dt) {
     const input = this.game.input;
     if (this.game.freecam) return this._freecamUpdate(dt, input); // dev noclip fly-cam (solo only)
@@ -173,12 +188,24 @@ export class Player {
     this.vel.x = damp(this.vel.x, wish.x, accel, dt);
     this.vel.z = damp(this.vel.z, wish.z, accel, dt);
 
-    if (!controlsPaused && this.onGround && input.wasPressed('Space') && !this.legBroken && this._splintT <= 0) { this.vel.y = 7.2; this.onGround = false; this.game.audio.jump(); }
-    this.vel.y -= 22 * dt; this._fallVel = this.vel.y;
+    // --- ladder climb (bunker escape shaft + НП tower скоб-трап) — gravity off, no fall damage ---
+    const onLadder = this._onLadder();
+    if (onLadder && !controlsPaused) {
+      let climb = 0;
+      if (input.isDown('Space')) climb = 1;
+      else if (input.isDown('ControlLeft') || input.isDown('ControlRight') || input.isDown('KeyC')) climb = -1;
+      else if (input.forward > 0.1) climb = (this.pitch < -0.12 ? -1 : 1); // walk into the ladder: look down to descend, else climb up
+      else if (input.forward < -0.1) climb = -1;
+      this.vel.y = climb * CLIMB_SPEED; this._fallVel = 0;
+      this.vel.x *= 0.5; this.vel.z *= 0.5;                                 // stick to the rungs
+    } else {
+      if (!controlsPaused && this.onGround && input.wasPressed('Space') && !this.legBroken && this._splintT <= 0) { this.vel.y = 7.2; this.onGround = false; this.game.audio.jump(); }
+      this.vel.y -= 22 * dt; this._fallVel = this.vel.y;
+    }
     const wasAir = !this.onGround;
     this.onGround = this.game.world.collide(this.pos, this.vel, this.radius, this.height, dt);
-    if (this.onGround && wasAir && this._fallVel < -6) this.game.audio.land(this._fallVel < -12);
-    if (this.onGround && wasAir && this._fallVel < FALL_SAFE) {
+    if (!onLadder && this.onGround && wasAir && this._fallVel < -6) this.game.audio.land(this._fallVel < -12);
+    if (!onLadder && this.onGround && wasAir && this._fallVel < FALL_SAFE) {
       let dmg = ((-this._fallVel) - (-FALL_SAFE)) * FALL_DMG_PER_VY; // HP per m/s beyond the safe threshold
       if (this._fallVel <= FALL_LETHAL) dmg += FALL_DMG_BONUS_AT_LETHAL;
       if (this._fallVel <= LEG_BREAK_VY && !this.legBroken) this.breakLeg();
