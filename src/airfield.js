@@ -94,21 +94,19 @@ function buildRunway(world, b, cx, cz, L, W, rng) {
 // =====================================================================
 // TAXIWAY (РД) + connectors + apron (стоянка). Concrete, yellow centreline + blue edge lights.
 // =====================================================================
-function buildTaxiways(world, b, cx, cz, runZ) {
-  // parallel taxiway
-  const tz = cz - 32, tx0 = cx - 70, tx1 = cx + 70, TW = 16;
-  b.box(tx1 - tx0, 0.1, TW, cx, 0.055, tz, CONC.lo, { tint: 0.02 });
-  for (let x = tx0 + 8; x < tx1; x += 12) b.box(0.12, 0.11, TW, x, 0.1, tz, MASTIC);
-  for (let x = tx0 + 6; x < tx1 - 4; x += 10) mark(b, 5, 0.5, x, tz, YMARK, 0.12);                  // yellow centreline
-  for (const z of [tz - TW / 2 - 0.4, tz + TW / 2 + 0.4]) for (let x = tx0; x <= tx1; x += 22) { b.box(0.14, 0.5, 0.14, x, 0.25, z, IRON); b.box(0.2, 0.14, 0.2, x, 0.5, z, 0x4060d0); } // blue edge
-  // 2 connectors runway↔taxiway
-  for (const xx of [tx0 + 6, tx1 - 6]) { b.box(TW, 0.1, runZ - 0.5 - tz, xx, 0.055, (runZ - 0.5 + tz) / 2, CONC.lo, { tint: 0.02 }); for (let z = tz; z < runZ; z += 10) mark(b, 0.5, 5, xx, z, YMARK, 0.12); }
-  // apron / hardstand pad (стоянка)
-  const az = cz - 56, aw = 22; b.box(120, 0.1, aw, cx, 0.05, az, CONC.lo, { tint: 0.03 });
-  for (let x = cx - 58; x < cx + 58; x += 12) b.box(0.12, 0.11, aw, x, 0.1, az, MASTIC);
-  for (let i = 0; i < 8; i++) b.box(randRange(5, 10), 0.11, randRange(3, 5), cx + randRange(-55, 55), 0.105, az + randRange(-8, 8), shade(CONC.slot, 0.02)); // oil
-  // apron parking spot markings (yellow T)
-  for (let x = cx - 50; x <= cx + 50; x += 25) { mark(b, 0.4, 8, x, az, YMARK, 0.12); mark(b, 6, 0.4, x, az - 4, YMARK, 0.12); }
+function buildTaxiways(world, b, cx, runZ, taxiZ, halfL, apronX, apronZ, apronHW, rng) {
+  const tx0 = cx - halfL, tx1 = cx + halfL, TW = 18;                                              // parallel taxiway (магистральная РД)
+  b.box(2 * halfL, 0.1, TW, cx, 0.055, taxiZ, CONC.lo, { tint: 0.02 });
+  for (let x = tx0 + 10; x < tx1; x += 12) b.box(0.12, 0.11, TW, x, 0.1, taxiZ, MASTIC);
+  for (let x = tx0 + 6; x < tx1 - 4; x += 10) mark(b, 5, 0.5, x, taxiZ, YMARK, 0.12);             // yellow centreline
+  for (const z of [taxiZ - TW / 2 - 0.4, taxiZ + TW / 2 + 0.4]) for (let x = tx0; x <= tx1; x += 22) { b.box(0.14, 0.5, 0.14, x, 0.25, z, IRON); b.box(0.2, 0.14, 0.2, x, 0.5, z, 0x4060d0); } // blue edge
+  const cd = Math.abs(runZ - taxiZ), cmid = (runZ + taxiZ) / 2;                                   // 3 connectors runway↔taxiway (ends + middle)
+  for (const xx of [tx0 + 12, cx, tx1 - 12]) { b.box(14, 0.1, cd, xx, 0.055, cmid, CONC.lo, { tint: 0.02 }); for (let z = Math.min(taxiZ, runZ); z < Math.max(taxiZ, runZ); z += 10) mark(b, 0.5, 5, xx, z, YMARK, 0.12); }
+  // apron / hardstand (стоянка) + parking T-marks + oil
+  b.box(2 * apronHW, 0.1, 26, apronX, 0.05, apronZ, CONC.lo, { tint: 0.03 });
+  for (let x = apronX - apronHW + 8; x < apronX + apronHW; x += 12) b.box(0.12, 0.11, 26, x, 0.1, apronZ, MASTIC);
+  for (let i = 0; i < 10; i++) b.box(randRange(5, 10, rng), 0.11, randRange(3, 5, rng), apronX + randRange(-apronHW + 6, apronHW - 6, rng), 0.105, apronZ + randRange(-10, 10, rng), shade(CONC.slot, 0.02));
+  for (let x = apronX - apronHW + 16; x <= apronX + apronHW - 16; x += 26) { mark(b, 0.4, 9, x, apronZ - 2, YMARK, 0.12); mark(b, 7, 0.4, x, apronZ - 6.5, YMARK, 0.12); }
 }
 
 // =====================================================================
@@ -161,31 +159,31 @@ function buildKPP(world, b, gx, gz) {
 // earth+grass berm (hill-like); 2-leaf olive blast doors (parted → walkable), rear 3×3 gas duct + deflector
 // + soot, white shelter №. Front (doors) faces −Z (the apron). Research: АУ-13 = 12.9×28, 0.6 m concrete.
 // =====================================================================
-function buildArchShelter(world, b, cx, cz, num) {
-  const R = 6.6, len = 26, hz0 = cz - len / 2, hz1 = cz + len / 2, N = 16, segH = (Math.PI * (R + 2) / N) * 1.1;
+function buildArchShelter(world, b, cx, cz, num, face = -1) {
+  const R = 6.6, len = 26, f = face, mouth = cz + f * len / 2, rear = cz - f * len / 2, N = 16, segH = (Math.PI * (R + 2) / N) * 1.1;
   // earth + grass HILL (the dominant exterior — covers the concrete arch, like a real ЗС)
   for (let i = 0; i < N; i++) {
     const a = Math.PI * (i + 0.5) / N, c = Math.cos(a), s = Math.sin(a), pal = s > 0.5 ? SOD : EARTH;   // earth flanks → grass crown
     b.box(3.4, segH, len + 0.4, cx + c * (R + 1.3), s * (R + 1.3), cz, i % 2 ? pal.mid : pal.lo, { rz: a, tint: 0.03 }); // overlapping → continuous hill
   }
   b.box(3.6, 0.5, len + 0.5, cx, R + 2.6, cz, SOD.hi, { tint: 0.06 });                                    // grass crown ridge
-  b.box(R * 2 - 2, R * 1.5, len - 1.5, cx, R * 0.72, cz - 0.2, 0x16140f);                                 // dark interior cavity (seen through the mouth)
-  // concrete arch-ring FACE at the front mouth (hz0) + lintel
+  b.box(R * 2 - 2, R * 1.5, len - 1.5, cx, R * 0.72, cz, 0x16140f);                                       // dark interior cavity (seen through the mouth)
+  // concrete arch-ring FACE at the mouth + lintel (mouth opens toward `face`)
   for (let i = 0; i < N; i++) {
     const a = Math.PI * (i + 0.5) / N, c = Math.cos(a), s = Math.sin(a);
-    b.box(1.5, segH, 0.9, cx + c * R, s * R, hz0 + 0.1, i % 2 ? CONC.mid : CONC.hi, { rz: a, tint: 0.02 });
+    b.box(1.5, segH, 0.9, cx + c * R, s * R, mouth - f * 0.1, i % 2 ? CONC.mid : CONC.hi, { rz: a, tint: 0.02 });
   }
   // collidable side walls + rear wall (3 m gas-duct gap on +X)
   for (const sx of [-1, 1]) collider(world, cx + sx * (R - 0.2), cz, 0.6, 0, 3.8, len / 2);
-  world._solid(b, R * 2 - 4, 3.8, 0.7, cx - 1, 1.9, hz1, CONC.lo, { tint: 0.03 });
-  b.box(3, 3, 1.0, cx + R - 2.2, 1.5, hz1 + 0.7, IRON); b.box(2.2, 1.1, 1.1, cx + R - 2.2, 3.9, hz1 + 0.6, shade(IRON, -0.02)); // duct + soot
-  b.box(0.6, 3.8, 3.4, cx + R - 0.3, 1.9, hz1 + 1.9, CONC.lo);                                            // blast deflector
+  world._solid(b, R * 2 - 4, 3.8, 0.7, cx - 1, 1.9, rear, CONC.lo, { tint: 0.03 });
+  b.box(3, 3, 1.0, cx + R - 2.2, 1.5, rear - f * 0.7, IRON); b.box(2.2, 1.1, 1.1, cx + R - 2.2, 3.9, rear - f * 0.6, shade(IRON, -0.02)); // duct + soot
+  b.box(0.6, 3.8, 3.4, cx + R - 0.3, 1.9, rear - f * 1.9, CONC.lo);                                       // blast deflector
   // 2 olive blast doors (parted ~1.8 m → walk in) + colliders ; white shelter №
   for (const sx of [-1, 1]) { const dx = cx + sx * (R / 2 + 0.5);
-    b.box(R - 1.1, 5.6, 0.45, dx, 2.8, hz0 - 0.35, 0x3a4a2a, { tint: 0.03 }); b.box(R - 1.3, 0.4, 0.5, dx, 5.5, hz0 - 0.35, 0x46582f);
-    collider(world, dx, hz0 - 0.35, (R - 1.1) / 2, 0, 5.6, 0.3); }
-  signPlane(world, num, cx - (R / 2 + 0.5), 3.3, hz0 - 0.62, 1.6, 1.6, Math.PI, { color: '#e8e6dd', size: 130 });
-  b.box(R * 2 + 1, 0.07, 9, cx, 0.05, hz0 - 5.5, CONC.lo, { tint: 0.02 });                                // apron/taxi spur in front
+    b.box(R - 1.1, 5.6, 0.45, dx, 2.8, mouth + f * 0.35, 0x3a4a2a, { tint: 0.03 }); b.box(R - 1.3, 0.4, 0.5, dx, 5.5, mouth + f * 0.35, 0x46582f);
+    collider(world, dx, mouth + f * 0.35, (R - 1.1) / 2, 0, 5.6, 0.3); }
+  signPlane(world, num, cx - (R / 2 + 0.5), 3.3, mouth + f * 0.62, 1.6, 1.6, f < 0 ? Math.PI : 0, { color: '#e8e6dd', size: 130 });
+  b.box(R * 2 + 1, 0.07, 9, cx, 0.05, mouth + f * 5.5, CONC.lo, { tint: 0.02 });                          // apron/taxi spur in front
 }
 
 // open earth+concrete revetment (капонир / обвалование) — U open toward −Z (apron)
@@ -397,9 +395,8 @@ function buildFanSong(world, b, cx, cz) {                                 // С�
   cyl(b, 0.55, 0.22, cx, 7.9, cz - 0.3, A, { rx: -Math.PI / 2, seg: 12 });        // LORO dish (V bar tip)
   collider(world, cx, cz, 1.8, 0, 2.2, 2.9);
 }
-function buildSAMSite(world, b, cx, cz) {
+function buildSAMSite(world, b, cx, cz, R = 22) {
   buildFanSong(world, b, cx, cz);
-  const R = 22;
   for (let k = 0; k < 6; k++) { const phi = k * Math.PI / 3, lx = cx + Math.sin(phi) * R, lz = cz + Math.cos(phi) * R;
     b.box(3.5, 0.06, R - 4, cx + Math.sin(phi) * R / 2, 0.05, cz + Math.cos(phi) * R / 2, CONC.lo, { ry: phi }); // petal road
     for (let a = 0; a < 8; a++) { const ra = a * Math.PI / 4; b.box(2.6, 1.5, 2.6, lx + Math.cos(ra) * 4.2, 0.75, lz + Math.sin(ra) * 4.2, a % 2 ? EARTH.mid : EARTH.lo, { ry: ra, tint: 0.03 }); b.box(2.4, 0.3, 2.4, lx + Math.cos(ra) * 4.2, 1.5, lz + Math.sin(ra) * 4.2, SOD.mid); } // revetment berm + grass
@@ -551,45 +548,48 @@ function buildRunwayLights(world, b, cx, cz, L, W) {
 export function buildAirfield(world, ox, oz) {
   const rng = makeRNG(0xA17F);
   const b = new MeshBuilder();
-  const RUNX = ox - 130, RUNZ = oz + 160, RUNL = 180, RUNW = 40;          // runway centre + size
+  // ENLARGED, dispersed layout — real Soviet zoning, spread out (de-crammed): a long runway with the
+  // flight line stacked on its S side (runway → parallel taxiway → apron + DISPERSED shelters in two
+  // staggered groups → technical/living rear); fuel at the E end, штаб/казарма at the far W (opposite
+  // the fuel), ammo magazines dispersed, the С-75 SAM site OUTSIDE the N fence. Footprint ≈ x[-225,+105].
+  const RUNX = ox - 55, RUNZ = oz + 185, RUNL = 300, RUNW = 34;           // runway z+168..+202
+  const TAXIZ = oz + 135, APZ = oz + 122;
 
   buildRunway(world, b, RUNX, RUNZ, RUNL, RUNW, rng);
   buildRunwayLights(world, b, RUNX, RUNZ, RUNL, RUNW);
-  buildTaxiways(world, b, RUNX, RUNZ, RUNZ - RUNW / 2);
-  buildPerimeter(world, b, ox - 235, oz + 85, ox - 35, oz + 195, { at: ox - 135, w: 9 }); // КПП gap on S
-  buildKPP(world, b, ox - 139, oz + 85);
+  buildTaxiways(world, b, RUNX, RUNZ - RUNW / 2, TAXIZ, 140, ox - 55, APZ, 68, rng);
+  buildPerimeter(world, b, ox - 225, oz + 44, ox + 105, oz + 212, { at: ox - 91, w: 10 }); // КПП gap on S
+  buildKPP(world, b, ox - 87, oz + 44);
 
-  // ② arch shelters (ЗС/АУ-13) dispersed in a row N of the apron, doors facing −Z; + a caponier
-  [-185, -143, -101, -59].forEach((sx, i) => buildArchShelter(world, b, ox + sx, oz + 114, '2' + (i + 1)));
-  buildCaponier(world, b, ox - 52, oz + 114);
+  // ② DISPERSED arch shelters — two staggered groups (W + E), opening N (face +1) toward the apron; NOT a tight row
+  [[-192, 96], [-158, 108], [-124, 96], [14, 96], [48, 108], [82, 96]].forEach(([sx, sz], i) => buildArchShelter(world, b, ox + sx, oz + sz, '2' + (i + 1), +1));
 
-  // ③ КДП control tower (landmark) — apron side, midfield ; ④ ТЭЧ hangar — W side
-  buildTower(world, b, ox - 112, oz + 91);
-  buildHangar(world, b, ox - 210, oz + 104);
+  // ③ КДП tower — runway MIDPOINT, flight-line side ; ④ ТЭЧ hangar — far rear (S), clear of the shelters
+  buildTower(world, b, ox - 55, oz + 156);
+  buildHangar(world, b, ox - 150, oz + 62);
 
-  // ⑤ aircraft — MiG-21bis parked on the apron + one in a shelter
-  buildMiG21(world, b, ox - 152, oz + 102, '12');
-  buildMiG21(world, b, ox - 59, oz + 112, '15');
-  buildMiG23(world, b, ox - 118, oz + 100, '31');
-  buildSu25(world, b, ox - 82, oz + 99, '25');
+  // ⑤ aircraft — dispersed on the apron / hardstands (nose −Z)
+  buildMiG21(world, b, ox - 95, oz + 120, '12');
+  buildMiG21(world, b, ox - 12, oz + 120, '15');
+  buildMiG23(world, b, ox - 55, oz + 118, '31');
+  buildSu25(world, b, ox + 34, oz + 122, '25');
 
-  // ⑥ ПВО — С-75 SAM site (N, outside the perimeter) + Шилка ×2 (corners) + П-18 radar + ЗУ-23-2 ×2
-  buildSAMSite(world, b, ox - 90, oz + 222);
-  buildShilka(world, b, ox - 224, oz + 188, 0.3); buildShilka(world, b, ox - 46, oz + 188, -0.3);
-  buildRadarP18(world, b, ox - 150, oz + 212);
-  buildZU23(world, b, ox - 168, oz + 92); buildZU23(world, b, ox - 44, oz + 100);
+  // ⑥ ПВО — С-75 SAM site (N, OUTSIDE the fence, shrunk to clear the mountains) + Шилка ×2 (N corners) + П-18 + ЗУ-23 ×2
+  buildSAMSite(world, b, ox - 70, oz + 230, 18);
+  buildShilka(world, b, ox - 218, oz + 204, 0.3); buildShilka(world, b, ox + 98, oz + 204, -0.3);
+  buildRadarP18(world, b, ox - 135, oz + 230);
+  buildZU23(world, b, ox - 92, oz + 50); buildZU23(world, b, ox + 90, oz + 92, 0.4);
 
-  // ⑦ support — штаб + fire depo (S edge, W cluster), fuel farm + ammo magazines (dispersed), windsock,
-  // watchtowers (corners), floodlight masts (apron/taxiway edges)
-  buildBarracks(world, b, ox - 186, oz + 92);
-  buildFireStation(world, b, ox - 158, oz + 92);
-  buildFuelFarm(world, b, ox - 78, oz + 93);
-  buildAmmoBunker(world, b, ox - 122, oz + 114, '1');  // dispersed among the shelters
-  buildAmmoBunker(world, b, ox - 60, oz + 92, '2');
-  buildAmmoBunker(world, b, ox - 44, oz + 134, '3');
-  buildWindsock(world, b, ox - 37, oz + 172);
-  [[-232, 90], [-38, 92], [-232, 170]].forEach(([sx, sz]) => buildWatchtower(world, b, ox + sx, oz + sz));
-  [[-180, 98, 0], [-120, 98, 0], [-70, 98, 0], [-150, 135, 0], [-90, 135, 0]].forEach(([sx, sz, ry]) => buildFloodlight(world, b, ox + sx, oz + sz, ry));
+  // ⑦ support — штаб + fire depo (far W rear, opposite the fuel) ; fuel ГСМ (E rear corner) ; ammo dispersed (rear) ; windsock ; towers ; lights
+  buildBarracks(world, b, ox - 210, oz + 66);
+  buildFireStation(world, b, ox - 210, oz + 48);
+  buildFuelFarm(world, b, ox + 92, oz + 60);
+  buildAmmoBunker(world, b, ox - 105, oz + 60, '1');
+  buildAmmoBunker(world, b, ox - 28, oz + 58, '2');
+  buildAmmoBunker(world, b, ox + 50, oz + 58, '3');
+  buildWindsock(world, b, ox + 92, oz + 168);
+  [[-220, 48], [100, 48], [-220, 206], [100, 206]].forEach(([sx, sz]) => buildWatchtower(world, b, ox + sx, oz + sz));
+  [[-150, 132], [-55, 132], [40, 132], [-100, 112], [10, 112]].forEach(([sx, sz]) => buildFloodlight(world, b, ox + sx, oz + sz, 0));
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
 }
