@@ -690,9 +690,19 @@
     .hero-ribbon .plaque b { color: #ffd06a; font-weight: 400; }
     /* slogan ribbon — longer text, so tighter tracking + wrap to 2 lines, with a quick fade-up on change */
     .hero-ribbon .plaque.slogan { letter-spacing: 2px; font-size: clamp(12px, 1.7vw, 17px); line-height: 1.32;
-      max-width: min(82vw, 780px); white-space: normal; text-wrap: balance; }
-    .hero-ribbon .plaque.flip { animation: sloganIn .5s ease both; }
-    @keyframes sloganIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+      max-width: min(82vw, 780px); white-space: normal; text-wrap: balance; transform-origin: 50% 0%; backface-visibility: hidden; }
+    /* physical tear-off-calendar flip: the old slogan hinges at its top edge and falls forward toward the
+       viewer, a fresh one drops in underneath */
+    .hero-ribbon { perspective: 900px; }
+    .slogan-stack { position: relative; display: inline-block; transform-style: preserve-3d; }
+    .hero-ribbon .plaque.falling { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none;
+      animation: sloganFall .9s cubic-bezier(.5,0,.7,1) both; box-shadow: 0 16px 32px rgba(0,0,0,.6); }
+    @keyframes sloganFall {
+      0%   { transform: rotateX(0deg) translateY(0) scale(1); opacity: 1; filter: brightness(1); }
+      18%  { transform: rotateX(-12deg) translateY(-2px) scale(1.03); opacity: 1; filter: brightness(1.18); }  /* tips toward the viewer */
+      100% { transform: rotateX(115deg) translateY(86px) scale(.94); opacity: 0; filter: brightness(.5); } }   /* …then falls forward + away */
+    .hero-ribbon .plaque.dropin { animation: sloganDrop .5s cubic-bezier(.2,.7,.3,1) both; animation-delay: .12s; }
+    @keyframes sloganDrop { 0% { opacity: 0; transform: rotateX(-34deg) translateY(-7px); } 100% { opacity: 1; transform: none; } }
     .hero-ribbon .en { display: block; margin-top: 7px; font-family: var(--font-stencil), var(--font-display);
       font-size: 11px; letter-spacing: 4px; color: #d8b888; opacity: .82; text-transform: uppercase; }
     /* scene caption swaps with the active scene */
@@ -878,7 +888,7 @@
       <div class="hero-haze"></div>
       <div class="hero-embers" id="heroEmbers"></div>
       <div class="hero-vig"></div>
-      <div class="hero-ribbon"><span class="plaque slogan" id="heroSlogan">WORKERS OF ALL COUNTRIES, UNITE!</span></div>
+      <div class="hero-ribbon"><span class="slogan-stack"><span class="plaque slogan" id="heroSlogan">WORKERS OF ALL COUNTRIES, UNITE!</span></span></div>
       <div class="hero-star3d l"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
       <div class="hero-star3d r"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
     </div>
@@ -1196,10 +1206,17 @@
       ];
       const slogan = document.getElementById('heroSlogan');
       if (slogan) {
-        let last = -1;
-        const rollSlogan = () => { let n; do { n = Math.floor(Math.random() * SLOGANS.length); } while (n === last && SLOGANS.length > 1); last = n;
-          slogan.classList.remove('flip'); void slogan.offsetWidth; slogan.textContent = SLOGANS[n]; slogan.classList.add('flip'); };
-        rollSlogan(); setInterval(rollSlogan, 10000);
+        let last = -1; const stack = slogan.parentNode;
+        const rollSlogan = (first) => {
+          let n; do { n = Math.floor(Math.random() * SLOGANS.length); } while (n === last && SLOGANS.length > 1); last = n;
+          if (!first) {   // peel the current slogan off — it hinges at the top and falls toward the viewer
+            const fall = slogan.cloneNode(true); fall.removeAttribute('id'); fall.classList.add('falling');
+            stack.appendChild(fall); fall.addEventListener('animationend', () => fall.remove(), { once: true });
+          }
+          slogan.textContent = SLOGANS[n];
+          slogan.classList.remove('dropin'); void slogan.offsetWidth; if (!first) slogan.classList.add('dropin');
+        };
+        rollSlogan(true); setInterval(rollSlogan, 10000);
       }
     })();
   </script>
