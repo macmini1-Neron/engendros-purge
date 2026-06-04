@@ -141,9 +141,7 @@ export class Admin {
     return [];
   }
   _sounds() {
-    const a = this.game.audio, m = a.music;
-    // audition a music scene at a fixed intensity (so adaptive scenes reveal their full arrangement)
-    const play = (name, { I = 0.75, variant = null } = {}) => () => { if (!m) return; m.setStress(0); m.setIntensity(I); m.setScene(name, { variant }); };
+    const a = this.game.audio;
     return [
       ['📻 Radio call (Su-24)', () => a.radioCall()],
       ['✈ Jet pass (demo)', () => { const j = a.startJetClip() || (a._jetFailed ? null : a.startJet()); if (!j) return; if (j.set) { let t = 0; const id = setInterval(() => { t += 0.1; const near = Math.max(0, 1 - Math.abs(t - 1.6) / 1.6); j.set(0.3 + near * 0.7, near); if (t >= 3.3) { clearInterval(id); j.stop(); } }, 100); } else { setTimeout(() => j.stop(1.4), 3800); } }],
@@ -155,24 +153,6 @@ export class Admin {
       ['UI click', () => a.uiClick()], ['UI hover', () => a.uiHover()], ['Buy', () => a.buy()], ['No money', () => a.noMoney()],
       ['Wave start', () => a.waveStart()], ['Wave clear', () => a.waveClear()], ['Game over', () => a.gameOver()],
       ['📻 Grant Radio x2 (dev)', () => { this.game.inventory.addItem('radio', 2); this.game.inventory.refreshHotbar(); this.game.hud.toast('Granted 2 Radios — select & place (LMB)', 0x6fd0e8); }], // dev/testing convenience — real acquisition is the 30% supply-drop (loot _spillDropLoot, gated on none in play)
-
-      // ── 🎵 MUSIC — the full procedural score (plays through the MusicDirector; click another to switch) ──
-      ['🎵 ⏹  Stop music', () => m && m.stop()],
-      ['🎵 ▶  Menu jukebox — all 6 (auto-rotate)', () => m && m.setPlaylist('menu')],
-      ['🎵 Korobeiniki — title chiptune', play('menu', { I: 0 })],
-      ['🎵 Катюша · Katyusha', play('katyusha')],
-      ['🎵 Полюшко-поле · Cavalry of the Steppe', play('polyushko')],
-      ['🎵 Марш защитников Москвы · Defence of Moscow', play('defenceMoscow')],
-      ['🎵 Тёмная ночь · Dark is the Night', play('darkNight')],
-      ['🎵 Священная война · Sacred War', play('sacredWar')],
-      ['🎵 Gameplay — calm (low intensity)', play('gameplay', { I: 0.12 })],
-      ['🎵 Gameplay — peak (high intensity)', play('gameplay', { I: 0.92 })],
-      ['🎵 Lobby (co-op)', play('lobby', { I: 0.7 })],
-      ['🎵 Boss — Tolo', play('boss', { I: 0.85, variant: 'tolo' })],
-      ['🎵 Boss — T-90M «MITRI»', play('boss', { I: 0.85, variant: 'mitri' })],
-      ['🎵 Shop / Armory muzak', play('shop', { I: 0.6 })],
-      ['🎵 Game over', play('gameover', { I: 0.85 })],
-      ['🎵 ✦ Victory sting', () => { if (!m) return; if (!m.sceneBus) m.setScene('gameplay', {}); setTimeout(() => m.sting('victory', 'big'), 80); }],
     ];
   }
   _render() {

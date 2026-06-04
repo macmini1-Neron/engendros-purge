@@ -6,82 +6,6 @@
 // look-ahead note scheduler. Scenes are data: { bpm, drones[], step() }. game.js sets
 // the scene per game-state and pushes per-frame intensity/stress during play.
 
-// ---- Soviet chiptune classics (32-bit-style arrangements of WW2-era melodies) -------------
-// note-name → frequency (equal-temperament, A4 = 440). Names: C Cs D Ds E F Fs G Gs A As B
-// (sharps only; write flats as their sharp twin — Bb=As, Eb=Ds, Ab=Gs). `0` is a rest.
-const NF = (() => {
-  const names = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B'];
-  const t = { 0: 0 };
-  for (let oct = 1; oct <= 6; oct++)
-    for (let i = 0; i < 12; i++) t[names[i] + oct] = 440 * Math.pow(2, ((oct + 1) * 12 + i - 69) / 12);
-  return t;
-})();
-const FIFTH = 1.4983; // equal-tempered perfect-fifth ratio (for oom-pah "pah" notes)
-
-// Expand an event list [[noteName|0, durSteps], …] into a per-16th-step array. Each onset slot
-// holds { f, dur } (dur in steps); sustained/rest slots are null. Length = sum of durations.
-function buildLead(events) {
-  const arr = [];
-  for (const [name, dur] of events) {
-    const f = NF[name] || 0;
-    arr.push(f ? { f, dur } : null);
-    for (let k = 1; k < dur; k++) arr.push(null);
-  }
-  return arr;
-}
-
-// Accompaniment patterns keyed by style. Each schedules bass/drums for one 16th step `step`,
-// given the bar's chord `root` (Hz). `spb` = steps per bar (16 = 4/4, 12 = 3/4).
-const ACCOMP = {
-  folk(M, bus, when, step, spb, root) {                        // oom-pah: root on 1&3, fifth on 2&4
-    if (step === 0 || step === 8) M.bass(bus, when, root, 0.16, 0.15);
-    else if (step === 4 || step === 12) M.note(bus, when, root * FIFTH, 0.11, 0.10, 'square');
-    if (step % 4 === 2) M.hat(bus, when, 0.05, 0.02);
-  },
-  march(M, bus, when, step, spb, root) {                       // driving: kick 1&3, snare 2&4, bass each beat
-    if (step === 0 || step === 8) M.kick(bus, when, 0.5);
-    if (step === 4 || step === 12) M.snare(bus, when, 0.26);
-    if (step % 4 === 0) M.bass(bus, when, root, 0.14, 0.14);
-    if (step % 2 === 0) M.hat(bus, when, 0.045, 0.02);
-  },
-  gallop(M, bus, when, step, spb, root) {                      // cavalry canter: trotting eighths + tom pulse
-    if (step % 2 === 0) {
-      if (step % 4 === 0) M.bass(bus, when, root, 0.12, 0.13);
-      else M.note(bus, when, root * FIFTH, 0.09, 0.11, 'square');
-    }
-    if (step % 4 === 0) M.tom(bus, when, root * 2, 0.18);
-    if (step === 4 || step === 12) M.snare(bus, when, 0.16);
-  },
-  ballad(M, bus, when, step, spb, root) {                      // slow & sparse: soft root + shimmer, no drums
-    if (step === 0) M.note(bus, when, root, 0.6, 0.11, 'triangle');
-    else if (step === 8) M.note(bus, when, root * FIFTH, 0.45, 0.08, 'triangle');
-    if (step === 6 || step === 14) M.bell(bus, when, root * 3, 0.5, 0.05);
-  },
-  waltz(M, bus, when, step, spb, root) {                       // 3/4 BOOM-pah-pah (spb 12): root+timpani on 1, fifth on 2&3
-    if (step === 0) { M.bass(bus, when, root, 0.2, 0.17); M.timpani(bus, when, root, 0.3); }
-    else if (step === 4 || step === 8) { M.note(bus, when, root * FIFTH, 0.13, 0.10, 'square'); M.hat(bus, when, 0.04, 0.02); }
-  },
-};
-
-// Build a looping chiptune scene from a melody event-list + per-bar chord roots. Returns a scene
-// object (bpm/stepsPerBar/bars/drones/step) the MusicDirector engine + playlist understand.
-function chiptune({ bpm, spb = 16, lead, chords, style = 'folk', leadType = 'square', leadVol = 0.18, drones = [] }) {
-  const L = buildLead(lead);
-  const bars = Math.round(L.length / spb);
-  return {
-    bpm, stepsPerBar: spb, bars,
-    // chiptune drones are part of a FIXED arrangement, not adaptive layers — force an intensity
-    // band that keeps _ramp01 pinned at 1 so they sound at the menu's default intensity (0).
-    drones: drones.map((d) => ({ ...d, min: -1, max: -0.5 })),
-    step(M, bus, when, bar, step) {
-      const stepSec = 60 / bpm / 4;
-      const ev = L[(bar * spb + step) % L.length];
-      if (ev) M.lead(bus, when, ev.f, ev.dur * stepSec * 0.92, leadVol, leadType);
-      ACCOMP[style](M, bus, when, step, spb, NF[chords[bar % chords.length]]);
-    },
-  };
-}
-
 // Scene registry. Each scene:
 //   { bpm, drones:[{ id, min, max, gain, build(M,bus)->droneHandle }], step(M,bus,when,bar,step,I) }
 // `build` returns a drone handle (see MusicDirector.drone); the engine ramps handle.gain
@@ -218,87 +142,6 @@ export const SCENES = {
       if (step === 0 && bar % 2 === 0) { M.bell(bus, when, 220, 1.4, 0.14); M.timpani(bus, when, 73, 0.35); }
     },
   },
-
-  // ═══ Soviet chiptune jukebox (title-screen playlist) — 32-bit takes on WW2-era classics ═══
-
-  // Катюша — M. Blanter (1938). Plays the real recorded arrangement (assets/katyusha.mp3,
-  // accordion + oom-pah + strings) via the sample path; the synth chiptune below stays as the
-  // graceful fallback if the MP3 fails to load. A minor, 2/4, dotted ♩.♪ lilt; arch verse (×2) →
-  // lifted answer (peak C6) → resolve to A.
-  katyusha: { audioUrl: 'assets/katyusha.mp3', ...chiptune({
-    bpm: 116, style: 'folk', leadVol: 0.18,
-    lead: [
-      ['E5', 6], ['E5', 2], ['F5', 6], ['G5', 2],                                     // line 1a (dotted lilt rising)
-      ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 4], ['E5', 4],               // line 1b (settle back to E)
-      ['E5', 6], ['E5', 2], ['F5', 6], ['G5', 2],                                     // line 2a
-      ['A5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8],                          // line 2b (hold)
-      ['A5', 6], ['A5', 2], ['B5', 6], ['C6', 2],                                     // line 3a (lift, peak C6)
-      ['B5', 2], ['A5', 2], ['G5', 2], ['F5', 2], ['E5', 8],                          // line 3b (descend, hold)
-      ['E5', 6], ['F5', 2], ['G5', 6], ['F5', 2],                                     // line 4a
-      ['E5', 2], ['D5', 2], ['C5', 2], ['B4', 2], ['A4', 8],                          // line 4b (resolve to tonic A)
-    ],
-    chords: ['A2', 'E2', 'A2', 'E2', 'A2', 'E2', 'E2', 'A2'],
-  }) },
-
-  // Полюшко-поле (Cavalry of the Steppe) — L. Knipper (1933). E-minor; galloping canter bass.
-  polyushko: chiptune({
-    bpm: 112, style: 'gallop', leadVol: 0.18,
-    lead: [
-      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['Fs4', 8], [0, 8],            // phrase 1 (descending Em triad)
-      ['B4', 4], ['G4', 4], ['E4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 4], // phrase 2
-      ['D5', 4], ['B4', 4], ['G4', 4], ['A4', 4], ['B4', 8], [0, 8],            // phrase 3 (lift)
-      ['B4', 4], ['A4', 4], ['G4', 4], ['Fs4', 4], ['E4', 8], [0, 8],          // phrase 4 (resolve to tonic)
-    ],
-    chords: ['E2', 'B2', 'E2', 'B2', 'E2', 'B2', 'B2', 'E2'],
-  }),
-
-  // Марш защитников Москвы — B. Mokrousov (1941). D-minor brisk defenders' march.
-  defenceMoscow: chiptune({
-    bpm: 124, style: 'march', leadVol: 0.17,
-    lead: [
-      ['D5', 4], ['D5', 4], ['E5', 4], ['F5', 4], ['E5', 8], ['D5', 4], [0, 4],   // phrase 1
-      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 8], ['D5', 8],           // phrase 2
-      ['F5', 4], ['F5', 4], ['G5', 4], ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['E5', 4], // phrase 3
-      ['D5', 8], ['C5', 4], ['D5', 4], ['D5', 16],                                // phrase 4 (cadence + final)
-    ],
-    chords: ['D2', 'A2', 'G2', 'A2', 'F2', 'D2', 'A2', 'D2'],
-  }),
-
-  // Тёмная ночь — N. Bogoslovsky (1943). G-minor tender ballad; sparse, no drums.
-  darkNight: chiptune({
-    bpm: 72, style: 'ballad', leadType: 'triangle', leadVol: 0.20,
-    drones: [{ id: 'pad', min: 0, max: 1, gain: 0.10, build: (M, bus) => M.drone(bus, [NF.G2, NF.D3], { cutoff: 600 }) }],
-    lead: [
-      ['D5', 4], ['C5', 2], ['As4', 2], ['A4', 4], ['G4', 4], ['G4', 8], [0, 8],                 // phrase 1 (descending)
-      ['D5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 4], ['C5', 8], [0, 8],     // phrase 2
-      ['As4', 4], ['C5', 2], ['D5', 2], ['Ds5', 4], ['D5', 2], ['C5', 2], ['As4', 8], [0, 8],    // phrase 3
-      ['A4', 4], ['As4', 2], ['C5', 2], ['A4', 4], ['G4', 4], ['G4', 16],                        // phrase 4 (resolve)
-    ],
-    chords: ['G2', 'D2', 'C3', 'D2', 'Ds3', 'D2', 'D2', 'G2'],
-  }),
-
-  // Священная война — A. Alexandrov (1941). D-minor 3/4 anthem; heavy BOOM-pah-pah waltz-march.
-  sacredWar: chiptune({
-    bpm: 80, spb: 12, style: 'waltz', leadVol: 0.18,
-    drones: [
-      { id: 'choir', min: 0, max: 1, gain: 0.10, build: (M, bus) => M.drone(bus, [NF.D3, NF.A3], { cutoff: 520 }) },
-      { id: 'sub', min: 0, max: 1, gain: 0.12, build: (M, bus) => M.drone(bus, [NF.D2], { cutoff: 180, type: 'sine' }) },
-    ],
-    lead: [
-      ['A4', 4], ['D5', 4], ['D5', 4], ['C5', 4], ['D5', 4], ['F5', 4],   // phrase 1 (the call, rising to F5)
-      ['E5', 4], ['D5', 4], ['A4', 4], ['D5', 12],                        // phrase 2 (held tonic)
-      ['A5', 4], ['A5', 4], ['G5', 4], ['F5', 4], ['A5', 4], ['G5', 4],   // phrase 3 (higher answer)
-      ['F5', 4], ['E5', 4], ['D5', 4], ['D5', 12],                        // phrase 4 (resolve)
-    ],
-    chords: ['D2', 'D2', 'A2', 'D2', 'D2', 'As2', 'A2', 'D2'],
-  }),
-};
-
-// Title-screen jukebox order: Korobeiniki (the existing 'menu' chiptune) then the 5 classics,
-// sequenced for mood variety (folk → anthem → folk → gallop → ballad → march). The MusicDirector
-// playlist auto-advances when each track finishes its loops. Keep names in sync with SCENES.
-const PLAYLISTS = {
-  menu: ['menu', 'sacredWar', 'katyusha', 'polyushko', 'darkNight', 'defenceMoscow'],
 };
 
 export class MusicDirector {
@@ -315,7 +158,6 @@ export class MusicDirector {
     this.drones = [];          // [{ def, handle }] sustained layers of the active scene
     this.scene = null;         // active scene def
     this.variant = null;       // optional scene flavor (e.g. boss 'mitri'/'tolo')
-    this.playlist = null;      // active jukebox { id, members[], idx, fade } or null (single-scene mode)
 
     this.intensity = 0; this._intTarget = 0;
     this.stress = 0; this._stressTarget = 0;
@@ -324,11 +166,6 @@ export class MusicDirector {
     this._nextNoteTime = 0;    // absolute ctx time of the next 16th step
     this._bar = 0; this._step = 0;
     this._pending = null;      // scene requested before ctx was ready (defensive; director only exists post-init)
-
-    this.samples = {};         // url → { buffer, failed, promise } — decoded MP3 cache (real recordings)
-    this.sceneIsSample = false;// active scene plays a decoded sample instead of synth notes
-    this._sampleSrc = null;    // active AudioBufferSourceNode for a sample scene
-    this._preloadSamples();    // warm any SCENES[*].audioUrl so it's ready before the jukebox reaches it
   }
 
   get t() { return this.ctx ? this.ctx.currentTime : 0; }
@@ -354,71 +191,6 @@ export class MusicDirector {
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), when + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
     o.start(when); o.stop(when + dur + 0.05);
-  }
-
-  // Fat "64-bit" lead — the chiptune melody voice. Three detuned oscillators (super-square
-  // chorus) + a sub-octave for body, a soft click-free ADSR, a delayed vibrato that only
-  // blooms on held notes (so quick notes stay tight), and a rounding lowpass with a little
-  // attack-brightness. Much warmer/thicker than the single-osc `note()` blip it replaces.
-  lead(bus, when, freq, dur, vol, type = 'square') {
-    if (!this.ctx) return;
-    const t = when, end = when + dur;
-    const g = this.ctx.createGain();
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.Q.value = 0.7;
-    const cut = Math.min(7000, Math.max(1300, freq * 5));
-    lp.frequency.setValueAtTime(cut * 1.5, t);                 // bright on the attack…
-    lp.frequency.exponentialRampToValueAtTime(cut, t + 0.10);  // …then settle (movement)
-    lp.connect(g); g.connect(bus);
-
-    const subType = type === 'sawtooth' ? 'sawtooth' : type === 'triangle' ? 'triangle' : 'square';
-    const oscs = [];
-    const mk = (mult, cents, oType, lvl) => {
-      const o = this.ctx.createOscillator();
-      o.type = oType; o.frequency.setValueAtTime(freq * mult, t); o.detune.setValueAtTime(cents, t);
-      const vg = this.ctx.createGain(); vg.gain.value = lvl;
-      o.connect(vg); vg.connect(lp);
-      o.start(t); o.stop(end + 0.2); oscs.push(o);
-      return o;
-    };
-    const o1 = mk(1, -7, type, 0.42);   // detuned pair → chorus shimmer
-    const o2 = mk(1, +7, type, 0.42);
-    mk(1, 0, type, 0.30);               // dry center to anchor pitch
-    mk(0.5, 0, subType, 0.30);          // sub-octave → warmth/body
-
-    // delayed vibrato (Hz offset summed onto the detuned pair) — sings on long notes only
-    const lfo = this.ctx.createOscillator(), lfoG = this.ctx.createGain();
-    lfo.type = 'sine'; lfo.frequency.value = 5.4;
-    lfoG.gain.setValueAtTime(0.0001, t);
-    lfoG.gain.linearRampToValueAtTime(freq * 0.007, t + Math.min(0.22, dur * 0.45));
-    lfo.connect(lfoG); lfoG.connect(o1.frequency); lfoG.connect(o2.frequency);
-    lfo.start(t); lfo.stop(end + 0.2);
-
-    const peak = Math.max(0.0004, vol), sus = peak * 0.78;
-    const atk = Math.min(0.025, dur * 0.3), dec = Math.min(0.09, dur * 0.3);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(peak, t + atk);            // linear attack = no click
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0003, sus), t + atk + dec);
-    g.gain.setValueAtTime(Math.max(0.0003, sus), Math.max(t + atk + dec, end - 0.04));
-    g.gain.exponentialRampToValueAtTime(0.0001, end + 0.16);  // release tail
-  }
-
-  // Weighted bass — square body + a sine sub-octave through a lowpass, short pluck. Gives the
-  // oom-pah/march low end real heft instead of a thin square (the "fuller" half of 64-bit).
-  bass(bus, when, freq, dur, vol) {
-    if (!this.ctx) return;
-    const g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = Math.min(1900, freq * 4.5); lp.Q.value = 0.8;
-    lp.connect(g); g.connect(bus);
-    const sq = this.ctx.createOscillator(); sq.type = 'square'; sq.frequency.setValueAtTime(freq, when);
-    const sqg = this.ctx.createGain(); sqg.gain.value = 0.55; sq.connect(sqg); sqg.connect(lp);
-    const sub = this.ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(freq * 0.5, when);
-    const sg = this.ctx.createGain(); sg.gain.value = 0.7; sub.connect(sg); sg.connect(lp);
-    const peak = Math.max(0.0004, vol);
-    g.gain.setValueAtTime(0.0001, when);
-    g.gain.linearRampToValueAtTime(peak, when + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-    sq.start(when); sub.start(when); sq.stop(when + dur + 0.05); sub.stop(when + dur + 0.05);
   }
 
   brass(bus, when, freq, dur, vol) { // warm two-saw → lowpass stab
@@ -524,86 +296,26 @@ export class MusicDirector {
     return { gain: g, stop: (when = this.t) => { try { for (const o of oscs) o.stop(when + 0.6); } catch (e) {} } };
   }
 
-  // ---- sample (MP3) playback ----
-  // Real recordings routed through the SAME scene bus as the synth, so crossfade, the stress
-  // duck, and the diegetic radio's music-duck all still apply (mix stays downstream of musicGain).
-  // Synth remains the fallback whenever the buffer isn't loaded (or fails to load).
-  _preloadSamples() {
-    const urls = [...new Set(Object.values(SCENES).map((s) => s && s.audioUrl).filter(Boolean))];
-    for (const u of urls) this._loadSample(u);
-  }
-  _loadSample(url) {
-    let rec = this.samples[url];
-    if (rec) return rec.promise || Promise.resolve(rec.buffer);
-    rec = this.samples[url] = { buffer: null, failed: false, promise: null };
-    rec.promise = fetch(url)
-      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
-      .then((ab) => this.ctx.decodeAudioData(ab))
-      .then((buf) => { rec.buffer = buf; return buf; })
-      .catch(() => { rec.failed = true; return null; });
-    return rec.promise;
-  }
-  _startSample(buffer, bus, name) {
-    const src = this.ctx.createBufferSource();
-    src.buffer = buffer; src.loop = false; src.connect(bus);
-    // in a jukebox, advance when the recording finishes; standalone (asset viewer) plays once
-    src.onended = () => { if (this._sampleSrc === src && this.playlist && this.sceneName === name) this._advancePlaylist(); };
-    src.start(this.t + 0.04);
-    this._sampleSrc = src;
-  }
-  _stopSample() { if (this._sampleSrc) { try { this._sampleSrc.onended = null; this._sampleSrc.stop(); } catch (e) {} this._sampleSrc = null; } }
-
   // ---- scene control ----
-  // Public scene change: any explicit setScene leaves jukebox (playlist) mode.
-  setScene(name, opts = {}) { this.playlist = null; this._applyScene(name, opts); }
-
-  // Start (or no-op if already running) a named jukebox from PLAYLISTS: plays each member scene
-  // for its loops, then auto-advances (see the scheduler). game.js points the title menu here.
-  setPlaylist(id, { fade = 1.6 } = {}) {
-    if (!this.ctx) return;
-    const members = (PLAYLISTS[id] || []).filter((n) => SCENES[n]);
-    if (!members.length) return;
-    if (this.playlist && this.playlist.id === id) return;     // already running this jukebox
-    this.playlist = { id, members, idx: 0, fade };
-    this._applyScene(members[0], { fade });
-  }
-
-  _advancePlaylist() {
-    const pl = this.playlist;
-    if (!pl || pl.members.length < 2) return;                 // single-member playlist just loops
-    pl.idx = (pl.idx + 1) % pl.members.length;
-    this._applyScene(pl.members[pl.idx], { fade: pl.fade });   // _applyScene leaves this.playlist intact
-  }
-
-  _applyScene(name, { fade = 1.2, variant = null } = {}) {
+  setScene(name, { fade = 1.2, variant = null } = {}) {
     if (!this.ctx) { this._pending = name; return; }
     this.variant = variant;
     if (name === this.sceneName) return;
     const def = SCENES[name];
     if (!def) return;
     const t = this.t;
-    // fade out + tear down the old scene (let any sample keep playing through its bus fade, then stop)
+    // fade out + tear down the old scene
     if (this.sceneBus) {
-      const old = this.sceneBus, oldDrones = this.drones, oldSrc = this._sampleSrc;
-      if (oldSrc) oldSrc.onended = null;                       // forced stop must not trigger an advance
+      const old = this.sceneBus, oldDrones = this.drones;
       old.gain.cancelScheduledValues(t); old.gain.setTargetAtTime(0.0001, t, fade / 3);
       for (const d of oldDrones) if (d.handle) d.handle.stop(t + fade);
-      setTimeout(() => { try { old.disconnect(); } catch (e) {} try { oldSrc && oldSrc.stop(); } catch (e) {} }, (fade + 1) * 1000);
+      setTimeout(() => { try { old.disconnect(); } catch (e) {} }, (fade + 1) * 1000);
     }
-    this._sampleSrc = null; this.sceneIsSample = false;
-    // build the new scene bus
+    // build the new scene bus + drones
     const bus = this.ctx.createGain(); bus.gain.value = 0.0001; bus.connect(this.out);
     bus.gain.setTargetAtTime(1, t, fade / 3);
     this.sceneBus = bus; this.scene = def; this.sceneName = name;
-    // real-recording scene → play the decoded MP3 through the bus; synth covers it until ready
-    const rec = def.audioUrl ? this.samples[def.audioUrl] : null;
-    if (def.audioUrl && rec && rec.buffer) {
-      this.sceneIsSample = true; this.drones = [];
-      this._startSample(rec.buffer, bus, name);
-    } else {
-      if (def.audioUrl) this._loadSample(def.audioUrl);        // not ready yet → load for next time, synth now
-      this.drones = (def.drones || []).map((dd) => ({ def: dd, handle: dd.build(this, bus) }));
-    }
+    this.drones = (def.drones || []).map((dd) => ({ def: dd, handle: dd.build(this, bus) }));
     this._bar = 0; this._step = 0; this._nextNoteTime = t + 0.06;
     this._ensureScheduler();
   }
@@ -631,11 +343,10 @@ export class MusicDirector {
   stop({ fade = 1.0 } = {}) {
     const t = this.t;
     const bus = this.sceneBus;
-    this._stopSample(); this.sceneIsSample = false;
     if (bus) bus.gain.setTargetAtTime(0.0001, t, fade / 3);
     for (const d of this.drones) if (d.handle) d.handle.stop(t + fade);
     setTimeout(() => { try { bus && bus.disconnect(); } catch (e) {} }, (fade + 1) * 1000);
-    this.sceneBus = null; this.scene = null; this.sceneName = null; this.drones = []; this.playlist = null;
+    this.sceneBus = null; this.scene = null; this.sceneName = null; this.drones = [];
     if (this._sched) { clearTimeout(this._sched); this._sched = null; }
   }
 
@@ -646,16 +357,9 @@ export class MusicDirector {
       if (!this.ctx) { this._sched = null; return; }
       const stepDur = 60 / (this.scene ? this.scene.bpm : 120) / 4; // 16th notes
       while (this.scene && this._nextNoteTime < this.t + LOOKAHEAD) {
-        if (!this.sceneIsSample) {                              // sample scenes play the MP3, not synth notes
-          try { this.scene.step(this, this.sceneBus, this._nextNoteTime, this._bar, this._step, this.intensity); } catch (e) {}
-          if (this.stress > 0.02) this._heartbeat(this._nextNoteTime, this._step);
-        }
-        this._step = (this._step + 1) % (this.scene.stepsPerBar || 16);
-        if (this._step === 0) {
-          this._bar++;
-          // synth scenes advance the jukebox on bar count; sample scenes advance on the MP3's onended
-          if (!this.sceneIsSample && this.playlist && this._bar >= (this.scene.bars || 8) * (this.scene.loops || 2)) this._advancePlaylist();
-        }
+        try { this.scene.step(this, this.sceneBus, this._nextNoteTime, this._bar, this._step, this.intensity); } catch (e) {}
+        if (this.stress > 0.02) this._heartbeat(this._nextNoteTime, this._step);
+        this._step = (this._step + 1) % 16; if (this._step === 0) this._bar++;
         this._nextNoteTime += stepDur;
       }
       this._sched = setTimeout(loop, TICK);
