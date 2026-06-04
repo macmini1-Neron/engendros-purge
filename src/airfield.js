@@ -150,7 +150,7 @@ function buildKPP(world, b, gx, gz) {
   world._solid(b, 6, 3, 3, gx - 4, 1.5, gz, OCH.mid, { tint: 0.04 });
   b.box(6.2, 0.5, 3.2, gx - 4, 0.25, gz, RED);                          // red base band
   b.box(6.6, 0.4, 3.6, gx - 4, 3.15, gz, 0x6a4a32);                     // roof
-  for (const dx of [-1.6, 1.6]) { b.box(1.1, 1.2, 0.1, gx - 4 + dx, 1.7, gz - 1.5 - 0.02, 0x6a7f86); } // windows (S)
+  for (const dx of [-1.6, 1.6]) { b.box(1.1, 1.2, 0.12, gx - 4 + dx, 1.7, gz - 1.55, 0x8fb0b6); b.box(1.24, 1.34, 0.08, gx - 4 + dx, 1.7, gz - 1.5, 0x45474a); } // glass windows + frame (S)
   b.box(0.1, 2.2, 1.2, gx - 1.0, 1.1, gz, 0x2d4a2a);                    // green door (E, toward the lane)
   star3D(b, gx - 4, 2.55, gz - 1.55, 0.4, RED, { ry: Math.PI, depth: 0.09 }); // proper 3-D red star on the gable
   // gate pillars + шлагбаум barrier (counterweighted red/white pole) across the lane
@@ -496,12 +496,14 @@ const SILV = { hi: 0xccd0d4, mid: 0xb8bcc0, lo: 0x8c9094 };               // bar
 function buildFuelFarm(world, b, cx, cz) {                                // ГСМ — vertical РВС tanks inside an earth bund
   for (let s = -1; s <= 1; s += 2) { b.box(20, 1.4, 2.2, cx, 0.7, cz + s * 9, EARTH.mid, { tint: 0.03 }); b.box(2.2, 1.4, 20, cx + s * 10, 0.7, cz, EARTH.mid, { tint: 0.03 }); }
   for (let s = -1; s <= 1; s += 2) { b.box(20, 0.22, 2.2, cx, 1.45, cz + s * 9, SOD.mid); b.box(2.2, 0.22, 20, cx + s * 10, 1.45, cz, SOD.mid); }
-  for (const [dx, dz] of [[-6, -5], [-6, 5], [6, -5], [6, 5]]) {          // 4 РВС tanks Ø6.4 h6
+  for (const [dx, dz] of [[-6, -5], [-6, 5], [6, -5], [6, 5]]) {          // 4 РВС vertical steel tanks (taller, low conical roof)
     const x = cx + dx, z = cz + dz;
-    cyl(b, 3.2, 6, x, 3, z, SILV.mid, { seg: 16, tint: 0.05 });
-    cyl(b, 3.26, 0.6, x, 4.3, z, YMARK, { seg: 16 });                     // yellow hazard band
-    cyl(b, 3.3, 0.35, x, 6.05, z, SILV.hi, { seg: 16 }); b.box(6.5, 0.28, 0.3, x, 6.15, z, SILV.lo);
-    collider(world, x, z, 3.35, 0, 6.2);
+    cyl(b, 3.2, 7, x, 3.5, z, SILV.mid, { seg: 18, tint: 0.05 });         // tall shell
+    cyl(b, 3.26, 0.5, x, 1.2, z, SILV.lo, { seg: 18 });                   // base ring
+    cyl(b, 3.28, 0.7, x, 5.0, z, YMARK, { seg: 18 });                     // yellow product band
+    { const g = new THREE.CylinderGeometry(0.25, 3.3, 1.3, 18); b.geo(g, x, 7.65, z, SILV.hi, { tint: 0.04 }); g.dispose(); } // low conical roof
+    cyl(b, 0.22, 0.6, x, 8.5, z, IRON, { seg: 8 });                       // roof vent
+    collider(world, x, z, 3.35, 0, 7.2);
   }
   world._solid(b, 4, 3, 4.5, cx, 1.5, cz - 14, CONC.mid, { tint: 0.03 }); // pump house
   b.box(4.3, 0.4, 4.8, cx, 3.2, cz - 14, CONC.lo);
@@ -526,7 +528,7 @@ function buildBarracks(world, b, cx, cz) {                                // ш�
   b.box(18.4, 1.1, 10.4, cx, 0.55, cz, CONC.lo, { tint: 0.03 });         // plinth
   b.box(18.5, 0.5, 10.5, cx, 7.05, cz, OCH.lo); b.box(18.7, 0.5, 10.7, cx, 7.5, cz, CONC.mid); // cornice + roof
   for (let r = 0; r < 2; r++) for (let c = 0; c < 6; c++) { const wx = cx - 7 + c * 2.8, wy = 2.5 + r * 2.8;
-    b.box(1.5, 1.9, 0.22, wx, wy, cz - 5.04, OCH.hi); b.box(1.15, 1.55, 0.14, wx, wy, cz - 5.12, 0x2a3340); } // windows face S (gate)
+    b.box(1.5, 1.9, 0.22, wx, wy, cz - 5.04, OCH.hi); b.box(1.15, 1.55, 0.16, wx, wy, cz - 5.13, 0x8fb0b6); b.box(0.16, 1.55, 0.17, wx, wy, cz - 5.16, 0x45474a); } // real-glass panes + mullion (face S/gate)
   world._solid(b, 4, 3, 2.2, cx, 1.5, cz - 6, OCH.lo, { tint: 0.03 });   // porch
   b.box(2.2, 2.5, 0.3, cx, 1.35, cz - 7.15, 0x3a2e1f);                   // door
   star3D(b, cx, 5.7, cz - 5.0, 0.95, RED, { ry: Math.PI, depth: 0.18 }); // proper 3-D red star
