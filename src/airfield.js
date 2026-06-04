@@ -169,7 +169,7 @@ function buildKPP(world, b, gx, gz) {
 // earth+grass berm (hill-like); 2-leaf olive blast doors (parted → walkable), rear 3×3 gas duct + deflector
 // + soot, white shelter №. Front (doors) faces −Z (the apron). Research: АУ-13 = 12.9×28, 0.6 m concrete.
 // =====================================================================
-function buildArchShelter(world, b, cx, cz, num, face = -1) {
+function buildArchShelter(world, b, cx, cz, num, face = -1, variant = 0) {
   const R = 6.6, len = 26, f = face, mouth = cz + f * len / 2, rear = cz - f * len / 2, N = 16, segH = (Math.PI * (R + 2) / N) * 1.1;
   // earth + grass HILL (the dominant exterior — covers the concrete arch, like a real ЗС)
   for (let i = 0; i < N; i++) {
@@ -177,7 +177,9 @@ function buildArchShelter(world, b, cx, cz, num, face = -1) {
     b.box(3.4, segH, len + 0.4, cx + c * (R + 1.3), s * (R + 1.3), cz, i % 2 ? pal.mid : pal.lo, { rz: a, tint: 0.03 }); // overlapping → continuous hill
   }
   b.box(3.6, 0.5, len + 0.5, cx, R + 2.6, cz, SOD.hi, { tint: 0.06 });                                    // grass crown ridge
-  b.box(R * 2 - 2, R * 1.5, len - 1.5, cx, R * 0.72, cz, 0x16140f);                                       // dark interior cavity (seen through the mouth)
+  // INNER concrete arch liner (interior ceiling/walls) + walkable floor → HOLLOW & ENTERABLE (replaces the old solid block)
+  for (let i = 2; i < N - 2; i++) { const a = Math.PI * (i + 0.5) / N, c = Math.cos(a), s = Math.sin(a); b.box(2.1, segH * 0.95, len - 1.4, cx + c * (R - 0.7), s * (R - 0.7) + 0.15, cz, i % 2 ? CONC.lo : CONC.slot, { rz: a, tint: 0.02 }); }
+  b.box(R * 2 - 3, 0.12, len - 1.4, cx, 0.06, cz, CONC.mid, { tint: 0.02 });                              // concrete floor
   // concrete arch-ring FACE at the mouth + lintel (mouth opens toward `face`)
   for (let i = 0; i < N; i++) {
     const a = Math.PI * (i + 0.5) / N, c = Math.cos(a), s = Math.sin(a);
@@ -188,12 +190,40 @@ function buildArchShelter(world, b, cx, cz, num, face = -1) {
   world._solid(b, R * 2 - 4, 3.8, 0.7, cx - 1, 1.9, rear, CONC.lo, { tint: 0.03 });
   b.box(3, 3, 1.0, cx + R - 2.2, 1.5, rear - f * 0.7, IRON); b.box(2.2, 1.1, 1.1, cx + R - 2.2, 3.9, rear - f * 0.6, shade(IRON, -0.02)); // duct + soot
   b.box(0.6, 3.8, 3.4, cx + R - 0.3, 1.9, rear - f * 1.9, CONC.lo);                                       // blast deflector
-  // 2 olive blast doors (parted ~1.8 m → walk in) + colliders ; white shelter №
+  // 2 olive blast doors (parted ~1.8 m → walk in) + interior locking wheel + colliders ; white shelter №
   for (const sx of [-1, 1]) { const dx = cx + sx * (R / 2 + 0.5);
     b.box(R - 1.1, 5.6, 0.45, dx, 2.8, mouth + f * 0.35, 0x3a4a2a, { tint: 0.03 }); b.box(R - 1.3, 0.4, 0.5, dx, 5.5, mouth + f * 0.35, 0x46582f);
+    cyl(b, 0.26, 0.12, dx - sx * 0.5, 2.6, mouth + f * 0.12, 0x2a3320, { rx: Math.PI / 2, seg: 10 });     // interior locking wheel
     collider(world, dx, mouth + f * 0.35, (R - 1.1) / 2, 0, 5.6, 0.3); }
   signPlane(world, num, cx - (R / 2 + 0.5), 3.3, mouth + f * 0.62, 1.6, 1.6, f < 0 ? Math.PI : 0, { color: '#e8e6dd', size: 130 });
   b.box(R * 2 + 1, 0.07, 9, cx, 0.05, mouth + f * 5.5, CONC.lo, { tint: 0.02 });                          // apron/taxi spur in front
+  buildShelterInterior(world, b, cx, cz, len, R, mouth, f, variant);
+}
+// shelter interior dressing (3 variants) — lights, floor markings, cable tray, fire cabinet + contents
+function buildShelterInterior(world, b, cx, cz, len, R, mouth, f, variant) {
+  const IRX = 0x2a2a2e;
+  for (let z = -len / 2 + 4; z < len / 2 - 3; z += 4.5) for (const sx of [-1, 1]) b.box(1.3, 0.18, 0.5, cx + sx * 2.3, R * 1.05, cz + z, 0xfaf3d2); // ceiling strip lights
+  b.box(0.25, 0.05, len - 4, cx, 0.13, cz, YMARK);                                                        // floor centreline
+  for (const sx of [-1, 1]) b.box(0.18, 0.05, len - 6, cx + sx * 3.6, 0.13, cz, YMARK);                   // wing-tip lines
+  b.box(2.2, 0.05, 0.3, cx, 0.13, cz - f * (len / 2 - 3.5), 0xc1272d);                                    // red nose-stop (rear)
+  b.box(0.12, 0.2, len - 5, cx - R + 0.9, 2.3, cz, 0x6a6760);                                             // cable tray (left wall)
+  for (const z of [-len / 4, len / 4]) b.box(0.45, 0.6, 0.32, cx - R + 0.7, 1.5, cz + z, 0x55504a);       // power panels
+  b.box(0.4, 0.7, 0.32, cx + R - 1.0, 1.3, mouth + f * 2.5, 0xb02a22);                                    // fire-extinguisher cabinet
+  if (variant === 0) {        // ARMED / ALERT: weapons trolley + 2 UB-32 pods + ground-power reel + chocks
+    b.box(2.0, 0.55, 0.85, cx + 3.0, 0.42, cz + f * 3, 0x3e4a1f); for (const wx of [-0.7, 0.7]) cyl(b, 0.16, 0.1, cx + 3.0 + wx, 0.16, cz + f * 3, IRX, { rx: Math.PI / 2, seg: 6 });
+    for (const px of [-0.3, 0.3]) cyl(b, 0.22, 1.6, cx + 3.0 + px, 0.78, cz + f * 3, 0x6a6760, { rx: Math.PI / 2, seg: 10 });
+    b.box(0.5, 0.6, 0.5, cx - 3.2, 0.45, cz - f * 1, 0xc78a2a); cyl(b, 0.33, 0.1, cx - 3.2, 0.95, cz - f * 1, IRX, { rx: Math.PI / 2, seg: 10 });
+    for (const sx of [-1, 1]) b.box(0.5, 0.22, 0.4, cx + sx * 1.6, 0.16, cz, 0xf3c14a);
+  } else if (variant === 1) { // MAINTENANCE: engine on a stand + workbench + tool cabinet + oil drums
+    b.box(2.2, 0.6, 1.2, cx, 0.4, cz, IRX); cyl(b, 0.6, 2.2, cx, 1.45, cz, 0x86837a, { rx: Math.PI / 2, seg: 12, tint: 0.03 }); cyl(b, 0.45, 0.5, cx, 1.45, cz - f * 1.3, 0x2f2f34, { rx: Math.PI / 2, seg: 10 });
+    b.box(2.4, 0.85, 0.8, cx - 3.2, 0.5, cz - f * 3, 0x6a5638); b.box(2.4, 0.12, 0.85, cx - 3.2, 0.96, cz - f * 3, 0x8a7048);
+    b.box(0.7, 1.3, 0.6, cx - 3.6, 0.65, cz + f * 0.5, 0x55504a);
+    for (const [dx, dz] of [[3.2, 3], [3.7, 3.4]]) cyl(b, 0.4, 1.0, cx + dx, 0.5, cz + f * dz, 0x9a3b2a, { seg: 8 });
+  } else {                    // EMPTY / READY: chocks + tow bar + sand buckets
+    for (const sx of [-1, 1]) b.box(0.5, 0.25, 0.4, cx + sx * 1.6, 0.18, cz, 0xf3c14a);
+    b.box(0.12, 0.12, 2.6, cx - 1.2, 0.2, cz + f * 3, IRX); b.box(0.4, 0.12, 0.12, cx - 1.2, 0.2, cz + f * 1.6, IRX);
+    for (const sx of [-1, 1]) cyl(b, 0.18, 0.3, cx + sx * (R - 1.2), 0.2, mouth + f * 4, 0xc1272d, { seg: 8 });
+  }
 }
 
 // open earth+concrete revetment (капонир / обвалование) — U open toward −Z (apron)
@@ -649,7 +679,7 @@ export function buildAirfield(world, ox, oz) {
   buildKPP(world, b, ox - 87, oz + 44);
 
   // ② DISPERSED arch shelters — two staggered groups (W + E), opening N (face +1) toward the apron; NOT a tight row
-  [[-192, 96], [-158, 108], [-124, 96], [14, 96], [48, 108], [82, 96]].forEach(([sx, sz], i) => buildArchShelter(world, b, ox + sx, oz + sz, '2' + (i + 1), +1));
+  [[-192, 96], [-158, 108], [-124, 96], [14, 96], [48, 108], [82, 96]].forEach(([sx, sz], i) => buildArchShelter(world, b, ox + sx, oz + sz, '2' + (i + 1), +1, i % 3)); // variant cycles → each shelter different inside
 
   // ③ КДП tower — runway MIDPOINT, flight-line side ; ④ ТЭЧ hangar — far rear (S), clear of the shelters
   buildTower(world, b, ox - 55, oz + 156);
