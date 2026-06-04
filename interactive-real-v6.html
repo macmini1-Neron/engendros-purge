@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ЭНГЕНДРОС · СТЕПЬ 1000×1000 — карта</title>
+<style>
+  :root { --ink:#e9e2cf; --gold:#c9a84a; --red:#b5302a; --panel:#1c211a; --line:#3a4232; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#10130d; color:var(--ink);
+    font-family:"Russo One","Arial Narrow",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  #wrap { display:grid; grid-template-columns:1fr 280px; gap:14px; height:100vh; padding:14px; }
+  #stage { position:relative; background:#161a10; border:2px solid var(--line); border-radius:6px; overflow:hidden; }
+  svg { width:100%; height:100%; display:block; }
+  .hdr { position:absolute; top:10px; left:14px; z-index:5; pointer-events:none; }
+  .hdr h1 { margin:0; font-size:19px; letter-spacing:2px; color:var(--gold); text-shadow:0 2px 4px #000; }
+  .hdr div { font-size:11px; opacity:.7; letter-spacing:3px; }
+  aside { background:var(--panel); border:2px solid var(--line); border-radius:6px; padding:14px; overflow:auto; }
+  aside h2 { font-size:12px; letter-spacing:2px; color:var(--gold); margin:0 0 8px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  .leg { display:flex; align-items:center; gap:8px; font-size:12px; margin:7px 0; cursor:default; }
+  .sw { width:16px; height:16px; border-radius:3px; flex:0 0 auto; border:1px solid #0008; }
+  .leg small { opacity:.6; margin-left:auto; font-size:10px; letter-spacing:1px; }
+  #tip { position:absolute; z-index:9; pointer-events:none; background:#0d0f0a; border:1px solid var(--gold);
+    border-radius:5px; padding:7px 10px; font-size:12px; max-width:230px; opacity:0; transition:opacity .08s; box-shadow:0 6px 18px #000a; }
+  #tip b { color:var(--gold); display:block; letter-spacing:1px; margin-bottom:2px; }
+  #tip i { color:#9fb07e; font-style:normal; font-size:10.5px; }
+  .zone { cursor:pointer; transition:filter .1s; }
+  .zone:hover { filter:brightness(1.35); }
+  .lbl { font-size:12px; fill:var(--ink); text-anchor:middle; paint-order:stroke; stroke:#000a; stroke-width:3px; pointer-events:none; }
+  .sub { font-size:8px; fill:#cdd4b8; }
+  .road { stroke:#6e5f40; fill:none; stroke-linecap:round; }
+  .rim { stroke:#cfc; opacity:.04; }
+  footer { font-size:10px; opacity:.5; margin-top:10px; line-height:1.5; letter-spacing:.5px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <div class="hdr"><h1>СТЕПЬ · THE STEPPE</h1><div>1000 × 1000 m · OPEN WORLD</div></div>
+    <div id="tip"></div>
+    <svg id="map" viewBox="-545 -545 1090 1090" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <aside>
+    <h2>ЛЕГЕНДА · LEGEND</h2>
+    <div id="legend"></div>
+    <footer>
+      Сетка 100 м · North = +Z (вверх).<br>
+      Наведи курсор на объект.<br>
+      Map mirrors src/world.js _buildSteppe (HALF=500) + openworld.js.
+    </footer>
+  </aside>
+</div>
+<script>
+// world → SVG: x stays, z is negated so +Z (north) is UP. 1 svg unit = 1 metre.
+const HALF = 500;
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('map');
+const tip = document.getElementById('tip');
+const el = (n, a={}) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+// ---- data (real positions from world.js / openworld.js) ----
+const districts = [
+  { id:'kombinat',   name:'КОМБИНАТ',     en:'Metallurgical works (hub)', x:0,   z:0,    w:172, d:120, c:'#8a8f7a', note:'Central industrial hub by spawn — ЗАВОДОУПРАВЛЕНИЕ HQ, ПРОХОДНАЯ gatehouse, slag heap.' },
+  { id:'airfield',   name:'АЭРОДРОМ',     en:'Military airfield',         x:0,   z:250,  w:300, d:240, c:'#7e8896', note:'Far N. Runway/taxiway/apron, arch shelters, КДП tower, hangar, ПВО + radar, parked jets.' },
+  { id:'strongpoint',name:'ОПОРНЫЙ ПУНКТ',en:'WW2 field strongpoint (home)', x:-330, z:-300, w:112, d:112, c:'#8c7a4e', note:'Far SW — your home base + player spawn. Trench ring, блиндаж, землянки, ДЗОТ, НП tower.' },
+  { id:'kolkhoz',    name:'КОЛХОЗ',       en:'«Красный степной» farm',    x:300, z:-300, w:100, d:92,  c:'#7c8a4e', note:'Far SE. Barn, silos, orchard, FAB bombs, downed Su-24 wreck.' },
+  { id:'bunker',     name:'ОБЪЕКТ 1180',  en:'Secret bunker',             x:360, z:150,  w:64,  d:64,  c:'#6b6f76', note:'Far E. Buried command bunker behind an earth berm.' },
+];
+const roads = [ // [x1,z1,x2,z2,width]
+  [150,-440, 150,215, 7.5], // N–S spine
+  [-287,-300, 258,-300, 7.5], // E–W south road
+  [10,210, 160,210, 6],   // airfield spur
+  [142,150, 342,150, 6],  // bunker spur
+  [84,-40, 156,-40, 6],   // kombinát access
+];
+const pois = [
+  { name:'АЗС',     en:'Fuel station',  x:170, z:96,   c:'#b5302a' },
+  { name:'Остановка', en:'Bus stop',    x:159, z:-188, c:'#1f5fa0' },
+  { name:'КПП',     en:'Checkpoint',    x:150, z:-388, c:'#c9a84a' },
+  { name:'Конвой',  en:'Burnt convoy',  x:-95, z:-296, c:'#5e4630' },
+  { name:'Колодец', en:'Well + windpump', x:206, z:-212, c:'#9aa0a4' },
+];
+
+// ---- render ----
+// steppe ground + mountain border
+svg.appendChild(el('rect', { x:-HALF, y:-HALF, width:HALF*2, height:HALF*2, fill:'#8a9152', rx:4 }));
+svg.appendChild(el('rect', { x:-HALF-30, y:-HALF-30, width:(HALF+30)*2, height:(HALF+30)*2, fill:'none', stroke:'#5b5347', 'stroke-width':30 }));
+// 100 m grid
+for (let g=-HALF+100; g<HALF; g+=100) {
+  svg.appendChild(el('line', { class:'rim', x1:g, y1:-HALF, x2:g, y2:HALF, 'stroke-width':1 }));
+  svg.appendChild(el('line', { class:'rim', x1:-HALF, y1:g, x2:HALF, y2:g, 'stroke-width':1 }));
+}
+// roads (z negated)
+for (const [x1,z1,x2,z2,w] of roads)
+  svg.appendChild(el('line', { class:'road', x1, y1:-z1, x2, y2:-z2, 'stroke-width':w }));
+// telegraph pole dots along the two main routes (visual flavour)
+for (let z=-430; z<=206; z+=36) svg.appendChild(el('circle', { cx:155, cy:-z, r:1.6, fill:'#3a2e1e' }));
+for (let x=-270; x<=250; x+=38) svg.appendChild(el('circle', { cx:x, cy:305, r:1.6, fill:'#3a2e1e' }));
+
+function bind(node, title, sub, note) {
+  node.addEventListener('mousemove', e => {
+    const r = svg.getBoundingClientRect();
+    tip.style.left = (e.clientX - r.left + 14) + 'px';
+    tip.style.top  = (e.clientY - r.top + 12) + 'px';
+    tip.innerHTML = `<b>${title}</b><i>${sub}</i>` + (note ? `<div style="margin-top:5px">${note}</div>` : '');
+    tip.style.opacity = 1;
+  });
+  node.addEventListener('mouseleave', () => tip.style.opacity = 0);
+}
+
+// districts
+for (const d of districts) {
+  const g = el('g', { class:'zone' });
+  g.appendChild(el('rect', { x:d.x-d.w/2, y:-d.z-d.d/2, width:d.w, height:d.d, rx:6, fill:d.c, 'fill-opacity':0.5, stroke:d.c, 'stroke-width':2.5 }));
+  const t = el('text', { class:'lbl', x:d.x, y:-d.z-2 }); t.textContent = d.name; g.appendChild(t);
+  const s = el('text', { class:'lbl sub', x:d.x, y:-d.z+11 }); s.textContent = `(${d.x}, ${d.z})`; g.appendChild(s);
+  bind(g, d.name + ' · ' + d.en, `центр (${d.x}, ${d.z}) · ${d.w}×${d.d} m`, d.note);
+  svg.appendChild(g);
+}
+// POIs
+for (const p of pois) {
+  const g = el('g', { class:'zone' });
+  g.appendChild(el('circle', { cx:p.x, cy:-p.z, r:9, fill:p.c, stroke:'#0008', 'stroke-width':1.5 }));
+  const t = el('text', { class:'lbl', x:p.x, y:-p.z-13, 'font-size':9 }); t.textContent = p.name; g.appendChild(t);
+  bind(g, p.name + ' · ' + p.en, `roadside POI (${p.x}, ${p.z})`, '');
+  svg.appendChild(g);
+}
+// player spawn (★ at the strongpoint) + map centre
+const star = el('text', { x:-330, y:282+9, 'font-size':26, fill:'#c9a84a', 'text-anchor':'middle', 'paint-order':'stroke', stroke:'#000', 'stroke-width':2 });
+star.textContent = '★'; bind(star, 'СПАВН · Player spawn', 'inside the strongpoint (−330, −282)', ''); svg.appendChild(star);
+svg.appendChild(el('circle', { cx:0, cy:0, r:3, fill:'#fff', 'fill-opacity':.5 }));
+
+// legend
+const legend = document.getElementById('legend');
+const row = (c, name, sub) => { const d = document.createElement('div'); d.className='leg';
+  d.innerHTML = `<span class="sw" style="background:${c}"></span>${name}<small>${sub}</small>`; legend.appendChild(d); };
+districts.forEach(d => row(d.c, d.name, `${d.x},${d.z}`));
+row('#6e5f40', 'Дороги', 'roads');
+row('#c9a84a', 'POI ×5', 'АЗС/КПП/…');
+row('#c9a84a', '★ Спавн', '−330,−282');
+</script>
+</body>
+</html>
