@@ -144,6 +144,36 @@ export const SCENES = {
   },
 };
 
+// --- Soviet song jukebox: real recordings (assets/*.mp3, sourced from the Internet Archive +
+//     the owner's own Katyusha). Each is a "sample scene" — the MusicDirector plays the MP3 and
+//     segues to the next on end; no synth. The title menu points at the `soviet` playlist. ---
+const SONGS = [
+  ['slavyanka', 'Прощание славянки', 1912],
+  ['aviamarsh', 'Марш авиаторов', 1923],
+  ['rodina', 'Широка страна моя родная', 1936],
+  ['katyusha', 'Катюша', 1938],
+  ['katyusha_frontline', 'Фронтовая Катюша', 1938],
+  ['svyashchennaya_voyna', 'Священная война', 1941],
+  ['vzemlyanke', 'В землянке', 1942],
+  ['platochek', 'Синий платочек', 1942],
+  ['gimn_sssr', 'Государственный гимн СССР', 1944],
+  ['smuglyanka', 'Смуглянка', 1944],
+  ['dorogi', 'Эх, дороги', 1945],
+  ['podmoskovnye', 'Подмосковные вечера', 1956],
+  ['khotyat', 'Хотят ли русские войны', 1962],
+  ['solnce', 'Пусть всегда будет солнце', 1962],
+  ['vysote', 'На безымянной высоте', 1963],
+  ['nezhnost', 'Нежность', 1965],
+  ['srodina', 'С чего начинается Родина', 1968],
+  ['zhuravli', 'Журавли', 1969],
+  ['den_pobedy', 'День Победы', 1975],
+  ['million_roz', 'Миллион алых роз', 1982],
+  ['komarovo', 'Комарово', 1985],
+  ['peremen', 'Хочу перемен', 1987],
+];
+for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
+const PLAYLISTS = { soviet: SONGS.map((s) => s[0]) };
+
 export class MusicDirector {
   constructor(audio) {
     this.audio = audio;
@@ -158,6 +188,7 @@ export class MusicDirector {
     this.drones = [];          // [{ def, handle }] sustained layers of the active scene
     this.scene = null;         // active scene def
     this.variant = null;       // optional scene flavor (e.g. boss 'mitri'/'tolo')
+    this.playlist = null;      // active jukebox { id, members[], idx, fade } or null (single-scene mode)
 
     this.intensity = 0; this._intTarget = 0;
     this.stress = 0; this._stressTarget = 0;
@@ -166,6 +197,10 @@ export class MusicDirector {
     this._nextNoteTime = 0;    // absolute ctx time of the next 16th step
     this._bar = 0; this._step = 0;
     this._pending = null;      // scene requested before ctx was ready (defensive; director only exists post-init)
+
+    this.sceneIsSample = false;// active scene streams an MP3 (real recording) instead of synth notes
+    this._sampleEl = null;     // active HTMLAudioElement (streamed, low-memory) for a sample scene
+    this._sampleNode = null;   // its MediaElementSource node, routed through the scene bus
   }
 
   get t() { return this.ctx ? this.ctx.currentTime : 0; }
@@ -296,26 +331,115 @@ export class MusicDirector {
     return { gain: g, stop: (when = this.t) => { try { for (const o of oscs) o.stop(when + 0.6); } catch (e) {} } };
   }
 
+  // ---- sample (MP3) playback ----
+  // Real recordings are STREAMED through an <audio> element (not decoded into RAM — these tracks
+  // are minutes long; decoding 16 of them would cost ~1GB). The element feeds a MediaElementSource
+  // into the SAME scene bus as the synth, so crossfade, the stress duck, and the diegetic radio's
+  // music-duck all still apply (mix stays downstream of musicGain; invariant m.out !== musicGain).
+  // Standalone scenes loop; in a jukebox the track segues to the next on `ended`.
+  _startSample(url, bus, name) {
+    const el = new Audio(url); el.loop = !this.playlist; el.preload = 'auto';
+    let node = null;
+    try { node = this.ctx.createMediaElementSource(el); node.connect(bus); } catch (e) {}
+    el.onended = () => { if (this._sampleEl === el && this.playlist && this.sceneName === name) this._advancePlaylist(); };
+    el.onerror = () => { if (this._sampleEl === el && this.playlist && this.sceneName === name) this._advancePlaylist(); }; // skip a missing/bad file
+    el.play().catch(() => {});
+    this._sampleEl = el; this._sampleNode = node;
+  }
+  _stopSample() { this._teardownSample(this._sampleEl, this._sampleNode); this._sampleEl = null; this._sampleNode = null; }
+  _teardownSample(el, node) {
+    if (el) { try { el.onended = null; el.onerror = null; el.pause(); el.src = ''; el.load(); } catch (e) {} }
+    if (node) { try { node.disconnect(); } catch (e) {} }
+  }
+
   // ---- scene control ----
-  setScene(name, { fade = 1.2, variant = null } = {}) {
+  // Public scene change: any explicit setScene leaves jukebox (playlist) mode.
+  setScene(name, opts = {}) { this.playlist = null; this._applyScene(name, opts); }
+
+  // Start a named jukebox from PLAYLISTS: plays each member, then segues to the next (sample
+  // scenes advance on the MP3's onended). game.js points the title menu here.
+  setPlaylist(id, { fade = 1.6 } = {}) {
+    if (!this.ctx) { this._pending = '@' + id; return; }
+    const members = (PLAYLISTS[id] || []).filter((n) => SCENES[n]);
+    if (!members.length) return;
+    if (this.playlist && this.playlist.id === id) return;     // already running this jukebox
+    this.playlist = { id, members, idx: 0, fade };
+    this._applyScene(members[0], { fade });
+  }
+  _advancePlaylist() {
+    const pl = this.playlist;
+    if (!pl) return;
+    pl.idx = (pl.idx + 1) % pl.members.length;
+    this._applyScene(pl.members[pl.idx], { fade: pl.fade });   // _applyScene leaves this.playlist intact
+  }
+
+  // ---- jukebox player API (drives the asset-viewer "Music" tab, Spotify-style) ----
+  jukeboxTracks() {
+    return (PLAYLISTS.soviet || []).map((slug) => ({ slug, title: SCENES[slug].title || slug, year: SCENES[slug].year || null }));
+  }
+  jukeboxPlayAt(index, { fade = 0.5 } = {}) {
+    const members = PLAYLISTS.soviet || [];
+    if (!members.length) return;
+    const i = ((index % members.length) + members.length) % members.length;
+    this.playlist = { id: 'soviet', members, idx: i, fade: 1.4 };
+    this._applyScene(members[i], { fade });
+  }
+  jukeboxNext() { if (this.playlist && this.playlist.id === 'soviet') this._advancePlaylist(); else this.jukeboxPlayAt(0); }
+  jukeboxPrev() {
+    const pl = this.playlist;
+    if (!pl || pl.id !== 'soviet') return this.jukeboxPlayAt(0);
+    pl.idx = (pl.idx - 1 + pl.members.length) % pl.members.length;
+    this._applyScene(pl.members[pl.idx], { fade: 0.5 });
+  }
+  jukeboxToggle() {                                            // returns true if now playing
+    const el = this._sampleEl;
+    if (!el) { this.jukeboxPlayAt(this.playlist && this.playlist.id === 'soviet' ? this.playlist.idx : 0); return true; }
+    if (el.paused) { el.play().catch(() => {}); return true; }
+    el.pause(); return false;
+  }
+  jukeboxSeek(frac) { const el = this._sampleEl; if (el && isFinite(el.duration)) el.currentTime = Math.max(0, Math.min(1, frac)) * el.duration; }
+  jukeboxStatus() {
+    const pl = this.playlist, el = this._sampleEl;
+    const on = !!(pl && pl.id === 'soviet' && this.sceneIsSample);
+    return {
+      active: on,
+      index: on ? pl.idx : -1,
+      slug: on ? pl.members[pl.idx] : null,
+      title: on ? (SCENES[pl.members[pl.idx]].title || pl.members[pl.idx]) : null,
+      year: on ? (SCENES[pl.members[pl.idx]].year || null) : null,
+      paused: el ? el.paused : true,
+      time: el ? (el.currentTime || 0) : 0,
+      duration: el && isFinite(el.duration) ? el.duration : 0,
+    };
+  }
+
+  _applyScene(name, { fade = 1.2, variant = null } = {}) {
     if (!this.ctx) { this._pending = name; return; }
     this.variant = variant;
     if (name === this.sceneName) return;
     const def = SCENES[name];
     if (!def) return;
     const t = this.t;
-    // fade out + tear down the old scene
+    // fade out + tear down the old scene (a sample keeps streaming through its bus fade, then stops)
     if (this.sceneBus) {
-      const old = this.sceneBus, oldDrones = this.drones;
+      const old = this.sceneBus, oldDrones = this.drones, oldEl = this._sampleEl, oldNode = this._sampleNode;
+      if (oldEl) { oldEl.onended = null; oldEl.onerror = null; }  // forced stop must not trigger an advance
       old.gain.cancelScheduledValues(t); old.gain.setTargetAtTime(0.0001, t, fade / 3);
       for (const d of oldDrones) if (d.handle) d.handle.stop(t + fade);
-      setTimeout(() => { try { old.disconnect(); } catch (e) {} }, (fade + 1) * 1000);
+      setTimeout(() => { try { old.disconnect(); } catch (e) {} this._teardownSample(oldEl, oldNode); }, (fade + 1) * 1000);
     }
-    // build the new scene bus + drones
+    this._sampleEl = null; this._sampleNode = null; this.sceneIsSample = false;
+    // build the new scene bus
     const bus = this.ctx.createGain(); bus.gain.value = 0.0001; bus.connect(this.out);
     bus.gain.setTargetAtTime(1, t, fade / 3);
     this.sceneBus = bus; this.scene = def; this.sceneName = name;
-    this.drones = (def.drones || []).map((dd) => ({ def: dd, handle: dd.build(this, bus) }));
+    // real-recording scene → stream the MP3 through the bus; otherwise build the synth drones
+    if (def.audioUrl) {
+      this.sceneIsSample = true; this.drones = [];
+      this._startSample(def.audioUrl, bus, name);
+    } else {
+      this.drones = (def.drones || []).map((dd) => ({ def: dd, handle: dd.build(this, bus) }));
+    }
     this._bar = 0; this._step = 0; this._nextNoteTime = t + 0.06;
     this._ensureScheduler();
   }
@@ -343,10 +467,11 @@ export class MusicDirector {
   stop({ fade = 1.0 } = {}) {
     const t = this.t;
     const bus = this.sceneBus;
+    this._stopSample(); this.sceneIsSample = false;
     if (bus) bus.gain.setTargetAtTime(0.0001, t, fade / 3);
     for (const d of this.drones) if (d.handle) d.handle.stop(t + fade);
     setTimeout(() => { try { bus && bus.disconnect(); } catch (e) {} }, (fade + 1) * 1000);
-    this.sceneBus = null; this.scene = null; this.sceneName = null; this.drones = [];
+    this.sceneBus = null; this.scene = null; this.sceneName = null; this.drones = []; this.playlist = null;
     if (this._sched) { clearTimeout(this._sched); this._sched = null; }
   }
 
@@ -357,8 +482,10 @@ export class MusicDirector {
       if (!this.ctx) { this._sched = null; return; }
       const stepDur = 60 / (this.scene ? this.scene.bpm : 120) / 4; // 16th notes
       while (this.scene && this._nextNoteTime < this.t + LOOKAHEAD) {
-        try { this.scene.step(this, this.sceneBus, this._nextNoteTime, this._bar, this._step, this.intensity); } catch (e) {}
-        if (this.stress > 0.02) this._heartbeat(this._nextNoteTime, this._step);
+        if (!this.sceneIsSample) {                              // sample scenes play the MP3, not synth notes
+          try { this.scene.step(this, this.sceneBus, this._nextNoteTime, this._bar, this._step, this.intensity); } catch (e) {}
+          if (this.stress > 0.02) this._heartbeat(this._nextNoteTime, this._step);
+        }
         this._step = (this._step + 1) % 16; if (this._step === 0) this._bar++;
         this._nextNoteTime += stepDur;
       }

@@ -341,7 +341,7 @@ export class MP {
     this._setLobbyDiag('');
     this._resetLobbyTransport();
     this._resetDiag('join', room);
-    this.name = name || 'Player'; this.isHost = false; this.myId = null;
+    this.name = name || 'Player'; this.isHost = false; this.myId = null; this._joinRoom = room;
     this.net.onPeerOpen = () => this._lobbyMsg(this._lanMode() ? ('Connecting to LAN room ' + room + '…') : ('Connecting to ' + room + '… finding WebRTC route (can take up to 45s).'));
     this.net.onConnect = () => {
       this.myId = this.net.selfId; this.net.lastRecv = performance.now();
@@ -521,6 +521,7 @@ export class MP {
       this.net.sendTo(from, 'joinok', {});
       this._markDiag({ joinokSent: true }, 'Join OK sent');
       this.net.sendTo(from, 'mode', { mode: this.game.mode || 'purge' });   // so the joiner's lobby shows the chosen mode
+      this.net.sendTo(from, 'map', { map: this.game.mapId });               // host-only map: the whole squad plays the HOST's map
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
     n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 4 players).'); try { this.net.close(); } catch (e) {} } });
@@ -543,6 +544,16 @@ export class MP {
     n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
     n.on('mode', (d) => { if (!this.isHost && d) { this._lobbyMode = (d.mode === 'longnight') ? 'longnight' : 'purge'; this.game.mode = this._lobbyMode; this._renderModeSel(); } }); // host announced the squad's mode
+    n.on('map', (d) => { // host-only map: joiner adopts the HOST's map; if it differs, reload world and auto-rejoin
+      if (this.isHost || !d) return;
+      const want = (d.map === 'steppe') ? 'steppe' : 'arena';
+      if (want === this.game.mapId) return;
+      try { localStorage.setItem('engendros_map', want); } catch (e) {}
+      try { sessionStorage.setItem('engendros_autojoin', JSON.stringify({ code: this._joinRoom || '', name: this.name || 'Player', skin: this.chosenSkin || 0, lan: !!(this._lanMode && this._lanMode()) })); } catch (e) {}
+      this._lobbyMsg('Host is on the ' + want.toUpperCase() + ' map — switching and rejoining...');
+      if (this.game.hud && this.game.hud.bigMessage) this.game.hud.bigMessage('SWITCHING MAP', 'joining host on ' + want.toUpperCase());
+      setTimeout(() => { try { location.href = location.pathname; } catch (e) {} }, 700);
+    });
     n.on('start', (d) => { this.active = true; this.net.lastRecv = performance.now(); this.game._enterMP(d.mode || 'purge'); this._syncRemoteObjs(); });
     n.on('xf', (d, from) => { if (this.isHost) this._lastXf.set(from, performance.now()); const rp = this._remote(d.id); if (rp) rp.setTransform(d); }); // host: track per-client heartbeat
     n.on('espawn', (d) => this._clientSpawnEnemy(d));
