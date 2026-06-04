@@ -221,9 +221,11 @@ export const SCENES = {
 
   // ═══ Soviet chiptune jukebox (title-screen playlist) — 32-bit takes on WW2-era classics ═══
 
-  // Катюша — M. Blanter (1938). A minor, 2/4 feel, with the authentic dotted-quarter+eighth lilt
-  // (♩.♪) of the tune — NOT flat eighths. Arch verse (×2) → lifted answer (peak C6) → resolve to A.
-  katyusha: chiptune({
+  // Катюша — M. Blanter (1938). Plays the real recorded arrangement (assets/katyusha.mp3,
+  // accordion + oom-pah + strings) via the sample path; the synth chiptune below stays as the
+  // graceful fallback if the MP3 fails to load. A minor, 2/4, dotted ♩.♪ lilt; arch verse (×2) →
+  // lifted answer (peak C6) → resolve to A.
+  katyusha: { audioUrl: 'assets/katyusha.mp3', ...chiptune({
     bpm: 116, style: 'folk', leadVol: 0.18,
     lead: [
       ['E5', 6], ['E5', 2], ['F5', 6], ['G5', 2],                                     // line 1a (dotted lilt rising)
@@ -236,7 +238,7 @@ export const SCENES = {
       ['E5', 2], ['D5', 2], ['C5', 2], ['B4', 2], ['A4', 8],                          // line 4b (resolve to tonic A)
     ],
     chords: ['A2', 'E2', 'A2', 'E2', 'A2', 'E2', 'E2', 'A2'],
-  }),
+  }) },
 
   // Полюшко-поле (Cavalry of the Steppe) — L. Knipper (1933). E-minor; galloping canter bass.
   polyushko: chiptune({
@@ -322,6 +324,11 @@ export class MusicDirector {
     this._nextNoteTime = 0;    // absolute ctx time of the next 16th step
     this._bar = 0; this._step = 0;
     this._pending = null;      // scene requested before ctx was ready (defensive; director only exists post-init)
+
+    this.samples = {};         // url → { buffer, failed, promise } — decoded MP3 cache (real recordings)
+    this.sceneIsSample = false;// active scene plays a decoded sample instead of synth notes
+    this._sampleSrc = null;    // active AudioBufferSourceNode for a sample scene
+    this._preloadSamples();    // warm any SCENES[*].audioUrl so it's ready before the jukebox reaches it
   }
 
   get t() { return this.ctx ? this.ctx.currentTime : 0; }
@@ -517,6 +524,35 @@ export class MusicDirector {
     return { gain: g, stop: (when = this.t) => { try { for (const o of oscs) o.stop(when + 0.6); } catch (e) {} } };
   }
 
+  // ---- sample (MP3) playback ----
+  // Real recordings routed through the SAME scene bus as the synth, so crossfade, the stress
+  // duck, and the diegetic radio's music-duck all still apply (mix stays downstream of musicGain).
+  // Synth remains the fallback whenever the buffer isn't loaded (or fails to load).
+  _preloadSamples() {
+    const urls = [...new Set(Object.values(SCENES).map((s) => s && s.audioUrl).filter(Boolean))];
+    for (const u of urls) this._loadSample(u);
+  }
+  _loadSample(url) {
+    let rec = this.samples[url];
+    if (rec) return rec.promise || Promise.resolve(rec.buffer);
+    rec = this.samples[url] = { buffer: null, failed: false, promise: null };
+    rec.promise = fetch(url)
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then((ab) => this.ctx.decodeAudioData(ab))
+      .then((buf) => { rec.buffer = buf; return buf; })
+      .catch(() => { rec.failed = true; return null; });
+    return rec.promise;
+  }
+  _startSample(buffer, bus, name) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer; src.loop = false; src.connect(bus);
+    // in a jukebox, advance when the recording finishes; standalone (asset viewer) plays once
+    src.onended = () => { if (this._sampleSrc === src && this.playlist && this.sceneName === name) this._advancePlaylist(); };
+    src.start(this.t + 0.04);
+    this._sampleSrc = src;
+  }
+  _stopSample() { if (this._sampleSrc) { try { this._sampleSrc.onended = null; this._sampleSrc.stop(); } catch (e) {} this._sampleSrc = null; } }
+
   // ---- scene control ----
   // Public scene change: any explicit setScene leaves jukebox (playlist) mode.
   setScene(name, opts = {}) { this.playlist = null; this._applyScene(name, opts); }
@@ -546,18 +582,28 @@ export class MusicDirector {
     const def = SCENES[name];
     if (!def) return;
     const t = this.t;
-    // fade out + tear down the old scene
+    // fade out + tear down the old scene (let any sample keep playing through its bus fade, then stop)
     if (this.sceneBus) {
-      const old = this.sceneBus, oldDrones = this.drones;
+      const old = this.sceneBus, oldDrones = this.drones, oldSrc = this._sampleSrc;
+      if (oldSrc) oldSrc.onended = null;                       // forced stop must not trigger an advance
       old.gain.cancelScheduledValues(t); old.gain.setTargetAtTime(0.0001, t, fade / 3);
       for (const d of oldDrones) if (d.handle) d.handle.stop(t + fade);
-      setTimeout(() => { try { old.disconnect(); } catch (e) {} }, (fade + 1) * 1000);
+      setTimeout(() => { try { old.disconnect(); } catch (e) {} try { oldSrc && oldSrc.stop(); } catch (e) {} }, (fade + 1) * 1000);
     }
-    // build the new scene bus + drones
+    this._sampleSrc = null; this.sceneIsSample = false;
+    // build the new scene bus
     const bus = this.ctx.createGain(); bus.gain.value = 0.0001; bus.connect(this.out);
     bus.gain.setTargetAtTime(1, t, fade / 3);
     this.sceneBus = bus; this.scene = def; this.sceneName = name;
-    this.drones = (def.drones || []).map((dd) => ({ def: dd, handle: dd.build(this, bus) }));
+    // real-recording scene → play the decoded MP3 through the bus; synth covers it until ready
+    const rec = def.audioUrl ? this.samples[def.audioUrl] : null;
+    if (def.audioUrl && rec && rec.buffer) {
+      this.sceneIsSample = true; this.drones = [];
+      this._startSample(rec.buffer, bus, name);
+    } else {
+      if (def.audioUrl) this._loadSample(def.audioUrl);        // not ready yet → load for next time, synth now
+      this.drones = (def.drones || []).map((dd) => ({ def: dd, handle: dd.build(this, bus) }));
+    }
     this._bar = 0; this._step = 0; this._nextNoteTime = t + 0.06;
     this._ensureScheduler();
   }
@@ -585,6 +631,7 @@ export class MusicDirector {
   stop({ fade = 1.0 } = {}) {
     const t = this.t;
     const bus = this.sceneBus;
+    this._stopSample(); this.sceneIsSample = false;
     if (bus) bus.gain.setTargetAtTime(0.0001, t, fade / 3);
     for (const d of this.drones) if (d.handle) d.handle.stop(t + fade);
     setTimeout(() => { try { bus && bus.disconnect(); } catch (e) {} }, (fade + 1) * 1000);
@@ -599,12 +646,15 @@ export class MusicDirector {
       if (!this.ctx) { this._sched = null; return; }
       const stepDur = 60 / (this.scene ? this.scene.bpm : 120) / 4; // 16th notes
       while (this.scene && this._nextNoteTime < this.t + LOOKAHEAD) {
-        try { this.scene.step(this, this.sceneBus, this._nextNoteTime, this._bar, this._step, this.intensity); } catch (e) {}
-        if (this.stress > 0.02) this._heartbeat(this._nextNoteTime, this._step);
+        if (!this.sceneIsSample) {                              // sample scenes play the MP3, not synth notes
+          try { this.scene.step(this, this.sceneBus, this._nextNoteTime, this._bar, this._step, this.intensity); } catch (e) {}
+          if (this.stress > 0.02) this._heartbeat(this._nextNoteTime, this._step);
+        }
         this._step = (this._step + 1) % (this.scene.stepsPerBar || 16);
         if (this._step === 0) {
           this._bar++;
-          if (this.playlist && this._bar >= (this.scene.bars || 8) * (this.scene.loops || 2)) this._advancePlaylist();
+          // synth scenes advance the jukebox on bar count; sample scenes advance on the MP3's onended
+          if (!this.sceneIsSample && this.playlist && this._bar >= (this.scene.bars || 8) * (this.scene.loops || 2)) this._advancePlaylist();
         }
         this._nextNoteTime += stepDur;
       }
