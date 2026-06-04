@@ -19,6 +19,19 @@ export class SpatialGrid {
     }
     return box;
   }
+  // Drop a box from every cell it was bucketed into (swap-pop). Call when a collider leaves world.boxes
+  // (destroyed fortification, detonated bomb) so the index can't return a phantom. Uses the box's CURRENT
+  // min/max — boxes don't move, so this hits exactly the cells addBox used.
+  removeBox(box) {
+    const c = this.cell;
+    const x0 = Math.floor(box.min.x / c), x1 = Math.floor(box.max.x / c);
+    const z0 = Math.floor(box.min.z / c), z1 = Math.floor(box.max.z / c);
+    for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
+      const a = this.cells.get(this._k(cx, cz)); if (!a) continue;
+      const i = a.indexOf(box); if (i >= 0) { a[i] = a[a.length - 1]; a.pop(); }
+    }
+    return box;
+  }
   // Boxes whose cells overlap the XZ rectangle. De-duped via a per-query stamp (no allocation).
   queryAABB(minx, minz, maxx, maxz, out = []) {
     out.length = 0; const c = this.cell, qid = ++this._qid;

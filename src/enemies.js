@@ -325,7 +325,7 @@ export class EnemyManager {
       }
       // crate avoidance
       let ax = 0, az = 0;
-      for (const b of this.world.boxes) {
+      for (const b of this.world.grid.queryAABB(e.pos.x - 1.8, e.pos.z - 1.8, e.pos.x + 1.8, e.pos.z + 1.8)) {
         if (b.max.y < 0.6) continue;
         const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2;
         const rx = e.pos.x - cx, rz = e.pos.z - cz;
@@ -352,7 +352,8 @@ export class EnemyManager {
       const lim = this.world.HALF - e.radius;
       e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
       e._blockStruct = null;
-      for (const b of this.world.boxes) {
+      const _cr = e.radius + 1.5; // query window (radius + slack); whole-cell results over-cover the small push-out
+      for (const b of this.world.grid.queryAABB(e.pos.x - _cr, e.pos.z - _cr, e.pos.x + _cr, e.pos.z + _cr)) {
         if (b.max.y < 0.6) continue;
         if (e.pos.x + e.radius <= b.min.x || e.pos.x - e.radius >= b.max.x) continue;
         if (e.pos.z + e.radius <= b.min.z || e.pos.z - e.radius >= b.max.z) continue;
@@ -845,7 +846,8 @@ export class EnemyManager {
     const lim = this.world.HALF - e.radius; e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
 
     // hard collide vs building boxes (large circle, ground-only — no step-up)
-    for (const b of this.world.boxes) {
+    const _tr = e.radius + 1.5; // big tank circle + slack; whole-cell results cover the push-out
+    for (const b of this.world.grid.queryAABB(e.pos.x - _tr, e.pos.z - _tr, e.pos.x + _tr, e.pos.z + _tr)) {
       if (b.max.y < 0.6) continue;
       if (e.pos.x + e.radius <= b.min.x || e.pos.x - e.radius >= b.max.x) continue;
       if (e.pos.z + e.radius <= b.min.z || e.pos.z - e.radius >= b.max.z) continue;

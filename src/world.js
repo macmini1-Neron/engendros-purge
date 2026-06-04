@@ -341,7 +341,7 @@ export class World {
     const hw = 2.0, hl = 3.6, h = 1.6;
     const _wreckBox = { min: new THREE.Vector3(pos.x - hw, 0, pos.z - hl), max: new THREE.Vector3(pos.x + hw, h, pos.z + hl), wreck: true }; this.boxes.push(_wreckBox); this.grid.addBox(_wreckBox);
   }
-  clearWrecks() { this.boxes = this.boxes.filter(b => !b.wreck); }
+  clearWrecks() { this.boxes = this.boxes.filter(b => !b.wreck); this.grid.build(this.boxes); }
 }
 
 // ---------------------------------------------------------------------------
@@ -573,7 +573,7 @@ export class BuildManager {
     const i = this.structures.indexOf(s); if (i < 0) return;
     this.structures.splice(i, 1);
     this._radioStop(s); if (s.audio) { try { s.audio.src = ''; } catch (e) {} s.audio = null; } // radio prop: kill its stream on destroy
-    if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
+    if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); this.game.world.grid.removeBox(s.box); }
     this._disposeMesh(s);
     const fx = this.game.effects;
     if (fx) { fx.stuffing && fx.stuffing(s.pos, STRUCT_FX_COLOR[s.kind] || 0xcdb887, 12, 4); fx.impact && fx.impact(s.pos, new THREE.Vector3(0, 1, 0), 'dust'); }
@@ -599,7 +599,7 @@ export class BuildManager {
 
   reset() {
     for (const s of this.structures) {
-      if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); }
+      if (s.box) { const j = this.game.world.boxes.indexOf(s.box); if (j >= 0) this.game.world.boxes.splice(j, 1); this.game.world.grid.removeBox(s.box); }
       this._disposeMesh(s);
       if (s.audio) { try { s.audio.pause(); s.audio.src = ''; } catch (e) {} } // radio props: stop streams on run reset
     }

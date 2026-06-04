@@ -393,6 +393,7 @@ export function buildKolkhoz(world, KX, KZ) {
     if (hostSim) { g.enemies.damageInRadius(p, bomb.blastR, bomb.dmg, null); g._explodeHurt(p, bomb.blastR, bomb.dmg); }
     if (bomb.mesh) bomb.mesh.visible = false;
     this.boxes = this.boxes.filter((x) => x !== bomb.box);            // remove its collider
+    if (this.grid) this.grid.removeBox(bomb.box);                     // …and drop it from the spatial index
     // small scorch where it sat
     const scorch = new THREE.Mesh(new THREE.BoxGeometry(bomb.blastR, 0.06, bomb.blastR), new THREE.MeshLambertMaterial({ color: SCORCH }));
     scorch.position.set(bomb.x, 0.04, bomb.z); this.scene.add(scorch);
