@@ -34,18 +34,21 @@ function buildLead(events) {
 // given the bar's chord `root` (Hz). `spb` = steps per bar (16 = 4/4, 12 = 3/4).
 const ACCOMP = {
   folk(M, bus, when, step, spb, root) {                        // oom-pah: root on 1&3, fifth on 2&4
-    if (step === 0 || step === 8) M.note(bus, when, root, 0.13, 0.14, 'square');
+    if (step === 0 || step === 8) M.bass(bus, when, root, 0.16, 0.15);
     else if (step === 4 || step === 12) M.note(bus, when, root * FIFTH, 0.11, 0.10, 'square');
     if (step % 4 === 2) M.hat(bus, when, 0.05, 0.02);
   },
   march(M, bus, when, step, spb, root) {                       // driving: kick 1&3, snare 2&4, bass each beat
     if (step === 0 || step === 8) M.kick(bus, when, 0.5);
     if (step === 4 || step === 12) M.snare(bus, when, 0.26);
-    if (step % 4 === 0) M.note(bus, when, root, 0.12, 0.13, 'square');
+    if (step % 4 === 0) M.bass(bus, when, root, 0.14, 0.14);
     if (step % 2 === 0) M.hat(bus, when, 0.045, 0.02);
   },
   gallop(M, bus, when, step, spb, root) {                      // cavalry canter: trotting eighths + tom pulse
-    if (step % 2 === 0) M.note(bus, when, step % 4 === 0 ? root : root * FIFTH, 0.09, 0.12, 'square');
+    if (step % 2 === 0) {
+      if (step % 4 === 0) M.bass(bus, when, root, 0.12, 0.13);
+      else M.note(bus, when, root * FIFTH, 0.09, 0.11, 'square');
+    }
     if (step % 4 === 0) M.tom(bus, when, root * 2, 0.18);
     if (step === 4 || step === 12) M.snare(bus, when, 0.16);
   },
@@ -55,7 +58,7 @@ const ACCOMP = {
     if (step === 6 || step === 14) M.bell(bus, when, root * 3, 0.5, 0.05);
   },
   waltz(M, bus, when, step, spb, root) {                       // 3/4 BOOM-pah-pah (spb 12): root+timpani on 1, fifth on 2&3
-    if (step === 0) { M.note(bus, when, root, 0.18, 0.16, 'square'); M.timpani(bus, when, root, 0.3); }
+    if (step === 0) { M.bass(bus, when, root, 0.2, 0.17); M.timpani(bus, when, root, 0.3); }
     else if (step === 4 || step === 8) { M.note(bus, when, root * FIFTH, 0.13, 0.10, 'square'); M.hat(bus, when, 0.04, 0.02); }
   },
 };
@@ -73,7 +76,7 @@ function chiptune({ bpm, spb = 16, lead, chords, style = 'folk', leadType = 'squ
     step(M, bus, when, bar, step) {
       const stepSec = 60 / bpm / 4;
       const ev = L[(bar * spb + step) % L.length];
-      if (ev) M.note(bus, when, ev.f, ev.dur * stepSec * 0.92, leadVol, leadType);
+      if (ev) M.lead(bus, when, ev.f, ev.dur * stepSec * 0.92, leadVol, leadType);
       ACCOMP[style](M, bus, when, step, spb, NF[chords[bar % chords.length]]);
     },
   };
@@ -344,6 +347,71 @@ export class MusicDirector {
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), when + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
     o.start(when); o.stop(when + dur + 0.05);
+  }
+
+  // Fat "64-bit" lead — the chiptune melody voice. Three detuned oscillators (super-square
+  // chorus) + a sub-octave for body, a soft click-free ADSR, a delayed vibrato that only
+  // blooms on held notes (so quick notes stay tight), and a rounding lowpass with a little
+  // attack-brightness. Much warmer/thicker than the single-osc `note()` blip it replaces.
+  lead(bus, when, freq, dur, vol, type = 'square') {
+    if (!this.ctx) return;
+    const t = when, end = when + dur;
+    const g = this.ctx.createGain();
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 0.7;
+    const cut = Math.min(7000, Math.max(1300, freq * 5));
+    lp.frequency.setValueAtTime(cut * 1.5, t);                 // bright on the attack…
+    lp.frequency.exponentialRampToValueAtTime(cut, t + 0.10);  // …then settle (movement)
+    lp.connect(g); g.connect(bus);
+
+    const subType = type === 'sawtooth' ? 'sawtooth' : type === 'triangle' ? 'triangle' : 'square';
+    const oscs = [];
+    const mk = (mult, cents, oType, lvl) => {
+      const o = this.ctx.createOscillator();
+      o.type = oType; o.frequency.setValueAtTime(freq * mult, t); o.detune.setValueAtTime(cents, t);
+      const vg = this.ctx.createGain(); vg.gain.value = lvl;
+      o.connect(vg); vg.connect(lp);
+      o.start(t); o.stop(end + 0.2); oscs.push(o);
+      return o;
+    };
+    const o1 = mk(1, -7, type, 0.42);   // detuned pair → chorus shimmer
+    const o2 = mk(1, +7, type, 0.42);
+    mk(1, 0, type, 0.30);               // dry center to anchor pitch
+    mk(0.5, 0, subType, 0.30);          // sub-octave → warmth/body
+
+    // delayed vibrato (Hz offset summed onto the detuned pair) — sings on long notes only
+    const lfo = this.ctx.createOscillator(), lfoG = this.ctx.createGain();
+    lfo.type = 'sine'; lfo.frequency.value = 5.4;
+    lfoG.gain.setValueAtTime(0.0001, t);
+    lfoG.gain.linearRampToValueAtTime(freq * 0.007, t + Math.min(0.22, dur * 0.45));
+    lfo.connect(lfoG); lfoG.connect(o1.frequency); lfoG.connect(o2.frequency);
+    lfo.start(t); lfo.stop(end + 0.2);
+
+    const peak = Math.max(0.0004, vol), sus = peak * 0.78;
+    const atk = Math.min(0.025, dur * 0.3), dec = Math.min(0.09, dur * 0.3);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + atk);            // linear attack = no click
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0003, sus), t + atk + dec);
+    g.gain.setValueAtTime(Math.max(0.0003, sus), Math.max(t + atk + dec, end - 0.04));
+    g.gain.exponentialRampToValueAtTime(0.0001, end + 0.16);  // release tail
+  }
+
+  // Weighted bass — square body + a sine sub-octave through a lowpass, short pluck. Gives the
+  // oom-pah/march low end real heft instead of a thin square (the "fuller" half of 64-bit).
+  bass(bus, when, freq, dur, vol) {
+    if (!this.ctx) return;
+    const g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = Math.min(1900, freq * 4.5); lp.Q.value = 0.8;
+    lp.connect(g); g.connect(bus);
+    const sq = this.ctx.createOscillator(); sq.type = 'square'; sq.frequency.setValueAtTime(freq, when);
+    const sqg = this.ctx.createGain(); sqg.gain.value = 0.55; sq.connect(sqg); sqg.connect(lp);
+    const sub = this.ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(freq * 0.5, when);
+    const sg = this.ctx.createGain(); sg.gain.value = 0.7; sub.connect(sg); sg.connect(lp);
+    const peak = Math.max(0.0004, vol);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(peak, when + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    sq.start(when); sub.start(when); sq.stop(when + dur + 0.05); sub.stop(when + dur + 0.05);
   }
 
   brass(bus, when, freq, dur, vol) { // warm two-saw → lowpass stab
