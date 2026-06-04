@@ -621,6 +621,8 @@
     .mp-btn { cursor: pointer; pointer-events: auto; background: var(--surface-1); border: 1px solid var(--concrete-3); border-radius: 50%; color: var(--gold); width: 34px; height: 34px; font-size: 14px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
     .mp-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
     .mp-btn.mp-big { width: 44px; height: 44px; font-size: 18px; background: var(--gold); color: #1a1208; border-color: var(--gold); }
+    .mp-btn.mp-tg { font-size: 13px; opacity: .5; }
+    .mp-btn.mp-tg.on { opacity: 1; color: var(--green); border-color: var(--green); box-shadow: 0 0 8px rgba(127,208,106,.4); }
     .mp-bar { flex: 1 1 auto; height: 8px; background: rgba(255,255,255,.12); border-radius: 4px; cursor: pointer; pointer-events: auto; overflow: hidden; min-width: 80px; }
     .mp-bar:hover { height: 10px; }
     .mp-fill { height: 100%; width: 0%; background: var(--gold); border-radius: 4px; }
@@ -903,6 +905,6 @@
     import { icon } from './src/icons.js';
     for (const el of document.querySelectorAll('[data-ic]')) el.innerHTML = icon(el.dataset.ic);
   </script>
-  <script type="module" src="./src/game.js?v=228"></script>
+  <script type="module" src="./src/game.js?v=229"></script>
 </body>
 </html>

@@ -189,6 +189,8 @@ export class MusicDirector {
     this.scene = null;         // active scene def
     this.variant = null;       // optional scene flavor (e.g. boss 'mitri'/'tolo')
     this.playlist = null;      // active jukebox { id, members[], idx, fade } or null (single-scene mode)
+    this.shuffle = false;      // jukebox plays a random next track instead of sequential
+    this.repeatOne = false;    // loop the current track instead of advancing
 
     this.intensity = 0; this._intTarget = 0;
     this.stress = 0; this._stressTarget = 0;
@@ -338,7 +340,7 @@ export class MusicDirector {
   // music-duck all still apply (mix stays downstream of musicGain; invariant m.out !== musicGain).
   // Standalone scenes loop; in a jukebox the track segues to the next on `ended`.
   _startSample(url, bus, name) {
-    const el = new Audio(url); el.loop = !this.playlist; el.preload = 'auto';
+    const el = new Audio(url); el.loop = !this.playlist || this.repeatOne; el.preload = 'auto'; // repeat-one loops the element (onended never fires)
     let node = null;
     try { node = this.ctx.createMediaElementSource(el); node.connect(bus); } catch (e) {}
     el.onended = () => { if (this._sampleEl === el && this.playlist && this.sceneName === name) this._advancePlaylist(); };
@@ -366,10 +368,19 @@ export class MusicDirector {
     this.playlist = { id, members, idx: 0, fade };
     this._applyScene(members[0], { fade });
   }
+  _nextIndex() {                                              // sequential, or a non-repeating random pick when shuffling
+    const pl = this.playlist;
+    if (!pl) return 0;
+    if (this.shuffle && pl.members.length > 1) {
+      let r; do { r = Math.floor(Math.random() * pl.members.length); } while (r === pl.idx);
+      return r;
+    }
+    return (pl.idx + 1) % pl.members.length;
+  }
   _advancePlaylist() {
     const pl = this.playlist;
     if (!pl) return;
-    pl.idx = (pl.idx + 1) % pl.members.length;
+    pl.idx = this._nextIndex();
     this._applyScene(pl.members[pl.idx], { fade: pl.fade });   // _applyScene leaves this.playlist intact
   }
 
@@ -398,6 +409,12 @@ export class MusicDirector {
     el.pause(); return false;
   }
   jukeboxSeek(frac) { const el = this._sampleEl; if (el && isFinite(el.duration)) el.currentTime = Math.max(0, Math.min(1, frac)) * el.duration; }
+  jukeboxSetShuffle(on) { this.shuffle = on === undefined ? !this.shuffle : !!on; return this.shuffle; }
+  jukeboxSetRepeatOne(on) {
+    this.repeatOne = on === undefined ? !this.repeatOne : !!on;
+    if (this._sampleEl) this._sampleEl.loop = !this.playlist || this.repeatOne;  // apply to the current track live
+    return this.repeatOne;
+  }
   jukeboxStatus() {
     const pl = this.playlist, el = this._sampleEl;
     const on = !!(pl && pl.id === 'soviet' && this.sceneIsSample);
@@ -410,6 +427,8 @@ export class MusicDirector {
       paused: el ? el.paused : true,
       time: el ? (el.currentTime || 0) : 0,
       duration: el && isFinite(el.duration) ? el.duration : 0,
+      shuffle: this.shuffle,
+      repeatOne: this.repeatOne,
     };
   }
 
