@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-04 11:38';
+const GAME_BUILD = '2026-06-04 11:46';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -227,7 +227,7 @@ class Game {
     const _primeMusic = () => {
       window.removeEventListener('pointerdown', _primeMusic); window.removeEventListener('keydown', _primeMusic);
       this.audio.init();
-      if (this.state === 'menu' && this.audio.music) { if (this._lobbyVisible()) this.audio.music.setScene('lobby'); else this.audio.music.setPlaylist('menu'); }
+      if (this.state === 'menu' && this.audio.music) { this.audio.music.setScene(this._lobbyVisible() ? 'lobby' : 'menu'); }
     };
     window.addEventListener('pointerdown', _primeMusic); window.addEventListener('keydown', _primeMusic);
   }
@@ -488,7 +488,7 @@ class Game {
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.resetMountedGuns();
     if (this.capturedTank) { this.capturedTank.forceReset(); this.capturedTank = null; }
-    this.enemies.clearAll(); if (this.audio.music) this.audio.music.setPlaylist('menu'); this.hud.show(false);
+    this.enemies.clearAll(); if (this.audio.music) this.audio.music.setScene('menu'); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
   }
   // Dev/preview: drop a Flopo avatar into the scene (returns the rigged Group).
