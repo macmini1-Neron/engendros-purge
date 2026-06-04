@@ -231,31 +231,60 @@ function buildTower(world, b, cx, cz) {
 // overhead crane + inspection pit, «СЛАВА КПСС» facade + «АНГАР №1». Research: ~30×60, eave 9 / ridge 11.
 // =====================================================================
 function buildHangar(world, b, cx, cz) {
-  const W = 28, D = 36, eave = 8.5, ridge = 10.5, T = 0.6;
-  const ST = { hi: 0x8a9082, mid: 0x6c7266, lo: 0x4c5148 };                                // sage corrugated steel
+  const W = 28, D = 36, eave = 9, ridge = 11, T = 0.6;
+  const ST = { hi: 0xb2b7a6, mid: 0x949a8a, lo: 0x767c6e };                                // sage corrugated steel — LIGHTER (never near-black)
+  const ROOF = { hi: 0x9a968c, mid: 0x827e74, lo: 0x66635c };
+  const DOOR = { hi: 0x9aa0a6, mid: 0x7e848a, lo: 0x5e646a };                              // galvanised sliding doors (distinct, lighter)
+  const GLASS = 0x8fb0b6, FRAME = 0x45474a, FLR = 0xb8b4a8;
   const sz = cz - D / 2, nz = cz + D / 2, wx = cx - W / 2, ex = cx + W / 2;
-  for (const fx of [wx, ex]) {                                                              // long walls: concrete lower + steel upper + ribbon window + ribs
+  // --- pale concrete floor + yellow tow-lane dashes + inspection pit (dark grey, NOT black) with edge rails ---
+  b.box(W - 1, 0.1, D - 1, cx, 0.06, cz, FLR, { tint: 0.02 });
+  for (let z = -D / 2 + 4; z < D / 2 - 3; z += 4) b.box(0.35, 0.11, 2, cx + 5, 0.07, cz + z, YMARK);
+  b.box(2.2, 0.12, 20, cx - 4, 0.05, cz + 1, 0x3c3a35); for (const sx of [-1, 1]) b.box(0.18, 0.22, 20, cx - 4 + sx * 1.05, 0.17, cz + 1, IRON);
+  // --- long side walls: concrete dado + LIGHTER steel + lit/shadow strips + ribbon GLASS + corrugation ribs ---
+  for (const fx of [wx, ex]) {
     const out = fx < cx ? -1 : 1;
     world._solid(b, T, 3, D, fx, 1.5, cz, CONC.mid, { tint: 0.04 });
     world._solid(b, T, eave - 3, D, fx, 3 + (eave - 3) / 2, cz, ST.mid, { tint: 0.04 });
-    b.box(0.12, 1.3, D - 3, fx + out * (T / 2 + 0.05), 5.6, cz, 0x55636a);                  // ribbon window
-    for (let z = -D / 2 + 3; z < D / 2; z += 3.5) b.box(0.1, eave - 3.2, 0.12, fx + out * (T / 2 + 0.06), 3 + (eave - 3) / 2, cz + z, shade(ST.lo, -0.02));
+    b.box(T + 0.05, 0.45, D, fx, eave - 0.3, cz, ST.hi); b.box(T + 0.05, 0.4, D, fx, 3.15, cz, ST.lo);   // lit eave + dado-top shadow
+    b.box(0.13, 1.5, D - 3, fx + out * (T / 2 + 0.04), 6.3, cz, FRAME); b.box(0.16, 1.2, D - 3.4, fx + out * (T / 2 + 0.08), 6.3, cz, GLASS); // ribbon window (glass proud of frame)
+    for (let z = -D / 2 + 3; z < D / 2; z += 3.0) b.box(0.12, eave - 3.3, 0.14, fx + out * (T / 2 + 0.1), 3 + (eave - 3) / 2, cz + z, shade(ST.lo, -0.015)); // corrugation ribs
   }
-  world._wall(b, cx, nz, W, 3, 0, 'x', CONC.mid, { width: 2.2, height: 2.8 });              // rear wall + personnel door
+  // --- rear (N) wall: concrete + steel + personnel door + a ribbon glass strip ---
+  world._wall(b, cx, nz, W, 3, 0, 'x', CONC.mid, { width: 2.2, height: 2.8 });
   world._solid(b, W, eave - 3, T, cx, 3 + (eave - 3) / 2, nz, ST.mid, { tint: 0.04 });
-  world._wall(b, cx, sz, W, eave, 0, 'x', CONC.mid, { width: 20, height: 7.6 });            // front jambs + lintel (big opening)
-  for (const sx of [-1, 1]) { const dx = cx + sx * 9;                                        // 2 sliding door leaves (parted ~4 m) + colliders
-    b.box(8, 7.4, 0.4, dx, 3.7, sz - 0.4, ST.lo, { tint: 0.03 });
-    for (let k = 0; k < 8; k++) b.box(8.1, 0.1, 0.45, dx, 0.6 + k * 0.95, sz - 0.4, ST.hi);
-    collider(world, dx, sz - 0.4, 4, 0, 7.4, 0.3); }
-  const ang = Math.atan2(ridge - eave, W / 2), sl = Math.hypot(W / 2, ridge - eave);        // low gable roof
-  b.box(sl, 0.3, D + 1.2, cx - W / 4, (ridge + eave) / 2, cz, 0x8a8680, { rz: -ang, tint: 0.03 });
-  b.box(sl, 0.3, D + 1.2, cx + W / 4, (ridge + eave) / 2, cz, 0x8a8680, { rz: ang, tint: 0.03 });
-  b.box(0.6, 0.35, D + 1.2, cx, ridge + 0.12, cz, 0x6c6760);
-  b.box(W - 2, 0.6, 1.0, cx, 7.0, cz - 4, 0xf3a505, { tint: 0.03 }); b.box(2.6, 0.9, 1.5, cx, 6.4, cz - 4, 0xf0a000); b.box(0.16, 2.2, 0.16, cx, 5.2, cz - 4, IRON); // overhead crane
-  b.box(1.4, 0.1, 18, cx, 0.06, cz, 0x16140f);                                              // inspection pit
-  signPlane(world, 'СЛАВА КПСС', cx, eave + 0.7, sz - 0.45, 16, 1.4, Math.PI, { panel: '#9a2b22', border: '#e8dca0', color: '#f2e9d6', size: 78, cw: 1200 });
-  signPlane(world, 'АНГАР №1', cx, eave + 1.0, nz + 0.36, 6, 1.0, 0, { color: '#e8e0cc', size: 64 });
+  b.box(W, 0.45, T + 0.05, cx, eave - 0.3, nz, ST.hi); b.box(W - 5, 1.1, 0.14, cx, 6.4, nz + T / 2 + 0.05, GLASS);
+  // --- front (S) wall: jambs + lintel for the big door opening ---
+  world._wall(b, cx, sz, W, eave, 0, 'x', CONC.mid, { width: 20, height: 7.8 });
+  // --- 2 galvanised sliding-door leaves (lighter, parted ~10 m → walk in) + top rail + handles ---
+  b.box(W + 0.8, 0.4, 0.55, cx, eave + 0.05, sz - 0.55, IRON);                              // top sliding rail
+  for (const sx of [-1, 1]) { const dx = cx + sx * 9.3;
+    world._solid(b, 7.4, 7.6, 0.42, dx, 3.8, sz - 0.5, DOOR.mid, { tint: 0.03 });
+    b.box(7.5, 0.5, 0.46, dx, 7.45, sz - 0.5, DOOR.hi); b.box(7.5, 0.45, 0.46, dx, 0.45, sz - 0.5, DOOR.lo);
+    for (let k = 0; k < 9; k++) b.box(7.5, 0.07, 0.48, dx, 0.9 + k * 0.8, sz - 0.5, shade(DOOR.lo, -0.02));
+    b.box(0.4, 1.2, 0.5, dx - sx * 3.2, 1.5, sz - 0.56, IRON); }                            // leaf edge handle
+  // --- low gable roof (LIGHTER, solid, overhanging eaves + lit ridge cap) ---
+  const ang = Math.atan2(ridge - eave, W / 2), sl = Math.hypot(W / 2, ridge - eave) + 0.5;
+  b.box(sl, 0.35, D + 1.6, cx - W / 4, (ridge + eave) / 2, cz, ROOF.mid, { rz: -ang, tint: 0.03 });
+  b.box(sl, 0.35, D + 1.6, cx + W / 4, (ridge + eave) / 2, cz, ROOF.mid, { rz: ang, tint: 0.03 });
+  b.box(0.9, 0.4, D + 1.6, cx, ridge + 0.2, cz, ROOF.hi);                                   // lit ridge cap
+  b.box(W + 1.4, 0.32, 0.5, cx, eave - 0.05, sz - 0.05, ROOF.lo); b.box(W + 1.4, 0.32, 0.5, cx, eave - 0.05, nz + 0.05, ROOF.lo); // eave fascias
+  // === INTERIOR — ТЭЧ maintenance hall (enterable through the front) ===
+  b.box(W - 2, 0.7, 1.0, cx - 4, 7.6, cz - 4, 0xf3a505, { tint: 0.03 });                    // gantry crane bridge
+  b.box(2.6, 1.0, 1.6, cx - 4, 6.9, cz - 4, 0xd98e00); b.box(0.18, 2.4, 0.18, cx - 4, 5.5, cz - 4, IRON); b.box(0.55, 0.55, 0.55, cx - 4, 4.3, cz - 4, IRON); // hoist + cable + hook
+  for (const sx of [-1, 1]) b.box(0.3, 0.3, D - 3, cx + sx * (W / 2 - 1.2), 7.9, cz, 0x8a8680); // crane rails
+  for (let z = -10; z <= 10; z += 10) for (const sx of [-1, 1]) b.box(1.6, 0.22, 0.9, cx + sx * 7, eave - 0.55, cz + z, 0xfaf3d2); // ceiling lights
+  // jet engine on a maintenance stand (centrepiece, under the crane)
+  b.box(2.8, 0.7, 1.7, cx - 4, 0.4, cz - 4, IRON); cyl(b, 0.78, 3.2, cx - 4, 1.7, cz - 4, 0x8e8b80, { rx: Math.PI / 2, seg: 14, tint: 0.03 });
+  cyl(b, 0.84, 0.5, cx - 4, 1.7, cz - 5.6, 0x2f2f34, { rx: Math.PI / 2, seg: 14 }); cyl(b, 0.5, 0.5, cx - 4, 1.7, cz - 2.5, 0x55524c, { rx: Math.PI / 2, seg: 12 });
+  collider(world, cx - 4, cz - 4, 1.5, 0, 2.6, 1.8);
+  for (let z = -12; z <= 8; z += 6) { b.box(2.6, 0.95, 0.9, wx + 1.7, 0.5, cz + z, 0x6a5638); b.box(2.6, 0.12, 0.92, wx + 1.7, 1.02, cz + z, 0x8a7048); b.box(2.2, 1.5, 0.1, wx + 0.85, 2.5, cz + z, 0x40443e); } // benches + pegboards (W wall)
+  for (let z = -11; z <= 9; z += 6.5) for (let s = 0; s < 3; s++) b.box(0.7, 0.1, 2.8, ex - 1.2, 0.9 + s * 1.0, cz + z, 0x57524b); // parts shelves (E wall)
+  for (const [dx, dz, col] of [[0, 0, 0x9a3b2a], [1.1, 0.3, 0x3a4a2a], [0.5, 1.2, 0x9a3b2a], [-0.6, 0.7, 0x3a4a2a]]) cyl(b, 0.5, 1.2, ex - 3 + dx, 0.6, nz - 3 + dz, col, { seg: 10 }); // oil drums
+  for (const sx of [-1, 1]) { b.box(1.0, 1.6, 0.7, cx + sx * 5.5, 0.8, sz + 2.6, sx > 0 ? 0xb02a22 : 0x3a4a2a); b.box(1.04, 0.1, 0.74, cx + sx * 5.5, 1.62, sz + 2.6, IRON); } // tool cabinets (by door)
+  signPlane(world, 'СЛАВА КПСС', cx, eave + 1.0, sz - 0.78, 16, 1.4, Math.PI, { panel: '#9a2b22', border: '#e8dca0', color: '#f2e9d6', size: 78, cw: 1200 });
+  signPlane(world, 'АНГАР №1', cx, eave + 1.3, nz + T / 2 + 0.08, 6, 1.0, 0, { color: '#e8e0cc', size: 64 });
+  signPlane(world, 'ТЭЧ АП', cx - 11, 3.4, sz - 0.78, 3.2, 0.8, Math.PI, { panel: '#2d4a2a', border: '#c8a24a', color: '#e8e0cc', size: 50 });
 }
 
 // =====================================================================
