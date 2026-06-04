@@ -26,7 +26,7 @@ export const SCENES = {
   //     Russian folk tune (public domain; the melody famously known from Tetris). Square-wave lead +
   //     oom-pah bass + arcade hat. Plays regardless of intensity (everything lives in step()). ---
   menu: {
-    bpm: 150,
+    bpm: 150, title: 'Коробейники (Тетрис)', year: 1861,
     drones: [],
     step(M, bus, when, bar, step, I) {
       const b = bar % 8;
@@ -172,7 +172,9 @@ const SONGS = [
   ['peremen', 'Хочу перемен', 1987],
 ];
 for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
-const PLAYLISTS = { soviet: SONGS.map((s) => s[0]) };
+// The jukebox mix = the Korobeiniki "Tetris" chiptune (synth) + every real recording. Korobeiniki
+// is a synth scene (no MP3); the engine times it out after a few loops to keep the rotation moving.
+const PLAYLISTS = { soviet: ['menu', ...SONGS.map((s) => s[0])] };
 
 export class MusicDirector {
   constructor(audio) {
@@ -189,6 +191,10 @@ export class MusicDirector {
     this.scene = null;         // active scene def
     this.variant = null;       // optional scene flavor (e.g. boss 'mitri'/'tolo')
     this.playlist = null;      // active jukebox { id, members[], idx, fade } or null (single-scene mode)
+    this.shuffle = true;       // jukebox plays a random next track instead of sequential (default ON)
+    this.repeatOne = false;    // loop the current track instead of advancing
+    this._synthAdvanceTimer = null; // for a synth scene in the jukebox (Korobeiniki): timed advance
+    this._synthStart = 0; this._synthDur = 78;  // pseudo-duration (s) for a synth jukebox track
 
     this.intensity = 0; this._intTarget = 0;
     this.stress = 0; this._stressTarget = 0;
@@ -338,7 +344,7 @@ export class MusicDirector {
   // music-duck all still apply (mix stays downstream of musicGain; invariant m.out !== musicGain).
   // Standalone scenes loop; in a jukebox the track segues to the next on `ended`.
   _startSample(url, bus, name) {
-    const el = new Audio(url); el.loop = !this.playlist; el.preload = 'auto';
+    const el = new Audio(url); el.loop = !this.playlist || this.repeatOne; el.preload = 'auto'; // repeat-one loops the element (onended never fires)
     let node = null;
     try { node = this.ctx.createMediaElementSource(el); node.connect(bus); } catch (e) {}
     el.onended = () => { if (this._sampleEl === el && this.playlist && this.sceneName === name) this._advancePlaylist(); };
@@ -358,18 +364,28 @@ export class MusicDirector {
 
   // Start a named jukebox from PLAYLISTS: plays each member, then segues to the next (sample
   // scenes advance on the MP3's onended). game.js points the title menu here.
-  setPlaylist(id, { fade = 1.6 } = {}) {
+  setPlaylist(id, { fade = 2.0 } = {}) {
     if (!this.ctx) { this._pending = '@' + id; return; }
     const members = (PLAYLISTS[id] || []).filter((n) => SCENES[n]);
     if (!members.length) return;
     if (this.playlist && this.playlist.id === id) return;     // already running this jukebox
-    this.playlist = { id, members, idx: 0, fade };
-    this._applyScene(members[0], { fade });
+    const start = this.shuffle ? Math.floor(Math.random() * members.length) : 0;
+    this.playlist = { id, members, idx: start, fade };
+    this._applyScene(members[start], { fade });
+  }
+  _nextIndex() {                                              // sequential, or a non-repeating random pick when shuffling
+    const pl = this.playlist;
+    if (!pl) return 0;
+    if (this.shuffle && pl.members.length > 1) {
+      let r; do { r = Math.floor(Math.random() * pl.members.length); } while (r === pl.idx);
+      return r;
+    }
+    return (pl.idx + 1) % pl.members.length;
   }
   _advancePlaylist() {
     const pl = this.playlist;
     if (!pl) return;
-    pl.idx = (pl.idx + 1) % pl.members.length;
+    pl.idx = this._nextIndex();
     this._applyScene(pl.members[pl.idx], { fade: pl.fade });   // _applyScene leaves this.playlist intact
   }
 
@@ -381,7 +397,7 @@ export class MusicDirector {
     const members = PLAYLISTS.soviet || [];
     if (!members.length) return;
     const i = ((index % members.length) + members.length) % members.length;
-    this.playlist = { id: 'soviet', members, idx: i, fade: 1.4 };
+    this.playlist = { id: 'soviet', members, idx: i, fade: 2.0 };   // auto-advance uses the smooth 2s segue
     this._applyScene(members[i], { fade });
   }
   jukeboxNext() { if (this.playlist && this.playlist.id === 'soviet') this._advancePlaylist(); else this.jukeboxPlayAt(0); }
@@ -398,18 +414,27 @@ export class MusicDirector {
     el.pause(); return false;
   }
   jukeboxSeek(frac) { const el = this._sampleEl; if (el && isFinite(el.duration)) el.currentTime = Math.max(0, Math.min(1, frac)) * el.duration; }
+  jukeboxSetShuffle(on) { this.shuffle = on === undefined ? !this.shuffle : !!on; return this.shuffle; }
+  jukeboxSetRepeatOne(on) {
+    this.repeatOne = on === undefined ? !this.repeatOne : !!on;
+    if (this._sampleEl) this._sampleEl.loop = !this.playlist || this.repeatOne;  // apply to the current track live
+    return this.repeatOne;
+  }
   jukeboxStatus() {
     const pl = this.playlist, el = this._sampleEl;
-    const on = !!(pl && pl.id === 'soviet' && this.sceneIsSample);
+    const on = !!(pl && pl.id === 'soviet');
+    const synth = on && !this.sceneIsSample;                  // Korobeiniki (generative) jukebox track
     return {
       active: on,
       index: on ? pl.idx : -1,
       slug: on ? pl.members[pl.idx] : null,
       title: on ? (SCENES[pl.members[pl.idx]].title || pl.members[pl.idx]) : null,
       year: on ? (SCENES[pl.members[pl.idx]].year || null) : null,
-      paused: el ? el.paused : true,
-      time: el ? (el.currentTime || 0) : 0,
-      duration: el && isFinite(el.duration) ? el.duration : 0,
+      paused: el ? el.paused : false,
+      time: el ? (el.currentTime || 0) : (synth ? Math.max(0, this.t - this._synthStart) : 0),
+      duration: el && isFinite(el.duration) ? el.duration : (synth ? this._synthDur : 0),
+      shuffle: this.shuffle,
+      repeatOne: this.repeatOne,
     };
   }
 
@@ -420,6 +445,7 @@ export class MusicDirector {
     const def = SCENES[name];
     if (!def) return;
     const t = this.t;
+    if (this._synthAdvanceTimer) { clearTimeout(this._synthAdvanceTimer); this._synthAdvanceTimer = null; }
     // fade out + tear down the old scene (a sample keeps streaming through its bus fade, then stops)
     if (this.sceneBus) {
       const old = this.sceneBus, oldDrones = this.drones, oldEl = this._sampleEl, oldNode = this._sampleNode;
@@ -439,6 +465,11 @@ export class MusicDirector {
       this._startSample(def.audioUrl, bus, name);
     } else {
       this.drones = (def.drones || []).map((dd) => ({ def: dd, handle: dd.build(this, bus) }));
+      // a synth scene inside the jukebox (Korobeiniki) has no `ended` event → advance on a timer
+      if (this.playlist && this.playlist.id === 'soviet' && this.playlist.members[this.playlist.idx] === name) {
+        this._synthStart = t;
+        this._synthAdvanceTimer = setTimeout(() => { if (this.sceneName === name && this.playlist) this._advancePlaylist(); }, this._synthDur * 1000);
+      }
     }
     this._bar = 0; this._step = 0; this._nextNoteTime = t + 0.06;
     this._ensureScheduler();
@@ -468,6 +499,7 @@ export class MusicDirector {
     const t = this.t;
     const bus = this.sceneBus;
     this._stopSample(); this.sceneIsSample = false;
+    if (this._synthAdvanceTimer) { clearTimeout(this._synthAdvanceTimer); this._synthAdvanceTimer = null; }
     if (bus) bus.gain.setTargetAtTime(0.0001, t, fade / 3);
     for (const d of this.drones) if (d.handle) d.handle.stop(t + fade);
     setTimeout(() => { try { bus && bus.disconnect(); } catch (e) {} }, (fade + 1) * 1000);

@@ -185,9 +185,11 @@ export class Admin {
       '<div class="mplayer">' +
         '<div class="mp-now" id="mp-now">— select a track —</div>' +
         '<div class="mp-ctl">' +
+          '<button class="mp-btn mp-tg" id="mp-shuffle" title="Shuffle (random)">🔀</button>' +
           '<button class="mp-btn" id="mp-prev" title="Previous">⏮</button>' +
           '<button class="mp-btn mp-big" id="mp-play" title="Play / Pause">▶</button>' +
           '<button class="mp-btn" id="mp-next" title="Next">⏭</button>' +
+          '<button class="mp-btn mp-tg" id="mp-repeat" title="Repeat one track">🔂</button>' +
           '<div class="mp-bar" id="mp-bar"><div class="mp-fill" id="mp-fill"></div></div>' +
           '<span class="mp-time" id="mp-time">0:00 / 0:00</span>' +
         '</div>' +
@@ -203,6 +205,8 @@ export class Admin {
     $('mp-prev').onclick = () => m.jukeboxPrev();
     $('mp-next').onclick = () => m.jukeboxNext();
     $('mp-play').onclick = () => m.jukeboxToggle();
+    $('mp-shuffle').onclick = () => m.jukeboxSetShuffle();
+    $('mp-repeat').onclick = () => m.jukeboxSetRepeatOne();
     $('mp-bar').onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); m.jukeboxSeek((e.clientX - r.left) / r.width); };
     this._startMusicTick();
   }
@@ -217,6 +221,9 @@ export class Admin {
       const fill = document.getElementById('mp-fill'), time = document.getElementById('mp-time');
       if (now) now.innerHTML = s.active ? `<span class="mp-dot ${s.paused ? '' : 'on'}"></span><b>${s.title}</b>${s.year ? ' · ' + s.year : ''}` : '— select a track —';
       if (play) play.textContent = (s.active && !s.paused) ? '⏸' : '▶';
+      const sh = document.getElementById('mp-shuffle'), rp = document.getElementById('mp-repeat');
+      if (sh) sh.classList.toggle('on', !!s.shuffle);
+      if (rp) rp.classList.toggle('on', !!s.repeatOne);
       if (fill) fill.style.width = (s.duration ? (s.time / s.duration * 100) : 0) + '%';
       if (time) time.textContent = this._fmt(s.time) + ' / ' + this._fmt(s.duration);
       if (this._mpRows) this._mpRows.forEach((r, i) => r.classList.toggle('on', i === s.index));
