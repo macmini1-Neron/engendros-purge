@@ -660,6 +660,8 @@
     .hero-scene > .sil-img { position: absolute; left: 50%; bottom: -1%; transform: translateX(-50%); height: 96%; width: auto;
       mix-blend-mode: multiply; filter: contrast(1.08) saturate(1.05);
       animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
+    /* transparent-background source (no white to drop): show opaque + deepen to a dark monument silhouette */
+    .hero-scene > .sil-img.alpha { mix-blend-mode: normal; filter: brightness(.3) contrast(1.32) saturate(.4) drop-shadow(0 8px 26px rgba(0,0,0,.55)); }
     @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-2%) scale(1.06); } }
     .sil { fill: #170402; }                          /* silhouette body */
     .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
@@ -845,24 +847,7 @@
       </div>
       <!-- 2 · РАБОЧИЙ И КОЛХОЗНИЦА — two figures, hammer & sickle crossed overhead -->
       <div class="hero-scene" data-cap="РАБОЧИЙ И КОЛХОЗНИЦА" data-en="Worker &amp; Kolkhoz Woman">
-        <svg viewBox="0 -40 460 640" preserveAspectRatio="xMidYMax meet">
-          <polygon class="sil2" points="120,600 360,600 338,558 142,558"/>
-          <!-- worker (left) -->
-          <path class="sil" d="M150 250 L206 250 L226 560 L120 560 Z"/>
-          <path class="sil" d="M160 168 L208 168 L214 256 L156 256 Z"/>
-          <ellipse class="sil" cx="184" cy="146" rx="20" ry="24"/>
-          <polygon class="sil" points="200,178 250,96 266,104 220,196"/>
-          <!-- kolkhoz woman (right) -->
-          <path class="sil" d="M250 250 L312 250 L344 560 L226 560 Z"/>
-          <path class="sil" d="M256 170 L306 170 L312 256 L250 256 Z"/>
-          <ellipse class="sil" cx="282" cy="148" rx="20" ry="24"/>
-          <polygon class="sil" points="262,180 214,98 230,90 282,176"/>
-          <!-- crossed hammer (left arm) + sickle (right arm) raised overhead -->
-          <rect class="sil" x="244" y="40" width="14" height="86" transform="rotate(26 251 83)"/>
-          <rect class="sil" x="232" y="36" width="46" height="20" transform="rotate(26 255 46)"/>
-          <rect class="sil" x="206" y="40" width="13" height="86" transform="rotate(-26 212 83)"/>
-          <path class="sil" d="M214 44 q40 -34 78 -6 q-30 -8 -52 16 q-14 14 -14 30 z"/>
-        </svg>
+        <img class="sil-img alpha" src="./assets/hero/rabochiy-kolkhoznitsa.png" alt="Рабочий и колхозница" draggable="false">
       </div>
       <!-- 3 · СЛАВА СОВЕТСКОЙ АРМИИ — bayonet obelisk + a row of helmeted guardsmen -->
       <div class="hero-scene wide" data-cap="СЛАВА СОВЕТСКОЙ АРМИИ" data-en="Glory to the Soviet Army">
