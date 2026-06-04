@@ -230,10 +230,10 @@ export class World {
       const x = randRange(-H + 30, H - 30, rng), z = randRange(-H + 30, H - 30, rng);
       if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
       if ((x > -84 && x < 84 && z > -104 && z < 12) || Math.hypot(x - 96, z - 18) < 22) continue; // keep the kombinát yard + slag heap clear
-      if (Math.hypot(x + 150, z + 90) < 48) continue; // keep the field strongpoint clear
-      if (x > -232 && x < 112 && z > 46 && z < 250) continue; // keep the enlarged N airfield (+ its N SAM site/radar) clear
-      if (x > -46 && x < 46 && z > -199 && z < -111) continue; // keep the kolkhoz «Красный степной» yard clear (moved S, off the airfield)
-      if (x > 150 && x < 190 && z > -8 && z < 38) continue; // keep the secret bunker «Объект 1180» berm clear
+      if (Math.hypot(x + 330, z + 300) < 56) continue; // keep the field strongpoint (far SW) clear
+      if (x > -232 && x < 112 && z > 290 && z < 500) continue; // keep the airfield (far N) + its N SAM site clear
+      if (x > 254 && x < 346 && z > -334 && z < -246) continue; // keep the kolkhoz (far SE) yard clear
+      if (x > 340 && x < 380 && z > 127 && z < 173) continue; // keep the secret bunker (far E) berm clear
       const s = randRange(2.5, 5.5, rng);
       this._solid(mb, s, s, s, x, s / 2, z, shade(0x6f6a5e, randRange(-0.08, 0.06, rng)), { ry: randRange(0, TAU, rng), tint: 0.07 });
     }
@@ -242,12 +242,13 @@ export class World {
     // scaled spawn ring + open loot spots
     for (let i = 0; i < 32; i++) { const a = (i / 32) * TAU; this.spawns.push(new THREE.Vector3(Math.cos(a) * (H - 12), 0, Math.sin(a) * (H - 12))); }
     this.lootSpots = [ new THREE.Vector3(0, 0, 40), new THREE.Vector3(90, 0, -40), new THREE.Vector3(-90, 0, -40), new THREE.Vector3(40, 0, 70), new THREE.Vector3(-50, 0, 30) ]; // open ground, clear of the kombinát yard
-    buildIndustrial(this, 0, 0); // Soviet kombinát district (world coords now; object-by-object — see industrial.js)
-    buildStrongpoint(this, -150, -90); // WW2 field strongpoint home base (object-by-object — see strongpoint.js)
-    buildAirfield(this, 0, 0); // Soviet military airfield (N district — object-by-object — see airfield.js)
-    buildKolkhoz(this, 0, -165); // kolkhoz «Красный степной» + crashed Su-24 POI — moved to the S open steppe (was NW, clashed with the airfield)
-    buildSecretBunker(this, 170, 15); // «Объект 1180» secret command bunker POI, remote E steppe (see bunker.js)
-    this.lootSpots.push(new THREE.Vector3(18, 0, -175), new THREE.Vector3(0, 0, -149)); // farm yard + by the wreck (moved with the kolkhoz)
+    // 1000×1000: districts SPREAD to the quadrants, kombinát central (hub by spawn)
+    buildIndustrial(this, 0, 0); // kombinát — centre (industrial.js)
+    buildStrongpoint(this, -330, -300); // WW2 field strongpoint home base — far SW (strongpoint.js)
+    buildAirfield(this, 0, 250); // Soviet military airfield — far N (airfield.js)
+    buildKolkhoz(this, 300, -300); // kolkhoz «Красный степной» + Su-24 wreck — far SE (kolkhoz.js)
+    buildSecretBunker(this, 360, 150); // «Объект 1180» secret bunker — far E/NE (bunker.js)
+    this.lootSpots.push(new THREE.Vector3(318, 0, -310), new THREE.Vector3(300, 0, -284)); // farm yard + by the wreck (moved with the kolkhoz)
   }
 
   _mesh(builder) {
