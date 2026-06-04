@@ -661,6 +661,8 @@
       mix-blend-mode: normal; filter: contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5));
       animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
     @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-1.2%) scale(1.025); } }
+    /* Родина-мать stays at her original commanding size (sword reaching up past the title) */
+    .hero-scene > .sil-img[src*="socha3"] { height: 97%; max-width: none; }
     .sil { fill: #170402; }                          /* silhouette body */
     .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
     .silr { fill: #3a0a06; }                          /* rim-lit edge tone */
