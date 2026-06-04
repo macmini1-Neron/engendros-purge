@@ -650,8 +650,10 @@
     .hero-glow { position: absolute; left: 50%; top: 43%; width: 78vmax; height: 78vmax; transform: translate(-50%, -50%);
       background: radial-gradient(closest-side, rgba(255,240,196,.62), rgba(255,186,98,.30) 26%, rgba(224,84,46,.13) 50%, transparent 72%); mix-blend-mode: screen; }
     /* monument silhouettes — only .on is visible, slow cross-fade + Ken-Burns drift */
-    .hero-scene { position: absolute; inset: 0; opacity: 0; transition: opacity 2.4s ease; }
-    .hero-scene.on { opacity: 1; }
+    /* scene change: a slow cross-dissolve + a gentle zoom-settle (incoming eases down from 1.06→1) */
+    .hero-scene { position: absolute; inset: 0; opacity: 0; transform: scale(1.06) translateY(1.5%); transform-origin: 50% 84%;
+      transition: opacity 1.7s ease, transform 2.1s cubic-bezier(.16,.72,.29,1); }
+    .hero-scene.on { opacity: 1; transform: scale(1) translateY(0); }
     .hero-scene > svg { position: absolute; left: 50%; bottom: -2%; transform: translateX(-50%); height: 86%; width: auto;
       filter: drop-shadow(0 6px 30px rgba(0,0,0,.55)); animation: heroDrift 30s ease-in-out infinite alternate; }
     .hero-scene.wide > svg { height: auto; width: 104%; bottom: 0; }
@@ -693,12 +695,11 @@
 
     /* ---- 3-D spinning brass-red stars flanking the title ---- */
     .hero-star3d { position: absolute; top: clamp(40px, 12vh, 144px); width: clamp(64px, 9.5vw, 134px); height: clamp(64px, 9.5vw, 134px);
-      z-index: 2; pointer-events: none; transform-style: preserve-3d; animation: starRock 7s ease-in-out infinite alternate; filter: drop-shadow(0 0 20px rgba(226,72,58,.65)); }
-    .hero-star3d.l { left: clamp(12px, 6.5vw, 150px); }
-    .hero-star3d.r { right: clamp(12px, 6.5vw, 150px); animation-delay: -3.5s; }
+      z-index: 4; pointer-events: none; transform-style: preserve-3d; filter: drop-shadow(0 0 20px rgba(226,72,58,.6)); }
+    .hero-star3d.l { left: clamp(12px, 6.5vw, 150px); transform: rotateY(20deg); }   /* fixed slight 3-D tilt, no spin */
+    .hero-star3d.r { right: clamp(12px, 6.5vw, 150px); transform: rotateY(-20deg); }
     .hero-star3d svg { position: absolute; inset: 0; width: 100%; height: 100%; }
     .hero-star3d .face-b { transform: translateZ(-16px); }
-    @keyframes starRock { from { transform: rotateY(-52deg) translateY(-7px); } to { transform: rotateY(52deg) translateY(7px); } }
 
     /* ---- minimalist NON-SCROLLING hero menu: title-block top, action-cluster bottom, monument between ---- */
     #menu { overflow: hidden; }
@@ -708,7 +709,7 @@
       display: flex; flex-direction: column; justify-content: space-between; min-height: 100vh;
       padding: 5vh clamp(20px,5vw,60px) clamp(70px,11vh,118px); text-align: center; animation: none; }
     #menu .card::before, #menu .card::after { display: none; }   /* no brass box frame */
-    .hero-star3d { z-index: 4; } .hero-ribbon { z-index: 4; }
+    .hero-ribbon { z-index: 4; }
     /* title block (top) */
     #menu .hero-head { flex: 0 0 auto; }
     #menu .kicker { font-size: clamp(10px,1.3vw,13px); letter-spacing: 5px; margin-bottom: 10px; }
@@ -763,6 +764,22 @@
     #play .play-extra { display: flex; gap: 12px; margin-top: 4px; }
     #play .play-extra .btn { flex: 1 1 0; min-width: 0; margin: 0; padding: 11px 14px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     #play .hint { font-size: 11.5px; color: var(--ink-dim); opacity: .75; min-height: 14px; margin-top: 7px; }
+
+    /* minimalist now-playing widget (bottom-left of the hero): note + track name + a music-volume slider */
+    .hero-np { position: absolute; left: 16px; bottom: 14px; z-index: 5; display: flex; align-items: center; gap: 9px;
+      padding: 7px 12px; max-width: 44vw; background: rgba(10,3,3,.5); border: 1px solid var(--brass-deep); border-radius: 4px;
+      backdrop-filter: blur(4px); box-shadow: 0 4px 14px rgba(0,0,0,.4), inset 0 1px 0 rgba(243,217,153,.08);
+      font-family: var(--font-stencil), monospace; pointer-events: auto; opacity: .9; transition: opacity .2s; }
+    .hero-np:hover { opacity: 1; }
+    .hero-np .np-note { width: 13px; height: 13px; color: var(--brass); flex: 0 0 auto; filter: drop-shadow(0 0 5px rgba(216,176,102,.4)); }
+    .hero-np .np-title { font-size: 11.5px; letter-spacing: 1px; color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28vw; text-transform: uppercase; }
+    .hero-np .np-vol { display: flex; align-items: center; gap: 7px; padding-left: 10px; border-left: 1px solid rgba(216,176,102,.22); }
+    .hero-np .np-spk { width: 13px; height: 13px; color: var(--brass-lo); flex: 0 0 auto; }
+    .hero-np input[type=range] { -webkit-appearance: none; appearance: none; width: 74px; height: 3px; border-radius: 3px;
+      background: rgba(216,176,102,.32); outline: none; cursor: pointer; }
+    .hero-np input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
+      background: var(--brass); border: 1px solid #3a2a0e; box-shadow: 0 0 6px rgba(216,176,102,.5); cursor: pointer; }
+    .hero-np input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--brass); border: 1px solid #3a2a0e; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -874,6 +891,15 @@
       </div>
     </div>
     <div id="menu-version" title="Build version &amp; release time"></div>
+    <!-- minimalist now-playing: just the track name + a music-volume slider (no skip / no marquee) -->
+    <div id="hero-np" class="hero-np">
+      <svg class="np-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span class="np-title" id="npTitle">— тишина —</span>
+      <span class="np-vol">
+        <svg class="np-spk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+        <input type="range" id="npVol" min="0" max="100" value="50" aria-label="Music volume">
+      </span>
+    </div>
   </div>
 
   <!-- DEPLOYMENT screen — map + mode + meta actions (kept OFF the art hero) -->
@@ -1105,6 +1131,21 @@
               const st = m && m.jukeboxStatus && m.jukeboxStatus(); playing = !!(st && st.active && !st.paused); } catch (e) {}
         if (!playing && performance.now() - lastChange > 22000) advance();
       }, 4000);
+
+      // ---- minimalist now-playing: current track name + music volume (no skip, no marquee) ----
+      const npTitle = document.getElementById('npTitle'), npVol = document.getElementById('npVol');
+      const audioM = () => window.GAME && window.GAME.audio;
+      if (npVol) npVol.addEventListener('input', () => { const a = audioM(); if (a && a.setMusicVolume) a.setMusicVolume(npVol.value / 100); });
+      let _volSynced = false;
+      function syncVol() { const a = audioM(); if (a && npVol && a.musicVolume != null) { npVol.value = Math.round(a.musicVolume * 100); _volSynced = true; } }
+      function syncTitle() {
+        const a = audioM(); let t = '';
+        try { const st = a && a.music && a.music.jukeboxStatus && a.music.jukeboxStatus(); if (st && st.active && st.title) t = st.title; } catch (e) {}
+        if (npTitle) npTitle.textContent = t || '— тишина —';
+      }
+      document.addEventListener('jukebox-track', () => setTimeout(syncTitle, 60));
+      setInterval(() => { if (!_volSynced) syncVol(); syncTitle(); }, 1500);
+      syncVol(); syncTitle();
     })();
   </script>
   <script type="module" src="./src/game.js?v=231"></script>
