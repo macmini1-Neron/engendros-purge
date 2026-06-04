@@ -315,13 +315,10 @@ export class World {
   }
 
   rayHit(origin, dir, maxDist, ignore = null) {
-    let best = maxDist, hitBox = null;
     const ignored = Array.isArray(ignore) ? ignore : null;
-    for (const b of this.boxes) {
-      if (b === ignore || (ignored && ignored.includes(b))) continue;
-      const t = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, b.min, b.max);
-      if (t !== null && t < best) { best = t; hitBox = b; }
-    }
+    const filter = (ignore != null) ? (b => !(b === ignore || (ignored && ignored.includes(b)))) : null;
+    const gh = this.grid.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, filter);
+    let best = gh ? gh.t : maxDist, hitBox = gh ? gh.box : null;
     if (dir.y < -1e-6) { const tg = -origin.y / dir.y; if (tg > 0 && tg < best) { best = tg; hitBox = 'ground'; } }
     if (best >= maxDist) return null;
     const point = new THREE.Vector3(origin.x + dir.x * best, origin.y + dir.y * best, origin.z + dir.z * best);
