@@ -1,5 +1,6 @@
 // waves.js — extracted from game.js during the module split (mechanical move, no logic changes).
-import { chc, pick, rr, weightedPick } from './util.js';
+import * as THREE from 'three';
+import { TAU, chc, clamp, pick, rr, weightedPick } from './util.js';
 import { BOSS_ROSTER, MINIBOSS_NAMES, WAVE_ADVANCE_SECS, WAVE_TYPES } from './tuning.js';
 import { ENEMY_TYPES } from './enemies.js';
 
@@ -111,9 +112,21 @@ export class WaveManager {
     } else this._advanceCheck(dt);
   }
   _spawnPos() {
-    const pp = this.game.player.pos; let best = null, bestD = -1;
-    for (let i = 0; i < 5; i++) { const s = pick(this.game.world.spawns); const d = Math.hypot(s.x - pp.x, s.z - pp.z); if (d > bestD) { bestD = d; best = s; } }
-    const pos = best.clone(); pos.x += rr(-2, 2); pos.z += rr(-2, 2); return pos;
+    // Open world (1000×1000): spawn in a fixed radius AROUND the player (not the map edge), biased
+    // to the flanks/rear so enemies don't pop into view, and re-rolled out of solid colliders.
+    const pp = this.game.player.pos, grid = this.game.world.grid, HALF = this.game.world.HALF;
+    const yaw = this.game.player.yaw || 0, fx = -Math.sin(yaw), fz = -Math.cos(yaw); // player forward
+    for (let tries = 0; tries < 8; tries++) {
+      const ang = rr(0, TAU), R = rr(75, 120), dxn = Math.sin(ang), dzn = Math.cos(ang);
+      if (tries < 5 && (dxn * fx + dzn * fz) > 0.3) continue; // skip the front cone on early tries
+      const x = clamp(pp.x + dxn * R, -HALF + 6, HALF - 6), z = clamp(pp.z + dzn * R, -HALF + 6, HALF - 6);
+      const near = grid ? grid.queryAABB(x - 1.5, z - 1.5, x + 1.5, z + 1.5) : this.game.world.boxes;
+      let blocked = false;
+      for (const b of near) { if (x > b.min.x - 1 && x < b.max.x + 1 && z > b.min.z - 1 && z < b.max.z + 1 && b.max.y > 1) { blocked = true; break; } }
+      if (!blocked) return new THREE.Vector3(x, 0, z);
+    }
+    const a = rr(0, TAU); // fallback: a plain offset from the player
+    return new THREE.Vector3(clamp(pp.x + Math.sin(a) * 90, -HALF + 6, HALF - 6), 0, clamp(pp.z + Math.cos(a) * 90, -HALF + 6, HALF - 6));
   }
   _spawnOne() {
     const n = this.wave, pos = this._spawnPos();
