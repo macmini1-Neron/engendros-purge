@@ -35,7 +35,6 @@ class Game {
   constructor() {
     this.canvas = document.getElementById('game');
     this.engine = new Engine(this.canvas);
-    this.engine.setPixelScale(2); // sharper than the default chunky 3x
     this.input = new Input(this.canvas);
     this.audio = new AudioManager();
     this.effects = new Effects(this);

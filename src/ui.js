@@ -214,7 +214,7 @@ export class UI {
 // ---------------------------------------------------------------------------
 // Settings — persisted (localStorage) options, applied live.
 // ---------------------------------------------------------------------------
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, pixel: 2, fov: 80 };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80 };
 
 export class Settings {
   constructor(game) {
@@ -229,7 +229,6 @@ export class Settings {
     if (this.game.player) this.game.player.sens = this.data.sens;
     this.game.audio.setVolume(this.data.sfx);
     this.game.audio.setMusicVolume(this.data.music);
-    this.game.engine.setPixelScale(this.data.pixel);
     this.game.engine.setFov(this.data.fov);
     this._refresh();
   }
@@ -239,14 +238,13 @@ export class Settings {
     txt('s-sens-v', Math.round(this.data.sens / SETTINGS_DEFAULTS.sens * 100) + '%');
     txt('s-sfx-v', Math.round(this.data.sfx * 100) + '%');
     txt('s-music-v', Math.round(this.data.music * 100) + '%');
-    txt('s-pixel-v', this.data.pixel <= 1 ? 'Crisp' : this.data.pixel + '×');
     txt('s-fov-v', this.data.fov + '°');
     val('s-sens', this.data.sens); val('s-sfx', this.data.sfx); val('s-music', this.data.music);
-    val('s-pixel', this.data.pixel); val('s-fov', this.data.fov);
+    val('s-fov', this.data.fov);
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
-    bind('s-sens', 'sens'); bind('s-sfx', 'sfx'); bind('s-music', 'music'); bind('s-pixel', 'pixel'); bind('s-fov', 'fov');
+    bind('s-sens', 'sens'); bind('s-sfx', 'sfx'); bind('s-music', 'music'); bind('s-fov', 'fov');
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }

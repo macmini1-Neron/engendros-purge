@@ -112,21 +112,16 @@ export class Engine {
     this.scene.add(this.clouds);
   }
 
-  setPixelScale(n) {
-    this.pixelScale = clamp(n, 1, 6);
-    this.resize();
-  }
+  setPixelScale() { /* pixelization removed — the renderer is always full-resolution / crisp */ }
 
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    // Internal buffer shrunk by pixelScale; CSS upscales (image-rendering: pixelated).
-    const iw = Math.max(1, Math.floor(w / this.pixelScale));
-    const ih = Math.max(1, Math.floor(h / this.pixelScale));
-    this.renderer.setPixelRatio(1);
-    this.renderer.setSize(iw, ih, false);
+    // Full native resolution (crisp); cap DPR at 2 so 4K/retina stays performant.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setSize(w, h, false);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
   }

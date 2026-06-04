@@ -58,7 +58,9 @@ function signPlane(world, text, x, y, z, w, h, ry, opts = {}) {
 function glassPane(world, w, h, x, y, z, opts = {}) {
   const mat = new THREE.MeshLambertMaterial({ color: opts.color || 0x9fc6cf, transparent: true, opacity: opts.opacity ?? 0.3, side: THREE.DoubleSide, depthWrite: false, emissive: 0x1c2a2e, emissiveIntensity: 0.3 });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-  m.position.set(x, y, z); m.rotation.set(opts.rx || 0, opts.ry || 0, opts.rz || 0);
+  m.position.set(x, y, z);
+  if (opts.ry) m.rotateY(opts.ry);       // face the wall direction first (local frame)
+  if (opts.lean) m.rotateX(opts.lean);   // THEN lean the top outward about the pane's OWN horizontal axis
   m.renderOrder = 3; world.scene.add(m);
 }
 // big runway number/marking painted FLAT on the ground
@@ -238,10 +240,10 @@ function buildTower(world, b, cx, cz) {
   world._solid(b, 0.3, sillH, cw, cx + cw / 2, cy + sillH / 2, cz, CONC.mid, { tint: 0.03 });
   // --- REAL see-through glass above the sill (tilted 15° outward) + corner mullions ---
   const gy = cy + sillH + (gh - sillH) / 2, ghh = gh - sillH;
-  glassPane(world, cw - 0.4, ghh, cx, gy, cz - cw / 2 - topOut / 2, { rx: tilt });
-  glassPane(world, cw - 0.4, ghh, cx, gy, cz + cw / 2 + topOut / 2, { rx: -tilt });
-  glassPane(world, cw - 0.4, ghh, cx - cw / 2 - topOut / 2, gy, cz, { ry: Math.PI / 2, rx: tilt });
-  glassPane(world, cw - 0.4, ghh, cx + cw / 2 + topOut / 2, gy, cz, { ry: Math.PI / 2, rx: -tilt });
+  glassPane(world, cw - 0.4, ghh, cx, gy, cz - cw / 2 - topOut / 2, { lean: -tilt });               // S (top leans out −Z)
+  glassPane(world, cw - 0.4, ghh, cx, gy, cz + cw / 2 + topOut / 2, { lean: tilt });                // N (top leans out +Z)
+  glassPane(world, cw - 0.4, ghh, cx - cw / 2 - topOut / 2, gy, cz, { ry: Math.PI / 2, lean: -tilt }); // W (top leans out −X)
+  glassPane(world, cw - 0.4, ghh, cx + cw / 2 + topOut / 2, gy, cz, { ry: Math.PI / 2, lean: tilt }); // E (top leans out +X)
   for (const [sx2, sz2] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.box(0.22, gh + 0.3, 0.22, cx + sx2 * (cw / 2 + topOut / 2), cy + sillH + ghh / 2, cz + sz2 * (cw / 2 + topOut / 2), 0x2b2b30);
   // --- cab roof (overhangs the splayed glazing) + ceiling light ---
   b.box(cw + 1.8 + topOut, 0.5, cw + 1.8 + topOut, cx, ry0 + 0.25, cz, CONC.hi);
