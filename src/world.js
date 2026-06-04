@@ -207,7 +207,7 @@ export class World {
 
     // sparse ground detail
     const tb = new MeshBuilder();
-    for (let i = 0; i < 220; i++) {
+    for (let i = 0; i < 880; i++) {
       const x = randRange(-H, H, rng), z = randRange(-H, H, rng), s = randRange(4, 12, rng);
       tb.box(s, 0.05, s, x, 0.03, z, shade(0x7c8a4e, randRange(-0.1, 0.06, rng)), { ry: randRange(0, TAU, rng) });
     }
@@ -220,13 +220,13 @@ export class World {
     this._solid(mb, span, MH, t, 0, MH / 2,  H + t / 2, rock, { tint: 0.06 });
     this._solid(mb, t, MH, span, -H - t / 2, MH / 2, 0, rock, { tint: 0.06 });
     this._solid(mb, t, MH, span,  H + t / 2, MH / 2, 0, rock, { tint: 0.06 });
-    for (let i = 0; i < 64; i++) { // jagged peaks (visual only — sit atop the impassable base)
+    for (let i = 0; i < 128; i++) { // jagged peaks (visual only — sit atop the impassable base)
       const edge = i % 4, f = randRange(-H, H, rng), peakH = randRange(8, 24, rng), pw = randRange(10, 28, rng);
       const x = edge < 2 ? f : (edge === 2 ? -H - t / 2 : H + t / 2);
       const z = edge < 2 ? (edge === 0 ? -H - t / 2 : H + t / 2) : f;
       mb.box(pw, peakH, pw, x, MH + peakH / 2 - 5, z, shade(rock2, randRange(-0.05, 0.05, rng)), { ry: randRange(0, TAU, rng), tint: 0.08 });
     }
-    for (let i = 0; i < 24; i++) { // boulders on open ground (cover + collision sanity)
+    for (let i = 0; i < 96; i++) { // boulders on open ground (cover + collision sanity)
       const x = randRange(-H + 30, H - 30, rng), z = randRange(-H + 30, H - 30, rng);
       if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
       if ((x > -84 && x < 84 && z > -104 && z < 12) || Math.hypot(x - 96, z - 18) < 22) continue; // keep the kombinát yard + slag heap clear
