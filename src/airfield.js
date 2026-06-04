@@ -351,6 +351,16 @@ function buildHangar(world, b, cx, cz) {
   for (let z = -11; z <= 9; z += 6.5) for (let s = 0; s < 3; s++) b.box(0.7, 0.1, 2.8, ex - 1.2, 0.9 + s * 1.0, cz + z, 0x57524b); // parts shelves (E wall)
   for (const [dx, dz, col] of [[0, 0, 0x9a3b2a], [1.1, 0.3, 0x3a4a2a], [0.5, 1.2, 0x9a3b2a], [-0.6, 0.7, 0x3a4a2a]]) cyl(b, 0.5, 1.2, ex - 3 + dx, 0.6, nz - 3 + dz, col, { seg: 10 }); // oil drums
   for (const sx of [-1, 1]) { b.box(1.0, 1.6, 0.7, cx + sx * 5.5, 0.8, sz + 2.6, sx > 0 ? 0xb02a22 : 0x3a4a2a); b.box(1.04, 0.1, 0.74, cx + sx * 5.5, 1.62, sz + 2.6, IRON); } // tool cabinets (by door)
+  // --- enriched ТЭЧ detail (dossier): glassed supervisor booth, service carts, jacks, tail stand, fire post, run-up anchors ---
+  { const bx = ex - 3, bz = nz - 3.4;                                                          // glazed supervisor booth (NE corner) — real glass
+    b.box(5, 0.3, 6, bx, 0.18, bz, CONC.lo); world._solid(b, 0.3, 2.4, 6, bx + 2.4, 1.4, bz, CONC.mid, { tint: 0.03 }); world._solid(b, 5, 2.4, 0.3, bx, 1.4, bz - 2.9, CONC.mid, { tint: 0.03 });
+    b.box(5.2, 0.2, 6.2, bx, 2.65, bz, CONC.lo); glassPane(world, 4.6, 1.3, bx, 2.0, bz - 2.75, {}); glassPane(world, 5.7, 1.3, bx + 2.4, 2.0, bz, { ry: Math.PI / 2 });
+    b.box(1.5, 0.8, 0.6, bx - 0.8, 0.55, bz + 1, 0x6a4a2a); b.box(1.1, 1.3, 0.08, bx - 1.8, 1.5, bz - 2.75, 0x2e4a2a); } // desk + schedule board
+  for (const [dxo, col] of [[-1, 0x3a5a9a], [2, 0x242424], [5, 0x2e7a3a]]) { b.box(0.9, 1.0, 0.6, cx + dxo, 0.5, cz + 7, col); cyl(b, 0.18, 0.1, cx + dxo, 0.18, cz + 7, IRON, { rx: Math.PI / 2, seg: 6 }); if (col !== 0x3a5a9a) for (const cyx of [-0.2, 0.2]) cyl(b, 0.12, 1.0, cx + dxo + cyx, 1.3, cz + 7, col, { seg: 8 }); } // hydraulic + N₂ + O₂ service carts
+  for (const z of [-7, -1]) { b.box(0.8, 0.3, 0.8, ex - 2.4, 0.15, cz + z, 0xb03020); cyl(b, 0.12, 1.3, ex - 2.4, 0.8, cz + z, 0x55504a, { seg: 6 }); } // aircraft jacks
+  b.box(0.7, 1.3, 0.7, cx + 4.2, 0.65, cz - 2, 0x55504a);                                       // tail stand (by the engine)
+  b.box(1.2, 1.6, 0.3, ex - 0.5, 0.9, cz + 9, 0xb02a22); b.box(0.34, 0.34, 0.12, ex - 0.5, 1.7, cz + 9, 0x14140f); // fire post + alarm
+  for (const [ax, az] of [[-4, -7.5], [-4, -0.5]]) cyl(b, 0.22, 0.08, cx + ax, 0.12, cz + az, 0xc9b048, { seg: 8 }); // engine run-up anchor rings
   signPlane(world, 'СЛАВА КПСС', cx, eave + 1.0, sz - 0.78, 16, 1.4, Math.PI, { panel: '#9a2b22', border: '#e8dca0', color: '#f2e9d6', size: 78, cw: 1200 });
   signPlane(world, 'АНГАР №1', cx, eave + 1.3, nz + T / 2 + 0.08, 6, 1.0, 0, { color: '#e8e0cc', size: 64 });
   signPlane(world, 'ТЭЧ АП', cx - 11, 3.4, sz - 0.78, 3.2, 0.8, Math.PI, { panel: '#2d4a2a', border: '#c8a24a', color: '#e8e0cc', size: 50 });
