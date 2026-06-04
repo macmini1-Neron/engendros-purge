@@ -661,7 +661,7 @@
       mix-blend-mode: multiply; filter: contrast(1.08) saturate(1.05);
       animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
     /* transparent-background source (no white to drop): show opaque + deepen to a dark monument silhouette */
-    .hero-scene > .sil-img.alpha { mix-blend-mode: normal; filter: brightness(.3) contrast(1.32) saturate(.4) drop-shadow(0 8px 26px rgba(0,0,0,.55)); }
+    .hero-scene > .sil-img.alpha { mix-blend-mode: normal; filter: brightness(.46) contrast(1.26) saturate(.45) drop-shadow(0 8px 26px rgba(0,0,0,.5)); }
     /* wide scene (a panoramic frieze, e.g. a parade): span the width, anchored at the bottom */
     .hero-scene.wide > .sil-img { height: auto; width: 104%; bottom: -2%; }
     .hero-scene.wide > .sil-img.alpha { width: 100%; }
@@ -846,7 +846,7 @@
       <!-- rotating monument tableaux (one .on at a time; JS cycles) -->
       <!-- 1 · РОДИНА-МАТЬ ЗОВЁТ — striding woman, sword thrust high, cloak streaming -->
       <div class="hero-scene on" data-cap="РОДИНА-МАТЬ ЗОВЁТ" data-en="The Motherland Calls">
-        <img class="sil-img" src="./assets/hero/rodina-mat.webp" alt="Родина-мать зовёт" draggable="false">
+        <img class="sil-img alpha" src="./assets/hero/rodina-mat.webp" alt="Родина-мать зовёт" draggable="false">
       </div>
       <!-- 2 · РАБОЧИЙ И КОЛХОЗНИЦА — two figures, hammer & sickle crossed overhead -->
       <div class="hero-scene" data-cap="РАБОЧИЙ И КОЛХОЗНИЦА" data-en="Worker &amp; Kolkhoz Woman">
@@ -854,7 +854,7 @@
       </div>
       <!-- 3 · СЛАВА СОВЕТСКОЙ АРМИИ — bayonet obelisk + a row of helmeted guardsmen -->
       <div class="hero-scene wide" data-cap="СЛАВА СОВЕТСКОЙ АРМИИ" data-en="Glory to the Soviet Army">
-        <img class="sil-img" src="./assets/hero/army-parade.webp" alt="Парад на Красной площади" draggable="false">
+        <img class="sil-img alpha" src="./assets/hero/army-parade.webp" alt="Парад на Красной площади" draggable="false">
       </div>
       <!-- 4 · ВПЕРЁД, К ПОБЕДЕ! — marching crowd, raised fists + banners -->
       <div class="hero-scene" data-cap="ВПЕРЁД, К ПОБЕДЕ!" data-en="Lenin — Forward, to Victory!">
@@ -862,11 +862,11 @@
       </div>
       <!-- 5 · ДВОРЕЦ СОВЕТОВ — Stalinist tiered skyline crowned with a star -->
       <div class="hero-scene" data-cap="ХРАМ ВАСИЛИЯ БЛАЖЕННОГО" data-en="St. Basil's · Red Square">
-        <img class="sil-img" src="./assets/hero/stbasil.webp" alt="Храм Василия Блаженного" draggable="false">
+        <img class="sil-img alpha" src="./assets/hero/stbasil.webp" alt="Храм Василия Блаженного" draggable="false">
       </div>
       <!-- 6 · БРОНЯ КРЕПКА — ranks of Soviet armour to the horizon -->
       <div class="hero-scene wide" data-cap="БРОНЯ КРЕПКА" data-en="Armour is Strong · Soviet Tanks">
-        <img class="sil-img" src="./assets/hero/tanks.webp" alt="Танковая мощь" draggable="false">
+        <img class="sil-img alpha" src="./assets/hero/tanks.webp" alt="Танковая мощь" draggable="false">
       </div>
       <div class="hero-haze"></div>
       <div class="hero-embers" id="heroEmbers"></div>
