@@ -303,7 +303,7 @@
 
     /* ---------- overlays (Atomic-Heart retro-futurist) ---------- */
     .overlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
-      background: radial-gradient(ellipse 100% 90% at 50% 26%, rgba(22,46,40,.62), rgba(4,8,7,.97) 92%); pointer-events: auto; }
+      background: radial-gradient(ellipse 120% 100% at 50% 24%, #111e18 0%, #070c0a 86%); pointer-events: auto; }
     .overlay.show { display: flex; animation: ovIn .25s ease both; }
     @keyframes ovIn { from { opacity: 0; } to { opacity: 1; } }
     /* film grain */
@@ -630,6 +630,170 @@
     .mp-fill { height: 100%; width: 0%; background: var(--gold); border-radius: 4px; }
     .mp-time { font-size: 12px; font-weight: 700; opacity: .7; font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 78px; text-align: right; }
     .mp-row b { color: var(--gold); opacity: .8; margin-right: 4px; }
+
+    /* ============================================================================
+       HERO — ultra-majestic Soviet main screen. A rotating roster of monument
+       tableaux over an animated gold sunburst on СССР red, flanked by 3-D spinning
+       stars, drifting embers + a banner ribbon. Lives INSIDE #menu, behind .card.
+       The whole point: hide the game map + radiate "МЫ — СОВЕТСКИЙ СОЮЗ".
+       ============================================================================ */
+    #menu { background: #160503; }                 /* opaque — the world never shows through */
+    #menu.overlay::after { opacity: .32; }          /* lighter scanlines over the hero */
+    #hero { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+    .hero-sky { position: absolute; inset: 0; background:
+        radial-gradient(125% 105% at 50% 40%, #8a1712 0%, #6a0f0b 40%, #380807 76%, #160403 100%); }
+    /* twin counter-rotating gold sunbursts */
+    .hero-rays { position: absolute; left: 50%; top: 40%; width: 230vmax; height: 230vmax; transform: translate(-50%, -50%);
+      background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(232,182,78,.18) 0deg 3.6deg, transparent 3.6deg 11deg);
+      animation: heroSpin 150s linear infinite; will-change: transform; }
+    .hero-rays.b { width: 200vmax; height: 200vmax; opacity: .55; animation-duration: 240s; animation-direction: reverse;
+      background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(243,217,153,.12) 0deg 2deg, transparent 2deg 8deg); }
+    @keyframes heroSpin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+    .hero-glow { position: absolute; left: 50%; top: 43%; width: 78vmax; height: 78vmax; transform: translate(-50%, -50%);
+      background: radial-gradient(closest-side, rgba(255,240,196,.62), rgba(255,186,98,.30) 26%, rgba(224,84,46,.13) 50%, transparent 72%); mix-blend-mode: screen; }
+    /* monument silhouettes — only .on is visible, slow cross-fade + Ken-Burns drift */
+    /* scene change: a slow cross-dissolve + a gentle zoom-settle (incoming eases down from 1.06→1) */
+    .hero-scene { position: absolute; inset: 0; opacity: 0; transform: scale(1.06) translateY(1.5%); transform-origin: 50% 84%;
+      transition: opacity 1.7s ease, transform 2.1s cubic-bezier(.16,.72,.29,1); }
+    .hero-scene.on { opacity: 1; transform: scale(1) translateY(0); }
+    .hero-scene > svg { position: absolute; left: 50%; bottom: -2%; transform: translateX(-50%); height: 86%; width: auto;
+      filter: drop-shadow(0 6px 30px rgba(0,0,0,.55)); animation: heroDrift 30s ease-in-out infinite alternate; }
+    .hero-scene.wide > svg { height: auto; width: 104%; bottom: 0; }
+    /* pre-cropped transparent monument photos — shown NORMAL (their own dark stone tone) over the sunburst,
+       a touch of contrast + a grounding shadow; no darkening so the sculptural detail reads. */
+    .hero-scene > .sil-img { position: absolute; left: 50%; bottom: -1%; transform: translateX(-50%); height: 73%; width: auto; max-width: 62vw; object-fit: contain; object-position: bottom;
+      mix-blend-mode: normal; filter: contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5));
+      animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
+    @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-1.2%) scale(1.025); } }
+    /* per-monument custom sizing + tone (each statue has its own proportions/reach; the grey ones are
+       darkened to Родина-мать's near-black silhouette tone so all three read the same) */
+    .hero-scene > .sil-img[src*="socha3"] { height: 97%; max-width: none; }  /* Родина-мать — reference dark, commanding */
+    .hero-scene > .sil-img[src*="socha2"] { height: 88%; max-width: none; filter: brightness(.55) contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5)); }  /* Рабочий и колхозница */
+    .hero-scene > .sil-img[src*="socha1"] { height: 86%; max-width: none; left: 44%; filter: brightness(.62) contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5)); }  /* Ленин — body centred + darkened */
+    .sil { fill: #170402; }                          /* silhouette body */
+    .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
+    .silr { fill: #3a0a06; }                          /* rim-lit edge tone */
+    /* horizon haze + tube vignette */
+    .hero-haze { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: linear-gradient(transparent, rgba(18,3,2,.92)); z-index: 1; }
+    .hero-vig { position: absolute; inset: 0; box-shadow: inset 0 0 340px 90px rgba(10,2,2,.82); z-index: 1; }
+    /* drifting embers (gold motes rising) */
+    .hero-embers { position: absolute; inset: 0; z-index: 1; }
+    .hero-embers i { position: absolute; bottom: -12px; width: 3px; height: 3px; border-radius: 50%;
+      background: rgba(255,212,128,.95); box-shadow: 0 0 7px 1px rgba(255,190,96,.7); animation: ember linear infinite; }
+    @keyframes ember { 0% { transform: translateY(0) translateX(0); opacity: 0; } 12% { opacity: .9; }
+      100% { transform: translateY(-92vh) translateX(34px); opacity: 0; } }
+    /* bottom banner ribbon — the scene's Cyrillic motto on a red plaque w/ gold rules */
+    .hero-ribbon { position: absolute; left: 0; right: 0; bottom: clamp(10px, 5vh, 40px); z-index: 2; text-align: center; pointer-events: none; }
+    .hero-ribbon .plaque { display: inline-block; position: relative; padding: 7px 30px; background: linear-gradient(180deg, #b22018, #7e120c);
+      border-top: 2px solid var(--brass); border-bottom: 2px solid var(--brass-deep);
+      box-shadow: 0 6px 22px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,210,150,.3);
+      font-family: var(--font-title); letter-spacing: 5px; font-size: clamp(13px, 2vw, 19px); color: #ffe9c4;
+      text-transform: uppercase; text-shadow: 0 2px 0 #4a0a06; }
+    .hero-ribbon .plaque b { color: #ffd06a; font-weight: 400; }
+    /* slogan ribbon — longer text, so tighter tracking + wrap to 2 lines, with a quick fade-up on change */
+    .hero-ribbon .plaque.slogan { letter-spacing: 2px; font-size: clamp(12px, 1.7vw, 17px); line-height: 1.32;
+      max-width: min(82vw, 780px); white-space: normal; text-wrap: balance; transform-origin: 50% 0%; backface-visibility: hidden; }
+    /* physical tear-off-calendar flip: the CURRENT slogan is cloned into .falling and torn off (hinges at its
+       top edge, falls forward toward the viewer) while the live line is hidden; the NEW text drops in as it
+       lands. BOTH moves are driven by the Web Animations API in the hero <script> (element.animate) — WAAPI
+       always plays a FRESH animation, so unlike CSS-class animations it can't get stuck "playing only once"
+       or be hijacked by a stale class on the clone. Keep only the 3-D context + the peel's static styling here. */
+    .hero-ribbon { perspective: 900px; }
+    .slogan-stack { position: relative; display: inline-block; transform-style: preserve-3d; }
+    .hero-ribbon .plaque.falling { position: absolute; z-index: 4; pointer-events: none; box-sizing: border-box;
+      margin: 0; box-shadow: 0 16px 32px rgba(0,0,0,.6); }
+    .hero-ribbon .en { display: block; margin-top: 7px; font-family: var(--font-stencil), var(--font-display);
+      font-size: 11px; letter-spacing: 4px; color: #d8b888; opacity: .82; text-transform: uppercase; }
+    /* scene caption swaps with the active scene */
+    .hero-scene .cap { display: none; }
+
+    /* ---- 3-D spinning brass-red stars flanking the title ---- */
+    .hero-star3d { position: absolute; top: clamp(40px, 12vh, 144px); width: clamp(64px, 9.5vw, 134px); height: clamp(64px, 9.5vw, 134px);
+      z-index: 4; pointer-events: none; transform-style: preserve-3d; filter: drop-shadow(0 0 20px rgba(226,72,58,.6)); }
+    .hero-star3d.l { left: clamp(12px, 6.5vw, 150px); transform: rotateY(20deg); }   /* fixed slight 3-D tilt, no spin */
+    .hero-star3d.r { right: clamp(12px, 6.5vw, 150px); transform: rotateY(-20deg); }
+    .hero-star3d svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .hero-star3d .face-b { transform: translateZ(-16px); }
+
+    /* ---- minimalist NON-SCROLLING hero menu: title-block top, action-cluster bottom, monument between ---- */
+    #menu { overflow: hidden; }
+    #menu .card { background:
+        linear-gradient(180deg, rgba(14,3,3,.52) 0%, rgba(16,4,3,0) 24%, rgba(16,4,3,0) 58%, rgba(12,3,3,.66) 100%);
+      border: 0; box-shadow: none; backdrop-filter: none; max-width: none; width: 100%; max-height: none; overflow: visible;
+      display: flex; flex-direction: column; justify-content: space-between; min-height: 100vh;
+      padding: 5vh clamp(20px,5vw,60px) clamp(70px,11vh,118px); text-align: center; animation: none; }
+    #menu .card::before, #menu .card::after { display: none; }   /* no brass box frame */
+    .hero-ribbon { z-index: 4; }
+    /* title block (top) */
+    #menu .hero-head { flex: 0 0 auto; }
+    #menu .kicker { font-size: clamp(10px,1.3vw,13px); letter-spacing: 5px; margin-bottom: 10px; }
+    #menu .kicker b { color: #ffd06a; }
+    #menu .title { font-size: clamp(46px,9.4vw,112px); font-weight: 400; letter-spacing: 3px; line-height: .9; margin: 0;
+      color: #f6ead0; text-shadow: 0 1px 0 #b89a52, 0 2px 0 #9a7e3e, 0 3px 0 #7e6530, 0 4px 0 #604c24, 0 5px 0 #463618, 0 6px 0 #2e240f, 0 9px 16px rgba(0,0,0,.6), 0 0 48px rgba(255,196,110,.42); }
+    #menu .title .hl { color: #ff5a44; text-shadow: 0 1px 0 #b41f16, 0 2px 0 #951810, 0 3px 0 #76130c, 0 4px 0 #570d08, 0 5px 0 #3a0805, 0 6px 0 #240403, 0 9px 18px rgba(0,0,0,.65), 0 0 44px rgba(255,80,60,.55); }
+    #menu .menubest { font-family: var(--font-stencil), monospace; font-size: 12px; letter-spacing: 2px; color: var(--brass-hi); opacity: .82; margin-top: 12px; min-height: 14px; text-transform: uppercase; }
+    /* action cluster (bottom) — one bold CTA, a secondary row, then minis */
+    #menu .hero-menu { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 11px; width: min(94vw,460px); margin: 0 auto; }
+    #menu .maptabs { margin: 0; background: rgba(8,2,2,.5); border-color: var(--brass-deep); padding: 4px; }
+    #menu .maptabs .tab { font-size: 12px; letter-spacing: 2px; padding: 6px 20px; }
+    #menu .hero-menu .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    #menu .hero-menu .btn small { display: none; }
+    #menu .btn.cta { width: 100%; margin: 0; padding: 17px 22px; font-size: clamp(19px,2.5vw,26px); letter-spacing: 3px; border-width: 2px; animation: ctaPulse 2.6s ease-in-out infinite; }
+    #menu .btn.cta i { font-size: .8em; }
+    @keyframes ctaPulse { 0%,100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 5px 0 #3a0c06, 0 10px 26px rgba(0,0,0,.5), 0 0 22px rgba(226,72,58,.4); }
+      50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 5px 0 #3a0c06, 0 12px 30px rgba(0,0,0,.55), 0 0 40px rgba(255,90,68,.72); } }
+    #menu .menu-row { display: flex; gap: 10px; width: 100%; }
+    #menu .menu-row .btn { flex: 1 1 0; margin: 0; padding: 12px 6px; font-size: 12.5px; letter-spacing: .8px; min-width: 0; }
+    #menu .menu-mini { display: flex; gap: 10px; margin-top: 1px; }
+    #menu .btn.mini { margin: 0; padding: 7px 16px; font-size: 11.5px; letter-spacing: 1.5px; opacity: .88; }
+    #menu .hint { font-size: 11px; color: var(--ink-dim); opacity: .7; min-height: 13px; letter-spacing: .5px; }
+    /* hero ENTER cluster (the ONLY action on the art screen) */
+    #menu .hero-enter { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(92vw, 430px); margin: 0 auto; }
+    #menu .btn.cta.enter { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+    #menu .menu-mini { display: flex; gap: 12px; }
+    #menu .btn.mini { margin: 0; padding: 7px 18px; font-size: 11.5px; letter-spacing: 1.5px; opacity: .82; }
+    #menu .btn.mini:hover { opacity: 1; }
+
+    /* ============ DEPLOYMENT (#play) — the second screen; map + mode live here, not on the hero ============ */
+    #play { background: radial-gradient(125% 110% at 50% 28%, #5c100c 0%, #380807 60%, #170403 100%); }
+    #play .play-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0;
+      background: repeating-conic-gradient(from 0deg at 50% 34%, rgba(232,182,78,.06) 0deg 3.4deg, transparent 3.4deg 11deg); }
+    #play::after { opacity: .3; }
+    #play .card.play-card { position: relative; z-index: 2; text-align: center; width: min(94vw, 560px); max-width: 560px;
+      max-height: 94vh; overflow: visible; padding: 26px 34px 28px; animation: cardIn .3s cubic-bezier(.2,.8,.25,1) both;
+      background: radial-gradient(140% 70% at 50% 0%, rgba(120,18,12,.34), transparent 62%), linear-gradient(180deg, #1d0907, #120403);
+      border: 2px solid var(--brass-lo); box-shadow: var(--shadow-card), 0 0 0 1px var(--brass-deep), inset 0 0 0 1px rgba(243,217,153,.12); }
+    #play .btn.back { position: absolute; top: 12px; left: 12px; width: auto; margin: 0; padding: 6px 14px; font-size: 11px; letter-spacing: 1.5px; opacity: .85; z-index: 3; }
+    #play .btn.back::before { display: none; }
+    #play .kicker { margin-top: 6px; }
+    #play .title.play-title { font-size: clamp(26px, 4vw, 38px); letter-spacing: 4px; color: var(--brass-hi);
+      text-shadow: 0 2px 0 #000, 0 0 24px rgba(216,176,102,.3); margin: 4px 0 6px; }
+    #play .menubest { margin: 0 0 16px; }
+    #play .play-sec { margin: 0 0 16px; }
+    #play .sec-label { font-family: var(--font-stencil), monospace; font-size: 11px; letter-spacing: 3px; color: var(--brass); opacity: .8; text-transform: uppercase; margin-bottom: 9px; }
+    #play .maptabs { display: inline-flex; }
+    #play .modepick { display: flex; gap: 12px; justify-content: center; }
+    #play .modepick .btn { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; margin: 0; padding: 14px 16px; }
+    #play .modepick .btn small, #play .play-extra .btn small { display: block; font-family: var(--font-body); font-weight: 500; font-size: 11px; opacity: .85; letter-spacing: .2px; text-transform: none; margin-top: 2px; }
+    #play .play-extra { display: flex; gap: 12px; margin-top: 4px; }
+    #play .play-extra .btn { flex: 1 1 0; min-width: 0; margin: 0; padding: 11px 14px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    #play .hint { font-size: 11.5px; color: var(--ink-dim); opacity: .75; min-height: 14px; margin-top: 7px; }
+
+    /* minimalist now-playing widget (bottom-left of the hero): note + track name + a music-volume slider */
+    .hero-np { position: absolute; left: 16px; bottom: 14px; z-index: 5; display: flex; align-items: center; gap: 9px;
+      padding: 7px 12px; max-width: 44vw; background: rgba(10,3,3,.5); border: 1px solid var(--brass-deep); border-radius: 4px;
+      backdrop-filter: blur(4px); box-shadow: 0 4px 14px rgba(0,0,0,.4), inset 0 1px 0 rgba(243,217,153,.08);
+      font-family: var(--font-stencil), monospace; pointer-events: auto; opacity: .9; transition: opacity .2s; }
+    .hero-np:hover { opacity: 1; }
+    .hero-np .np-note { width: 13px; height: 13px; color: var(--brass); flex: 0 0 auto; filter: drop-shadow(0 0 5px rgba(216,176,102,.4)); }
+    .hero-np .np-title { font-size: 11.5px; letter-spacing: 1px; color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28vw; text-transform: uppercase; }
+    .hero-np .np-vol { display: flex; align-items: center; gap: 7px; padding-left: 10px; border-left: 1px solid rgba(216,176,102,.22); }
+    .hero-np .np-spk { width: 13px; height: 13px; color: var(--brass-lo); flex: 0 0 auto; }
+    .hero-np input[type=range] { -webkit-appearance: none; appearance: none; width: 74px; height: 3px; border-radius: 3px;
+      background: rgba(216,176,102,.32); outline: none; cursor: pointer; }
+    .hero-np input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
+      background: var(--brass); border: 1px solid #3a2a0e; box-shadow: 0 0 6px rgba(216,176,102,.5); cursor: pointer; }
+    .hero-np input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--brass); border: 1px solid #3a2a0e; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -705,40 +869,81 @@
   <div id="mp-labels"></div>
   <div id="mp-scoreboard"><div class="sb-card"><div class="sb-title">SQUAD</div><div class="sb-head"><span></span><span>PLAYER</span><span>CASH</span><span>PING</span></div><div class="sb-rows" id="sb-rows"></div><div class="sb-hint">hold <b>Tab</b></div></div></div>
   <div id="menu" class="overlay show">
+    <div id="hero" aria-hidden="true">
+      <div class="hero-sky"></div>
+      <div class="hero-rays"></div>
+      <div class="hero-rays b"></div>
+      <div class="hero-glow"></div>
+      <!-- rotating monument tableaux — advance when a jukebox track ends (see the cycler script below) -->
+      <div class="hero-scene on" data-cap="РОДИНА-МАТЬ ЗОВЁТ" data-en="The Motherland Calls">
+        <img class="sil-img" src="./assets/hero/socha3.webp" alt="Родина-мать зовёт" draggable="false">
+      </div>
+      <div class="hero-scene" data-cap="РАБОЧИЙ И КОЛХОЗНИЦА" data-en="Worker &amp; Kolkhoz Woman">
+        <img class="sil-img" src="./assets/hero/socha2.webp" alt="Рабочий и колхозница" draggable="false">
+      </div>
+      <div class="hero-scene" data-cap="ЛЕНИН · ВПЕРЁД!" data-en="Vladimir Lenin">
+        <img class="sil-img" src="./assets/hero/socha1.webp" alt="Ленин" draggable="false">
+      </div>
+      <div class="hero-haze"></div>
+      <div class="hero-embers" id="heroEmbers"></div>
+      <div class="hero-vig"></div>
+      <div class="hero-ribbon"><span class="slogan-stack"><span class="plaque slogan" id="heroSlogan">WORKERS OF ALL COUNTRIES, UNITE!</span></span></div>
+      <div class="hero-star3d l"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
+      <div class="hero-star3d r"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
+    </div>
     <div class="card">
-      <div class="crest"><span class="ds side" data-ic="star"></span><span class="ds mid" data-ic="star"></span><span class="ds side" data-ic="star"></span></div>
-      <div class="kicker"><b>ИСТРЕБЛЕНИЕ</b> · EXTERMINATION PROTOCOL · СЕКТОР-7</div>
-      <div class="title">ENGENDROS <span class="hl">PURGE</span></div>
-      <div class="subtitle">
-        The voodoo plushies woke up hungry. Hold the sector, pop them for stuffing &amp; cash —
-        every run banks to your <b>account</b>. Spend it in the <b>ARMORY</b> to unlock gear and build your loadout.
+      <div class="hero-head">
+        <div class="kicker"><b>ИСТРЕБЛЕНИЕ</b> · EXTERMINATION PROTOCOL</div>
+        <div class="title">ENGENDROS <span class="hl">PURGE</span></div>
       </div>
-      <div id="menuBest" class="subtitle" style="margin:-6px 0 14px;font-size:13px;opacity:.72;color:var(--gold);"></div>
-      <div class="mappick" style="margin:2px 0 14px;">
-        <div style="font-family:var(--font-stencil),monospace;font-size:11px;letter-spacing:2px;opacity:.7;margin-bottom:6px;text-transform:uppercase;">Полигон · Select map</div>
-        <div class="shoptabs" id="map-pick" style="margin-bottom:0;">
-          <button class="tab on" id="map-arena" data-map="arena">Арена · Arena</button>
-          <button class="tab" id="map-steppe" data-map="steppe">Степь · Steppe</button>
+      <div class="hero-enter">
+        <button class="btn go cta enter" id="enterBtn"><i data-ic="play"></i> НАЧАТЬ · ENTER</button>
+        <div class="menu-mini">
+          <button class="btn sec mini" id="settingsBtn"><i data-ic="gear"></i> SETTINGS</button>
+          <button class="btn sec mini" id="adminBtn"><i data-ic="wrench"></i> ASSETS</button>
         </div>
-        <div id="map-note" class="subtitle" style="margin:6px 0 0;font-size:12px;opacity:.72;text-align:center;"></div>
-      </div>
-      <div class="modepick">
-        <button class="btn go" id="playBtn"><i data-ic="play"></i> PURGE<small>arcade wave modes — special waves, mini-bosses</small></button>
-        <button class="btn night" id="longNightBtn"><i data-ic="moon"></i> THE LONG NIGHT<small>endless survival · day/night · pitch-dark nights</small></button>
-      </div>
-      <button class="btn" id="armoryBtn"><i data-ic="crate"></i> ARMORY<small>spend your bank — unlock &amp; equip your loadout</small></button>
-      <button class="btn" id="multiplayerBtn"><i data-ic="users"></i> MULTIPLAYER<small>co-op for 2–4 · host or join with a room code</small></button>
-      <button class="btn sec" id="settingsBtn"><i data-ic="gear"></i> SETTINGS</button>
-      <button class="btn sec" id="adminBtn"><i data-ic="wrench"></i> ADMIN — ASSET VIEWER</button>
-      <div class="controls">
-        <span><b>WASD</b> move</span><span><b>Mouse</b> look</span><span><b>LMB</b> use / attack</span>
-        <span><b>RMB</b> aim / zoom</span><span><b>Wheel</b> scroll inventory</span><span><b>1-9</b> inventory slots</span>
-        <span><b>I</b> inventory</span><span><b>E</b> pick up / interact / 🔦 toggle</span><span><b>R</b> reload</span>
-        <span><b>V</b> quick-melee</span><span><b>B</b> fire mode</span><span><b>Space</b> jump</span>
-        <span><b>Shift</b> sprint</span><span><b>F</b> fullscreen</span><span><b>Esc</b> pause</span><span><b>M</b> mute</span>
       </div>
     </div>
     <div id="menu-version" title="Build version &amp; release time"></div>
+    <!-- minimalist now-playing: just the track name + a music-volume slider (no skip / no marquee) -->
+    <div id="hero-np" class="hero-np">
+      <svg class="np-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span class="np-title" id="npTitle">— тишина —</span>
+      <span class="np-vol">
+        <svg class="np-spk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+        <input type="range" id="npVol" min="0" max="100" value="50" aria-label="Music volume">
+      </span>
+    </div>
+  </div>
+
+  <!-- DEPLOYMENT screen — map + mode + meta actions (kept OFF the art hero) -->
+  <div id="play" class="overlay">
+    <div class="play-bg"></div>
+    <div class="card play-card">
+      <button class="btn back mini" id="playBackBtn">‹ НАЗАД · BACK</button>
+      <div class="kicker"><b>РАЗВЁРТЫВАНИЕ</b> · DEPLOYMENT ORDER</div>
+      <div class="title play-title">ВЫБОР ОПЕРАЦИИ</div>
+      <div id="menuBest" class="menubest"></div>
+      <div class="play-sec">
+        <div class="sec-label">Полигон · SECTOR</div>
+        <div class="shoptabs maptabs" id="map-pick">
+          <button class="tab on" id="map-arena" data-map="arena">Арена · Arena</button>
+          <button class="tab" id="map-steppe" data-map="steppe">Степь · Steppe</button>
+        </div>
+        <div id="map-note" class="hint"></div>
+      </div>
+      <div class="play-sec">
+        <div class="sec-label">Режим · MODE</div>
+        <div class="modepick">
+          <button class="btn go" id="playBtn"><i data-ic="play"></i> PURGE<small>arcade waves · special events · mini-bosses</small></button>
+          <button class="btn night" id="longNightBtn"><i data-ic="moon"></i> THE LONG NIGHT<small>endless survival · day/night · pitch-dark nights</small></button>
+        </div>
+      </div>
+      <div class="menu-row play-extra">
+        <button class="btn" id="armoryBtn"><i data-ic="crate"></i> ARMORY<small>spend your bank · unlock &amp; equip</small></button>
+        <button class="btn" id="multiplayerBtn"><i data-ic="users"></i> CO-OP<small>2–4 players · host or join</small></button>
+      </div>
+    </div>
   </div>
 
   <div id="pause" class="overlay">
@@ -906,6 +1111,141 @@
     // Fill static [data-ic="name"] placeholders with crisp SVG icons (replaces emoji in menu/shop/lobby chrome).
     import { icon } from './src/icons.js';
     for (const el of document.querySelectorAll('[data-ic]')) el.innerHTML = icon(el.dataset.ic);
+  </script>
+  <script>
+    // ---- HERO main-screen: drifting embers + rotating monument tableaux ----
+    (function () {
+      const em = document.getElementById('heroEmbers');
+      if (em) for (let i = 0; i < 22; i++) {
+        const s = document.createElement('i'); const dur = 7 + Math.random() * 12, sz = 1.5 + Math.random() * 2.6;
+        s.style.left = (Math.random() * 100) + '%'; s.style.width = s.style.height = sz.toFixed(1) + 'px';
+        s.style.animationDuration = dur.toFixed(1) + 's'; s.style.animationDelay = (-Math.random() * dur).toFixed(1) + 's';
+        s.style.opacity = (0.4 + Math.random() * 0.6).toFixed(2); em.appendChild(s);
+      }
+      // scene cycler — advance the monument IN STEP WITH THE JUKEBOX (each track is a different length),
+      // with a slow fallback so a silent / pre-interaction menu still rotates.
+      const scenes = Array.from(document.querySelectorAll('#hero .hero-scene'));
+      let i = 0, lastChange = performance.now();
+      function advance() {
+        if (scenes.length < 2) return;
+        scenes[i].classList.remove('on');
+        i = (i + 1) % scenes.length;
+        scenes[i].classList.add('on');
+        lastChange = performance.now();
+      }
+      // primary: switch the monument when a song ends → the next track begins
+      document.addEventListener('jukebox-track', advance);
+      // fallback: only when no track is actually playing (muted / before first interaction), drift slowly
+      setInterval(() => {
+        let playing = false;
+        try { const m = window.GAME && window.GAME.audio && window.GAME.audio.music;
+              const st = m && m.jukeboxStatus && m.jukeboxStatus(); playing = !!(st && st.active && !st.paused); } catch (e) {}
+        if (!playing && performance.now() - lastChange > 22000) advance();
+      }, 4000);
+
+      // ---- minimalist now-playing: current track name + music volume (no skip, no marquee) ----
+      const npTitle = document.getElementById('npTitle'), npVol = document.getElementById('npVol');
+      const audioM = () => window.GAME && window.GAME.audio;
+      if (npVol) npVol.addEventListener('input', () => { const a = audioM(); if (a && a.setMusicVolume) a.setMusicVolume(npVol.value / 100); });
+      let _volSynced = false;
+      function syncVol() { const a = audioM(); if (a && npVol && a.musicVolume != null) { npVol.value = Math.round(a.musicVolume * 100); _volSynced = true; } }
+      function syncTitle() {
+        const a = audioM(); let t = '';
+        try { const st = a && a.music && a.music.jukeboxStatus && a.music.jukeboxStatus(); if (st && st.active && st.title) t = st.title; } catch (e) {}
+        if (npTitle) npTitle.textContent = t || '— тишина —';
+      }
+      document.addEventListener('jukebox-track', () => setTimeout(syncTitle, 60));
+      setInterval(() => { if (!_volSynced) syncVol(); syncTitle(); }, 1500);
+      syncVol(); syncTitle();
+
+      // ---- the red ribbon cycles ~100 REAL Soviet propaganda slogans (English), one every 10s ----
+      const SLOGANS = [
+        'WORKERS OF ALL COUNTRIES, UNITE!', 'PROLETARIANS OF ALL LANDS, UNITE!', 'ALL POWER TO THE SOVIETS!',
+        'PEACE, LAND, BREAD!', 'PEACE, LABOUR, MAY!', 'LONG LIVE THE FIRST OF MAY!',
+        'COMMUNISM IS SOVIET POWER PLUS THE ELECTRIFICATION OF THE WHOLE COUNTRY',
+        'THE PARTY IS THE MIND, HONOUR AND CONSCIENCE OF OUR EPOCH', 'GLORY TO THE CPSU!',
+        'GLORY TO THE GREAT LENIN!', 'GLORY TO THE COMMUNIST PARTY!', 'LENIN LIVED, LENIN LIVES, LENIN WILL LIVE!',
+        'LENIN IS MORE ALIVE THAN ALL THE LIVING', 'THE PEOPLE AND THE PARTY ARE UNITED!',
+        'THE PARTY OF LENIN LEADS US TO COMMUNISM!', 'UNDER THE BANNER OF LENIN, FORWARD TO COMMUNISM!',
+        'FORWARD TO THE VICTORY OF COMMUNISM!', 'OUR GOAL IS COMMUNISM!', 'COMMUNISM — THE BRIGHT FUTURE OF MANKIND!',
+        'THE PRESENT GENERATION SHALL LIVE UNDER COMMUNISM!', 'WORK, LIVE AND STRUGGLE IN A COMMUNIST WAY!',
+        'LONG LIVE THE GREAT OCTOBER SOCIALIST REVOLUTION!', 'LONG LIVE THE SOVIET UNION!',
+        'LONG LIVE PEACE THROUGHOUT THE WORLD!', 'LONG LIVE THE FRIENDSHIP OF THE PEOPLES!',
+        'LONG LIVE THE UNION OF WORKERS AND PEASANTS!', 'LONG LIVE PROLETARIAN SOLIDARITY!',
+        'STUDY, STUDY, AND STUDY AGAIN!', 'CADRES DECIDE EVERYTHING!', 'KNOWLEDGE IS POWER',
+        'HE WHO DOES NOT WORK SHALL NOT EAT', 'FROM EACH ACCORDING TO HIS ABILITY, TO EACH ACCORDING TO HIS WORK',
+        'RELIGION IS THE OPIUM OF THE PEOPLE', 'LABOUR IN THE USSR IS A MATTER OF HONOUR AND GLORY',
+        'GLORY TO LABOUR!', 'GLORY TO THE HEROES OF LABOUR!', 'GLORY TO THE SOVIET PEOPLE!',
+        'HONOUR AND GLORY TO THE WORKING MAN!', 'THROUGH LABOUR — TO COMMUNISM!', 'PEACE THROUGH LABOUR!',
+        'THE FIVE-YEAR PLAN IN FOUR YEARS!', 'THE FIVE-YEAR PLAN — INTO LIFE!',
+        'THE PLAN IS LAW, FULFILMENT IS DUTY, OVERFULFILMENT IS HONOUR!', 'WE WILL FULFIL AND OVERFULFIL THE PLAN!',
+        'HIGHER LABOUR PRODUCTIVITY!', 'MORE METAL FOR THE MOTHERLAND!', 'MORE COAL FOR THE COUNTRY!',
+        'ONWARD TO NEW VICTORIES OF LABOUR!', 'DECISIONS OF THE PARTY CONGRESS — INTO LIFE!',
+        'THE ECONOMY MUST BE ECONOMICAL', 'SOVIET MEANS EXCELLENT!', 'QUALITY IS EVERYONE’S CONCERN!',
+        'CATCH UP AND OVERTAKE AMERICA!', 'LIFE HAS BECOME BETTER, LIFE HAS BECOME MORE JOYFUL',
+        'THE MOTHERLAND CALLS!', 'EVERYTHING FOR THE FRONT, EVERYTHING FOR VICTORY!',
+        'OUR CAUSE IS JUST — THE ENEMY WILL BE CRUSHED, VICTORY WILL BE OURS!', 'NOT A STEP BACK!',
+        'FOR THE MOTHERLAND! FOR HONOUR! FOR FREEDOM!', 'DEATH TO THE FASCIST INVADERS!',
+        'WE WILL DEFEND MOSCOW!', 'RAISE THE BANNER OF VICTORY OVER BERLIN!', 'WARRIOR, SAVE US!',
+        'THE MOTHERLAND WILL NOT FORGET ITS HEROES!', 'GLORY TO THE VICTORIOUS SOVIET PEOPLE!',
+        'NAPOLEON WAS SMASHED — SO WILL HITLER BE!', 'FOR OUR SOVIET MOTHERLAND!',
+        'LONG LIVE THE INVINCIBLE SOVIET ARMY!', 'GLORY TO THE ARMED FORCES OF THE USSR!',
+        'THE RED ARMY IS THE ARMY OF THE WORKERS AND PEASANTS', 'WORKERS AND PEASANTS, DEFEND SOVIET POWER!',
+        'WE ARE FOR PEACE!', 'PEACE TO THE WORLD!', 'PEACE WILL DEFEAT WAR!', 'DOWN WITH THE WARMONGERS!',
+        'DOWN WITH IMPERIALISM!', 'YANKEE, GO HOME!', 'PROLETARIAN INTERNATIONALISM IS OUR BANNER!',
+        'THE ATOM MUST BE A WORKER, NOT A SOLDIER', 'NO TO THE ATOMIC BOMB!',
+        'GLORY TO SOVIET SCIENCE!', 'THE ROAD TO THE STARS IS OPEN!', 'ONWARD TO THE STARS!',
+        'GLORY TO THE CONQUERORS OF SPACE!', 'DOWN WITH KITCHEN SLAVERY!', 'WOMAN, LEARN TO READ AND WRITE!',
+        'THE ILLITERATE IS LIKE A BLIND MAN', 'EMANCIPATED WOMAN, BUILD SOCIALISM!',
+        'CONQUER THE VIRGIN LANDS!', 'BREAD TO THE MOTHERLAND!', 'MAKE THE EARTH BLOOM!',
+        'PEASANT, JOIN THE COLLECTIVE FARM!', 'BE PREPARED! — ALWAYS PREPARED!', 'YOUTH — TO THE FRONT OF LABOUR!',
+        'THE YOUNG ARE OUR FUTURE!', 'THANK YOU, COMRADE, FOR OUR HAPPY CHILDHOOD!',
+        'LENIN IS WITH US!', 'LENIN — OCTOBER — COMMUNISM!', 'OUR STRENGTH IS IN UNITY!',
+        'BUILD SOCIALISM!', 'TO THE BRIGHT FUTURE!', 'THE REVOLUTION CONTINUES!', 'DARE TO STRUGGLE, DARE TO WIN!',
+      ];
+      const slogan = document.getElementById('heroSlogan');
+      if (slogan) {
+        let last = -1, revealT = 0, dropAnim = null; const ribbon = slogan.closest('.hero-ribbon');
+        // WAAPI keyframes (driven from JS so each roll plays a guaranteed-fresh animation)
+        const FALL = [
+          { transform: 'rotateX(0deg) translateY(0) scale(1)',          opacity: 1, filter: 'brightness(1)',    offset: 0 },
+          { transform: 'rotateX(-12deg) translateY(-2px) scale(1.03)',  opacity: 1, filter: 'brightness(1.18)', offset: 0.18 },  // tips toward viewer
+          { transform: 'rotateX(115deg) translateY(86px) scale(.94)',   opacity: 0, filter: 'brightness(.5)',   offset: 1 },     // …falls forward + away
+        ];
+        const DROP = [
+          { opacity: 0, transform: 'rotateX(-34deg) translateY(-7px)' },
+          { opacity: 1, transform: 'none' },
+        ];
+        const rollSlogan = (first) => {
+          if (ribbon) ribbon.querySelectorAll('.plaque.falling').forEach((el) => el.remove());  // clear any in-flight peel
+          clearTimeout(revealT);
+          let n; do { n = Math.floor(Math.random() * SLOGANS.length); } while (n === last && SLOGANS.length > 1); last = n;
+          const next = SLOGANS[n];
+          // no animation on first paint, with no ribbon, or on a hidden tab (WAAPI won't run on a hidden tab)
+          if (first || !ribbon || document.visibilityState !== 'visible') {
+            slogan.textContent = next; slogan.style.visibility = ''; return;
+          }
+          // 1) peel the CURRENT slogan into a clone pinned to its exact box (so the next slogan's size can't
+          //    shift the layers) and tear it off with the Web Animations API — a FRESH play every time, so it
+          //    animates on EVERY roll (no class/reflow/source-order games). It falls ALONE; the live line is hidden.
+          const r = slogan.getBoundingClientRect(), rr = ribbon.getBoundingClientRect();
+          const fall = slogan.cloneNode(true); fall.removeAttribute('id'); fall.classList.add('falling');
+          fall.style.left = (r.left - rr.left) + 'px'; fall.style.top = (r.top - rr.top) + 'px';
+          fall.style.width = r.width + 'px'; fall.style.visibility = '';
+          ribbon.appendChild(fall);
+          fall.animate(FALL, { duration: 900, easing: 'cubic-bezier(.5,0,.7,1)', fill: 'forwards' })
+              .finished.then(() => fall.remove(), () => fall.remove());   // resolves on finish, rejects on cancel — clean either way
+          // 2) hide the live line while the old one falls, then reveal the NEW one as it lands
+          slogan.style.visibility = 'hidden';
+          revealT = setTimeout(() => {
+            if (dropAnim) dropAnim.cancel();   // don't let finished drop-ins pile up on the live element
+            slogan.textContent = next; slogan.style.visibility = '';
+            dropAnim = slogan.animate(DROP, { duration: 500, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'both' });
+          }, 560);
+        };
+        rollSlogan(true); setInterval(rollSlogan, 10000);
+      }
+    })();
   </script>
   <script type="module" src="./src/game.js?v=232"></script>
 </body>
