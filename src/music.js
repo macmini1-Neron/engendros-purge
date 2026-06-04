@@ -386,7 +386,14 @@ export class MusicDirector {
     const pl = this.playlist;
     if (!pl) return;
     pl.idx = this._nextIndex();
-    this._applyScene(pl.members[pl.idx], { fade: pl.fade });   // _applyScene leaves this.playlist intact
+    const next = pl.members[pl.idx];
+    // tell the menu hero to switch its monument in step with the music (each track is a different length)
+    try { document.dispatchEvent(new CustomEvent('jukebox-track', { detail: { idx: pl.idx, slug: next } })); } catch (e) {}
+    // leave a short SILENT gap between tracks so boundaries breathe (the old track already ended on `onended`)
+    if (this._gapTimer) clearTimeout(this._gapTimer);
+    this._gapTimer = setTimeout(() => {
+      if (this.playlist === pl && pl.members[pl.idx] === next) this._applyScene(next, { fade: pl.fade });
+    }, 1400);
   }
 
   // ---- jukebox player API (drives the asset-viewer "Music" tab, Spotify-style) ----

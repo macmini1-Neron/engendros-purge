@@ -655,16 +655,11 @@
     .hero-scene > svg { position: absolute; left: 50%; bottom: -2%; transform: translateX(-50%); height: 86%; width: auto;
       filter: drop-shadow(0 6px 30px rgba(0,0,0,.55)); animation: heroDrift 30s ease-in-out infinite alternate; }
     .hero-scene.wide > svg { height: auto; width: 104%; bottom: 0; }
-    /* real photographic silhouettes (black-on-white PNG) — multiply drops the white, leaving the figure
-       as a tonal dark-red silhouette over the sunburst. Same drift as the SVG scenes. */
-    .hero-scene > .sil-img { position: absolute; left: 50%; bottom: -1%; transform: translateX(-50%); height: 96%; width: auto;
-      mix-blend-mode: multiply; filter: contrast(1.08) saturate(1.05);
+    /* pre-cropped transparent monument photos — shown NORMAL (their own dark stone tone) over the sunburst,
+       a touch of contrast + a grounding shadow; no darkening so the sculptural detail reads. */
+    .hero-scene > .sil-img { position: absolute; left: 50%; bottom: -1%; transform: translateX(-50%); height: 97%; width: auto;
+      mix-blend-mode: normal; filter: contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5));
       animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
-    /* transparent-background source (no white to drop): show opaque + deepen to a dark monument silhouette */
-    .hero-scene > .sil-img.alpha { mix-blend-mode: normal; filter: brightness(.46) contrast(1.26) saturate(.45) drop-shadow(0 8px 26px rgba(0,0,0,.5)); }
-    /* wide scene (a panoramic frieze, e.g. a parade): span the width, anchored at the bottom */
-    .hero-scene.wide > .sil-img { height: auto; width: 104%; bottom: -2%; }
-    .hero-scene.wide > .sil-img.alpha { width: 100%; }
     @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-2%) scale(1.06); } }
     .sil { fill: #170402; }                          /* silhouette body */
     .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
@@ -843,30 +838,15 @@
       <div class="hero-rays"></div>
       <div class="hero-rays b"></div>
       <div class="hero-glow"></div>
-      <!-- rotating monument tableaux (one .on at a time; JS cycles) -->
-      <!-- 1 · РОДИНА-МАТЬ ЗОВЁТ — striding woman, sword thrust high, cloak streaming -->
+      <!-- rotating monument tableaux — advance when a jukebox track ends (see the cycler script below) -->
       <div class="hero-scene on" data-cap="РОДИНА-МАТЬ ЗОВЁТ" data-en="The Motherland Calls">
-        <img class="sil-img alpha" src="./assets/hero/rodina-mat.webp" alt="Родина-мать зовёт" draggable="false">
+        <img class="sil-img" src="./assets/hero/socha3.webp" alt="Родина-мать зовёт" draggable="false">
       </div>
-      <!-- 2 · РАБОЧИЙ И КОЛХОЗНИЦА — two figures, hammer & sickle crossed overhead -->
       <div class="hero-scene" data-cap="РАБОЧИЙ И КОЛХОЗНИЦА" data-en="Worker &amp; Kolkhoz Woman">
-        <img class="sil-img alpha" src="./assets/hero/rabochiy-kolkhoznitsa.webp" alt="Рабочий и колхозница" draggable="false">
+        <img class="sil-img" src="./assets/hero/socha2.webp" alt="Рабочий и колхозница" draggable="false">
       </div>
-      <!-- 3 · СЛАВА СОВЕТСКОЙ АРМИИ — bayonet obelisk + a row of helmeted guardsmen -->
-      <div class="hero-scene wide" data-cap="СЛАВА СОВЕТСКОЙ АРМИИ" data-en="Glory to the Soviet Army">
-        <img class="sil-img alpha" src="./assets/hero/army-parade.webp" alt="Парад на Красной площади" draggable="false">
-      </div>
-      <!-- 4 · ВПЕРЁД, К ПОБЕДЕ! — marching crowd, raised fists + banners -->
-      <div class="hero-scene" data-cap="ВПЕРЁД, К ПОБЕДЕ!" data-en="Lenin — Forward, to Victory!">
-        <img class="sil-img alpha" src="./assets/hero/lenin.webp" alt="Ленин" draggable="false">
-      </div>
-      <!-- 5 · ДВОРЕЦ СОВЕТОВ — Stalinist tiered skyline crowned with a star -->
-      <div class="hero-scene" data-cap="ХРАМ ВАСИЛИЯ БЛАЖЕННОГО" data-en="St. Basil's · Red Square">
-        <img class="sil-img alpha" src="./assets/hero/stbasil.webp" alt="Храм Василия Блаженного" draggable="false">
-      </div>
-      <!-- 6 · БРОНЯ КРЕПКА — ranks of Soviet armour to the horizon -->
-      <div class="hero-scene wide" data-cap="БРОНЯ КРЕПКА" data-en="Armour is Strong · Soviet Tanks">
-        <img class="sil-img alpha" src="./assets/hero/tanks.webp" alt="Танковая мощь" draggable="false">
+      <div class="hero-scene" data-cap="ЛЕНИН · ВПЕРЁД!" data-en="Vladimir Lenin">
+        <img class="sil-img" src="./assets/hero/socha1.webp" alt="Ленин" draggable="false">
       </div>
       <div class="hero-haze"></div>
       <div class="hero-embers" id="heroEmbers"></div>
@@ -1097,16 +1077,29 @@
         s.style.animationDuration = dur.toFixed(1) + 's'; s.style.animationDelay = (-Math.random() * dur).toFixed(1) + 's';
         s.style.opacity = (0.4 + Math.random() * 0.6).toFixed(2); em.appendChild(s);
       }
-      // scene cycler — cross-fade through the monument roster while the menu is up
+      // scene cycler — advance the monument IN STEP WITH THE JUKEBOX (each track is a different length),
+      // with a slow fallback so a silent / pre-interaction menu still rotates.
       const scenes = Array.from(document.querySelectorAll('#hero .hero-scene'));
       const plaque = document.getElementById('heroPlaque'), plaqueEn = document.getElementById('heroPlaqueEn');
-      let i = 0;
-      if (scenes.length > 1) setInterval(() => {
+      let i = 0, lastChange = performance.now();
+      function advance() {
+        if (scenes.length < 2) return;
         scenes[i].classList.remove('on');
         i = (i + 1) % scenes.length;
         const sc = scenes[i]; sc.classList.add('on');
-        if (plaque) plaque.textContent = sc.dataset.cap || ''; if (plaqueEn) plaqueEn.textContent = sc.dataset.en || '';
-      }, 8000);
+        if (plaque) plaque.textContent = sc.dataset.cap || '';
+        if (plaqueEn) plaqueEn.textContent = sc.dataset.en || '';
+        lastChange = performance.now();
+      }
+      // primary: switch the monument when a song ends → the next track begins
+      document.addEventListener('jukebox-track', advance);
+      // fallback: only when no track is actually playing (muted / before first interaction), drift slowly
+      setInterval(() => {
+        let playing = false;
+        try { const m = window.GAME && window.GAME.audio && window.GAME.audio.music;
+              const st = m && m.jukeboxStatus && m.jukeboxStatus(); playing = !!(st && st.active && !st.paused); } catch (e) {}
+        if (!playing && performance.now() - lastChange > 22000) advance();
+      }, 4000);
     })();
   </script>
   <script type="module" src="./src/game.js?v=231"></script>
