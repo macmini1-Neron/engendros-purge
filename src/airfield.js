@@ -574,15 +574,40 @@ function buildFireStation(world, b, cx, cz) {                            // по
   signPlane(world, 'ПОЖАРНОЕ ДЕПО', cx, 5.0, cz - 4.0, 8, 1.0, Math.PI, { color: '#f0e8d0', size: 48 });
   collider(world, cx, cz, 6.2, 0, 5.5, 4.2);
 }
-function buildWatchtower(world, b, cx, cz) {                             // вышка охраны — 4-leg timber tower + cabin
-  const H = 6;
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { b.box(0.3, H, 0.3, cx + sx * 1.2, H / 2, cz + sz * 1.2, PLANK, { tint: 0.04 }); }
-  for (const sz of [-1, 1]) b.box(2.7, 0.2, 0.2, cx, 3, cz + sz * 1.2, PLANK); for (const sx of [-1, 1]) b.box(0.2, 0.2, 2.7, cx + sx * 1.2, 3.6, cz, PLANK);
-  b.box(3.5, 2.3, 3.5, cx, H + 1.15, cz, PLANK, { tint: 0.05 });
-  b.box(3.9, 0.5, 3.9, cx, H + 2.5, cz, 0x4a3a24);                       // roof
-  for (const [dx, dz] of [[0, 1.78], [1.78, 0], [0, -1.78], [-1.78, 0]]) b.box(dx ? 0.2 : 2.5, 0.9, dz ? 0.2 : 2.5, cx + dx, H + 1.4, cz + dz, 0x14140f);
-  b.box(0.12, H, 0.7, cx, H / 2, cz - 1.35, IRON);                       // ladder
-  collider(world, cx, cz, 1.7, 0, H + 2.6);
+function buildWatchtower(world, b, cx, cz, sd = 1) {                     // вышка охраны — CLIMBABLE; sd=+1 stair toward +Z (S corners), −1 toward −Z (N corners) — always into the base
+  const FLOOR = 5, B = 1.7, PL = PLANK, RW = 0xc1272d, WH = 0xece4d2, WOOD = 0x6a4a2a, IFL = 0x8a7048, CW = 2 * B + 0.8, ch = 2.0, sillH = 0.7;
+  // --- 4 battered legs with red/white base bands + ring braces + face diagonals ---
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    b.box(0.26, FLOOR + 1.5, 0.26, cx + sx * B, (FLOOR + 1.5) / 2, cz + sz * B, PL, { tint: 0.04 });
+    for (let k = 0; k < 4; k++) b.box(0.3, 0.45, 0.3, cx + sx * B, 0.45 + k * 0.9, cz + sz * B, k % 2 ? WH : RW);
+  }
+  for (const yy of [1.6, 3.4]) { for (const sz of [-1, 1]) b.box(2 * B, 0.16, 0.16, cx, yy, cz + sz * B, PL); for (const sx of [-1, 1]) b.box(0.16, 0.16, 2 * B, cx + sx * B, yy, cz, PL); }
+  for (const sx of [-1, 1]) b.box(0.14, 5.0, 0.14, cx + sx * B, 2.5, cz, PL, { rz: sx * 0.62 });
+  // --- climbable external stair on the INTERIOR (sd) side, ascending toward the tower + handrail ---
+  const steps = 12, run = 0.45, rise = FLOOR / steps, sbase = cz + sd * (B + 5);
+  world._stairs(b, cx, sbase, 0, -sd, steps, WOOD, 0, rise, run, 1.3);
+  for (const sx of [-1, 1]) for (let i = 1; i < steps; i += 2) b.box(0.09, 1.0, 0.09, cx + sx * 0.72, i * rise + 0.5, sbase - sd * i * run, WOOD);
+  // --- cabin floor (y5) with the stair-head opening on the sd side ---
+  world._floor(b, cx, cz, CW, CW, FLOOR, IFL, { x: cx, z: cz + sd * (CW / 2 - 0.7), w: 1.5, d: 1.6 });
+  // --- cabin: low collidable timber sill (skip S opening) + REAL glass above + top plate + corner posts ---
+  for (const [ax, fz, fx] of [['x', -1, 0], ['x', 1, 0], ['z', 0, -1], ['z', 0, 1]]) {
+    const wx = cx + fx * (CW / 2), wz = cz + fz * (CW / 2), gh2 = ch - sillH - 0.3;
+    if (!(ax === 'x' && fz === sd)) { if (ax === 'x') world._solid(b, CW, sillH, 0.18, wx, FLOOR + sillH / 2, wz, WOOD, { tint: 0.03 }); else world._solid(b, 0.18, sillH, CW, wx, FLOOR + sillH / 2, wz, WOOD, { tint: 0.03 }); } // skip the sd-side sill (stair entry)
+    if (ax === 'x') glassPane(world, CW - 0.4, gh2, wx, FLOOR + sillH + gh2 / 2, wz, {}); else glassPane(world, CW - 0.4, gh2, wx, FLOOR + sillH + gh2 / 2, wz, { ry: Math.PI / 2 });
+    if (ax === 'x') b.box(CW, 0.18, 0.22, wx, FLOOR + ch, wz, WOOD); else b.box(0.22, 0.18, CW, wx, FLOOR + ch, wz, WOOD);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.16, ch, 0.16, cx + sx * CW / 2, FLOOR + ch / 2, cz + sz * CW / 2, WOOD);
+  b.box(CW + 0.8, 0.3, CW + 0.8, cx, FLOOR + ch + 0.25, cz, 0x4a3a24); b.box(CW - 0.4, 0.5, CW - 0.4, cx, FLOOR + ch + 0.55, cz, 0x3a2c1a); // hip roof
+  // --- cabin interior: stool, ТА-57 field phone, 3-rifle rack, stove + stovepipe, logbook on a shelf ---
+  b.box(0.4, 0.5, 0.4, cx - 0.7, FLOOR + 0.25, cz - sd * 0.7, WOOD);                                            // stool (back corner)
+  b.box(0.26, 0.2, 0.12, cx + CW / 2 - 0.28, FLOOR + 1.0, cz, 0x8a8466); b.box(0.1, 0.16, 0.1, cx + CW / 2 - 0.28, FLOOR + 0.84, cz, 0x222020); // ТА-57 field phone (E wall)
+  for (let r = 0; r < 3; r++) b.box(0.07, 0.55, 0.07, cx - CW / 2 + 0.4 + r * 0.16, FLOOR + 0.9, cz - sd * (CW / 2 - 0.5), 0x2a2a2e); // rifle rack (back wall)
+  b.box(0.4, 0.6, 0.4, cx + 0.85, FLOOR + 0.3, cz - sd * 0.85, 0x222226); cyl(b, 0.08, 2.1, cx + 0.85, FLOOR + 1.35, cz - sd * 0.85, 0x2a2a2e, { seg: 6 }); // stove + stovepipe
+  b.box(0.34, 0.04, 0.42, cx, FLOOR + 0.92, cz - sd * 0.95, 0xe8e0cc);                                          // logbook on a shelf
+  // --- exterior searchlight (прожектор) on the OUTWARD (−sd) face ---
+  { const lz = cz - sd * (CW / 2 + 0.25); b.box(0.18, 0.2, 0.3, cx, FLOOR + 1.4, lz + sd * 0.18, IRON); cyl(b, 0.32, 0.34, cx, FLOOR + 1.5, lz, 0x2a2a2e, { rx: Math.PI / 2, seg: 12 }); cyl(b, 0.27, 0.06, cx, FLOOR + 1.5, lz - sd * 0.17, 0xf6eec2, { rx: Math.PI / 2, seg: 12 }); }
+  // --- colliders: 4 legs + the cabin sill ring (player enters the cabin via the floor opening) ---
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) collider(world, cx + sx * B, cz + sz * B, 0.22, 0, FLOOR, 0.22);
 }
 function buildFloodlight(world, b, cx, cz, ry = 0) {                     // прожекторная мачта
   const H = 11;
@@ -628,7 +653,7 @@ export function buildAirfield(world, ox, oz) {
 
   // ③ КДП tower — runway MIDPOINT, flight-line side ; ④ ТЭЧ hangar — far rear (S), clear of the shelters
   buildTower(world, b, ox - 55, oz + 156);
-  buildHangar(world, b, ox - 150, oz + 62);
+  buildHangar(world, b, ox - 150, oz + 64);  // pulled N off the S fence
 
   // ⑤ aircraft — dispersed on the apron / hardstands (nose −Z)
   buildMiG21(world, b, ox - 95, oz + 120, '12');
@@ -638,19 +663,19 @@ export function buildAirfield(world, ox, oz) {
 
   // ⑥ ПВО — С-75 SAM site (N, OUTSIDE the fence, shrunk to clear the mountains) + Шилка ×2 (N corners) + П-18 + ЗУ-23 ×2
   buildSAMSite(world, b, ox - 70, oz + 230, 18);
-  buildShilka(world, b, ox - 218, oz + 204, 0.3); buildShilka(world, b, ox + 98, oz + 204, -0.3);
+  buildShilka(world, b, ox - 175, oz + 205, 0.3); buildShilka(world, b, ox + 55, oz + 205, -0.3); // mid-N, clear of the corner watchtowers
   buildRadarP18(world, b, ox - 135, oz + 230);
-  buildZU23(world, b, ox - 92, oz + 50); buildZU23(world, b, ox + 90, oz + 92, 0.4);
+  buildZU23(world, b, ox - 92, oz + 50); buildZU23(world, b, ox + 98, oz + 90, 0.4);             // E flank, clear of the E shelter
 
   // ⑦ support — штаб + fire depo (far W rear, opposite the fuel) ; fuel ГСМ (E rear corner) ; ammo dispersed (rear) ; windsock ; towers ; lights
   buildBarracks(world, b, ox - 210, oz + 66);
-  buildFireStation(world, b, ox - 210, oz + 48);
-  buildFuelFarm(world, b, ox + 92, oz + 60);
+  buildFireStation(world, b, ox - 210, oz + 54);  // pulled N off the S fence
+  buildFuelFarm(world, b, ox + 92, oz + 64);       // pulled N off the SE watchtower
   buildAmmoBunker(world, b, ox - 105, oz + 60, '1');
   buildAmmoBunker(world, b, ox - 28, oz + 58, '2');
   buildAmmoBunker(world, b, ox + 50, oz + 58, '3');
   buildWindsock(world, b, ox + 92, oz + 168);
-  [[-220, 48], [100, 48], [-220, 206], [100, 206]].forEach(([sx, sz]) => buildWatchtower(world, b, ox + sx, oz + sz));
+  [[-220, 48, 1], [100, 48, 1], [-220, 206, -1], [100, 206, -1]].forEach(([sx, sz, sd]) => buildWatchtower(world, b, ox + sx, oz + sz, sd)); // stairs face into the base
   [[-150, 132], [-55, 132], [40, 132], [-100, 112], [10, 112]].forEach(([sx, sz]) => buildFloodlight(world, b, ox + sx, oz + sz, 0));
 
   const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
