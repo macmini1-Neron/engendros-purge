@@ -168,6 +168,7 @@ const SONGS = [
   ['zhuravli', 'Журавли', 1969],
   ['den_pobedy', 'День Победы', 1975],
   ['million_roz', 'Миллион алых роз', 1982],
+  ['komarovo', 'Комарово', 1985],
   ['peremen', 'Хочу перемен', 1987],
 ];
 for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
