@@ -695,7 +695,7 @@
        viewer, a fresh one drops in underneath */
     .hero-ribbon { perspective: 900px; }
     .slogan-stack { position: relative; display: inline-block; transform-style: preserve-3d; }
-    .hero-ribbon .plaque.falling { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none;
+    .hero-ribbon .plaque.falling { position: absolute; z-index: 4; pointer-events: none; box-sizing: border-box; margin: 0;
       animation: sloganFall .9s cubic-bezier(.5,0,.7,1) both; box-shadow: 0 16px 32px rgba(0,0,0,.6); }
     @keyframes sloganFall {
       0%   { transform: rotateX(0deg) translateY(0) scale(1); opacity: 1; filter: brightness(1); }
@@ -1206,12 +1206,16 @@
       ];
       const slogan = document.getElementById('heroSlogan');
       if (slogan) {
-        let last = -1; const stack = slogan.parentNode;
+        let last = -1; const ribbon = slogan.closest('.hero-ribbon');
         const rollSlogan = (first) => {
           let n; do { n = Math.floor(Math.random() * SLOGANS.length); } while (n === last && SLOGANS.length > 1); last = n;
-          if (!first) {   // peel the current slogan off — it hinges at the top and falls toward the viewer
+          if (!first && ribbon) {
+            // pin a clone to the CURRENT slogan's exact box, THEN swap the text — so a longer/larger/2-line
+            // next slogan reflows freely without dragging the falling layer out of place (both stay centred)
+            const r = slogan.getBoundingClientRect(), rr = ribbon.getBoundingClientRect();
             const fall = slogan.cloneNode(true); fall.removeAttribute('id'); fall.classList.add('falling');
-            stack.appendChild(fall); fall.addEventListener('animationend', () => fall.remove(), { once: true });
+            fall.style.left = (r.left - rr.left) + 'px'; fall.style.top = (r.top - rr.top) + 'px'; fall.style.width = r.width + 'px';
+            ribbon.appendChild(fall); fall.addEventListener('animationend', () => fall.remove(), { once: true });
           }
           slogan.textContent = SLOGANS[n];
           slogan.classList.remove('dropin'); void slogan.offsetWidth; if (!first) slogan.classList.add('dropin');
