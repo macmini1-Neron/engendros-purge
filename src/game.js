@@ -27,7 +27,7 @@ import { Effects } from './effects.js';
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-04 12:22';
+const GAME_BUILD = '2026-06-04 12:24';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -38,8 +38,13 @@ class Game {
     this.input = new Input(this.canvas);
     this.audio = new AudioManager();
     this.effects = new Effects(this);
-    // Map selection (dev: ?map=steppe). World reads game.mapId in its constructor, so this MUST precede `new World`.
-    this.mapId = (() => { try { return new URLSearchParams(location.search).get('map') === 'steppe' ? 'steppe' : 'arena'; } catch (e) { return 'arena'; } })();
+    // Map selection. World reads game.mapId in its constructor, so this MUST precede `new World`.
+    // Priority: ?map= URL override (dev) -> the menu's saved pick (localStorage) -> 'arena' default.
+    this.mapId = (() => { try {
+      const p = new URLSearchParams(location.search).get('map');
+      if (p === 'steppe' || p === 'arena') return p;
+      return localStorage.getItem('engendros_map') === 'steppe' ? 'steppe' : 'arena';
+    } catch (e) { return 'arena'; } })();
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
     this.freecam = false;
     this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })();
@@ -75,12 +80,48 @@ class Game {
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
     this._last = 0; this._bound = this._frame.bind(this);
 
-    this._wireUI(); this._wireInput(); this._showMenuBest();
+    this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin();
     this.player.update(0.0001); this.engine.render();
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
 
     const DEBUG = true; // TODO remove in final task
     if (DEBUG) { window.__dbg = () => this; window.__dbgTank = () => this.waves._forceTankWave(); }
+  }
+
+  // Main-menu map picker (Arena/Steppe). The world is built once at boot from this.mapId,
+  // so switching maps persists the choice to localStorage and reloads to a clean world.
+  _wireMapPick() {
+    const NOTES = {
+      arena: 'de_dust2 arena — the classic wave-defence map.',
+      steppe: 'Soviet steppe — airfield, kombinát, проходная, field base + POIs.',
+    };
+    const tabs = Array.from(document.querySelectorAll('#map-pick .tab'));
+    const note = document.getElementById('map-note');
+    const sync = () => { tabs.forEach((t) => t.classList.toggle('on', t.dataset.map === this.mapId)); if (note) note.textContent = NOTES[this.mapId] || ''; };
+    tabs.forEach((t) => t.addEventListener('click', () => {
+      const m = t.dataset.map; if (!m || m === this.mapId) return;
+      try { localStorage.setItem('engendros_map', m); } catch (e) {}
+      location.href = location.pathname;
+    }));
+    sync();
+  }
+
+  // After a host-driven co-op map switch, reload onto the host's map and resume joining.
+  _maybeAutoRejoin() {
+    let info = null;
+    try { info = JSON.parse(sessionStorage.getItem('engendros_autojoin') || 'null'); sessionStorage.removeItem('engendros_autojoin'); } catch (e) {}
+    if (!info || !info.code) return;
+    setTimeout(() => {
+      try {
+        this.toLobby();
+        if (info.lan && this.mp.toggleLanMode && this.mp._lanMode && !this.mp._lanMode()) this.mp.toggleLanMode();
+        if (info.skin != null) this.mp.chosenSkin = info.skin;
+        const nameEl = document.getElementById('mp-name'); if (nameEl) nameEl.value = info.name || 'Player';
+        const codeEl = document.getElementById('mp-code'); if (codeEl) codeEl.value = info.code;
+        this.mp.startJoin(info.code, info.name || 'Player');
+        if (this.hud && this.hud.toast) this.hud.toast('Rejoining host on the new map...', 0x6fd0e8);
+      } catch (e) {}
+    }, 900);
   }
 
   _wireUI() {
