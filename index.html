@@ -301,7 +301,7 @@
 
     /* ---------- overlays (Atomic-Heart retro-futurist) ---------- */
     .overlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
-      background: radial-gradient(ellipse 100% 90% at 50% 26%, rgba(22,46,40,.62), rgba(4,8,7,.97) 92%); pointer-events: auto; }
+      background: radial-gradient(ellipse 120% 100% at 50% 24%, #111e18 0%, #070c0a 86%); pointer-events: auto; }
     .overlay.show { display: flex; animation: ovIn .25s ease both; }
     @keyframes ovIn { from { opacity: 0; } to { opacity: 1; } }
     /* film grain */
@@ -628,6 +628,136 @@
     .mp-fill { height: 100%; width: 0%; background: var(--gold); border-radius: 4px; }
     .mp-time { font-size: 12px; font-weight: 700; opacity: .7; font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 78px; text-align: right; }
     .mp-row b { color: var(--gold); opacity: .8; margin-right: 4px; }
+
+    /* ============================================================================
+       HERO — ultra-majestic Soviet main screen. A rotating roster of monument
+       tableaux over an animated gold sunburst on СССР red, flanked by 3-D spinning
+       stars, drifting embers + a banner ribbon. Lives INSIDE #menu, behind .card.
+       The whole point: hide the game map + radiate "МЫ — СОВЕТСКИЙ СОЮЗ".
+       ============================================================================ */
+    #menu { background: #160503; }                 /* opaque — the world never shows through */
+    #menu.overlay::after { opacity: .32; }          /* lighter scanlines over the hero */
+    #hero { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+    .hero-sky { position: absolute; inset: 0; background:
+        radial-gradient(125% 105% at 50% 40%, #8a1712 0%, #6a0f0b 40%, #380807 76%, #160403 100%); }
+    /* twin counter-rotating gold sunbursts */
+    .hero-rays { position: absolute; left: 50%; top: 40%; width: 230vmax; height: 230vmax; transform: translate(-50%, -50%);
+      background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(232,182,78,.18) 0deg 3.6deg, transparent 3.6deg 11deg);
+      animation: heroSpin 150s linear infinite; will-change: transform; }
+    .hero-rays.b { width: 200vmax; height: 200vmax; opacity: .55; animation-duration: 240s; animation-direction: reverse;
+      background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(243,217,153,.12) 0deg 2deg, transparent 2deg 8deg); }
+    @keyframes heroSpin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+    .hero-glow { position: absolute; left: 50%; top: 43%; width: 78vmax; height: 78vmax; transform: translate(-50%, -50%);
+      background: radial-gradient(closest-side, rgba(255,240,196,.62), rgba(255,186,98,.30) 26%, rgba(224,84,46,.13) 50%, transparent 72%); mix-blend-mode: screen; }
+    /* monument silhouettes — only .on is visible, slow cross-fade + Ken-Burns drift */
+    .hero-scene { position: absolute; inset: 0; opacity: 0; transition: opacity 2.4s ease; }
+    .hero-scene.on { opacity: 1; }
+    .hero-scene > svg { position: absolute; left: 50%; bottom: -2%; transform: translateX(-50%); height: 86%; width: auto;
+      filter: drop-shadow(0 6px 30px rgba(0,0,0,.55)); animation: heroDrift 30s ease-in-out infinite alternate; }
+    .hero-scene.wide > svg { height: auto; width: 104%; bottom: 0; }
+    /* real photographic silhouettes (black-on-white PNG) — multiply drops the white, leaving the figure
+       as a tonal dark-red silhouette over the sunburst. Same drift as the SVG scenes. */
+    .hero-scene > .sil-img { position: absolute; left: 50%; bottom: -1%; transform: translateX(-50%); height: 96%; width: auto;
+      mix-blend-mode: multiply; filter: contrast(1.08) saturate(1.05);
+      animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
+    @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-2%) scale(1.06); } }
+    .sil { fill: #170402; }                          /* silhouette body */
+    .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
+    .silr { fill: #3a0a06; }                          /* rim-lit edge tone */
+    /* horizon haze + tube vignette */
+    .hero-haze { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: linear-gradient(transparent, rgba(18,3,2,.92)); z-index: 1; }
+    .hero-vig { position: absolute; inset: 0; box-shadow: inset 0 0 340px 90px rgba(10,2,2,.82); z-index: 1; }
+    /* drifting embers (gold motes rising) */
+    .hero-embers { position: absolute; inset: 0; z-index: 1; }
+    .hero-embers i { position: absolute; bottom: -12px; width: 3px; height: 3px; border-radius: 50%;
+      background: rgba(255,212,128,.95); box-shadow: 0 0 7px 1px rgba(255,190,96,.7); animation: ember linear infinite; }
+    @keyframes ember { 0% { transform: translateY(0) translateX(0); opacity: 0; } 12% { opacity: .9; }
+      100% { transform: translateY(-92vh) translateX(34px); opacity: 0; } }
+    /* bottom banner ribbon — the scene's Cyrillic motto on a red plaque w/ gold rules */
+    .hero-ribbon { position: absolute; left: 0; right: 0; bottom: clamp(10px, 5vh, 40px); z-index: 2; text-align: center; pointer-events: none; }
+    .hero-ribbon .plaque { display: inline-block; position: relative; padding: 7px 30px; background: linear-gradient(180deg, #b22018, #7e120c);
+      border-top: 2px solid var(--brass); border-bottom: 2px solid var(--brass-deep);
+      box-shadow: 0 6px 22px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,210,150,.3);
+      font-family: var(--font-title); letter-spacing: 5px; font-size: clamp(13px, 2vw, 19px); color: #ffe9c4;
+      text-transform: uppercase; text-shadow: 0 2px 0 #4a0a06; }
+    .hero-ribbon .plaque b { color: #ffd06a; font-weight: 400; }
+    .hero-ribbon .en { display: block; margin-top: 7px; font-family: var(--font-stencil), var(--font-display);
+      font-size: 11px; letter-spacing: 4px; color: #d8b888; opacity: .82; text-transform: uppercase; }
+    /* scene caption swaps with the active scene */
+    .hero-scene .cap { display: none; }
+
+    /* ---- 3-D spinning brass-red stars flanking the title ---- */
+    .hero-star3d { position: absolute; top: clamp(40px, 13vh, 150px); width: clamp(58px, 9vw, 124px); height: clamp(58px, 9vw, 124px);
+      z-index: 2; pointer-events: none; transform-style: preserve-3d; animation: starSpin 9s linear infinite; filter: drop-shadow(0 0 18px rgba(226,72,58,.6)); }
+    .hero-star3d.l { left: clamp(14px, 7vw, 150px); }
+    .hero-star3d.r { right: clamp(14px, 7vw, 150px); animation-direction: reverse; }
+    .hero-star3d svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .hero-star3d .face-b { transform: translateZ(-9px); }
+    @keyframes starSpin { to { transform: rotateY(360deg); } }
+
+    /* ---- minimalist NON-SCROLLING hero menu: title-block top, action-cluster bottom, monument between ---- */
+    #menu { overflow: hidden; }
+    #menu .card { background:
+        linear-gradient(180deg, rgba(14,3,3,.52) 0%, rgba(16,4,3,0) 24%, rgba(16,4,3,0) 58%, rgba(12,3,3,.66) 100%);
+      border: 0; box-shadow: none; backdrop-filter: none; max-width: none; width: 100%; max-height: none; overflow: visible;
+      display: flex; flex-direction: column; justify-content: space-between; min-height: 100vh;
+      padding: 5vh clamp(20px,5vw,60px) clamp(70px,11vh,118px); text-align: center; animation: none; }
+    #menu .card::before, #menu .card::after { display: none; }   /* no brass box frame */
+    .hero-star3d { z-index: 4; } .hero-ribbon { z-index: 4; }
+    /* title block (top) */
+    #menu .hero-head { flex: 0 0 auto; }
+    #menu .kicker { font-size: clamp(10px,1.3vw,13px); letter-spacing: 5px; margin-bottom: 10px; }
+    #menu .kicker b { color: #ffd06a; }
+    #menu .title { font-size: clamp(46px,9.4vw,112px); font-weight: 400; letter-spacing: 3px; line-height: .9; margin: 0;
+      color: #f6ead0; text-shadow: 0 1px 0 #b89a52, 0 2px 0 #9a7e3e, 0 3px 0 #7e6530, 0 4px 0 #604c24, 0 5px 0 #463618, 0 6px 0 #2e240f, 0 9px 16px rgba(0,0,0,.6), 0 0 48px rgba(255,196,110,.42); }
+    #menu .title .hl { color: #ff5a44; text-shadow: 0 1px 0 #b41f16, 0 2px 0 #951810, 0 3px 0 #76130c, 0 4px 0 #570d08, 0 5px 0 #3a0805, 0 6px 0 #240403, 0 9px 18px rgba(0,0,0,.65), 0 0 44px rgba(255,80,60,.55); }
+    #menu .menubest { font-family: var(--font-stencil), monospace; font-size: 12px; letter-spacing: 2px; color: var(--brass-hi); opacity: .82; margin-top: 12px; min-height: 14px; text-transform: uppercase; }
+    /* action cluster (bottom) — one bold CTA, a secondary row, then minis */
+    #menu .hero-menu { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 11px; width: min(94vw,460px); margin: 0 auto; }
+    #menu .maptabs { margin: 0; background: rgba(8,2,2,.5); border-color: var(--brass-deep); padding: 4px; }
+    #menu .maptabs .tab { font-size: 12px; letter-spacing: 2px; padding: 6px 20px; }
+    #menu .hero-menu .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    #menu .hero-menu .btn small { display: none; }
+    #menu .btn.cta { width: 100%; margin: 0; padding: 17px 22px; font-size: clamp(19px,2.5vw,26px); letter-spacing: 3px; border-width: 2px; animation: ctaPulse 2.6s ease-in-out infinite; }
+    #menu .btn.cta i { font-size: .8em; }
+    @keyframes ctaPulse { 0%,100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 5px 0 #3a0c06, 0 10px 26px rgba(0,0,0,.5), 0 0 22px rgba(226,72,58,.4); }
+      50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 5px 0 #3a0c06, 0 12px 30px rgba(0,0,0,.55), 0 0 40px rgba(255,90,68,.72); } }
+    #menu .menu-row { display: flex; gap: 10px; width: 100%; }
+    #menu .menu-row .btn { flex: 1 1 0; margin: 0; padding: 12px 6px; font-size: 12.5px; letter-spacing: .8px; min-width: 0; }
+    #menu .menu-mini { display: flex; gap: 10px; margin-top: 1px; }
+    #menu .btn.mini { margin: 0; padding: 7px 16px; font-size: 11.5px; letter-spacing: 1.5px; opacity: .88; }
+    #menu .hint { font-size: 11px; color: var(--ink-dim); opacity: .7; min-height: 13px; letter-spacing: .5px; }
+    /* hero ENTER cluster (the ONLY action on the art screen) */
+    #menu .hero-enter { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(92vw, 430px); margin: 0 auto; }
+    #menu .btn.cta.enter { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+    #menu .menu-mini { display: flex; gap: 12px; }
+    #menu .btn.mini { margin: 0; padding: 7px 18px; font-size: 11.5px; letter-spacing: 1.5px; opacity: .82; }
+    #menu .btn.mini:hover { opacity: 1; }
+
+    /* ============ DEPLOYMENT (#play) — the second screen; map + mode live here, not on the hero ============ */
+    #play { background: radial-gradient(125% 110% at 50% 28%, #5c100c 0%, #380807 60%, #170403 100%); }
+    #play .play-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0;
+      background: repeating-conic-gradient(from 0deg at 50% 34%, rgba(232,182,78,.06) 0deg 3.4deg, transparent 3.4deg 11deg); }
+    #play::after { opacity: .3; }
+    #play .card.play-card { position: relative; z-index: 2; text-align: center; width: min(94vw, 560px); max-width: 560px;
+      max-height: 94vh; overflow: visible; padding: 26px 34px 28px; animation: cardIn .3s cubic-bezier(.2,.8,.25,1) both;
+      background: radial-gradient(140% 70% at 50% 0%, rgba(120,18,12,.34), transparent 62%), linear-gradient(180deg, #1d0907, #120403);
+      border: 2px solid var(--brass-lo); box-shadow: var(--shadow-card), 0 0 0 1px var(--brass-deep), inset 0 0 0 1px rgba(243,217,153,.12); }
+    #play .btn.back { position: absolute; top: 12px; left: 12px; width: auto; margin: 0; padding: 6px 14px; font-size: 11px; letter-spacing: 1.5px; opacity: .85; z-index: 3; }
+    #play .btn.back::before { display: none; }
+    #play .kicker { margin-top: 6px; }
+    #play .title.play-title { font-size: clamp(26px, 4vw, 38px); letter-spacing: 4px; color: var(--brass-hi);
+      text-shadow: 0 2px 0 #000, 0 0 24px rgba(216,176,102,.3); margin: 4px 0 6px; }
+    #play .menubest { margin: 0 0 16px; }
+    #play .play-sec { margin: 0 0 16px; }
+    #play .sec-label { font-family: var(--font-stencil), monospace; font-size: 11px; letter-spacing: 3px; color: var(--brass); opacity: .8; text-transform: uppercase; margin-bottom: 9px; }
+    #play .maptabs { display: inline-flex; }
+    #play .modepick { display: flex; gap: 12px; justify-content: center; }
+    #play .modepick .btn { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; margin: 0; padding: 14px 16px; }
+    #play .modepick .btn small, #play .play-extra .btn small { display: block; font-family: var(--font-body); font-weight: 500; font-size: 11px; opacity: .85; letter-spacing: .2px; text-transform: none; margin-top: 2px; }
+    #play .play-extra { display: flex; gap: 12px; margin-top: 4px; }
+    #play .play-extra .btn { flex: 1 1 0; min-width: 0; margin: 0; padding: 11px 14px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    #play .hint { font-size: 11.5px; color: var(--ink-dim); opacity: .75; min-height: 14px; margin-top: 7px; }
   </style>
 </head>
 <body>
@@ -703,40 +833,145 @@
   <div id="mp-labels"></div>
   <div id="mp-scoreboard"><div class="sb-card"><div class="sb-title">SQUAD</div><div class="sb-head"><span></span><span>PLAYER</span><span>CASH</span><span>PING</span></div><div class="sb-rows" id="sb-rows"></div><div class="sb-hint">hold <b>Tab</b></div></div></div>
   <div id="menu" class="overlay show">
+    <div id="hero" aria-hidden="true">
+      <div class="hero-sky"></div>
+      <div class="hero-rays"></div>
+      <div class="hero-rays b"></div>
+      <div class="hero-glow"></div>
+      <!-- rotating monument tableaux (one .on at a time; JS cycles) -->
+      <!-- 1 · РОДИНА-МАТЬ ЗОВЁТ — striding woman, sword thrust high, cloak streaming -->
+      <div class="hero-scene on" data-cap="РОДИНА-МАТЬ ЗОВЁТ" data-en="The Motherland Calls">
+        <img class="sil-img" src="./assets/hero/rodina-mat.png" alt="Родина-мать зовёт" draggable="false">
+      </div>
+      <!-- 2 · РАБОЧИЙ И КОЛХОЗНИЦА — two figures, hammer & sickle crossed overhead -->
+      <div class="hero-scene" data-cap="РАБОЧИЙ И КОЛХОЗНИЦА" data-en="Worker &amp; Kolkhoz Woman">
+        <svg viewBox="0 -40 460 640" preserveAspectRatio="xMidYMax meet">
+          <polygon class="sil2" points="120,600 360,600 338,558 142,558"/>
+          <!-- worker (left) -->
+          <path class="sil" d="M150 250 L206 250 L226 560 L120 560 Z"/>
+          <path class="sil" d="M160 168 L208 168 L214 256 L156 256 Z"/>
+          <ellipse class="sil" cx="184" cy="146" rx="20" ry="24"/>
+          <polygon class="sil" points="200,178 250,96 266,104 220,196"/>
+          <!-- kolkhoz woman (right) -->
+          <path class="sil" d="M250 250 L312 250 L344 560 L226 560 Z"/>
+          <path class="sil" d="M256 170 L306 170 L312 256 L250 256 Z"/>
+          <ellipse class="sil" cx="282" cy="148" rx="20" ry="24"/>
+          <polygon class="sil" points="262,180 214,98 230,90 282,176"/>
+          <!-- crossed hammer (left arm) + sickle (right arm) raised overhead -->
+          <rect class="sil" x="244" y="40" width="14" height="86" transform="rotate(26 251 83)"/>
+          <rect class="sil" x="232" y="36" width="46" height="20" transform="rotate(26 255 46)"/>
+          <rect class="sil" x="206" y="40" width="13" height="86" transform="rotate(-26 212 83)"/>
+          <path class="sil" d="M214 44 q40 -34 78 -6 q-30 -8 -52 16 q-14 14 -14 30 z"/>
+        </svg>
+      </div>
+      <!-- 3 · СЛАВА СОВЕТСКОЙ АРМИИ — bayonet obelisk + a row of helmeted guardsmen -->
+      <div class="hero-scene wide" data-cap="СЛАВА СОВЕТСКОЙ АРМИИ" data-en="Glory to the Soviet Army">
+        <svg viewBox="0 0 760 440" preserveAspectRatio="xMidYMax meet">
+          <!-- obelisk + bayonet spike -->
+          <polygon class="sil2" points="360,440 400,440 392,150 368,150"/>
+          <polygon class="sil" points="372,160 388,160 384,70 376,70"/>
+          <polygon class="sil" points="376,74 384,74 380,8 380,8"/>
+          <polygon class="silr" points="366,150 394,150 398,176 362,176"/>
+          <!-- row of helmeted busts -->
+          <g class="sil">
+            <path d="M70 440 q0 -70 70 -70 q70 0 70 70 z"/><path d="M86 392 a54 50 0 0 1 108 0 q-54 -22 -108 0z"/>
+            <path d="M210 440 q0 -78 78 -78 q78 0 78 78 z"/><path d="M228 388 a60 56 0 0 1 120 0 q-60 -24 -120 0z"/>
+            <path d="M408 440 q0 -78 78 -78 q78 0 78 78 z"/><path d="M426 388 a60 56 0 0 1 120 0 q-60 -24 -120 0z"/>
+            <path d="M566 440 q0 -70 70 -70 q70 0 70 70 z"/><path d="M582 392 a54 50 0 0 1 108 0 q-54 -22 -108 0z"/>
+          </g>
+          <polygon points="380,40 391,64 417,64 396,80 404,106 380,90 356,106 364,80 343,64 369,64" fill="#5e120c"/>
+        </svg>
+      </div>
+      <!-- 4 · ВПЕРЁД, К ПОБЕДЕ! — marching crowd, raised fists + banners -->
+      <div class="hero-scene wide" data-cap="ВПЕРЁД, К ПОБЕДЕ!" data-en="Forward, to Victory!">
+        <svg viewBox="0 0 760 460" preserveAspectRatio="xMidYMax meet">
+          <!-- banner poles + flags -->
+          <g class="sil"><rect x="150" y="40" width="7" height="320"/><rect x="360" y="14" width="8" height="346"/><rect x="560" y="54" width="7" height="306"/></g>
+          <path class="silr" d="M157 44 L300 28 L296 96 L157 110 Z"/>
+          <path class="silr" d="M368 18 L540 36 L536 112 L368 92 Z"/>
+          <path class="silr" d="M567 58 L690 44 L686 108 L567 120 Z"/>
+          <!-- crowd of heads + raised fists -->
+          <g class="sil">
+            <circle cx="90" cy="300" r="26"/><circle cx="170" cy="288" r="28"/><circle cx="258" cy="298" r="26"/><circle cx="346" cy="284" r="30"/><circle cx="440" cy="296" r="27"/><circle cx="532" cy="288" r="29"/><circle cx="624" cy="300" r="26"/><circle cx="704" cy="294" r="27"/>
+            <rect x="78" y="312" width="640" height="150"/>
+            <!-- raised arms + fists -->
+            <rect x="206" y="150" width="20" height="150" transform="rotate(-12 216 225)"/><circle cx="200" cy="150" r="20"/>
+            <rect x="470" y="140" width="20" height="160" transform="rotate(10 480 220)"/><circle cx="492" cy="140" r="20"/>
+            <rect x="356" y="120" width="20" height="170"/><circle cx="366" cy="120" r="21"/>
+          </g>
+        </svg>
+      </div>
+      <!-- 5 · ДВОРЕЦ СОВЕТОВ — Stalinist tiered skyline crowned with a star -->
+      <div class="hero-scene wide" data-cap="ДВОРЕЦ СОВЕТОВ" data-en="Palace of the Soviets">
+        <svg viewBox="0 0 760 460" preserveAspectRatio="xMidYMax meet">
+          <g class="sil2"><rect x="40" y="300" width="120" height="160"/><rect x="600" y="300" width="120" height="160"/></g>
+          <g class="silr"><rect x="70" y="250" width="60" height="60"/><rect x="630" y="250" width="60" height="60"/><polygon points="100,250 70,250 85,210"/><polygon points="660,250 630,250 645,210"/></g>
+          <!-- central wedding-cake tower -->
+          <g class="sil">
+            <rect x="300" y="360" width="160" height="100"/>
+            <rect x="320" y="270" width="120" height="100"/>
+            <rect x="338" y="190" width="84" height="90"/>
+            <rect x="352" y="120" width="56" height="80"/>
+            <polygon points="380,40 366,124 394,124"/>
+            <rect x="376" y="20" width="8" height="26"/>
+          </g>
+          <!-- colonnade base -->
+          <g class="sil2"><rect x="180" y="400" width="400" height="60"/></g>
+          <g class="silr"><rect x="200" y="404" width="8" height="56"/><rect x="232" y="404" width="8" height="56"/><rect x="264" y="404" width="8" height="56"/><rect x="296" y="404" width="8" height="56"/><rect x="464" y="404" width="8" height="56"/><rect x="496" y="404" width="8" height="56"/><rect x="528" y="404" width="8" height="56"/><rect x="560" y="404" width="8" height="56"/></g>
+          <polygon points="380,2 386,20 405,20 390,32 396,50 380,39 364,50 370,32 355,20 374,20" fill="#c9a84a"/>
+        </svg>
+      </div>
+      <div class="hero-haze"></div>
+      <div class="hero-embers" id="heroEmbers"></div>
+      <div class="hero-vig"></div>
+      <div class="hero-ribbon"><span class="plaque" id="heroPlaque">РОДИНА-МАТЬ ЗОВЁТ</span><span class="en" id="heroPlaqueEn">The Motherland Calls</span></div>
+      <div class="hero-star3d l"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
+      <div class="hero-star3d r"><svg viewBox="0 0 120 120"><polygon class="face-b" points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#5e0f0a"/><polygon points="60,10 71.8,43.8 107.6,44.6 79,66.2 89.4,100.5 60,80 30.6,100.5 41,66.2 12.4,44.6 48.2,43.8" fill="#e2483a" stroke="#f3d999" stroke-width="3"/></svg></div>
+    </div>
     <div class="card">
-      <div class="crest"><span class="ds side" data-ic="star"></span><span class="ds mid" data-ic="star"></span><span class="ds side" data-ic="star"></span></div>
-      <div class="kicker"><b>ИСТРЕБЛЕНИЕ</b> · EXTERMINATION PROTOCOL · СЕКТОР-7</div>
-      <div class="title">ENGENDROS <span class="hl">PURGE</span></div>
-      <div class="subtitle">
-        The voodoo plushies woke up hungry. Hold the sector, pop them for stuffing &amp; cash —
-        every run banks to your <b>account</b>. Spend it in the <b>ARMORY</b> to unlock gear and build your loadout.
+      <div class="hero-head">
+        <div class="kicker"><b>ИСТРЕБЛЕНИЕ</b> · EXTERMINATION PROTOCOL</div>
+        <div class="title">ENGENDROS <span class="hl">PURGE</span></div>
       </div>
-      <div id="menuBest" class="subtitle" style="margin:-6px 0 14px;font-size:13px;opacity:.72;color:var(--gold);"></div>
-      <div class="mappick" style="margin:2px 0 14px;">
-        <div style="font-family:var(--font-stencil),monospace;font-size:11px;letter-spacing:2px;opacity:.7;margin-bottom:6px;text-transform:uppercase;">Полигон · Select map</div>
-        <div class="shoptabs" id="map-pick" style="margin-bottom:0;">
-          <button class="tab on" id="map-arena" data-map="arena">Арена · Arena</button>
-          <button class="tab" id="map-steppe" data-map="steppe">Степь · Steppe</button>
+      <div class="hero-enter">
+        <button class="btn go cta enter" id="enterBtn"><i data-ic="play"></i> НАЧАТЬ · ENTER</button>
+        <div class="menu-mini">
+          <button class="btn sec mini" id="settingsBtn"><i data-ic="gear"></i> SETTINGS</button>
+          <button class="btn sec mini" id="adminBtn"><i data-ic="wrench"></i> ASSETS</button>
         </div>
-        <div id="map-note" class="subtitle" style="margin:6px 0 0;font-size:12px;opacity:.72;text-align:center;"></div>
-      </div>
-      <div class="modepick">
-        <button class="btn go" id="playBtn"><i data-ic="play"></i> PURGE<small>arcade wave modes — special waves, mini-bosses</small></button>
-        <button class="btn night" id="longNightBtn"><i data-ic="moon"></i> THE LONG NIGHT<small>endless survival · day/night · pitch-dark nights</small></button>
-      </div>
-      <button class="btn" id="armoryBtn"><i data-ic="crate"></i> ARMORY<small>spend your bank — unlock &amp; equip your loadout</small></button>
-      <button class="btn" id="multiplayerBtn"><i data-ic="users"></i> MULTIPLAYER<small>co-op for 2–4 · host or join with a room code</small></button>
-      <button class="btn sec" id="settingsBtn"><i data-ic="gear"></i> SETTINGS</button>
-      <button class="btn sec" id="adminBtn"><i data-ic="wrench"></i> ADMIN — ASSET VIEWER</button>
-      <div class="controls">
-        <span><b>WASD</b> move</span><span><b>Mouse</b> look</span><span><b>LMB</b> use / attack</span>
-        <span><b>RMB</b> aim / zoom</span><span><b>Wheel</b> scroll inventory</span><span><b>1-9</b> inventory slots</span>
-        <span><b>I</b> inventory</span><span><b>E</b> pick up / interact / 🔦 toggle</span><span><b>R</b> reload</span>
-        <span><b>V</b> quick-melee</span><span><b>B</b> fire mode</span><span><b>Space</b> jump</span>
-        <span><b>Shift</b> sprint</span><span><b>F</b> fullscreen</span><span><b>Esc</b> pause</span><span><b>M</b> mute</span>
       </div>
     </div>
     <div id="menu-version" title="Build version &amp; release time"></div>
+  </div>
+
+  <!-- DEPLOYMENT screen — map + mode + meta actions (kept OFF the art hero) -->
+  <div id="play" class="overlay">
+    <div class="play-bg"></div>
+    <div class="card play-card">
+      <button class="btn back mini" id="playBackBtn">‹ НАЗАД · BACK</button>
+      <div class="kicker"><b>РАЗВЁРТЫВАНИЕ</b> · DEPLOYMENT ORDER</div>
+      <div class="title play-title">ВЫБОР ОПЕРАЦИИ</div>
+      <div id="menuBest" class="menubest"></div>
+      <div class="play-sec">
+        <div class="sec-label">Полигон · SECTOR</div>
+        <div class="shoptabs maptabs" id="map-pick">
+          <button class="tab on" id="map-arena" data-map="arena">Арена · Arena</button>
+          <button class="tab" id="map-steppe" data-map="steppe">Степь · Steppe</button>
+        </div>
+        <div id="map-note" class="hint"></div>
+      </div>
+      <div class="play-sec">
+        <div class="sec-label">Режим · MODE</div>
+        <div class="modepick">
+          <button class="btn go" id="playBtn"><i data-ic="play"></i> PURGE<small>arcade waves · special events · mini-bosses</small></button>
+          <button class="btn night" id="longNightBtn"><i data-ic="moon"></i> THE LONG NIGHT<small>endless survival · day/night · pitch-dark nights</small></button>
+        </div>
+      </div>
+      <div class="menu-row play-extra">
+        <button class="btn" id="armoryBtn"><i data-ic="crate"></i> ARMORY<small>spend your bank · unlock &amp; equip</small></button>
+        <button class="btn" id="multiplayerBtn"><i data-ic="users"></i> CO-OP<small>2–4 players · host or join</small></button>
+      </div>
+    </div>
   </div>
 
   <div id="pause" class="overlay">
@@ -904,6 +1139,28 @@
     // Fill static [data-ic="name"] placeholders with crisp SVG icons (replaces emoji in menu/shop/lobby chrome).
     import { icon } from './src/icons.js';
     for (const el of document.querySelectorAll('[data-ic]')) el.innerHTML = icon(el.dataset.ic);
+  </script>
+  <script>
+    // ---- HERO main-screen: drifting embers + rotating monument tableaux ----
+    (function () {
+      const em = document.getElementById('heroEmbers');
+      if (em) for (let i = 0; i < 22; i++) {
+        const s = document.createElement('i'); const dur = 7 + Math.random() * 12, sz = 1.5 + Math.random() * 2.6;
+        s.style.left = (Math.random() * 100) + '%'; s.style.width = s.style.height = sz.toFixed(1) + 'px';
+        s.style.animationDuration = dur.toFixed(1) + 's'; s.style.animationDelay = (-Math.random() * dur).toFixed(1) + 's';
+        s.style.opacity = (0.4 + Math.random() * 0.6).toFixed(2); em.appendChild(s);
+      }
+      // scene cycler — cross-fade through the monument roster while the menu is up
+      const scenes = Array.from(document.querySelectorAll('#hero .hero-scene'));
+      const plaque = document.getElementById('heroPlaque'), plaqueEn = document.getElementById('heroPlaqueEn');
+      let i = 0;
+      if (scenes.length > 1) setInterval(() => {
+        scenes[i].classList.remove('on');
+        i = (i + 1) % scenes.length;
+        const sc = scenes[i]; sc.classList.add('on');
+        if (plaque) plaque.textContent = sc.dataset.cap || ''; if (plaqueEn) plaqueEn.textContent = sc.dataset.en || '';
+      }, 8000);
+    })();
   </script>
   <script type="module" src="./src/game.js?v=231"></script>
 </body>

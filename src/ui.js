@@ -200,7 +200,8 @@ export class HUD {
 export class UI {
   constructor() {
     this.overlays = {
-      menu: document.getElementById('menu'), pause: document.getElementById('pause'),
+      menu: document.getElementById('menu'), play: document.getElementById('play'),
+      pause: document.getElementById('pause'),
       shop: document.getElementById('shop'), gameover: document.getElementById('gameover'),
       settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
       admin: document.getElementById('admin'),

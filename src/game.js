@@ -129,6 +129,8 @@ class Game {
     // build version + release time (to the minute), shown in both the main menu and the co-op lobby corner
     const verHTML = `ENGENDROS PURGE <b>${GAME_VERSION}</b> (${GAME_BUILD})`;
     for (const id of ['lobby-version', 'menu-version']) { const e = document.getElementById(id); if (e) e.innerHTML = verHTML; }
+    click('enterBtn', () => this.ui.show('play'));        // hero art screen → deployment screen
+    click('playBackBtn', () => this.ui.show('menu'));      // deployment → back to the hero
     click('playBtn', () => this.startGame('purge'));
     click('longNightBtn', () => this.startGame('longnight'));
     click('resumeBtn', () => this.resume());
