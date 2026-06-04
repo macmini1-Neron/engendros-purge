@@ -266,7 +266,7 @@ export class World {
     // vertical
     pos.y += vel.y * dt;
     if (pos.y <= 0) { pos.y = 0; if (vel.y < 0) vel.y = 0; onGround = true; }
-    for (const b of this.boxes) {
+    for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
       const feet = pos.y, head = pos.y + h;
@@ -285,7 +285,7 @@ export class World {
 
   // Is the player's body column free of boxes if its feet were at feetY here?
   _headClear(pos, r, h, feetY, ignore) {
-    for (const b of this.boxes) {
+    for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
       if (b === ignore) continue;
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
@@ -297,7 +297,11 @@ export class World {
 
   _moveAxis(pos, vel, r, h, ax, delta) {
     pos[ax] += delta;
-    for (const b of this.boxes) {
+    // Candidates over the SWEPT range (old→new pos): snapshot a fixed array, since the loop mutates pos
+    // (blocking/step-up) and a live query would shift under us. Padded by r; matches the old whole-list scan.
+    const oldA = pos[ax] - delta, lo = Math.min(pos[ax], oldA) - r, hi = Math.max(pos[ax], oldA) + r;
+    const cands = ax === 'x' ? this.grid.queryAABB(lo, pos.z - r, hi, pos.z + r) : this.grid.queryAABB(pos.x - r, lo, pos.x + r, hi);
+    for (const b of cands) {
       const feet = pos.y, head = pos.y + h;
       if (head <= b.min.y + 0.02 || feet >= b.max.y - 0.02) continue;
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
