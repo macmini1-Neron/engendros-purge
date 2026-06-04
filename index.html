@@ -662,6 +662,9 @@
       animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
     /* transparent-background source (no white to drop): show opaque + deepen to a dark monument silhouette */
     .hero-scene > .sil-img.alpha { mix-blend-mode: normal; filter: brightness(.3) contrast(1.32) saturate(.4) drop-shadow(0 8px 26px rgba(0,0,0,.55)); }
+    /* wide scene (a panoramic frieze, e.g. a parade): span the width, anchored at the bottom */
+    .hero-scene.wide > .sil-img { height: auto; width: 104%; bottom: -2%; }
+    .hero-scene.wide > .sil-img.alpha { width: 100%; }
     @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-2%) scale(1.06); } }
     .sil { fill: #170402; }                          /* silhouette body */
     .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
@@ -851,45 +854,15 @@
       </div>
       <!-- 3 · СЛАВА СОВЕТСКОЙ АРМИИ — bayonet obelisk + a row of helmeted guardsmen -->
       <div class="hero-scene wide" data-cap="СЛАВА СОВЕТСКОЙ АРМИИ" data-en="Glory to the Soviet Army">
-        <svg viewBox="0 0 760 440" preserveAspectRatio="xMidYMax meet">
-          <!-- obelisk + bayonet spike -->
-          <polygon class="sil2" points="360,440 400,440 392,150 368,150"/>
-          <polygon class="sil" points="372,160 388,160 384,70 376,70"/>
-          <polygon class="sil" points="376,74 384,74 380,8 380,8"/>
-          <polygon class="silr" points="366,150 394,150 398,176 362,176"/>
-          <!-- row of helmeted busts -->
-          <g class="sil">
-            <path d="M70 440 q0 -70 70 -70 q70 0 70 70 z"/><path d="M86 392 a54 50 0 0 1 108 0 q-54 -22 -108 0z"/>
-            <path d="M210 440 q0 -78 78 -78 q78 0 78 78 z"/><path d="M228 388 a60 56 0 0 1 120 0 q-60 -24 -120 0z"/>
-            <path d="M408 440 q0 -78 78 -78 q78 0 78 78 z"/><path d="M426 388 a60 56 0 0 1 120 0 q-60 -24 -120 0z"/>
-            <path d="M566 440 q0 -70 70 -70 q70 0 70 70 z"/><path d="M582 392 a54 50 0 0 1 108 0 q-54 -22 -108 0z"/>
-          </g>
-          <polygon points="380,40 391,64 417,64 396,80 404,106 380,90 356,106 364,80 343,64 369,64" fill="#5e120c"/>
-        </svg>
+        <img class="sil-img" src="./assets/hero/army-parade.png" alt="Парад на Красной площади" draggable="false">
       </div>
       <!-- 4 · ВПЕРЁД, К ПОБЕДЕ! — marching crowd, raised fists + banners -->
       <div class="hero-scene" data-cap="ВПЕРЁД, К ПОБЕДЕ!" data-en="Lenin — Forward, to Victory!">
         <img class="sil-img alpha" src="./assets/hero/lenin.png" alt="Ленин" draggable="false">
       </div>
       <!-- 5 · ДВОРЕЦ СОВЕТОВ — Stalinist tiered skyline crowned with a star -->
-      <div class="hero-scene wide" data-cap="ДВОРЕЦ СОВЕТОВ" data-en="Palace of the Soviets">
-        <svg viewBox="0 0 760 460" preserveAspectRatio="xMidYMax meet">
-          <g class="sil2"><rect x="40" y="300" width="120" height="160"/><rect x="600" y="300" width="120" height="160"/></g>
-          <g class="silr"><rect x="70" y="250" width="60" height="60"/><rect x="630" y="250" width="60" height="60"/><polygon points="100,250 70,250 85,210"/><polygon points="660,250 630,250 645,210"/></g>
-          <!-- central wedding-cake tower -->
-          <g class="sil">
-            <rect x="300" y="360" width="160" height="100"/>
-            <rect x="320" y="270" width="120" height="100"/>
-            <rect x="338" y="190" width="84" height="90"/>
-            <rect x="352" y="120" width="56" height="80"/>
-            <polygon points="380,40 366,124 394,124"/>
-            <rect x="376" y="20" width="8" height="26"/>
-          </g>
-          <!-- colonnade base -->
-          <g class="sil2"><rect x="180" y="400" width="400" height="60"/></g>
-          <g class="silr"><rect x="200" y="404" width="8" height="56"/><rect x="232" y="404" width="8" height="56"/><rect x="264" y="404" width="8" height="56"/><rect x="296" y="404" width="8" height="56"/><rect x="464" y="404" width="8" height="56"/><rect x="496" y="404" width="8" height="56"/><rect x="528" y="404" width="8" height="56"/><rect x="560" y="404" width="8" height="56"/></g>
-          <polygon points="380,2 386,20 405,20 390,32 396,50 380,39 364,50 370,32 355,20 374,20" fill="#c9a84a"/>
-        </svg>
+      <div class="hero-scene" data-cap="ХРАМ ВАСИЛИЯ БЛАЖЕННОГО" data-en="St. Basil's · Red Square">
+        <img class="sil-img" src="./assets/hero/stbasil.png" alt="Храм Василия Блаженного" draggable="false">
       </div>
       <div class="hero-haze"></div>
       <div class="hero-embers" id="heroEmbers"></div>
