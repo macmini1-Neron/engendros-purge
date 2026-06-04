@@ -691,18 +691,15 @@
     /* slogan ribbon — longer text, so tighter tracking + wrap to 2 lines, with a quick fade-up on change */
     .hero-ribbon .plaque.slogan { letter-spacing: 2px; font-size: clamp(12px, 1.7vw, 17px); line-height: 1.32;
       max-width: min(82vw, 780px); white-space: normal; text-wrap: balance; transform-origin: 50% 0%; backface-visibility: hidden; }
-    /* physical tear-off-calendar flip: the old slogan hinges at its top edge and falls forward toward the
-       viewer, a fresh one drops in underneath */
+    /* physical tear-off-calendar flip: the CURRENT slogan is cloned into .falling and torn off (hinges at its
+       top edge, falls forward toward the viewer) while the live line is hidden; the NEW text drops in as it
+       lands. BOTH moves are driven by the Web Animations API in the hero <script> (element.animate) — WAAPI
+       always plays a FRESH animation, so unlike CSS-class animations it can't get stuck "playing only once"
+       or be hijacked by a stale class on the clone. Keep only the 3-D context + the peel's static styling here. */
     .hero-ribbon { perspective: 900px; }
     .slogan-stack { position: relative; display: inline-block; transform-style: preserve-3d; }
-    .hero-ribbon .plaque.falling { position: absolute; z-index: 4; pointer-events: none; box-sizing: border-box; margin: 0;
-      animation: sloganFall .9s cubic-bezier(.5,0,.7,1) both; box-shadow: 0 16px 32px rgba(0,0,0,.6); }
-    @keyframes sloganFall {
-      0%   { transform: rotateX(0deg) translateY(0) scale(1); opacity: 1; filter: brightness(1); }
-      18%  { transform: rotateX(-12deg) translateY(-2px) scale(1.03); opacity: 1; filter: brightness(1.18); }  /* tips toward the viewer */
-      100% { transform: rotateX(115deg) translateY(86px) scale(.94); opacity: 0; filter: brightness(.5); } }   /* …then falls forward + away */
-    .hero-ribbon .plaque.dropin { animation: sloganDrop .5s cubic-bezier(.2,.7,.3,1) both; animation-delay: .12s; }
-    @keyframes sloganDrop { 0% { opacity: 0; transform: rotateX(-34deg) translateY(-7px); } 100% { opacity: 1; transform: none; } }
+    .hero-ribbon .plaque.falling { position: absolute; z-index: 4; pointer-events: none; box-sizing: border-box;
+      margin: 0; box-shadow: 0 16px 32px rgba(0,0,0,.6); }
     .hero-ribbon .en { display: block; margin-top: 7px; font-family: var(--font-stencil), var(--font-display);
       font-size: 11px; letter-spacing: 4px; color: #d8b888; opacity: .82; text-transform: uppercase; }
     /* scene caption swaps with the active scene */
@@ -1206,30 +1203,43 @@
       ];
       const slogan = document.getElementById('heroSlogan');
       if (slogan) {
-        let last = -1, revealT = 0; const ribbon = slogan.closest('.hero-ribbon');
+        let last = -1, revealT = 0, dropAnim = null; const ribbon = slogan.closest('.hero-ribbon');
+        // WAAPI keyframes (driven from JS so each roll plays a guaranteed-fresh animation)
+        const FALL = [
+          { transform: 'rotateX(0deg) translateY(0) scale(1)',          opacity: 1, filter: 'brightness(1)',    offset: 0 },
+          { transform: 'rotateX(-12deg) translateY(-2px) scale(1.03)',  opacity: 1, filter: 'brightness(1.18)', offset: 0.18 },  // tips toward viewer
+          { transform: 'rotateX(115deg) translateY(86px) scale(.94)',   opacity: 0, filter: 'brightness(.5)',   offset: 1 },     // …falls forward + away
+        ];
+        const DROP = [
+          { opacity: 0, transform: 'rotateX(-34deg) translateY(-7px)' },
+          { opacity: 1, transform: 'none' },
+        ];
         const rollSlogan = (first) => {
-          if (ribbon) ribbon.querySelectorAll('.plaque.falling').forEach((el) => el.remove());  // never let clones pile up
+          if (ribbon) ribbon.querySelectorAll('.plaque.falling').forEach((el) => el.remove());  // clear any in-flight peel
           clearTimeout(revealT);
           let n; do { n = Math.floor(Math.random() * SLOGANS.length); } while (n === last && SLOGANS.length > 1); last = n;
           const next = SLOGANS[n];
-          // no animation on first paint, with no ribbon, or on a hidden tab (CSS anims pause → would stack)
+          // no animation on first paint, with no ribbon, or on a hidden tab (WAAPI won't run on a hidden tab)
           if (first || !ribbon || document.visibilityState !== 'visible') {
-            slogan.textContent = next; slogan.style.visibility = ''; slogan.classList.remove('dropin'); return;
+            slogan.textContent = next; slogan.style.visibility = ''; return;
           }
-          // 1) peel the CURRENT slogan into a falling clone, pinned to its exact box (so the next slogan's
-          //    size can't shift the layers). It falls ALONE — the live slogan is hidden until it lands.
+          // 1) peel the CURRENT slogan into a clone pinned to its exact box (so the next slogan's size can't
+          //    shift the layers) and tear it off with the Web Animations API — a FRESH play every time, so it
+          //    animates on EVERY roll (no class/reflow/source-order games). It falls ALONE; the live line is hidden.
           const r = slogan.getBoundingClientRect(), rr = ribbon.getBoundingClientRect();
           const fall = slogan.cloneNode(true); fall.removeAttribute('id'); fall.classList.add('falling');
-          fall.style.left = (r.left - rr.left) + 'px'; fall.style.top = (r.top - rr.top) + 'px'; fall.style.width = r.width + 'px';
+          fall.style.left = (r.left - rr.left) + 'px'; fall.style.top = (r.top - rr.top) + 'px';
+          fall.style.width = r.width + 'px'; fall.style.visibility = '';
           ribbon.appendChild(fall);
-          const kill = () => fall.remove();
-          fall.addEventListener('animationend', kill, { once: true }); setTimeout(kill, 1500);  // always cleans up
-          // 2) hide the live line while the old one drops, then reveal the NEW one as it lands
-          slogan.classList.remove('dropin'); slogan.style.visibility = 'hidden';
+          fall.animate(FALL, { duration: 900, easing: 'cubic-bezier(.5,0,.7,1)', fill: 'forwards' })
+              .finished.then(() => fall.remove(), () => fall.remove());   // resolves on finish, rejects on cancel — clean either way
+          // 2) hide the live line while the old one falls, then reveal the NEW one as it lands
+          slogan.style.visibility = 'hidden';
           revealT = setTimeout(() => {
+            if (dropAnim) dropAnim.cancel();   // don't let finished drop-ins pile up on the live element
             slogan.textContent = next; slogan.style.visibility = '';
-            void slogan.offsetWidth; slogan.classList.add('dropin');   // forced reflow → the drop-in replays every time
-          }, 600);
+            dropAnim = slogan.animate(DROP, { duration: 500, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'both' });
+          }, 560);
         };
         rollSlogan(true); setInterval(rollSlogan, 10000);
       }
