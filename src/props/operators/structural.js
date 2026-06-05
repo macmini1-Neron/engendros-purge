@@ -47,3 +47,26 @@ export function finSet(b, a, t, o) {
     }
   }
 }
+
+// latticeBeam — an open truss/girder along +Z (a launch rail, gantry, tower leg): 4 longitudinal
+// corner chords + a vertical post & a top/bottom cross member at every bay station + zig-zag side
+// diagonals. Box-only (thin members), so it stays pure + unit-testable. Args: len (along Z), w, h
+// (cross-section); opts: bays (truss divisions), chord (member thickness).
+export function latticeBeam(b, a, t, o) {
+  const len = a.len, w = a.w, h = a.h;
+  const bays = a.bays ?? Math.max(3, Math.round(len / Math.max(0.3, h * 1.1)));
+  const ch = a.chord ?? 0.05, hw = w / 2, hh = h / 2, bl = len / bays;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                  // 4 corner chords
+    b.box(ch, ch, len, o.x + sx * (hw - ch / 2), o.y + sy * (hh - ch / 2), o.z, sy > 0 ? t.bright : t.mid);
+  }
+  for (let i = 0; i <= bays; i++) {                                       // posts + cross members per station
+    const z = o.z - len / 2 + i * bl;
+    for (const sx of [-1, 1]) b.box(ch, h - ch, ch, o.x + sx * (hw - ch / 2), o.y, z, t.lo);
+    for (const sy of [-1, 1]) b.box(w - ch, ch, ch, o.x, o.y + sy * (hh - ch / 2), z, t.mid);
+  }
+  const ang = Math.atan2(h, bl), diag = Math.hypot(bl, h);               // side diagonals (zig-zag)
+  for (let i = 0; i < bays; i++) {
+    const z = o.z - len / 2 + (i + 0.5) * bl, dir = i % 2 ? 1 : -1;
+    for (const sx of [-1, 1]) b.box(ch, ch, diag, o.x + sx * (hw - ch / 2), o.y, z, t.mid, { rx: dir * ang });
+  }
+}

@@ -13,6 +13,7 @@ export const MANIFEST = {
   finSet:      { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
   deltaFins:   { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
   texturedCylinder: { args: ['r', 'h'],           dims: ['r', 'h'] },
+  latticeBeam: { args: ['len', 'w', 'h'],         dims: ['len', 'w', 'h'] },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);
