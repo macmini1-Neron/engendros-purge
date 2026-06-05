@@ -727,7 +727,7 @@ export function buildAirfield(world, ox, oz) {
   buildSu25(world, b, ox + 34, oz + 122, '25');
 
   // ⑥ ПВО — С-75 SAM site (N, OUTSIDE the fence, shrunk to clear the mountains) + Шилка ×2 (N corners) + П-18 + ЗУ-23 ×2
-  buildSAMSite(world, b, ox - 70, oz + 230, 18);
+  buildSAMSite(world, b, ox - 70, oz + 240, 18);   // pushed 10 m further N so the «цветок» S petal clears the perimeter fence (still ~20 m off the N mountains)
   buildShilka(world, b, ox - 175, oz + 205, 0.3); buildShilka(world, b, ox + 55, oz + 205, -0.3); // mid-N, clear of the corner watchtowers
   buildRadarP18(world, b, ox - 135, oz + 230);
   buildZU23(world, b, ox - 92, oz + 50); buildZU23(world, b, ox + 98, oz + 90, 0.4);             // E flank, clear of the E shelter
