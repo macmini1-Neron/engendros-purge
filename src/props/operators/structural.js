@@ -70,3 +70,20 @@ export function latticeBeam(b, a, t, o) {
     for (const sx of [-1, 1]) b.box(ch, ch, diag, o.x + sx * (hw - ch / 2), o.y, z, t.mid, { rx: dir * ang });
   }
 }
+
+// cabinet — a paneled equipment box (an ЭСП-90 housing, container, generator set): a layered body
+// with a chamfered narrower top, vertical panel grooves down the long sides, and a lit top cap.
+// Box-only, pure/testable. Args: w, h, d; opts: panels (groove count), inset (top chamfer width).
+export function cabinet(b, a, t, o) {
+  const { w, h, d } = a, inset = a.inset ?? 0.12;
+  const lowH = h * 0.72, topH = h - lowH;
+  b.box(w, lowH, d, o.x, o.y - h / 2 + lowH / 2, o.z, t.mid);                            // lower body
+  b.box(w, 0.03, d, o.x, o.y - h / 2 + 0.015, o.z, t.lo);                                 // shadow foot
+  b.box(w - 2 * inset, topH, d - inset, o.x, o.y - h / 2 + lowH + topH / 2, o.z, t.hi);   // chamfered top block
+  b.box(w - 2 * inset, 0.03, d - inset, o.x, o.y + h / 2 - 0.015, o.z, t.bright);         // lit top cap
+  const panels = a.panels ?? Math.max(2, Math.round(d / 0.6)), pd = d / panels;
+  for (let i = 1; i < panels; i++) {
+    const z = o.z - d / 2 + i * pd;
+    for (const sx of [-1, 1]) b.box(0.03, lowH * 0.8, 0.04, o.x + sx * (w / 2 - 0.01), o.y - h / 2 + lowH / 2, z, t.slot);
+  }
+}
