@@ -235,7 +235,7 @@ export class World {
       if (Math.hypot(x, z) < 25) continue; // keep the centre start clear
       if ((x > -84 && x < 84 && z > -104 && z < 12) || Math.hypot(x - 96, z - 18) < 22) continue; // keep the kombinát yard + slag heap clear
       if (Math.hypot(x + 330, z + 300) < 56) continue; // keep the field strongpoint (far SW) clear
-      if (x > -232 && x < 112 && z > 290 && z < 500) continue; // keep the airfield (far N) + its N SAM site clear
+      if (x > -232 && x < 112 && z > 248 && z < 500) continue; // keep the airfield (far N, pulled 40 m S) + its N SAM site clear
       if (x > 254 && x < 346 && z > -334 && z < -246) continue; // keep the kolkhoz (far SE) yard clear
       if (x > 340 && x < 380 && z > 127 && z < 173) continue; // keep the secret bunker (far E) berm clear
       // keep the dirt-road corridors clear (spine + south road + 3 spurs — see openworld.js)
@@ -256,7 +256,7 @@ export class World {
     // 1000×1000: districts SPREAD to the quadrants, kombinát central (hub by spawn)
     buildIndustrial(this, 0, 0); // kombinát — centre (industrial.js)
     buildStrongpoint(this, -330, -300); // WW2 field strongpoint home base — far SW (strongpoint.js)
-    buildAirfield(this, 0, 250); // Soviet military airfield — far N (airfield.js)
+    buildAirfield(this, 0, 210); // Soviet military airfield — far N (airfield.js); pulled 40 m S so the SAM-site missiles clear the N mountain wall
     buildKolkhoz(this, 300, -300); // kolkhoz «Красный степной» + Su-24 wreck — far SE (kolkhoz.js)
     buildSecretBunker(this, 360, 150); // «Объект 1180» secret bunker — far E/NE (bunker.js)
     this.lootSpots.push(new THREE.Vector3(318, 0, -310), new THREE.Vector3(300, 0, -284)); // farm yard + by the wreck (moved with the kolkhoz)
