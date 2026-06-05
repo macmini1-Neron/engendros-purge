@@ -1131,6 +1131,27 @@
         s.style.animationDuration = dur.toFixed(1) + 's'; s.style.animationDelay = (-Math.random() * dur).toFixed(1) + 's';
         s.style.opacity = (0.4 + Math.random() * 0.6).toFixed(2); em.appendChild(s);
       }
+      // ---- sunburst re-centre on viewport change ----
+      // The twin .hero-rays are huge GPU-composited layers (rotating conic-gradients). A real
+      // fullscreen enter/exit — the game uses the native Fullscreen API on <html> — re-centres the
+      // element BOX via CSS but can leave the cached PAINT stale, so the rays drift off-centre while
+      // the static <img> statue stays put. Force a fresh rasterisation (display flush) on any resize
+      // or fullscreen toggle so the conic centre snaps back onto the burst. Debounced; the ~1-frame
+      // flush is invisible and the slow rotation's absolute angle doesn't matter.
+      let _burstT;
+      function recentreBurst() {
+        clearTimeout(_burstT);
+        _burstT = setTimeout(() => {
+          document.querySelectorAll('#hero .hero-rays, #hero .hero-glow').forEach(el => {
+            const d = el.style.display; el.style.display = 'none';
+            void el.offsetWidth;            // reflow → destroy the stale composited layer
+            el.style.display = d;           // re-create it, freshly painted at the current size
+          });
+        }, 50);
+      }
+      addEventListener('resize', recentreBurst, { passive: true });
+      document.addEventListener('fullscreenchange', recentreBurst);
+      document.addEventListener('webkitfullscreenchange', recentreBurst);
       // scene cycler — advance the monument IN STEP WITH THE JUKEBOX (each track is a different length),
       // with a slow fallback so a silent / pre-interaction menu still rotates.
       const scenes = Array.from(document.querySelectorAll('#hero .hero-scene'));
@@ -1256,6 +1277,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=241"></script>
+  <script type="module" src="./src/game.js?v=242"></script>
 </body>
 </html>
