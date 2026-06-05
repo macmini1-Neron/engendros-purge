@@ -46,3 +46,37 @@ window.VIEWER = {
   clear() { if (model) { scene.remove(model); model = null; } },
 };
 window.addEventListener('resize', resize);
+
+// --- mouse orbit (human use) ---
+let drag = null;
+canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; });
+addEventListener('pointerup', () => { drag = null; });
+addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  cam.az = (cam.az - (e.clientX - drag.x) * 0.4 + 360) % 360;
+  cam.el = Math.max(-80, Math.min(80, cam.el + (e.clientY - drag.y) * 0.3));
+  drag = { x: e.clientX, y: e.clientY };
+  syncSliders();
+});
+canvas.addEventListener('wheel', (e) => { cam.dist = Math.max(1, Math.min(12, cam.dist + e.deltaY * 0.002)); e.preventDefault(); }, { passive: false });
+
+// --- sliders ---
+const $ = (id) => document.getElementById(id);
+function syncSliders() { $('az').value = cam.az | 0; $('el').value = cam.el | 0; $('dist').value = cam.dist.toFixed(1); }
+for (const k of ['az', 'el', 'dist']) $(k).addEventListener('input', () => { cam[k] = +$(k).value; });
+
+// --- wireframe / snapshot / overlay ---
+let wf = false;
+$('wf').addEventListener('click', () => { wf = !wf; if (model) model.traverse((o) => { if (o.material) o.material.wireframe = wf; }); });
+$('snap').addEventListener('click', () => {
+  renderer.render(scene, camera);
+  const a = document.createElement('a'); a.download = 'snap.png'; a.href = canvas.toDataURL('image/png'); a.click();
+});
+const overlayImg = document.getElementById('overlay');
+$('op').addEventListener('input', () => { overlayImg.style.opacity = $('op').value; });
+
+Object.assign(window.VIEWER, {
+  wireframe(on) { wf = !!on; if (model) model.traverse((o) => { if (o.material) o.material.wireframe = wf; }); return wf; },
+  overlay(url, opacity = 0.5) { overlayImg.src = url; overlayImg.style.opacity = opacity; $('op').value = opacity; return true; },
+  snapshot() { renderer.render(scene, camera); return canvas.toDataURL('image/png'); },
+});
