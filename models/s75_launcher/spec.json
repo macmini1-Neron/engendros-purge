@@ -4,52 +4,56 @@
   "category": "industrial",
   "target": "voxel",
   "anchor": "floor",
-  "footprint": { "w": 3.0, "h": 3.3, "d": 10.85 },
+  "footprint": { "w": 3.6, "h": 3.3, "d": 6.0 },
   "dossier": "models/s75_launcher/ref/dossier.json",
   "rig": [
-    { "name": "elevation", "pivot": [0, 1.9, 1.7], "axis": "x", "pose": -0.95 },
-    { "name": "deflector", "pivot": [0, 0.12, -0.5], "axis": "x", "pose": -0.5 }
+    { "name": "azimuth",   "pivot": [0, 0.4, 1.7],  "axis": "y", "pose": 0,     "type": "spin",  "range": [0, 6.2832] },
+    { "name": "elevation", "pivot": [0, 1.85, 1.7], "axis": "x", "pose": -0.95, "parent": "azimuth",   "type": "hinge", "range": [-1.309, -0.1745] },
+    { "name": "missile",   "pivot": [0, 2.3, 1.7],  "axis": "z", "pose": 0,     "parent": "elevation", "type": "slide" },
+    { "name": "deflector", "pivot": [0, 0.18, -0.5], "axis": "x", "pose": -0.55, "parent": "azimuth",  "type": "hinge" }
   ],
   "parts": [
-    { "op": "cone",     "id": "nozzle",    "args": { "r": 0.38, "h": 0.34, "tone": "lo" }, "at": [0, 2.3, -0.12], "mat": "steel", "rig": "elevation", "src": "dossier#derivation" },
-    { "op": "cylinder", "id": "booster",   "args": { "r": 0.327, "h": 2.702 }, "at": [0, 2.3, 1.351], "mat": "missileGrey", "rig": "elevation", "src": "dossier#booster" },
-    { "op": "cylinder", "id": "transition","args": { "r": 0.327, "r2": 0.25, "h": 0.24 }, "at": [0, 2.3, 2.82], "mat": "missileGrey", "rig": "elevation", "src": "dossier#sustainer" },
+    { "op": "cone",     "id": "nozzle",    "args": { "r": 0.38, "h": 0.34, "tone": "lo" }, "at": [0, 2.3, -0.12], "mat": "steel", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "booster",   "args": { "r": 0.327, "h": 2.702 }, "at": [0, 2.3, 1.351], "mat": "missileGrey", "rig": "missile", "src": "dossier#booster" },
+    { "op": "cylinder", "id": "transition","args": { "r": 0.327, "r2": 0.25, "h": 0.24 }, "at": [0, 2.3, 2.82], "mat": "missileGrey", "rig": "missile", "src": "dossier#sustainer" },
     { "op": "texturedCylinder", "id": "sustainer", "args": { "r": 0.25, "h": 6.98, "tone": "hi", "marks": [
         { "text": "5Я23  0250853", "x": 0.22, "y": 0.46, "rot": -1.5708, "size": 48 },
         { "text": "В-750ВН", "x": 0.22, "y": 0.74, "rot": -1.5708, "size": 38 },
         { "text": "БЧ", "x": 0.22, "y": 0.9, "size": 54 }
-      ] }, "at": [0, 2.3, 6.43], "mat": "missileGrey", "rig": "elevation", "src": "dossier#sustainer" },
-    { "op": "cylinder", "id": "warheadBand","args": { "r": 0.262, "h": 0.45, "tone": "hi" }, "at": [0, 2.3, 8.7], "mat": "missileGrey", "rig": "elevation", "src": "dossier#derivation" },
-    { "op": "cylinder", "id": "noseBand",   "args": { "r": 0.254, "h": 0.5 }, "at": [0, 2.3, 9.62], "mat": "gunGrey", "rig": "elevation", "src": "dossier#derivation" },
-    { "op": "cone",     "id": "nose",      "args": { "r": 0.25, "h": 0.96 }, "at": [0, 2.3, 10.4], "mat": "missileGrey", "rig": "elevation", "src": "dossier#nose" },
-    { "op": "bevelBox", "id": "conduit",   "args": { "w": 0.08, "h": 0.07, "d": 6.9 }, "at": [0, 2.58, 6.0], "mat": "steel", "rig": "elevation", "src": "dossier#derivation" },
+      ] }, "at": [0, 2.3, 6.43], "mat": "missileGrey", "rig": "missile", "src": "dossier#sustainer" },
+    { "op": "cylinder", "id": "warheadBand","args": { "r": 0.262, "h": 0.45, "tone": "hi" }, "at": [0, 2.3, 8.7], "mat": "missileGrey", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "noseBand",   "args": { "r": 0.254, "h": 0.5 }, "at": [0, 2.3, 9.62], "mat": "gunGrey", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "cone",     "id": "nose",      "args": { "r": 0.25, "h": 0.96 }, "at": [0, 2.3, 10.4], "mat": "missileGrey", "rig": "missile", "src": "dossier#nose" },
+    { "op": "bevelBox", "id": "conduit",   "args": { "w": 0.08, "h": 0.07, "d": 6.9 }, "at": [0, 2.58, 6.0], "mat": "steel", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "deltaFins", "id": "boosterFins", "args": { "count": 4, "root": 1.8, "span": 0.966, "tip": 0.45, "sweep": 0.95, "thick": 0.05, "r0": 0.327, "phase": 0.785 }, "at": [0, 2.3, 1.05], "mat": "missileGrey", "rig": "missile", "src": "dossier#fins" },
+    { "op": "deltaFins", "id": "wings",       "args": { "count": 4, "root": 1.2, "span": 0.596, "tip": 0.32, "sweep": 0.65, "thick": 0.04, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 3.7], "mat": "missileGrey", "rig": "missile", "src": "dossier#fins" },
+    { "op": "deltaFins", "id": "noseFins",    "args": { "count": 4, "root": 0.4, "span": 0.35, "tip": 0.12, "sweep": 0.22, "thick": 0.03, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 9.4], "mat": "missileGrey", "rig": "missile", "src": "dossier#derivation" },
 
-    { "op": "deltaFins", "id": "boosterFins", "args": { "count": 4, "root": 1.8, "span": 0.966, "tip": 0.45, "sweep": 0.95, "thick": 0.05, "r0": 0.327, "phase": 0.785 }, "at": [0, 2.3, 1.05], "mat": "missileGrey", "rig": "elevation", "src": "dossier#fins" },
-    { "op": "deltaFins", "id": "wings",       "args": { "count": 4, "root": 1.2, "span": 0.596, "tip": 0.32, "sweep": 0.65, "thick": 0.04, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 3.7], "mat": "missileGrey", "rig": "elevation", "src": "dossier#fins" },
-    { "op": "deltaFins", "id": "noseFins",    "args": { "count": 4, "root": 0.4, "span": 0.35, "tip": 0.12, "sweep": 0.22, "thick": 0.03, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 9.4], "mat": "missileGrey", "rig": "elevation", "src": "dossier#derivation" },
+    { "op": "latticeBeam", "id": "rail", "args": { "len": 8.6, "w": 0.54, "h": 0.32, "bays": 12, "chord": 0.055 }, "at": [0, 1.75, 4.2], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "railWeb", "args": { "w": 0.12, "h": 0.34, "d": 8.6 }, "at": [0, 1.75, 4.2], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "shoeAft",  "args": { "w": 0.56, "h": 0.18, "d": 0.4 }, "at": [0, 2.0, 1.5], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "shoeFore", "args": { "w": 0.46, "h": 0.18, "d": 0.4 }, "at": [0, 2.0, 6.6], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
 
-    { "op": "latticeBeam", "id": "rail", "args": { "len": 9.4, "w": 0.5, "h": 0.46, "bays": 12, "chord": 0.05 }, "at": [0, 1.72, 4.4], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "shoeAft",  "args": { "w": 0.5, "h": 0.2, "d": 0.34 }, "at": [0, 2.0, 1.4], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "shoeFore", "args": { "w": 0.42, "h": 0.2, "d": 0.34 }, "at": [0, 2.0, 6.6], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "turntable", "args": { "r": 0.95, "h": 0.34, "axis": "y" }, "at": [0, 0.4, 1.7], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "housing",    "args": { "w": 1.5, "h": 1.0, "d": 3.1 }, "at": [0, 1.05, 1.9], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "housingTop", "args": { "w": 1.16, "h": 0.34, "d": 2.9 }, "at": [0, 1.6, 1.9], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "trunnion",   "args": { "w": 0.85, "h": 0.7, "d": 0.95 }, "at": [0, 1.55, 1.0], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
 
-    { "op": "bevelBox", "id": "trunnion",  "args": { "w": 0.9, "h": 1.7, "d": 1.1 }, "at": [0, 1.05, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "baseCone",  "args": { "r": 1.4, "r2": 0.72, "h": 0.7, "axis": "y" }, "at": [0, 0.35, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "servoL",    "args": { "w": 0.42, "h": 0.6, "d": 1.0 }, "at": [-0.92, 0.78, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "servoR",    "args": { "w": 0.42, "h": 0.6, "d": 1.0 }, "at": [0.92, 0.78, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "spine",   "args": { "w": 0.5, "h": 0.2, "d": 5.2 }, "at": [0, 0.12, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "crossF",  "args": { "w": 3.5, "h": 0.2, "d": 0.5 }, "at": [0, 0.12, 3.6], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "crossR",  "args": { "w": 3.5, "h": 0.2, "d": 0.5 }, "at": [0, 0.12, -0.2], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "footFL", "args": { "w": 0.7, "h": 0.28, "d": 0.7 }, "at": [-1.65, 0.14, 3.6], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "footFR", "args": { "w": 0.7, "h": 0.28, "d": 0.7 }, "at": [1.65, 0.14, 3.6], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "footRL", "args": { "w": 0.7, "h": 0.28, "d": 0.7 }, "at": [-1.65, 0.14, -0.2], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "footRR", "args": { "w": 0.7, "h": 0.28, "d": 0.7 }, "at": [1.65, 0.14, -0.2], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
 
-    { "op": "bevelBox", "id": "chassis",   "args": { "w": 1.0, "h": 0.28, "d": 4.4 }, "at": [0, 0.5, 1.9], "mat": "steel", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "wheelFL", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [-1.12, 0.52, 3.7], "mat": "steel", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "wheelFR", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [1.12, 0.52, 3.7], "mat": "steel", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "wheelRL", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [-1.12, 0.52, 0.1], "mat": "steel", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "wheelRR", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [1.12, 0.52, 0.1], "mat": "steel", "src": "dossier#launcher_sm90" },
-    { "op": "legs",     "id": "jacks",    "args": { "w": 3.1, "d": 4.6, "h": 0.55, "lw": 0.12 }, "at": [0, 0, 1.9], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
-
-    { "op": "bevelBox", "id": "blastPlate", "args": { "w": 1.6, "h": 1.2, "d": 0.12 }, "at": [0, 0.72, -0.5], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#launcher_sm90" }
+    { "op": "bevelBox", "id": "deflBlade", "args": { "w": 1.7, "h": 0.06, "d": 1.5 }, "at": [0, 0.75, -1.35], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "deflStrut", "args": { "w": 0.12, "h": 0.8, "d": 0.12 }, "at": [0, 0.4, -1.9], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "deflFoot",  "args": { "r": 0.35, "h": 0.08, "axis": "y" }, "at": [0, 0.04, -1.95], "mat": "oliveDrab", "src": "dossier#launcher_sm90" }
   ],
   "needs": [
-    "Beam is the sourced OPEN-LATTICE type (latticeBeam) — exact truss member cross-section/count not in sources; bay count + chord are plausible.",
-    "Conical SM-63-2 base, 2-bogie carriage, ~4 screw jacks, газоотражатель are sourced features but their exact dims aren't — modelled plausibly (dossier#launcher_sm90 + needs).",
-    "Shown in MUSEUM/display config (on wheels, erected). Operational firing config detaches the bogies onto the base + jacks — a variant for later.",
-    "Body stencils/serial + erection angle ~54° are representative/derived (see earlier needs)."
+    "RIGGED for animation (ready, not animated): azimuth (Y, whole launcher) → elevation (X, beam+missile) → missile (Z slide / launch); deflector (X) under azimuth. Each rig node carries pivot+axis+range in userData.rig.",
+    "СМ-90 firing config: open-lattice beam, big equipment housing, X cross ground-base (bogies detached), большой газоотражатель blade on a strut+foot — sourced features; exact dims plausible (dossier#launcher_sm90 + needs).",
+    "Body stencils/serial + erection ~54° are representative/derived (see earlier needs)."
   ]
 }

@@ -14,48 +14,55 @@ export function buildSpec(spec) {
   const root = new THREE.Group();
   root.name = plan.id;
 
-  const builders = new Map();   // rigKey → MeshBuilder (merged box/cylinder parts)
-  const extras = new Map();     // rigKey → [Object3D] (ops that return their OWN mesh, e.g. textured)
+  // 1) run operators → merged builder + standalone meshes per rig key
+  const builders = new Map(), extras = new Map();
+  const ensure = (key) => { if (!builders.has(key)) { builders.set(key, new MeshBuilder()); extras.set(key, []); } };
+  ensure('__base');
   for (const o of plan.ops) {
     const fn = OPS[o.op];
     if (!fn) throw new Error(`no voxel impl for operator '${o.op}'`);
     const key = o.rig || '__base';
-    if (!builders.has(key)) { builders.set(key, new MeshBuilder()); extras.set(key, []); }
+    ensure(key);
     const ret = fn(builders.get(key), o.args, o.tones, o.origin);
     if (ret && ret.isObject3D) extras.get(key).push(ret);   // a textured/standalone-mesh operator
   }
 
+  // 2) a group per rig — ANY rig with a `pivot` gets an outer (named, carries rotation about the
+  // pivot) + an inner container offset by −pivot, so an animator can just set outer.rotation[axis]
+  // and it pivots correctly. `pose` is the static display angle (default 0 = neutral, ready to
+  // animate). Rigs nest: a rig with `parent` hangs under the parent's container (azimuth → elevation
+  // → missile), so one parent rotation carries everything below it. userData.rig keeps the contract.
   const rigByName = new Map(plan.rig.map((r) => [r.name, r]));
+  for (const r of plan.rig) ensure(r.name);   // a rig may be a pure container (children only)
+  const containers = new Map([['__base', root]]), outers = new Map();
   for (const key of builders.keys()) {
-    const rig = key === '__base' ? null : rigByName.get(key);
-    const posed = rig && Array.isArray(rig.pivot) && rig.pose != null;
-    // `outer` = the named rig group (carries the STATIC pose: rotate `pose` rad about `axis`).
-    // `container` = where meshes actually go; for a posed rig it is offset by −pivot so the
-    // outer rotation pivots about `pivot` (e.g. erecting a missile on its trunnion). Parts are
-    // built at absolute coords; the −pivot container makes the net transform a rotation about pivot.
-    let outer = root, container = root;
-    if (key !== '__base') {
-      outer = new THREE.Group(); outer.name = key;
-      if (rig) outer.userData.rig = rig;
-      container = outer;
-      if (posed) {
-        const [px, py, pz] = rig.pivot;
-        outer.position.set(px, py, pz);
-        outer.rotation[rig.axis || 'x'] = rig.pose;
-        container = new THREE.Group(); container.position.set(-px, -py, -pz); outer.add(container);
-      }
-      root.add(outer);
+    if (key === '__base') continue;
+    const rig = rigByName.get(key);
+    const outer = new THREE.Group(); outer.name = key;
+    if (rig) outer.userData.rig = rig;
+    let container = outer;
+    if (rig && Array.isArray(rig.pivot)) {
+      const [px, py, pz] = rig.pivot;
+      outer.position.set(px, py, pz);
+      outer.rotation[rig.axis || 'x'] = rig.pose ?? 0;
+      container = new THREE.Group(); container.position.set(-px, -py, -pz); outer.add(container);
     }
-    const b = builders.get(key);
-    if (b.pos.length) {                       // merged vertex-colour mesh (box/cylinder parts)
+    outers.set(key, outer); containers.set(key, container);
+  }
+  for (const key of outers.keys()) {          // wire nesting: child.outer → parent.container (or root)
+    const rig = rigByName.get(key);
+    (rig && rig.parent && containers.has(rig.parent) ? containers.get(rig.parent) : root).add(outers.get(key));
+  }
+
+  // 3) attach each rig's meshes into its container
+  for (const [key, b] of builders) {
+    const container = containers.get(key);
+    if (b.pos.length) {
       const mesh = new THREE.Mesh(b.build(), voxelMaterial());
       mesh.castShadow = true; mesh.receiveShadow = true;
       container.add(mesh);
     }
-    for (const ex of extras.get(key)) {       // standalone meshes (own material, e.g. CanvasTexture)
-      ex.castShadow = true; ex.receiveShadow = true;
-      container.add(ex);
-    }
+    for (const ex of extras.get(key)) { ex.castShadow = true; ex.receiveShadow = true; container.add(ex); }
   }
   root.userData.footprint = plan.footprint;
   return root;
