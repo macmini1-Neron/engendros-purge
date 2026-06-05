@@ -1,7 +1,7 @@
 // registry.js — browser-facing facade (THREE boundary). Re-exports the pure
 // registry core + adds placeProp(), which builds a registered spec and adds it
-// to a scene. Never silently swallows an unknown id.
-import * as THREE from 'three';
+// to a scene. Never silently swallows an unknown id. (THREE boundary: pulls
+// three transitively via voxel-interp, so it is browser-only — not node-tested.)
 import { buildSpec } from './voxel-interp.js';
 export { registerModel, getSpec, hasModel, listModels } from './registry-core.js';
 import { getSpec } from './registry-core.js';
