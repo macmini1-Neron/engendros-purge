@@ -1,0 +1,31 @@
+{
+  "id": "s75_missile",
+  "name": "S-75 Dvina (SA-2) V-750VN missile — standalone",
+  "category": "industrial",
+  "target": "voxel",
+  "anchor": "free",
+  "footprint": { "w": 2.6, "h": 2.6, "d": 10.85 },
+  "dossier": "models/s75_launcher/ref/dossier.json",
+  "parts": [
+    { "op": "cone",     "id": "nozzle",    "args": { "r": 0.38, "h": 0.34, "tone": "lo" }, "at": [0, 0, -0.12], "mat": "steel", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "booster",   "args": { "r": 0.327, "h": 2.702 }, "at": [0, 0, 1.351], "mat": "missileGrey", "src": "dossier#booster" },
+    { "op": "cylinder", "id": "transition","args": { "r": 0.327, "r2": 0.25, "h": 0.24 }, "at": [0, 0, 2.82], "mat": "missileGrey", "src": "dossier#sustainer" },
+    { "op": "texturedCylinder", "id": "sustainer", "args": { "r": 0.25, "h": 6.98, "tone": "hi", "marks": [
+        { "text": "5Я23  0250853", "x": 0.22, "y": 0.46, "rot": -1.5708, "size": 48 },
+        { "text": "В-750ВН", "x": 0.22, "y": 0.74, "rot": -1.5708, "size": 38 },
+        { "text": "БЧ", "x": 0.22, "y": 0.9, "size": 54 }
+      ] }, "at": [0, 0, 6.43], "mat": "missileGrey", "src": "dossier#sustainer" },
+    { "op": "cylinder", "id": "warheadBand","args": { "r": 0.262, "h": 0.45, "tone": "hi" }, "at": [0, 0, 8.7], "mat": "missileGrey", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "noseBand",   "args": { "r": 0.254, "h": 0.5 }, "at": [0, 0, 9.62], "mat": "gunGrey", "src": "dossier#derivation" },
+    { "op": "cone",     "id": "nose",      "args": { "r": 0.25, "h": 0.96 }, "at": [0, 0, 10.4], "mat": "missileGrey", "src": "dossier#nose" },
+    { "op": "bevelBox", "id": "conduit",   "args": { "w": 0.08, "h": 0.07, "d": 6.9 }, "at": [0, 0.28, 6.0], "mat": "steel", "src": "dossier#derivation" },
+
+    { "op": "deltaFins", "id": "boosterFins", "args": { "count": 4, "root": 1.8, "span": 0.966, "tip": 0.45, "sweep": 0.95, "thick": 0.05, "r0": 0.327, "phase": 0.785 }, "at": [0, 0, 1.05], "mat": "missileGrey", "src": "dossier#fins" },
+    { "op": "deltaFins", "id": "wings",       "args": { "count": 4, "root": 1.2, "span": 0.596, "tip": 0.32, "sweep": 0.65, "thick": 0.04, "r0": 0.25, "phase": 0.785 }, "at": [0, 0, 3.7], "mat": "missileGrey", "src": "dossier#fins" },
+    { "op": "deltaFins", "id": "noseFins",    "args": { "count": 4, "root": 0.4, "span": 0.35, "tip": 0.12, "sweep": 0.22, "thick": 0.03, "r0": 0.25, "phase": 0.785 }, "at": [0, 0, 9.4], "mat": "missileGrey", "src": "dossier#derivation" }
+  ],
+  "needs": [
+    "Standalone missile (launcher removed), centred on the +Z axis at y=0 — ready to translate/rotate for a flight animation",
+    "Same sourced dims + representative stencils as s75_launcher (shares its dossier)"
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "model": "S-75 Dvina (SA-2 Guideline) — V-750VN / 13D missile on СМ-90 single-rail launcher",
+  "era": "USSR, in service from 1957; 13D airframe = the common Cold-War variant (downed the U-2 in 1960)",
+  "facts": {
+    "missile_overall": {
+      "length_m": 10.841, "launch_weight_kg": 2283,
+      "src": "thisdayinaviation.com/tag/v-750vn-13d-desna (V-750VN/13D, NASM-class data). Variant 1D/SA-2A is shorter (10.6–10.726 m / 2163 kg): en.wikipedia.org/wiki/S-75_Dvina + ausairpower.net/APA-S-75-Volkhov.html (Vestnik PVO)."
+    },
+    "booster": {
+      "length_m": 2.702, "dia_m": 0.654, "radius_m": 0.327,
+      "src": "dia 0.654 m: thisdayinaviation.com + ausairpower.net (Vestnik PVO), 3 sources agree. length 2.702 m is DERIVED = 10.841 − 8.139 (see derivation; no source gives booster length standalone)."
+    },
+    "sustainer": {
+      "length_m": 8.139, "dia_m": 0.500, "radius_m": 0.25,
+      "src": "thisdayinaviation.com/tag/v-750vn-13d-desna ('8.139 meters' for V-750VN). dia 0.500 m confirmed by Wikipedia S-75 Dvina, FAS nuke.fas.org/guide/russia/airdef/v-75.htm, parkpatriot.ru."
+    },
+    "nose": {
+      "shape": "ogival nose cone (тело вращения с оживальной носовой частью), houses proximity fuse + radio antenna; small fixed cruciform nose control fins",
+      "src": "Wikipedia S-75 Dvina; FAS v-75; sovetarmy.forum2x2.ru/t39-topic"
+    },
+    "fins": {
+      "booster_span_m": 2.586, "wing_span_m": 1.691, "offset_deg": 45,
+      "desc": "3 cruciform (4×) sets at 45° roll offset: (1) booster tail = large cropped-delta, full span 2.586 m (widest point of the system); (2) sustainer mid/rear wings = cropped-delta, span 1.691 m; (3) small nose control fins (span unsourced).",
+      "src": "spans: thisdayinaviation.com/tag/v-750vn-13d-desna (13D). shape: Wikipedia S-75 + FAS v-75 ('four large cropped-delta wing fins ... small control surfaces'). Minor conflict: ausairpower gives booster span 2.566 m for the 1D."
+    },
+    "launcher_sm90": {
+      "fire_line_height_m": 2.3, "elevation_deg": "10–75", "azimuth": "360°",
+      "cradle_skid_length_m": 1.6, "travel_envelope_m": { "length": 10.2, "height": 3.8, "width": 2.675 },
+      "beam_type": "OPEN LATTICE / TRUSS girder (решётчатая конструкция) — NOT a solid box; exposed structural members + stiffening ribs both sides, wider at the pivot tapering toward the muzzle. Missile rests ON TOP in 2 guide-shoe rails (полозки, 1.6 m); the big booster fins hang FREE below the beam sides. Chain-drive elevation.",
+      "base_type": "Conical / low-frustum SM-63-2 turntable pedestal between ground and beam pivot; 360° azimuth (7°/s elec). Trunnion pivot is PARTWAY along the beam, not at the tail. Typical launch angle ~60° (range 10–75°).",
+      "carriage": "2 detachable wheeled bogies (front steerable + rear braked) for transport (KrAZ-214 tow); in FIRING position the bogies detach and the launcher sits on its base, levelled on ~4 screw jacks (area 80 m²). ЭСП-90 servo housings (sheet-metal covers) on the rotating base sides.",
+      "deflector": "газоотражатель — a blast plate on a hinged arm below the booster (tail) end of the beam; floats ~15–20 cm off the ground, presses to the ground only under booster efflux.",
+      "desc": "Single open-lattice trainable launch beam on a conical SM-63-2 turntable. Missile rests on top on guide shoes; booster fins hang free; exhaust to the deflector aft.",
+      "src": "sovetarmy.forum2x2.ru/t38-topic (skid 1600 mm; elev 10–75°; fire-line 2300 mm; envelope 10200 mm; gauge 5435 mm; area 80 m²; mass marching ≤14200 / firing ≤11100 kg); scalemodels.ru #16222 + karopka.ru #415250/#445168 (lattice beam, stiffening ribs, chain-drive, conical SM-63-2); myauu.livejournal.com (ЭСП-90 servo, газоотражатель); modelingmadness.com + Airfix Tribute Forum (overall Soviet dark-olive green; museum sand = repaint)."
+    },
+    "deflector": {
+      "type": "газоотражатель (blast / jet deflector) — a wedge / inverted-V ridge plate at the REAR of the rotating launcher, directly behind & below the missile nozzle; its sloped face takes the booster efflux (scorch marks on the ridge of the USAFM example).",
+      "attachment": "BRIDGES the rotating launcher and the ground. Upper/front part is suspended from the rear of the rotating launcher 'box' via ARMS + TWO HYDRAULIC RAMS; lower part stands on shock absorbers / a tubular A-frame support foot on the ground. (Modelled: a mount bracket on the platform rear → 2 arms + 2 ram cylinders to the wedge → A-frame foot to the ground.)",
+      "motion": "FIXED plate relative to the base — it does NOT pitch on its own and does NOT track the rail's elevation; only at launch the gas jet presses it down onto its ground shock absorbers. Because its arms bolt to the rear of the rotating box (which traverses 360°), it SWINGS IN AZIMUTH together with the whole launcher to stay behind the missile tail — it is NOT separately motorized (so it is rigged azimuth-fixed, no self-motion).",
+      "shape_size": "wedge-shaped metal structure ('клиновидная металлическая конструкция'), ~rail-width, a couple of metres long, low to the ground; in firing config a circular ramp is fitted on it to take the exhaust. No mm dimensions sourced.",
+      "src": "vko.ru/oruzhie/zrk-s-75-pervyy-sredi-ravnyh-chast-i (клиновидная конструкция; нижняя часть на амортизаторах на грунте, верхняя подвешена к ПУ; прижимается к грунту газовой струёй стартового двигателя); modelingmadness.com/review/misc/alcottsam.htm (Planet Models kit teardown: launcher = base+turntable / box-with-blast-deflector / elevating arm; deflector has its own support foot; TWO hydraulic rams between the deflector arms and the rear of the launcher); wargaming3d.com/product/s-75-sa-2-guideline-misslie-and-launcher (circular ramp on the efflux deflector; firing vs transport configs differ); militaryfactory.com armor_id=133 (launcher traverses 360°, fires ~60°); USAFM walkaround cybermodeler.com/space/sa-2/images/afm_sa-2_11.jpg (wedge at the rear on a tubular A-frame ground leg, scorched ridge); sovetarmy.forum2x2.ru/t38-topic (газоотражатель listed among launcher components). NOTE: patent RU42646U1 describes a DIFFERENT, steerable exhaust-vectoring launcher — NOT the classic СМ-63/СМ-90; not applied here."
+    },
+    "livery": {
+      "soviet_pvo": "unpainted aluminium / natural metal ('алюминиевый цвет') → modelled as missileGrey",
+      "src": "sovetarmy.forum2x2.ru (Soviet service aluminium); NASM example is factory green; Vietnamese SA-2s dark green (modelingmadness.com). No official Soviet PVO paint TU located."
+    }
+  },
+  "derivation": {
+    "booster_length_m": 2.702, "note_booster": "= overall 10.841 − sustainer 8.139 (sourced math, not invention).",
+    "booster_fin_radial_m": 0.966, "note_bfin": "= booster_span/2 − booster_radius = 1.293 − 0.327.",
+    "wing_radial_m": 0.596, "note_wing": "= wing_span/2 − sustainer_radius = 0.846 − 0.25.",
+    "nose_fin_span_m": 0.35, "note_nosefin": "ESTIMATE, NOT SOURCED — proportionally smaller than the 1.691 m wings; flagged in needs. Used only so the characteristic nose fins exist.",
+    "beam_length_m": 9.6, "note_beam": "ESTIMATE — 'beam ≈ missile length, missile overhangs rear'; ~ a touch under 10.841. Travel envelope length is 10.2 m. Flagged in needs.",
+    "turntable_dia_m": 2.6, "note_tt": "ESTIMATE — base circle dia not in any source (only 80 m² site footprint). Flagged in needs.",
+    "src": "geometric derivation from facts.* + the launcher description; estimates explicitly flagged"
+  },
+  "images": [
+    { "view": "side", "url": "https://airandspace.si.edu/collection-objects/missile-surface-air-sa-2-guideline-model-sa-2b-mod-1/nasm_A19850424000", "shows": "V-750VN at NASM — full side profile (factory green)" },
+    { "view": "data", "url": "https://www.thisdayinaviation.com/tag/v-750vn-13d-desna/", "shows": "13D precise dimension table — best dimensional reference" },
+    { "view": "launcher", "url": "https://www.ausairpower.net/APA-S-75-Volkhov.html", "shows": "SM-90 launcher, erected + stowed, variant spec tables" }
+  ],
+  "needs": [
+    "Nose control-fin span — UNSOURCED; estimated 0.35 m in derivation",
+    "SM-90 beam total length — UNSOURCED; estimated 9.6 m (only skid 1.6 m + travel envelope 10.2 m are documented)",
+    "SM-90 / SM-63 turntable base circle diameter — UNSOURCED; estimated 2.6 m (only 80 m² site footprint documented)",
+    "Official Soviet PVO paint spec (TU) — 'алюминиевый цвет' is forum-cited, no primary source",
+    "Booster length is derived (10.841 − 8.139), not directly sourced",
+    "Erected firing angle for the canonical pose (10–75° range sourced; exact parade angle not fixed) — v1 is modelled horizontal",
+    "Blast-deflector exact dimensions (length / width / height / plate thickness in mm) — UNSOURCED; wedge modelled ~rail-width from museum photos (cybermodeler USAFM walkaround); flagged.",
+    "No single primary manual sentence literally states the газоотражатель rotates in azimuth with the launcher — strongly inferred (its arms/rams bolt to the rotating box; launcher traverses 360°; museum photo geometry keeps it behind the tail). Modelled azimuth-fixed (swings with the launcher), not self-moving."
+  ]
+}
