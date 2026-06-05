@@ -26,8 +26,12 @@
     "launcher_sm90": {
       "fire_line_height_m": 2.3, "elevation_deg": "10–75", "azimuth": "360°",
       "cradle_skid_length_m": 1.6, "travel_envelope_m": { "length": 10.2, "height": 3.8, "width": 2.675 },
-      "desc": "Single trainable launch beam on a wheeled turntable (SM-63 base). Missile rests on top of the beam on guide skids, held fore+aft; booster exhaust directed aft. Beam ≈ missile length and the missile overhangs the rear.",
-      "src": "sovetarmy.forum2x2.ru/t38-topic (Russian tech data: skid 1600 mm; elev 10–75°; fire-line 2300 mm; travel length ≤10200 mm; track gauge 5435 mm; area 80 m²). ausairpower.net/APA-S-75-Volkhov.html confirms single-rail SM-90."
+      "beam_type": "OPEN LATTICE / TRUSS girder (решётчатая конструкция) — NOT a solid box; exposed structural members + stiffening ribs both sides, wider at the pivot tapering toward the muzzle. Missile rests ON TOP in 2 guide-shoe rails (полозки, 1.6 m); the big booster fins hang FREE below the beam sides. Chain-drive elevation.",
+      "base_type": "Conical / low-frustum SM-63-2 turntable pedestal between ground and beam pivot; 360° azimuth (7°/s elec). Trunnion pivot is PARTWAY along the beam, not at the tail. Typical launch angle ~60° (range 10–75°).",
+      "carriage": "2 detachable wheeled bogies (front steerable + rear braked) for transport (KrAZ-214 tow); in FIRING position the bogies detach and the launcher sits on its base, levelled on ~4 screw jacks (area 80 m²). ЭСП-90 servo housings (sheet-metal covers) on the rotating base sides.",
+      "deflector": "газоотражатель — a blast plate on a hinged arm below the booster (tail) end of the beam; floats ~15–20 cm off the ground, presses to the ground only under booster efflux.",
+      "desc": "Single open-lattice trainable launch beam on a conical SM-63-2 turntable. Missile rests on top on guide shoes; booster fins hang free; exhaust to the deflector aft.",
+      "src": "sovetarmy.forum2x2.ru/t38-topic (skid 1600 mm; elev 10–75°; fire-line 2300 mm; envelope 10200 mm; gauge 5435 mm; area 80 m²; mass marching ≤14200 / firing ≤11100 kg); scalemodels.ru #16222 + karopka.ru #415250/#445168 (lattice beam, stiffening ribs, chain-drive, conical SM-63-2); myauu.livejournal.com (ЭСП-90 servo, газоотражатель); modelingmadness.com + Airfix Tribute Forum (overall Soviet dark-olive green; museum sand = repaint)."
     },
     "livery": {
       "soviet_pvo": "unpainted aluminium / natural metal ('алюминиевый цвет') → modelled as missileGrey",

@@ -4,11 +4,11 @@
   "category": "industrial",
   "target": "voxel",
   "anchor": "floor",
-  "footprint": { "w": 2.6, "h": 3.3, "d": 10.85 },
+  "footprint": { "w": 3.0, "h": 3.3, "d": 10.85 },
   "dossier": "models/s75_launcher/ref/dossier.json",
   "rig": [
-    { "name": "elevation", "pivot": [0, 1.9, 1.5], "axis": "x", "pose": -0.95 },
-    { "name": "deflector", "pivot": [0, 0.1, -0.2], "axis": "x", "pose": -0.6 }
+    { "name": "elevation", "pivot": [0, 1.9, 1.7], "axis": "x", "pose": -0.95 },
+    { "name": "deflector", "pivot": [0, 0.12, -0.5], "axis": "x", "pose": -0.5 }
   ],
   "parts": [
     { "op": "cone",     "id": "nozzle",    "args": { "r": 0.38, "h": 0.34, "tone": "lo" }, "at": [0, 2.3, -0.12], "mat": "steel", "rig": "elevation", "src": "dossier#derivation" },
@@ -28,26 +28,28 @@
     { "op": "deltaFins", "id": "wings",       "args": { "count": 4, "root": 1.2, "span": 0.596, "tip": 0.32, "sweep": 0.65, "thick": 0.04, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 3.7], "mat": "missileGrey", "rig": "elevation", "src": "dossier#fins" },
     { "op": "deltaFins", "id": "noseFins",    "args": { "count": 4, "root": 0.4, "span": 0.35, "tip": 0.12, "sweep": 0.22, "thick": 0.03, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 9.4], "mat": "missileGrey", "rig": "elevation", "src": "dossier#derivation" },
 
-    { "op": "bevelBox", "id": "beam",       "args": { "w": 0.4, "h": 0.3, "d": 9.6 }, "at": [0, 1.8, 4.5], "mat": "steel", "rig": "elevation", "src": "dossier#launcher" },
-    { "op": "bevelBox", "id": "railL",      "args": { "w": 0.08, "h": 0.13, "d": 9.4 }, "at": [-0.14, 2.0, 4.5], "mat": "steel", "rig": "elevation", "src": "dossier#launcher" },
-    { "op": "bevelBox", "id": "railR",      "args": { "w": 0.08, "h": 0.13, "d": 9.4 }, "at": [0.14, 2.0, 4.5], "mat": "steel", "rig": "elevation", "src": "dossier#launcher" },
-    { "op": "bevelBox", "id": "cradleAft",  "args": { "w": 0.62, "h": 0.34, "d": 0.3 }, "at": [0, 2.05, 1.4], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher" },
-    { "op": "bevelBox", "id": "cradleFore", "args": { "w": 0.52, "h": 0.34, "d": 0.3 }, "at": [0, 2.05, 6.5], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher" },
+    { "op": "latticeBeam", "id": "rail", "args": { "len": 9.4, "w": 0.5, "h": 0.46, "bays": 12, "chord": 0.05 }, "at": [0, 1.72, 4.4], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "shoeAft",  "args": { "w": 0.5, "h": 0.2, "d": 0.34 }, "at": [0, 2.0, 1.4], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "shoeFore", "args": { "w": 0.42, "h": 0.2, "d": 0.34 }, "at": [0, 2.0, 6.6], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
 
-    { "op": "bevelBox", "id": "trunnion",  "args": { "w": 0.8, "h": 1.9, "d": 1.0 }, "at": [0, 0.95, 1.5], "mat": "oliveDrab", "src": "dossier#launcher" },
-    { "op": "cylinder", "id": "turntable", "args": { "r": 1.3, "h": 0.4, "axis": "y" }, "at": [0, 0.3, 1.5], "mat": "oliveDrab", "src": "dossier#derivation" },
-    { "op": "bevelBox", "id": "chassis",   "args": { "w": 1.1, "h": 0.3, "d": 3.4 }, "at": [0, 0.4, 1.5], "mat": "steel", "src": "dossier#derivation" },
-    { "op": "cylinder", "id": "wheelFL", "args": { "r": 0.42, "h": 0.3, "axis": "x", "tone": "lo" }, "at": [-1.05, 0.42, 2.6], "mat": "steel", "src": "dossier#derivation" },
-    { "op": "cylinder", "id": "wheelFR", "args": { "r": 0.42, "h": 0.3, "axis": "x", "tone": "lo" }, "at": [1.05, 0.42, 2.6], "mat": "steel", "src": "dossier#derivation" },
-    { "op": "cylinder", "id": "wheelRL", "args": { "r": 0.42, "h": 0.3, "axis": "x", "tone": "lo" }, "at": [-1.05, 0.42, 0.4], "mat": "steel", "src": "dossier#derivation" },
-    { "op": "cylinder", "id": "wheelRR", "args": { "r": 0.42, "h": 0.3, "axis": "x", "tone": "lo" }, "at": [1.05, 0.42, 0.4], "mat": "steel", "src": "dossier#derivation" },
-    { "op": "legs",     "id": "outriggers","args": { "w": 3.0, "d": 3.0, "h": 0.5 }, "at": [0, 0, 1.5], "mat": "oliveDrab", "src": "dossier#derivation" },
+    { "op": "bevelBox", "id": "trunnion",  "args": { "w": 0.9, "h": 1.7, "d": 1.1 }, "at": [0, 1.05, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "baseCone",  "args": { "r": 1.4, "r2": 0.72, "h": 0.7, "axis": "y" }, "at": [0, 0.35, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "servoL",    "args": { "w": 0.42, "h": 0.6, "d": 1.0 }, "at": [-0.92, 0.78, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "servoR",    "args": { "w": 0.42, "h": 0.6, "d": 1.0 }, "at": [0.92, 0.78, 1.7], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
 
-    { "op": "bevelBox", "id": "blastPlate", "args": { "w": 1.7, "h": 1.3, "d": 0.12 }, "at": [0, 0.75, -0.2], "mat": "steel", "rig": "deflector", "src": "dossier#derivation" }
+    { "op": "bevelBox", "id": "chassis",   "args": { "w": 1.0, "h": 0.28, "d": 4.4 }, "at": [0, 0.5, 1.9], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "wheelFL", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [-1.12, 0.52, 3.7], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "wheelFR", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [1.12, 0.52, 3.7], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "wheelRL", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [-1.12, 0.52, 0.1], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "wheelRR", "args": { "r": 0.52, "h": 0.36, "axis": "x", "tone": "lo" }, "at": [1.12, 0.52, 0.1], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "legs",     "id": "jacks",    "args": { "w": 3.1, "d": 4.6, "h": 0.55, "lw": 0.12 }, "at": [0, 0, 1.9], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+
+    { "op": "bevelBox", "id": "blastPlate", "args": { "w": 1.6, "h": 1.2, "d": 0.12 }, "at": [0, 0.72, -0.5], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#launcher_sm90" }
   ],
   "needs": [
-    "Detail elements (cable conduit, warhead band, flared nozzle, guide rails, wheels/chassis, blast deflector) are REAL SA-2/СМ-90 features but NOT individually dimensioned in any source — sizes are plausible estimates (dossier#derivation)",
-    "Erection angle ~54° (−0.95 rad) and deflector tilt are chosen for the look, within the sourced 10–75° elevation range",
-    "Body stencils/serial (5Я23 0250853 / В-750ВН / БЧ / ВЕРХ) are REPRESENTATIVE Soviet-style markings + the dark seeker band — illustrative livery, NOT a transcribed exact serial from a specific airframe"
+    "Beam is the sourced OPEN-LATTICE type (latticeBeam) — exact truss member cross-section/count not in sources; bay count + chord are plausible.",
+    "Conical SM-63-2 base, 2-bogie carriage, ~4 screw jacks, газоотражатель are sourced features but their exact dims aren't — modelled plausibly (dossier#launcher_sm90 + needs).",
+    "Shown in MUSEUM/display config (on wheels, erected). Operational firing config detaches the bogies onto the base + jacks — a variant for later.",
+    "Body stencils/serial + erection angle ~54° are representative/derived (see earlier needs)."
   ]
 }
