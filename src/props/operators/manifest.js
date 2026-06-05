@@ -8,6 +8,9 @@ export const MANIFEST = {
   plate:       { args: ['w', 'd'],               dims: ['w', 'd'] },
   drawerStack: { args: ['w', 'h', 'd', 'count'], dims: ['w', 'h', 'd'] },
   legs:        { args: ['w', 'd', 'h'],          dims: ['w', 'd', 'h'] },
+  cylinder:    { args: ['r', 'h'],                dims: ['r', 'h'] },
+  cone:        { args: ['r', 'h'],                dims: ['r', 'h'] },
+  finSet:      { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);

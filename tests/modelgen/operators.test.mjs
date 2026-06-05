@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bevelBox, panel, plate } from '../../src/props/operators/structural.js';
+import { bevelBox, panel, plate, finSet } from '../../src/props/operators/structural.js';
 import { drawerStack, legs } from '../../src/props/operators/furniture.js';
 
 // mock builder — records every box() call as [w,h,d,x,y,z,color,opts]
@@ -42,4 +42,14 @@ test('legs emits 4 posts each with a lit cap (8 boxes)', () => {
   const b = mock();
   legs(b, { w: 1, d: 0.6, h: 0.7 }, T, O);
   assert.equal(b.calls.length, 8);
+});
+
+test('finSet emits count*steps rotated plates; outer plate is lit', () => {
+  const b = mock();
+  finSet(b, { count: 4, root: 1.2, span: 0.8, steps: 3, r0: 0.3 }, T, O);
+  assert.equal(b.calls.length, 4 * 3);
+  // every plate carries an rz rotation opt (cruciform placement)
+  assert.ok(b.calls.every((c) => c[7] && typeof c[7].rz === 'number'));
+  // the outermost plate of each fin uses the bright tone
+  assert.ok(b.colorsUsed().includes(T.bright));
 });
