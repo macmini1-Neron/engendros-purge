@@ -16,7 +16,7 @@ export function legs(b, a, t, o) {
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const x = o.x + sx * (w / 2 - lw / 2 - 0.01);
     const z = o.z + sz * (d / 2 - lw / 2 - 0.01);
-    b.box(lw, h, lw, x, o.y + h / 2, z, t.mid);
-    b.box(lw, 0.05, lw, x, o.y + h - 0.025, z, t.bright);                 // lit cap
+    b.box(lw, h - 0.05, lw, x, o.y + (h - 0.05) / 2, z, t.mid);          // post
+    b.box(lw, 0.05, lw, x, o.y + h - 0.025, z, t.bright);                 // lit cap (stacked on post top — no coplanar z-fight)
   }
 }

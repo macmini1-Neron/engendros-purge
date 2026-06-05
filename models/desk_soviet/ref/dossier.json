@@ -1,0 +1,40 @@
+{
+  "model": "Письменный стол двухтумбовый (Soviet double-pedestal writing desk)",
+  "era": "USSR, 1960s–1980s",
+  "facts": {
+    "top_dims": {
+      "w_mm": 1400, "d_mm": 700, "h_mm": 730, "top_thickness_mm": 35,
+      "src": "Festima.ru listing #230719471 (Moscow, solid-wood Soviet двухтумбовый, seller-measured 1395×700×730 mm) → rounds to 1400×700×730. GOST 26800.1-86 (administrative writing desks): height range 720–780 mm, work surface min 750×600 mm; width not GOST-mandated. 1400×700 is the repeatedly-cited canonical footprint for the type."
+    },
+    "pedestal": {
+      "count": 2, "drawers_each": 3, "drawer_interior_mm": [340, 500, 90],
+      "src": "Festima #230719471 (6 drawers, 3 per side, interior 340×500×90 mm); Tsiolkovsky Museum culture.ru/muzey_imeni_tsiolkovskogo/catalog/0002900023 ('по три ящика в каждой тумбе' — 3 drawers per pedestal on a classic двухтумбовый)."
+    },
+    "materials": {
+      "top": "Lacquered birch/oak veneer (massiv on higher-grade 1960s–early-70s; ЛДСП/ДСП wood-grain on later institutional), warm brown, polished",
+      "handles": "Metal bail/ring pulls (скобы) on solid-wood; recessed/plastic on ДСП",
+      "knee": "Knee recess open front-to-back, closed on the sides by the two pedestal carcasses; a shallow back apron rail under the top",
+      "src": "back-in-ussr.com/2015/11/sovetskaya-mebel.html (materials/polishing); Festima #230719471 (solid massiv, orgsteklo cover, 1972); Tsiolkovsky Museum culture.ru"
+    },
+    "derivation": {
+      "pedestal_w_mm": 376, "knee_recess_mm": 648, "pedestal_d_mm": 660, "apron_h_mm": 60,
+      "note": "DERIVED from the sourced numbers above (NOT independently sourced — the raw figures are in needs[]): pedestal_w = drawer_interior_w 340 + 2×18 mm carcass walls ≈ 376; knee = overall_w 1400 − 2×376 = 648; pedestal_d = top_d 700 − ~40 mm overhang ≈ 660; apron kept thin and high to stay above the GOST 26800.1-86 legroom minimum (610 mm floor-to-understructure).",
+      "src": "geometric derivation from facts.top_dims + facts.pedestal + GOST 26800.1-86 legroom 610 mm"
+    }
+  },
+  "images": [
+    { "view": "front",  "url": "https://kvartblog.ru/uploads/post_photo/4717/27457/post_IMG_9776.JPG", "file": "ref/desk_dsp_front.jpg", "direct": true,  "shows": "Soviet ДСП desk, front — pedestal drawers + apron (single-pedestal; style/proportion reference, not exact двухтумбовый)" },
+    { "view": "3-4",    "url": "https://kvartblog.ru/uploads/post_photo/4717/27451/post_IMG_9770.JPG", "file": "ref/desk_dsp_q34.jpg",   "direct": true,  "shows": "Soviet ДСП desk, 3/4 front-left — lacquered-plank construction, drawer pulls" },
+    { "view": "front",  "url": "https://festima.ru/docs/230719471/moscow/dereviannyi-pismennyi-stol-sssr",       "direct": false, "shows": "Festima Moscow listing — real solid-wood двухтумбовый 1395×700×730, 6 drawers (3/side), orgsteklo top (landing page, not a direct image file)" },
+    { "view": "front",  "url": "http://vm1.culture.ru/muzey_imeni_tsiolkovskogo/catalog//0002900023/",            "direct": false, "shows": "Tsiolkovsky Museum catalog — classic двухтумбовый, green-cloth top, 3 upper + 3/pedestal (landing page)" }
+  ],
+  "needs": [
+    "Exact pedestal carcass width (mm) and knee-recess width — DERIVED here from sourced drawer-interior width, not directly sourced",
+    "Exact pedestal depth (mm) and whether flush or recessed vs the desktop — derived, not sourced",
+    "Exterior (framed) drawer height (mm) — only interior 90 mm is sourced",
+    "Handle catalog type for mass 1970s–80s production (bail vs cup vs bar) — no period catalog/GOST hardware spec found",
+    "Governing GOST/TU for the named двухтумбовый form — GOST 26800.1-86 covers functional minimums only",
+    "Direct photographic image FILE urls (jpg/png) of a canonical double-pedestal example — culture.ru/festima are landing pages; overlay refs limited to a related ДСП single-pedestal desk",
+    "Apron height (mm) / exact knee clearance — derived to stay above GOST legroom 610 mm"
+  ]
+}
