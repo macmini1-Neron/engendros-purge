@@ -29,7 +29,27 @@ function applyCam() {
   );
   camera.lookAt(target);
 }
-function frame() { resize(); applyCam(); renderer.render(scene, camera); requestAnimationFrame(frame); }
+// --- rig animation: drive the model's named rig nodes by their userData.rig contract.
+// Generic + reusable: 'spin' axes slew side-to-side, 'hinge' axes sweep their [lo,hi] range,
+// 'slide' axes are SKIPPED (no firing/launch). Works for any rigged model, not just the S-75.
+let anim = { playing: false, t0: 0 };
+function rigNodes() { const out = []; if (model) model.traverse((o) => { if (o.userData && o.userData.rig && o.userData.rig.axis) out.push(o); }); return out; }
+function tickAnim(tMs) {
+  if (!anim.playing || !model) return;
+  const t = (tMs - anim.t0) / 1000;
+  for (const n of rigNodes()) {
+    const rig = n.userData.rig, ax = rig.axis;
+    if (rig.type === 'slide') continue;                                  // no firing/launch
+    if (rig.type === 'spin') n.rotation[ax] = Math.sin(t * 0.32) * 1.35; // azimuth slew ±77°
+    else if (rig.type === 'hinge' && Array.isArray(rig.range)) {
+      const [lo, hi] = rig.range;                                        // sweep through the real range
+      n.rotation[ax] = (lo + hi) / 2 + Math.sin(t * 0.5 + 0.6) * (hi - lo) / 2;
+    }
+  }
+}
+function restorePose() { for (const n of rigNodes()) n.rotation[n.userData.rig.axis] = n.userData.rig.pose ?? 0; }
+
+function frame(t) { tickAnim(t || 0); resize(); applyCam(); renderer.render(scene, camera); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 
 window.VIEWER = {
@@ -37,13 +57,18 @@ window.VIEWER = {
     if (model) { scene.remove(model); model = null; }
     model = buildSpec(spec);
     scene.add(model);
+    window.__MODEL = model;   // debug hook: lets Claude/Playwright inspect & toggle rig nodes by name
+
     const box = new THREE.Box3().setFromObject(model);
     box.getCenter(target);
     cam.dist = Math.max(2, box.getSize(new THREE.Vector3()).length() * 1.2);
     return true;
   },
   setCamera(az, el, dist) { cam = { az, el, dist: dist ?? cam.dist }; return cam; },
+  setTarget(x, y, z) { target.set(x, y, z); return [x, y, z]; },   // re-aim orbit pivot (focus a sub-assembly)
   clear() { if (model) { scene.remove(model); model = null; } },
+  play() { anim = { playing: true, t0: performance.now() }; return true; },
+  stop() { anim.playing = false; restorePose(); return true; },
 };
 window.addEventListener('resize', resize);
 
@@ -74,6 +99,10 @@ $('snap').addEventListener('click', () => {
 });
 const overlayImg = document.getElementById('overlay');
 $('op').addEventListener('input', () => { overlayImg.style.opacity = $('op').value; });
+$('play').addEventListener('click', () => {
+  if (anim.playing) { window.VIEWER.stop(); $('play').textContent = '▶ animate'; }
+  else { window.VIEWER.play(); $('play').textContent = '⏸ stop'; }
+});
 
 Object.assign(window.VIEWER, {
   wireframe(on) { wf = !!on; if (model) model.traverse((o) => { if (o.material) o.material.wireframe = wf; }); return wf; },
@@ -98,10 +127,14 @@ drop.addEventListener('drop', (e) => {
 window.VIEWER.addRef = (url) => { addRef(url); return true; };
 
 // --- auto-load a model from ?model=<id> so a single URL shows it (no console needed) ---
-const _autoId = new URLSearchParams(location.search).get('model');
+// add &anim=1 to autoplay the rig animation.
+const _params = new URLSearchParams(location.search), _autoId = _params.get('model');
 if (_autoId) {
   fetch(`/models/${_autoId}/spec.json?cb=${Date.now()}`)
     .then((r) => r.json())
-    .then((spec) => { window.VIEWER.loadSpec(spec); syncSliders(); })
+    .then((spec) => {
+      window.VIEWER.loadSpec(spec); syncSliders();
+      if (_params.get('anim')) { window.VIEWER.play(); $('play').textContent = '⏸ stop'; }
+    })
     .catch((e) => console.warn('[viewer] auto-load of', _autoId, 'failed:', e));
 }

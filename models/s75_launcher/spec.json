@@ -10,7 +10,7 @@
     { "name": "azimuth",   "pivot": [0, 0.45, 2.0], "axis": "y", "pose": 0,     "type": "spin",  "range": [0, 6.2832] },
     { "name": "elevation", "pivot": [0, 1.82, 1.1], "axis": "x", "pose": -0.95, "parent": "azimuth",   "type": "hinge", "range": [-1.309, -0.1745] },
     { "name": "missile",   "pivot": [0, 2.3, 1.1],  "axis": "z", "pose": 0,     "parent": "elevation", "type": "slide" },
-    { "name": "deflector", "pivot": [0, 0.18, -0.2], "axis": "x", "pose": -0.5, "parent": "azimuth",   "type": "hinge" }
+    { "name": "deflector", "pivot": [0, 0.5, 0.0], "axis": "x", "pose": 0, "parent": "azimuth",   "type": "fixed" }
   ],
   "parts": [
     { "op": "cone",     "id": "nozzle",    "args": { "r": 0.38, "h": 0.34, "tone": "lo" }, "at": [0, 2.3, -0.12], "mat": "steel", "rig": "missile", "src": "dossier#derivation" },
@@ -52,14 +52,23 @@
     { "op": "cylinder", "id": "jackRR", "args": { "r": 0.09, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [1.6, 0.3, 0.3], "mat": "steel", "src": "dossier#launcher_sm90" },
     { "op": "cylinder", "id": "padRR",  "args": { "r": 0.32, "h": 0.08, "axis": "y" }, "at": [1.6, 0.04, 0.3], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
 
-    { "op": "bevelBox", "id": "deflBlade", "args": { "w": 1.7, "h": 0.06, "d": 1.5 }, "at": [0, 0.78, -1.05], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "deflStrut", "args": { "w": 0.12, "h": 0.85, "d": 0.12 }, "at": [0, 0.42, -1.6], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "deflFoot",  "args": { "r": 0.32, "h": 0.08, "axis": "y" }, "at": [0, 0.04, -1.65], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#launcher_sm90" }
+    { "op": "bevelBox", "id": "deflBracket", "args": { "w": 1.0, "h": 0.22, "d": 0.3 }, "at": [0, 0.62, 0.2], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflArmL", "args": { "w": 0.14, "h": 0.16, "d": 1.05 }, "at": [-0.42, 0.56, -0.3], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflArmR", "args": { "w": 0.14, "h": 0.16, "d": 1.05 }, "at": [0.42, 0.56, -0.3], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflRamL", "args": { "r": 0.06, "h": 0.95, "axis": "z", "tone": "lo" }, "at": [-0.2, 0.69, -0.12], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflRamR", "args": { "r": 0.06, "h": 0.95, "axis": "z", "tone": "lo" }, "at": [0.2, 0.69, -0.12], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflWedgeBack", "args": { "w": 1.5, "h": 0.14, "d": 0.5 }, "at": [0, 0.30, -1.12], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflWedgeMid",  "args": { "w": 1.5, "h": 0.14, "d": 0.5 }, "at": [0, 0.42, -0.82], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflWedgeFront","args": { "w": 1.5, "h": 0.16, "d": 0.5 }, "at": [0, 0.55, -0.55], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflFootPad",  "args": { "r": 0.3, "h": 0.08, "axis": "y" }, "at": [0, 0.04, -1.2], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflFootLegL", "args": { "r": 0.06, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [-0.3, 0.28, -1.18], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflFootLegR", "args": { "r": 0.06, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [0.3, 0.28, -1.18], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflFootTie", "args": { "w": 0.7, "h": 0.08, "d": 0.1 }, "at": [0, 0.5, -1.18], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" }
   ],
   "needs": [
     "Booster swings clear of the housing/base across the FULL elevation arc (10–75°): pivot is near the booster (z≈1.1) and the housing sits forward of it, so the tail arcs down BEHIND the housing, over the deflector — verified at multiple angles.",
-    "RIGGED for animation: azimuth (Y) → elevation (X, −75…−10°) → missile (Z slide); deflector (X) under azimuth. userData.rig carries pivot/axis/type/range.",
-    "СМ-90 firing config (open lattice beam, paneled ЭСП-90 cabinet, X cross-base, screw jacks, газоотражатель blade) — sourced features, plausible dims (dossier#launcher_sm90 + needs).",
+    "RIGGED for animation: azimuth (Y, traverse) → elevation (X, −75…−10°, rail pitch) → missile (Z slide, firing-only). Deflector is FIXED under azimuth — it does NOT move on its own; it swings in azimuth with the whole launcher to stay behind the tail (sourced), and is pressed to the ground only by efflux at launch. userData.rig carries pivot/axis/type/range.",
+    "СМ-90 firing config (open lattice beam, paneled ЭСП-90 cabinet, X cross-base, screw jacks, газоотражатель wedge) — sourced features, plausible dims (dossier#launcher_sm90 + dossier#deflector + needs). The blast-deflector wedge is mounted per sources: arms + TWO hydraulic rams to the rear of the rotating box + a tubular A-frame support foot on the ground (dossier#deflector).",
     "Body stencils/serial + erection ~54° are representative/derived."
   ]
 }

@@ -33,6 +33,13 @@
       "desc": "Single open-lattice trainable launch beam on a conical SM-63-2 turntable. Missile rests on top on guide shoes; booster fins hang free; exhaust to the deflector aft.",
       "src": "sovetarmy.forum2x2.ru/t38-topic (skid 1600 mm; elev 10–75°; fire-line 2300 mm; envelope 10200 mm; gauge 5435 mm; area 80 m²; mass marching ≤14200 / firing ≤11100 kg); scalemodels.ru #16222 + karopka.ru #415250/#445168 (lattice beam, stiffening ribs, chain-drive, conical SM-63-2); myauu.livejournal.com (ЭСП-90 servo, газоотражатель); modelingmadness.com + Airfix Tribute Forum (overall Soviet dark-olive green; museum sand = repaint)."
     },
+    "deflector": {
+      "type": "газоотражатель (blast / jet deflector) — a wedge / inverted-V ridge plate at the REAR of the rotating launcher, directly behind & below the missile nozzle; its sloped face takes the booster efflux (scorch marks on the ridge of the USAFM example).",
+      "attachment": "BRIDGES the rotating launcher and the ground. Upper/front part is suspended from the rear of the rotating launcher 'box' via ARMS + TWO HYDRAULIC RAMS; lower part stands on shock absorbers / a tubular A-frame support foot on the ground. (Modelled: a mount bracket on the platform rear → 2 arms + 2 ram cylinders to the wedge → A-frame foot to the ground.)",
+      "motion": "FIXED plate relative to the base — it does NOT pitch on its own and does NOT track the rail's elevation; only at launch the gas jet presses it down onto its ground shock absorbers. Because its arms bolt to the rear of the rotating box (which traverses 360°), it SWINGS IN AZIMUTH together with the whole launcher to stay behind the missile tail — it is NOT separately motorized (so it is rigged azimuth-fixed, no self-motion).",
+      "shape_size": "wedge-shaped metal structure ('клиновидная металлическая конструкция'), ~rail-width, a couple of metres long, low to the ground; in firing config a circular ramp is fitted on it to take the exhaust. No mm dimensions sourced.",
+      "src": "vko.ru/oruzhie/zrk-s-75-pervyy-sredi-ravnyh-chast-i (клиновидная конструкция; нижняя часть на амортизаторах на грунте, верхняя подвешена к ПУ; прижимается к грунту газовой струёй стартового двигателя); modelingmadness.com/review/misc/alcottsam.htm (Planet Models kit teardown: launcher = base+turntable / box-with-blast-deflector / elevating arm; deflector has its own support foot; TWO hydraulic rams between the deflector arms and the rear of the launcher); wargaming3d.com/product/s-75-sa-2-guideline-misslie-and-launcher (circular ramp on the efflux deflector; firing vs transport configs differ); militaryfactory.com armor_id=133 (launcher traverses 360°, fires ~60°); USAFM walkaround cybermodeler.com/space/sa-2/images/afm_sa-2_11.jpg (wedge at the rear on a tubular A-frame ground leg, scorched ridge); sovetarmy.forum2x2.ru/t38-topic (газоотражатель listed among launcher components). NOTE: patent RU42646U1 describes a DIFFERENT, steerable exhaust-vectoring launcher — NOT the classic СМ-63/СМ-90; not applied here."
+    },
     "livery": {
       "soviet_pvo": "unpainted aluminium / natural metal ('алюминиевый цвет') → modelled as missileGrey",
       "src": "sovetarmy.forum2x2.ru (Soviet service aluminium); NASM example is factory green; Vietnamese SA-2s dark green (modelingmadness.com). No official Soviet PVO paint TU located."
@@ -58,6 +65,8 @@
     "SM-90 / SM-63 turntable base circle diameter — UNSOURCED; estimated 2.6 m (only 80 m² site footprint documented)",
     "Official Soviet PVO paint spec (TU) — 'алюминиевый цвет' is forum-cited, no primary source",
     "Booster length is derived (10.841 − 8.139), not directly sourced",
-    "Erected firing angle for the canonical pose (10–75° range sourced; exact parade angle not fixed) — v1 is modelled horizontal"
+    "Erected firing angle for the canonical pose (10–75° range sourced; exact parade angle not fixed) — v1 is modelled horizontal",
+    "Blast-deflector exact dimensions (length / width / height / plate thickness in mm) — UNSOURCED; wedge modelled ~rail-width from museum photos (cybermodeler USAFM walkaround); flagged.",
+    "No single primary manual sentence literally states the газоотражатель rotates in azimuth with the launcher — strongly inferred (its arms/rams bolt to the rotating box; launcher traverses 360°; museum photo geometry keeps it behind the tail). Modelled azimuth-fixed (swings with the launcher), not self-moving."
   ]
 }
