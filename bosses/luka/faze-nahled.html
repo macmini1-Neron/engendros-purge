@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Luka – fáze 1/2/3 (animované útoky + rekvizity)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0c; overflow:hidden; font-family:monospace; }
+  canvas { display:block; }
+  #info { position:fixed; top:12px; left:50%; transform:translateX(-50%);
+    color:#cfe; font-size:13px; background:rgba(0,0,0,.55); padding:7px 16px;
+    border-radius:8px; pointer-events:none; text-align:center; line-height:1.5; }
+</style>
+</head>
+<body>
+<div id="info">LUKA · 4 fáze: 1 „otřes se" (sprcha) · 2 hrst drobáků (hází) · 3 „pytel" (+ DÝMOVNICE → přechod do f4) · 4 „cylindr + money gun"<br>
+tažení myší = otočit · kolečko = zoom · útoky se přehrávají ve smyčce · (modely přímo z .js)</div>
+
+<!-- UMD Three.js r0.140 (global THREE) – LOKÁLNĚ (lib/), aby šlo otevřít offline přes file:// -->
+<script src="lib/three.min.js"></script>
+<script src="lib/OrbitControls.js"></script>
+
+<!-- MeshBuilder (stejná konvence jako buildViewmodel ve hře; podporuje opci align) -->
+<script>
+class MeshBuilder {
+  constructor() { this._pos=[]; this._nor=[]; this._col=[]; this._idx=[]; this._vc=0; }
+  _apply(geo, x, y, z, { rx=0, ry=0, rz=0, align=null } = {}) {
+    const g = geo.clone();
+    if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); if (rz) g.rotateZ(rz);
+    if (align) { const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), align.clone().normalize()); g.applyQuaternion(q); }
+    g.translate(x, y, z);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    return g;
+  }
+  _push(geo, color) {
+    const pos=geo.attributes.position, nor=geo.attributes.normal, idx=geo.index;
+    const r=((color>>16)&0xff)/255, g=((color>>8)&0xff)/255, b=(color&0xff)/255;
+    for (let i=0;i<pos.count;i++){ this._pos.push(pos.getX(i),pos.getY(i),pos.getZ(i)); this._nor.push(nor.getX(i),nor.getY(i),nor.getZ(i)); this._col.push(r,g,b); }
+    if (idx){ for(let i=0;i<idx.count;i++) this._idx.push(this._vc+idx.getX(i)); } else { for(let i=0;i<pos.count;i++) this._idx.push(this._vc+i); }
+    this._vc += pos.count;
+  }
+  box(w,h,d, x,y,z, color, opts={}) { const g=this._apply(new THREE.BoxGeometry(w,h,d), x,y,z, opts); this._push(g,color); g.dispose(); }
+  geo(geometry, x,y,z, color, opts={}) { const g=this._apply(geometry, x,y,z, opts); this._push(g,color); g.dispose(); }
+  build() {
+    const bg=new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute(this._pos,3));
+    bg.setAttribute('normal',   new THREE.Float32BufferAttribute(this._nor,3));
+    bg.setAttribute('color',    new THREE.Float32BufferAttribute(this._col,3));
+    bg.setIndex(new THREE.Uint32BufferAttribute(this._idx,1));
+    return new THREE.Mesh(bg, new THREE.MeshLambertMaterial({ vertexColors:true }));
+  }
+}
+</script>
+
+<!-- REÁLNÉ MODELY (jediný zdroj pravdy) -->
+<script src="luka-fn.js"></script>
+<script src="money-bag.js"></script>
+<script src="coin.js"></script>
+<script src="top-hat.js"></script>
+<script src="smoke-bomb.js"></script>
+<script src="money-gun/money-gun.js"></script>
+
+<script>
+// ── scéna ──
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0c);     // černé neutrální pozadí (vše vidět)
+scene.fog = new THREE.Fog(0x0a0a0c, 18, 44);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(0, 1.6, -15);                 // FACE = −Z; oddáleno na 4 sloupce (1A·1B·2·3)
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.25, 0); controls.enableDamping = true; controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.2); sun.position.set(-2, 5, -3); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xcfe0ff, 0.5); fill.position.set(3, 1, -4); scene.add(fill);
+const grid = new THREE.GridHelper(40, 40, 0x3a3a3e, 0x222226); grid.position.y = -0.62; scene.add(grid);
+
+function label(text, px, py) {
+  const c = document.createElement('canvas'); c.width = 384; c.height = 64;
+  const g = c.getContext('2d'); g.font = 'bold 30px monospace'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillStyle = '#cfe9cf'; g.fillText(text, 192, 32);
+  const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent:true, depthTest:false }));
+  spr.scale.set(2.4, 0.4, 1); spr.position.set(px, py, 0); scene.add(spr);
+}
+function propMesh(fn) { const b = new MeshBuilder(); fn(b); return b.build(); }
+
+// ── šablony mincí (reálný buildCoin) – klonují se do poolů ──
+const coinTpl = {
+  silver:     propMesh(b => buildCoin(b, 0,0,0, 0.234, 'silver')),  // +30 %
+  gold:       propMesh(b => buildCoin(b, 0,0,0, 0.234, 'gold')),    // +30 %
+  copper:     propMesh(b => buildCoin(b, 0,0,0, 0.234, 'copper')),  // f1 měďáky +30 %
+  copperAmmo: propMesh(b => buildCoin(b, 0,0,0, 0.13,  'copper')),  // munice money gunu – BEZE ZMĚNY
+};
+function coinClone(variant) { const m = coinTpl[variant].clone(); m.visible = false; return m; }
+
+// ── MONEY FX toolkit (additive, zlatě laděné: záblesk · prach · stoupající $ · glint) ──
+const addMat = (c,o=0.6)=>new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,blending:THREE.AdditiveBlending,depthWrite:false});
+const GOLD=0xffd24a, GOLDc=0xfff0b0, DUSTC=0xb7b0a0;
+function dollarTex(){ const s=64,cv=document.createElement('canvas');cv.width=cv.height=s;const x=cv.getContext('2d');
+  x.font='bold 50px Georgia';x.textAlign='center';x.textBaseline='middle';x.lineWidth=6;x.strokeStyle='#6e5210';x.strokeText('$',s/2,s/2+3);x.fillStyle='#ffd860';x.fillText('$',s/2,s/2+3);
+  return new THREE.CanvasTexture(cv); }
+const DTEX=dollarTex();
+function fxPools(grp){ const P={flash:[],dust:[],doll:[],glint:[],smoke:[],flame:[]};
+  for(let i=0;i<10;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(0.12,10,8),addMat(GOLDc,0));m.visible=false;grp.add(m);P.flash.push({m,life:0,max:1,scl:1});}
+  for(let i=0;i<32;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(0.05,6,6),addMat(DUSTC,0));m.visible=false;grp.add(m);P.dust.push({m,vx:0,vy:0,vz:0,life:0});}
+  for(let i=0;i<12;i++){const m=new THREE.Sprite(new THREE.SpriteMaterial({map:DTEX,transparent:true,opacity:0,depthWrite:false}));m.scale.set(0.16,0.16,1);m.visible=false;grp.add(m);P.doll.push({m,vy:0,life:0});}
+  for(let i=0;i<26;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.03,0.03),addMat(GOLDc,0));m.visible=false;grp.add(m);P.glint.push({m,life:0,max:0.25});}
+  // DÝMOVNICE: šedé obláčky kouře (NEaditivní – mají schovat figuru, ne zářit)
+  for(let i=0;i<40;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(0.16,9,8),new THREE.MeshBasicMaterial({color:0xc2c6cc,transparent:true,opacity:0,depthWrite:false}));m.visible=false;grp.add(m);P.smoke.push({m,vx:0,vy:0,vz:0,life:0,max:1,s0:0.3,s1:1.6});}
+  // OHNIVÉ FLECKY: malý oranžovo-červený výbuch u jádra (aditivní – září)
+  for(let i=0;i<14;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,7),addMat(0xff7a1e,0));m.visible=false;grp.add(m);P.flame.push({m,life:0,max:1,scl:1,vx:0,vy:0,vz:0,c0:new THREE.Color(),c1:new THREE.Color()});}
+  return P; }
+function fxFlash(P,p,scl=1,c=GOLDc){const f=P.flash.find(o=>o.life<=0);if(!f)return;f.m.position.copy(p);f.m.material.color.setHex(c);f.life=f.max=0.22;f.scl=scl;f.m.visible=true;}
+function fxDustRing(P,p,n=12,spd=0.9,c=DUSTC){for(let i=0;i<n;i++){const d=P.dust.find(o=>o.life<=0);if(!d)break;const a=i/n*Math.PI*2;d.m.position.copy(p);d.m.material.color.setHex(c);d.vx=Math.cos(a)*spd;d.vz=Math.sin(a)*spd;d.vy=0.25+Math.random()*0.35;d.life=0.4+Math.random()*0.25;d.m.visible=true;}}
+function fxDust(P,p,n=4,c=DUSTC){for(let i=0;i<n;i++){const d=P.dust.find(o=>o.life<=0);if(!d)break;const a=Math.random()*Math.PI*2;d.m.position.copy(p);d.m.material.color.setHex(c);d.vx=Math.cos(a)*0.35;d.vz=Math.sin(a)*0.35;d.vy=0.35+Math.random()*0.4;d.life=0.3+Math.random()*0.2;d.m.visible=true;}}
+function fxDollars(P,p,n=3){for(let i=0;i<n;i++){const d=P.doll.find(o=>o.life<=0);if(!d)break;d.m.position.set(p.x+(Math.random()-0.5)*0.35,p.y+0.1,p.z+(Math.random()-0.5)*0.25);d.vy=0.7+Math.random()*0.5;d.life=0.9+Math.random()*0.5;d.m.visible=true;}}
+function fxGlint(P,p){const g=P.glint.find(o=>o.life<=0);if(!g)return;g.m.position.copy(p);g.life=g.max=0.25;g.m.visible=true;}
+// DÝMOVNICE: gradient odstínů podle INTENZITY výbuchu (jádro/u země = světlé/bílé →
+// výš a do stran = tmavé až černé). Začíná trochou výbuchu (teplý záblesk) + chemickou
+// jiskrou; oblak se posadí NÍŽ k podlaze, ale spodních ~30 % nohou zůstane vidět.
+const SMK_DARK = new THREE.Color(0x1f2126), SMK_MID = new THREE.Color(0x7c818a), SMK_LIGHT = new THREE.Color(0xf0f2f5);
+function smokeShade(t){ t = t<0?0:t>1?1:t; const c = new THREE.Color();
+  return t<0.5 ? c.copy(SMK_DARK).lerp(SMK_MID, t*2) : c.copy(SMK_MID).lerp(SMK_LIGHT, (t-0.5)*2); }
+function fxSmokeBomb(P,p,n=16,scl=1){
+  // ZAČÁTEK = trochu VÝBUCHU: teplý záblesk (oranž→bílá) + chemická jiskra (zelenkavá)
+  fxFlash(P,p,1.8*scl,0xffd49a); fxFlash(P,p,1.15*scl,0xfff6e6); fxFlash(P,p,0.85*scl,0xcdeec2);
+  const clearY = -0.22, H = 0.64*scl, spread = 0.42*scl;          // clearY = kde začínají středy obláčků (chodidla pod tím zůstanou vidět)
+  for(let i=0;i<n;i++){ const s=P.smoke.find(o=>o.life<=0); if(!s) break;
+    const v = Math.pow(Math.random(), 1.5);                       // bias DOLŮ → hustěji u podlahy
+    const wid = (1.15 - 0.55*v) * spread;                         // širší dole (rozvalí se po zemi), užší nahoře
+    const a = Math.random()*Math.PI*2, r = Math.random()*wid, out = r/Math.max(0.001,wid);
+    s.m.position.set(p.x + Math.cos(a)*r, clearY + v*H, p.z + Math.sin(a)*r);
+    const t = v*0.5 + out*0.35 + (Math.random()-0.5)*0.3;          // REÁLNÝ výbuch: jádro/u země TMAVÉ až černé → dál od exploze SVĚTLEJŠÍ
+    s.m.material.color.copy(smokeShade(t));
+    s.vx = Math.cos(a)*(0.3+Math.random()*0.6)*scl*(1.2-0.6*v);   // dole se rozlétne do stran víc (přízemní vál)
+    s.vz = Math.sin(a)*(0.3+Math.random()*0.6)*scl*(1.2-0.6*v);
+    s.vy = (0.08 + Math.random()*0.5*v)*scl;                      // dole skoro nestoupá, nahoře stoupá
+    s.life = s.max = 2.0 + Math.random()*0.9;
+    s.s0 = (0.4 + v*0.5)*scl; s.s1 = (0.95 + v*1.45 + Math.random()*0.4)*scl;  // DOLE menší (chodidla vidět), NAHOŘE velké
+    s.m.scale.setScalar(s.s0); s.m.visible = true; } }
+// malý OHNIVÝ výbuch u jádra: oranžovo-červené flecky, co bouchnou ven a rychle zhasnou
+function fxExplodeBits(P,p,n=8,scl=1){
+  for(let i=0;i<n;i++){ const f=P.flame.find(o=>o.life<=0); if(!f) break;
+    const a=Math.random()*Math.PI*2, r=Math.random()*0.22*scl, sp=(0.6+Math.random()*1.3)*scl;
+    f.m.position.set(p.x+Math.cos(a)*r, p.y+0.04+Math.random()*0.2*scl, p.z+Math.sin(a)*r);
+    f.vx=Math.cos(a)*sp; f.vz=Math.sin(a)*sp; f.vy=(0.4+Math.random()*0.9)*scl;
+    f.life=f.max=0.22+Math.random()*0.24; f.scl=(0.6+Math.random()*0.8)*scl;
+    f.c0.setHex(Math.random()<0.5?0xffd23a:0xff7a1e); f.c1.setHex(Math.random()<0.5?0xff3210:0x7a0f04); // žluto-oranž → červená/temná
+    f.m.material.color.copy(f.c0); f.m.material.opacity=0.95; f.m.visible=true; }
+  fxDust(P,p,5,0xff7a1e); }                                        // pár oranžových jisker ven
+function stepFX(P,dt){
+  for(const f of P.flash){if(f.life<=0)continue;f.life-=dt;const u=f.life/f.max;f.m.material.opacity=u*0.9;f.m.scale.setScalar(f.scl*(1.5-u));if(f.life<=0)f.m.visible=false;}
+  for(const d of P.dust){if(d.life<=0)continue;d.life-=dt;d.vy-=1.4*dt;d.m.position.x+=d.vx*dt;d.m.position.y+=d.vy*dt;d.m.position.z+=d.vz*dt;d.m.material.opacity=Math.min(0.45,d.life*1.6);d.m.scale.setScalar(1+(0.5-d.life));if(d.life<=0)d.m.visible=false;}
+  for(const d of P.doll){if(d.life<=0)continue;d.life-=dt;d.m.position.y+=d.vy*dt;d.vy*=0.97;d.m.material.opacity=Math.min(1,d.life*1.6);if(d.life<=0)d.m.visible=false;}
+  for(const g of P.glint){if(g.life<=0)continue;g.life-=dt;const u=g.life/g.max;g.m.material.opacity=u;g.m.scale.setScalar(0.4+(1-u)*1.8);if(g.life<=0)g.m.visible=false;}
+  for(const s of P.smoke){ if(s.life<=0) continue; s.life-=dt; const u=s.life/s.max, age=1-u;
+    s.vx*=0.95; s.vy*=0.96; s.vz*=0.95;
+    s.m.position.x+=s.vx*dt; s.m.position.y+=s.vy*dt; s.m.position.z+=s.vz*dt;
+    s.m.scale.setScalar(s.s0+(s.s1-s.s0)*age);
+    const op = age<0.12 ? age/0.12 : (age>0.62 ? (1-age)/0.38 : 1);   // rychle zhoustne → DLOUHÉ husté plató → rozplyne
+    s.m.material.opacity = Math.min(0.95, op*0.95);
+    if(s.life<=0) s.m.visible=false; }
+  for(const f of P.flame){ if(f.life<=0) continue; f.life-=dt; const u=f.life/f.max;
+    f.vy-=2.2*dt; f.m.position.x+=f.vx*dt; f.m.position.y+=f.vy*dt; f.m.position.z+=f.vz*dt;
+    f.m.material.color.copy(f.c0).lerp(f.c1, 1-u);                 // oranž → červená/temná jak hasne
+    f.m.material.opacity=u*0.95; f.m.scale.setScalar(f.scl*(1.4-u*0.5));
+    if(f.life<=0) f.m.visible=false; }
+}
+
+// ── společné: měřítko + lokální kotvy (model-space, s=1) ──
+const SPACING = 4.3, SC = 1.55;
+const HAND_L = new THREE.Vector3(-0.30, -0.08, -0.07); // Lukova levá (−X) – pytel
+const HAND_R = new THREE.Vector3( 0.28, -0.05, -0.06); // Lukova pravá (+X) – money gun
+const HEAD_T = new THREE.Vector3( 0.00,  0.62,  0.00); // temeno (klobouk – výš, ať se nepřekrývá s hlavou)
+const BELLY  = new THREE.Vector3( 0.00, -0.08, -0.18);
+
+// ── fázový sloupec: tělo (bez $) + samostatný přebarvitelný $ + FX prstenec přechodu ──
+function makePhase(px, dollarHex, l1, l2, prevHex = null) {
+  const grp = new THREE.Group(); grp.position.set(px, 0, 0); grp.scale.setScalar(SC);
+  const fig = new THREE.Group(); grp.add(fig);                 // FIGURA (třese se) – mince jdou do grp (klid)
+  const body = propMesh(b => buildLuka(b, { noDollar: true })); fig.add(body);
+  const dollar = propMesh(b => buildLukaDollar(b));            // bílé vertex-barvy → ovládá material.color
+  dollar.material = dollar.material.clone(); dollar.material.color.setHex(dollarHex); fig.add(dollar);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 8, 30),
+    new THREE.MeshBasicMaterial({ color: 0xffe7a0, transparent: true, opacity: 0, depthWrite: false }));
+  ring.position.set(0, -0.08, -0.235); ring.visible = false; fig.add(ring);
+  // nabíjení: zlatá koule energie + stahující se zlaté úlomky do bříška ($)
+  const cglow = new THREE.Mesh(new THREE.SphereGeometry(0.11,14,10), addMat(GOLD,0)); cglow.position.copy(BELLY); fig.add(cglow);
+  const bits=[]; for(let i=0;i<10;i++){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.035,0.035,0.035), addMat(GOLDc,0));
+    const u=Math.random()*2-1, th=Math.random()*Math.PI*2, s=Math.sqrt(1-u*u);
+    m.userData={dir:new THREE.Vector3(s*Math.cos(th), u*0.7, s*Math.sin(th)-0.5).normalize(), ph:Math.random()*Math.PI*2}; m.visible=false; fig.add(m); bits.push(m); }
+  scene.add(grp); label(l1, px, 1.66); label(l2, px, 1.28);
+  return { grp, fig, body, dollar, ring, cglow, bits, fx: fxPools(grp), shake: 0, ringT: -1, flash: 0, flashTo: new THREE.Color(0xffffff), dollarHex, prevHex, _evolveIn: 0 };
+}
+// nabíjení $: zlatá koule roste + úlomky se víří dovnitř do bříška
+function setCharge(ph, t){ ph.cglow.material.opacity = t*0.8; ph.cglow.scale.setScalar(0.5 + t*1.0);
+  const on = t>0.02 && t<0.999, tn = performance.now()*0.004;
+  for (const m of ph.bits){ m.visible = on; if (!on) continue;
+    const r = 0.05 + (1-t)*0.3, d = m.userData.dir, sw = m.userData.ph + tn, cx=Math.cos(sw), sz=Math.sin(sw);
+    m.position.set(BELLY.x + (d.x*cx - d.z*sz)*r, BELLY.y + d.y*r, BELLY.z + (d.x*sz + d.z*cx)*r);
+    m.material.opacity = 0.3 + t*0.7; }
+}
+// SJEDNOCENÝ „PŘECHOD FÁZE" = f1 (otřes + prach) + f2 ($ pop + rozpínavý prstenec) dohromady
+function fxTransition(ph) {
+  ph.shake = 0.55; ph.ring.visible = true; ph.ringT = 0;          // f1 otřes (přes updateFX) + prstenec
+  // $ EVOLUCE: nejdřív ukáže $ PŘEDCHOZÍ fáze, pak se STEJNOU pop-animací přebarví na AKTUÁLNÍ
+  if (ph.prevHex != null){ ph.dollar.material.color.setHex(ph.prevHex); ph.flash = 0; ph.dollar.scale.setScalar(1); ph._evolveIn = 0.35; }
+  else if (ph.dollarHex != null) fxDollar(ph, ph.dollarHex);       // f1 (bez předchůdce): rovnou pop na svou barvu
+  fxFlash(ph.fx, BELLY, 1.3, GOLDc);                              // záblesk na bříšku
+  fxDustRing(ph.fx, new THREE.Vector3(0, GROUND, 0), 13, 1.0, DUSTC); // prstenec prachu od nohou
+}
+// změna barvy $ s pop-animací (záblesk → cílová barva)
+function fxDollar(ph, hex) { ph.flash = 0.4; ph.flashTo.setHex(hex); ph.dollar.material.color.setRGB(1, 0.96, 0.78); }
+function updateFX(ph, dt) {
+  ph.shake = Math.max(0, ph.shake - dt);
+  if (ph._evolveIn > 0){ ph._evolveIn -= dt; if (ph._evolveIn <= 0) fxDollar(ph, ph.dollarHex); }  // po prodlevě: pop PŘEDCHOZÍ → AKTUÁLNÍ $
+  const sh = ph.shake > 0 ? Math.sin(performance.now() * 0.05) * 0.09 * (ph.shake / 0.55) : 0;
+  ph.fig.rotation.z = sh;   // třese se jen FIGURA (klobouk/gun/držený pytel) – NE mince na zemi
+  if (ph.ringT >= 0) { ph.ringT += dt; const u = ph.ringT / 0.6;
+    ph.ring.scale.setScalar(0.4 + u * 2.4); ph.ring.material.opacity = Math.max(0, 0.85 * (1 - u));
+    if (u >= 1) { ph.ringT = -1; ph.ring.visible = false; } }
+  if (ph.flash > 0) { ph.flash -= dt; const k = Math.max(0, ph.flash / 0.4);
+    ph.dollar.material.color.lerp(ph.flashTo, 0.3); ph.dollar.scale.setScalar(1 + 0.22 * k); }
+  else ph.dollar.scale.setScalar(1);
+}
+
+// rozložení 4 sloupců (1A · 1B · f2 · f3); +X = vlevo (kamera ze strany −Z)
+const COL = 3.6, GROUND = -0.40;
+const BODY = new THREE.Vector3(0, -0.04, -0.05);   // odkud se mince sypou (z těla)
+
+// otřes celé figury: kývání + poskok + zploštění (amp 0..1)
+function shakeFig(ph, amp){ const n = performance.now();
+  ph.fig.rotation.z = Math.sin(n*0.045)*0.14*amp;
+  ph.fig.rotation.x = Math.sin(n*0.037)*0.06*amp;
+  ph.fig.position.y = Math.abs(Math.sin(n*0.05))*0.05*amp;
+  ph.fig.scale.set(1 + 0.05*amp*Math.sin(n*0.05), 1 - 0.05*amp*Math.sin(n*0.05), 1);
+}
+// ── FONTÁNA mincí (1A: otřesová sprcha) ──
+function makeFcoin(ph, variant){ const m = coinClone(variant); m.visible=false; ph.grp.add(m);
+  return { m, vx:0, vy:0, vz:0, life:0, grounded:false, rest:0 }; }
+function spawnF(ph, pool){ const c = pool.find(o=>o.life<=0); if (!c) return;
+  c.m.position.set(BODY.x+(Math.random()-0.5)*0.2, BODY.y+(Math.random()-0.5)*0.18, BODY.z);
+  c.m.rotation.set(Math.random()*3, Math.random()*3, 0);
+  const a = Math.random()*Math.PI*2, r = 0.55+Math.random()*1.0;
+  c.vx = Math.cos(a)*r; c.vy = 1.9+Math.random()*1.3; c.vz = Math.sin(a)*r;   // ven + nahoru (fontána)
+  c.grounded = false; c.rest = 0; c.life = 3.0; c.m.visible = true; }
+function stepF(ph, pool, dt, dust){
+  for (const c of pool){ if (c.life<=0) continue; c.life-=dt;
+    if (!c.grounded){ c.vy -= 6.2*dt; c.m.position.x+=c.vx*dt; c.m.position.y+=c.vy*dt; c.m.position.z+=c.vz*dt;
+      c.m.rotation.x+=dt*11; c.m.rotation.y+=dt*8;
+      if (c.m.position.y<=GROUND && c.vy<0){ c.m.position.y=GROUND; c.grounded=true; c.rest=1.4+Math.random()*1.0;
+        fxDust(ph.fx, c.m.position, 2, dust); fxGlint(ph.fx, c.m.position); } }   // dopad: prach v barvě mince + „cink"
+    else { c.vx*=0.86; c.vz*=0.86; c.m.position.x+=c.vx*dt; c.m.position.z+=c.vz*dt;
+      c.m.rotation.x += (Math.PI/2 - c.m.rotation.x)*Math.min(1, dt*8);          // dolehne naplocho
+      if (Math.random()<0.012) fxGlint(ph.fx, c.m.position);                     // ležící občas blýskne
+      c.rest-=dt; if (c.rest<=0){ c.life=0; c.m.visible=false; } } }
+}
+// ── VALÍCÍ mince (1B: vypadnou z výšky pasu → kutálí se → náhodný konec) ──
+const WAIST_Y = -0.02, REST_Y = GROUND + 0.045, FALL_G = 3.4;
+function makeRollCoin(ph, variant){ const holder = new THREE.Group(); const coin = coinClone(variant); coin.visible = true;
+  holder.add(coin); holder.visible = false; ph.grp.add(holder);
+  return { holder, coin, vx:0, vz:0, vy:0, roll:0, grounded:false, life:0 }; }
+function emitRoll(pool, ox, oz){ let k=0; for (const c of pool){ if (k>=12) break;
+    const a = k/12*Math.PI*2 + (Math.random()-0.5)*0.26; const sp = 1.6 + Math.random()*1.3;
+    c.holder.position.set(ox, GROUND+0.14, oz);              // od MÍSTA DOPADU hrsti
+    c.vx = Math.sin(a)*sp; c.vz = Math.cos(a)*sp; c.vy = 0.2;
+    c.holder.rotation.set(0, a - Math.PI/2, 0); c.coin.rotation.set(0,0,0);
+    c.roll = 0; c.grounded = false; c.life = 2.6 + Math.random()*0.9; c.gt = 0;
+    const cv = Math.random()*2 - 1; c.curve = cv*Math.abs(cv)*4.2;
+    c.straightFor = 0.55 + Math.random()*0.4; c.decel = 0.965 + Math.random()*0.022;
+    c.holder.visible = true; k++; } }
+function stepRoll(pool, dt, FX, dustCol){
+  for (const c of pool){ if (c.life<=0) continue; c.life-=dt;
+    if (!c.grounded){ c.vy -= FALL_G*dt; c.holder.position.y += c.vy*dt;
+      c.holder.position.x += c.vx*dt; c.holder.position.z += c.vz*dt;
+      if (c.holder.position.y <= REST_Y){ c.holder.position.y = REST_Y; c.vy = 0; c.grounded = true;
+        fxDust(FX, c.holder.position, 3, dustCol); fxGlint(FX, c.holder.position); }
+      continue; }
+    const spd = Math.hypot(c.vx, c.vz);
+    if (spd < 0.22 || c.life < 0.7) {
+      c.coin.rotation.x += (Math.PI/2 - c.coin.rotation.x) * Math.min(1, dt*6);
+      c.holder.position.y += ((GROUND + 0.012) - c.holder.position.y) * Math.min(1, dt*6);
+      c.vx *= 0.80; c.vz *= 0.80; if (Math.random() < 0.015) fxGlint(FX, c.holder.position);
+    } else {
+      c.gt += dt;
+      if (c.gt < c.straightFor) { c.vx *= 0.985; c.vz *= 0.985; }
+      else { const ang = c.curve*dt, co = Math.cos(ang), si = Math.sin(ang);
+        const nx = c.vx*co - c.vz*si, nz = c.vx*si + c.vz*co; c.vx = nx*c.decel; c.vz = nz*c.decel; }
+      c.holder.position.x += c.vx*dt; c.holder.position.z += c.vz*dt;
+      c.holder.rotation.y = Math.atan2(c.vx, c.vz) - Math.PI/2;
+      c.roll += spd*dt*26; c.coin.rotation.z = c.roll;
+    }
+    if (c.life<=0) c.holder.visible = false;
+  }
+}
+
+// ════════ FÁZE 1A — „Oslíčku, otřes se!": otřesová sprcha měďáků ════════
+const P1A = makePhase(1.5*COL, 0x121212, 'FÁZE 1 · otřes se', '„Oslíčku, otřes se!" – sprcha měďáků');
+const f1cu = []; for (let i=0;i<26;i++) f1cu.push(makeFcoin(P1A,'copper'));
+let p1aT = 0, p1aEmit = 0, p1aOn = false;
+function updP1A(dt){ updateFX(P1A, dt); stepFX(P1A.fx, dt); p1aT += dt; const T = p1aT % 3.4;
+  const shaking = T < 2.3; shakeFig(P1A, shaking ? 1 : Math.max(0, 1-(T-2.3)*4));
+  if (shaking && !p1aOn){ p1aOn = true; fxTransition(P1A); }   // sjednocený přechod f1+f2 (otřes + $ pop + prstenec + prach)
+  if (!shaking) p1aOn = false;
+  p1aEmit -= dt; if (shaking && p1aEmit <= 0){ p1aEmit = 0.05; spawnF(P1A, f1cu); }
+  stepF(P1A, f1cu, dt, 0xB0602A);
+}
+
+// ════════ FÁZE 2 — HÁZÍ HRST: drží hrst v pravé ruce, hodí ji SKORO POD SEBE ════════
+// Na MÍSTĚ DOPADU se přehraje PŮVODNÍ efekt (rozkutálení mincí). Unifikované STANDARDNÍ
+// mince (hl. MĚĎÁKY + pár stříbrňáků) se stejnými efekty (roll/prach/glint) jako jinde.
+const P1B = makePhase(0.5*COL, 0xB24E16, 'FÁZE 2 · hází hrst', 'hodí skoro pod sebe → rozkutálení', 0x121212); // prev = f1 ČERNÝ
+const HANDR = new THREE.Vector3(0.31, -0.03, -0.05);          // přímo v PRAVÉ ruce (víc do dlaně, mimo tělo)
+// HRST v ruce (clump – standardní mince, hl. měď) – letí jako celek k dopadu
+const clump = new THREE.Group(); clump.position.copy(HANDR); P1B.grp.add(clump);
+for (let i=0;i<6;i++){ const m = coinClone(i===0?'silver':'copper'); m.visible=true;
+  m.position.set((Math.random()-0.5)*0.1, (Math.random()-0.5)*0.08, (Math.random()-0.5)*0.08);  // sevřená hrst
+  m.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3); clump.add(m); }
+// rozkutálené mince na dopadu (PŮVODNÍ efekt) – unified, hl. měď
+const p2roll = []; for (let i=0;i<14;i++) p2roll.push(makeRollCoin(P1B, i%4===0?'silver':'copper'));
+let p1bT = 0, p1bState = 0; const p2tgt = new THREE.Vector3();
+function updP1B(dt){ updateFX(P1B, dt); stepFX(P1B.fx, dt); p1bT += dt; const T = p1bT % 3.0;
+  P1B.fig.rotation.x = (T>0.05 && T<0.35) ? Math.sin((T-0.05)/0.3*Math.PI)*0.12 : 0;   // jen lehké máchnutí (ať se hrst neodlepí)
+  if (T < 0.05){ p1bState = 0; clump.visible = true; clump.position.copy(HANDR); clump.rotation.set(0,0,0); P1B._tel = false; }
+  else if (T < 0.35){ clump.visible = true;                                   // drží + napřahuje (TELEGRAF)
+    if (!P1B._tel){ P1B._tel = true; fxTransition(P1B);                       // sjednocený přechod f1+f2
+      fxFlash(P1B.fx, HANDR, 0.95, GOLDc); } }                                // + extra záblesk přímo u ruky (odkud letí hrst)
+  else if (T < 0.7){                                                         // LET hrsti SKORO POD SEBE (krátký oblouk)
+    if (p1bState === 0){ p1bState = 1; p2tgt.set((Math.random()-0.5)*0.5, 0, -0.5 - Math.random()*0.3); }
+    clump.visible = true; const u = (T-0.35)/0.35;
+    clump.position.set(HANDR.x+(p2tgt.x-HANDR.x)*u, HANDR.y+(GROUND+0.05-HANDR.y)*u + Math.sin(u*Math.PI)*0.35, HANDR.z+(p2tgt.z-HANDR.z)*u);
+    clump.rotation.x += dt*9;
+  } else {                                                                   // DOPAD → PŮVODNÍ rozkutálení z místa
+    if (p1bState === 1){ p1bState = 2; clump.visible = false;
+      emitRoll(p2roll, p2tgt.x, p2tgt.z);
+      fxFlash(P1B.fx, new THREE.Vector3(p2tgt.x, GROUND+0.05, p2tgt.z), 1.2, GOLDc);
+      fxDustRing(P1B.fx, new THREE.Vector3(p2tgt.x, GROUND, p2tgt.z), 12, 1.0, 0xB0602A); }
+  }
+  stepRoll(p2roll, dt, P1B.fx, 0xB0602A);    // PŮVODNÍ valící efekt (prach měď)
+}
+
+// ════════ FÁZE 2 — „pytel" ($ stříbrný) ════════
+const P2 = makePhase(-0.5*COL, 0xC8CDD4, 'FÁZE 3 · pytel', '$ stříbrný · lob + anti-camp', 0xB24E16); // prev = f2 MĚĎ
+const heldBag2 = propMesh(b => buildMoneyBag(b, 0,0,0, 0.84)); heldBag2.position.copy(HAND_L); P2.fig.add(heldBag2);
+const flyBag2  = propMesh(b => buildMoneyBag(b, 0,0,0, 0.84)); flyBag2.visible=false; P2.grp.add(flyBag2);
+const p2silver = []; for (let i=0;i<8;i++){ const m=coinClone('silver'); P2.grp.add(m); p2silver.push({m,vx:0,vy:0,vz:0,life:0}); }
+const p2copper = []; for (let i=0;i<8;i++){ const m=coinClone('copper'); P2.grp.add(m); p2copper.push({m,vx:0,vy:0,vz:0,life:0}); }
+// ── KOUZELNICKÁ DÝMOVNICE (patří do FÁZE 3 → spouští přechod do f4) ──────────────
+//  Luka VYTÁHNE v PRAVÉ ruce kulatou bombu (krček + knot) · knot DOHOŘÍVÁ (žhavý
+//  ohýnek putuje po knotu + jiskry) · než to bouchne, HODÍ ji obloukem NA ZEM · dopad = BUM (oblak kouře).
+const BOMB_S    = 0.62;
+const BOMB_HAND = new THREE.Vector3(0.34, -0.02, -0.10);          // v PRAVÉ ruce (+X), kousek od těla
+const BOMB_GND  = new THREE.Vector3(0.10, GROUND + 0.05, -0.30);  // dopadne na zem před nohama
+const SMOKE_C   = new THREE.Vector3(0.05, -0.05, -0.08);          // střed oblaku = TĚLO (aby Luka úplně zmizel)
+const FUSE = smokeBombFuse(BOMB_S);
+function sampleFuse(u){ const f = (1-u)*(FUSE.length-1); const i = Math.floor(f), t = f - i;   // u:0 hořící konec → 1 pata u krčku (knot „dohořívá")
+  const a = FUSE[Math.min(i, FUSE.length-1)], bb = FUSE[Math.min(i+1, FUSE.length-1)]; return a.clone().lerp(bb, t); }
+function makeBomb(ph){ const g = new THREE.Group(); ph.grp.add(g); g.visible = false;
+  g.add(propMesh(b => buildSmokeBomb(b, 0, 0, 0, BOMB_S)));
+  const em = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), addMat(0xffae3a, 0.95)); g.add(em);
+  return { g, em }; }
+// hold (drží+napřahuje) → throw (hod obloukem) → BUM (dýmovnice na zemi)
+function stepSmokeBomb(ph, bomb, em, dt){
+  ph._bt = (ph._bt || 0) + dt;
+  const PER = 8.0, HOLD = 1.0, BOOM = 1.42;
+  const tc = ph._bt % PER;
+  if (tc < dt){ bomb.visible = true; em.visible = true; bomb.position.copy(BOMB_HAND); bomb.rotation.set(0,0,0); ph._boomed = false; }  // nový cyklus: vytáhne
+  if (tc < BOOM){
+    bomb.visible = true; em.visible = true;
+    const fu = Math.min(1, tc / (BOOM * 0.92));                    // knot dohořívá
+    em.position.copy(sampleFuse(fu));
+    em.material.opacity = 0.85 + 0.15*Math.sin(performance.now()*0.05);
+    em.scale.setScalar(0.85 + Math.random()*0.5);                  // jiskření ohýnku
+    if (Math.random() < 0.6) fxGlint(ph.fx, bomb.position.clone().add(em.position));   // jiskry z knotu
+    if (tc < HOLD){                                                // DRŽÍ v ruce + lehce kýve (napřahuje)
+      bomb.position.set(BOMB_HAND.x, BOMB_HAND.y + Math.sin(performance.now()*0.02)*0.012, BOMB_HAND.z);
+      bomb.rotation.z = Math.sin(performance.now()*0.03)*0.22;
+    } else {                                                       // HOD obloukem na zem
+      const u = (tc - HOLD) / (BOOM - HOLD);
+      bomb.position.set(
+        BOMB_HAND.x + (BOMB_GND.x - BOMB_HAND.x)*u,
+        BOMB_HAND.y + (BOMB_GND.y - BOMB_HAND.y)*u + Math.sin(u*Math.PI)*0.55,
+        BOMB_HAND.z + (BOMB_GND.z - BOMB_HAND.z)*u);
+      bomb.rotation.x += dt*12; bomb.rotation.z += dt*7;
+    }
+  } else if (!ph._boomed){                                         // ── BUM: VELKÝ hustý oblak, Luka úplně zmizí ──
+    ph._boomed = true; bomb.visible = false; em.visible = false;
+    fxExplodeBits(ph.fx, new THREE.Vector3(SMOKE_C.x, -0.30, SMOKE_C.z), 11, 1.45);  // malý oranžovo-červený výbuch u jádra (u země)
+    fxSmokeBomb(ph.fx, SMOKE_C, 38, 1.55);                         // hustý oblak (gradient: tmavé jádro → světlejší okraj) kolem TĚLA
+    fxDustRing(ph.fx, BOMB_GND, 18, 1.6, 0x9aa0a8);
+  }
+}
+const bombObj2 = makeBomb(P2), bomb2 = bombObj2.g, ember2 = bombObj2.em;
+function updP2(dt){ updateFX(P2, dt); stepFX(P2.fx, dt);
+  lobBag(P2, flyBag2, [{pool:p2silver,n:5,dust:0xC2C8D0},{pool:p2copper,n:5,dust:0xB0602A}], dt, 2.8);   // rozsyp STŘÍBRO + MĚĎ
+  stepSmokeBomb(P2, bomb2, ember2, dt);                            // přechod f3→f4: dýmovnice (vytáhne → knot dohoří → hodí → BUM)
+}
+
+// ════════ FÁZE 3 — „crazy" ($ zlatý, cylindr + money gun + pytel) ════════
+const P3 = makePhase(-1.5*COL, 0xE8C84A, 'FÁZE 4 · crazy', '$ zlatý · cylindr + money gun', 0xC8CDD4); // prev = f3 STŘÍBRO
+const hat3 = propMesh(b => buildTopHat(b, 0,0,0, 0.95)); hat3.position.copy(HEAD_T); P3.fig.add(hat3);
+const GUN_SC = 0.36;
+const gun3 = propMesh(b => buildMoneyGun(b, 0,0,0, GUN_SC)); gun3.position.set(0.32, 0.0, -0.14); P3.fig.add(gun3);
+const heldBag3 = propMesh(b => buildMoneyBag(b, 0,0,0, 1.0)); heldBag3.position.copy(HAND_L); P3.fig.add(heldBag3);   // +20 % (poslední fáze)
+const flyBag3  = propMesh(b => buildMoneyBag(b, 0,0,0, 1.0)); flyBag3.visible=false; P3.grp.add(flyBag3);
+const p3gold   = []; for (let i=0;i<8;i++){ const m=coinClone('gold');   P3.grp.add(m); p3gold.push({m,vx:0,vy:0,vz:0,life:0}); }
+const p3silver = []; for (let i=0;i<8;i++){ const m=coinClone('silver'); P3.grp.add(m); p3silver.push({m,vx:0,vy:0,vz:0,life:0}); }
+const p3copper = []; for (let i=0;i<8;i++){ const m=coinClone('copper'); P3.grp.add(m); p3copper.push({m,vx:0,vy:0,vz:0,life:0}); }
+const muzzle = new THREE.Vector3(0.32, 0.03, -0.37);
+const p3gun = []; for (let i=0;i<14;i++){ const m=coinClone('copperAmmo'); P3.grp.add(m); p3gun.push({m,life:0}); }
+let p3gunCd = 0;
+function updP3(dt){ updateFX(P3, dt); stepFX(P3.fx, dt);
+  p3gunCd -= dt;
+  if (p3gunCd <= 0){ p3gunCd = 0.32; for (const c of p3gun){ if (c.life<=0){ c.m.position.copy(muzzle); c.life=1.2; c.m.visible=true;
+    fxFlash(P3.fx, muzzle, 0.7, GOLDc); fxDust(P3.fx, muzzle, 2); break; } } }   // muzzle flash + kouř
+  for (const c of p3gun){ if (c.life<=0) continue; c.life-=dt; c.m.position.z-=4.2*dt; c.m.rotation.x+=dt*16; if (c.life<=0) c.m.visible=false; }
+  lobBag(P3, flyBag3, [{pool:p3gold,n:6,dust:0xCBA53A},{pool:p3silver,n:6,dust:0xC2C8D0},{pool:p3copper,n:6,dust:0xB0602A}], dt, 3.2); // NEJVÍC: ZLATO + STŘÍBRO + MĚĎ (barevný prach vč. zlatého)
+}
+
+// ── pytel lob (společné f2/f3); při hodu spustí „přechod" FX, dopad = rozsyp mincí ──
+// pools = [{pool, n}, ...] → po dopadu se rozsype n mincí z každé varianty (mix barev)
+function spillPool(pool, count){ let k=0; for (const c of pool){ if (k>=count) break;
+  const a = Math.random()*Math.PI*2;                  // náhodný směr (ne pravidelný kruh)
+  const sp = 0.45 + Math.random()*1.15;               // náhodná síla → různá vzdálenost dopadu
+  c.m.position.set(0.06+(Math.random()-0.5)*0.1, GROUND, -1.7+(Math.random()-0.5)*0.1);
+  c.vx=Math.cos(a)*sp; c.vy=1.1+Math.random()*1.2; c.vz=Math.sin(a)*sp;
+  c.grounded=false; c.rest=0; c.alive=true; c.m.visible=true; k++; } }
+function lobBag(ph, bagMesh, pools, dt, period) {
+  bagMesh._t = (bagMesh._t==null? Math.random()*period : bagMesh._t) + dt;
+  const T = bagMesh._t % period, throwDur = 1.1;
+  if (T < throwDur) {
+    if (!bagMesh._thrown) { bagMesh._thrown = true; fxTransition(ph); }
+    const u = T/throwDur; bagMesh.visible = true;
+    const sx=HAND_L.x, sy=HAND_L.y, sz=HAND_L.z, ex=0.1, ey=GROUND+0.30, ez=-1.7; // dopad NAD zem (pytel sedí na zemi)
+    bagMesh.position.set(sx+(ex-sx)*u, sy+(ey-sy)*u + Math.sin(u*Math.PI)*1.1, sz+(ez-sz)*u);
+    bagMesh.rotation.x += dt*6; bagMesh._landed = false;
+  } else {
+    bagMesh.visible = false; bagMesh._thrown = false;
+    if (!bagMesh._landed) { bagMesh._landed = true; for (const p of pools) spillPool(p.pool, p.n);
+      const ip = new THREE.Vector3(0.1, GROUND+0.02, -1.7);
+      fxFlash(ph.fx, ip, 1.9, GOLD); fxDustRing(ph.fx, ip, 14, 1.2); }  // „cha-ching": záblesk + prach (bez stoupajících $)
+  }
+  const GND = GROUND + 0.012;   // mince leží PŘESNĚ na zemi (ne pod ní)
+  for (const p of pools) for (const c of p.pool){ if (!c.alive) continue;
+    if (!c.grounded){                                       // rozutečou se vzduchem + padají
+      c.vy -= 5.5*dt; c.m.position.x+=c.vx*dt; c.m.position.y+=c.vy*dt; c.m.position.z+=c.vz*dt;
+      c.m.rotation.y+=dt*9; c.m.rotation.x+=dt*7;
+      if (c.m.position.y <= GND && c.vy < 0){ c.m.position.y = GND; c.grounded = true; c.rest = 0.8 + Math.random()*0.9;
+        fxDust(ph.fx, c.m.position, 2, p.dust || DUSTC); } // dosedlo → leží + obláček prachu v barvě mince
+    } else {                                                // leží na zemi (dokutálí, dolehne naplocho)
+      c.vx *= 0.84; c.vz *= 0.84; c.m.position.x+=c.vx*dt; c.m.position.z+=c.vz*dt;
+      c.m.rotation.x += (Math.PI/2 - c.m.rotation.x) * Math.min(1, dt*8);   // dolehne naplocho
+      c.rest -= dt; if (c.rest <= 0){ c.alive = false; c.m.visible = false; }
+    }
+  }
+}
+
+// ── smyčka ──
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  updP1A(dt); updP1B(dt); updP2(dt); updP3(dt);
+  controls.update(); renderer.render(scene, camera);
+});
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+window.__ready = true;
+</script>
+</body>
+</html>

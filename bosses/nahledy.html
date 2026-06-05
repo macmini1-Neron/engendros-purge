@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>ENGENDROS PURGE — bossové náhledy</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0c130c; color:#dfeadf; font-family:system-ui, monospace;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:40px 16px; gap:26px; }
+  h1 { font-size:26px; letter-spacing:1px; color:#bfe6bf; }
+  p.sub { color:#7fa07f; font-size:13px; margin-top:-14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+          gap:18px; width:100%; max-width:860px; }
+  a.card { display:block; text-decoration:none; color:inherit; background:#14201400; border:1px solid #2c4a2c;
+           border-radius:14px; padding:22px 20px; transition:.15s; background:#13201380; }
+  a.card:hover { border-color:#5fd05f; transform:translateY(-3px); background:#1a2e1a; }
+  .card .t { font-size:18px; font-weight:700; color:#cfe9cf; }
+  .card .d { font-size:13px; color:#8fb88f; margin-top:7px; line-height:1.4; }
+  .card .badge { display:inline-block; font-size:11px; color:#0c130c; background:#7fd07f;
+                 border-radius:6px; padding:2px 8px; margin-bottom:10px; font-weight:700; }
+  .tolo .badge { background:#e08a8a; }
+  footer { color:#557055; font-size:12px; margin-top:10px; text-align:center; }
+</style>
+</head>
+<body>
+  <h1>ENGENDROS&nbsp;PURGE · bossové náhledy</h1>
+  <p class="sub">klikni na náhled · jede offline (lokální Three.js)</p>
+
+  <div class="grid">
+    <a class="card luka" href="luka/faze-nahled.html">
+      <span class="badge">LUKA</span>
+      <div class="t">Luka — 4 fáze</div>
+      <div class="d">Animované útoky: 1 otřes (sprcha) · 2 hrst drobáků (hází) · 3 pytel · 4 cylindr + money gun. $ černá→měď→stříbro→zlato.</div>
+    </a>
+
+    <a class="card luka" href="luka/props-nahled.html">
+      <span class="badge">LUKA</span>
+      <div class="t">Luka — itemy</div>
+      <div class="d">Pytel · mince (stříbro/zlato/měď) · money gun · cylindr — jednotlivě na talíři (turntable).</div>
+    </a>
+
+    <a class="card luka" href="luka/f1-varianty.html">
+      <span class="badge">LUKA</span>
+      <div class="t">Luka — f1 varianty (A/B/C)</div>
+      <div class="d">„Oslíčku, otřes se!" — tři verze útoku fáze 1 k výběru: A fontána · B po dávkách · C k nohám.</div>
+    </a>
+
+    <a class="card tolo" href="tolo/faze-nahled.html">
+      <span class="badge">TOLO</span>
+      <div class="t">Tolo — fáze 1 / 2 / 3</div>
+      <div class="d">Laser boss kolem terčíku: 5 blaster střel · sweep paprsek · dvojitý sweep + ohnivé zóny. Terčík se nabíjí.</div>
+    </a>
+  </div>
+
+  <footer>soubory: bosses\luka\faze-nahled.html · bosses\tolo\faze-nahled.html · bosses\luka\props-nahled.html<br>
+  (modely se berou přímo z .js souborů — jediný zdroj pravdy)</footer>
+</body>
+</html>

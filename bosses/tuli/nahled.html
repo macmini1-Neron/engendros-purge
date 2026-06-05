@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Tuli – náhled</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a0d0d; overflow:hidden; }
+  canvas { display:block; }
+  #info {
+    position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    color:#d99; font:13px monospace;
+    background:rgba(0,0,0,.55); padding:7px 16px; border-radius:8px;
+    pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<div id="info">Tuli · tažení myší = otočit · kolečko = zoom</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Custom MeshBuilder – ruční skládání vrcholů do jednoho BufferGeometry ──
+// API jako v bráchově hře: b.box() a b.geo(). Vše se sloučí do 1 vertex-colored meshe.
+class MeshBuilder {
+  constructor() { this._pos=[]; this._nor=[]; this._col=[]; this._idx=[]; this._vc=0; }
+
+  _apply(geo, x, y, z, { rx=0, ry=0, rz=0, align=null } = {}) {
+    const g = geo.clone();
+    if (rx) g.rotateX(rx);
+    if (ry) g.rotateY(ry);
+    if (rz) g.rotateZ(rz);
+    // align: natoč geometrii tak, aby +Y mířilo podél zadané normály
+    if (align) {
+      const q = new THREE.Quaternion()
+        .setFromUnitVectors(new THREE.Vector3(0,1,0), align.clone().normalize());
+      g.applyQuaternion(q);
+    }
+    g.translate(x, y, z);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    return g;
+  }
+  _push(geo, color) {
+    const pos=geo.attributes.position, nor=geo.attributes.normal, idx=geo.index;
+    const r=((color>>16)&0xff)/255, g=((color>>8)&0xff)/255, b=(color&0xff)/255;
+    for (let i=0;i<pos.count;i++){
+      this._pos.push(pos.getX(i),pos.getY(i),pos.getZ(i));
+      this._nor.push(nor.getX(i),nor.getY(i),nor.getZ(i));
+      this._col.push(r,g,b);
+    }
+    if (idx){ for(let i=0;i<idx.count;i++) this._idx.push(this._vc+idx.getX(i)); }
+    else   { for(let i=0;i<pos.count;i++) this._idx.push(this._vc+i); }
+    this._vc += pos.count;
+  }
+  box(w,h,d, x,y,z, color, opts={}) {
+    const g=this._apply(new THREE.BoxGeometry(w,h,d), x,y,z, opts);
+    this._push(g,color); g.dispose();
+  }
+  geo(geometry, x,y,z, color, opts={}) {
+    const g=this._apply(geometry, x,y,z, opts);
+    this._push(g,color); g.dispose();
+  }
+  build() {
+    const bg=new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute(this._pos,3));
+    bg.setAttribute('normal',   new THREE.Float32BufferAttribute(this._nor,3));
+    bg.setAttribute('color',    new THREE.Float32BufferAttribute(this._col,3));
+    bg.setIndex(new THREE.Uint32BufferAttribute(this._idx,1));
+    const mat=new THREE.MeshLambertMaterial({ vertexColors:true, flatShading:false });
+    const mesh=new THREE.Mesh(bg, mat); mesh.castShadow=true; return mesh;
+  }
+}
+
+// ── Tuli model ─────────────────────────────────────────────────────────────
+// Konvence: PŘEDEK = −Z (obličej), nahoru = +Y, doprava = +X.
+function buildTuli() {
+  const b = new MeshBuilder();
+
+  // paleta
+  const cHead   = 0xE01818; // sytě červený plyš – hlava
+  const cBody   = 0xE01818; // tělo (stejná sytá červená)
+  const cLimb   = 0xE01818; // ruce/nohy (stejná sytá červená)
+  const cBlack  = 0x121212; // ocásek, stehy, úsměv
+  const cBtn    = 0x0C0C0C; // tmavý knoflík oka
+  const cRim    = 0x2C2C2C; // okraj knoflíku
+  const cBelt   = 0x121212; // černý pás (obvodový pruh těla)
+  const cEye    = 0x080808; // malé pravé očko
+
+  // — geometrie hlavy pro výpočet bodu na přední ploše —
+  const HEAD_R = 0.32, HEAD_Y = 0.34;
+  const headFront = (x, y) => {
+    let u = HEAD_R*HEAD_R - x*x - (y-HEAD_Y)*(y-HEAD_Y);
+    if (u < 0.0009) u = 0.0009;
+    return -Math.sqrt(u);
+  };
+  const headSurf = (x, y) => new THREE.Vector3(x, y, headFront(x, y));
+  const headNorm = (x, y) => {
+    const p = headSurf(x, y);
+    return new THREE.Vector3(p.x, p.y - HEAD_Y, p.z).normalize();
+  };
+  const stitch1 = (x, y, len, ang, color) => {
+    const p = headSurf(x, y), n = headNorm(x, y);
+    b.box(len, 0.012, 0.012,
+      p.x - n.x*0.003, p.y - n.y*0.003, p.z - n.z*0.003,
+      color, { ry: ang, align: n });
+  };
+  const xStitch = (x, y, len, color, rot=0) => {
+    stitch1(x, y, len,  0.78 + rot, color);
+    stitch1(x, y, len, -0.78 + rot, color);
+  };
+  const arcTube = (cx, cy, r, a0, a1, tube, color) => {
+    const pts = [], steps = 14;
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (a1 - a0) * (i / steps);
+      const p = headSurf(cx + r*Math.cos(a), cy + r*Math.sin(a));
+      const n = headNorm(cx + r*Math.cos(a), cy + r*Math.sin(a));
+      pts.push(new THREE.Vector3(p.x - n.x*0.008, p.y - n.y*0.008, p.z - n.z*0.008));
+    }
+    const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 28, tube, 6, false);
+    b.geo(g, 0, 0, 0, color); g.dispose();
+  };
+
+  // ── RŮŽKY – dva krátké zahnuté ČERVENÉ růžky z BOKŮ hlavy (CUSTOM MESH dle plyšáka) ──
+  //    Ručně stavěná zužující se trubice podél krátké křivky (ne kužel-primitiv).
+  {
+    const makeHorn = (sign) => {
+      const path = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(sign*0.22, 0.46,  0.02),  // kořen zapuštěný v boku hlavy
+        new THREE.Vector3(sign*0.37, 0.47,  0.01),  // protažený VEN (skoro vodorovně)
+        new THREE.Vector3(sign*0.45, 0.54,  0.00),  // koleno – stáčí se nahoru
+        new THREE.Vector3(sign*0.47, 0.66, -0.02)   // špička NAHORU (jako originál)
+      ]);
+      const RINGS = 10, RADIAL = 8, baseR = 0.055;
+      const frames = path.computeFrenetFrames(RINGS, false);
+      const pos = [], idx = [];
+      for (let i = 0; i <= RINGS; i++) {
+        const t = i / RINGS, p = path.getPoint(t);
+        const r = baseR * Math.pow(1 - t, 1.4);     // zúžení do špičky
+        const N = frames.normals[i], B = frames.binormals[i];
+        for (let j = 0; j < RADIAL; j++) {
+          const a = (j / RADIAL) * Math.PI * 2;
+          const dx = Math.cos(a) * r, dy = Math.sin(a) * r;
+          pos.push(p.x + N.x*dx + B.x*dy, p.y + N.y*dx + B.y*dy, p.z + N.z*dx + B.z*dy);
+        }
+      }
+      // winding ven (computeFrenetFrames je vždy pravotočivý → stejné pro OBA růžky)
+      for (let i = 0; i < RINGS; i++)
+        for (let j = 0; j < RADIAL; j++) {
+          const a = i*RADIAL + j,           c = (i+1)*RADIAL + j;
+          const e = i*RADIAL + (j+1)%RADIAL, d = (i+1)*RADIAL + (j+1)%RADIAL;
+          idx.push(a, d, c,  a, e, d);
+        }
+      // VÝPLŇ základny – trojúhelníkový vějíř uzavře otevřený konec (plný mesh;
+      // je zapuštěn v hlavě, takže navenek vypadá růžek úplně stejně)
+      const baseC = path.getPoint(0);
+      const ci = pos.length / 3;
+      pos.push(baseC.x, baseC.y, baseC.z);
+      for (let j = 0; j < RADIAL; j++) {
+        const a = j, e = (j + 1) % RADIAL;
+        idx.push(ci, a, e);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx); g.computeVertexNormals();
+      return g;
+    };
+    const hL = makeHorn(-1); b.geo(hL, 0, 0, 0, cHead); hL.dispose();
+    const hR = makeHorn( 1); b.geo(hR, 0, 0, 0, cHead); hR.dispose();
+  }
+
+  // ── VLÁSKY – dva černé chloupky na temeni (tloušťka jako ocásek 0.017, s čepičkou) ──
+  {
+    const hair = (pts) => {
+      const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.017, 6, false);
+      b.geo(g, 0, 0, 0, cBlack); g.dispose();
+      const tip = pts[pts.length - 1];        // čepička zakryje otevřenou díru na špičce
+      const cap = new THREE.SphereGeometry(0.017, 8, 8);
+      b.geo(cap, tip.x, tip.y, tip.z, cBlack); cap.dispose();
+    };
+    hair([                                   // levý chloupek – nahoru-vlevo
+      new THREE.Vector3( 0.000, 0.620,  0.020),
+      new THREE.Vector3(-0.012, 0.668,  0.014),
+      new THREE.Vector3(-0.030, 0.710,  0.002),
+      new THREE.Vector3(-0.024, 0.740, -0.010)
+    ]);
+    hair([                                   // pravý chloupek – nahoru-vpravo
+      new THREE.Vector3( 0.010, 0.620,  0.020),
+      new THREE.Vector3( 0.022, 0.674,  0.014),
+      new THREE.Vector3( 0.040, 0.716,  0.002),
+      new THREE.Vector3( 0.034, 0.746, -0.010)
+    ]);
+  }
+
+  // ── HLAVA (velká koule ~60 % výšky) ──
+  { const g = new THREE.SphereGeometry(HEAD_R, 18, 14);
+    b.geo(g, 0, HEAD_Y, 0, cHead); g.dispose(); }
+
+  // ── TĚLO (krátký kulatý trup, mírně užší než hlava) ──
+  const BODY_R = 0.23, BODY_Y = -0.12;
+  { const g = new THREE.SphereGeometry(BODY_R, 20, 16);
+    b.geo(g, 0, BODY_Y, 0, cBody); g.dispose(); }
+
+  // ── RUČIČKY ──
+  { const g = new THREE.CapsuleGeometry(0.072, 0.075, 4, 10);
+    b.geo(g, -0.255, -0.02, 0.0, cLimb, { rz:  0.78 }); g.dispose(); }
+  { const g = new THREE.CapsuleGeometry(0.072, 0.075, 4, 10);
+    b.geo(g,  0.255, -0.02, 0.0, cLimb, { rz: -0.78 }); g.dispose(); }
+
+  // ── NOŽIČKY ──
+  { const g = new THREE.CapsuleGeometry(0.082, 0.05, 4, 10);
+    b.geo(g, -0.115, -0.34, 0.015, cLimb); g.dispose(); }
+  { const g = new THREE.CapsuleGeometry(0.082, 0.05, 4, 10);
+    b.geo(g,  0.115, -0.34, 0.015, cLimb); g.dispose(); }
+
+  // ── PÁS – tlustý černý pruh ZAPEČENÝ do těla (obvodový pás, à la Tolův terčík) ──
+  {
+    const br = BODY_R + 0.003;                                  // těsně nad povrchem těla
+    const belt = new THREE.SphereGeometry(br, 28, 24, 0, Math.PI*2, 1.46, 0.52); // latitude pás kolem osy Y
+    b.geo(belt, 0, BODY_Y, 0, cBelt); belt.dispose();
+  }
+
+  // ── OCÁSEK – tenký černý ocásek ze ZADU uprostřed; špička končí U ZEMĚ (neprorůstá) ──
+  {
+    const tailPts = [
+      new THREE.Vector3( 0.00, -0.16, 0.18),   // kořen na zádech uprostřed
+      new THREE.Vector3( 0.02, -0.30, 0.27),
+      new THREE.Vector3( 0.08, -0.40, 0.29),
+      new THREE.Vector3( 0.16, -0.44, 0.23),   // dno na úrovni chodidel (země)
+      new THREE.Vector3( 0.21, -0.41, 0.17)    // špička se stáčí zpět nahoru
+    ];
+    const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(tailPts), 28, 0.017, 6, false);
+    b.geo(g, 0, 0, 0, cBlack); g.dispose();
+    const tip = tailPts[tailPts.length - 1];   // čepička na špičce (zakryje díru)
+    const cap = new THREE.SphereGeometry(0.017, 8, 8);
+    b.geo(cap, tip.x, tip.y, tip.z, cBlack); cap.dispose();
+  }
+
+  // ── OČI (velký knoflík s X-stehem vlevo / malé černé očko vpravo) ──
+  const EY = 0.40;
+  { const ex = 0.135, n = headNorm(ex, EY), p = headSurf(ex, EY);
+    const at = (o) => [p.x + n.x*o, p.y + n.y*o, p.z + n.z*o];
+    let q;
+    const rim = new THREE.TorusGeometry(0.06, 0.015, 8, 18);
+    q = at(0.002); b.geo(rim, q[0], q[1], q[2], cRim, { rx: Math.PI/2, align: n }); rim.dispose();
+    const face = new THREE.CylinderGeometry(0.052, 0.052, 0.022, 18);
+    q = at(0.010); b.geo(face, q[0], q[1], q[2], cBtn, { align: n }); face.dispose();
+    // ╳ X-steh nití přes knoflík – sytě červený (barva těla, à la Tolo)
+    q = at(0.024);
+    b.box(0.066, 0.011, 0.011, q[0], q[1], q[2], cHead, { ry:  0.78, align: n });
+    b.box(0.066, 0.011, 0.011, q[0], q[1], q[2], cHead, { ry: -0.78, align: n });
+  }
+  { const ex = -0.135, n = headNorm(ex, EY), p = headSurf(ex, EY);
+    const g = new THREE.SphereGeometry(0.036, 14, 12);
+    b.geo(g, p.x + n.x*0.012, p.y + n.y*0.012, p.z + n.z*0.012, cEye); g.dispose();
+    arcTube(ex, EY, 0.056, Math.PI*0.55, Math.PI*1.45, 0.010, cBlack);
+  }
+
+  // ── PUSA – zapuštěná linka úsměvu + 3 křížky + kulaté závorky na koncích ──
+  const smileXY = (t) => [ -0.16 + 0.32 * t, 0.205 + 0.058 * Math.pow(2*t - 1, 2) ];
+  {
+    const pts = [], N = 26;
+    for (let i = 0; i <= N; i++) {
+      const [mx, my] = smileXY(i / N);
+      const p = headSurf(mx, my), n = headNorm(mx, my);
+      pts.push(new THREE.Vector3(p.x - n.x*0.008, p.y - n.y*0.008, p.z - n.z*0.008));
+    }
+    const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 50, 0.012, 7, false);
+    b.geo(g, 0, 0, 0, cBlack); g.dispose();
+  }
+  for (const t of [0.2, 0.5, 0.8]) {
+    const [mx, my] = smileXY(t);
+    xStitch(mx, my, 0.068, cBlack, t === 0.5 ? 0 : 0.42);
+  }
+  { const [lx, ly]  = smileXY(0.0);
+    arcTube(lx + 0.032, ly - 0.011, 0.044,  Math.PI*0.58, Math.PI*1.42, 0.012, cBlack); }
+  { const [rx2, ry2] = smileXY(1.0);
+    arcTube(rx2 - 0.032, ry2 - 0.011, 0.044, -Math.PI*0.42, Math.PI*0.42, 0.012, cBlack); }
+
+  return b.build();
+}
+
+// ── Scene ────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a0d0d);
+scene.fog = new THREE.Fog(0x1a0d0d, 10, 22);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(0, 0.25, 3.4);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.12, 0);
+controls.enableDamping = true;
+controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 1.25);
+sun.position.set(2, 5, 3); sun.castShadow = true; scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.45);
+fill.position.set(-3, 1, 4); scene.add(fill);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(3, 48),
+  new THREE.MeshLambertMaterial({ color: 0x2a1414 })
+);
+floor.rotation.x = -Math.PI/2; floor.position.y = -0.52;
+floor.receiveShadow = true; scene.add(floor);
+const grid = new THREE.GridHelper(6, 20, 0x442222, 0x381a1a);
+grid.position.y = -0.519; scene.add(grid);
+
+const tuli = buildTuli();
+tuli.rotation.y = Math.PI;   // start: obličejem (−Z) ke kameře
+scene.add(tuli);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+renderer.setAnimationLoop(() => {
+  tuli.rotation.y += 0.005;
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

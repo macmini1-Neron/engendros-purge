@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Luka – rekvizity útoků</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0c; overflow:hidden; }
+  canvas { display:block; }
+  #info {
+    position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    color:#9d9; font:13px monospace;
+    background:rgba(0,0,0,.55); padding:7px 16px; border-radius:8px;
+    pointer-events:none; text-align:center;
+  }
+</style>
+</head>
+<body>
+<div id="info">Luka · rekvizity útoků — pytel · mince (stříbro/zlato/měď) · money gun · cylindr · dýmovnice<br>tažení myší = otočit · kolečko = zoom · (model se bere přímo z .js souborů)</div>
+
+<!-- Náhled používá STARŠÍ UMD build Three.js (global THREE), aby šly přímo načíst
+     reálné model .js soubory (psané pro r160, ale tyhle geometrie jsou kompatibilní).
+     Hra sama běží na r160 modulech – tohle je jen prohlížečka. -->
+<script src="lib/three.min.js"></script>
+<script src="lib/OrbitControls.js"></script>
+
+<!-- MeshBuilder (stejná konvence jako buildViewmodel ve hře) -->
+<script>
+class MeshBuilder {
+  constructor() { this._pos=[]; this._nor=[]; this._col=[]; this._idx=[]; this._vc=0; }
+  _apply(geo, x, y, z, { rx=0, ry=0, rz=0, align=null } = {}) {
+    const g = geo.clone();
+    if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); if (rz) g.rotateZ(rz);
+    if (align) { const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), align.clone().normalize()); g.applyQuaternion(q); }
+    g.translate(x, y, z);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    return g;
+  }
+  _push(geo, color) {
+    const pos=geo.attributes.position, nor=geo.attributes.normal, idx=geo.index;
+    const r=((color>>16)&0xff)/255, g=((color>>8)&0xff)/255, b=(color&0xff)/255;
+    for (let i=0;i<pos.count;i++){ this._pos.push(pos.getX(i),pos.getY(i),pos.getZ(i)); this._nor.push(nor.getX(i),nor.getY(i),nor.getZ(i)); this._col.push(r,g,b); }
+    if (idx){ for(let i=0;i<idx.count;i++) this._idx.push(this._vc+idx.getX(i)); } else { for(let i=0;i<pos.count;i++) this._idx.push(this._vc+i); }
+    this._vc += pos.count;
+  }
+  box(w,h,d, x,y,z, color, opts={}) { const g=this._apply(new THREE.BoxGeometry(w,h,d), x,y,z, opts); this._push(g,color); g.dispose(); }
+  geo(geometry, x,y,z, color, opts={}) { const g=this._apply(geometry, x,y,z, opts); this._push(g,color); g.dispose(); }
+  build() {
+    const bg=new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute(this._pos,3));
+    bg.setAttribute('normal',   new THREE.Float32BufferAttribute(this._nor,3));
+    bg.setAttribute('color',    new THREE.Float32BufferAttribute(this._col,3));
+    bg.setIndex(new THREE.Uint32BufferAttribute(this._idx,1));
+    const mesh=new THREE.Mesh(bg, new THREE.MeshLambertMaterial({ vertexColors:true, flatShading:false }));
+    mesh.castShadow=true; return mesh;
+  }
+}
+</script>
+
+<!-- REÁLNÉ MODELY (přímo ze souborů – jediný zdroj pravdy) -->
+<script src="money-bag.js"></script>
+<script src="coin.js"></script>
+<script src="top-hat.js"></script>
+<script src="smoke-bomb.js"></script>
+<script src="money-gun/money-gun.js"></script>
+
+<!-- Scéna -->
+<script>
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0c);
+scene.fog = new THREE.Fog(0x0a0a0c, 18, 44);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(0, 0.9, 7.8);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.05, 0);
+controls.enableDamping = true; controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 1.25); sun.position.set(2, 5, 3); sun.castShadow = true; scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.45); fill.position.set(-3, 1, 4); scene.add(fill);
+
+const grid = new THREE.GridHelper(12, 24, 0x3a3a3e, 0x222226); grid.position.y = -0.62; scene.add(grid);
+
+function makeLabel(text) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = 'bold 30px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#bfe6bf'; g.fillText(text, 128, 32);
+  const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+  spr.scale.set(1.0, 0.25, 1); return spr;
+}
+
+const turntables = []; window.GROUPS = turntables;
+function addProp(px, label, buildFn, lblY) {
+  const b = new MeshBuilder(); buildFn(b);
+  const group = new THREE.Group(); group.position.x = px; group.add(b.build());
+  const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.12, 24), new THREE.MeshLambertMaterial({ color: 0x26262b }));
+  ped.position.set(px, -0.62, 0); ped.receiveShadow = true; scene.add(ped);
+  const lbl = makeLabel(label); lbl.position.set(px, lblY, 0); scene.add(lbl);
+  scene.add(group); turntables.push(group);
+}
+
+const S = 2.0, COL = 2.0;
+addProp(-2.5*COL, 'PYTEL (f2/f3)',       b => buildMoneyBag(b, 0, 0, 0, S*0.9), 0.55);
+addProp(-1.5*COL, 'MINCE stříbro (f1)',  b => buildCoin(b, 0, 0, 0, S, 'silver'), 0.6);
+addProp(-0.5*COL, 'MINCE zlato (f3)',    b => buildCoin(b, 0, 0, 0, S, 'gold'), 0.6);
+addProp( 0.5*COL, 'MUNICE měď (gun)',    b => buildCoin(b, 0, 0, 0, S*0.5, 'copper'), 0.5);
+addProp( 1.5*COL, 'MONEY GUN (f3)',      b => buildMoneyGun(b, 0, 0.05, 0, S*0.42), 0.72);
+addProp( 2.5*COL, 'CYLINDR (f3)',        b => buildTopHat(b, 0, -0.35, 0, S*0.9), 0.7);
+addProp( 3.5*COL, 'DÝMOVNICE (f3)',      b => buildSmokeBomb(b, 0, -0.30, 0, S*0.85), 0.62);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+renderer.setAnimationLoop(() => {
+  for (const g of turntables) g.rotation.y += 0.012;
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

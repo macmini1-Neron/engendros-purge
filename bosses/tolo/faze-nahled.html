@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Tolo – fáze 1/2/3 (laser boss: terčík → blaster / sweep / dvojsweep + oheň)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0c; overflow:hidden; font-family:monospace; }
+  canvas { display:block; }
+  #info { position:fixed; top:12px; left:50%; transform:translateX(-50%);
+    color:#dde; font-size:13px; background:rgba(0,0,0,.55); padding:7px 16px;
+    border-radius:8px; pointer-events:none; text-align:center; line-height:1.5; }
+</style>
+</head>
+<body>
+<div id="info">TOLO · laser boss · vše kolem ČERVENÉHO TERČÍKU na bříšku (zbraň i slabé místo)<br>
+f1 = 5 blaster střel · f2 = sweep paprsek · f3 = dvojitý sweep + ohnivé zóny · (modely přímo z .js)</div>
+
+<!-- lokální UMD Three (sdílené z luka/lib) – offline přes file:// -->
+<script src="../luka/lib/three.min.js"></script>
+<script src="../luka/lib/OrbitControls.js"></script>
+
+<!-- MeshBuilder (s opcí align) -->
+<script>
+class MeshBuilder {
+  constructor() { this._pos=[]; this._nor=[]; this._col=[]; this._idx=[]; this._vc=0; }
+  _apply(geo, x, y, z, { rx=0, ry=0, rz=0, align=null } = {}) {
+    const g = geo.clone();
+    if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); if (rz) g.rotateZ(rz);
+    if (align) { const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), align.clone().normalize()); g.applyQuaternion(q); }
+    g.translate(x, y, z);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    return g;
+  }
+  _push(geo, color) {
+    const pos=geo.attributes.position, nor=geo.attributes.normal, idx=geo.index;
+    const r=((color>>16)&0xff)/255, g=((color>>8)&0xff)/255, b=(color&0xff)/255;
+    for (let i=0;i<pos.count;i++){ this._pos.push(pos.getX(i),pos.getY(i),pos.getZ(i)); this._nor.push(nor.getX(i),nor.getY(i),nor.getZ(i)); this._col.push(r,g,b); }
+    if (idx){ for(let i=0;i<idx.count;i++) this._idx.push(this._vc+idx.getX(i)); } else { for(let i=0;i<pos.count;i++) this._idx.push(this._vc+i); }
+    this._vc += pos.count;
+  }
+  box(w,h,d, x,y,z, color, opts={}) { const g=this._apply(new THREE.BoxGeometry(w,h,d), x,y,z, opts); this._push(g,color); g.dispose(); }
+  geo(geometry, x,y,z, color, opts={}) { const g=this._apply(geometry, x,y,z, opts); this._push(g,color); g.dispose(); }
+  build() {
+    const bg=new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute(this._pos,3));
+    bg.setAttribute('normal',   new THREE.Float32BufferAttribute(this._nor,3));
+    bg.setAttribute('color',    new THREE.Float32BufferAttribute(this._col,3));
+    bg.setIndex(new THREE.Uint32BufferAttribute(this._idx,1));
+    return new THREE.Mesh(bg, new THREE.MeshLambertMaterial({ vertexColors:true }));
+  }
+}
+</script>
+
+<!-- REÁLNÝ MODEL (jediný zdroj pravdy) -->
+<script src="tolo-fn.js"></script>
+
+<script>
+// ── scéna ──
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0c);      // černé neutrální pozadí (vše vidět)
+scene.fog = new THREE.Fog(0x0a0a0c, 18, 44);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(0, 1.4, -11);                 // FACE = −Z → kamera ze strany −Z vidí obličej + terčík
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.15, 0); controls.enableDamping = true; controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+const sun = new THREE.DirectionalLight(0xffffff, 1.25); sun.position.set(-2, 5, -3); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xc6ccd8, 0.45); fill.position.set(3, 1, -4); scene.add(fill);
+const grid = new THREE.GridHelper(40, 40, 0x3a3a3e, 0x222226); grid.position.y = -0.62; scene.add(grid);
+
+function label(text, px, py) {
+  const c = document.createElement('canvas'); c.width = 384; c.height = 64;
+  const g = c.getContext('2d'); g.font = 'bold 30px monospace'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillStyle = '#dfe2ff'; g.fillText(text, 192, 32);
+  const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent:true, depthTest:false }));
+  spr.scale.set(2.4, 0.4, 1); spr.position.set(px, py, 0); scene.add(spr);
+}
+function propMesh(fn) { const b = new MeshBuilder(); fn(b); return b.build(); }
+const addMat = (c, o=0.6) => new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:o, blending:THREE.AdditiveBlending, depthWrite:false });
+
+// ── společné ──
+const SPACING = 4.3, SC = 1.55, GROUND = -0.40;
+const BELLY = new THREE.Vector3(0, -0.12, -0.235);     // terčík (−Z)
+const cCore = 0xfff0f0, cBeam = 0xff2a30, cBeam3 = 0xff6a20, cGlow = 0xff3838;
+const TILT = 0.15, REACH = (BELLY.y - GROUND)/Math.sin(TILT);  // délka paprsku po zem
+const HITD = Math.cos(TILT)*REACH;                            // vodorovná vzdálenost dopadu
+
+// ── 1) žhavý paprsek: jádro + průsvitná záře (+blikání zvenčí) ──
+function makeBeam(len, glowCol){
+  const g = new THREE.Group();
+  const halo = new THREE.Mesh(new THREE.BoxGeometry(0.20,0.20,len), addMat(glowCol,0.30));
+  const core = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,len), new THREE.MeshBasicMaterial({color:cCore}));
+  halo.position.z = -len/2; core.position.z = -len/2; g.add(halo); g.add(core); g.userData={halo,core,len}; return g;
+}
+
+// ── efektové pooly na fázi (vše v grp = lokální souřadnice) ──
+function fxPools(grp){
+  const P = { flashes:[], sparks:[], scorch:[], embers:[] };
+  for(let i=0;i<10;i++){ const m=new THREE.Mesh(new THREE.SphereGeometry(0.12,10,8), addMat(0xffe0e0,0)); m.visible=false; grp.add(m); P.flashes.push({m,life:0,max:1}); }
+  for(let i=0;i<54;i++){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.035,0.035,0.035), addMat(0xff8a4a,0)); m.visible=false; grp.add(m); P.sparks.push({m,vx:0,vy:0,vz:0,life:0}); }
+  for(let i=0;i<26;i++){ const m=new THREE.Mesh(new THREE.CircleGeometry(0.14,14), addMat(0xff5a20,0)); m.rotation.x=-Math.PI/2; m.position.y=GROUND+0.004; m.visible=false; grp.add(m); P.scorch.push({m,life:0,max:1}); }
+  for(let i=0;i<34;i++){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.07,0.05), addMat(0xffaa3a,0)); m.visible=false; grp.add(m); P.embers.push({m,vy:0,life:0}); }
+  return P;
+}
+function spawnFlash(P,p,scl,col){ const f=P.flashes.find(o=>o.life<=0); if(!f) return;
+  f.m.position.copy(p); f.m.material.color.setHex(col); f.life=f.max=0.22; f.scl=scl; f.m.visible=true; }
+function spawnSparks(P,p,n,col,spd=2.0){ for(let i=0;i<n;i++){ const s=P.sparks.find(o=>o.life<=0); if(!s) break;
+  s.m.position.copy(p); s.m.material.color.setHex(col); const a=Math.random()*Math.PI*2, e=0.3+Math.random()*0.9;
+  s.vx=Math.cos(a)*spd*e; s.vz=Math.sin(a)*spd*e; s.vy=1.2+Math.random()*1.8; s.life=0.35+Math.random()*0.3; s.m.visible=true; } }
+function spawnScorch(P,p){ const c=P.scorch.find(o=>o.life<=0); if(!c) return;
+  c.m.position.set(p.x,GROUND+0.004,p.z); c.life=c.max=0.9+Math.random()*0.5; c.m.scale.setScalar(0.7+Math.random()*0.6); c.m.visible=true; }
+function spawnEmber(P,p){ const e=P.embers.find(o=>o.life<=0); if(!e) return;
+  e.m.position.set(p.x+(Math.random()-0.5)*0.2, GROUND+0.05, p.z+(Math.random()-0.5)*0.2); e.vy=0.5+Math.random()*0.7; e.life=0.5+Math.random()*0.5; e.m.visible=true; }
+function stepFX(P,dt){
+  for(const f of P.flashes){ if(f.life<=0) continue; f.life-=dt; const u=f.life/f.max;
+    f.m.material.opacity=u*0.9; f.m.scale.setScalar(f.scl*(1.4-u)); if(f.life<=0) f.m.visible=false; }
+  for(const s of P.sparks){ if(s.life<=0) continue; s.life-=dt; s.vy-=6*dt;
+    s.m.position.x+=s.vx*dt; s.m.position.y+=s.vy*dt; s.m.position.z+=s.vz*dt;
+    if(s.m.position.y<GROUND){ s.m.position.y=GROUND; s.vy*=-0.3; } s.m.material.opacity=Math.min(1,s.life*3); if(s.life<=0) s.m.visible=false; }
+  for(const c of P.scorch){ if(c.life<=0) continue; c.life-=dt; c.m.material.opacity=Math.min(0.7,c.life/c.max*0.7); if(c.life<=0) c.m.visible=false; }
+  for(const e of P.embers){ if(e.life<=0) continue; e.life-=dt; e.m.position.y+=e.vy*dt; e.vy*=0.98;
+    e.m.material.opacity=Math.min(1,e.life*2.2); e.m.rotation.y+=dt*6; if(e.life<=0) e.m.visible=false; }
+}
+
+// ── fázový sloupec: tělo (třese se = recoil) + záře terčíku + nabíjecí prstenec ──
+function makePhase(px, l1, l2) {
+  const grp = new THREE.Group(); grp.position.set(px, 0, 0); grp.scale.setScalar(SC);
+  const fig = new THREE.Group(); grp.add(fig);
+  fig.add(propMesh(b => buildTolo(b)));
+  // 3D koule energie u terčíku (ne plochý talíř): vnější záře + jasné jádro
+  const ctr = BELLY.clone(); ctr.z -= 0.04;
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), addMat(cGlow,0)); glow.position.copy(ctr); fig.add(glow);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), new THREE.MeshBasicMaterial({color:cCore, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false})); core.position.copy(ctr); fig.add(core);
+  // konvergující 3D úlomky energie (víří se dovnitř do terčíku)
+  const bits = []; for(let i=0;i<14;i++){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.045,0.045,0.045), addMat(0xffc0c0,0));
+    const u=Math.random()*2-1, th=Math.random()*Math.PI*2, s=Math.sqrt(1-u*u);
+    m.userData.dir=new THREE.Vector3(s*Math.cos(th), u*0.8, s*Math.sin(th) - 0.5).normalize(); // bias dopředu
+    m.userData.ph=Math.random()*Math.PI*2; m.visible=false; fig.add(m); bits.push(m); }
+  scene.add(grp); label(l1, px, 1.5); label(l2, px, 1.14);
+  return { grp, fig, glow, core, bits, ctr, shake:0, fx:fxPools(grp) };
+}
+// nabíjení: záře roste, prstenec se stahuje do terčíku
+function setCharge(ph, t){
+  ph.glow.material.opacity = t*0.92;         ph.glow.scale.setScalar(0.5 + t*1.05);  // v klidu (t=0) NEVIDITELNÁ – jen při nabíjení
+  ph.core.material.opacity = t*0.95;         ph.core.scale.setScalar(0.6 + t*0.8);
+  const on = t>0.02 && t<0.999, tn = performance.now()*0.004;
+  for (const m of ph.bits){ m.visible = on; if (!on) continue;
+    const r = 0.06 + (1-t)*0.36, d = m.userData.dir, sw = m.userData.ph + tn;   // víří + stahuje se dovnitř
+    const cx=Math.cos(sw), sz=Math.sin(sw);
+    m.position.set(ph.ctr.x + (d.x*cx - d.z*sz)*r, ph.ctr.y + d.y*r, ph.ctr.z + (d.x*sz + d.z*cx)*r);
+    m.material.opacity = 0.25 + t*0.7; m.scale.setScalar(0.5 + t*0.8);
+  }
+}
+function recoil(ph){ ph.shake = 0.32; }
+function stepShake(ph, dt){
+  ph.shake = Math.max(0, ph.shake - dt);
+  const s = ph.shake>0 ? Math.sin(performance.now()*0.06)*0.07*(ph.shake/0.32) : 0;
+  ph.fig.rotation.z = s; ph.fig.position.z = ph.shake>0 ? 0.04*(ph.shake/0.32) : 0; // cuknutí dozadu
+}
+const hitPoint = (yaw) => new THREE.Vector3(BELLY.x - Math.sin(yaw)*HITD, GROUND, BELLY.z - Math.cos(yaw)*HITD);
+
+// ════════ FÁZE 1 — 5 BLASTER STŘEL (žhavé jádro + záře + stopa + dopad) ════════
+const P1 = makePhase(SPACING, 'FÁZE 1 · blaster', '5 střel · žhavé jádro + dopad');
+const bolts = []; for (let i=0;i<12;i++){
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,0.62), addMat(cGlow,0.4)));   // záře/stopa
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,0.34), new THREE.MeshBasicMaterial({color:cCore}))); // jádro
+  g.visible=false; P1.grp.add(g); bolts.push({g,vx:0,vz:0,life:0}); }
+let p1t = 0, p1fired = -1;
+function updP1(dt){ stepShake(P1,dt); stepFX(P1.fx,dt); p1t += dt; const T = p1t % 3.4, chg=0.9;
+  setCharge(P1, T<chg ? T/chg : Math.max(0, 0.9-(T-chg)*5));
+  if (T >= chg && p1fired < 5) {                          // dávka 5 střel po 0.09 s
+    const slot = Math.floor((T-chg)/0.09);
+    while (p1fired < slot && p1fired < 5) { p1fired++;
+      const c = bolts.find(b=>b.life<=0); if (c){ c.g.position.copy(BELLY);
+        c.vx=(Math.random()-0.5)*0.8; c.vz=-7.2; c.life=1.3; c.g.visible=true;
+        recoil(P1); spawnFlash(P1.fx, BELLY, 0.9, 0xffe0e0); spawnSparks(P1.fx, BELLY, 5, 0xff7a4a, 1.4); } }
+  }
+  if (T < chg) p1fired = -1;
+  for (const c of bolts){ if (c.life<=0) continue; c.life-=dt;
+    c.g.position.z += c.vz*dt; c.g.position.x += c.vx*dt;
+    if (c.life<=0){ c.g.visible=false; spawnFlash(P1.fx, c.g.position, 1.1, 0xffd0d0); spawnSparks(P1.fx, c.g.position, 8, 0xff6a3a, 2.2); } }
+}
+
+// ════════ FÁZE 2 — SWEEP žhavý paprsek (scorch + jiskry na zemi) ════════
+const P2 = makePhase(0, 'FÁZE 2 · sweep', 'žhavý paprsek · spáleniště');
+const yaw2 = new THREE.Group(); yaw2.position.copy(BELLY); P2.grp.add(yaw2);
+const tilt2 = new THREE.Group(); tilt2.rotation.x = -TILT; yaw2.add(tilt2);
+const beam2 = makeBeam(REACH, cBeam); beam2.visible=false; tilt2.add(beam2);
+const hot2 = new THREE.Mesh(new THREE.SphereGeometry(0.13,12,10), addMat(0xffd0d0,0)); hot2.visible=false; P2.grp.add(hot2);
+let p2t = 0, p2spk = 0;
+function updP2(dt){ stepShake(P2,dt); stepFX(P2.fx,dt); p2t += dt; const T = p2t % 4.0, chg=0.9, swp=2.6;
+  setCharge(P2, T<chg ? T/chg : (T<chg+swp ? 0.95 : Math.max(0,0.95-(T-chg-swp)*5)));
+  const sweeping = T>=chg && T<chg+swp;
+  beam2.visible = sweeping; hot2.visible = sweeping;
+  if (sweeping){ if (T-dt < chg) recoil(P2);
+    P2.shake = Math.max(P2.shake, 0.10);                       // jemný setrvalý třes (míň než f3)
+    const u=(T-chg)/swp, yaw=-0.42 + u*0.84; yaw2.rotation.y = yaw;
+    const fl = 0.78 + 0.22*Math.sin(performance.now()*0.04);                    // blikání
+    beam2.userData.halo.material.opacity = 0.30*fl; beam2.userData.halo.scale.x = beam2.userData.halo.scale.y = fl;
+    const hp = hitPoint(yaw); hot2.position.copy(hp); hot2.position.y=GROUND+0.02;
+    hot2.material.opacity = 0.85*fl; hot2.scale.setScalar(0.9+0.3*Math.sin(performance.now()*0.05));
+    spawnScorch(P2.fx, hp);                                                      // spáleniště za paprskem
+    p2spk -= dt; if (p2spk<=0){ p2spk=0.05; spawnSparks(P2.fx, hp, 3, 0xff8a3a, 2.4); }
+  }
+}
+
+// ════════ FÁZE 3 — DVOJITÝ SWEEP + OHNIVÉ ZÓNY (zatím lehká verze, předěláme) ════════
+const P3 = makePhase(-SPACING, 'FÁZE 3 · 2× sweep + oheň', 'dva paprsky · hořící zóny');
+const yaw3 = new THREE.Group(); yaw3.position.copy(BELLY); P3.grp.add(yaw3);
+const beam3 = [];
+for (const off of [-0.16, 0.16]) { const t = new THREE.Group(); t.rotation.x = -TILT; t.rotation.y = off; yaw3.add(t);
+  const b = makeBeam(REACH, cBeam3); b.visible=false; t.add(b); beam3.push({b,off}); }
+const fires = []; for (let i=0;i<16;i++){ const m=new THREE.Mesh(new THREE.CircleGeometry(0.2,16), addMat(cBeam3,0));
+  m.rotation.x=-Math.PI/2; m.position.y=GROUND+0.006; m.visible=false; P3.grp.add(m); fires.push({m,life:0,x:0,z:0}); }
+let p3t = 0, p3fireCd = 0;
+function updP3(dt){ stepShake(P3,dt); stepFX(P3.fx,dt); p3t += dt; const T = p3t % 3.2, chg=0.7, swp=2.0;
+  setCharge(P3, T<chg ? T/chg : (T<chg+swp ? 1.0 : Math.max(0,1.0-(T-chg-swp)*5)));
+  const sweeping = T>=chg && T<chg+swp;
+  const fl = 0.8 + 0.2*Math.sin(performance.now()*0.05);
+  for (const o of beam3){ o.b.visible=sweeping; if(sweeping){ o.b.userData.halo.material.opacity=0.32*fl; } }
+  if (sweeping){ if (T-dt<chg) recoil(P3);
+    P3.shake = Math.max(P3.shake, 0.15);                       // jemný setrvalý třes (dvojitý laser → o chlup víc)
+    const u=(T-chg)/swp; yaw3.rotation.y = -0.5 + u*1.0;
+    p3fireCd -= dt; if (p3fireCd<=0){ p3fireCd=0.1;
+      for (const o of beam3){ const hp=hitPoint(yaw3.rotation.y + o.off);
+        const f=fires.find(x=>x.life<=0); if(f){ f.m.position.set(hp.x,GROUND+0.006,hp.z); f.x=hp.x; f.z=hp.z; f.life=1.4; f.m.visible=true; }
+        spawnSparks(P3.fx, hp, 2, 0xffaa3a, 2.0); } }
+  }
+  // hořící zóny: blikají + chrlí uhlíky
+  for (const f of fires){ if (f.life<=0) continue; f.life-=dt;
+    f.m.material.opacity = Math.max(0, f.life/1.4) * (0.5+0.5*Math.sin(performance.now()*0.02+f.x*5));
+    f.m.scale.setScalar(1 + (1.4-f.life)*0.4);
+    if (Math.random()<0.25) spawnEmber(P3.fx, {x:f.x,z:f.z});
+    if (f.life<=0) f.m.visible=false; }
+}
+
+// ── smyčka ──
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  updP1(dt); updP2(dt); updP3(dt);
+  controls.update(); renderer.render(scene, camera);
+});
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+window.__ready = true;
+</script>
+</body>
+</html>

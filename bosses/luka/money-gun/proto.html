@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="cs"><head><meta charset="UTF-8"><title>Money Gun – bambitka proto</title>
+<style>*{margin:0}body{background:#15110a;overflow:hidden}canvas{display:block}</style></head>
+<body>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ── kruhový medailon: slonovina + zlatý lem + zlatá silueta (emoji/znak) ──
+function makeMedallion(sym, px=150) {
+  const S=256, cv=document.createElement('canvas'); cv.width=S; cv.height=S; const x=cv.getContext('2d');
+  x.clearRect(0,0,S,S);
+  x.beginPath(); x.arc(S/2,S/2,S/2-10,0,7); x.fillStyle='#ECE2C6'; x.fill();             // slonovina disk
+  const gg=x.createLinearGradient(0,0,0,S); gg.addColorStop(0,'#F8E68C'); gg.addColorStop(1,'#9A7820');
+  x.lineWidth=20; x.strokeStyle=gg; x.beginPath(); x.arc(S/2,S/2,S/2-22,0,7); x.stroke();  // silný zlatý lem
+  x.lineWidth=5;  x.strokeStyle='#7A5E18'; x.beginPath(); x.arc(S/2,S/2,S/2-34,0,7); x.stroke(); // vnitřní linka
+  const e=document.createElement('canvas'); e.width=S; e.height=S; const ec=e.getContext('2d');
+  ec.font=px+'px serif'; ec.textAlign='center'; ec.textBaseline='middle'; ec.fillText(sym,S/2,S/2+8);
+  ec.globalCompositeOperation='source-atop'; ec.fillStyle='#2A1D07'; ec.fillRect(0,0,S,S);   // TMAVÁ rytá silueta = kontrast
+  x.drawImage(e,0,0);
+  const t=new THREE.CanvasTexture(cv); t.anisotropy=8; t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+const bullTex=makeMedallion('🐂'), bearTex=makeMedallion('🐻'), dollarTex=makeMedallion('$',170);
+
+// ── scéna / materiály ──
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(900,900);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.18;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x15110a);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(40,1,0.01,100); camera.position.set(2.7,1.2,3.0); camera.lookAt(0,-0.02,0);
+const controls = new OrbitControls(camera, renderer.domElement); controls.target.set(0,-0.02,0); controls.update();
+scene.add(new THREE.AmbientLight(0xffffff,0.42));
+const key=new THREE.DirectionalLight(0xfff2d8,2.7); key.position.set(3,5,4); scene.add(key);
+const top=new THREE.DirectionalLight(0xfff6e2,1.1); top.position.set(0,6,0.5); scene.add(top);
+const rim=new THREE.DirectionalLight(0x99aaff,0.9); rim.position.set(-4,2,-3); scene.add(rim);
+
+const gold = new THREE.MeshStandardMaterial({ color:0xCFA72E, metalness:0.95, roughness:0.25, envMapIntensity:1.6, emissive:0x1a1304, emissiveIntensity:0.12 });
+const ivory= new THREE.MeshStandardMaterial({ color:0xEADFC2, metalness:0.0, roughness:0.5 });
+const dark = new THREE.MeshStandardMaterial({ color:0x0E0E0E, metalness:0.3, roughness:0.5 });
+const copper=new THREE.MeshStandardMaterial({ color:0xB87333, metalness:0.85, roughness:0.35, envMapIntensity:1.2 });
+const medMat=(t)=> new THREE.MeshStandardMaterial({ map:t, transparent:true, metalness:0.45, roughness:0.4, side:THREE.DoubleSide, emissiveMap:t, emissive:0xffffff, emissiveIntensity:0.22 });
+
+const gun = new THREE.Group();
+const add=(geo,mat,x,y,z,opts={})=>{ const me=new THREE.Mesh(geo,mat); me.position.set(x,y,z);
+  if(opts.rx)me.rotation.x=opts.rx; if(opts.ry)me.rotation.y=opts.ry; if(opts.rz)me.rotation.z=opts.rz;
+  if(opts.look)me.lookAt(opts.look); gun.add(me); return me; };
+
+// ═══ TROJÚHELNÍKOVÁ HLAVEŇ (vrchol nahoru, podél Z; předek = −Z) ═══
+const TA=0.13, TBx=0.10, TBy=0.07, len=0.80, yB=0.11, zF=-0.60, zBk=zF+len, zM=zF+len*0.5;
+const triShape=()=>{ const s=new THREE.Shape(); s.moveTo(0,TA); s.lineTo(-TBx,-TBy); s.lineTo(TBx,-TBy); s.closePath(); return s; };
+add(new THREE.ExtrudeGeometry(triShape(),{depth:len,bevelEnabled:true,bevelThickness:0.01,bevelSize:0.01,bevelSegments:2}), ivory, 0,yB,zF);
+// zlaté podélné hrany (tenké) – jen obrys, ne plné stěny
+for(const [ex,ey] of [[0,TA],[-TBx,-TBy],[TBx,-TBy]])
+  add(new THREE.CylinderGeometry(0.009,0.009,len,14), gold, ex, yB+ey, zM, {rx:Math.PI/2});
+
+// ── BÝK (+X) / MEDVĚD (−X) jako texturované medailony na šikmých bocích ──
+{ const nx=(TA+TBy), ny=TBx, L=Math.hypot(nx,ny); const ux=nx/L, uy=ny/L;
+  const px=TBx*0.5, py=yB+(TA-TBy)*0.5;
+  const mBull=add(new THREE.CircleGeometry(0.092,40), medMat(bullTex),  px+ux*0.012, py+uy*0.012, zM);
+  mBull.lookAt(px+ux, py+uy, zM);
+  const mBear=add(new THREE.CircleGeometry(0.092,40), medMat(bearTex), -px-ux*0.012, py+uy*0.012, zM);
+  mBear.lookAt(-px-ux, py+uy, zM); }
+
+// ── PŘEDNÍ ČELO (slonovina): Iluminát oko, jehož ZORNICE = otvor hlavně ──
+add(new THREE.TorusGeometry(0.075,0.016,12,36).scale(1,0.6,1), gold, 0,yB,zF-0.02);     // zlaté oční víčko (mandle)
+add(new THREE.CylinderGeometry(0.044,0.05,0.20,30), dark, 0,yB,zF+0.07, {rx:Math.PI/2});  // ZORNICE = vývrt (díra, ze které se střílí)
+for(let i=0;i<12;i++){ const a=i/12*Math.PI*2;                                            // zlaté paprsky (glory) kolem oka
+  add(new THREE.ConeGeometry(0.008,0.035,6), gold, Math.cos(a)*0.105, yB+Math.sin(a)*0.062, zF-0.015, {rz:-a-Math.PI/2}); }
+
+// ── MINCE JAKO MUNICE: řada měděných mincí navrchu hlavně (vně) ──
+add(new THREE.BoxGeometry(0.055,0.025,0.52), gold, 0, yB+TA+0.006, zF+0.28);   // tenký zlatý žlábek
+for(let i=0;i<6;i++)
+  add(new THREE.CylinderGeometry(0.05,0.05,0.02,24), copper, 0, yB+TA+0.04, zF+0.12+i*0.075, {rx:Math.PI/2});
+
+// ═══ BAMBITKOVÁ RUKOJEŤ (slonovina + zlato, $ medailon), zakončená koulí ═══
+add(new THREE.BoxGeometry(0.18,0.22,0.22), ivory, 0,0.0,zBk-0.02);                 // závěr/breech
+add(new THREE.BoxGeometry(0.19,0.03,0.23), gold, 0,0.10,zBk-0.02);                 // zlatá lišta nahoře
+add(new THREE.BoxGeometry(0.155,0.42,0.17), ivory, 0,-0.20,zBk+0.10, {rx:-0.5});   // rukojeť (šikmo)
+add(new THREE.SphereGeometry(0.105,28,22), ivory, 0,-0.40,zBk+0.205);              // koule (pommel)
+add(new THREE.TorusGeometry(0.105,0.016,12,30), gold, 0,-0.40,zBk+0.205, {ry:Math.PI/2}); // zlatý prstenec na pommelu
+add(new THREE.TorusGeometry(0.085,0.015,12,30), gold, 0,-0.05,zBk+0.04, {rx:-0.5, ry:Math.PI/2}); // zlatý prstenec na krku rukojeti
+// $ medailon na obou bocích rukojeti
+for(const sx of [1,-1]){ const m=add(new THREE.CircleGeometry(0.072,36), medMat(dollarTex), sx*0.083,-0.18,zBk+0.115, {rx:-0.5, ry:sx>0?Math.PI/2:-Math.PI/2}); }
+
+// ── lučík + spoušť ──
+add(new THREE.TorusGeometry(0.06,0.014,12,28), gold, 0,-0.075,zBk+0.0, {ry:Math.PI/2});
+add(new THREE.BoxGeometry(0.016,0.06,0.016), dark, 0,-0.06,zBk+0.0, {rx:0.3});
+
+scene.add(gun);
+window.GUN=gun; window.RENDER=()=>renderer.render(scene,camera);
+renderer.render(scene,camera);
+controls.addEventListener('change',()=>renderer.render(scene,camera));
+window.__ready=true;
+</script>
+</body></html>

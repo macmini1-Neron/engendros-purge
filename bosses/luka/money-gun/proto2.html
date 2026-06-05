@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="cs"><head><meta charset="UTF-8"><title>Money Gun – herní formát (vertex-color + decaly)</title>
+<style>*{margin:0}body{background:#15110a;overflow:hidden}canvas{display:block}</style></head>
+<body>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" }}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── MeshBuilder (vertex-color, jako ve hře) ──
+class MeshBuilder {
+  constructor(){this.p=[];this.n=[];this.c=[];this.i=[];this.v=0;}
+  _a(g,x,y,z,{rx=0,ry=0,rz=0}={}){g=g.clone();if(rx)g.rotateX(rx);if(ry)g.rotateY(ry);if(rz)g.rotateZ(rz);g.translate(x,y,z);if(!g.attributes.normal)g.computeVertexNormals();return g;}
+  _p(g,col){const P=g.attributes.position,N=g.attributes.normal,I=g.index;const r=((col>>16)&255)/255,gg=((col>>8)&255)/255,b=(col&255)/255;for(let i=0;i<P.count;i++){this.p.push(P.getX(i),P.getY(i),P.getZ(i));this.n.push(N.getX(i),N.getY(i),N.getZ(i));this.c.push(r,gg,b);}if(I){for(let i=0;i<I.count;i++)this.i.push(this.v+I.getX(i));}else for(let i=0;i<P.count;i++)this.i.push(this.v+i);this.v+=P.count;}
+  box(w,h,d,x,y,z,col,o){const g=this._a(new THREE.BoxGeometry(w,h,d),x,y,z,o||{});this._p(g,col);g.dispose();}
+  geo(ge,x,y,z,col,o){const g=this._a(ge,x,y,z,o||{});this._p(g,col);g.dispose();}
+  build(){const G=new THREE.BufferGeometry();G.setAttribute('position',new THREE.Float32BufferAttribute(this.p,3));G.setAttribute('normal',new THREE.Float32BufferAttribute(this.n,3));G.setAttribute('color',new THREE.Float32BufferAttribute(this.c,3));G.setIndex(this.i);return new THREE.Mesh(G,new THREE.MeshLambertMaterial({vertexColors:true}));}
+}
+
+// ── malovaný DECAL (ornátní panel s býkem/medvědem / $) – MeshLambert + map (žádný env netřeba) ──
+function panelTex(emoji,title){
+  const W=1024,H=420,cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');
+  const gold=()=>{const g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'#F4DE7E');g.addColorStop(.5,'#C9A22B');g.addColorStop(1,'#8A6A16');return g;};
+  c.fillStyle='#ECE2C6';c.fillRect(0,0,W,H);
+  c.strokeStyle=gold();c.lineWidth=30;c.strokeRect(20,20,W-40,H-40);
+  c.lineWidth=9;c.strokeRect(54,54,W-108,H-108);
+  const scr=(x,y,f)=>{c.save();c.strokeStyle=gold();c.lineWidth=11;c.translate(x,y);for(let k=0;k<3;k++){c.beginPath();c.arc(f*(20+k*16),20+k*16,26-k*7,0,Math.PI*1.4);c.stroke();}c.restore();};
+  scr(70,70,1);scr(W-70,70,-1);scr(70,H-70,1);scr(W-70,H-70,-1);
+  c.textAlign='center';c.font='bold 60px Georgia';c.lineWidth=6;c.strokeStyle='#5E430F';c.strokeText(title,W/2,92);c.fillStyle=gold();c.fillText(title,W/2,92);
+  c.font='italic 28px Georgia';c.lineWidth=3;c.strokeStyle='#5E430F';c.strokeText('$   PENÍZE JSOU MOC   $',W/2,H-58);c.fillStyle=gold();c.fillText('$   PENÍZE JSOU MOC   $',W/2,H-58);
+  c.strokeStyle=gold();c.lineWidth=15;c.beginPath();c.arc(W/2,H/2+4,116,0,7);c.stroke();c.lineWidth=6;c.beginPath();c.arc(W/2,H/2+4,132,0,7);c.stroke();
+  const e=document.createElement('canvas');e.width=220;e.height=220;const ec=e.getContext('2d');
+  ec.font='168px serif';ec.textAlign='center';ec.textBaseline='middle';ec.fillText(emoji,110,116);
+  ec.globalCompositeOperation='source-atop';ec.fillStyle='#2A1D07';ec.fillRect(0,0,220,220);
+  c.drawImage(e,W/2-110,H/2-106);
+  const t=new THREE.CanvasTexture(cv);t.anisotropy=8;t.colorSpace=THREE.SRGBColorSpace;return t;
+}
+function dollarTex(){const S=256,cv=document.createElement('canvas');cv.width=S;cv.height=S;const x=cv.getContext('2d');x.clearRect(0,0,S,S);
+  x.beginPath();x.arc(S/2,S/2,S/2-10,0,7);x.fillStyle='#ECE2C6';x.fill();
+  const g=x.createLinearGradient(0,0,0,S);g.addColorStop(0,'#F4DE7E');g.addColorStop(1,'#9A7820');x.lineWidth=20;x.strokeStyle=g;x.beginPath();x.arc(S/2,S/2,S/2-22,0,7);x.stroke();
+  x.fillStyle='#2A1D07';x.font='bold 150px Georgia';x.textAlign='center';x.textBaseline='middle';x.fillText('$',S/2,S/2+6);
+  const t=new THREE.CanvasTexture(cv);t.anisotropy=8;t.colorSpace=THREE.SRGBColorSpace;t.transparent=true;return t;}
+const decalMat=(t)=>new THREE.MeshLambertMaterial({map:t,transparent:true,side:THREE.DoubleSide});
+
+// ── scéna: HERNÍ osvětlení (ACES, exposure 1.05, BEZ environment) ──
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(900,900);
+renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x15110a);
+const camera=new THREE.PerspectiveCamera(40,1,0.01,100);camera.position.set(2.7,1.2,3.0);camera.lookAt(0,-0.02,0);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,-0.02,0);controls.update();
+scene.add(new THREE.AmbientLight(0xffffff,0.55));
+const key=new THREE.DirectionalLight(0xfff4e0,1.7);key.position.set(3,5,4);scene.add(key);
+const fill=new THREE.DirectionalLight(0xcfd8ff,0.6);fill.position.set(-4,1,3);scene.add(fill);
+const top=new THREE.DirectionalLight(0xfff8ec,0.7);top.position.set(0,6,0.5);scene.add(top);
+
+// ═══ PALETA – 5 odstínů na materiál (vrstvené stínování dle skillu) ═══
+const gHi=0xEAD27A,gMid=0xC9A22B,gLo=0x8A6A16;                 // zlato
+const iHi=0xF4ECD6,iMid=0xE3D7B6,iLo=0xC2B48E;                 // slonovina
+const wHi=0x8A5A28,wMid=0x633E18,wLo=0x3E2710,wSlot=0x281708;  // tmavší ořechové dřevo
+const cHi=0xE08A3C,cMid=0xC06A22,cLo=0x7A3F14;                 // měď (mince) – sytější
+const dk=0x131110;                                             // recesy / oko
+const b=new MeshBuilder();
+
+// ═══════════ TROJÚHELNÍKOVÁ HLAVEŇ (slonovina, vrchol nahoru) ═══════════
+const TA=0.13,TBx=0.10,TBy=0.07,len=0.84,yB=0.11,zF=-0.62,zBk=zF+len,zM=zF+len*0.5;
+const tri =(k=1)=>{const s=new THREE.Shape();s.moveTo(0,TA*k);s.lineTo(-TBx*k,-TBy*k);s.lineTo(TBx*k,-TBy*k);s.closePath();return s;};
+// zlatý PRSTENEC (band) kolem hlavně = vnější tri − vnitřní tri
+const band=(ko,ki)=>{const s=tri(ko);const h=new THREE.Path();h.moveTo(0,TA*ki);h.lineTo(-TBx*ki,-TBy*ki);h.lineTo(TBx*ki,-TBy*ki);h.closePath();s.holes.push(h);return s;};
+
+// tělo hlavně (slonovina) – bevel pro jemné hrany
+b.geo(new THREE.ExtrudeGeometry(tri(1),{depth:len,bevelEnabled:true,bevelThickness:0.012,bevelSize:0.012,bevelSegments:2}),0,yB,zF,iMid);
+// slonovinový stínový pruh pod základnou (lo) – vrstvení
+b.box(0.205,0.014,len,0,yB-TBy-0.006,zM,iLo);
+// zlaté podélné HRANY (hi nahoře, lo/mid dole) – 3 tyče
+for(const [ex,ey,col] of [[0,TA,gHi],[-TBx,-TBy,gLo],[TBx,-TBy,gMid]])
+  b.geo(new THREE.CylinderGeometry(0.012,0.012,len,12),ex,yB+ey,zM,col,{rx:Math.PI/2});
+// zlaté kříž-BANDY kolem hlavně (rámy u ústí, u závěru + 2 mezilehlé)
+for(const [zc,ko,ki,col] of [[zF+0.005,1.17,0.9,gMid],[zF+0.22,1.05,0.94,gHi],[zM+0.06,1.05,0.94,gMid],[zBk-0.16,1.08,0.92,gHi]])
+  b.geo(new THREE.ExtrudeGeometry(band(ko,ki),{depth:0.028,bevelEnabled:false}),0,yB,zc,col);
+// FILIGRÁN: zlaté nýtky po obou spodních hranách + po apexu
+for(let i=0;i<8;i++)for(const ex of [-TBx,TBx]) b.geo(new THREE.SphereGeometry(0.008,8,8),ex,yB-TBy-0.003,zF+0.08+i*0.095,gHi);
+for(let i=0;i<7;i++) b.geo(new THREE.SphereGeometry(0.0075,8,8),0,yB+TA+0.004,zF+0.13+i*0.10,gHi);
+
+// ── PŘEDNÍ ČELO = ILUMINÁT: zlatý trojúhelníkový rám + oko, zornice = otvor hlavně ──
+const ez=zF-0.03;                                                   // rovina oka (mírně před čelem)
+// vývrt (tmavá zornice) – jde dovnitř hlavně
+b.geo(new THREE.CylinderGeometry(0.05,0.056,0.34,30),0,yB,zF+0.16,dk,{rx:Math.PI/2});
+// SCLÉRA (slonovinové bělmo) jako mandlový prstenec kolem zornice
+{const t=new THREE.TorusGeometry(0.05,0.024,12,32);t.scale(1.35,0.85,0.55);b.geo(t,0,yB,ez,iHi);}
+// zlaté víčko (vnější mandlový rám)
+{const t=new THREE.TorusGeometry(0.072,0.013,12,34);t.scale(1.35,0.85,0.55);b.geo(t,0,yB,ez-0.004,gHi);}
+// zlatá duhovka (užší prstenec u zornice)
+{const t=new THREE.TorusGeometry(0.036,0.009,10,28);b.geo(t,0,yB,ez+0.002,gMid);}
+// zlaté PAPRSKY kolem oka (sunburst) – delší/výraznější, střídavě hi/mid
+for(let i=0;i<14;i++){const a=i/14*Math.PI*2;const rx2=0.092,ry2=0.064;
+  b.geo(new THREE.ConeGeometry(0.012,0.07,6),Math.cos(a)*rx2,yB+Math.sin(a)*ry2,ez+0.004,(i%2?gHi:gMid),{rz:-a-Math.PI/2});}
+
+// ── MINCE JAKO MUNICE (měď) v zlatém žlábku po hřbetu hlavně ──
+b.box(0.062,0.026,0.56,0,yB+TA+0.008,zF+0.30,gLo);                   // žlábek
+for(let i=0;i<6;i++){const zc=zF+0.14+i*0.078;
+  b.geo(new THREE.CylinderGeometry(0.05,0.05,0.02,20),0,yB+TA+0.042,zc,cMid,{rx:Math.PI/2});      // mince
+  b.geo(new THREE.CylinderGeometry(0.051,0.051,0.006,20),0,yB+TA+0.062,zc,cHi,{rx:Math.PI/2});}   // horní lesklý okraj
+
+// ═══ KOHOUT (flintlock hammer/cock) na zadním-horním rohu hlavně, nakloněný dozadu ═══
+const hz=zBk-0.04, hy=yB+TA-0.02;
+b.box(0.085,0.07,0.13,0,hy,hz,gMid);                                    // zámková deska na temeni
+b.geo(new THREE.CylinderGeometry(0.02,0.02,0.10,12),0,hy+0.02,hz,gHi,{rz:Math.PI/2}); // čep (pivot)
+b.box(0.05,0.14,0.05,0,hy+0.085,hz+0.055,gMid,{rx:0.55});               // labutí krk – spodní segment
+b.box(0.05,0.12,0.045,0,hy+0.20,hz+0.135,gHi,{rx:0.95});                // labutí krk – horní segment (víc dozadu)
+b.box(0.018,0.10,0.018,0.03,hy+0.13,hz+0.085,gLo,{rx:0.7}); b.box(0.018,0.10,0.018,-0.03,hy+0.13,hz+0.085,gLo,{rx:0.7}); // boční žebra krku
+b.box(0.062,0.05,0.055,0,hy+0.26,hz+0.175,gLo,{rx:0.95});               // horní čelist
+b.box(0.045,0.04,0.04,0,hy+0.30,hz+0.20,dk,{rx:0.95});                  // křemen (flint)
+b.geo(new THREE.CylinderGeometry(0.012,0.012,0.05,8),0,hy+0.245,hz+0.165,gHi,{rx:0.95,rz:Math.PI/2}); // šroub čelisti
+// frizzen + pánvička (před kohoutem)
+b.box(0.05,0.11,0.028,0,hy+0.075,hz-0.075,gHi,{rx:-0.45});              // frizzen (ocílka)
+b.box(0.06,0.025,0.05,0,hy+0.01,hz-0.06,gMid);                         // pánvička
+
+// ═══ BAMBITKOVÁ RUKOJEŤ + PAŽBA ZE DŘEVA (vrstvené wHi/wMid/wLo + zlaté prstence) ═══
+// zápěstí (přechod hlaveň→grip)
+b.box(0.18,0.22,0.22,0,0.0,zBk-0.02,wMid);
+b.box(0.185,0.032,0.225,0,0.10,zBk-0.02,wHi); b.box(0.185,0.03,0.225,0,-0.10,zBk-0.02,wLo);  // hi temeno / lo spodek
+// zlatý prstenec na přechodu
+b.geo(new THREE.TorusGeometry(0.085,0.015,10,26),0,-0.05,zBk+0.04,gMid,{rx:-0.5,ry:Math.PI/2});
+// vlastní grip – šikmo dozadu-dolů
+b.box(0.155,0.42,0.17,0,-0.20,zBk+0.10,wMid,{rx:-0.5});
+b.box(0.024,0.40,0.16,0.078,-0.20,zBk+0.10,wHi,{rx:-0.5}); b.box(0.024,0.40,0.16,-0.078,-0.20,zBk+0.10,wLo,{rx:-0.5}); // boční hi/lo plošky
+// tmavá rýha (recess) podél předního břicha gripu
+b.box(0.10,0.36,0.012,0,-0.19,zBk+0.018,wSlot,{rx:-0.5});
+// SLONOVINOVÁ KARTUŠE (oválná ploška) na obou bocích gripu – sem přijde $ medailon
+for(const sx of [1,-1]) b.box(0.022,0.21,0.135,sx*0.080,-0.18,zBk+0.108,iHi,{rx:-0.5});
+// zlatý rám kartuše
+for(const sx of [1,-1]){const t=new THREE.TorusGeometry(0.082,0.011,10,26);t.scale(1,1.3,0.9);b.geo(t,sx*0.090,-0.18,zBk+0.108,gMid,{ry:Math.PI/2,rx:-0.5});}
+// KOULE (pommel) na konci + zlaté prstence
+b.geo(new THREE.SphereGeometry(0.105,24,18),0,-0.40,zBk+0.205,wMid);
+b.geo(new THREE.TorusGeometry(0.105,0.016,10,26),0,-0.40,zBk+0.205,gHi,{ry:Math.PI/2});
+b.geo(new THREE.TorusGeometry(0.088,0.013,10,24),0,-0.40,zBk+0.205,gMid,{rx:Math.PI/2});
+// lučík + spoušť
+b.geo(new THREE.TorusGeometry(0.06,0.014,10,24),0,-0.075,zBk+0.0,gMid,{ry:Math.PI/2});
+b.box(0.016,0.06,0.016,0,-0.06,zBk+0.0,dk,{rx:0.3});
+
+const gun=new THREE.Group(); gun.add(b.build());
+
+// ── DECALY (malované, MeshLambert+map): ornátní panel s býkem/medvědem na bocích + $ na pažbě ──
+function decal(tex,w,h,px,py,pz,look,extraRot){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),decalMat(tex));m.position.set(px,py,pz);m.lookAt(look);if(extraRot)m.rotateZ(extraRot);gun.add(m);return m;}
+{ const nx=(TA+TBy),ny=TBx,L=Math.hypot(nx,ny),ux=nx/L,uy=ny/L;
+  const px=TBx*0.5,py=yB+(TA-TBy)*0.5;
+  // panel kopíruje šikmou stěnu (rozměr ~ délka×slant); orientace podle normály
+  decal(panelTex('🐂','MONEY GUN'), 0.66,0.20, px+ux*0.012,py+uy*0.012,zM, new THREE.Vector3(px+ux,py+uy,zM));
+  decal(panelTex('🐻','MONEY GUN'), 0.66,0.20, -px-ux*0.012,py+uy*0.012,zM, new THREE.Vector3(-px-ux,py+uy,zM)); }
+// $ na obou bocích pažby (na slonovinové kartuši)
+const dt=dollarTex();
+for(const sx of [1,-1]){const m=new THREE.Mesh(new THREE.PlaneGeometry(0.12,0.12),decalMat(dt));m.position.set(sx*0.094,-0.18,zBk+0.115);m.lookAt(sx*0.5,-0.18,zBk+0.115);m.rotateX(-0.5);gun.add(m);}
+
+scene.add(gun);
+window.GUN=gun;window.RENDER=()=>renderer.render(scene,camera);renderer.render(scene,camera);
+controls.addEventListener('change',()=>renderer.render(scene,camera));window.__ready=true;
+</script>
+</body></html>

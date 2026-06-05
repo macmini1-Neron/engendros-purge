@@ -1159,7 +1159,7 @@ export class WeaponSystem {
       const dot = (dx / (dist || 1)) * fwd.x + (dz / (dist || 1)) * fwd.z;
       if (dot < d.arcCos) continue;
       hitAny = true;
-      e.pos.x += (dx / (dist || 1)) * d.knock; e.pos.z += (dz / (dist || 1)) * d.knock;
+      if (!e.def.boss) { e.pos.x += (dx / (dist || 1)) * d.knock; e.pos.z += (dz / (dist || 1)) * d.knock; } // bossové (Tolo/Luka) jsou imunní vůči melee odhozu
       if (this.game.enemies.damage(e, d.dmg * mult, 'melee')) killed = true;
     }
     if (this.game.mp.active) { // co-op: an active swing also strikes upright teammates (host-authoritative friendly fire)
