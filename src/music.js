@@ -170,6 +170,29 @@ const SONGS = [
   ['million_roz', 'Миллион алых роз', 1982],
   ['komarovo', 'Комарово', 1985],
   ['peremen', 'Хочу перемен', 1987],
+  // --- +20 expansion (2026-06-05): more classics + hidden gems + special versions, 1920–1988.
+  //     Real recordings (Internet Archive + sovmusic.ru), normalized to 128k stereo. See
+  //     docs/2026-06-05-soviet-songs-expansion-shortlist.md for sources/notes. ---
+  ['krasnaya_armiya', 'Красная Армия всех сильней', 1920],
+  ['podolinam', 'По долинам и по взгорьям', 1929],
+  ['polyushko', 'Полюшко-поле', 1933],
+  ['tachanka', 'Тачанка', 1937],
+  ['tri_tankista', 'Три танкиста', 1939],
+  ['vecher_na_reyde', 'Вечер на рейде', 1941],
+  ['temnaya_noch', 'Тёмная ночь', 1943],
+  ['ogonyok', 'Огонёк', 1943],
+  ['sluchayny_vals', 'Случайный вальс', 1943],
+  ['solovyi', 'Соловьи', 1944],
+  ['vput', 'В путь', 1954],
+  ['buchenwald', 'Бухенвальдский набат', 1958],
+  ['ne_vernulsya', 'Он не вернулся из боя', 1969],
+  ['odna_pobeda', 'Нам нужна одна победа', 1970],
+  ['ot_geroev', 'От героев былых времён', 1971],
+  ['nadezhda', 'Надежда', 1971],
+  ['mgnoveniya', 'Мгновения', 1973],
+  ['vnov_boy', 'И вновь продолжается бой', 1974],
+  ['gorod_zolotoy', 'Город золотой', 1986],
+  ['gruppa_krovi', 'Группа крови', 1988],
 ];
 for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
 // The jukebox mix = the Korobeiniki "Tetris" chiptune (synth) + every real recording. Korobeiniki
