@@ -3,4 +3,4 @@
 // THREE-bound round operators here does NOT pull `three` into any node-tested module.)
 export { bevelBox, panel, plate, finSet } from './structural.js';
 export { drawerStack, legs } from './furniture.js';
-export { cylinder, cone, deltaFins } from './round.js';
+export { cylinder, cone, deltaFins, texturedCylinder } from './round.js';

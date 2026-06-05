@@ -14,33 +14,48 @@ export function buildSpec(spec) {
   const root = new THREE.Group();
   root.name = plan.id;
 
-  const builders = new Map();                // rigKey → MeshBuilder
+  const builders = new Map();   // rigKey → MeshBuilder (merged box/cylinder parts)
+  const extras = new Map();     // rigKey → [Object3D] (ops that return their OWN mesh, e.g. textured)
   for (const o of plan.ops) {
     const fn = OPS[o.op];
     if (!fn) throw new Error(`no voxel impl for operator '${o.op}'`);
     const key = o.rig || '__base';
-    if (!builders.has(key)) builders.set(key, new MeshBuilder());
-    fn(builders.get(key), o.args, o.tones, o.origin);
+    if (!builders.has(key)) { builders.set(key, new MeshBuilder()); extras.set(key, []); }
+    const ret = fn(builders.get(key), o.args, o.tones, o.origin);
+    if (ret && ret.isObject3D) extras.get(key).push(ret);   // a textured/standalone-mesh operator
   }
 
   const rigByName = new Map(plan.rig.map((r) => [r.name, r]));
-  for (const [key, b] of builders) {
-    const mesh = new THREE.Mesh(b.build(), voxelMaterial());
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    if (key === '__base') { root.add(mesh); continue; }
-    const g = new THREE.Group(); g.name = key;
-    const rig = rigByName.get(key);
-    // A rig may carry a STATIC pose: rotate the group `pose` rad about `axis` around `pivot`.
-    // Parts are built at absolute coords, so we offset the mesh by −pivot and put the group at
-    // +pivot — net effect is rotation about the pivot (e.g. erecting a missile on its trunnion).
-    if (rig && Array.isArray(rig.pivot) && rig.pose != null) {
-      const [px, py, pz] = rig.pivot;
-      g.position.set(px, py, pz);
-      g.rotation[rig.axis || 'x'] = rig.pose;
-      mesh.position.set(-px, -py, -pz);
+  for (const key of builders.keys()) {
+    const rig = key === '__base' ? null : rigByName.get(key);
+    const posed = rig && Array.isArray(rig.pivot) && rig.pose != null;
+    // `outer` = the named rig group (carries the STATIC pose: rotate `pose` rad about `axis`).
+    // `container` = where meshes actually go; for a posed rig it is offset by −pivot so the
+    // outer rotation pivots about `pivot` (e.g. erecting a missile on its trunnion). Parts are
+    // built at absolute coords; the −pivot container makes the net transform a rotation about pivot.
+    let outer = root, container = root;
+    if (key !== '__base') {
+      outer = new THREE.Group(); outer.name = key;
+      if (rig) outer.userData.rig = rig;
+      container = outer;
+      if (posed) {
+        const [px, py, pz] = rig.pivot;
+        outer.position.set(px, py, pz);
+        outer.rotation[rig.axis || 'x'] = rig.pose;
+        container = new THREE.Group(); container.position.set(-px, -py, -pz); outer.add(container);
+      }
+      root.add(outer);
     }
-    if (rig) g.userData.rig = rig;
-    g.add(mesh); root.add(g);
+    const b = builders.get(key);
+    if (b.pos.length) {                       // merged vertex-colour mesh (box/cylinder parts)
+      const mesh = new THREE.Mesh(b.build(), voxelMaterial());
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      container.add(mesh);
+    }
+    for (const ex of extras.get(key)) {       // standalone meshes (own material, e.g. CanvasTexture)
+      ex.castShadow = true; ex.receiveShadow = true;
+      container.add(ex);
+    }
   }
   root.userData.footprint = plan.footprint;
   return root;

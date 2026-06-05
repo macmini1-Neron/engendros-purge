@@ -56,3 +56,48 @@ export function deltaFins(b, a, t, o) {
     g.dispose();
   }
 }
+
+// Draw a missile-body livery onto a canvas → CanvasTexture. The cylinder UV wraps the canvas
+// X around the circumference and Y along the length, so a mark at {x:0..1 around, y:0..1 along}
+// lands at that spot on the body. `marks` are stencils/serials: {text,x,y,size,rot,color,weight}.
+function _bodyTexture(baseHex, marks) {
+  // Cylinder UV: X = around the circumference, Y = along the LENGTH. A missile body is far
+  // longer than it is round, so the canvas must be tall (Y≫X) or text smears. 512×2048 ≈ the
+  // unrolled aspect for a slender body.
+  const W = 512, H = 2048;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  c.fillStyle = baseHex; c.fillRect(0, 0, W, H);
+  c.strokeStyle = 'rgba(18,18,22,0.22)'; c.lineWidth = 2;                       // panel rings (around body)
+  for (const v of [0.1, 0.32, 0.6, 0.85]) { c.beginPath(); c.moveTo(0, v * H); c.lineTo(W, v * H); c.stroke(); }
+  c.strokeStyle = 'rgba(18,18,22,0.10)';                                         // faint lengthwise seams
+  for (const u of [0.0, 0.5]) { c.beginPath(); c.moveTo(u * W, 0); c.lineTo(u * W, H); c.stroke(); }
+  for (const m of marks) {
+    c.save();
+    c.translate((m.x ?? 0.5) * W, (m.y ?? 0.5) * H);
+    c.rotate(m.rot ?? 0);
+    c.fillStyle = m.color || '#26262a';
+    c.font = `${m.weight || 'bold'} ${m.size || 30}px "Arial Narrow","Helvetica Neue",sans-serif`;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(m.text, 0, 0);
+    c.restore();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// texturedCylinder — like `cylinder`, but returns its OWN Mesh carrying a CanvasTexture (so it
+// can show real stencils/serials — vertex colours can't). buildSpec adds the returned mesh into
+// the part's (rig-aware) group. Args: r, h; opts: r2, axis, seg, tone (base colour), marks[].
+export function texturedCylinder(b, a, t, o) {
+  const seg = a.seg ?? 24;
+  const g = new THREE.CylinderGeometry(a.r2 ?? a.r, a.r, a.h, seg, 1);
+  const mat = new THREE.MeshLambertMaterial({ map: _bodyTexture(t[a.tone || 'mid'], a.marks || []) });
+  const mesh = new THREE.Mesh(g, mat);
+  const or = ORIENT[a.axis ?? 'z'];
+  mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
+  mesh.position.set(o.x, o.y, o.z);
+  return mesh;
+}

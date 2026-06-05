@@ -12,6 +12,7 @@ export const MANIFEST = {
   cone:        { args: ['r', 'h'],                dims: ['r', 'h'] },
   finSet:      { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
   deltaFins:   { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
+  texturedCylinder: { args: ['r', 'h'],           dims: ['r', 'h'] },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);
