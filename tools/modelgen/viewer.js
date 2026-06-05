@@ -80,3 +80,19 @@ Object.assign(window.VIEWER, {
   overlay(url, opacity = 0.5) { overlayImg.src = url; overlayImg.style.opacity = opacity; $('op').value = opacity; return true; },
   snapshot() { renderer.render(scene, camera); return canvas.toDataURL('image/png'); },
 });
+
+// --- drag-drop reference images (F0: view-only; persistent save-to-ref/ is F1) ---
+const drop = document.getElementById('drop');
+const refs = document.getElementById('refs');
+function addRef(url) {
+  const im = document.createElement('img'); im.src = url; im.title = 'click → overlay';
+  im.addEventListener('click', () => window.VIEWER.overlay(url, 0.5));
+  refs.appendChild(im);
+}
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('hot'); }));
+drop.addEventListener('drop', (e) => {
+  for (const f of e.dataTransfer.files) if (f.type.startsWith('image/')) addRef(URL.createObjectURL(f));
+});
+// Claude can also inject a ref by URL/path (served over http) without a real drag:
+window.VIEWER.addRef = (url) => { addRef(url); return true; };
