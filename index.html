@@ -666,10 +666,15 @@
       animation: heroDrift 30s ease-in-out infinite alternate; -webkit-user-drag: none; user-select: none; }
     @keyframes heroDrift { from { transform: translateX(-50%) translateY(0) scale(1); } to { transform: translateX(-50%) translateY(-1.2%) scale(1.025); } }
     /* per-monument custom sizing + tone (each statue has its own proportions/reach; the grey ones are
-       darkened to Родина-мать's near-black silhouette tone so they all read the same) */
+       darkened to Родина-мать's near-black silhouette tone so they all read the same).
+       NOTE: every webp has its figure centred in its own canvas (socha1 + socha3 were re-cropped/padded
+       so the figure's BASE sits at the canvas centre; socha2 + socha4 already were), so the single
+       inherited left:50% lands every monument on the sunburst. Do NOT add per-image `left` nudges —
+       the old socha1 `left:44%` drifted with aspect ratio (off by %-of-width, not %-of-figure).
+       Re-centre in the IMAGE, not in CSS. */
     .hero-scene > .sil-img[src*="socha3"] { height: 97%; max-width: none; }  /* Родина-мать — reference dark, commanding */
     .hero-scene > .sil-img[src*="socha2"] { height: 88%; max-width: none; filter: brightness(.55) contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5)); }  /* Рабочий и колхозница */
-    .hero-scene > .sil-img[src*="socha1"] { height: 86%; max-width: none; left: 44%; filter: brightness(.62) contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5)); }  /* Ленин — body centred + darkened */
+    .hero-scene > .sil-img[src*="socha1"] { height: 86%; max-width: none; filter: brightness(.62) contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5)); }  /* Ленин — base-centred in the webp, so plain inherited left:50% (no nudge) + darkened */
     .hero-scene > .sil-img[src*="socha4"] { height: 75%; max-width: none; filter: brightness(.62) contrast(1.06) saturate(.92) drop-shadow(0 10px 30px rgba(0,0,0,.5)); }  /* Воин-освободитель — Treptower liberator (grey stone darkened to match); shorter so the whole statue clears the title */
     .sil { fill: #170402; }                          /* silhouette body */
     .sil2 { fill: #210805; }                          /* a hair lighter (depth layering) */
@@ -1251,6 +1256,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=240"></script>
+  <script type="module" src="./src/game.js?v=241"></script>
 </body>
 </html>
