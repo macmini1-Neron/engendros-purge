@@ -24,3 +24,35 @@ export function cone(b, a, t, o) {
   b.geo(g, o.x, o.y, o.z, a.tone ? t[a.tone] : t.bright, { ...ORIENT[a.axis ?? 'z'], tint: 0.02 });
   g.dispose();
 }
+
+// deltaFins — `count` cruciform CROPPED-DELTA fins around the +Z axis. Each fin is a clean
+// swept trapezoid (root chord `root`, shorter tip chord `tip`, leading edge swept back toward
+// the tail by `sweep`), built as a thin prism of real geometry — not stepped boxes — so the
+// silhouette reads as a true delta. THREE-bound (browser-verified). r0 = body radius the fins
+// start at; phase = angular offset (use ~0.785 for an X / 45° cruciform).
+export function deltaFins(b, a, t, o) {
+  const count = a.count ?? 4, phase = a.phase ?? 0;
+  const root = a.root, span = a.span, tip = a.tip ?? root * 0.3;
+  const r0 = a.r0 ?? 0, sweep = a.sweep ?? root * 0.45, thick = a.thick ?? 0.04;
+  const color = a.tone ? t[a.tone] : t.mid;
+  // corners in (radial u, axial v); +v is toward the +Z nose (leading edge)
+  const corners = [
+    [r0, root / 2],                       // root leading
+    [r0 + span, root / 2 - sweep],         // tip leading
+    [r0 + span, root / 2 - sweep - tip],   // tip trailing
+    [r0, -root / 2],                       // root trailing
+  ];
+  for (let k = 0; k < count; k++) {
+    const ang = phase + (k / count) * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang);
+    const V = [];
+    for (const w of [thick / 2, -thick / 2])
+      for (const [u, v] of corners) V.push(ca * u - sa * w, sa * u + ca * w, v);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(V, 3));
+    g.setIndex([0, 1, 2, 0, 2, 3,  4, 6, 5, 4, 7, 6,  0, 4, 5, 0, 5, 1,
+                1, 5, 6, 1, 6, 2,  2, 6, 7, 2, 7, 3,  3, 7, 4, 3, 4, 0]);
+    g.computeVertexNormals();
+    b.geo(g, o.x, o.y, o.z, color, { tint: 0.015 });
+    g.dispose();
+  }
+}

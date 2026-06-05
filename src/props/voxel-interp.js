@@ -23,16 +23,24 @@ export function buildSpec(spec) {
     fn(builders.get(key), o.args, o.tones, o.origin);
   }
 
+  const rigByName = new Map(plan.rig.map((r) => [r.name, r]));
   for (const [key, b] of builders) {
     const mesh = new THREE.Mesh(b.build(), voxelMaterial());
     mesh.castShadow = true; mesh.receiveShadow = true;
-    if (key === '__base') { root.add(mesh); }
-    else { const g = new THREE.Group(); g.name = key; g.add(mesh); root.add(g); }
-  }
-
-  for (const r of plan.rig) {
-    const g = root.getObjectByName(r.name);
-    if (g) g.userData.rig = r;
+    if (key === '__base') { root.add(mesh); continue; }
+    const g = new THREE.Group(); g.name = key;
+    const rig = rigByName.get(key);
+    // A rig may carry a STATIC pose: rotate the group `pose` rad about `axis` around `pivot`.
+    // Parts are built at absolute coords, so we offset the mesh by −pivot and put the group at
+    // +pivot — net effect is rotation about the pivot (e.g. erecting a missile on its trunnion).
+    if (rig && Array.isArray(rig.pivot) && rig.pose != null) {
+      const [px, py, pz] = rig.pivot;
+      g.position.set(px, py, pz);
+      g.rotation[rig.axis || 'x'] = rig.pose;
+      mesh.position.set(-px, -py, -pz);
+    }
+    if (rig) g.userData.rig = rig;
+    g.add(mesh); root.add(g);
   }
   root.userData.footprint = plan.footprint;
   return root;

@@ -11,6 +11,7 @@ export const MANIFEST = {
   cylinder:    { args: ['r', 'h'],                dims: ['r', 'h'] },
   cone:        { args: ['r', 'h'],                dims: ['r', 'h'] },
   finSet:      { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
+  deltaFins:   { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);
