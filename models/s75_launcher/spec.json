@@ -1,0 +1,27 @@
+{
+  "id": "s75_launcher",
+  "name": "S-75 Dvina (SA-2) V-750VN missile on СМ-90 launcher",
+  "category": "industrial",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 2.6, "h": 3.3, "d": 10.85 },
+  "dossier": "models/s75_launcher/ref/dossier.json",
+  "parts": [
+    { "op": "cylinder", "id": "booster",   "args": { "r": 0.327, "h": 2.702 }, "at": [0, 2.3, 1.351], "mat": "missileGrey", "src": "dossier#booster" },
+    { "op": "cylinder", "id": "nozzle",    "args": { "r": 0.30, "h": 0.30, "tone": "lo" }, "at": [0, 2.3, -0.15], "mat": "steel", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "sustainer", "args": { "r": 0.25, "h": 7.20 }, "at": [0, 2.3, 6.302], "mat": "missileGrey", "src": "dossier#sustainer" },
+    { "op": "cone",     "id": "nose",      "args": { "r": 0.25, "h": 0.94 }, "at": [0, 2.3, 10.372], "mat": "missileGrey", "src": "dossier#nose" },
+
+    { "op": "finSet", "id": "boosterFins", "args": { "count": 4, "steps": 1, "root": 1.8, "span": 0.966, "thick": 0.05, "r0": 0.327, "phase": 0.785 }, "at": [0, 2.3, 1.05], "mat": "missileGrey", "src": "dossier#fins" },
+    { "op": "finSet", "id": "wings",       "args": { "count": 4, "steps": 1, "root": 1.4, "span": 0.596, "thick": 0.04, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 3.6], "mat": "missileGrey", "src": "dossier#fins" },
+    { "op": "finSet", "id": "noseFins",    "args": { "count": 4, "steps": 1, "root": 0.45, "span": 0.35, "thick": 0.03, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 9.3], "mat": "missileGrey", "src": "dossier#derivation" },
+
+    { "op": "bevelBox", "id": "beam",     "args": { "w": 0.4, "h": 0.3, "d": 9.6 }, "at": [0, 1.8, 4.5], "mat": "steel", "src": "dossier#launcher" },
+    { "op": "bevelBox", "id": "trunnion", "args": { "w": 0.7, "h": 1.4, "d": 0.9 }, "at": [0, 1.05, 1.5], "mat": "oliveDrab", "src": "dossier#launcher" },
+    { "op": "cylinder", "id": "turntable","args": { "r": 1.3, "h": 0.4, "axis": "y" }, "at": [0, 0.2, 1.5], "mat": "oliveDrab", "src": "dossier#derivation" }
+  ],
+  "needs": [
+    "Nose-fin span (0.35) and SM-90 beam length (9.6) and turntable dia (2.6) are DERIVED ESTIMATES, not sourced — see dossier.needs",
+    "v1 is modelled HORIZONTAL on the rail; the iconic erected pose (10–75°) is a placement transform to add later"
+  ]
+}

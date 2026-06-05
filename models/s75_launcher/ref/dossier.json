@@ -1,0 +1,59 @@
+{
+  "model": "S-75 Dvina (SA-2 Guideline) — V-750VN / 13D missile on СМ-90 single-rail launcher",
+  "era": "USSR, in service from 1957; 13D airframe = the common Cold-War variant (downed the U-2 in 1960)",
+  "facts": {
+    "missile_overall": {
+      "length_m": 10.841, "launch_weight_kg": 2283,
+      "src": "thisdayinaviation.com/tag/v-750vn-13d-desna (V-750VN/13D, NASM-class data). Variant 1D/SA-2A is shorter (10.6–10.726 m / 2163 kg): en.wikipedia.org/wiki/S-75_Dvina + ausairpower.net/APA-S-75-Volkhov.html (Vestnik PVO)."
+    },
+    "booster": {
+      "length_m": 2.702, "dia_m": 0.654, "radius_m": 0.327,
+      "src": "dia 0.654 m: thisdayinaviation.com + ausairpower.net (Vestnik PVO), 3 sources agree. length 2.702 m is DERIVED = 10.841 − 8.139 (see derivation; no source gives booster length standalone)."
+    },
+    "sustainer": {
+      "length_m": 8.139, "dia_m": 0.500, "radius_m": 0.25,
+      "src": "thisdayinaviation.com/tag/v-750vn-13d-desna ('8.139 meters' for V-750VN). dia 0.500 m confirmed by Wikipedia S-75 Dvina, FAS nuke.fas.org/guide/russia/airdef/v-75.htm, parkpatriot.ru."
+    },
+    "nose": {
+      "shape": "ogival nose cone (тело вращения с оживальной носовой частью), houses proximity fuse + radio antenna; small fixed cruciform nose control fins",
+      "src": "Wikipedia S-75 Dvina; FAS v-75; sovetarmy.forum2x2.ru/t39-topic"
+    },
+    "fins": {
+      "booster_span_m": 2.586, "wing_span_m": 1.691, "offset_deg": 45,
+      "desc": "3 cruciform (4×) sets at 45° roll offset: (1) booster tail = large cropped-delta, full span 2.586 m (widest point of the system); (2) sustainer mid/rear wings = cropped-delta, span 1.691 m; (3) small nose control fins (span unsourced).",
+      "src": "spans: thisdayinaviation.com/tag/v-750vn-13d-desna (13D). shape: Wikipedia S-75 + FAS v-75 ('four large cropped-delta wing fins ... small control surfaces'). Minor conflict: ausairpower gives booster span 2.566 m for the 1D."
+    },
+    "launcher_sm90": {
+      "fire_line_height_m": 2.3, "elevation_deg": "10–75", "azimuth": "360°",
+      "cradle_skid_length_m": 1.6, "travel_envelope_m": { "length": 10.2, "height": 3.8, "width": 2.675 },
+      "desc": "Single trainable launch beam on a wheeled turntable (SM-63 base). Missile rests on top of the beam on guide skids, held fore+aft; booster exhaust directed aft. Beam ≈ missile length and the missile overhangs the rear.",
+      "src": "sovetarmy.forum2x2.ru/t38-topic (Russian tech data: skid 1600 mm; elev 10–75°; fire-line 2300 mm; travel length ≤10200 mm; track gauge 5435 mm; area 80 m²). ausairpower.net/APA-S-75-Volkhov.html confirms single-rail SM-90."
+    },
+    "livery": {
+      "soviet_pvo": "unpainted aluminium / natural metal ('алюминиевый цвет') → modelled as missileGrey",
+      "src": "sovetarmy.forum2x2.ru (Soviet service aluminium); NASM example is factory green; Vietnamese SA-2s dark green (modelingmadness.com). No official Soviet PVO paint TU located."
+    }
+  },
+  "derivation": {
+    "booster_length_m": 2.702, "note_booster": "= overall 10.841 − sustainer 8.139 (sourced math, not invention).",
+    "booster_fin_radial_m": 0.966, "note_bfin": "= booster_span/2 − booster_radius = 1.293 − 0.327.",
+    "wing_radial_m": 0.596, "note_wing": "= wing_span/2 − sustainer_radius = 0.846 − 0.25.",
+    "nose_fin_span_m": 0.35, "note_nosefin": "ESTIMATE, NOT SOURCED — proportionally smaller than the 1.691 m wings; flagged in needs. Used only so the characteristic nose fins exist.",
+    "beam_length_m": 9.6, "note_beam": "ESTIMATE — 'beam ≈ missile length, missile overhangs rear'; ~ a touch under 10.841. Travel envelope length is 10.2 m. Flagged in needs.",
+    "turntable_dia_m": 2.6, "note_tt": "ESTIMATE — base circle dia not in any source (only 80 m² site footprint). Flagged in needs.",
+    "src": "geometric derivation from facts.* + the launcher description; estimates explicitly flagged"
+  },
+  "images": [
+    { "view": "side", "url": "https://airandspace.si.edu/collection-objects/missile-surface-air-sa-2-guideline-model-sa-2b-mod-1/nasm_A19850424000", "shows": "V-750VN at NASM — full side profile (factory green)" },
+    { "view": "data", "url": "https://www.thisdayinaviation.com/tag/v-750vn-13d-desna/", "shows": "13D precise dimension table — best dimensional reference" },
+    { "view": "launcher", "url": "https://www.ausairpower.net/APA-S-75-Volkhov.html", "shows": "SM-90 launcher, erected + stowed, variant spec tables" }
+  ],
+  "needs": [
+    "Nose control-fin span — UNSOURCED; estimated 0.35 m in derivation",
+    "SM-90 beam total length — UNSOURCED; estimated 9.6 m (only skid 1.6 m + travel envelope 10.2 m are documented)",
+    "SM-90 / SM-63 turntable base circle diameter — UNSOURCED; estimated 2.6 m (only 80 m² site footprint documented)",
+    "Official Soviet PVO paint spec (TU) — 'алюминиевый цвет' is forum-cited, no primary source",
+    "Booster length is derived (10.841 − 8.139), not directly sourced",
+    "Erected firing angle for the canonical pose (10–75° range sourced; exact parade angle not fixed) — v1 is modelled horizontal"
+  ]
+}

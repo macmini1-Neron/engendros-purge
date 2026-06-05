@@ -58,7 +58,7 @@ addEventListener('pointermove', (e) => {
   drag = { x: e.clientX, y: e.clientY };
   syncSliders();
 });
-canvas.addEventListener('wheel', (e) => { cam.dist = Math.max(1, Math.min(12, cam.dist + e.deltaY * 0.002)); e.preventDefault(); }, { passive: false });
+canvas.addEventListener('wheel', (e) => { cam.dist = Math.max(1, Math.min(80, cam.dist + e.deltaY * 0.01)); e.preventDefault(); syncSliders(); }, { passive: false });
 
 // --- sliders ---
 const $ = (id) => document.getElementById(id);
@@ -96,3 +96,12 @@ drop.addEventListener('drop', (e) => {
 });
 // Claude can also inject a ref by URL/path (served over http) without a real drag:
 window.VIEWER.addRef = (url) => { addRef(url); return true; };
+
+// --- auto-load a model from ?model=<id> so a single URL shows it (no console needed) ---
+const _autoId = new URLSearchParams(location.search).get('model');
+if (_autoId) {
+  fetch(`/models/${_autoId}/spec.json?cb=${Date.now()}`)
+    .then((r) => r.json())
+    .then((spec) => { window.VIEWER.loadSpec(spec); syncSliders(); })
+    .catch((e) => console.warn('[viewer] auto-load of', _autoId, 'failed:', e));
+}
