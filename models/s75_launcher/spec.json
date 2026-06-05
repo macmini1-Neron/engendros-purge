@@ -8,7 +8,7 @@
   "dossier": "models/s75_launcher/ref/dossier.json",
   "rig": [
     { "name": "azimuth",   "pivot": [0, 0.45, 2.0], "axis": "y", "pose": 0,     "type": "spin",  "range": [0, 6.2832] },
-    { "name": "elevation", "pivot": [0, 2.0, 1.1],  "axis": "x", "pose": -0.95, "parent": "azimuth",   "type": "hinge", "range": [-1.309, -0.1745] },
+    { "name": "elevation", "pivot": [0, 1.82, 1.1], "axis": "x", "pose": -0.95, "parent": "azimuth",   "type": "hinge", "range": [-1.309, -0.1745] },
     { "name": "missile",   "pivot": [0, 2.3, 1.1],  "axis": "z", "pose": 0,     "parent": "elevation", "type": "slide" },
     { "name": "deflector", "pivot": [0, 0.18, -0.2], "axis": "x", "pose": -0.5, "parent": "azimuth",   "type": "hinge" }
   ],
@@ -32,17 +32,13 @@
 
     { "op": "latticeBeam", "id": "rail", "args": { "len": 7.0, "w": 0.54, "h": 0.32, "bays": 10, "chord": 0.055 }, "at": [0, 1.82, 4.0], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
     { "op": "bevelBox", "id": "railWeb", "args": { "w": 0.12, "h": 0.34, "d": 7.0 }, "at": [0, 1.82, 4.0], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "pivotSaddle", "args": { "w": 0.62, "h": 0.36, "d": 0.6 }, "at": [0, 1.83, 1.0], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "beamHeel",  "args": { "w": 0.5, "h": 0.5, "d": 0.55 }, "at": [0, 1.7, 0.55], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
     { "op": "bevelBox", "id": "shoeAft",  "args": { "w": 0.56, "h": 0.18, "d": 0.4 }, "at": [0, 2.05, 1.4], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
     { "op": "bevelBox", "id": "shoeFore", "args": { "w": 0.46, "h": 0.18, "d": 0.4 }, "at": [0, 2.05, 6.0], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
 
-    { "op": "bevelBox", "id": "azPlatform","args": { "w": 2.5, "h": 0.32, "d": 3.7 }, "at": [0, 0.5, 2.2], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "turntable", "args": { "r": 1.3, "h": 0.34, "axis": "y" }, "at": [0, 0.45, 2.0], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "azPlatform","args": { "w": 1.7, "h": 0.32, "d": 3.7 }, "at": [0, 0.5, 2.2], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "turntable", "args": { "r": 1.05, "h": 0.34, "axis": "y" }, "at": [0, 0.45, 2.0], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
     { "op": "cabinet",  "id": "housing",   "args": { "w": 1.5, "h": 1.05, "d": 2.5, "panels": 4 }, "at": [0, 1.2, 3.0], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "trunnionL", "args": { "w": 0.3, "h": 1.55, "d": 0.95 }, "at": [-1.15, 1.25, 1.1], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
-    { "op": "bevelBox", "id": "trunnionR", "args": { "w": 0.3, "h": 1.55, "d": 0.95 }, "at": [1.15, 1.25, 1.1], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
-    { "op": "cylinder", "id": "pivotAxle", "args": { "r": 0.13, "h": 2.62, "axis": "x", "tone": "lo" }, "at": [0, 1.78, 1.1], "mat": "steel", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "trunnion", "args": { "w": 0.6, "h": 1.25, "d": 0.95 }, "at": [0, 1.23, 1.1], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
 
     { "op": "bevelBox", "id": "spine",  "args": { "w": 0.5, "h": 0.2, "d": 5.6 }, "at": [0, 0.12, 2.0], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
     { "op": "bevelBox", "id": "crossF", "args": { "w": 3.5, "h": 0.2, "d": 0.5 }, "at": [0, 0.12, 3.9], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
