@@ -15,6 +15,11 @@ export const MANIFEST = {
   texturedCylinder: { args: ['r', 'h'],           dims: ['r', 'h'] },
   latticeBeam: { args: ['len', 'w', 'h'],         dims: ['len', 'w', 'h'] },
   cabinet:     { args: ['w', 'h', 'd'],           dims: ['w', 'h', 'd'] },
+  meshReflector:{ args: ['w', 'h'],               dims: ['w', 'h'] },
+  star:        { args: ['r'],                     dims: ['r'] },
+  wheel:       { args: ['r', 'w'],                dims: ['r', 'w'] },
+  pipe:        { args: ['pts', 'r'],              dims: ['r'] },
+  tubeMast:    { args: ['baseW', 'baseD', 'h'],   dims: ['baseW', 'baseD', 'h'] },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);

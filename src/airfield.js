@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, makeRNG, randRange, shade, voxelMaterial } from './util.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { S75_LAUNCHER_SPEC } from './props/models/s75_launcher.js';
+import { P37_RADAR_SPEC } from './props/models/p37_radar.js';
 
 // ---- layered-shading palettes (Hi/Mid/Lo/Slot) ----
 const CONC = { hi: 0xc8c4ba, mid: 0xa8a49a, lo: 0x86837a, slot: 0x5c594f }; // PAG airfield concrete
@@ -489,6 +490,27 @@ function placeS75(world, b, lx, lz, phi) {
   world.scene.add(g);
   collider(world, lx, lz, 1.7, 0, 1.6);                                   // base footprint (the rail/missile overhang is non-solid)
 }
+// The detailed P-37 «Bar Lock» early-warning/GCI radar (models/p37_radar) — built ONCE from the modelgen
+// harness. The whole antenna sits at its trailer origin, so it just drops onto (lx,lz). Reflectors overhang
+// up high (non-solid); only the cabin/trailer base gets a collider.
+let _p37Base = null, _p37Tried = false;
+function p37Base() {
+  if (_p37Tried) return _p37Base;
+  _p37Tried = true;
+  try { _p37Base = buildSpec(P37_RADAR_SPEC); }
+  catch (e) { console.warn('[airfield] modelgen P-37 build failed:', e); }
+  return _p37Base;
+}
+function placeP37(world, lx, lz, yaw = 0) {
+  const base = p37Base();
+  if (!base) return;
+  const g = base.clone(true);
+  g.position.set(lx, 0, lz);
+  g.rotation.y = yaw;
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  world.scene.add(g);
+  collider(world, lx, lz, 2.4, 0, 4.2, 2.6);                              // cabin/trailer base (the wide reflectors overhang above, non-solid)
+}
 function buildFanSong(world, b, cx, cz) {                                 // СНР-75 «Fan Song» — TWO perpendicular trough antennas forming a +
   const M = G4BO, A = 0x8d8a80, RIB = 0x66635c, IRX = 0x2a2a2e;
   world._solid(b, 3.4, 2.2, 5.5, cx, 1.1, cz, M.mid, { tint: 0.03 });     // operator van
@@ -730,6 +752,7 @@ export function buildAirfield(world, ox, oz) {
   buildSAMSite(world, b, ox - 70, oz + 240, 18);   // pushed 10 m further N so the «цветок» S petal clears the perimeter fence (still ~20 m off the N mountains)
   buildShilka(world, b, ox - 175, oz + 205, 0.3); buildShilka(world, b, ox + 55, oz + 205, -0.3); // mid-N, clear of the corner watchtowers
   buildRadarP18(world, b, ox - 135, oz + 230);
+  placeP37(world, ox + 8, oz + 238, 2.2);          // P-37 «Bar Lock» early-warning radar (modelgen) — N radar line, E of the SAM site
   buildZU23(world, b, ox - 92, oz + 50); buildZU23(world, b, ox + 98, oz + 90, 0.4);             // E flank, clear of the E shelter
 
   // ⑦ support — штаб + fire depo (far W rear, opposite the fuel) ; fuel ГСМ (E rear corner) ; ammo dispersed (rear) ; windsock ; towers ; lights

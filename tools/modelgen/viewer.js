@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { buildSpec } from '../../src/props/voxel-interp.js';
 
 const canvas = document.getElementById('canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x1a1a1e);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
 const target = new THREE.Vector3(0, 0.5, 0);
@@ -69,6 +69,10 @@ window.VIEWER = {
   clear() { if (model) { scene.remove(model); model = null; } },
   play() { anim = { playing: true, t0: performance.now() }; return true; },
   stop() { anim.playing = false; restorePose(); return true; },
+  // capture() — force a fresh render of the CURRENT camera and return a data-URL. Lets an agent
+  // grab a deterministic frame via browser_evaluate (no flaky screenshot tool, no drawing-buffer
+  // race — preserveDrawingBuffer is on). Pass jpeg quality 0..1; default jpeg 0.85.
+  capture(q) { resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', q ?? 0.85); },
 };
 window.addEventListener('resize', resize);
 

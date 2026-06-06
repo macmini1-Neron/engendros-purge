@@ -74,20 +74,37 @@ python3 -m http.server 8000        # from the repo root; if the port is busy pic
 ```
 Drive it with the Playwright MCP against `window.VIEWER`:
 - `browser_evaluate` → `await window.VIEWER.loadSpec(await (await fetch('/models/<id>/spec.json?cb='+Math.random())).json())`
+  - **Module cache:** the viewer's internal `import`s are bare paths you CAN'T `?cb=`-bust, so after editing
+    any `src/props/*.js` (a new operator, palette, manifest) the browser keeps the STALE module and your spec
+    fails to build (e.g. "unknown operator"). Reload fresh by serving on a **NEW port** (`--directory <root>`)
+    and navigating there — a new origin = an uncached module graph. Tip: `…/viewer.html?model=<id>` auto-loads
+    that spec on open.
 - `browser_evaluate` → `window.VIEWER.setCamera(az, el, dist)` — sweep several angles: front `(0,12)`,
   3/4 `(35,18)`, side `(90,12)`, top `(0,80)`, and a **low grazing** angle `(28,11)` (grazing angles
   expose z-fighting that head-on views hide).
 - `browser_evaluate` → `window.VIEWER.overlay('/models/<id>/ref/<img>', 0.5)` to compare against a reference.
-- `browser_take_screenshot` with `filename: 'models/<id>/renders/<view>.png'`, then **`Read` that PNG to
-  actually SEE it** — the tool only saves a file; you must read it back.
+- **Snapshot — prefer `window.VIEWER.capture()`.** `browser_take_screenshot` works but has a hard ~5 s
+  timeout that a retina WebGL readback routinely blows. The reliable path is `window.VIEWER.capture(q)` — it
+  force-renders the current camera and returns a JPEG data-URL (`preserveDrawingBuffer` is on). `browser_evaluate`
+  it with `filename: '.playwright-mcp/<view>.txt'` so the huge data-URL lands in a FILE, not your context; then
+  `base64 -d` the part after `base64,` into `models/<id>/renders/<view>.jpg` and **`Read` that to actually SEE it.**
+  (Playwright serialises `evaluate` on a page, so you can fire several `setCamera`+`capture` calls at once without
+  racing the shared camera.) `browser_take_screenshot` with `filename: 'models/<id>/renders/<view>.png'` remains
+  the fallback.
 - Compare each view to the dossier facts + references. List concrete defects (proportions off, z-fighting,
   a part floating, illogical layout, reads flat/no shading). Fix the **spec** (or an **operator** if a shape
   is structurally wrong), reload, re-shoot. **Repeat until it reads unmistakably as the real object from
   every angle** — typically 2–4 iterations.
 
 ### Phase 4 — Approve + register
-Show the user the final multi-angle renders and get a yes (or specific tweaks → loop again). Then
-`registerModel(id, spec)` and place it in a map with `placeProp(scene, id, x, z, yaw)`.
+Show the user the final multi-angle renders. **Whenever you present work — the first build OR any later
+iteration — END the message with an `AskUserQuestion` popup that proposes the concrete NEXT steps.** Name
+the SPECIFIC parts/areas you'd refine, never a vague "anything else?": e.g. "tubular X-braced mast",
+"cabin ladder", "deeper reflector curve", "trailer underframe bracing", plus an "It's good — register
+it" option. Draw the options straight from the model's `needs[]` + the defects you can still see versus
+the references, so the user can one-click pick what to improve (or approve). You propose the menu; the
+user just picks — don't make them invent the next task. A picked tweak → loop back to Phase 3; an
+approval → `registerModel(id, spec)` and place it in a map with `placeProp(scene, id, x, z, yaw)`.
 
 ## Z-fighting checklist (the owner explicitly wants this nailed)
 Flicker/shimmer on a flat face = two **coplanar exposed faces** at the same depth. The classic bug: a

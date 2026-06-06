@@ -23,6 +23,10 @@ export const PALETTE = {
                glb: { rgb: [0.55, 0.57, 0.55], rough: 0.6, metal: 0.1 } },
   gunGrey:   { voxel: { hi: '#4a4e52', mid: '#34383c', lo: '#23262a', slot: '#16181b', bright: '#5e636a' },
                glb: { rgb: [0.10, 0.11, 0.12], rough: 0.5, metal: 0.3 } },
+  tyre:      { voxel: { hi: '#3a3d42', mid: '#212327', lo: '#141518', slot: '#0d0e10', bright: '#4c5158' },
+               glb: { rgb: [0.04, 0.04, 0.05], rough: 0.9, metal: 0.05 } },
+  sovietRed: { voxel: { hi: '#c0352a', mid: '#9a2620', lo: '#741b18', slot: '#511211', bright: '#d6483a' },
+               glb: { rgb: [0.55, 0.10, 0.08], rough: 0.5, metal: 0.0 } },
 };
 
 export function resolveMaterial(name, target = 'voxel') {
