@@ -1,0 +1,13 @@
+# Těžké binární reference — zůstávají jen na disku (do gitu jen model: .md/.py + vybrané GLB).
+ref/
+# Výstupní GLB se NEverzují automaticky (regenerovatelné z build.py);
+# konkrétní schválené GLB přidávám ručně přes `git add -f`.
+out/*.glb
+parts/*/out.glb
+assembly/*/*.glb
+# QA screenshoty z verify + macOS junk
+**/verify_*.png
+**/verify-*.png
+**/compare_*.png
+**/screenshot-*.png
+**/.DS_Store

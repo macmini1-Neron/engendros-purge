@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>T-62 part viewer — WheelL1</title>
+<style>
+  html,body{margin:0;height:100%;background:#3a3a3a;overflow:hidden;font-family:monospace}
+  #hud{position:fixed;left:8px;top:8px;color:#cfd2b0;font-size:12px;
+       text-shadow:0 1px 2px #000;line-height:1.5;z-index:10}
+  #hud b{color:#fff}
+</style>
+<script type="importmap">
+{ "imports": { "three": "../../vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="hud">
+  <b>T-62 WheelL1</b> — free-cam viewer<br>
+  táhni myší = rotace · kolečko = zoom · pravé tl./Shift = posun · <b>F</b> = reset · <b>Space</b> = stop/start · <b>C</b> = barvy dílů<br>
+  <span id="info">loading…</span>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../../vendor/GLTFLoader.js';
+
+const params = new URLSearchParams(location.search);
+let SPIN = params.get('spin') === '1';   // free-cam default: bez auto-spinu (?spin=1 zapne); Space = toggle
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x3a3a3a);
+
+const cam = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.01, 100);
+
+// ── lehká FREE-CAM (orbit/pan/zoom), bez závislostí ─────────────────────────
+const target = new THREE.Vector3(0, 0, 0);
+const orbit = { theta: 0.7, phi: 1.15, radius: 2.4 };   // azimut, polární, vzdálenost
+function applyCam(){
+  const { theta, phi, radius } = orbit;
+  cam.position.set(
+    target.x + radius * Math.sin(phi) * Math.cos(theta),
+    target.y + radius * Math.cos(phi),
+    target.z + radius * Math.sin(phi) * Math.sin(theta)
+  );
+  cam.lookAt(target);
+}
+applyCam();
+const el = renderer.domElement;
+let drag = null;
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => { drag = { x:e.clientX, y:e.clientY, btn:e.button, shift:e.shiftKey }; try { el.setPointerCapture(e.pointerId); } catch(_){} });
+el.addEventListener('pointerup',   e => { drag = null; });
+el.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  const pan = (drag.btn === 2 || drag.btn === 1 || drag.shift);
+  if (pan){
+    // posun cíle v rovině kamery
+    const s = orbit.radius * 0.0018;
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+    target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
+  } else {
+    orbit.theta += dx * 0.01;
+    orbit.phi = Math.min(Math.PI - 0.05, Math.max(0.05, orbit.phi - dy * 0.01));
+  }
+  applyCam();
+});
+el.addEventListener('wheel', e => {
+  e.preventDefault();
+  orbit.radius = Math.min(20, Math.max(0.3, orbit.radius * (1 + Math.sign(e.deltaY) * 0.1)));
+  applyCam();
+}, { passive:false });
+addEventListener('keydown', e => {
+  if (e.key.toLowerCase()==='f'){ target.set(0,0,0); orbit.theta=0.7; orbit.phi=1.15; orbit.radius=2.4; applyCam(); }
+  if (e.code==='Space'){ e.preventDefault(); SPIN = !SPIN; }   // Space = stop/spustit animaci
+});
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444433, 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(2,3,2); scene.add(key);
+const fill= new THREE.DirectionalLight(0xa0b0ff, 0.5); fill.position.set(-2,1,-1); scene.add(fill);
+
+// ground + axes for orientation
+const grid = new THREE.GridHelper(2, 8, 0x556633, 0x444444); grid.position.y=-0.45; scene.add(grid);
+scene.add(new THREE.AxesHelper(0.6)); // X=red Y=green Z=blue
+
+let wheel = null;
+const info = document.getElementById('info');
+
+// paleta na „ukazovací" barvy dílů
+const PART_COLORS = [0xffd400, 0x22cc44, 0x2299ff, 0xff5522, 0xcc44ff, 0x00cccc, 0xff88bb, 0xaaff33];
+const meshes = [];            // {mesh, texMat, colorMat}
+let colorMode = false;
+
+const GLB = params.get('glb') || 'wheel.glb';   // ?glb=idler.glb pro idler atd.
+new GLTFLoader().load('./out/' + GLB + '?cb=' + Date.now(), (gltf)=>{
+  const root = gltf.scene;
+  scene.add(root);
+  let texCount=0, i=0;
+  root.traverse(o=>{
+    if (o.isMesh){
+      const mats = Array.isArray(o.material)?o.material:[o.material];
+      mats.forEach(m=>{
+        ['map','emissiveMap'].forEach(k=>{
+          if (m && m[k]){ m[k].magFilter=THREE.NearestFilter; m[k].minFilter=THREE.NearestFilter;
+                          m[k].generateMipmaps=false; m[k].needsUpdate=true; texCount++; }
+        });
+      });
+      const colorMat = new THREE.MeshLambertMaterial({ color: PART_COLORS[i % PART_COLORS.length] });
+      meshes.push({ mesh:o, texMat:o.material, colorMat, name:o.name });
+      i++;
+    }
+  });
+  wheel = root.getObjectByName('WheelL1') || root.getObjectByName('IdlerL') || root;
+  info.innerHTML = `loaded · ${meshes.length} dílů · nearest-tex:${texCount} · <b>C</b>=barvy dílů`;
+  window.__loaded = true;
+}, undefined, (err)=>{ info.textContent='LOAD ERROR: '+err; });
+
+function toggleColors(force){
+  colorMode = (force===undefined) ? !colorMode : force;
+  meshes.forEach(r => { r.mesh.material = colorMode ? r.colorMat : r.texMat; });
+  return colorMode;
+}
+window.__toggleColors = toggleColors;
+addEventListener('keydown', e => { if (e.key.toLowerCase()==='c') toggleColors(); });
+
+addEventListener('resize', ()=>{ cam.aspect=innerWidth/innerHeight; cam.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(()=>{
+  const dt = clock.getDelta();
+  if (wheel && SPIN) wheel.rotation.x += dt*1.4;   // spin kolem lokální X (rig kontrakt)
+  renderer.render(scene, cam);
+});
+</script>
+</body>
+</html>
