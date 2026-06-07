@@ -33,7 +33,7 @@ export class WaveManager {
     this.game.hud.setWave(n);
     // banner + persistent tag
     const title = this.isBossWave ? `WAVE ${n}` : `${t.label} ${n}`;
-    let sub = this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : t.sub;
+    let sub = this.isBossWave ? 'BOSS TOLO APPROACHES' : t.sub;
     this.game.hud.bigMessage(title, sub);
     const tags = [];
     if (this.isBossWave) tags.push({ t: '☠ BOSS' });
@@ -60,7 +60,7 @@ export class WaveManager {
     this.weights = this._longNightWeights(n);
     if (this.game.player.armorOnWave > 0) { this.game.player.armor = Math.max(this.game.player.armor, Math.min(this.game.player.armorMax, this.game.player.armorOnWave)); this.game.hud.setArmor(this.game.player.armor, this.game.player.armorMax); }
     this.game.hud.setWave(n);
-    this.game.hud.bigMessage(`WAVE ${n}`, this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : 'more keep coming…');
+    this.game.hud.bigMessage(`WAVE ${n}`, this.isBossWave ? 'BOSS TOLO APPROACHES' : 'more keep coming…');
     const tags = []; if (this.isBossWave) tags.push({ t: '☠ BOSS' }); if (blood) tags.push({ t: '🔴 Blood Moon', mod: true });
     this.game.hud.setWaveTag(tags);
     if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('wavetag', { tags }); // host: persistent special-wave tags → clients
@@ -146,27 +146,8 @@ export class WaveManager {
     this.spawned++;
   }
   _spawnBoss(which, pos, hpScale) {
-    if (which === 'tank') {
-      const e = this.game.enemies.spawn('tank', pos, Math.round(ENEMY_TYPES.tank.armorHP * hpScale), ENEMY_TYPES.tank.speed);
-      e.armorHP = e.armorHPmax = Math.round(ENEMY_TYPES.tank.armorHP * hpScale);
-      e.mitriHP = e.mitriHPmax = Math.round(ENEMY_TYPES.tank.mitriHP * Math.min(hpScale, 2.0)); // cap so capture stays viable late-game
-      // Task 14: dramatic entrance — tank rolls in from spawn edge toward arena center
-      e.entering = true;
-      e.entryTarget = { x: 0, z: 0 }; // plaza/arena center
-      this.game.hud.bigMessage('T-90M «MITRI» ROLLS IN', 'armored boss inbound');
-      this.game.audio.tone(40, 0.6, 'sawtooth', 0.35); // low engine roar entrance sting
-      if (!this.game._tankIntroShown) {
-        this.game._tankIntroShown = true;
-        // Delay the teach banner slightly so it doesn't clash with the entrance bigMessage
-        setTimeout(() => {
-          if (this.game && this.game.hud) this.game.hud.bigMessage('⚠ T-90M «MITRI»', 'Bullets won\'t dent armor — use EXPLOSIVES on the rear/tracks, or shoot the COMMANDER when he pops out to STEAL the tank!');
-        }, 2400);
-      }
-    } else {
-      this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
-    }
+    this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
   }
-  _forceTankWave() { this._forceBoss = 'tank'; this.startWave(this.wave + 1); } // DEBUG: forces next wave to be a tank boss
   // A named elite that hijacks the boss bar (no laser/phase-2) and pays out big.
   _spawnMiniboss(pos, n) {
     const baseType = chc(0.5) ? 'titan' : 'brute', def = ENEMY_TYPES[baseType];

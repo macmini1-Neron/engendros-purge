@@ -404,7 +404,7 @@ export class Inventory {
   _armThrowable(kind, slotIdx, edge) {
     const w = this.game.weapons;
     if (edge !== 'press' && edge !== 'hold') return;
-    if (this.game.player.inTank || this.game.player.mountedGun || this.game._waveBreak > 0) return;
+    if (this.game.player.mountedGun || this.game._waveBreak > 0) return;
     if (kind === 'molotov') {
       if (w.molotovState || w.molotovCD > 0 || w.reloading > 0) return;
       w.molotovState = 'lighting'; w.molotovLightT = 0; w.molotovFuseT = 0; w._throwSlot = slotIdx;

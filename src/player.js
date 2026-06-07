@@ -25,7 +25,6 @@ export class Player {
     this.moveSpeedMult = 1; this.damageMult = 1; this.reloadMult = 1;
     this.armorOnWave = 0;
     this.mountedGun = null;
-    this.inTank = null;
     // --- survival mechanics ---
     this.legBroken = false; this._splintT = 0; this.splints = 0;
     this.hunger = HUNGER_MAX; this._starveT = 0; this._wasFrozen = false;
@@ -40,7 +39,6 @@ export class Player {
   hurt(dmg, bypassArmor = 0) {
     if (this.game.freecam) return;            // observation/fly-cam: invulnerable
     if (!this.alive) return;
-    if (this.inTank && this.inTank.shielded && this.inTank.shielded()) return; // protected by tank armor (enemy fire hits the tank instead — see captured-tank HP)
     const mp = this.game.mp;
     if (mp && mp.active) { mp.claimPlayerHit(mp.myId, dmg); return; } // co-op: player damage is host-authoritative (pstate owns hp/armor/down/3-down death)
     // bypassArmor 0..1 = fraction of dmg armor cannot soak (blunt trauma). 0 = bullets, 1 = ignores armor.
@@ -61,7 +59,7 @@ export class Player {
     if (this._splintT > 0) return;
     if (!this.legBroken) { this.game.hud.toast('Leg is fine.', 0x7fd06a); return; }
     if (this.splints <= 0) { this.game.hud.toast('No splint.', 0xd23a2a); this.game.audio.noMoney(); return; }
-    if (this.inTank || this.mountedGun) { this.game.hud.toast('Dismount first.', 0xd23a2a); return; }
+    if (this.mountedGun) { this.game.hud.toast('Dismount first.', 0xd23a2a); return; }
     if (!this.onGround) { this.game.hud.toast("Can't splint mid-air.", 0xd23a2a); return; }
     this.splints--; this._splintT = SPLINT_APPLY_TIME;
     this.game.audio.reloadIn(); this.game.hud.setSurvival(this);
@@ -72,7 +70,7 @@ export class Player {
     if (this.hunger <= before) { this.game.hud.toast('Already full.', 0x7fd06a); return false; }
     this.game.hud.setHunger(this.hunger); this.game.audio.reloadIn(); return true;
   }
-  // Survival timers — called every frame from _updatePlaying so they keep ticking on foot, on the .50 cal, or in the tank.
+  // Survival timers — called every frame from _updatePlaying so they keep ticking on foot or on the .50 cal.
   survivalTick(dt) {
     if (this.game.freecam) return;            // observation/fly-cam: no hunger/burn/regen
     const mp = this.game.mp;

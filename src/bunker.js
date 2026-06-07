@@ -135,7 +135,7 @@ function installDoorSystem(world) {
   world.updateDoorTarget = function (game) {
     this.doorTarget = null;
     if (!this._doors.length || game.state !== 'playing' || (game.mp && game.mp.frozen)) return;
-    if (game.player.inTank || game.player.mountedGun) return;
+    if (game.player.mountedGun) return;
     const cam = game.engine.camera; cam.updateMatrixWorld();
     const o = (this._dO || (this._dO = new THREE.Vector3())).setFromMatrixPosition(cam.matrixWorld);
     const f = (this._dF || (this._dF = new THREE.Vector3())).set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();

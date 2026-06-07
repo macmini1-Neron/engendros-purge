@@ -169,21 +169,6 @@ export class World {
 
     this.scene.add(this._mesh(wb)); this.scene.add(this._mesh(cb));
 
-    // === intel poster on the Barracks east wall (T-90M weak-points), facing the plaza ===
-    const posterTex = new THREE.TextureLoader().load('assets/poster-t90m-weakpoints.png');
-    posterTex.colorSpace = THREE.SRGBColorSpace; posterTex.anisotropy = 4;
-    const posterH = 1.44, posterW = posterH * (687 / 1024);   // image is 687×1024 (portrait); 40% of original (−60%)
-    // Lambert (not Basic) so the poster is lit by the scene — bright in sun, dim/shaded
-    // at dusk & night — and can receive shadows. alphaTest keeps it in the OPAQUE pass so
-    // the depthTest:false viewmodel weapon (renderOrder 1000) still draws on top, and clips
-    // the PNG's transparent edges. A faint emissive keeps it just-readable in deep dark.
-    const poster = new THREE.Mesh(new THREE.PlaneGeometry(posterW, posterH),
-      new THREE.MeshLambertMaterial({ map: posterTex, alphaTest: 0.5, emissive: 0x0a0a0c, emissiveIntensity: 1 }));
-    poster.position.set(-32.65, 2.4, 32);   // just off the barracks east face (x=-33, ±0.3 thick)
-    poster.rotation.y = Math.PI / 2;          // normal → +x (toward map centre)
-    poster.receiveShadow = true;
-    this.scene.add(poster);
-
     // outer spawn ring
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * TAU;
@@ -411,7 +396,7 @@ export class BuildManager {
 
   update(dt) {
     this._updateRadios(dt);
-    const onFoot = this.game.state === 'playing' && !this.game.player.inTank && !this.game.player.mountedGun && !(this.game.mp && this.game.mp.frozen);
+    const onFoot = this.game.state === 'playing' && !this.game.player.mountedGun && !(this.game.mp && this.game.mp.frozen);
     const kind = onFoot ? this._curKind() : null;
     if (!kind) { this.ghost.visible = false; return; }
     if (kind !== this._ghostKind) { this.ghost.geometry = this._geos[kind]; this._ghostKind = kind; }
@@ -496,7 +481,7 @@ export class BuildManager {
   updateRadioTarget() {
     this.radioTarget = null;
     if (this.game.state !== 'playing' || (this.game.mp && this.game.mp.frozen)) return;
-    if (this.game.player.inTank || this.game.player.mountedGun) return;
+    if (this.game.player.mountedGun) return;
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
     const o = this._tmpO.setFromMatrixPosition(cam.matrixWorld);
     const f = this._tmpF.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
@@ -554,7 +539,7 @@ export class BuildManager {
 
   attackStructure(s, dmg, enemy) {
     if (!s || s.hp <= 0) return;
-    if (enemy && enemy.def && (enemy.def.boss || enemy.def.tank || (enemy.def.scale || 1) >= 1.6)) dmg = s.maxHp; // heavies crush
+    if (enemy && enemy.def && (enemy.def.boss || (enemy.def.scale || 1) >= 1.6)) dmg = s.maxHp; // heavies crush
     s.hp -= dmg;
     if (s.mesh && s.mesh.material && s.mesh.material.emissive) { const f = Math.max(0, s.hp / s.maxHp); s.mesh.material.emissive.setRGB((1 - f) * 0.22, 0, 0); } // radio props are Groups (no single .material) — skip the hit-flash tint
     if (s.hp <= 0) this.destroyStructure(s, 'smash');
