@@ -193,6 +193,29 @@ const SONGS = [
   ['vnov_boy', 'И вновь продолжается бой', 1974],
   ['gorod_zolotoy', 'Город золотой', 1986],
   ['gruppa_krovi', 'Группа крови', 1988],
+  // --- +20 pop/estrada/disco expansion (2026-06-07): danceable «vypalovačky» 1970–1989 —
+  //     VIA, disco, synth-pop, italo-disco. Real recordings (Internet Archive 70s_hits +
+  //     YouTube), normalized to 128k stereo. See docs/2026-06-07-soviet-pop-disco-shortlist.md. ---
+  ['svadba', 'Свадьба', 1970],
+  ['siniy_iney', 'Синий иней', 1971],
+  ['moy_adres', 'Мой адрес — Советский Союз', 1972],
+  ['lyudi_vstrechayutsya', 'Люди встречаются', 1972],
+  ['zvezdochka', 'Звёздочка моя ясная', 1974],
+  ['arlekino', 'Арлекино', 1975],
+  ['zodiak', 'Зодиак', 1980],
+  ['tanec_na_barabane', 'Танец на барабане', 1980],
+  ['uchkuduk', 'Учкудук, три колодца', 1981],
+  ['trava_u_doma', 'Трава у дома', 1982],
+  ['cherny_kot', 'Чёрный кот', 1983],
+  ['deltaplan', 'Дельтаплан', 1983],
+  ['zelyony_svet', 'Зелёный свет', 1984],
+  ['luna_luna', 'Луна-луна', 1986],
+  ['lavanda', 'Лаванда', 1986],
+  ['belaya_noch', 'Белая ночь', 1986],
+  ['muzyka_svyazala', 'Музыка нас связала', 1987],
+  ['belye_rozy', 'Белые розы', 1988],
+  ['fantazyor', 'Фантазёр', 1988],
+  ['rozovye_rozy', 'Розовые розы', 1989],
 ];
 for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
 // The jukebox mix = the Korobeiniki "Tetris" chiptune (synth) + every real recording. Korobeiniki
