@@ -708,12 +708,10 @@ export class MP {
         for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100), bf: e.burnT > 0 ? 1 : 0 });
         this.net.send('esnap', arr); this._tickDowns(); this._tickBurn();
         // pick a SINGLE highest-priority boss without flicker: a real boss/tank outranks an elite mini-boss
-        let boss = null; for (const e of g.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
+        let boss = null; for (const e of g.enemies.active) { if (!e.alive) continue; if (e.def.boss) { boss = e; break; } if (e.isElite && !boss) boss = e; }
         if (boss) {
-          const isTank = !!(boss.isTank || boss.def.tank);
-          const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp);
-          const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1;
-          this.net.send('boss', { frac, name: boss.name, pip }); this._hadBoss = true;
+          const frac = boss.hp / boss.maxHp;
+          this.net.send('boss', { frac, name: boss.name, pip: -1 }); this._hadBoss = true;
         }
         else if (this._hadBoss) { this.net.send('boss', { hide: true }); this._hadBoss = false; }
       }
@@ -955,7 +953,7 @@ export class MP {
   canStartRevive() { return !this.frozen && !!this._downedRemoteAimed(); }
   tryStartRevive() {
     if (!this.active || this.frozen) return false;
-    if (this.game.player.inTank || this.game.player.mountedGun) return false;
+    if (this.game.player.mountedGun) return false;
     const rp = this._downedRemoteAimed();
     if (!rp) return false;
     this._reviveActive = true; this._reviveTargetId = rp.id; this._reviveClicks = 0;
@@ -1010,8 +1008,8 @@ export class MP {
     if (this.game.world._slideGate) this.net.sendTo(pid, 'gateset', { open: !!this.game.world._slideGate.open }); // late-join: current works-gate state
     if (this.game.world._doors) for (const dr of this.game.world._doors) this.net.sendTo(pid, 'doorset', { id: dr.id, open: !!dr.open }); // late-join: current bunker гермодверь states
     for (const pu of this.game.loot.pickups) if (pu.id != null) this.net.sendTo(pid, 'pickup', { id: pu.id, kind: pu.kind, x: pu.mesh.position.x, z: pu.mesh.position.z, value: pu.value, life: pu.life }); // late-join: existing shared ground pickups
-    let boss = null; for (const e of this.game.enemies.active) { if (!e.alive) continue; if (e.def.boss || e.isTank || e.def.tank) { boss = e; break; } if (e.isElite && !boss) boss = e; }
-    if (boss) { const isTank = !!(boss.isTank || boss.def.tank); const frac = isTank ? (boss.armorHP / boss.armorHPmax) : (boss.hp / boss.maxHp); const pip = (isTank && boss.vulnerable) ? (boss.mitriHP / boss.mitriHPmax) : -1; this.net.sendTo(pid, 'boss', { frac, name: boss.name, pip }); }   // late-join: current boss bar
+    let boss = null; for (const e of this.game.enemies.active) { if (!e.alive) continue; if (e.def.boss) { boss = e; break; } if (e.isElite && !boss) boss = e; }
+    if (boss) { const frac = boss.hp / boss.maxHp; this.net.sendTo(pid, 'boss', { frac, name: boss.name, pip: -1 }); }   // late-join: current boss bar
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
     for (const [id, s] of this.pstate) this.net.sendTo(pid, 'pstate', this._pStatePayload(id, s)); // late-join: current down/dead/waiting states
     this.sendWorldTime(pid); // late-join: current day/night + blood-moon state

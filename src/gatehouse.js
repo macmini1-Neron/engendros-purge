@@ -396,7 +396,7 @@ export function buildGatehouse(world, b, cx, cz) {
     this.gateTarget = null;
     const gc = this.gateConsole; if (!gc) return;
     if (game.state !== 'playing' || (game.mp && game.mp.frozen)) return;
-    if (game.player.inTank || game.player.mountedGun) return;
+    if (game.player.mountedGun) return;
     const cam = game.engine.camera; cam.updateMatrixWorld();
     const o = (this._gcO || (this._gcO = new THREE.Vector3())).setFromMatrixPosition(cam.matrixWorld);
     const f = (this._gcF || (this._gcF = new THREE.Vector3())).set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();

@@ -54,7 +54,7 @@ export const WAVE_TYPES = {
 // (Wave modifiers removed — no frenzy / tough-hide / swarm / glass / payday mutators.)
 export const MINIBOSS_NAMES = ['Stitchjaw', 'Mauler', 'Hugo', 'Ragnar', 'Bramble', 'Gloomgut'];
 
-export const BOSS_ROSTER = ['boss', 'tank']; // 'boss' = Tolo, 'tank' = T-90M «MITRI»
+export const BOSS_ROSTER = ['boss']; // 'boss' = Tolo (tank boss removed)
 
 // ---------------------------------------------------------------------------
 // Day/Night cycle + celestial sky for THE LONG NIGHT. Drives every light, the

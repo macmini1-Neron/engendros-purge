@@ -25,7 +25,6 @@ export class HUD {
       bleedbar: $('bleedbar'), bleedfill: $('bleedfill'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
       clock: $('clock'), nightgear: $('nightgear'),
-      tankhp: $('tankhp'), tankhpfill: $('tankhpfill'),
       hungerfill: $('hungerfill'), survival: $('survival'),
       firevig: $('firevig'), firepov: $('firepov'), molotov: $('molotovhud'),
       buildmats: $('buildmats'), hotbar: $('hotbar'),
@@ -165,13 +164,6 @@ export class HUD {
   setBleed(frac) { if (!this.el.bleedbar) return; if (frac < 0) this.el.bleedbar.classList.remove('show'); else { this.el.bleedbar.classList.add('show'); this.el.bleedfill.style.width = (clamp(frac, 0, 1) * 100) + '%'; } }
   setHeat(frac, over) { this.el.heatbar.classList.add('show'); this.el.heatfill.style.width = clamp(frac, 0, 1) * 100 + '%'; this.el.heatbar.classList.toggle('over', !!over); this.el.heatlabel.textContent = over ? 'OVERHEATED — COOLING' : 'BARREL HEAT'; }
   hideHeat() { this.el.heatbar.classList.remove('show'); }
-  setTankHp(frac) {
-    const el = this.el.tankhp; if (!el) return;
-    if (frac < 0) { el.classList.remove('show'); return; }
-    el.classList.add('show');
-    const f = clamp(frac, 0, 1); this.el.tankhpfill.style.width = f * 100 + '%';
-    this.el.tankhpfill.style.background = f > 0.5 ? 'linear-gradient(90deg,#4caf50,#cddc39)' : (f > 0.25 ? 'linear-gradient(90deg,#ffb300,#ffd54f)' : 'linear-gradient(90deg,#e53935,#ff7043)');
-  }
   hitmarker(kill) { const h = this.el.hitmarker; h.classList.remove('boss'); h.classList.toggle('kill', !!kill); h.style.transition = 'none'; h.style.opacity = '1'; this._hitT = 0.12; }
   // Effective hit on boss Tolo (bullseye-in-window / bazooka): yellow hitmarker + a brief yellow crosshair tint.
   bossHitCue() {

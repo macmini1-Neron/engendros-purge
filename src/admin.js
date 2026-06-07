@@ -1,12 +1,9 @@
 // admin.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
 import { clamp, voxelMaterial } from './util.js';
-import { buildTank, buildTankWreck } from './bosstank.js';
 import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
 import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
-import { buildT34Hull, buildT34Model, buildT34Tracks, buildT34Turret } from './t34model.js';
-import { buildSu34DuctBellyModule, buildSu34FinishPhotoModule, buildSu34ForwardModule, buildSu34GeneralArrangementModule, buildSu34Model, buildSu34RearModule, buildSu34UpperTailExhaustModule, buildSu34WingModule } from './su34model.js';
 
 
 // ---------------------------------------------------------------------------
@@ -104,24 +101,10 @@ export class Admin {
       list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'mini' }, 'normal'), voxelMaterial()) });
       list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: () => new THREE.Mesh(buildEngendro(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length], 'exploder'), voxelMaterial()) });
       list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
-      list.push({ name: 'T-90M «MITRI»', sub: 'tank boss', make: () => buildTank('desert') });
-      list.push({ name: 'T-90M (wreck)', sub: 'destroyed', make: () => buildTankWreck() });
-      list.push({ name: 'T-34/76 1942', sub: 'asset-only model', make: () => buildT34Model() });
-      list.push({ name: 'T-34/76 tracks', sub: 'rig part', make: () => buildT34Tracks() });
-      list.push({ name: 'T-34/76 hull', sub: 'rig part', make: () => buildT34Hull() });
-      list.push({ name: 'T-34/76 turret', sub: 'rig part', make: () => buildT34Turret() });
       return list;
     }
     if (this.tab === 'props') return [
       { name: 'Su-24M Fencer', sub: 'supply plane', make: () => buildSu24() },
-      { name: 'Su-34 Fullback', sub: 'from-zero guide p5-42 + GA fit', make: () => buildSu34Model() },
-      { name: 'Su-34 GA reference', sub: '1398/845/291 datums', make: () => buildSu34GeneralArrangementModule() },
-      { name: 'Su-34 p5-14 forward fuselage', sub: 'Jetworks guide part', make: () => buildSu34ForwardModule() },
-      { name: 'Su-34 p15-16 wing/canards', sub: 'Jetworks guide part', make: () => buildSu34WingModule() },
-      { name: 'Su-34 p17-24 rear/nacelles', sub: 'Jetworks guide part', make: () => buildSu34RearModule() },
-      { name: 'Su-34 p25-33 ducts/belly', sub: 'Jetworks guide part', make: () => buildSu34DuctBellyModule() },
-      { name: 'Su-34 p34-40 upper/tails', sub: 'Jetworks guide part', make: () => buildSu34UpperTailExhaustModule() },
-      { name: 'Su-34 p41-42 finish/photo', sub: 'guide finish pass', make: () => buildSu34FinishPhotoModule() },
       { name: 'Field Radio «Р-105»', sub: 'music prop (NEW)', make: () => buildFieldRadio() },
       { name: 'Vysílačka (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('airbeacon') },
       { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
