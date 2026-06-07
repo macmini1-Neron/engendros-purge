@@ -73,5 +73,16 @@ These are **commercial Мелодия-era recordings still under copyright** (au
 
 ---
 
-### Next step (not done here — this doc is research only)
-Like the +20 expansion: source the 20 MP3s in an **isolated worktree**, normalize to 128 k stereo, drop into `assets/<slug>.mp3`, append the rows to `SONGS[]` in `src/music.js`, browser-verify each plays full-length, then cache-bust + PR. Say the word and I'll start the sourcing pass.
+## ✅ SHIPPED — final 20 (2026-06-07, this branch)
+
+Sourced + normalized (128 k stereo, loudnorm) into `assets/<slug>.mp3` and appended to `SONGS[]`. During sourcing a few picks were swapped for better-available / more-danceable canonical versions (noted below). Years adjusted to the actual recordings.
+
+**From Internet Archive `70s_hits` (11 — exact durations verified, full-length):**
+`svadba` Свадьба · Магомаев 1970 *(swap: Магомаев "Свадьба" instead of "Королева красоты" — more danceable + on IA)* · `siniy_iney` Синий иней · Поющие гитары 1971 · `moy_adres` Мой адрес — Советский Союз · Самоцветы 1972 · `lyudi_vstrechayutsya` Люди встречаются · Весёлые ребята 1972 · `zvezdochka` Звёздочка моя ясная · Цветы 1974 *(promoted from alternates)* · `arlekino` Арлекино · Пугачёва 1975 · `zodiak` Зодиак · Зодиак/Zodiac 1980 *(instrumental italo-disco; the "Зодиак" track rather than "Pacific")* · `tanec_na_barabane` Танец на барабане · Николай Гнатюк 1980 *(NEW — superb floor-filler found on IA)* · `uchkuduk` Учкудук, три колодца · Ялла 1981 · `trava_u_doma` Трава у дома · Земляне 1982 · `cherny_kot` Чёрный кот · Браво 1983 *(swap: Браво "Чёрный кот" instead of "Жёлтые ботинки" — on IA)* · `zelyony_svet` Зелёный свет · Леонтьев 1984.
+
+**From YouTube (9 — real titles/channels verified):**
+`deltaplan` Дельтаплан · Леонтьев 1983 · `luna_luna` Луна-луна · Ротару 1986 *(original, not the IA 2010 re-record)* · `lavanda` Лаванда · Ротару & Яак Йоала 1986 · `belaya_noch` Белая ночь · Форум 1986 · `muzyka_svyazala` Музыка нас связала · Мираж 1987 · `belye_rozy` Белые розы · Ласковый май 1988 · `fantazyor` Фантазёр · Электроклуб 1988 · `rozovye_rozy` Розовые розы · Весёлые ребята 1989.
+
+**Dropped to "didn't ship" (kept as future candidates):** `koroleva_krasoty` (Магомаев — used Свадьба instead), `zheltye_botinki` (Браво — used Чёрный кот instead), `trololo` (Хиль), `pod_kryshey` (Антонов). All four remain perfectly valid future adds.
+
+Jukebox total after this batch: **42 → 62** real recordings (+ the Korobeiniki menu chiptune).
