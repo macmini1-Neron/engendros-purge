@@ -170,6 +170,29 @@ const SONGS = [
   ['million_roz', 'Миллион алых роз', 1982],
   ['komarovo', 'Комарово', 1985],
   ['peremen', 'Хочу перемен', 1987],
+  // --- +20 expansion (2026-06-05): more classics + hidden gems + special versions, 1920–1988.
+  //     Real recordings (Internet Archive + sovmusic.ru), normalized to 128k stereo. See
+  //     docs/2026-06-05-soviet-songs-expansion-shortlist.md for sources/notes. ---
+  ['krasnaya_armiya', 'Красная Армия всех сильней', 1920],
+  ['podolinam', 'По долинам и по взгорьям', 1929],
+  ['polyushko', 'Полюшко-поле', 1933],
+  ['tachanka', 'Тачанка', 1937],
+  ['tri_tankista', 'Три танкиста', 1939],
+  ['vecher_na_reyde', 'Вечер на рейде', 1941],
+  ['temnaya_noch', 'Тёмная ночь', 1943],
+  ['ogonyok', 'Огонёк', 1943],
+  ['sluchayny_vals', 'Случайный вальс', 1943],
+  ['solovyi', 'Соловьи', 1944],
+  ['vput', 'В путь', 1954],
+  ['buchenwald', 'Бухенвальдский набат', 1958],
+  ['ne_vernulsya', 'Он не вернулся из боя', 1969],
+  ['odna_pobeda', 'Нам нужна одна победа', 1970],
+  ['ot_geroev', 'От героев былых времён', 1971],
+  ['nadezhda', 'Надежда', 1971],
+  ['mgnoveniya', 'Мгновения', 1973],
+  ['vnov_boy', 'И вновь продолжается бой', 1974],
+  ['gorod_zolotoy', 'Город золотой', 1986],
+  ['gruppa_krovi', 'Группа крови', 1988],
 ];
 for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
 // The jukebox mix = the Korobeiniki "Tetris" chiptune (synth) + every real recording. Korobeiniki
@@ -362,21 +385,48 @@ export class MusicDirector {
   // Public scene change: any explicit setScene leaves jukebox (playlist) mode.
   setScene(name, opts = {}) { this.playlist = null; this._applyScene(name, opts); }
 
-  // Start a named jukebox from PLAYLISTS: plays each member, then segues to the next (sample
-  // scenes advance on the MP3's onended). game.js points the title menu here.
+  // Start a named jukebox from PLAYLISTS. With shuffle ON (default) every run plays a FRESH random
+  // permutation (Fisher–Yates) — full coverage, no track repeats until the whole list has played —
+  // and the opening track is guaranteed different from the previous run (persisted per playlist in
+  // localStorage). So each page load opens the menu/lobby on a different song in a different order.
+  // Sample scenes advance on the MP3's onended; the menu/lobby point the title here.
   setPlaylist(id, { fade = 2.0 } = {}) {
     if (!this.ctx) { this._pending = '@' + id; return; }
     const members = (PLAYLISTS[id] || []).filter((n) => SCENES[n]);
     if (!members.length) return;
     if (this.playlist && this.playlist.id === id) return;     // already running this jukebox
-    const start = this.shuffle ? Math.floor(Math.random() * members.length) : 0;
-    this.playlist = { id, members, idx: start, fade };
-    this._applyScene(members[start], { fade });
+    const key = 'engendros_jukestart_' + id;
+    let last = null; try { last = localStorage.getItem(key); } catch (e) {}
+    const queue = this._freshQueue(members, last);            // shuffled order; queue[0] avoids last run's opener
+    try { localStorage.setItem(key, members[queue[0]]); } catch (e) {}
+    this.playlist = { id, members, fade, queue, qpos: 0, idx: queue[0] };
+    this._applyScene(members[queue[0]], { fade });
   }
-  _nextIndex() {                                              // sequential, or a non-repeating random pick when shuffling
+  // A fresh play order over member INDICES. Shuffle on → Fisher–Yates permutation whose first entry
+  // avoids `avoidSlug` (so the opener differs from last time / from the just-played track). Off → sequential.
+  _freshQueue(members, avoidSlug) {
+    const n = members.length;
+    const order = Array.from({ length: n }, (_, i) => i);
+    if (this.shuffle) {
+      for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+      if (n > 1 && avoidSlug != null && members[order[0]] === avoidSlug) {
+        const k = 1 + Math.floor(Math.random() * (n - 1)); [order[0], order[k]] = [order[k], order[0]];
+      }
+    }
+    return order;
+  }
+  _nextIndex() {                                              // walk the shuffled queue; reshuffle a brand-new order on exhaustion
     const pl = this.playlist;
     if (!pl) return 0;
-    if (this.shuffle && pl.members.length > 1) {
+    if (pl.queue) {
+      pl.qpos++;
+      if (pl.qpos >= pl.queue.length) {                       // played them all → fresh order, don't repeat across the seam
+        pl.queue = this._freshQueue(pl.members, pl.members[pl.idx]);
+        pl.qpos = 0;
+      }
+      return pl.queue[pl.qpos];
+    }
+    if (this.shuffle && pl.members.length > 1) {              // fallback (no queue): non-repeating random
       let r; do { r = Math.floor(Math.random() * pl.members.length); } while (r === pl.idx);
       return r;
     }
@@ -404,14 +454,17 @@ export class MusicDirector {
     const members = PLAYLISTS.soviet || [];
     if (!members.length) return;
     const i = ((index % members.length) + members.length) % members.length;
-    this.playlist = { id: 'soviet', members, idx: i, fade: 2.0 };   // auto-advance uses the smooth 2s segue
+    const pl = this.playlist;
+    const queue = (pl && pl.id === 'soviet' && pl.queue) ? pl.queue : this._freshQueue(members, null); // keep the running shuffle order
+    this.playlist = { id: 'soviet', members, idx: i, fade: 2.0, queue, qpos: Math.max(0, queue.indexOf(i)) };
     this._applyScene(members[i], { fade });
   }
   jukeboxNext() { if (this.playlist && this.playlist.id === 'soviet') this._advancePlaylist(); else this.jukeboxPlayAt(0); }
   jukeboxPrev() {
     const pl = this.playlist;
     if (!pl || pl.id !== 'soviet') return this.jukeboxPlayAt(0);
-    pl.idx = (pl.idx - 1 + pl.members.length) % pl.members.length;
+    if (pl.queue) { pl.qpos = (pl.qpos - 1 + pl.queue.length) % pl.queue.length; pl.idx = pl.queue[pl.qpos]; }
+    else pl.idx = (pl.idx - 1 + pl.members.length) % pl.members.length;
     this._applyScene(pl.members[pl.idx], { fade: 0.5 });
   }
   jukeboxToggle() {                                            // returns true if now playing

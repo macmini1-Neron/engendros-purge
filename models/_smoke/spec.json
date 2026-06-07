@@ -1,0 +1,9 @@
+{
+  "id": "_smoke",
+  "category": "test",
+  "target": "voxel",
+  "footprint": { "w": 1.0, "h": 0.1, "d": 0.6 },
+  "parts": [
+    { "op": "bevelBox", "id": "slab", "args": { "w": 1.0, "h": 0.1, "d": 0.6 }, "at": [0, 0.5, 0], "mat": "steel", "src": "n/a-smoke-test" }
+  ]
+}

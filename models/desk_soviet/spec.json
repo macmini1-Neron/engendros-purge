@@ -1,0 +1,19 @@
+{
+  "id": "desk_soviet",
+  "name": "Письменный стол двухтумбовый",
+  "category": "furniture",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 1.40, "h": 0.75, "d": 0.70 },
+  "dossier": "models/desk_soviet/ref/dossier.json",
+  "parts": [
+    { "op": "drawerStack", "id": "ped_l", "args": { "w": 0.376, "h": 0.715, "d": 0.66, "count": 3 }, "at": [-0.512, 0, 0], "mat": "woodMid", "src": "dossier#pedestal" },
+    { "op": "drawerStack", "id": "ped_r", "args": { "w": 0.376, "h": 0.715, "d": 0.66, "count": 3 }, "at": [0.512, 0, 0], "mat": "woodMid", "src": "dossier#pedestal" },
+    { "op": "bevelBox", "id": "top", "args": { "w": 1.40, "h": 0.035, "d": 0.70 }, "at": [0, 0.715, 0], "mat": "woodMid", "src": "dossier#top_dims" }
+  ],
+  "needs": [
+    "Pedestal width/depth and knee-recess width are DERIVED from sourced drawer-interior dims, not directly sourced (see dossier#derivation + dossier.needs)",
+    "Exterior drawer height and handle catalog type unsourced",
+    "Direct double-pedestal reference image files unavailable — overlay limited to a related ДСП single-pedestal Soviet desk"
+  ]
+}
