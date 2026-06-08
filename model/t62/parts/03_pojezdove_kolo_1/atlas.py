@@ -32,7 +32,7 @@ def build(out_path):
     # koncentrické zóny
     d.ellipse([CX - R, CY - R, CX + R, CY + R], fill=RUBBER_HI)
     rr = 0.985 * R; d.ellipse([CX - rr, CY - rr, CX + rr, CY + rr], fill=RUBBER)        # guma
-    rr = 0.84 * R;  d.ellipse([CX - rr, CY - rr, CX + rr, CY + rr], fill=WEB)           # olivový kov (disk+lem); guma 0.84..1.0 (rezerva ať okraj gumy je černý)
+    rr = 0.84 * R;  d.ellipse([CX - rr, CY - rr, CX + rr, CY + rr], fill=WEB)           # olivový kov (disk+lem); guma 0.84..1.0 (R_OUT zpět na 0.405 → původní hranice správná)
     rr = 0.43 * R;  d.ellipse([CX - rr, CY - rr, CX + rr, CY + rr], fill=HUB_GRN)       # náboj
     rr = 0.16 * R;  d.ellipse([CX - rr, CY - rr, CX + rr, CY + rr], fill=HUB_HI)        # vrchol dome
     # konzervativní variace KOVU (jen do r<0.82 = NIKDY na gumu): jemné olivové skvrny

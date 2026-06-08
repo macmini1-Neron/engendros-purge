@@ -20,15 +20,15 @@ SHARED = "/Users/Shared/t62"
 ATLAS  = SHARED + "/wheel_atlas.png"
 OUT    = SHARED + "/wheel.glb"
 
-R_OUT   = 0.405
-R_RUB_I = 0.351        # guma tlustší (lem:guma ≈ 1:2.5) — guma 0.351..0.405
-DISC_W  = 0.115
-GAP_H   = 0.020          # poloviční středová mezera — ÚZKÁ (~1/4 šířky gumy, dle dokumentace img#12)
+R_OUT   = 0.405        # Ø0.81 (WT 1:1 — eyeball zvětšení Ø vráceno); guma 0.351..0.405
+R_RUB_I = 0.358        # vnitřní okraj gumy (uvolněno místo pro vysoký lem)
+DISC_W  = 0.185        # šířka 1 pneu; celková šířka kola = 2*(GAP_H+DISC_W) = 0.438 (WT 1:1)
+GAP_H   = 0.034          # poloviční středová mezera pro vodící zuby; celková šířka 0.438
 SEG     = 28
 N       = 5            # 5 žeber / 5 klíčových dírek
 
-RIM_O   = 0.353        # prstenec (lem) TENKÝ — lem:guma ≈ 1:2.5 (guma 0.351..0.405)
-RIM_I   = 0.325        # vnitřní okraj = u konce žeber (žebra končí na 0.33)
+RIM_O   = 0.358        # lem vnější = vnitřek gumy; VYSOKÁ stěna
+RIM_I   = 0.340        # lem vnitřní; pás 0.340..0.358 (za tenkým prstencem, před gumou)
 R_DISC  = 0.335        # litý disk — zvětšen, ať dosáhne k prstenci (žádná mezera; Tomáš)
 DISH    = 0.040
 
@@ -53,6 +53,7 @@ def make_disc(side):
     out = side
     suf = "out" if side > 0 else "in"
     xc  = side * (GAP_H + DISC_W * 0.5)
+    shelf = out * 0.028   # JEN náboj proud k líci pneu; disk/žebra ZAPUŠTĚNÉ (ať lem vyčnívá jako stěna)
     face = xc + out * 0.030
     groups = []
 
@@ -61,16 +62,19 @@ def make_disc(side):
                        segments=SEG, axis='X', center=(xc, 0, 0)))
     # prstenec/lem — VÍC PROUD (nejvyšší bod kola, výš než kopule); guma líc = xc+out*0.0575
     # lem hl. 0.05, střed xc+out*0.045 → čelo na xc+out*0.070 (nad gumou i nad kopulí)
-    groups.append(tube("rim_%s" % suf, r_out=RIM_O, r_in=RIM_I, depth=0.05,
-                       segments=SEG, axis='X', center=(xc + out * 0.045, 0, 0)))
+    # VYSOKÝ kovový LEM = stěna od disku až NAD líc pneu (vrchol ~xc+0.100 > guma xc+0.0925)
+    groups.append(tube("rim_%s" % suf, r_out=RIM_O, r_in=RIM_I, depth=0.075,
+                       segments=SEG, axis='X', center=(xc + out * 0.0625, 0, 0)))
+    # TENKÝ NÍZKÝ PRSTENEC na koncích žeber (mírně nad žebry) — napojený dovnitř na lem
+    groups.append(tube("rim_ring_%s" % suf, r_out=0.340, r_in=0.325, depth=0.035,
+                       segments=SEG, axis='X', center=(xc + out * 0.040, 0, 0)))
 
-    # litý disk
+    # litý disk — ZAPUŠTĚNÝ (žebra/disk níž, ať lem vyčnívá jako vysoká stěna)
     disc = cyl("disc_%s" % suf, radius=R_DISC, depth=0.045, segments=SEG, axis='X',
                center=(xc, 0, 0))
     # KLOKOVÁNÍ disků: vnitřní disk otočen o PŮL segmentu (36°) → kde má vnější disk velkou díru,
     # tam má vnitřní disk žebro (díry prostřídané kvůli pevnosti) — Tomáš.
     base = math.radians(90) + (math.radians(360.0 / N / 2.0) if side < 0 else 0.0)
-    ribs = []
     # POZOR: cuttery booleovat JEDNOTLIVĚ (joinem překrývajících se cutterů vznikne nemanifold
     # → EXACT solver smaže celý disk). Sekvenční difference překrývajících se cutterů je OK.
     for i in range(N):
@@ -89,16 +93,30 @@ def make_disc(side):
     dish_mesh(disc, out, DISH)
     groups.append(disc)
 
-    # žebra (rozšiřující se) + malá díra skrz žebro
-    for i in range(N):
-        a_rib = base + i * (math.tau / N)
-        rib = taper_bar("rb_%d_%d" % (side, i), a_rib, RIB_R0, RIB_R1, RIB_W0, RIB_W1,
-                        x0=face, thick=0.045)
-        ry, rz = math.cos(a_rib), math.sin(a_rib)
-        cut = cyl("rc_%d_%d" % (side, i), radius=SML_R, depth=0.6, segments=12,
-                  axis='X', center=(0, ry * SML_C, rz * SML_C))
-        boolean_diff(rib, cut)
-        ribs.append(rib)
+    # žebra — postav JEDNO funkční žebro (taper_bar + díra), pak ho DUPLIKUJ + otoč kolem osy X
+    # pro všech N pozic → všechna žebra GARANTOVANĚ identická (kopie jednoho funkčního).
+    # Tím odpadá per-žebro boolean odchylka EXACT solveru = žádný rogue „zub" na jednom žebru.
+    # NÁBĚH (DROP) ODSTRANĚN — dělal zub na KAŽDÉM žebru (Tomáš: „víc jich je, vrať spátky").
+    RIB_TH = 0.045
+    a0 = base
+    ry0, rz0 = math.cos(a0), math.sin(a0)
+    master = taper_bar("rb_%d_0" % side, a0, RIB_R0, RIB_R1, RIB_W0, RIB_W1,
+                       x0=face, thick=RIB_TH)
+    boolean_diff(master, cyl("rc_%d_0" % side, radius=SML_R, depth=0.6, segments=12,
+                             axis='X', center=(0, ry0 * SML_C, rz0 * SML_C)))
+    ribs = [master]
+    for i in range(1, N):
+        dup = master.copy(); dup.data = master.data.copy()
+        dup.name = "rb_%d_%d" % (side, i)
+        bpy.context.collection.objects.link(dup)
+        ang = i * (math.tau / N)
+        ca, sa = math.cos(ang), math.sin(ang)
+        for v in dup.data.vertices:        # rotace vrcholů kolem osy X (a0 → a0 + i*krok)
+            y, z = v.co.y, v.co.z
+            v.co.y = ca * y - sa * z
+            v.co.z = sa * y + ca * z
+        dup.data.update()
+        ribs.append(dup)
     ribsg = join("ribs_%s" % suf, ribs)
     dish_mesh(ribsg, out, DISH)
     groups.append(ribsg)
@@ -106,16 +124,23 @@ def make_disc(side):
     # náboj: plochý věnec + NÍZKÁ kupole (NESMÍ přečuhovat přes lem) + 6 šroubů na věnci
     hub = []
     flange = cyl("hf_%d" % side, radius=0.165, depth=0.04, segments=SEG, axis='X',
-                 center=(xc + out * 0.012, 0, 0))
+                 center=(xc + shelf + out * 0.012, 0, 0))
     hub.append(flange)
-    # KULATÁ kupole — STEJNÁ na obou stranách (obě kola stejně tlustá); vrchol pod lemem (0.070)
-    dome_h = 0.052                                  # peak ~ xc+out*0.064 < lem 0.070, oboustranně shodné
-    hub.append(dome("hd_%d" % side, radius=0.095, height=dome_h, segments=SEG, rings=4,
-                    axis='X', center=(xc + out * 0.012, 0, 0)))
+    # KULATÁ kupole — STEJNÁ na obou stranách; u vnějšího líce pneu (přes shelf)
+    dome_h = 0.052
+    dh = dome("hd_%d" % side, radius=0.095, height=dome_h, segments=SEG, rings=4,
+              axis='X', center=(0, 0, 0))
+    mh = dh.data
+    if side < 0:                       # kupole směřuje VEN na OBOU stranách (symetrie náboje)
+        for v in mh.vertices: v.co.x = -v.co.x
+        mh.update(); recalc_normals(dh)
+    for v in mh.vertices: v.co.x += xc + shelf + out * 0.012
+    mh.update()
+    hub.append(dh)
     for i in range(6):
         a = (i / 6) * math.tau
         hub.append(cyl("bl_%d_%d" % (side, i), radius=0.0125, depth=0.025, segments=6, axis='X',
-                       center=(xc + out * 0.025, math.cos(a) * 0.135, math.sin(a) * 0.135)))  # zasunuté ~50%
+                       center=(xc + shelf + out * 0.025, math.cos(a) * 0.135, math.sin(a) * 0.135)))  # zasunuté ~50%
     groups.append(join("hub_%s" % suf, hub))
     return groups
 
