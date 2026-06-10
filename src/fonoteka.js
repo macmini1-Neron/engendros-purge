@@ -20,7 +20,7 @@ const DISPLAY_SPIN = DISPLAY_RPS * Math.PI * 2; // ~2.14 rad/s
 // the needle goes from the outer groove to the LABEL EDGE and never crosses onto the paper label.
 const ARM_OUTER = 0.484;   // start of a track: needle on the outer groove (R≈0.112 m from spindle)
 const ARM_INNER = 0.122;   // end of a track: needle at the label edge (R≈0.060 m; label is r0.05 — stops just outside the paper)
-const ARM_PARK  = 0.95;    // off to the side, clear of the disc (cradle) — where it waits while a record is changed
+const ARM_PARK  = 0.95;    // off to the arm-rest side, clear of the disc — where it waits while a record is changed
 const ARM_LIFT  = -0.30;   // rotation.z that raises the needle clear of the disc (the lift gesture)
 const LIFT_DISC = 0.085;   // how far the record rises off the platter during a swap (m, local)
 // Record-change choreography (like a real patefon, no collisions). Phase boundaries are elapsed seconds:
@@ -179,12 +179,12 @@ class GramophoneViewer {
     rim.position.copy(disc.position); rim.rotation.copy(disc.rotation);
     bg.add(disc, hub, rim); this.scene.add(bg);
     await ensureDeskSpec();
-    const desk = buildSpec(getSpec('desk_soviet'));
-    if (desk) {
-      const db = new THREE.Box3().setFromObject(desk), dc = db.getCenter(new THREE.Vector3()), ds = db.getSize(new THREE.Vector3());
-      desk.position.set(-dc.x, baseY - 0.001 - (db.min.y + ds.y), -dc.z + 0.18); // tabletop just under the gramophone; pulled forward so only the top + front lip show
-      this.scene.add(desk);
-    }
+    const deskSpec = getSpec('desk_soviet');
+    if (!deskSpec) { console.warn('[fonoteka] desk spec unavailable — showing the gramophone without the desk'); return; } // buildSpec(undefined) would throw; degrade gracefully like the gramophone path
+    const desk = buildSpec(deskSpec);
+    const db = new THREE.Box3().setFromObject(desk), dc = db.getCenter(new THREE.Vector3()), ds = db.getSize(new THREE.Vector3());
+    desk.position.set(-dc.x, baseY - 0.001 - (db.min.y + ds.y), -dc.z + 0.18); // tabletop just under the gramophone; pulled forward so only the top + front lip show
+    this.scene.add(desk);
   }
   setLabel(title) {
     if (!this.model) { this._pendingLabel = title; return; }

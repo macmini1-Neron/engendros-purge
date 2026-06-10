@@ -151,7 +151,7 @@ export function tube(b, a, t, o) {
 // gramophone can find it by rig name and re-skin the label per song). Default axis y (faces up).
 export function texturedDisc(b, a, t, o) {
   const g = new THREE.CircleGeometry(a.r, a.seg ?? 48);
-  const tex = makeRecordLabelTexture({ title: a.title || 'СССР', sub: a.sub, mode: a.mode || 'black' });
+  const tex = makeRecordLabelTexture({ title: a.title || 'СССР', mode: a.mode || 'black' });
   const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex }));
   const or = NORMAL[a.axis ?? 'y'];
   mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
