@@ -1,0 +1,74 @@
+{
+  "model": "H.K.M. Главширпотреб Ленинградский граммофонный завод — portable wind-up патефон (78 rpm suitcase phonograph)",
+  "era": "USSR, late 1940s–1950s",
+  "facts": {
+    "maker": {
+      "name": "Н.К.М. Главширпотреб, Ленинградский граммофонный завод",
+      "src": "Owner's in-hand reference photographs (lid interior maker decal, photos 5/13: 'Н.К.М. ГЛАВШИРПОТРЕБ / ЛЕНИНГРАДСКИЙ ГРАММОФОННЫЙ ЗАВОД', treble-clef + red CCCP flag in a diamond). Class corroborated by ПТ-3 catalog listings (cozythings.ru/shop/grammofonyi-patefonyi, galex.ru collection #27178) and ru.wikipedia.org/wiki/Патефон."
+    },
+    "case": {
+      "w_mm": 310, "d_mm": 290, "h_closed_mm": 160,
+      "src": "Owner's in-hand photographs (closed suitcase, photos 2/3/8 — near-square plan, ~2:1 width:height closed). Dimensional class per ПТ-3 portable патефон listings (case ≈ 290–310 mm square × 150–170 mm closed): cozythings.ru/shop/grammofonyi-patefonyi/patefon-dovoennyiy-leningrad/, galex.ru/about/collections/detail.php?ELEMENT_ID=27178."
+    },
+    "lid": {
+      "h_mm": 55,
+      "src": "Owner's photographs (photos 1/2/8): hinged lid is roughly one third of the closed height (160 mm) → ≈55 mm shell; rear chrome piano-hinge (photo 2/10), opens back past vertical (photo 1)."
+    },
+    "platter": {
+      "dia_mm": 250, "rim_h_mm": 18,
+      "src": "Owner's photographs (photos 1/9/11): chrome-rimmed turntable carrying a 10-inch disc with slight record overhang. Standard portable патефон platter ≈ 250 mm (10 in): ru.wikipedia.org/wiki/Патефон."
+    },
+    "record": {
+      "dia_mm": 250, "thickness_mm": 2.5, "rpm": 78,
+      "src": "Owner's photograph of an Апрелевский завод shellac disc (photo 14: 'СССР / АПРЕЛЕВСКИЙ ЗАВОД', ГОСТ 5289-50). 78 rpm + 10-inch (250 mm) shellac standard: en.wikipedia.org/wiki/Phonograph_record (coarse-groove 78 rpm, 10 in)."
+    },
+    "tonearm": {
+      "length_mm": 160, "tube_dia_mm": 22,
+      "src": "Owner's photographs (photos 7/11): chromed S-curved swan-neck tonearm running from a circular base post to the reproducer over the platter; tube reads ≈20–24 mm across the bends, total run a bit over half the platter diameter."
+    },
+    "reproducer": {
+      "dia_mm": 64, "depth_mm": 22,
+      "src": "Owner's photographs (photos 7/11): circular soundbox (мембрана) with a 12-petal flower grille and a needle thumbscrew, ≈ a quarter of the platter diameter (250 mm)."
+    },
+    "crank": {
+      "arm_mm": 50, "drop_mm": 70, "rod_dia_mm": 10,
+      "src": "Owner's photographs (photos 1/8/9): fold-out L-shaped chromed winding crank with a black bakelite knob, socketed in the right face."
+    },
+    "hardware": {
+      "items": "chrome carry handles recessed in front/side faces with black backing trays (photo 3); chrome corner caps + two front clasps/latches (photos 1/3/8); rear chrome piano-hinge (photo 2); nickel speed-regulator plate 'FH 78 Bremze' (photo 6); nickel auto-stop plate 'АВТОСТОП ВКЛ/ВЫКЛ' (photo 12); steel needle tin in a corner (photo 4)",
+      "src": "Owner's in-hand reference photographs (14 images)."
+    },
+    "finish": {
+      "case": "dark-brown granitol/leatherette over plywood, triangular-flake emboss (photos 3/12)",
+      "metal": "polished chrome/nickel hardware + tonearm + platter rim",
+      "record": "near-black shellac, gold-on-black Апрелевский label",
+      "platter_top": "dark baize/felt",
+      "src": "Owner's in-hand reference photographs (14 images)."
+    },
+    "derivation": {
+      "case_w_m": 0.31, "case_d_m": 0.29, "base_h_m": 0.105, "deck_y_m": 0.106,
+      "platter_r_m": 0.118, "record_r_m": 0.125, "spindle_xz": [-0.04, 0.01],
+      "tonearm_post_xyz": [0.10, 0.12, -0.03], "lid_hinge_xyz": [0.0, 0.105, -0.145],
+      "note": "DERIVED from facts above (mm→m): base height = closed 160 − lid 55 ≈ 105 mm; deck sits at the base top; platter radius = dia 250/2 = 125 mm, chrome rim slightly inside the record so record_r 125 > felt; turntable offset to the left of centre so the tonearm base + crank clear it on the right (per photos 1/9). Hinge at the rear top edge (z = −d/2).",
+      "src": "geometric derivation from facts.case + facts.lid + facts.platter + facts.record"
+    }
+  },
+  "images": [
+    { "view": "open-hero", "file": "ref/1.jpeg", "shows": "full open: record on chrome platter, S-tonearm + reproducer, fold-out crank" },
+    { "view": "closed-side", "file": "ref/2.png", "shows": "closed suitcase, rear chrome piano-hinge strip" },
+    { "view": "corner-handle", "file": "ref/3.png", "shows": "recessed chrome carry handle + black tray, granitol triangular-flake texture" },
+    { "view": "needle-tin", "file": "ref/4.png", "shows": "corner steel-needle tin" },
+    { "view": "lid-logo", "file": "ref/5.png", "shows": "lid maker decal — diamond, treble clef, red CCCP flag, caption" },
+    { "view": "speed-plate", "file": "ref/6.png", "shows": "speed regulator plate 'FH 78 Bremze' + indicator" },
+    { "view": "tonearm", "file": "ref/7.png", "shows": "chrome S-bend tonearm + reproducer soundbox" },
+    { "view": "reproducer", "file": "ref/11.jpeg", "shows": "12-petal flower-grille reproducer, S-arm, record grooves" },
+    { "view": "auto-stop", "file": "ref/12.jpeg", "shows": "auto-stop lever plate 'АВТОСТОП ВКЛ/ВЫКЛ', case texture" },
+    { "view": "record-label", "file": "ref/14.jpeg", "shows": "Апрелевский завод 78 shellac: gold-on-black CCCP label, star+wheat, ГОСТ 5289-50" }
+  ],
+  "needs": [
+    "Exact factory case dimensions in mm (derived from photo proportions + ПТ-3 catalog class, not a measured spec sheet for this exact unit)",
+    "Tonearm tube diameter + exact S-curve control geometry (estimated from photos 7/11)",
+    "Reproducer soundbox diameter/depth (estimated as ~1/4 platter; no catalog figure)",
+    "Speed-regulator + auto-stop plate exact dimensions (small detail plates, sized by eye from photos 6/12)"
+  ]
+}

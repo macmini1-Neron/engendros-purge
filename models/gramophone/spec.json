@@ -1,0 +1,56 @@
+{
+  "id": "gramophone",
+  "name": "H.K.M. Ленинградский патефон (wind-up suitcase gramophone)",
+  "category": "prop",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.31, "h": 0.16, "d": 0.29 },
+  "dossier": "models/gramophone/ref/dossier.json",
+  "rig": [
+    { "name": "lid",       "pivot": [0, 0.108, -0.145], "axis": "x", "pose": -1.9,  "type": "hinge", "range": [-2.0, 0] },
+    { "name": "turntable", "pivot": [-0.04, 0.118, 0.01], "axis": "y", "pose": 0,   "type": "spin",  "range": [0, 6.2832] },
+    { "name": "tonearm",   "pivot": [0.10, 0.13, -0.03], "axis": "y", "pose": -0.5, "type": "spin",  "range": [-0.8, 0.4] },
+    { "name": "crank",     "pivot": [0.156, 0.06, 0],    "axis": "x", "pose": 0,    "type": "spin",  "range": [0, 6.2832] }
+  ],
+  "parts": [
+    { "op": "bevelBox", "id": "caseBody", "args": { "w": 0.31, "h": 0.105, "d": 0.29 }, "at": [0, 0.0525, 0], "mat": "granitol", "src": "dossier#case" },
+    { "op": "bevelBox", "id": "deck", "args": { "w": 0.285, "h": 0.012, "d": 0.265, "tone": "lo" }, "at": [0, 0.108, 0], "mat": "granitol", "src": "dossier#derivation" },
+
+    { "op": "bevelBox", "id": "hinge", "args": { "w": 0.30, "h": 0.012, "d": 0.014, "tone": "hi" }, "at": [0, 0.108, -0.145], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "cornerFL", "args": { "w": 0.018, "h": 0.04, "d": 0.018, "tone": "hi" }, "at": [-0.148, 0.02, 0.138], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "cornerFR", "args": { "w": 0.018, "h": 0.04, "d": 0.018, "tone": "hi" }, "at": [0.148, 0.02, 0.138], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "cornerBL", "args": { "w": 0.018, "h": 0.04, "d": 0.018, "tone": "hi" }, "at": [-0.148, 0.02, -0.138], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "cornerBR", "args": { "w": 0.018, "h": 0.04, "d": 0.018, "tone": "hi" }, "at": [0.148, 0.02, -0.138], "mat": "chrome", "src": "dossier#hardware" },
+
+    { "op": "bevelBox", "id": "claspL", "args": { "w": 0.03, "h": 0.022, "d": 0.008, "tone": "hi" }, "at": [-0.075, 0.10, 0.149], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "claspR", "args": { "w": 0.03, "h": 0.022, "d": 0.008, "tone": "hi" }, "at": [0.075, 0.10, 0.149], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "handleTray", "args": { "w": 0.12, "h": 0.03, "d": 0.006, "tone": "lo" }, "at": [0, 0.045, 0.147], "mat": "paintBlack", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "handleFront", "args": { "w": 0.10, "h": 0.012, "d": 0.012, "tone": "hi" }, "at": [0, 0.045, 0.152], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "bevelBox", "id": "handleSide", "args": { "w": 0.012, "h": 0.012, "d": 0.10, "tone": "hi" }, "at": [-0.156, 0.058, 0], "mat": "chrome", "src": "dossier#hardware" },
+
+    { "op": "decal", "id": "speedPlate", "args": { "w": 0.05, "h": 0.02, "kind": "speedPlate" }, "at": [0.05, 0.1145, -0.065], "rot": [0, 0, 0], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "decal", "id": "autoPlate", "args": { "w": 0.05, "h": 0.016, "kind": "autoPlate" }, "at": [-0.06, 0.1145, 0.08], "rot": [0, 0, 0], "mat": "chrome", "src": "dossier#hardware" },
+
+    { "op": "bevelBox", "id": "lidShell", "args": { "w": 0.31, "h": 0.05, "d": 0.29 }, "at": [0, 0.135, 0], "mat": "granitol", "rig": "lid", "src": "dossier#lid" },
+    { "op": "bevelBox", "id": "lidLining", "args": { "w": 0.285, "h": 0.006, "d": 0.265, "tone": "hi" }, "at": [0, 0.106, 0], "mat": "granitol", "rig": "lid", "src": "dossier#lid" },
+    { "op": "decal", "id": "lidLogo", "args": { "w": 0.15, "h": 0.19, "kind": "lidLogo" }, "at": [0, 0.102, -0.01], "rot": [180, 0, 0], "mat": "cream", "rig": "lid", "src": "dossier#lid" },
+
+    { "op": "cylinder", "id": "platter", "args": { "r": 0.118, "h": 0.018, "axis": "y", "tone": "hi" }, "at": [-0.04, 0.118, 0.01], "mat": "chrome", "rig": "turntable", "src": "dossier#platter" },
+    { "op": "cylinder", "id": "platterFelt", "args": { "r": 0.112, "h": 0.004, "axis": "y" }, "at": [-0.04, 0.1285, 0.01], "mat": "feltTeal", "rig": "turntable", "src": "dossier#platter" },
+    { "op": "cylinder", "id": "record", "args": { "r": 0.125, "h": 0.003, "axis": "y" }, "at": [-0.04, 0.131, 0.01], "mat": "shellac", "rig": "turntable", "src": "dossier#record" },
+    { "op": "texturedDisc", "id": "recordLabel", "args": { "r": 0.05, "axis": "y", "title": "АМУРСКИЕ ВОЛНЫ", "mode": "black" }, "at": [-0.04, 0.1331, 0.01], "mat": "cream", "rig": "turntable", "src": "dossier#record" },
+    { "op": "cylinder", "id": "spindle", "args": { "r": 0.004, "h": 0.014, "axis": "y", "tone": "bright" }, "at": [-0.04, 0.137, 0.01], "mat": "chrome", "rig": "turntable", "src": "dossier#derivation" },
+
+    { "op": "cylinder", "id": "tonearmBase", "args": { "r": 0.016, "h": 0.024, "axis": "y", "tone": "hi" }, "at": [0.10, 0.12, -0.03], "mat": "chrome", "src": "dossier#tonearm" },
+    { "op": "cylinder", "id": "armRest", "args": { "r": 0.006, "h": 0.03, "axis": "y", "tone": "hi" }, "at": [0.14, 0.125, 0.07], "mat": "chrome", "src": "dossier#derivation" },
+    { "op": "tube", "id": "tonearm", "args": { "tube": 0.011, "pts": [[0, 0, 0], [0.006, 0.022, 0.012], [-0.03, 0.03, 0.035], [-0.085, 0.018, 0.06], [-0.135, 0.004, 0.082]], "tone": "hi" }, "at": [0.10, 0.132, -0.03], "mat": "chrome", "rig": "tonearm", "src": "dossier#tonearm" },
+    { "op": "cylinder", "id": "reproducer", "args": { "r": 0.032, "h": 0.02, "axis": "y", "tone": "mid" }, "at": [-0.035, 0.13, 0.052], "mat": "chrome", "rig": "tonearm", "src": "dossier#reproducer" },
+    { "op": "torus", "id": "reproGrille", "args": { "r": 0.024, "tube": 0.004, "axis": "y", "tone": "lo" }, "at": [-0.035, 0.119, 0.052], "mat": "chrome", "rig": "tonearm", "src": "dossier#reproducer" },
+    { "op": "cylinder", "id": "needle", "args": { "r": 0.0012, "h": 0.012, "axis": "y", "tone": "bright" }, "at": [-0.035, 0.112, 0.052], "mat": "chrome", "rig": "tonearm", "src": "dossier#reproducer" },
+
+    { "op": "cylinder", "id": "crankSocket", "args": { "r": 0.014, "h": 0.012, "axis": "x", "tone": "hi" }, "at": [0.157, 0.06, 0], "mat": "chrome", "src": "dossier#crank" },
+    { "op": "cylinder", "id": "crankArm", "args": { "r": 0.005, "h": 0.05, "axis": "x", "tone": "hi" }, "at": [0.185, 0.06, 0], "mat": "chrome", "rig": "crank", "src": "dossier#crank" },
+    { "op": "cylinder", "id": "crankDrop", "args": { "r": 0.005, "h": 0.06, "axis": "y", "tone": "hi" }, "at": [0.208, 0.04, 0], "mat": "chrome", "rig": "crank", "src": "dossier#crank" },
+    { "op": "cylinder", "id": "crankKnob", "args": { "r": 0.011, "h": 0.034, "axis": "y", "tone": "mid" }, "at": [0.208, 0.018, 0], "mat": "bakelite", "rig": "crank", "src": "dossier#crank" }
+  ]
+}
