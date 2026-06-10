@@ -21,13 +21,25 @@ import { Engine } from './engine.js';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
+import { registerModel } from './props/registry.js';
+
+// Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
+// Specs are authored in METRES — never compensate a wrong-sized spec with a
+// scale factor at the call site (see tools/modelgen/lint.mjs).
+const _registerModels = async () => {
+  try {
+    const spec = await (await fetch(`./models/dshk-ammo-box/spec.json?cb=${Date.now()}`)).json();
+    registerModel('dshk-ammo-box', spec);
+  } catch (e) { console.warn('[modelgen] Failed to register dshk-ammo-box:', e); }
+};
+_registerModels();
 
 // --- build identity (shown bottom-right in the co-op lobby) ---
 // GAME_VERSION auto-tracks the ?v= cache-bust on this module's own URL, so it can't drift from
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-07 20:37';
+const GAME_BUILD = '2026-06-10 07:41';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 

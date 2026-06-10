@@ -4,6 +4,8 @@ import { clamp, voxelMaterial } from './util.js';
 import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
 import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
+import { getSpec } from './props/registry-core.js';
+import { buildSpec } from './props/voxel-interp.js';
 
 
 // ---------------------------------------------------------------------------
@@ -112,6 +114,7 @@ export class Admin {
       { name: 'Lootbox Key', sub: 'pickup', make: () => g.loot._keyMesh() },
       { name: 'Medkit', sub: 'pickup', make: () => g.loot._pickupMesh('medkit') },
       { name: 'Ammo box', sub: 'pickup', make: () => g.loot._pickupMesh('ammo') },
+      { name: 'DShK Ammo Box', sub: 'pickup (modelgen)', make: () => { const s = getSpec('dshk-ammo-box'); return s ? buildSpec(s) : null; } },
       { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
       { name: 'Field splint', sub: 'pickup', make: () => g.loot._pickupMesh('splint') },
       { name: 'Ration tin', sub: 'pickup', make: () => g.loot._pickupMesh('food') },

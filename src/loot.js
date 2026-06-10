@@ -5,6 +5,8 @@ import { FOOD_RESTORE } from './tuning.js';
 import { KEY_CASH } from './economy.js';
 import { _strut, buildChuteRig, buildFieldRadio, buildFlare, buildSu24, buildSupplyCrate } from './props.js';
 import { FIREARM_KEYS, WEAPONS, buildViewmodel } from './weapons.js';
+import { getSpec } from './props/registry-core.js';
+import { buildSpec } from './props/voxel-interp.js';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private; duplicated to avoid a cross-module import)
 
@@ -17,6 +19,7 @@ export const ITEM_DEFS = {
   food:    { name: 'Field Ration', class: 'consumable', icon: '🥫', mesh: 'food',   food: 40 },
   armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50 },
   ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo' },
+  dshkammo: { name: 'DShK Ammo Box', class: 'consumable', icon: '🟦', mesh: 'dshkammo' },
   fiftyammo: { name: '12.7mm Ammo Can', class: 'consumable', icon: '🟩', mesh: 'fiftyammo' }, // resupplies the rooftop heavy MG — used at the gun, not on hand weapons
   splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint' },
   airbeacon: { name: 'Vysílačka',  class: 'callable',   icon: '📡', mesh: 'airbeacon' },
@@ -96,6 +99,23 @@ export class LootManager {
     const b = new MeshBuilder();
     if (WEAPONS[kind]) { const m = buildViewmodel(WEAPONS[kind]); m.position.set(0, 0, 0); m.rotation.set(0.3, 0.6, 0); m.scale.setScalar(0.5); return m; } // a dropped weapon, as a ground pickup
     if (kind === 'key') return this._keyMesh();
+    if (kind === 'dshkammo') { // Soviet DShK 12.7mm ammunition box (modelgen prop, real 0.29 m scale)
+      const spec = getSpec('dshk-ammo-box');
+      if (spec) {
+        // spec groups are floor-anchored; recentre so the pickup bobs around its middle.
+        // NOTE: scale stays 1 — the spec is authored in real metres. Needing a scale
+        // fudge here means the spec units are wrong; fix the spec, not the call site.
+        const g = new THREE.Group();
+        const m = buildSpec(spec);
+        m.position.y = -(spec.footprint?.h ?? 0.155) / 2;
+        g.add(m);
+        return g;
+      }
+      // Fallback if the spec fetch hasn't resolved (matches real 280×140×140 mm)
+      const od = 0x4a5a2e, odHi = 0x6a7c42; // olive-drab
+      b.box(0.28, 0.11, 0.14, 0, -0.015, 0, od); b.box(0.29, 0.03, 0.15, 0, 0.055, 0, odHi);
+      return new THREE.Mesh(b.build(), voxelMaterial({ emissive: 0x1a2410, emissiveIntensity: 0.5 }));
+    }
     if (kind === 'radio') { const m = buildFieldRadio(); m.scale.multiplyScalar(0.5); return m; } // field-radio material as a ground pickup (from supply drops)
     if (kind === 'airbeacon') { // Falcon III-style military handheld radio (olive, antenna, green LCD, keypad, battery)
       const olive = 0x3f4a2c, oHi = 0x515c39, oLo = 0x2c331d, blk = 0x16160f, metal = 0x8a8f86, scr = 0x9be86a, btn = 0x202018;

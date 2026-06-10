@@ -1,0 +1,105 @@
+{
+  "id": "dshk-ammo-box",
+  "name": "Soviet DShK 12.7mm Ammunition Box",
+  "description": "Olive-drab painted galvanized-steel transport box for 85 rounds of 12.7×108mm: hinged lever-lock lid, stowed folding handle, two leather lashing straps, brass end latches, stencilled markings and a red star.",
+  "category": "military",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.29, "h": 0.155, "d": 0.18 },
+  "dossier": "models/dshk-ammo-box/ref/dossier.json",
+  "parts": [
+    {
+      "id": "shell",
+      "name": "Box + hinged lid (hinges back, hasp front)",
+      "op": "lidBox",
+      "args": { "w": 0.28, "h": 0.14, "d": 0.14, "lid": 0.028 },
+      "at": [0, 0, 0],
+      "mat": "paintOD",
+      "src": "dossier#box_dimensions_estimated",
+      "note": "280×140×140 mm overall incl. lid; lid height from dossier#hardware_derived"
+    },
+    {
+      "id": "strap_l",
+      "name": "Leather lashing strap (left)",
+      "op": "strapBand",
+      "args": { "w": 0.024, "h": 0.132, "d": 0.152, "th": 0.006 },
+      "at": [-0.095, 0.07, 0],
+      "mat": "leather",
+      "src": "dossier#hardware_derived",
+      "note": "wraps body + lid lip, lashes the lid down; outboard of the rear hinges"
+    },
+    {
+      "id": "strap_r",
+      "name": "Leather lashing strap (right)",
+      "op": "strapBand",
+      "args": { "w": 0.024, "h": 0.132, "d": 0.152, "th": 0.006 },
+      "at": [0.095, 0.07, 0],
+      "mat": "leather",
+      "src": "dossier#hardware_derived"
+    },
+    {
+      "id": "handle",
+      "name": "Flat-folding carry handle, stowed on the lid",
+      "op": "handleU",
+      "args": { "w": 0.15, "h": 0.05, "th": 0.014 },
+      "at": [0, 0.14, -0.025],
+      "mat": "steel",
+      "src": "dossier#hardware_derived"
+    },
+    {
+      "id": "latch_l",
+      "name": "Brass toggle latch (left end)",
+      "op": "panel",
+      "args": { "w": 0.024, "h": 0.032, "th": 0.008 },
+      "at": [-0.142, 0.1, 0.045],
+      "rot": [0, -90, 0],
+      "mat": "brass",
+      "src": "dossier#hardware_derived"
+    },
+    {
+      "id": "latch_r",
+      "name": "Brass toggle latch (right end)",
+      "op": "panel",
+      "args": { "w": 0.024, "h": 0.032, "th": 0.008 },
+      "at": [0.142, 0.1, 0.045],
+      "rot": [0, 90, 0],
+      "mat": "brass",
+      "src": "dossier#hardware_derived"
+    },
+    {
+      "id": "star",
+      "name": "Red star, front face (offset clear of the hasp)",
+      "op": "stencil",
+      "args": { "w": 0.04, "h": 0.04 },
+      "at": [-0.07, 0.075, 0.07],
+      "rot": [0, 0, 45],
+      "mat": "paintRed",
+      "src": "dossier#markings",
+      "note": "voxel simplification: 45° diamond reads as an insignia, a square reads as a patch"
+    },
+    {
+      "id": "stencil_left",
+      "name": "Black lot/factory stencil lines (left end)",
+      "op": "stencil",
+      "args": { "w": 0.08, "h": 0.05, "lines": 3 },
+      "at": [-0.14, 0.07, -0.015],
+      "rot": [0, -90, 0],
+      "mat": "paintBlack",
+      "src": "dossier#markings"
+    },
+    {
+      "id": "stencil_right",
+      "name": "Black cartridge-type stencil lines (right end)",
+      "op": "stencil",
+      "args": { "w": 0.08, "h": 0.05, "lines": 3 },
+      "at": [0.14, 0.07, -0.015],
+      "rot": [0, 90, 0],
+      "mat": "paintBlack",
+      "src": "dossier#markings"
+    }
+  ],
+  "needs": [
+    "Exact box dimensions from a Soviet ГОСТ standard or museum catalog — 280×140×140 mm is kit-proportion + round-count derived (dossier#box_dimensions_estimated)",
+    "Hardware dimensions (lid, handle, straps, latches) are geometric derivations (dossier#hardware_derived), not measured"
+  ]
+}

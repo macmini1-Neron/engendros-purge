@@ -1,0 +1,75 @@
+{
+  "id": "dshk-ammo-box",
+  "title": "Soviet DShK 12.7×108mm Ammunition Transport Box",
+  "era": "1930s–1990s (continuous production, Shpagin design)",
+  "sources": {
+    "scale_model_kit": "TA072 (Tank Model) — Soviet Ammo Box 12.7 DShK & NSVT MG — Scalemates",
+    "firearm_reference": "How the DShK 12.7mm Machine Gun Functions — The Firearm Blog",
+    "soviet_standard": "Degtyarev-Shpagin DSHK and DSHKM heavy machine gun — gunrf.ru (Russian Federation gun reference)",
+    "ammo_spec": "12.7 × 108 mm — Wikipedia article on Soviet heavy machine gun ammunition",
+    "markings": "Decoding Soviet Military Surplus Ammunition Labels — DCAF Conflict Armament Research",
+    "military_encyclopedia": "Военная энциклопедия (Soviet Military Encyclopedia) — ordnance container standards"
+  },
+  "specifications": {
+    "capacity": {
+      "value": 85,
+      "unit": "cartridges (12.7×108mm)",
+      "src": "TA072 scale model kit specifications; firearm_reference confirms standard DShK box capacity",
+      "note": "Transport box; feed system on gun holds 50-round belts in rotary magazine"
+    },
+    "ammo_dimensions": {
+      "length_mm": 130,
+      "diameter_mm": 12.7,
+      "weight_g": 48,
+      "src": "12.7 × 108 mm Wikipedia article",
+      "note": "Used to calculate box internal volume and proportions"
+    },
+    "box_dimensions_estimated": {
+      "length_mm": 280,
+      "width_mm": 140,
+      "height_mm": 140,
+      "src": "TA072 scale model kit (proportions); actual GOST dimensions unknown — needs museum/catalog verification",
+      "derivation": "85 rounds in alternating rows (head-to-tail, tail-to-head) with paper separators; 130mm × 85 ≈ 280mm length; ~3 rows across 140mm width; height accommodates ±65mm row stack"
+    },
+    "weight_total_kg": {
+      "value": 12,
+      "unit": "kg (with 85 cartridges, ~3.8 kg ammunition + steel/latches/straps)",
+      "src": "Soviet ordnance field manuals (approximate, not sourced to specific ГОСТ)",
+      "note": "Informational; not used in voxel model"
+    },
+    "construction": {
+      "primary_metal": "Galvanized steel (zinc-coated)",
+      "primary_paint": "Olive drab (Советский защитный цвет) — darker/warmer than US olive, yellow-brown cast",
+      "hardware": "Brass or bronze latches, hinges, and fasteners",
+      "closure": "Lever-operated lock with rubber gasket seal (hermetic when closed)",
+      "straps": "Canvas-backed leather webbing for carrying/lashing (two longitudinal straps)",
+      "handle": "Flat-folding steel handle, stowed on top when not in use",
+      "src": "TA072 scale model kit; firearm_reference; soviet_standard (Шпагин design documentation)"
+    },
+    "markings": {
+      "stencil_color": "Black paint",
+      "content": "Factory identification (Ф or Завод № XX), production year (two-digit YY), lot/batch number (ЛОТ №), cartridge type stencil (7.62×54Р, 12.7×108 ПЗБ-М, etc.), unit acceptance marks (УОП)",
+      "insignia": "Red star (Пятиконечная звезда) center front; Soviet state emblem",
+      "src": "Decoding Soviet Military Surplus Ammunition Labels (DCAF CAR); military_encyclopedia"
+    },
+    "hardware_derived": {
+      "lid_height_mm": 28,
+      "handle_w_mm": 150, "handle_reach_mm": 50,
+      "strap_width_mm": 24, "strap_positions_mm": "±95 from centre (outboard of the rear hinges at ±70)",
+      "latch_plate_mm": [24, 32],
+      "star_mm": 40, "end_stencil_mm": [100, 50],
+      "src": "geometric derivation from box_dimensions_estimated + construction (TA072 kit proportions; lid ≈ 0.2 × height, handle ≈ 0.54 × length)",
+      "derivation": "DERIVED, not independently sourced (raw GOST figures remain in needs[]): lid 0.2×140 ≈ 28; handle spans ~half the lid length; straps clear the hinge knuckles; latch plates / star / stencils scaled from kit box-art proportions"
+    }
+  },
+  "feed_system_context": {
+    "weapon": "Degtyarev-Shpagin DSHK (ДШК) 12.7mm Heavy Machine Gun",
+    "rotary_magazine": "Шпагин feed sprocket system (revolver-style rotating magazine with 6 chambers, holds 50-round disintegrating-link belt)",
+    "box_usage": "Transport/storage container; weapons-mounted magazine is separate",
+    "src": "firearm_reference; soviet_standard"
+  },
+  "game_model_purpose": "Loot prop — standalone ammo-box item that players can pick up in the world to resupply DShK ammunition (analogous to M2A1 .50-cal ammo can already in game)",
+  "needs": [
+    "Exact dimensions (mm) from a Soviet ГОСТ ammunition box standard or museum catalog"
+  ]
+}
