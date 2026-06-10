@@ -611,6 +611,80 @@
     .mp-row b { color: var(--gold); opacity: .8; margin-right: 4px; }
 
     /* ============================================================================
+       ФОНОТЕКА — full-screen "Soviet Spotify": live 3D gramophone (left) + genre
+       browser (right). POLYMER brass/petrol-teal. No emoji — SVG icons (icons.js).
+       ============================================================================ */
+    #music.overlay { align-items: stretch; justify-content: center; }
+    #music .ic { width: 1em; height: 1em; vertical-align: -0.14em; }
+    .fono { width: 100%; max-width: 1340px; height: 100%; display: flex; flex-direction: column;
+      padding: clamp(10px, 2.2vh, 24px) clamp(12px, 2.4vw, 34px); gap: 14px; }
+    .fono-head { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      border-bottom: 1px solid var(--line-gold); padding-bottom: 10px; }
+    .fono-brand { display: flex; flex-direction: column; line-height: 1.05; }
+    .fono-brand b { font-family: var(--font-title); font-size: clamp(22px, 3.4vw, 40px); color: var(--brass-hi);
+      letter-spacing: 4px; text-shadow: 0 2px 0 #3a0a06, 0 0 26px rgba(216,176,102,.35); }
+    .fono-brand span { font-family: var(--font-stencil, var(--font-display)); font-size: 11px; letter-spacing: 4px; color: var(--ink-dim); margin-top: 3px; }
+    .fono-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1.05fr 1fr; gap: clamp(14px, 2.4vw, 34px); }
+
+    /* left — the 3D gramophone showpiece on a vignette plinth */
+    .fono-stage { position: relative; border-radius: var(--r-md); overflow: hidden;
+      background: radial-gradient(120% 95% at 50% 30%, rgba(69,224,207,.07), rgba(7,14,12,.0) 55%),
+                  radial-gradient(150% 120% at 50% 120%, rgba(216,176,102,.16), rgba(7,14,12,0) 60%),
+                  linear-gradient(180deg, #0c1614 0%, #070d0c 100%);
+      border: 1px solid var(--concrete-3); box-shadow: inset 0 0 120px 30px rgba(0,0,0,.55); }
+    .fono-stage canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+    .fono-stage canvas:active { cursor: grabbing; }
+    .fono-np { position: absolute; left: 18px; bottom: 16px; right: 18px; pointer-events: none; }
+    .fono-np-ru { font-family: var(--font-title); font-size: clamp(16px, 2.1vw, 26px); color: #fff; letter-spacing: .5px;
+      text-shadow: 0 2px 8px rgba(0,0,0,.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fono-np-en { font-family: var(--font-display); font-size: 14px; color: var(--brass-hi); letter-spacing: 1.5px; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+    .fono-np-meta { font-size: 11px; letter-spacing: 2px; color: var(--ink-dim); margin-top: 4px; text-transform: uppercase; }
+
+    /* right — search / genre filter / track list / transport */
+    .fono-side { display: flex; flex-direction: column; min-height: 0; gap: 11px; }
+    .fono-search { display: flex; align-items: center; gap: 9px; padding: 0 12px; height: 40px; flex: 0 0 auto;
+      background: var(--surface-1); border: 1px solid var(--concrete-3); border-radius: var(--r-md); color: var(--ink-dim); }
+    .fono-search .ic { font-size: 17px; }
+    .fono-search input { flex: 1; background: none; border: none; outline: none; color: var(--paper); font-family: var(--font-display); font-size: 15px; letter-spacing: .5px; }
+    .fono-search input::placeholder { color: var(--ink-dim); opacity: .7; }
+    .fono-genres { display: flex; gap: 7px; flex: 0 0 auto; flex-wrap: wrap; }
+    .fono-g { flex: 1 1 auto; min-width: 0; cursor: pointer; pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 4px 6px; background: var(--surface-1); border: 1px solid var(--concrete-3); border-radius: var(--r-md); color: var(--ink-dim);
+      transition: transform .08s, border-color .12s, color .12s, background .12s; }
+    .fono-g .ic { font-size: 21px; }
+    .fono-g i { font-style: normal; font-family: var(--font-display); font-size: 8.5px; letter-spacing: .5px; text-transform: uppercase; opacity: .8; white-space: nowrap; }
+    .fono-g:hover { color: var(--neon); border-color: var(--neon); transform: translateY(-1px); }
+    .fono-g.on { color: #1a1208; background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-color: var(--brass-hi); box-shadow: 0 0 14px rgba(216,176,102,.35); }
+    .fono-count { flex: 0 0 auto; font-family: var(--font-display); font-size: 11px; letter-spacing: 2px; color: var(--ink-dim); text-transform: uppercase; }
+    .fono-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 4px; }
+    .fono-row { display: grid; grid-template-columns: 26px 1fr 22px 42px; align-items: center; gap: 10px; padding: 7px 10px; cursor: pointer;
+      background: rgba(26,44,38,.32); border: 1px solid transparent; border-left: 2px solid transparent; border-radius: 7px; transition: background .1s, border-color .1s; }
+    .fono-row:hover { background: rgba(69,224,207,.10); border-left-color: var(--neon); }
+    .fono-row.on { background: linear-gradient(90deg, rgba(216,176,102,.22), rgba(216,176,102,.05)); border-color: var(--line-gold); border-left-color: var(--brass-hi); }
+    .fr-n { font-family: var(--font-stencil, monospace); font-size: 12px; color: var(--ink-dim); text-align: center; }
+    .fono-row.on .fr-n { color: var(--brass-hi); }
+    .fr-tt { display: flex; flex-direction: column; min-width: 0; }
+    .fr-tt b { font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--paper); letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fono-row.on .fr-tt b { color: #fff; }
+    .fr-tt small { font-size: 11.5px; color: var(--ink-dim); letter-spacing: .4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fr-g { color: var(--ink-dim); font-size: 16px; display: flex; justify-content: center; }
+    .fono-row:hover .fr-g, .fono-row.on .fr-g { color: var(--brass-hi); }
+    .fr-y { font-family: var(--font-stencil, monospace); font-size: 12px; color: var(--ink-dim); text-align: right; }
+    .fono-bar { flex: 0 0 auto; height: 7px; background: rgba(255,255,255,.10); border-radius: 4px; cursor: pointer; pointer-events: auto; overflow: hidden; }
+    .fono-bar:hover { height: 9px; }
+    .fono-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--brass), var(--brass-hi)); border-radius: 4px; }
+    .fono-transport { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+    .fono-time { font-family: var(--font-stencil, monospace); font-size: 12px; color: var(--ink-dim); min-width: 92px; }
+    .fono-t { margin-left: auto; cursor: pointer; pointer-events: auto; width: 38px; height: 38px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; color: var(--brass); background: var(--surface-1); border: 1px solid var(--concrete-3); border-radius: 50%; transition: transform .08s, border-color .12s, color .12s; }
+    .fono-t + .fono-t { margin-left: 0; }
+    .fono-t:hover { color: var(--brass-hi); border-color: var(--brass); transform: translateY(-1px); }
+    .fono-t.big { width: 50px; height: 50px; font-size: 20px; color: #1a1208; background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-color: var(--brass-hi); }
+    .fono-t.tg { opacity: .55; }
+    .fono-t.tg.on { opacity: 1; color: var(--neon); border-color: var(--neon); box-shadow: 0 0 10px rgba(69,224,207,.4); }
+    @media (max-width: 820px) { .fono-body { grid-template-columns: 1fr; grid-template-rows: 38% 1fr; } }
+
+    /* ============================================================================
        HERO — ultra-majestic Soviet main screen. A rotating roster of monument
        tableaux over an animated gold sunburst on СССР red, flanked by 3-D spinning
        stars, drifting embers + a banner ribbon. Lives INSIDE #menu, behind .card.
@@ -878,6 +952,7 @@
       <div class="hero-enter">
         <button class="btn go cta enter" id="enterBtn"><i data-ic="play"></i> НАЧАТЬ · ENTER</button>
         <div class="menu-mini">
+          <button class="btn sec mini" id="fonoteka-menu-btn"><i data-ic="disc"></i> ФОНОТЕКА</button>
           <button class="btn sec mini" id="settingsBtn"><i data-ic="gear"></i> SETTINGS</button>
           <button class="btn sec mini" id="adminBtn"><i data-ic="wrench"></i> ASSETS</button>
         </div>
@@ -1040,6 +1115,7 @@
           <button class="btn sec" id="mpLanBtn">NET: WEBRTC</button>
           <button class="btn sec" id="mpRelayBtn">RELAY: AUTO</button>
           <button class="btn sec" id="lobbyArmoryBtn"><i data-ic="crate"></i> ARMORY</button>
+          <button class="btn sec" id="fonoteka-lobby-btn"><i data-ic="disc"></i> ФОНОТЕКА</button>
           <button class="btn sec" id="mpBackBtn"><i data-ic="back"></i> BACK</button>
       </div>
     </div>
@@ -1079,6 +1155,9 @@
       <button class="btn sec" id="adminBack"><i data-ic="back"></i> BACK TO MENU</button>
     </div>
   </div>
+
+  <!-- ФОНОТЕКА — full-screen "Soviet Spotify" music screen; Fonoteka (src/fonoteka.js) builds the inner DOM -->
+  <div id="music" class="overlay"></div>
 
   <div class="hint" id="hint">Click the canvas to lock the mouse · Esc to pause</div>
 

@@ -35,6 +35,17 @@ export const PALETTE = {
                glb: { rgb: [0.55, 0.57, 0.55], rough: 0.6, metal: 0.1 } },
   gunGrey:   { voxel: { hi: '#4a4e52', mid: '#34383c', lo: '#23262a', slot: '#16181b', bright: '#5e636a' },
                glb: { rgb: [0.10, 0.11, 0.12], rough: 0.5, metal: 0.3 } },
+  // --- H.K.M. gramophone palette ---
+  chrome:    { voxel: { hi: '#e9edf2', mid: '#b9c1c9', lo: '#7b848d', slot: '#4a5158', bright: '#ffffff' },
+               glb: { rgb: [0.70, 0.72, 0.75], rough: 0.16, metal: 0.95 } },
+  granitol:  { voxel: { hi: '#5a4636', mid: '#3f2e22', lo: '#281b13', slot: '#170f0a', bright: '#6e573f' },
+               glb: { rgb: [0.16, 0.11, 0.08], rough: 0.82, metal: 0.0 } },
+  shellac:   { voxel: { hi: '#2a2a2a', mid: '#121212', lo: '#070707', slot: '#000000', bright: '#4a4a4a' },
+               glb: { rgb: [0.02, 0.02, 0.02], rough: 0.26, metal: 0.0 } },
+  feltTeal:  { voxel: { hi: '#2e5048', mid: '#1f3a34', lo: '#142621', slot: '#0b1714', bright: '#3f6a5e' },
+               glb: { rgb: [0.10, 0.20, 0.17], rough: 0.92, metal: 0.0 } },
+  cream:     { voxel: { hi: '#e6dcc2', mid: '#cabf9a', lo: '#9d9270', slot: '#6c6147', bright: '#f4ecd6' },
+               glb: { rgb: [0.74, 0.69, 0.55], rough: 0.6, metal: 0.0 } },
 };
 
 export function resolveMaterial(name, target = 'voxel') {

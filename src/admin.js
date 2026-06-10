@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { clamp, voxelMaterial } from './util.js';
 import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
+import { buildGramophone } from './fonoteka.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
 import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
 import { getSpec } from './props/registry-core.js';
@@ -123,6 +124,7 @@ export class Admin {
       { name: 'Sandbags', sub: 'fortification', make: () => buildSandbags() },
       { name: 'Barbed wire', sub: 'fortification', make: () => buildBarbedWire() },
       { name: 'Barricade', sub: 'fortification', make: () => buildBarricade() },
+      { name: 'H.K.M. Gramophone', sub: 'ФОНОТЕКА prop', make: () => buildGramophone() || new THREE.Group() },
     ];
     return [];
   }

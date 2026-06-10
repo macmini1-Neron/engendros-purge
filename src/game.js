@@ -16,6 +16,7 @@ import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
+import { Fonoteka, GramophoneManager, ensureGramophoneSpec, placeGramophones } from './fonoteka.js';
 import { MP } from './mp.js';
 import { Engine } from './engine.js';
 import { Input } from './input.js';
@@ -80,6 +81,8 @@ class Game {
     const _pc = document.getElementById('previewCanvas'); this.preview = _pc ? new WeaponPreview(_pc) : null;
     this.ui = new UI();
     const _ac = document.getElementById('adminCanvas'); this.admin = _ac ? new Admin(this) : null;
+    this.fonoteka = new Fonoteka(this); ensureGramophoneSpec(); // ФОНОТЕКА music screen + preload the gramophone model
+    this.gramophone = new GramophoneManager(this); placeGramophones(this.gramophone, this.engine.scene, this.mapId); // in-world gramophone props (genre per prop, E + ◀/▶)
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov
     this.meta = this._loadMeta(); // persistent best-wave / lifetime stats
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
@@ -151,6 +154,8 @@ class Game {
     click('nextWaveBtn', () => this.beginNextWave());
     click('settingsBtn', () => this.settings.open('menu'));
     click('adminBtn', () => this.openAdmin());
+    click('fonoteka-menu-btn', () => this.openFonoteka('menu'));
+    click('fonoteka-lobby-btn', () => this.openFonoteka('lobby'));
     click('adminBack', () => this.toMenu());
     click('multiplayerBtn', () => this.toLobby());
     click('armoryBtn', () => this.shop.open('menu'));
@@ -179,7 +184,7 @@ class Game {
     }));
     click('pauseSettingsBtn', () => this.settings.open('pause'));
     this.canvas.addEventListener('click', () => {
-      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin') return;
+      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin' || this.state === 'music') return;
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
     this.input.on('lock', () => { if (this.mpMenuOpen) this._closeMpMenu(false); else if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
@@ -243,6 +248,7 @@ class Game {
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
+          else if (this.gramophone.target) { this.gramophone.toggle(this.gramophone.target); }
           else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
           else if (this.loot.openNearby()) { /* claimed a landed supply drop */ }
           else if (this.inventory.isHoldingFlashlight()) this.dayNight.toggleFlashlight(); // nothing nearby to interact with → toggle the held flashlight beam
@@ -530,6 +536,19 @@ class Game {
   }
 
   openAdmin() { this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // keep the jukebox running so the asset-viewer Music player controls it live
+  // ФОНОТЕКА — full-screen music screen (live 3D gramophone + genre browser), from the menu or the co-op lobby.
+  openFonoteka(from) {
+    this._fonoFrom = (from === 'lobby') ? 'lobby' : 'menu';
+    this.state = 'music';
+    this.audio.init();
+    if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet');
+    this.ui.show('music');
+    if (this.fonoteka) this.fonoteka.open();
+  }
+  closeFonoteka() {
+    if (this.fonoteka) this.fonoteka.close();
+    if (this._fonoFrom === 'lobby') this.toLobby(); else { this.state = 'menu'; this.ui.show('menu'); }
+  }
   beginNextWave() {
     if (this.state !== 'shop') return;
     if (this.mp.active && !this.mp.isHost) { this.ui.hideAll(); this.hud.bigMessage('READY', 'waiting for the host…'); return; }
@@ -720,6 +739,7 @@ class Game {
     this.engine.update(dt); this.engine.render();
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
+    if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
     this.input.endFrame();
   }
 
@@ -743,6 +763,7 @@ class Game {
       }
       if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
+      this.gramophone.updateTarget(); // gramophone prop look-target + ←/→ song change (BEFORE player.update reads strafe)
       if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)
       if (this.world.updateDoorTarget) this.world.updateDoorTarget(this); // bunker гермодверь look-target (steppe only)
       this.player.update(dt);
@@ -755,6 +776,7 @@ class Game {
     if (this.world.updateDoors) this.world.updateDoors(dt); // steppe: ease bunker гермодвери open/closed + track leaf colliders
     if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
+    this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);
     this.loot.update(dt);
@@ -810,6 +832,8 @@ class Game {
     } else if (this.build.radioTarget) {
       const _r = this.build.radioTarget;
       this.hud.setInteract(_r.on ? '←/→ stanice · <b>E</b> vypnout rádio' : 'Press <b>E</b> to turn on radio');
+    } else if (this.gramophone.target) {
+      this.hud.setInteract(this.gramophone.prompt(this.gramophone.target));
     } else if (this.loot.nearPickup) {
       this.hud.setInteract(this.loot.promptPickup());
     } else {
