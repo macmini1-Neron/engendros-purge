@@ -202,6 +202,7 @@ export class UI {
       shop: document.getElementById('shop'), gameover: document.getElementById('gameover'),
       settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
       admin: document.getElementById('admin'), music: document.getElementById('music'),
+      crate: document.getElementById('crateOverlay'),
     };
     this.hint = document.getElementById('hint');
   }
@@ -284,6 +285,18 @@ export class WeaponPreview {
     this.spin = 0.6;
   }
   hide() { while (this.holder.children.length) { const c = this.holder.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); } this.cur = null; } // clear the model (gadgets with no 3D viewmodel)
+  // Show any Object3D (not a WEAPONS key) — e.g. the crate preview. modelgen Groups are nested,
+  // so dispose by TRAVERSE (the shallow pop-dispose above leaks on nested groups).
+  showObject(obj) {
+    this.cur = null;
+    while (this.holder.children.length) { const c = this.holder.children.pop(); c.traverse && c.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) (Array.isArray(n.material) ? n.material : [n.material]).forEach((m) => m.dispose && m.dispose()); }); }
+    if (!obj) return;
+    this.holder.add(obj);
+    const box = new THREE.Box3().setFromObject(this.holder);
+    const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    for (const c of this.holder.children) c.position.sub(ctr);
+    this.dist = Math.max(size.x, size.y, size.z) * 1.7 + 0.35; this.spin = 0.6;
+  }
   render(dt) {
     this.spin += dt * 0.7; this.holder.rotation.y = this.spin;
     const d = this.dist;

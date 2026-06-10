@@ -30,6 +30,7 @@ const SHOP_CATS = [
   { id: 'all', label: 'All' }, { id: 'rifle', label: 'Rifles' }, { id: 'smg', label: 'SMG' },
   { id: 'pistol', label: 'Pistols' }, { id: 'shotgun', label: 'Shotguns' }, { id: 'sniper', label: 'Snipers' },
   { id: 'launcher', label: 'Heavy' }, { id: 'melee', label: 'Melee' }, { id: 'gadget', label: 'Gadgets' },
+  { id: 'crate', label: 'Crates' },   // «Посылка» lootbox — discoverable rail, room to grow
 ];
 
 // The lobby/menu ARMORY: spend the persistent bank to permanently UNLOCK gear (unlock-once), then build a flat
@@ -82,9 +83,10 @@ export class Shop {
     }
     return icon(ITEM_ICON[key] || 'crate');
   }
-  _nameOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.name; return WEAPONS[key] ? WEAPONS[key].name : key; } // GADGETS first (flashlight/binoculars live in both registries)
-  _descOf(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.desc; const w = WEAPONS[key]; return w ? (w.class + (w.melee ? ' · melee weapon' : ' · firearm')) : ''; }
-  _price(key) { const g = GADGETS.find((x) => x.key === key); if (g) return g.price; return WEAPONS[key] ? (WEAPONS[key].price || 0) : 0; } // GADGETS first: flashlight/binoculars have a price in GADGETS, none in WEAPONS
+  _crateDef() { return this.game.crate ? this.game.crate.def : null; }   // crate data read at runtime (no crate.js import here)
+  _nameOf(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.name; const g = GADGETS.find((x) => x.key === key); if (g) return g.name; return WEAPONS[key] ? WEAPONS[key].name : key; } // crate, then GADGETS (flashlight/binoculars live in both registries)
+  _descOf(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.desc; const g = GADGETS.find((x) => x.key === key); if (g) return g.desc; const w = WEAPONS[key]; return w ? (w.class + (w.melee ? ' · melee weapon' : ' · firearm')) : ''; }
+  _price(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.price; const g = GADGETS.find((x) => x.key === key); if (g) return g.price; return WEAPONS[key] ? (WEAPONS[key].price || 0) : 0; } // crate, then GADGETS (flashlight/binoculars have a price in GADGETS, none in WEAPONS)
   _count(key) { return this._meta().loadout.filter((k) => k === key).length; }
 
   // ---- economy: unlock-once + paid duplicates ----
@@ -130,6 +132,7 @@ export class Shop {
     const out = [];
     for (const k of WEAPON_ORDER) { const w = WEAPONS[k]; if (!w || w.class === 'tool') continue; out.push({ key: k, name: w.name, price: w.price || 0, cat: w.class }); }
     for (const g of GADGETS) out.push({ key: g.key, name: g.name, price: g.price, cat: 'gadget' });
+    const cd = this._crateDef(); if (cd) out.push({ key: cd.key, name: cd.name, price: cd.price, cat: 'crate' });
     return out;
   }
   _filteredCatalog() {
@@ -161,8 +164,11 @@ export class Shop {
     if (!this.grid) return; const m = this._meta(); const _st = this.grid.scrollTop; this.grid.innerHTML = '';
     const list = this._filteredCatalog();
     if (!list.length) { this.grid.innerHTML = '<div class="cat-empty">No gear matches your search.</div>'; return; }
+    const cd = this._crateDef();
     for (const it of list) {
-      const owned = m.unlocked.includes(it.key), cnt = this._count(it.key);
+      const isCrate = cd && it.key === cd.key;
+      const owned = isCrate ? false : m.unlocked.includes(it.key);   // crate is consumable stock, never "owned"
+      const cnt = isCrate ? (m.crates | 0) : this._count(it.key);    // crate badge = stock you hold
       const afford = owned ? true : m.bank >= it.price;
       const el = document.createElement('div');
       el.className = 'cat-item' + (it.key === this.selected ? ' sel' : '') + (owned ? ' owned' : (afford ? '' : ' dim'));
@@ -176,12 +182,13 @@ export class Shop {
     this.grid.scrollTop = _st; // preserve scroll across the full rebuild (clicking a tile re-renders the grid)
   }
   _setPreview(key) {
-    const g = this.game;
+    const g = this.game, cd = this._crateDef(), isCrate = cd && key === cd.key;
     if (g.preview && g.preview.setSize) g.preview.setSize(); // keep the WebGL buffer matched to the live canvas box
-    if (key && WEAPONS[key] && g.preview) g.preview.show(key);
+    if (isCrate && g.preview && g.preview.showObject) g.preview.showObject(g.crate.buildPreviewMesh());
+    else if (key && WEAPONS[key] && g.preview) g.preview.show(key);
     else if (g.preview && g.preview.hide) g.preview.hide();
     if (this.nameEl) this.nameEl.textContent = key ? this._nameOf(key) : '';
-    if (this.statsEl) { const w = WEAPONS[key]; const p = []; if (w) { if (w.dmg) p.push('DMG ' + w.dmg); if (w.rpm) p.push(w.rpm + ' RPM'); if (w.mag) p.push(w.mag + ' mag'); if (w.melee) p.push('melee'); } this.statsEl.textContent = w ? p.join('  ·  ') : (key ? 'gadget' : ''); }
+    if (this.statsEl) { const w = WEAPONS[key]; const p = []; if (w) { if (w.dmg) p.push('DMG ' + w.dmg); if (w.rpm) p.push(w.rpm + ' RPM'); if (w.mag) p.push(w.mag + ' mag'); if (w.melee) p.push('melee'); } this.statsEl.textContent = isCrate ? 'supply crate · contains 1 item' : (w ? p.join('  ·  ') : (key ? 'gadget' : '')); }
   }
   _renderDetail() {
     this._setPreview(this.selected);
@@ -190,6 +197,7 @@ export class Shop {
     if (desc) desc.textContent = key ? this._descOf(key) : '';
     if (!host) return;
     if (!key) { host.innerHTML = '<div class="det-hint">Pick a weapon to inspect.</div>'; return; }
+    const cd = this._crateDef(); if (cd && key === cd.key) { this._renderCrateDetail(host, m, cd); return; }
     const owned = m.unlocked.includes(key), cnt = this._count(key), price = this._price(key), afford = m.bank >= price;
     const full = m.loadout.indexOf(null) < 0; // adding needs a free slot
     let html = '';
@@ -219,6 +227,30 @@ export class Shop {
         else if (act === 'sell') { const c = this._count(key), refund = Math.round(price * 0.6) + Math.max(0, c - 1) * price; const msg = c > 1 ? `Sell ALL ×${c} ${nm} and give up the unlock? You get $${refund} back.` : `Sell ${nm}? You get $${refund} back and it leaves your loadout.`; this._confirm(msg, () => this._sell(key)); }
       });
     });
+  }
+  // «Посылка» lootbox tile: BUY (confirm — house rule for spends) + OPEN (zero friction, no confirm).
+  _renderCrateDetail(host, m, cd) {
+    const stock = m.crates | 0, afford = m.bank >= cd.price;
+    let html = `<button class="det-btn buy" data-act="buycrate" ${afford ? '' : 'disabled'}>BUY · $${cd.price}</button>`;
+    if (!afford) html += `<div class="det-warn">Need $${cd.price - m.bank} more</div>`;
+    html += `<button class="det-btn equip" data-act="opencrate" ${stock > 0 ? '' : 'disabled'}>OPEN · ×${stock}</button>`;
+    if (stock <= 0) html += '<div class="det-incl">Buy a crate first</div>';
+    const pity = this.game.crate && this.game.crate.pity;           // pity transparency keeps hope mathematically alive
+    if (pity) { const toLegend = pity.legendary - (m.pityLegend | 0); if (toLegend > 0 && toLegend <= 5) html += `<div class="det-incl">legendary guaranteed within ≤${toLegend} crates</div>`; }
+    host.innerHTML = html;
+    host.querySelectorAll('.det-btn').forEach((b) => {
+      b.addEventListener('mouseenter', () => this.game.audio.uiHover());
+      b.addEventListener('click', () => {
+        if (b.dataset.act === 'buycrate') this._confirm(`Buy a Supply Crate for $${cd.price}?`, () => this._buyCrate());
+        else if (b.dataset.act === 'opencrate') this.game.openCrate();   // commits the roll + launches the ceremony
+      });
+    });
+  }
+  _buyCrate() {
+    const m = this._meta(), cd = this._crateDef(); if (!cd) return;
+    if (m.bank < cd.price) { this.game.audio.noMoney(); return; }
+    m.bank -= cd.price; m.crates = (m.crates | 0) + 1;
+    this.game.audio.buy(); this.game._saveMeta(); this._render();
   }
   _renderLoadoutBar() {
     if (!this.stripEl) return; const m = this._meta(); this.stripEl.innerHTML = '';

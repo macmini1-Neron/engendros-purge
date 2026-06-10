@@ -16,6 +16,7 @@ import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
+import { CrateCeremony, rollCrateReward } from './crate.js';
 import { Fonoteka, GramophoneManager, ensureGramophoneSpec, placeGramophones } from './fonoteka.js';
 import { MP } from './mp.js';
 import { Engine } from './engine.js';
@@ -28,10 +29,12 @@ import { registerModel } from './props/registry.js';
 // Specs are authored in METRES — never compensate a wrong-sized spec with a
 // scale factor at the call site (see tools/modelgen/lint.mjs).
 const _registerModels = async () => {
-  try {
-    const spec = await (await fetch(`./models/dshk-ammo-box/spec.json?cb=${Date.now()}`)).json();
-    registerModel('dshk-ammo-box', spec);
-  } catch (e) { console.warn('[modelgen] Failed to register dshk-ammo-box:', e); }
+  const load = async (id) => {
+    try { registerModel(id, await (await fetch(`./models/${id}/spec.json?cb=${Date.now()}`)).json()); }
+    catch (e) { console.warn(`[modelgen] Failed to register ${id}:`, e); }
+  };
+  await load('dshk-ammo-box');
+  await load('supply-lootbox');     // «Посылка» lootbox crate (CrateCeremony falls back to a procedural chest if this fails)
 };
 _registerModels();
 
@@ -40,7 +43,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-10 07:41';
+const GAME_BUILD = '2026-06-10 12:58';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -81,6 +84,7 @@ class Game {
     const _pc = document.getElementById('previewCanvas'); this.preview = _pc ? new WeaponPreview(_pc) : null;
     this.ui = new UI();
     const _ac = document.getElementById('adminCanvas'); this.admin = _ac ? new Admin(this) : null;
+    const _cc = document.getElementById('crateCanvas'); this.crate = _cc ? new CrateCeremony(this) : null; // «Посылка» lootbox ceremony (own renderer, gated on state==='crate')
     this.fonoteka = new Fonoteka(this); ensureGramophoneSpec(); // ФОНОТЕКА music screen + preload the gramophone model
     this.gramophone = new GramophoneManager(this); placeGramophones(this.gramophone, this.engine.scene, this.mapId); // in-world gramophone props (genre per prop, E + ◀/▶)
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov
@@ -184,7 +188,7 @@ class Game {
     }));
     click('pauseSettingsBtn', () => this.settings.open('pause'));
     this.canvas.addEventListener('click', () => {
-      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin' || this.state === 'music') return;
+      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin' || this.state === 'music' || this.state === 'crate') return;
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
     this.input.on('lock', () => { if (this.mpMenuOpen) this._closeMpMenu(false); else if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
@@ -549,6 +553,17 @@ class Game {
     if (this.fonoteka) this.fonoteka.close();
     if (this._fonoFrom === 'lobby') this.toLobby(); else { this.state = 'menu'; this.ui.show('menu'); }
   }
+  // «Посылка» lootbox — open one owned crate. The roll is COMMITTED + saved BEFORE any
+  // animation so an Esc/refresh/crash mid-ceremony can never re-roll or lose the reward.
+  openCrate() {
+    const m = this.meta;
+    if (!this.crate || this.state === 'crate' || !((m.crates | 0) > 0)) { this.audio.noMoney(); return; } // re-entry/stock guard
+    this.audio.init();                       // CTA click = the user gesture that unlocks WebAudio
+    const result = rollCrateReward(this);    // decrement stock, advance pity, grant reward
+    this._saveMeta();
+    this.state = 'crate'; this.ui.show('crate');
+    this.crate.open(result);
+  }
   beginNextWave() {
     if (this.state !== 'shop') return;
     if (this.mp.active && !this.mp.isHost) { this.ui.hideAll(); this.hud.bigMessage('READY', 'waiting for the host…'); return; }
@@ -686,6 +701,7 @@ class Game {
     m.loadout = m.loadout.map((k) => (k && typeof k === 'string' && !/^build_/.test(k)) ? k : null); // drop junk/removed-builder keys
     if (m.loadout.every((k) => !k)) m.loadout[0] = 'knife';                       // cold start / empty → knife in slot 0
     for (const k of m.loadout) { if (k && !m.unlocked.includes(k)) m.unlocked.push(k); } // anything equipped is owned (catalog ownership derives from m.unlocked)
+    for (const k of ['crates', 'crateOpens', 'pityEpic', 'pityLegend']) if (typeof m[k] !== 'number' || !(m[k] >= 0)) m[k] = 0; // «Посылка» lootbox: stock + pity counters
     if (!m.playerId) { m.playerId = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); try { localStorage.setItem('engendros_meta', JSON.stringify(m)); } catch (e) {} } // stable per-device co-op identity — persist immediately so it survives reloads
     return m;
   }
@@ -740,6 +756,8 @@ class Game {
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
     if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
+    if (this.state === 'crate' && this.crate) this.crate.render(dt);
+    else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
     this.input.endFrame();
   }
 

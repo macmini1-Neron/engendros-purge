@@ -572,6 +572,24 @@
 
     .hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .45; z-index: 8; }
 
+    /* ---------- «Посылка» lootbox ceremony (POLYMER + the until-now-unused rarity vars) ---------- */
+    .crate-ov { padding: 0; background: #000; }
+    #crateCanvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; opacity: 0; transition: opacity .45s ease; cursor: pointer; }
+    #crateCanvas.lit { opacity: 1; }
+    #crateVig { position: absolute; inset: 0; z-index: 2; pointer-events: none; box-shadow: inset 0 0 240px 80px rgba(0,0,0,.78); transition: box-shadow .12s ease; }
+    #crateCount { position: absolute; top: 16px; right: 22px; z-index: 3; font-family: var(--font-stencil), var(--font-display); font-size: 15px; letter-spacing: 2px; color: var(--ink-dim); text-shadow: 0 2px 0 #000; }
+    .crate-hint { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); z-index: 3; font-family: var(--font-display); font-size: 19px; letter-spacing: 3px; text-transform: uppercase; color: var(--brass); text-shadow: 0 2px 0 #000; opacity: 0; transition: opacity .2s; animation: cratePulse 1.6s ease-in-out infinite; }
+    .crate-hint.show { opacity: 1; }
+    @keyframes cratePulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+    .crate-card { position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%); z-index: 3; text-align: center; pointer-events: none; opacity: 0; --tier: var(--c-common); }
+    .crate-card.show { opacity: 1; animation: cratePop .38s cubic-bezier(.2,1.5,.3,1) both; }
+    @keyframes cratePop { from { transform: translateX(-50%) scale(.78); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+    .crate-tier { font-family: var(--font-stencil), var(--font-display); font-size: 15px; letter-spacing: 6px; text-transform: uppercase; color: var(--tier); text-shadow: 0 0 14px var(--tier), 0 2px 0 #000; }
+    .crate-name { font-family: var(--font-title); font-size: 44px; letter-spacing: 2px; color: var(--paper); text-shadow: 0 3px 0 #000, 0 0 26px var(--tier); margin-top: 2px; }
+    .crate-sub { font-family: var(--font-body); font-size: 16px; color: var(--ink-dim); margin-top: 6px; text-shadow: 0 2px 0 #000; min-height: 19px; }
+    .crate-btns { position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%); z-index: 3; display: flex; gap: 12px; opacity: 0; pointer-events: none; transition: opacity .25s; }
+    .crate-btns.show { opacity: 1; pointer-events: auto; }
+
     /* ---------- ADMIN asset viewer ---------- */
     .admincard { width: min(96vw, 1100px); max-width: 1100px; max-height: 94vh; display: flex; flex-direction: column; overflow: hidden; }
     .adminbody { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; margin: 8px 0; }
@@ -1053,6 +1071,23 @@
     </div>
   </div>
 
+  <!-- «Посылка» lootbox ceremony — full-screen 3D opening (own renderer, state==='crate') -->
+  <div id="crateOverlay" class="overlay crate-ov">
+    <canvas id="crateCanvas"></canvas>
+    <div id="crateVig"></div>
+    <div id="crateCount"></div>
+    <div id="crateHint" class="crate-hint"></div>
+    <div id="crateCard" class="crate-card">
+      <div id="crateTier" class="crate-tier"></div>
+      <div id="crateName" class="crate-name"></div>
+      <div id="crateSub" class="crate-sub"></div>
+    </div>
+    <div id="crateBtns" class="crate-btns">
+      <button class="btn go" id="crateAgainBtn">OPEN AGAIN · ×<span id="crateLeft">0</span></button>
+      <button class="btn sec" id="crateBackBtn">BACK</button>
+    </div>
+  </div>
+
   <div id="gameover" class="overlay">
     <div class="card">
       <div class="kicker"><b>КОНЕЦ</b> · CASUALTY REPORT</div>
@@ -1326,6 +1361,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=247"></script>
+  <script type="module" src="./src/game.js?v=248"></script>
 </body>
 </html>
