@@ -277,11 +277,15 @@ export class Fonoteka {
       this._renderList();
     }));
     $('fono-vol').addEventListener('input', (e) => { this.game.audio.init(); this.game.audio.setMusicVolume(Math.max(0, Math.min(1, (+e.target.value) / 100))); this._volFill(e.target); });
-    $('fono-prev').onclick = () => m() && m().jukeboxPrev();
-    $('fono-next').onclick = () => m() && m().jukeboxNext();
-    $('fono-play').onclick = () => m() && m().jukeboxToggle();
-    $('fono-shuffle').onclick = () => m() && m().jukeboxSetShuffle();
-    $('fono-repeat').onclick = () => m() && m().jukeboxSetRepeatOne();
+    // every transport action FIRST resumes the audio context (the browser auto-suspends it when the
+    // tab is hidden / after inactivity — a play click on a suspended ctx toggles the element silently,
+    // which reads as "the button did nothing"). Then refresh the UI at once so the icon never lags.
+    const act = (fn) => { this.game.audio.init(); const mm = m(); if (mm) fn(mm); this._tick(); };
+    $('fono-prev').onclick = () => act((mm) => mm.jukeboxPrev());
+    $('fono-next').onclick = () => act((mm) => mm.jukeboxNext());
+    $('fono-play').onclick = () => act((mm) => mm.jukeboxToggle());
+    $('fono-shuffle').onclick = () => act((mm) => mm.jukeboxSetShuffle());
+    $('fono-repeat').onclick = () => act((mm) => mm.jukeboxSetRepeatOne());
     const bar = $('fono-bar');                                  // click OR drag to scrub; the needle follows at once
     const seekTo = (clientX) => {
       const r = bar.getBoundingClientRect(); const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
@@ -290,7 +294,7 @@ export class Fonoteka {
       const fill = $('fono-fill'); if (fill) fill.style.width = (frac * 100) + '%';
     };
     let seeking = false;
-    bar.addEventListener('pointerdown', (e) => { seeking = true; try { bar.setPointerCapture(e.pointerId); } catch (x) {} seekTo(e.clientX); });
+    bar.addEventListener('pointerdown', (e) => { seeking = true; this.game.audio.init(); try { bar.setPointerCapture(e.pointerId); } catch (x) {} seekTo(e.clientX); });
     bar.addEventListener('pointermove', (e) => { if (seeking) seekTo(e.clientX); });
     const endSeek = () => { seeking = false; };
     bar.addEventListener('pointerup', endSeek); bar.addEventListener('pointercancel', endSeek);
