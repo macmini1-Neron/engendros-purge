@@ -7,6 +7,8 @@
 // later ② arch shelters ③ КДП tower ④ hangar ⑤ aircraft ⑥ ПВО+radar ⑦ support.
 import * as THREE from 'three';
 import { MeshBuilder, TAU, makeRNG, randRange, shade, voxelMaterial } from './util.js';
+import { buildSpec } from './props/voxel-interp.js';
+import { S75_LAUNCHER_SPEC } from './props/models/s75_launcher.js';
 
 // ---- layered-shading palettes (Hi/Mid/Lo/Slot) ----
 const CONC = { hi: 0xc8c4ba, mid: 0xa8a49a, lo: 0x86837a, slot: 0x5c594f }; // PAG airfield concrete
@@ -464,6 +466,29 @@ function buildSAMLauncher(world, b, lx, lz, phi) {                        // С�
   for (let k = 0; k < 4; k++) { const fa = phi + Math.PI / 4 + k * Math.PI / 2; const [px, py, pz] = A(3.1, 0); b.box(0.7, 0.08, 0.55, px + Math.cos(fa) * 0.5, py, pz + Math.sin(fa) * 0.5, M.mid, { ry: fa }); } // 4 smaller sustainer fins
   collider(world, lx, lz, 1.6, 0, 1.5);
 }
+// The detailed S-75 «Двина» launcher comes from the modelgen harness (models/s75_launcher) — built ONCE
+// and cloned per emplacement (clones share geometry + the livery texture, so 6 launchers stay cheap).
+// Each is yawed so the missile points outward and the газоотражатель faces the central radar. Falls back
+// to the lightweight hand-coded buildSAMLauncher above if the spec ever fails to build (never bricks the field).
+let _s75Base = null, _s75Tried = false;
+function s75Base() {
+  if (_s75Tried) return _s75Base;
+  _s75Tried = true;
+  try { _s75Base = buildSpec(S75_LAUNCHER_SPEC); }
+  catch (e) { console.warn('[airfield] modelgen S-75 build failed — using hand-coded launcher:', e); }
+  return _s75Base;
+}
+function placeS75(world, b, lx, lz, phi) {
+  const base = s75Base();
+  if (!base) { buildSAMLauncher(world, b, lx, lz, phi); return; }         // graceful fallback
+  const g = base.clone(true);
+  const TT = 2.0;                                                         // model turntable sits at local +Z 2.0 → center it on the pad
+  g.position.set(lx - Math.sin(phi) * TT, 0, lz - Math.cos(phi) * TT);
+  g.rotation.y = phi;                                                     // nose outward, blast deflector toward the radar
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  world.scene.add(g);
+  collider(world, lx, lz, 1.7, 0, 1.6);                                   // base footprint (the rail/missile overhang is non-solid)
+}
 function buildFanSong(world, b, cx, cz) {                                 // СНР-75 «Fan Song» — TWO perpendicular trough antennas forming a +
   const M = G4BO, A = 0x8d8a80, RIB = 0x66635c, IRX = 0x2a2a2e;
   world._solid(b, 3.4, 2.2, 5.5, cx, 1.1, cz, M.mid, { tint: 0.03 });     // operator van
@@ -481,7 +506,7 @@ function buildSAMSite(world, b, cx, cz, R = 22) {
   for (let k = 0; k < 6; k++) { const phi = k * Math.PI / 3, lx = cx + Math.sin(phi) * R, lz = cz + Math.cos(phi) * R;
     b.box(3.5, 0.06, R - 4, cx + Math.sin(phi) * R / 2, 0.05, cz + Math.cos(phi) * R / 2, CONC.lo, { ry: phi }); // petal road
     for (let a = 0; a < 8; a++) { const ra = a * Math.PI / 4; b.box(2.6, 1.5, 2.6, lx + Math.cos(ra) * 4.2, 0.75, lz + Math.sin(ra) * 4.2, a % 2 ? EARTH.mid : EARTH.lo, { ry: ra, tint: 0.03 }); b.box(2.4, 0.3, 2.4, lx + Math.cos(ra) * 4.2, 1.5, lz + Math.sin(ra) * 4.2, SOD.mid); } // revetment berm + grass
-    buildSAMLauncher(world, b, lx, lz, phi);
+    placeS75(world, b, lx, lz, phi);   // detailed modelgen S-75 «Двина» (was the hand-coded buildSAMLauncher)
   }
 }
 function buildShilka(world, b, cx, cz, ry = 0) {                          // ЗСУ-23-4 «Шилка» — squat box turret, 2×2 water-jacketed barrels, Gun-Dish at rear
@@ -702,7 +727,7 @@ export function buildAirfield(world, ox, oz) {
   buildSu25(world, b, ox + 34, oz + 122, '25');
 
   // ⑥ ПВО — С-75 SAM site (N, OUTSIDE the fence, shrunk to clear the mountains) + Шилка ×2 (N corners) + П-18 + ЗУ-23 ×2
-  buildSAMSite(world, b, ox - 70, oz + 230, 18);
+  buildSAMSite(world, b, ox - 70, oz + 240, 18);   // pushed 10 m further N so the «цветок» S petal clears the perimeter fence (still ~20 m off the N mountains)
   buildShilka(world, b, ox - 175, oz + 205, 0.3); buildShilka(world, b, ox + 55, oz + 205, -0.3); // mid-N, clear of the corner watchtowers
   buildRadarP18(world, b, ox - 135, oz + 230);
   buildZU23(world, b, ox - 92, oz + 50); buildZU23(world, b, ox + 98, oz + 90, 0.4);             // E flank, clear of the E shelter

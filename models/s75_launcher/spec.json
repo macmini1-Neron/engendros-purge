@@ -1,0 +1,74 @@
+{
+  "id": "s75_launcher",
+  "name": "S-75 Dvina (SA-2) V-750VN missile on СМ-90 launcher",
+  "category": "industrial",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 3.6, "h": 3.4, "d": 7.0 },
+  "dossier": "models/s75_launcher/ref/dossier.json",
+  "rig": [
+    { "name": "azimuth",   "pivot": [0, 0.45, 2.0], "axis": "y", "pose": 0,     "type": "spin",  "range": [0, 6.2832] },
+    { "name": "elevation", "pivot": [0, 1.82, 1.1], "axis": "x", "pose": -0.95, "parent": "azimuth",   "type": "hinge", "range": [-1.309, -0.1745] },
+    { "name": "missile",   "pivot": [0, 2.3, 1.1],  "axis": "z", "pose": 0,     "parent": "elevation", "type": "slide" },
+    { "name": "deflector", "pivot": [0, 0.5, 0.0], "axis": "x", "pose": 0, "parent": "azimuth",   "type": "fixed" }
+  ],
+  "parts": [
+    { "op": "cone",     "id": "nozzle",    "args": { "r": 0.38, "h": 0.34, "tone": "lo" }, "at": [0, 2.3, -0.12], "mat": "steel", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "booster",   "args": { "r": 0.327, "h": 2.702 }, "at": [0, 2.3, 1.351], "mat": "missileGrey", "rig": "missile", "src": "dossier#booster" },
+    { "op": "cylinder", "id": "transition","args": { "r": 0.327, "r2": 0.25, "h": 0.24 }, "at": [0, 2.3, 2.82], "mat": "missileGrey", "rig": "missile", "src": "dossier#sustainer" },
+    { "op": "texturedCylinder", "id": "sustainer", "args": { "r": 0.25, "h": 6.98, "tone": "hi", "marks": [
+        { "text": "5Я23  0250853", "x": 0.22, "y": 0.46, "rot": -1.5708, "size": 48 },
+        { "text": "В-750ВН", "x": 0.22, "y": 0.74, "rot": -1.5708, "size": 38 },
+        { "text": "БЧ", "x": 0.22, "y": 0.9, "size": 54 }
+      ] }, "at": [0, 2.3, 6.43], "mat": "missileGrey", "rig": "missile", "src": "dossier#sustainer" },
+    { "op": "cylinder", "id": "warheadBand","args": { "r": 0.262, "h": 0.45, "tone": "hi" }, "at": [0, 2.3, 8.7], "mat": "missileGrey", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "noseBand",   "args": { "r": 0.254, "h": 0.5 }, "at": [0, 2.3, 9.62], "mat": "gunGrey", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "cone",     "id": "nose",      "args": { "r": 0.25, "h": 0.96 }, "at": [0, 2.3, 10.4], "mat": "missileGrey", "rig": "missile", "src": "dossier#nose" },
+    { "op": "cone",     "id": "noseTip",   "args": { "r": 0.07, "h": 0.28, "tone": "mid" }, "at": [0, 2.3, 10.95], "mat": "gunGrey", "rig": "missile", "src": "dossier#nose" },
+    { "op": "bevelBox", "id": "conduit",   "args": { "w": 0.08, "h": 0.07, "d": 6.9 }, "at": [0, 2.58, 6.0], "mat": "steel", "rig": "missile", "src": "dossier#derivation" },
+    { "op": "deltaFins", "id": "boosterFins", "args": { "count": 4, "root": 1.8, "span": 0.966, "tip": 0.45, "sweep": 0.95, "thick": 0.05, "r0": 0.327, "phase": 0.785 }, "at": [0, 2.3, 1.05], "mat": "missileGrey", "rig": "missile", "src": "dossier#fins" },
+    { "op": "deltaFins", "id": "wings",       "args": { "count": 4, "root": 1.2, "span": 0.596, "tip": 0.32, "sweep": 0.65, "thick": 0.04, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 3.7], "mat": "missileGrey", "rig": "missile", "src": "dossier#fins" },
+    { "op": "deltaFins", "id": "noseFins",    "args": { "count": 4, "root": 0.4, "span": 0.35, "tip": 0.12, "sweep": 0.22, "thick": 0.03, "r0": 0.25, "phase": 0.785 }, "at": [0, 2.3, 9.4], "mat": "missileGrey", "rig": "missile", "src": "dossier#derivation" },
+
+    { "op": "latticeBeam", "id": "rail", "args": { "len": 7.0, "w": 0.54, "h": 0.32, "bays": 10, "chord": 0.055 }, "at": [0, 1.82, 4.0], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "railWeb", "args": { "w": 0.12, "h": 0.34, "d": 7.0 }, "at": [0, 1.82, 4.0], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "shoeAft",  "args": { "w": 0.56, "h": 0.18, "d": 0.4 }, "at": [0, 2.05, 1.4], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "shoeFore", "args": { "w": 0.46, "h": 0.18, "d": 0.4 }, "at": [0, 2.05, 6.0], "mat": "oliveDrab", "rig": "elevation", "src": "dossier#launcher_sm90" },
+
+    { "op": "bevelBox", "id": "azPlatform","args": { "w": 1.7, "h": 0.32, "d": 3.7 }, "at": [0, 0.5, 2.2], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "turntable", "args": { "r": 1.05, "h": 0.34, "axis": "y" }, "at": [0, 0.45, 2.0], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "cabinet",  "id": "housing",   "args": { "w": 1.5, "h": 1.05, "d": 2.5, "panels": 4 }, "at": [0, 1.2, 3.0], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "trunnion", "args": { "w": 0.6, "h": 1.25, "d": 0.95 }, "at": [0, 1.23, 1.1], "mat": "oliveDrab", "rig": "azimuth", "src": "dossier#launcher_sm90" },
+
+    { "op": "bevelBox", "id": "spine",  "args": { "w": 0.5, "h": 0.2, "d": 5.6 }, "at": [0, 0.12, 2.0], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "crossF", "args": { "w": 3.5, "h": 0.2, "d": 0.5 }, "at": [0, 0.12, 3.9], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "bevelBox", "id": "crossR", "args": { "w": 3.5, "h": 0.2, "d": 0.5 }, "at": [0, 0.12, 0.3], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "jackFL", "args": { "r": 0.09, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [-1.6, 0.3, 3.9], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "padFL",  "args": { "r": 0.32, "h": 0.08, "axis": "y" }, "at": [-1.6, 0.04, 3.9], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "jackFR", "args": { "r": 0.09, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [1.6, 0.3, 3.9], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "padFR",  "args": { "r": 0.32, "h": 0.08, "axis": "y" }, "at": [1.6, 0.04, 3.9], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "jackRL", "args": { "r": 0.09, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [-1.6, 0.3, 0.3], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "padRL",  "args": { "r": 0.32, "h": 0.08, "axis": "y" }, "at": [-1.6, 0.04, 0.3], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "jackRR", "args": { "r": 0.09, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [1.6, 0.3, 0.3], "mat": "steel", "src": "dossier#launcher_sm90" },
+    { "op": "cylinder", "id": "padRR",  "args": { "r": 0.32, "h": 0.08, "axis": "y" }, "at": [1.6, 0.04, 0.3], "mat": "oliveDrab", "src": "dossier#launcher_sm90" },
+
+    { "op": "bevelBox", "id": "deflBracket", "args": { "w": 1.0, "h": 0.22, "d": 0.3 }, "at": [0, 0.62, 0.2], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflArmL", "args": { "w": 0.14, "h": 0.16, "d": 1.05 }, "at": [-0.42, 0.56, -0.3], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflArmR", "args": { "w": 0.14, "h": 0.16, "d": 1.05 }, "at": [0.42, 0.56, -0.3], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflRamL", "args": { "r": 0.06, "h": 0.95, "axis": "z", "tone": "lo" }, "at": [-0.2, 0.69, -0.12], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflRamR", "args": { "r": 0.06, "h": 0.95, "axis": "z", "tone": "lo" }, "at": [0.2, 0.69, -0.12], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflWedgeBack", "args": { "w": 1.5, "h": 0.14, "d": 0.5 }, "at": [0, 0.30, -1.12], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflWedgeMid",  "args": { "w": 1.5, "h": 0.14, "d": 0.5 }, "at": [0, 0.42, -0.82], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflWedgeFront","args": { "w": 1.5, "h": 0.16, "d": 0.5 }, "at": [0, 0.55, -0.55], "mat": "oliveDrab", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflFootPad",  "args": { "r": 0.3, "h": 0.08, "axis": "y" }, "at": [0, 0.04, -1.2], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflFootLegL", "args": { "r": 0.06, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [-0.3, 0.28, -1.18], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "cylinder", "id": "deflFootLegR", "args": { "r": 0.06, "h": 0.5, "axis": "y", "tone": "lo" }, "at": [0.3, 0.28, -1.18], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" },
+    { "op": "bevelBox", "id": "deflFootTie", "args": { "w": 0.7, "h": 0.08, "d": 0.1 }, "at": [0, 0.5, -1.18], "mat": "steel", "rig": "deflector", "src": "dossier#deflector" }
+  ],
+  "needs": [
+    "Booster swings clear of the housing/base across the FULL elevation arc (10–75°): pivot is near the booster (z≈1.1) and the housing sits forward of it, so the tail arcs down BEHIND the housing, over the deflector — verified at multiple angles.",
+    "RIGGED for animation: azimuth (Y, traverse) → elevation (X, −75…−10°, rail pitch) → missile (Z slide, firing-only). Deflector is FIXED under azimuth — it does NOT move on its own; it swings in azimuth with the whole launcher to stay behind the tail (sourced), and is pressed to the ground only by efflux at launch. userData.rig carries pivot/axis/type/range.",
+    "СМ-90 firing config (open lattice beam, paneled ЭСП-90 cabinet, X cross-base, screw jacks, газоотражатель wedge) — sourced features, plausible dims (dossier#launcher_sm90 + dossier#deflector + needs). The blast-deflector wedge is mounted per sources: arms + TWO hydraulic rams to the rear of the rotating box + a tubular A-frame support foot on the ground (dossier#deflector).",
+    "Body stencils/serial + erection ~54° are representative/derived."
+  ]
+}
