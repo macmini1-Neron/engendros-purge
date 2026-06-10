@@ -22,41 +22,41 @@
       "id": "mid_bulk",
       "name": "Mid body — main mass, slightly narrower",
       "op": "bevelBox",
-      "args": { "w": 0.96, "h": 0.32, "d": 0.78 },
-      "at": [0, 0.36, 0],
+      "args": { "w": 0.96, "h": 0.34, "d": 0.78 },
+      "at": [0.07, 0.30, -0.05],
       "mat": "granite",
       "src": "dossier#boulder_chosen_dims",
-      "note": "960×320×780 mm; stacked on base_slab (bottom at y=0.20)."
+      "note": "960×340×780 mm; offset +x/−z and sunk so it overlaps base_slab (bottom y=0.13) — breaks the concentric terrace, reads as an irregular rounded mass."
     },
     {
       "id": "upper_dome",
       "name": "Upper shoulder — narrowed dome section",
       "op": "bevelBox",
-      "args": { "w": 0.74, "h": 0.20, "d": 0.60 },
-      "at": [0, 0.58, 0],
+      "args": { "w": 0.74, "h": 0.24, "d": 0.62 },
+      "at": [-0.08, 0.50, 0.06],
       "mat": "granite",
       "src": "dossier#boulder_chosen_dims",
-      "note": "740×200×600 mm; centre y=0.58 (bottom y=0.48, within mid_bulk — natural overlap for rounded profile)."
+      "note": "740×240×620 mm; offset −x/+z (opposite of mid_bulk) and sunk (bottom y=0.38, deep overlap with mid) — the lateral jitter is what kills the wedding-cake silhouette."
     },
     {
       "id": "top_cap",
       "name": "Top granite cap — smallest, rounded apex",
       "op": "bevelBox",
-      "args": { "w": 0.48, "h": 0.12, "d": 0.40 },
-      "at": [0, 0.74, 0],
+      "args": { "w": 0.50, "h": 0.16, "d": 0.42 },
+      "at": [0.06, 0.65, -0.03],
       "mat": "granite",
       "src": "dossier#boulder_chosen_dims",
-      "note": "480×120×400 mm; sits exactly on upper_dome top (y=0.68 + 0.06 = top at 0.80)."
+      "note": "500×160×420 mm; offset +x/−z, sunk into upper_dome (bottom y=0.57); top y=0.73 — apex."
     },
     {
       "id": "moss_crown",
       "name": "Moss mat — crown of boulder (thickest accumulation, most sheltered)",
       "op": "bevelBox",
-      "args": { "w": 0.36, "h": 0.06, "d": 0.28 },
-      "at": [0, 0.83, 0],
+      "args": { "w": 0.38, "h": 0.06, "d": 0.30 },
+      "at": [0.06, 0.76, -0.03],
       "mat": "graniteMoss",
       "src": "dossier#moss_coverage",
-      "note": "360×60×280 mm; sits on top_cap top (y=0.80); centre y=0.83, top y=0.86."
+      "note": "380×60×300 mm; caps top_cap (top y=0.73); centre y=0.76, top y=0.79 — crown moss following the apex offset."
     },
     {
       "id": "moss_shoulder_l",

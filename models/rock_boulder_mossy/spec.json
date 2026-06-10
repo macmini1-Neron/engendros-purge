@@ -22,41 +22,41 @@
       "id": "body_mid",
       "name": "Granite body — mid layer",
       "op": "bevelBox",
-      "args": { "w": 0.40, "h": 0.12, "d": 0.37 },
-      "at": [0, 0.14, 0],
+      "args": { "w": 0.40, "h": 0.13, "d": 0.37 },
+      "at": [0.03, 0.12, -0.02],
       "mat": "granite",
       "src": "dossier#body_dimensions",
-      "note": "Stacked on body_base top (y=0.08). Slightly narrower in w and d, building the rounded taper. Center y=0.14, top y=0.20."
+      "note": "Offset +x/−z and sunk to overlap body_base (bottom y=0.055) — lateral jitter breaks the concentric dome into an irregular rounded mass."
     },
     {
       "id": "body_upper",
       "name": "Granite body — upper layer (narrowing)",
       "op": "bevelBox",
-      "args": { "w": 0.33, "h": 0.10, "d": 0.28 },
-      "at": [0, 0.25, 0],
+      "args": { "w": 0.33, "h": 0.11, "d": 0.29 },
+      "at": [-0.04, 0.22, 0.03],
       "mat": "granite",
       "src": "dossier#body_dimensions",
-      "note": "Stacked on body_mid top (y=0.20). Notably narrower, accentuating the rounded dome silhouette. Center y=0.25, top y=0.30."
+      "note": "Offset −x/+z (opposite of body_mid) and sunk (bottom y=0.165) — the alternating lateral jitter is what kills the wedding-cake look."
     },
     {
       "id": "body_crown",
       "name": "Granite body — crown (narrow apex)",
       "op": "bevelBox",
-      "args": { "w": 0.22, "h": 0.06, "d": 0.18 },
-      "at": [0, 0.33, 0],
+      "args": { "w": 0.24, "h": 0.07, "d": 0.20 },
+      "at": [0.03, 0.29, -0.02],
       "mat": "granite",
       "src": "dossier#body_dimensions",
-      "note": "Stacked on body_upper top (y=0.30). Narrow apex of the boulder, 220 mm wide. Top face at y=0.36 — moss_cap straddles this."
+      "note": "Offset +x/−z apex, sunk into body_upper (bottom y=0.255). Top face at y=0.325 — moss_cap straddles this."
     },
     {
       "id": "moss_cap",
       "name": "Bryophyte mat — crown cap",
       "op": "bevelBox",
-      "args": { "w": 0.20, "h": 0.04, "d": 0.16 },
-      "at": [0, 0.376, 0],
+      "args": { "w": 0.22, "h": 0.04, "d": 0.18 },
+      "at": [0.03, 0.341, -0.02],
       "mat": "graniteMoss",
       "src": "dossier#moss_cover",
-      "note": "40 mm moss mat from dossier#moss_cover. Straddling body_crown top face (y=0.36) by 4 mm: bottom face at y=0.356, center at y=0.376, top at y=0.396. No coplanar face with granite crown top (0.356 ≠ 0.36)."
+      "note": "40 mm moss mat from dossier#moss_cover, following the offset apex. Straddling body_crown top face (y=0.325) by 4 mm: bottom y=0.321, center y=0.341, top y=0.361. No coplanar face (0.321 ≠ 0.325)."
     },
     {
       "id": "moss_front",
@@ -93,10 +93,10 @@
       "name": "Foliose lichen / algal crust spot",
       "op": "bevelBox",
       "args": { "w": 0.06, "h": 0.02, "d": 0.05 },
-      "at": [-0.04, 0.402, 0.04],
+      "at": [-0.01, 0.367, 0.06],
       "mat": "grassGreen",
       "src": "dossier#lichen_patch",
-      "note": "60 mm lichen patch from dossier#lichen_patch. Straddling moss_cap top (y=0.396) by 4 mm: bottom y=0.392, center y=0.402, top y=0.412. Offset from centre (x=-0.04, z=+0.04) for an organic irregular placement. grassGreen reads distinctly from the graniteMoss patches."
+      "note": "60 mm lichen patch from dossier#lichen_patch. Straddling moss_cap top (y=0.361) by 4 mm: bottom y=0.357, center y=0.367, top y=0.377. Offset from the apex centre for an organic irregular placement. grassGreen reads distinctly from the graniteMoss patches."
     }
   ],
   "needs": [

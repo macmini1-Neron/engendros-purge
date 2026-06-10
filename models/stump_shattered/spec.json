@@ -92,34 +92,56 @@
       "id": "splinter_a",
       "name": "Largest splintered shard — leans +x / +z",
       "op": "bevelBox",
-      "args": { "w": 0.07, "h": 0.22, "d": 0.05 },
-      "at": [0.10, 0.72, 0.07],
-      "rot": [8, 0, 12],
+      "args": { "w": 0.07, "h": 0.34, "d": 0.05 },
+      "at": [0.10, 0.70, 0.07],
+      "rot": [14, 0, 20],
       "mat": "woodMid",
       "src": "dossier#splinter_dims",
-      "note": "Centre at y=0.72; unrotated bottom y=0.61 (embedded ~40 mm below break for structural read). Estimated rotated top ≈ y=0.837. Pale inner wood exposed by impact."
+      "note": "Tall dominant shard; centre y=0.70 (embedded below break). Strong +x/+z lean — rotated top ≈ y=0.88. Pale inner wood exposed by impact, the jagged silhouette the break needs."
     },
     {
       "id": "splinter_b",
       "name": "Mid splintered shard — leans -x / +z (still barked)",
       "op": "bevelBox",
-      "args": { "w": 0.06, "h": 0.18, "d": 0.04 },
-      "at": [-0.11, 0.70, 0.05],
-      "rot": [-6, 0, -15],
+      "args": { "w": 0.06, "h": 0.28, "d": 0.04 },
+      "at": [-0.11, 0.66, 0.05],
+      "rot": [-8, 0, -24],
       "mat": "barkPine",
       "src": "dossier#splinter_dims",
-      "note": "Still-barked outer splinter. Estimated rotated top ≈ y=0.796."
+      "note": "Still-barked outer splinter, leaning hard −x. Rotated top ≈ y=0.82."
     },
     {
       "id": "splinter_c",
       "name": "Small splintered shard — leans +x / -z",
       "op": "bevelBox",
-      "args": { "w": 0.05, "h": 0.14, "d": 0.04 },
-      "at": [0.04, 0.68, -0.10],
-      "rot": [10, 0, 8],
+      "args": { "w": 0.05, "h": 0.24, "d": 0.04 },
+      "at": [0.04, 0.64, -0.10],
+      "rot": [12, 0, 10],
       "mat": "woodDark",
       "src": "dossier#splinter_dims",
-      "note": "Latewood-side darker shard. Estimated rotated top ≈ y=0.755."
+      "note": "Latewood-side darker shard. Rotated top ≈ y=0.78."
+    },
+    {
+      "id": "splinter_d",
+      "name": "Back-left splinter — leans -x / -z (still barked)",
+      "op": "bevelBox",
+      "args": { "w": 0.055, "h": 0.30, "d": 0.045 },
+      "at": [-0.06, 0.68, -0.08],
+      "rot": [-12, 0, 16],
+      "mat": "barkPine",
+      "src": "dossier#splinter_dims",
+      "note": "Fills the back of the shatter fan; rotated top ≈ y=0.85. Design estimate (see needs[])."
+    },
+    {
+      "id": "splinter_e",
+      "name": "Thin tall sliver — front-right, sharply leaning",
+      "op": "bevelBox",
+      "args": { "w": 0.04, "h": 0.26, "d": 0.035 },
+      "at": [0.08, 0.66, -0.02],
+      "rot": [16, 0, -14],
+      "mat": "woodMid",
+      "src": "dossier#splinter_dims",
+      "note": "Thin pale sliver giving the break a ragged multi-shard crown; rotated top ≈ y=0.80."
     }
   ],
   "needs": [

@@ -49,6 +49,8 @@ export const PALETTE = {
                 glb: { rgb: [0.21, 0.37, 0.12], rough: 0.78, metal: 0.0 } },
   foliageDry: { voxel: { hi: '#c8882a', mid: '#a06018', lo: '#784810', slot: '#543208', bright: '#dea040' },
                 glb: { rgb: [0.58, 0.34, 0.08], rough: 0.82, metal: 0.0 } },
+  foliageWillow: { voxel: { hi: '#9fb78a', mid: '#7a946a', lo: '#5e7450', slot: '#44563a', bright: '#b6c89e' },
+                glb: { rgb: [0.48, 0.55, 0.40], rough: 0.78, metal: 0.0 } },
   grassGreen: { voxel: { hi: '#6ab040', mid: '#4a8028', lo: '#38601e', slot: '#284414', bright: '#82c850' },
                 glb: { rgb: [0.27, 0.50, 0.14], rough: 0.85, metal: 0.0 } },
   grassDry:   { voxel: { hi: '#c8a84a', mid: '#a08030', lo: '#785e18', slot: '#504010', bright: '#dcc060' },

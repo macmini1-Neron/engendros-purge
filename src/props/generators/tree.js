@@ -75,10 +75,10 @@ export const SPECIES = {
     bark: 'barkBirch',
     foliage: 'foliageBirch',
     heightM: [15, 22],
-    trunkDiaM: [0.25, 0.40],
+    trunkDiaM: [0.34, 0.50],
     crown: 'ovoid',
     crownWidthM: [6, 9],
-    crownFrac: 0.55,     // foliage occupies top 55% of height
+    crownFrac: 0.62,     // foliage occupies top 62% of height (less bare lollipop bole)
     branches: [4, 7],
     branchTilt: [50, 70], // degrees up from horizontal — birch twigs rise then weep
     twist: 0.08,
@@ -138,7 +138,7 @@ export const SPECIES = {
   willow: {
     label: 'White willow (Salix alba)',
     bark: 'barkDark',
-    foliage: 'foliageDry', // pale silver-grey shimmering canopy ('alba')
+    foliage: 'foliageWillow', // pale silver-grey shimmering canopy ('alba')
     heightM: [12, 22],
     trunkDiaM: [0.5, 1.0],
     crown: 'weeping',
@@ -396,8 +396,11 @@ function applyDamage(mb, r, cfg, trunkPts, baseDia) {
 //   seed      : integer seed for all variety (default derived from species)
 //   damage    : override the species damage level ('none'|'snapped'|'bare'|'charred')
 //   height    : override height in metres (else seeded from the species range)
-//   scale     : uniform post-scale multiplier (default 1)
+//   scale     : uniform post-scale multiplier (default GAME_SCALE — botanical
+//               heights in SPECIES are realistic; this brings them to a
+//               gameplay-readable size, ~6–13 m, without distorting proportions)
 // ---------------------------------------------------------------------------
+const GAME_SCALE = 0.42;
 export function makeTree(opts = {}) {
   const speciesKey = opts.species || 'birch';
   const base = SPECIES[speciesKey];
@@ -435,9 +438,10 @@ export function makeTree(opts = {}) {
   }
 
   const geometry = mb.build();
-  if (opts.scale && opts.scale !== 1) geometry.scale(opts.scale, opts.scale, opts.scale);
+  const scl = opts.scale != null ? opts.scale : GAME_SCALE;
+  if (scl !== 1) geometry.scale(scl, scl, scl);
   const material = voxelMaterial();
-  return { geometry, material, height: effHeight, species: speciesKey };
+  return { geometry, material, height: effHeight * scl, species: speciesKey };
 }
 
 // ---------------------------------------------------------------------------

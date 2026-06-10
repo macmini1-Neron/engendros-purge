@@ -145,7 +145,7 @@ export function makeShrub(seed = 1) {
   const r = makeRNG(seed >>> 0 || 1);
   const b = new MeshBuilder();
   const wood = tones('barkDark');
-  const leaf = tones('foliageDry');
+  const leaf = tones('foliageWillow'); // dusty grey-green steppe scrub — NOT orange foliageDry (read as a flower)
   const base = { x: 0, y: 0, z: 0 };
 
   b.box(0.16, 0.08, 0.16, 0, 0.04, 0, wood.slot); // root knob
@@ -217,23 +217,24 @@ export function makeBush(seed = 1) {
   const leaf = tones('foliageOak');
 
   const tall = randRange(0.8, 1.6, r);
-  const trunk = tall * randRange(0.18, 0.3, r);
-  // short stubby trunk + 2-3 main boughs
+  const trunk = tall * randRange(0.06, 0.12, r); // SHORT stub — a bush, not a sapling: foliage must reach near the ground
+  // short stubby trunk + 2-3 main boughs splaying low
   b.box(0.12, trunk, 0.12, 0, trunk / 2, 0, wood.lo);
-  b.box(0.1, trunk * 0.5, 0.1, 0, trunk * 0.3, 0, wood.slot);
   const boughs = randInt(2, 4, r);
   for (let i = 0; i < boughs; i++) {
-    blade(b, { x: 0, y: trunk * 0.7, z: 0 }, tall * randRange(0.4, 0.6, r), 0.06, 0.06,
-      randRange(0.3, 0.7, r), (i / boughs) * Math.PI * 2, wood.mid);
+    blade(b, { x: 0, y: trunk * 0.6, z: 0 }, tall * randRange(0.4, 0.6, r), 0.05, 0.05,
+      randRange(0.5, 0.9, r), (i / boughs) * Math.PI * 2, wood.mid);
   }
-  // Canopy — main blob plus a few satellite lobes for an irregular silhouette.
-  const cy = trunk + (tall - trunk) * 0.5;
-  const rad = tall * randRange(0.34, 0.44, r);
+  // Canopy — main blob low on the stub, a near-ground skirt, plus satellite lobes.
+  const rad = tall * randRange(0.36, 0.46, r);
+  const cy = trunk + (tall - trunk) * 0.42;
   clump(b, 0, cy, 0, rad, randInt(18, 28, r), leaf, r);
+  // skirt lobe near the base so the bush is full to the ground (no bare-trunk sapling look)
+  clump(b, randRange(-0.1, 0.1, r), trunk + rad * 0.45, randRange(-0.1, 0.1, r), rad * 0.85, randInt(10, 16, r), leaf, r);
   const lobes = randInt(2, 4, r);
   for (let i = 0; i < lobes; i++) {
     const u = r() * Math.PI * 2;
-    clump(b, Math.cos(u) * rad * 0.7, cy + randRange(-0.1, 0.25, r), Math.sin(u) * rad * 0.7,
+    clump(b, Math.cos(u) * rad * 0.7, cy + randRange(-0.3, 0.18, r), Math.sin(u) * rad * 0.7,
       rad * randRange(0.45, 0.65, r), randInt(8, 14, r), leaf, r);
   }
   return { geometry: b.build(), material: voxelMaterial(), type: 'bush' };

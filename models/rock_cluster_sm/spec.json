@@ -5,28 +5,28 @@
   "category": "nature",
   "target": "voxel",
   "anchor": "floor",
-  "footprint": { "w": 0.50, "h": 0.19, "d": 0.38 },
+  "footprint": { "w": 0.58, "h": 0.23, "d": 0.44 },
   "dossier": "models/rock_cluster_sm/ref/dossier.json",
   "parts": [
     {
       "id": "stone_a",
       "name": "Large stone A — granite, back-right",
       "op": "bevelBox",
-      "args": { "w": 0.22, "h": 0.17, "d": 0.20 },
-      "at": [0.05, 0.085, -0.07],
+      "args": { "w": 0.27, "h": 0.21, "d": 0.25 },
+      "at": [0.07, 0.105, -0.08],
       "mat": "granite",
       "src": "dossier#stone_a",
-      "note": "220×170×200 mm (dossier#stone_a); center y=h/2 so bottom is flush with floor y=0"
+      "note": "270×210×250 mm — upper Wentworth cobble / small-boulder; center y=h/2 so bottom flush with floor y=0 (design value within sourced range, see needs[])"
     },
     {
       "id": "stone_b",
       "name": "Large stone B — moss granite, back-left",
       "op": "bevelBox",
-      "args": { "w": 0.19, "h": 0.14, "d": 0.17 },
-      "at": [-0.12, 0.07, -0.05],
+      "args": { "w": 0.24, "h": 0.18, "d": 0.21 },
+      "at": [-0.15, 0.09, -0.05],
       "mat": "graniteMoss",
       "src": "dossier#stone_b",
-      "note": "190×140×170 mm; angled to left to widen cluster"
+      "note": "240×180×210 mm; angled left to widen cluster (design value within sourced cobble range)"
     },
     {
       "id": "stone_c",
