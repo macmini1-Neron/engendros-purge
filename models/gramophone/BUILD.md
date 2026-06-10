@@ -35,3 +35,11 @@ not a measured spec sheet" — acceptable; recorded, not invented).
 lint clean / node --test 63/63 / canonical render set + ghost saved / every view Read, defects
 fixed / BUILD.md. Animation rig contract (userData by rig name): lid (hinge x), turntable (spin y),
 tonearm (swing y), crank (spin x) — driven at runtime by fonoteka.js.
+
+## Revision 2026-06-10 (fonoteka polish)
+- Lid maker's logo: was a vertical plane (normal ±Z, invisible edge-on); now `axis:y` + `rot[180,0,0]`
+  so it lies flat on the lining and faces the viewer when the lid is open (the "reversed sticker" fix).
+- Speed/auto control plates: `axis:y` so they lie flat on the deck (were standing 90° vertical).
+- Black record vinyl: `cylinder` → new standalone `disc` operator, so the WHOLE record (vinyl + label)
+  lifts off the platter as one piece during the runtime record-swap animation (fonoteka.js groups them
+  into a `disc` node under the turntable). 67/67 tests, lint clean.

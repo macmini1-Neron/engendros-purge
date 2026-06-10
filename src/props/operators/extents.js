@@ -16,6 +16,7 @@ const axisExtents = (lateral, axial, axis = 'z') => {
 };
 const roundExtents = {
   cylinder: (a) => axisExtents(Math.max(a.r, a.r2 ?? 0), a.h / 2, a.axis ?? 'z'),
+  disc: (a) => axisExtents(a.r, (a.h ?? 0.003) / 2, a.axis ?? 'y'),
   cone: (a) => axisExtents(a.r, a.h / 2, a.axis ?? 'z'),
   texturedCylinder: (a) => axisExtents(Math.max(a.r, a.r2 ?? 0), a.h / 2, a.axis ?? 'z'),
   deltaFins: (a) => {

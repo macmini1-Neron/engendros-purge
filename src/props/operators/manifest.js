@@ -24,6 +24,7 @@ export const MANIFEST = {
   handleU:     { args: ['w', 'h'],               dims: ['w', 'h'],             anchor: 'floor'  },
   // round (THREE-bound — browser-verified, not node-tested)
   cylinder:    { args: ['r', 'h'],                dims: ['r', 'h'],            anchor: 'center' },
+  disc:        { args: ['r'],                     dims: ['r'],                 anchor: 'center' },
   cone:        { args: ['r', 'h'],                dims: ['r', 'h'],            anchor: 'center' },
   deltaFins:   { args: ['count', 'root', 'span'], dims: ['root', 'span'],      anchor: 'center' },
   texturedCylinder: { args: ['r', 'h'],           dims: ['r', 'h'],            anchor: 'center' },

@@ -80,6 +80,7 @@ const ICONS = {
   disc:     '<path fill-rule="evenodd" d="M12 3a9 9 0 100 18 9 9 0 000-18zm0 7a2 2 0 100 4 2 2 0 000-4z"/><circle cx="12" cy="12" r="5.2" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>',
   guitar:   '<path d="M18.5 2.5l3 3-2.2 1.7.9.9-1.8 1.8-1-1-3.6 3.6a4.2 4.2 0 11-2.1-2.1l3.6-3.6-1-1 1.8-1.8.9.9z"/><circle cx="9.5" cy="14.5" r="1.5" fill="#1a120a"/>',
   bolt:     '<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>',
+  volume:   '<path d="M4 9h3l4-3.5v13L7 15H4z"/><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 9.2a4 4 0 010 5.6"/><path d="M17.5 6.8a7.5 7.5 0 010 10.4"/></g>',
 };
 
 export function icon(name) { return OPEN + (ICONS[name] || ICONS.crate) + '</svg>'; }

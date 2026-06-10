@@ -43,7 +43,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-10 13:19';
+const GAME_BUILD = '2026-06-10 13:26';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -102,9 +102,6 @@ class Game {
     this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin();
     this.player.update(0.0001); this.engine.render();
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
-
-    const DEBUG = true; // TODO remove in final task
-    if (DEBUG) { window.__dbg = () => this; }
   }
 
   // Main-menu map picker (Arena/Steppe). The world is built once at boot from this.mapId,

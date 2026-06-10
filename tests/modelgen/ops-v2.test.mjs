@@ -14,7 +14,7 @@ const PURE_OPS = {
   drawerStack: FURN.drawerStack, legs: FURN.legs,
   lidBox: CONT.lidBox, strapBand: CONT.strapBand, handleU: CONT.handleU,
 };
-const ROUND_OPS = ['cylinder', 'cone', 'deltaFins', 'texturedCylinder', 'torus', 'tube', 'texturedDisc', 'decal'];  // THREE-bound: browser-verified
+const ROUND_OPS = ['cylinder', 'disc', 'cone', 'deltaFins', 'texturedCylinder', 'torus', 'tube', 'texturedDisc', 'decal'];  // THREE-bound: browser-verified
 
 function mock() {
   const calls = [];
@@ -42,6 +42,7 @@ const SAMPLES = {
 // extents-only samples for the THREE-bound ops (impls aren't node-runnable)
 const ROUND_SAMPLES = {
   cylinder: { r: 0.33, h: 2.7 },
+  disc: { r: 0.125, h: 0.003, axis: 'y' },
   cone: { r: 0.25, h: 0.96 },
   deltaFins: { count: 4, root: 1.8, span: 0.97, r0: 0.33 },
   texturedCylinder: { r: 0.25, h: 6.98 },
