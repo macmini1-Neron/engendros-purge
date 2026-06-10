@@ -1,0 +1,439 @@
+{
+  "id": "supply-lootbox",
+  "name": "Посылка — Soviet PG-7V supply crate",
+  "description": "Soviet/Warsaw-Pact PG-7V 6-round wooden ammunition crate repurposed as the lootbox «Посылка»: olive 2-plank body, 3-plank lid with two battens, steel flip-latches, rear strap hinges, folding bail handles on the ends, black stencils, raw pine lid underside. Hinged lid rig for the opening ceremony.",
+  "category": "military",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": {
+    "w": 0.82,
+    "h": 0.27,
+    "d": 0.485
+  },
+  "dossier": "models/supply-lootbox/ref/dossier.json",
+  "rig": [
+    {
+      "name": "lid",
+      "pivot": [
+        0,
+        0.225,
+        -0.226
+      ],
+      "axis": "x",
+      "pose": 0,
+      "type": "hinge",
+      "range": [
+        -2.0,
+        0
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "body",
+      "name": "Body — two olive plank rows wrapping all sides",
+      "op": "planks",
+      "args": {
+        "w": 0.798,
+        "h": 0.225,
+        "d": 0.452,
+        "count": 2
+      },
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "mat": "paintOD",
+      "src": "dossier#box_dimensions",
+      "note": "body = 245 − 20 lid board; 2-plank walls per dossier#construction"
+    },
+    {
+      "id": "lid_boards",
+      "name": "Lid — three longitudinal olive planks",
+      "op": "planks",
+      "args": {
+        "w": 0.798,
+        "h": 0.02,
+        "d": 0.452,
+        "count": 3,
+        "axis": "z"
+      },
+      "at": [
+        0,
+        0.225,
+        0
+      ],
+      "rig": "lid",
+      "mat": "paintOD",
+      "src": "dossier#lid"
+    },
+    {
+      "id": "lid_liner",
+      "name": "Raw pine lid underside / dust lip (nests into the body mouth)",
+      "op": "plate",
+      "args": {
+        "w": 0.788,
+        "d": 0.442,
+        "th": 0.012
+      },
+      "at": [
+        0,
+        0.2235,
+        0
+      ],
+      "rig": "lid",
+      "mat": "pine",
+      "src": "dossier#construction",
+      "note": "reads as the raw interior when the lid swings open; hidden inside the body mouth when closed"
+    },
+    {
+      "id": "batten_l",
+      "name": "Lid batten (left)",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.05,
+        "h": 0.025,
+        "d": 0.452
+      },
+      "at": [
+        -0.28,
+        0.2575,
+        0
+      ],
+      "rig": "lid",
+      "mat": "paintOD",
+      "src": "dossier#lid"
+    },
+    {
+      "id": "batten_r",
+      "name": "Lid batten (right)",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.05,
+        "h": 0.025,
+        "d": 0.452
+      },
+      "at": [
+        0.28,
+        0.2575,
+        0
+      ],
+      "rig": "lid",
+      "mat": "paintOD",
+      "src": "dossier#lid"
+    },
+    {
+      "id": "latch_l",
+      "name": "Steel flip-latch (front left, straddles the seam)",
+      "op": "panel",
+      "args": {
+        "w": 0.06,
+        "h": 0.09,
+        "th": 0.01
+      },
+      "at": [
+        -0.19,
+        0.195,
+        0.226
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "latch_r",
+      "name": "Steel flip-latch (front right)",
+      "op": "panel",
+      "args": {
+        "w": 0.06,
+        "h": 0.09,
+        "th": 0.01
+      },
+      "at": [
+        0.19,
+        0.195,
+        0.226
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "hinge_l",
+      "name": "Steel strap hinge (rear left)",
+      "op": "panel",
+      "args": {
+        "w": 0.05,
+        "h": 0.1,
+        "th": 0.008
+      },
+      "at": [
+        -0.19,
+        0.19,
+        -0.226
+      ],
+      "rot": [
+        0,
+        180,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "hinge_r",
+      "name": "Steel strap hinge (rear right)",
+      "op": "panel",
+      "args": {
+        "w": 0.05,
+        "h": 0.1,
+        "th": 0.008
+      },
+      "at": [
+        0.19,
+        0.19,
+        -0.226
+      ],
+      "rot": [
+        0,
+        180,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "handle_r",
+      "name": "Folding bail handle (right end, hanging)",
+      "op": "handleU",
+      "args": {
+        "w": 0.15,
+        "h": 0.06,
+        "th": 0.012
+      },
+      "at": [
+        0.398,
+        0.175,
+        0.075
+      ],
+      "rot": [
+        90,
+        0,
+        -90
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "handle_l",
+      "name": "Folding bail handle (left end)",
+      "op": "handleU",
+      "args": {
+        "w": 0.15,
+        "h": 0.06,
+        "th": 0.012
+      },
+      "at": [
+        -0.398,
+        0.175,
+        -0.075
+      ],
+      "rot": [
+        90,
+        0,
+        90
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "corner_rf",
+      "name": "Riveted corner angle strap (right end, front corner)",
+      "op": "panel",
+      "args": {
+        "w": 0.03,
+        "h": 0.2,
+        "th": 0.006
+      },
+      "at": [
+        0.399,
+        0.1,
+        0.21
+      ],
+      "rot": [
+        0,
+        90,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "corner_rb",
+      "name": "Corner strap (right end, back)",
+      "op": "panel",
+      "args": {
+        "w": 0.03,
+        "h": 0.2,
+        "th": 0.006
+      },
+      "at": [
+        0.399,
+        0.1,
+        -0.21
+      ],
+      "rot": [
+        0,
+        90,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "corner_lf",
+      "name": "Corner strap (left end, front)",
+      "op": "panel",
+      "args": {
+        "w": 0.03,
+        "h": 0.2,
+        "th": 0.006
+      },
+      "at": [
+        -0.399,
+        0.1,
+        0.21
+      ],
+      "rot": [
+        0,
+        -90,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "corner_lb",
+      "name": "Corner strap (left end, back)",
+      "op": "panel",
+      "args": {
+        "w": 0.03,
+        "h": 0.2,
+        "th": 0.006
+      },
+      "at": [
+        -0.399,
+        0.1,
+        -0.21
+      ],
+      "rot": [
+        0,
+        -90,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "cleat_l",
+      "name": "Proud vertical wooden cleat (front, left of centre)",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.04,
+        "h": 0.2,
+        "d": 0.015
+      },
+      "at": [
+        -0.085,
+        0.105,
+        0.2335
+      ],
+      "mat": "paintOD",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "cleat_r",
+      "name": "Proud vertical wooden cleat (front, right)",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.04,
+        "h": 0.2,
+        "d": 0.015
+      },
+      "at": [
+        0.085,
+        0.105,
+        0.2335
+      ],
+      "mat": "paintOD",
+      "src": "dossier#hardware_sizes_mm"
+    },
+    {
+      "id": "stencil_front",
+      "name": "Front stencil block: index / lot–factory–year / БРУТТО / 6 ШТ",
+      "op": "stencil",
+      "args": {
+        "w": 0.26,
+        "h": 0.11,
+        "lines": 4
+      },
+      "at": [
+        -0.255,
+        0.1,
+        0.226
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#paint_markings"
+    },
+    {
+      "id": "stencil_end_r",
+      "name": "End stencil (right): index + lot group",
+      "op": "stencil",
+      "args": {
+        "w": 0.16,
+        "h": 0.08,
+        "lines": 3
+      },
+      "at": [
+        0.399,
+        0.06,
+        -0.06
+      ],
+      "rot": [
+        0,
+        90,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#paint_markings"
+    },
+    {
+      "id": "stencil_end_l",
+      "name": "End stencil (left)",
+      "op": "stencil",
+      "args": {
+        "w": 0.16,
+        "h": 0.08,
+        "lines": 3
+      },
+      "at": [
+        -0.399,
+        0.06,
+        -0.06
+      ],
+      "rot": [
+        0,
+        -90,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#paint_markings"
+    }
+  ],
+  "needs": [
+    "Board thickness 20 mm + batten 50×25 are ANALOG values from a WW2 45mm crate (dossier#construction) — photo-consistent",
+    "Hardware sizes are photo-proportion derivations against the sourced 798×452×245 envelope (dossier#hardware_sizes_mm)",
+    "Hollow interior not modeled (solid body) — raw pine reads via the lid underside/dust-lip part",
+    "Batten steel end straps + sealing wire omitted (sub-centimetre details)",
+    "NO red star on this crate type (dossier#paint_markings explicitly: do not add one) — Soviet flavor carried by stencils"
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "id": "patefon",
+  "title": "Патефон ПТ-3 — Soviet portable wind-up suitcase gramophone (primary: Молотовский патефонный завод, г. Молотов/Пермь)",
+  "era": "USSR 1930s–1950s; ПТ-3 standard model 1935–1957 (licensed copy of HMV Model 102). Pre-war: Коломенский патефонный завод 1934–41; post-war: Молотовский 1945/46–1956 (~1M units by 1954, the most widespread in the USSR), Московский 1946–62, «Молот» Вятские Поляны, Владимирский, Ленинградский",
+  "sources": {
+    "pt3_factory_manual": "Скан инструкции ПТ-3 (scanned factory instruction manual; dims 414×288×160 mm, 7,2 kg, 30–35 crank turns, 78±8 rpm, autostop) — satikon.narod.ru — https://satikon.narod.ru/instrukcij.html",
+    "muscol_pt3": "Граммофон портативный (патефон) ПТ-3, 41×28,5×16,5 см — The Museum Collection (mus-col.com), inv. 930.1-2/УВЗ — https://mus-col.com/collection/mmp/turntable/gramophones/26251/",
+    "muscol_hmv102": "HMV Model 102 portable gramophone (ПТ-3 prototype), 41×28,5×15,5 cm — The Museum Collection — https://mus-col.com/en/collection/mmp/turntable/gramophones/26384/",
+    "artefact_pt3_molotov": "Патефон ПТ-3, Госзавод Минмаша СССР, г. Молотов, «17,5x41,2x29 см» — Artefact (Минкультуры РФ) — https://ar.culture.ru/ru/subject/34-patefon-pt-3",
+    "artefact_pt3_altai": "Патефон ПТ-3, «16x40x28,5 см», 7,2 кг, needle box in deck corner — Artefact / State Museum of Altai culture — https://ar.culture.ru/ru/subject/patefon-47",
+    "artefact_patefon_tisul": "Патефон, «17x30x42 см», tonearm = jointed brass tube, horn = continuation of tonearm — Artefact / Тисульский краеведческий музей — https://ar.culture.ru/ru/subject/patefon-37",
+    "gagarin_museum": "Патефон портативный «ПТ-3», Молотовский патефонный завод 1946–1957, «41х17х28 см» — Музей Ю.А. Гагарина virtual exhibit — https://museumgagarin.ru/virtualnyy-muzey/virtualnye-vystavki/vystavka-mozaika-vremen/patefon-portativnyy-pt-3/",
+    "pc1_pt3_moscow": "Патефон ПТ-3 Московский патефонный завод, «Габаритные размеры (мм): ≈ 165х410х290; Вес (кг): ≈ 7,5», nickel-plated fittings, internal exponential horn, HMV-102 copy — pc-1.ru dealer tech card — https://pc-1.ru/i_shop/comp_zakaz/A045266",
+    "dvaveka_molotov": "Советский патефон ПТ-3, Госзавод МСХМ г. Молотов, 1952–53, measured «41,5х29,5х18 см», wood/metal/ледерин/карболит/сукно — dvaveka.ru antique listing — https://www.dvaveka.ru/patefony-i-grammofony/sovetskiy-patefon-chemodannogo-tipa-g-molotov-sssr-1950-e/",
+    "wiki_patefon": "Патефон — Russian Wikipedia (definition, internal horn, suitcase form, 78 rpm, 80–100 dB, factory list) — https://ru.wikipedia.org/wiki/Патефон",
+    "monetnik": "«Советский патефон как зеркало эпохи» (ПТ-3 = copy of HMV 102 with oval sound outlet; factory history) — monetnik.ru — https://www.monetnik.ru/obuchenie/antikvariat/patefon-grammofon/",
+    "oldpatefon_felt": "«Старый патефон» collector forum t932: «Диски (точнее, накладки на диск) тонкое сукно… чаще светло-зелёные, реже ярко-малиновые» — https://oldpatefon.profiforum.ru/t932-topic",
+    "oldpatefon_variants": "«Старый патефон» forum t476 — PT-3 factory variant differences (nickel-plated brass needle box on Moscow ММП, horn tinplate smooth vs ribbed, felt crimping) — https://oldpatefon.profiforum.ru/t476-topic",
+    "oldpatefon_molot": "«Старый патефон» forum t5 — «Молот» ПТ-3: carbolite crank grip, red-brown covering variant — http://oldpatefon.profiforum.ru/t5-topic",
+    "starogitnosti_manual": "«Вся правда про патефон» — LiveJournal post quoting the ПТ-3 manual: crank hole «справа футляра», tonearm parked «в крайнее правое положение», «рупор является естественным продолжением тонарма», «рычаг крышкодержателя», дерматин — https://starogitnosti.livejournal.com/885657.html",
+    "cozythings_molotov": "Патефон ПТ-3 Молотовский завод — dealer listing: «На внутренней стороне крышки оборудован проволочный держатель пластинок» — https://cozythings.ru/shop/grammofonyi-patefonyi/patefon-antikvarnyj-molotovskij-zavod/",
+    "restoration_molot": "Реставрация патефона «Молот» (Вятские Поляны, 1955): 29×36×15,5 см, красный ледерин variant, chrome plating, сукно on platter, pine + birch-ply carcass — https://restoration.in.ua/restavracziya-patefona-molot/",
+    "photo_open": "Wikimedia Commons USSR_patefon.jpg (open ПТ-3-type patefon, ¾ view; inspected visually) — https://upload.wikimedia.org/wikipedia/commons/9/9f/USSR_patefon.jpg",
+    "photo_crank": "Wikimedia Commons Portable_78_rpm_record_player.jpg (open portable with crank inserted; inspected visually) — https://upload.wikimedia.org/wikipedia/commons/b/be/Portable_78_rpm_record_player.jpg"
+  },
+  "specifications": {
+    "case_dimensions": {
+      "length_mm": 414,
+      "width_mm": 288,
+      "height_mm": 160,
+      "weight_kg": 7.2,
+      "src": "pt3_factory_manual (414×288×160 мм; 7,2 кг)",
+      "note": "Model = ПТ-3 (factory manual figures; primary). Independent cross-checks, same model: muscol_pt3 410×285×165; pc1_pt3_moscow ≈410×290×165, 7,5 kg; artefact_pt3_molotov 412×290×175; artefact_pt3_altai 400×285×160, 7,2 kg; gagarin_museum 410×280×170; dvaveka_molotov (measured) 415×295×180; HMV 102 prototype 410×285×155 (muscol_hmv102). Spread: L 400–415, D 280–295, H(closed) 155–180. Smaller «Молот» Vyatskie-Polyany variant 360–370×230–290×155–160 (restoration_molot) — NOT the primary."
+    },
+    "platter": {
+      "diameter_mm": 240,
+      "diameter_is_derived": true,
+      "construction": "Stamped steel disc with polished rim, on centre spindle, fixed by figured split washer",
+      "mat": "Thin felt (сукно) glued on top — most often light green («светло-зелёные»), rarer bright crimson («ярко-малиновые»); HMV prototype used woollen cloth; one Vladimir-factory PT-3 example had a rubber mat (variant)",
+      "src": "construction+washer: muscol_pt3; mat colours verbatim: oldpatefon_felt; woollen cloth: muscol_hmv102; diameter DERIVED — see derivation, exact mm in needs[]"
+    },
+    "tonearm": {
+      "finish": "Nickel/chrome-plated, S-shaped tube of variable section with two joints (horizontal + vertical movement)",
+      "soundbox": "Round soundbox (мембрана): aluminium diaphragm on a bakelite base, covered by chrome-plated slotted cap; needle clamped by knurled screw; soundbox sits on a turning bend of the tonearm",
+      "soundbox_diameter_mm_est": 78,
+      "parked_position": "Swung to the far right, behind the platter — manual: «Отведите тонарм за мембрану в крайнее правое положение»; rests over a support at the right/rear of the deck when closed",
+      "src": "S-shape/soundbox/cap: muscol_hmv102 + muscol_pt3; jointed tube: artefact_patefon_tisul; parking quote: starogitnosti_manual; photo_open confirms right-rear park. Soundbox diameter is a photo-derived estimate (needs[])"
+    },
+    "crank": {
+      "position": "Removable crank inserts into a hole in the RIGHT side wall of the case («справа футляра», into the winding worm gear); sits toward the front-bottom of the right wall in reference photos",
+      "operation": "30–35 turns clockwise = full wind (one wind ≈ 1–2 record sides; 25 cm side ≈ 3 min)",
+      "stowage": "In transport the crank clips to the inner side of the lid («В походном положении рукоятку закрепляли на внутренней стороне крышки»)",
+      "grip": "Carbolite (bakelite) grip on folding steel arm",
+      "length_mm_est": 140,
+      "src": "hole side verbatim: starogitnosti_manual + artefact_pt3_molotov («отверстие с правой стороны устройства») + muscol_hmv102 («slot on the case right side»); turns: pt3_factory_manual; play time: wiki_patefon; stowage: artefact_pt3_molotov; grip: oldpatefon_molot; photo_crank shows inserted position. Length is a photo-derived estimate (needs[])"
+    },
+    "lid": {
+      "hinge_position": "Rear long edge (back wall) — pivot/piano hinges",
+      "open_angle_deg_est": 102,
+      "stay": "Held open slightly past vertical by a locking bar / «рычаг крышкодержателя» (lid-stay lever)",
+      "inner_lid_features": "Cloth lining (blue-grey in photo_open) with factory rhombus decal/logo top-centre; wire record holder on inner face (some factories/years); clip for the stowed crank",
+      "src": "hinge+stay: muscol_pt3 («catch … pivot hinge») + muscol_hmv102 («fixed in open position by the locking bar») + starogitnosti_manual (крышкодержатель); lining+decal: photo_open + artefact_patefon_tisul (interior lid factory logo); wire holder: cozythings_molotov; crank clip: artefact_pt3_molotov. Open angle is photo-derived (needs[])"
+    },
+    "case_finish": {
+      "carcass": "Wood — pine carcass with birch plywood panels",
+      "covering": "Dermantine/lederin (ледерин) glued over the wood — black most common; documented variants: dark red-brown, red («красный ледерин»), green fabrikoid (HMV); «от дешевых дерматиновых до подарочных лаковых» (cheap dermantine up to gift lacquered cases)",
+      "corners": "Nickel-plated metal fittings («фурнитура — никелированный метал»); corner protectors visible on some examples in photos — variant hardware, confirm per factory (needs[])",
+      "handle": "Carrying handle on the FRONT long wall (latch side) in reference photos — leather/leatherette strap type on PT-3 (muscol EN text words it 'case lateral side')",
+      "latch": "Spring catch/latch on the front long wall, centre; lid hooks over the body rim",
+      "src": "carcass: restoration_molot; covering: starogitnosti_manual (дерматин) + dvaveka_molotov (ледерин) + artefact_pt3_molotov (variants quote) + restoration_molot (red) + oldpatefon_molot (red-brown) + muscol_hmv102 (green fabrikoid); fittings: pc1_pt3_moscow; handle+latch placement: photo_open + photo_crank + muscol_pt3 (catch)"
+    },
+    "horn_vents": {
+      "horn": "Internal exponential folded horn under the deck (motor board); «рупор является естественным продолжением тонарма» — tonearm feeds the horn at its rear-right base; horn body of tinplate, smooth or ribbed depending on factory",
+      "sound_exit": "Sound exits UP through a decoratively shaped window cut in the REAR part of the deck panel («The sound is output from ornately shaped window in the panel rear part»; monetnik: «oval-shaped sound outlet») into the open-lid cavity — the patefon is played lid-open; no grille in the lid, no side louvres",
+      "deck_layout_around_it": "Platter centre-left of deck; speed-regulator lever with dial «МЕДЛЕН/78/БЫСТРО» left of platter; brake lever right; autostop toggle «Включено/Выключено»; lubrication openings in the mounting board",
+      "src": "exponential horn: pc1_pt3_moscow; tonearm-continuation: starogitnosti_manual + artefact_patefon_tisul; exit window verbatim: muscol_hmv102 (PT-3 prototype, same deck) + muscol_pt3 («hidden beneath the panel, sound output directed outward») + monetnik (oval outlet); tinplate smooth/ribbed: oldpatefon_variants; deck levers/dial: muscol_pt3 + pt3_factory_manual",
+      "needle_box": "Small lidded needle box («ящичек для сменных игл») set into one deck corner — nickel-plated brass box on Moscow ММП variant; front-left corner in most reference photos (corner not pinned in text — needs[])"
+    },
+    "derivation": {
+      "game_units": "1 unit = 1 m → closed case 0.414 × 0.288 × 0.160 (L×D×H), lid-open total height ≈ 0.16 + lid_h·sin(102°)",
+      "platter_diameter_mm": "≈240 = 250 mm standard «гранд» 78-rpm record (wiki_patefon: «25 см пластинка») × ~0.96 — record overhangs the polished platter rim slightly in photo_open/photo_crank; exact figure unsourced → needs[]",
+      "body_lid_split_mm": "lid ≈ 55, body ≈ 105 of the 160 closed height — photo proportion ≈ 0.35 H (photo_open); unsourced → needs[]",
+      "soundbox_diameter_mm": "≈78 ≈ platter_diameter × 1/3 measured off photo_crank (soundbox vs record); unsourced → needs[]",
+      "crank_length_mm": "≈140 ≈ case length × 1/3 measured off photo_crank; unsourced → needs[]",
+      "lid_open_angle": "≈100–105° read off photo_open (lid leans slightly past vertical against the stay); stay confirmed textually, angle value unsourced → needs[]"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "Suitcase wooden case 414×288×160 mm, dermantine/lederin-covered (black primary; red/red-brown/lacquer variants)", "src": "pt3_factory_manual; starogitnosti_manual; artefact_pt3_molotov; restoration_molot" },
+    { "feature": "Lid hinged at rear, spring latch front-centre, lid-stay bar holds it ~vertical when open", "src": "muscol_pt3; muscol_hmv102; starogitnosti_manual; photo_open" },
+    { "feature": "Carry handle (leather/leatherette strap) on front long wall beside the latch", "src": "photo_open; photo_crank; muscol_hmv102" },
+    { "feature": "Nickel-plated hardware: latch, hinges, fittings; corner protectors on some examples", "src": "pc1_pt3_moscow; photo_open" },
+    { "feature": "Stamped-steel platter, polished rim, glued thin felt mat (light green most common, crimson rarer), figured split washer on spindle", "src": "muscol_pt3; oldpatefon_felt" },
+    { "feature": "Chrome S-shaped tonearm with round soundbox (aluminium diaphragm, bakelite base, chrome slotted cap, knurled needle screw), parks far right", "src": "muscol_hmv102; muscol_pt3; starogitnosti_manual" },
+    { "feature": "Removable winding crank in right side wall (30–35 turns), carbolite grip, stows clipped inside lid", "src": "starogitnosti_manual; pt3_factory_manual; artefact_pt3_molotov; oldpatefon_molot" },
+    { "feature": "Speed regulator lever + dial «МЕДЛЕН/78/БЫСТРО» (78±8 rpm) left of platter; brake lever right; autostop toggle", "src": "muscol_pt3; pt3_factory_manual; artefact_pt3_altai" },
+    { "feature": "Needle box (ящичек для сменных игл) sunk into a deck corner (nickel-brass on Moscow variant)", "src": "artefact_pt3_altai; oldpatefon_variants" },
+    { "feature": "Internal exponential tinplate horn under deck; sound exits via ornately shaped (oval) window in the rear deck panel — played lid-open", "src": "pc1_pt3_moscow; muscol_hmv102; monetnik; oldpatefon_variants" },
+    { "feature": "Lid interior: cloth lining with factory rhombus decal; wire record holder (some variants)", "src": "photo_open; artefact_patefon_tisul; cozythings_molotov" },
+    { "feature": "Performance for flavour: 78 rpm, ~80–100 dB, one wind ≈ one-two 25-cm record sides (~3 min/side)", "src": "wiki_patefon; artefact_pt3_altai" }
+  ],
+  "images": [
+    { "view": "open ¾ front-left", "url": "https://upload.wikimedia.org/wikipedia/commons/9/9f/USSR_patefon.jpg", "shows": "black leatherette case, rear-hinged lid ~100–105° with blue-grey cloth lining + rhombus factory decal, platter with record centre-left, chrome S-tonearm parked right, front latch + leather strap handle, nickel edge hardware" },
+    { "view": "open ¾ with crank inserted", "url": "https://upload.wikimedia.org/wikipedia/commons/b/be/Portable_78_rpm_record_player.jpg", "shows": "crank protruding from right side wall near front corner, nickel slotted soundbox parked on record, front latch, lid decal" },
+    { "view": "factory manual scans (photo13–16.jpg)", "url": "https://satikon.narod.ru/instrukcij.html", "shows": "ПТ-3 instruction text: dims 414×288×160 mm, 7,2 kg, winding/needle/lubrication/autostop procedures" },
+    { "view": "museum catalog photos, deck close-ups", "url": "https://mus-col.com/collection/mmp/turntable/gramophones/26251/", "shows": "PT-3 deck layout, «МЕДЛЕН/78/БЫСТРО» regulator dial, soundbox construction, light-brown leatherette variant" },
+    { "view": "museum exhibit photo", "url": "https://ar.culture.ru/ru/subject/34-patefon-pt-3", "shows": "Molotov-plant ПТ-3, crank hole right side, lid-interior crank stowage" }
+  ],
+  "needs": [
+    "Exact platter diameter in mm (parts listing / service doc) — current 240 mm is photo-derived from the 250 mm «гранд» record overhang",
+    "Soundbox (мембрана) outer diameter in mm — current 78 mm is photo-derived",
+    "Crank length in mm — current 140 mm is photo-derived",
+    "Exact lid-stay open angle — 100–105° read off photos; крышкодержатель lever confirmed textually but no angle spec found",
+    "Textual confirmation of WHICH deck corner houses the needle box (photos suggest front-left)",
+    "Confirmation that metal corner protectors were factory-fitted on the primary Molotov ПТ-3 (nickel fittings sourced; corner caps seen only in photos of some examples)",
+    "Body/lid height split of the 160 mm closed case (photo-derived 105/55 mm)",
+    "Exact shape of the deck sound window per factory (sourced as 'ornately shaped/oval window, rear deck panel'; fretwork pattern varies)"
+  ]
+}
