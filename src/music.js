@@ -249,6 +249,10 @@ const SONGS = [
   ['ya_hochu_byt_s_toboy', 'Я хочу быть с тобой', 1989, 'rock', 'I Want To Be With You'],
   ['povorot', 'Поворот', 1979, 'rock', 'The Turn'],
   ['my_vmeste', 'Мы вместе', 1987, 'rock', 'We Are Together'],
+  // --- +2 late-Soviet hits (2026-06-10): Bravo rockabilly + Kombinatsiya girl-group disco.
+  //     Real recordings (yt-dlp), loudnorm I=-12 128k stereo to match the catalog. ---
+  ['etot_gorod', 'Этот город', 1990, 'rock', 'This City'],
+  ['american_boy', 'American Boy', 1990, 'disco', 'American Boy'],
 ];
 for (const [slug, title, year, genre, en] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, en, year, genre, bpm: 120, drones: [], step() {} };
 
