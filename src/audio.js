@@ -760,6 +760,111 @@ export class AudioManager {
       stop: () => { const t = this.t; g.gain.setTargetAtTime(0.0001, t, 0.25); og.gain.setTargetAtTime(0.0001, t, 0.25); try { src.stop(t + 0.7); o.stop(t + 0.7); } catch (e) {} },
     };
   }
+
+  // ---- crate ceremony («Посылка» lootbox) ----
+  // Sound carries ~half the thrill: weight-as-value thud, per-latch creak rising in pitch,
+  // a tension drone whose end-pitch is a subtle tier-tell, escalating stingers + a legendary fanfare.
+  crateThud() {                                                 // sub-bass impact = the conditioned "it landed, it's heavy" cue
+    if (!this.ctx) return;
+    const t0 = this.t, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(60, t0); o.frequency.exponentialRampToValueAtTime(24, t0 + 0.5);
+    o.connect(g); g.connect(this.sfxGain); this._env(g, t0, 0.9, 0.004, 0.5); o.start(t0); o.stop(t0 + 0.6);
+    this.noise(0.45, 0.7, 'lowpass', 220, 0.7);                 // body
+    this._burst(t0 + 0.02, 0.12, 0.3, 'bandpass', 90, 1);       // slap
+    for (let i = 0; i < 3; i++) this._burst(t0 + 0.12 + i * 0.07, 0.04, 0.12, 'highpass', 3000 + Math.random() * 2000, 0.7); // settling dirt
+  }
+  crateLatch(i) {                                               // creak → metallic pop; pitch climbs per latch (rising tension)
+    if (!this.ctx) return;
+    const t0 = this.t, base = [300, 380, 470][i % 3];
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(base, t0); o.frequency.exponentialRampToValueAtTime(base * 1.9, t0 + 0.2);
+    o.connect(g); g.connect(this.sfxGain); this._env(g, t0, 0.2, 0.01, 0.2); o.start(t0); o.stop(t0 + 0.25);
+    this.noise(0.16, 0.3, 'bandpass', 700 + i * 150, 2.5);      // creak
+    this._metalPing(t0 + 0.18, 2400 + i * 500, 0.12, 0.08);     // pop
+    this._clank(t0 + 0.19, 0.18, 150 + i * 30);
+  }
+  crateDrone(tier, dur) {                                       // FINITE riser (abort-safe); end-pitch is a subtle tier tell
+    if (!this.ctx) return;
+    const t0 = this.t, ti = { common: 0, rare: 1, epic: 2, legendary: 3 }[tier] ?? 0;
+    const endHz = [82, 90, 110, 130][ti], lpEnd = [900, 1100, 1500, 2200][ti], gMax = [0.10, 0.13, 0.17, 0.22][ti];
+    const o1 = this.ctx.createOscillator(), o2 = this.ctx.createOscillator(), g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
+    o1.type = 'sawtooth'; o2.type = 'sawtooth'; o1.frequency.setValueAtTime(55, t0); o2.frequency.setValueAtTime(55.6, t0);
+    o1.frequency.linearRampToValueAtTime(endHz, t0 + dur); o2.frequency.linearRampToValueAtTime(endHz * 1.01, t0 + dur);
+    lp.type = 'lowpass'; lp.frequency.setValueAtTime(300, t0); lp.frequency.linearRampToValueAtTime(lpEnd, t0 + dur); lp.Q.value = 0.8;
+    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.sfxGain);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(gMax, t0 + dur); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.12);
+    o1.start(t0); o2.start(t0); o1.stop(t0 + dur + 0.2); o2.stop(t0 + dur + 0.2);
+  }
+  crateTick(k, n) { if (!this.ctx) return; this.tone(900 + 600 * (k / Math.max(1, n)), 0.025, 'square', 0.10); } // reel tick, climbs as it slows
+  crateBurst(tier) {                                            // lid-pop whoosh; epic+ gets a sub-bass drop
+    if (!this.ctx) return;
+    const t0 = this.t; this._clank(t0, 0.5, 95);
+    [600, 1500, 3200].forEach((f, i) => this._burst(t0 + 0.01 + i * 0.04, 0.18, 0.22, 'bandpass', f, 0.8));
+    if (tier === 'epic' || tier === 'legendary') {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(70, t0); o.frequency.exponentialRampToValueAtTime(30, t0 + 0.35);
+      o.connect(g); g.connect(this.sfxGain); this._env(g, t0, 0.5, 0.005, 0.35); o.start(t0); o.stop(t0 + 0.4);
+    }
+  }
+  crateStinger(tier) {                                          // four escalating reveal stingers (conditioned tier reward)
+    if (!this.ctx) return;
+    if (tier === 'legendary') { this.crateFanfare(); return; }
+    const t0 = this.t;
+    if (tier === 'common') { this.tone(660, 0.12, 'triangle', 0.25); setTimeout(() => this.tone(880, 0.18, 'sine', 0.2), 60); }
+    else if (tier === 'rare') { this.tone(523, 0.16, 'square', 0.22); this.tone(784, 0.16, 'square', 0.2); this.noise(0.3, 0.08, 'highpass', 6000, 0.5); }
+    else if (tier === 'epic') {
+      [587, 880, 1174].forEach((f, i) => setTimeout(() => this.tone(f, 0.22, 'triangle', 0.2), i * 95));
+      setTimeout(() => this.tone(2350, 0.5, 'sine', 0.12), 300);
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(130, t0); o.frequency.exponentialRampToValueAtTime(45, t0 + 0.4);
+      o.connect(g); g.connect(this.sfxGain); this._env(g, t0, 0.45, 0.005, 0.4); o.start(t0); o.stop(t0 + 0.45);
+    }
+  }
+  crateFanfare() {                                              // unique legendary brass+timpani crown (lifts radioCall's builders)
+    if (!this.ctx) return;
+    const ctx = this.ctx, t0 = this.t;
+    const note = (ts, freq, dur, vol) => {
+      const o = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+      o.type = 'sawtooth'; o2.type = 'sawtooth'; o.frequency.value = freq; o2.frequency.value = freq * 1.006;
+      lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.6;
+      o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.sfxGain);
+      g.gain.setValueAtTime(0.0001, ts); g.gain.exponentialRampToValueAtTime(vol, ts + 0.04); g.gain.setValueAtTime(vol, ts + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, ts + dur);
+      o.start(ts); o2.start(ts); o.stop(ts + dur + 0.05); o2.stop(ts + dur + 0.05);
+    };
+    const drum = (ts, vol) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(150, ts); o.frequency.exponentialRampToValueAtTime(48, ts + 0.3);
+      o.connect(g); g.connect(this.sfxGain);
+      g.gain.setValueAtTime(0.0001, ts); g.gain.exponentialRampToValueAtTime(vol, ts + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, ts + 0.4);
+      o.start(ts); o.stop(ts + 0.45); this._burst(ts, 0.06, vol * 0.4, 'bandpass', 200, 0.6);
+    };
+    drum(t0, 0.5); drum(t0 + 0.3, 0.45);
+    note(t0, 196, 1.2, 0.16); note(t0, 246.94, 1.2, 0.14);
+    note(t0 + 0.18, 392, 1.0, 0.16); note(t0 + 0.18, 293.66, 1.0, 0.13);
+    note(t0 + 0.42, 523.25, 1.2, 0.18);
+    this._burst(t0 + 0.42, 0.7, 0.16, 'highpass', 6500, 0.4);   // cymbal shimmer
+  }
+  coinTick(k) {                                                 // dense→sparse coin cascade under the rising counter
+    if (!this.ctx) return;
+    const t0 = this.t; this._metalPing(t0, 2200 + Math.random() * 1800 + k * 40, 0.07, 0.06);
+    if (k % 3 === 0) this._burst(t0, 0.03, 0.05, 'highpass', 7000, 0.6);
+  }
+  crateChute() { if (!this.ctx) return; this.noise(0.18, 0.4, 'bandpass', 900, 1.2); this.noise(0.4, 0.18, 'highpass', 2400, 0.8); } // fabric snap + flutter
+  crateWind() {                                                 // looping night-steppe bed under the whole ceremony
+    if (!this.ctx || this._crateWind) return;
+    const src = this.ctx.createBufferSource(); src.buffer = this._noiseBuffer(2); src.loop = true;
+    const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320; lp.Q.value = 0.6;
+    const g = this.ctx.createGain(); g.gain.setValueAtTime(0.0001, this.t); g.gain.linearRampToValueAtTime(0.05, this.t + 0.4);
+    src.connect(lp); lp.connect(g); g.connect(this.sfxGain); src.start();
+    this._crateWind = { src, g };
+  }
+  crateWindStop() {
+    if (!this._crateWind) return;
+    const { src, g } = this._crateWind, t = this.t;
+    try { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5); src.stop(t + 0.55); } catch (e) {}
+    this._crateWind = null;
+  }
+
   waveStart() {
     [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.tone(f, 0.18, 'square', 0.3), i * 90));
   }

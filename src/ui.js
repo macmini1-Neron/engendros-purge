@@ -202,6 +202,7 @@ export class UI {
       shop: document.getElementById('shop'), gameover: document.getElementById('gameover'),
       settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
       admin: document.getElementById('admin'), music: document.getElementById('music'),
+      crate: document.getElementById('crateOverlay'),
     };
     this.hint = document.getElementById('hint');
   }
@@ -272,9 +273,17 @@ export class WeaponPreview {
     const w = this.canvas.clientWidth || 360, h = this.canvas.clientHeight || 200;
     this.renderer.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix();
   }
+  // Dispose every holder child by TRAVERSE — viewmodels are flat but the crate preview is a nested
+  // modelgen Group, so a shallow pop-dispose would leak its nested geometries/materials.
+  _clearHolder() {
+    while (this.holder.children.length) {
+      const c = this.holder.children.pop();
+      c.traverse && c.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) (Array.isArray(n.material) ? n.material : [n.material]).forEach((m) => m.dispose && m.dispose()); });
+    }
+  }
   show(key) {
     if (this.cur === key) return; this.cur = key;
-    while (this.holder.children.length) { const c = this.holder.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
+    this._clearHolder();
     const m = buildViewmodel(WEAPONS[key]); m.material.depthTest = true; m.renderOrder = 0; this.holder.add(m);
     const sm = WEAPONS[key].spinMag; if (sm) { const mag = buildMag(sm); mag.material.depthTest = true; mag.renderOrder = 0; mag.position.set(sm.x, sm.y, sm.z); this.holder.add(mag); }
     const box = new THREE.Box3().setFromObject(this.holder);
@@ -283,7 +292,18 @@ export class WeaponPreview {
     this.dist = Math.max(size.x, size.y, size.z) * 1.7 + 0.35;
     this.spin = 0.6;
   }
-  hide() { while (this.holder.children.length) { const c = this.holder.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); } this.cur = null; } // clear the model (gadgets with no 3D viewmodel)
+  hide() { this._clearHolder(); this.cur = null; } // clear the model (gadgets with no 3D viewmodel)
+  // Show any Object3D (not a WEAPONS key) — e.g. the crate preview (a nested modelgen Group).
+  showObject(obj) {
+    this.cur = null;
+    this._clearHolder();
+    if (!obj) return;
+    this.holder.add(obj);
+    const box = new THREE.Box3().setFromObject(this.holder);
+    const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    for (const c of this.holder.children) c.position.sub(ctr);
+    this.dist = Math.max(size.x, size.y, size.z) * 1.7 + 0.35; this.spin = 0.6;
+  }
   render(dt) {
     this.spin += dt * 0.7; this.holder.rotation.y = this.spin;
     const d = this.dist;
