@@ -2,10 +2,11 @@
 
 **Date:** 2026-06-10 · **Status:** Approved design — ready to implement
 **Implementer:** coder model (Codex), branch `feat/lootbox-crate` off `main`
-**Models:** `models/supply-lootbox/` + `models/patefon/` are delivered separately via the modelgen
-harness (rigged specs). The feature must NOT hard-block on them (fallback meshes, §7).
+**Models:** `models/supply-lootbox/` is delivered separately via the modelgen harness (rigged
+spec). The feature must NOT hard-block on it (fallback mesh, §7).
 **Owner decisions (locked):** 1 item per crate · pry = 3 latch clicks · price $800 ·
-legendary exclusive = «Патефон» decoy gadget.
+NO crate-exclusive item — the patefon idea was DROPPED (2026-06-10: the game is getting its own
+patefon separately; do not add another). Legendary = bazooka + cash jackpot.
 
 Private hobby game, in-game cash only. The goal is a maximally thrilling, psychology-engineered
 opening ceremony — every beat below carries its justification. Keep the justifications as code
@@ -75,7 +76,7 @@ game scene): dust 60 pts (size .07, 0x8a7a5a, life .9 s, gravity −2) and spark
 
 1. Imports: `import { CrateCeremony, rollCrateReward } from './crate.js';` — `registerModel` import
    + `_registerModels` block ALREADY EXISTS on main (modelgen-v2 PR); just add
-   `reg('supply-lootbox')`-style lines for the two new specs to that block.
+   a `reg('supply-lootbox')` line to that block.
 2. Construction after the admin-canvas block:
    `const _cc = document.getElementById('crateCanvas'); this.crate = _cc ? new CrateCeremony(this) : null;`
 3. Pointer-lock guard: extend the early-return state list (`'menu' || 'dead' || 'shop' || 'admin'`)
@@ -189,14 +190,11 @@ export const LOOT_TABLE = {
     { key: 'kar98', w: 2 }, { key: 'bar', w: 2 }, { key: 'dp28', w: 2 },
   ],
   legendary: [ // Σw 5
-    { key: 'patefon', w: 2 },                       // crate-exclusive decoy gadget, §6
-    { key: 'bazooka', w: 2 },
-    { cash: 2500, name: 'ПРЕМИЯ ГЕНШТАБА', w: 2 ? 1 : 1 },   // w: 1
+    { key: 'bazooka', w: 3 },
+    { cash: 2500, name: 'ПРЕМИЯ ГЕНШТАБА', w: 2 },
   ],
 };
 ```
-(Yes, `legendary` cash weight is **1** — write it plainly, the ternary above is a transcription
-artifact. patefon 2 / bazooka 2 / cash 1.)
 
 EV math to keep in comments: liquidation EV ≈ 67% of price (no arbitrage), all-owned EV ≈ 49%
 (endgame cash sink), fresh-account unlock EV ≫ price (the hook). Crate ≈ 2–3 cleared waves
@@ -232,8 +230,7 @@ export function rollCrateReward(game) {
   return { tier, kind: WEAPONS[e.key] ? 'weapon' : 'gadget', key: e.key, name, price };
 }
 ```
-`patefon` notional price for dup-conversion: **$3000** (→ dupe $1200). All-owned case needs no
-special code — everything converts to cash via the dupe path.
+All-owned case needs no special code — everything converts to cash via the dupe path.
 
 ---
 
@@ -269,7 +266,7 @@ lands at origin, front face +z, camera on +z side.
 | 4 | pry | user-paced | close-up (1.05,.78,1.95); 3 latch meshes on front face, ACTIVE one pulses an additive ring (op `.25+.2sin(8t)`); per click: latch flies off (vel (±1.2,2.2,1.8), spin, gravity, despawn 1 s), **crack light steps 0→.5→1.2→2.2 WARM WHITE 0xffd9a0**, lid micro-jitter (rot.x −.015 pulse 80 ms); hint «СОРВАТЬ ЗАМОК — k/3» | `crateLatch(i)` pitch rises 1→3 | **3 clicks**, 0.18 s debounce [4; NO tier color — 2] |
 | 5 | hold (light roulette) | 0.6/0.8/1.1/1.4 by tier | push-in (0.85,.62,1.5); crack+seam flicker through TIER_COLORS, swap interval `0.06·1.32^k` decelerating; **last 3 swaps engineered:** 2 higher-tier teases (gold passes when result isn't legendary; for legendary tease epic/rare so gold lands as the shock), final = REAL tier held ~0.45 s; lid strains rot.x −.02..0 | `crateDrone(tier, dur)` rising; `crateTick(k, n)` per swap | — [3 near-miss; 2 late tell; 6 tier-scaled length] |
 | 6 | burst | 0–0.5 | lid swings on rig rot.x 0→−2.15 cubic-out .22 s, settle −1.95 (overshoot bounce); `#crateVig` flashes tier color; burstLight (tier, 6→2) + shaft cone opacity 0→.35; straw 40 pts; epic+ shake .05; legendary shake .09 + 12 red-star sprites radial burst | `crateBurst(tier)`; `crateStinger(tier)` at +50 ms (legendary → `crateFanfare()`) | — [1: reveal snappy; 6] |
-| 7 | rise | 0.7/0.7/0.9/1.4 by tier | reward rises y .30→1.02 ease-out, spin 1.4 rad/s in the shaft; weapon=`buildViewmodel` (+`buildMag` if spinMag); gadget=`game.loot._pickupMesh(kind)`/`buildFlare()`; patefon=its modelgen spec or mini-case mesh; cash/dupe=coin-stack mesh (3 gold cylinders + banknote box); cam look up (0,.95,0) | soft shaft hum `tone(196,dur,'sine',.06)`; legendary fanfare tail | — [6] |
+| 7 | rise | 0.7/0.7/0.9/1.4 by tier | reward rises y .30→1.02 ease-out, spin 1.4 rad/s in the shaft; weapon=`buildViewmodel` (+`buildMag` if spinMag); gadget=`game.loot._pickupMesh(kind)`/`buildFlare()`; cash/dupe=coin-stack mesh (3 gold cylinders + banknote box); cam look up (0,.95,0) | soft shaft hum `tone(196,dur,'sine',.06)`; legendary fanfare tail | — [6] |
 | 8 | showcase | card at rise-end +0.1; ≥0.8 s | item spins at apex; `.crate-card.show`: tier line ОБЫЧНАЯ/РЕДКАЯ/ЭПИЧЕСКАЯ/ЛЕГЕНДАРНАЯ ПОСЫЛКА + name + sub; **dupe/cash: counter `+$0→+$X` over .9 s + coin fountain; `#crateCount` bank ticks live** | `coinTick(k)` ×~16 dense→sparse; weapon: one `reloadClick()` "rack" | click → end [7 peak-end] |
 | 9 | end | +0.4 | `.crate-btns.show`: [ОТКРЫТЬ ЕЩЁ ×n] (hidden at 0) + [НАЗАД]; `#crateCount` «ПОСЫЛКИ ×n · БАНК $…»; hint = collection «ОРУЖЕЙНАЯ: 14/23 СТВОЛОВ» | wind breathes | buttons; Esc=close [7,10] |
 
@@ -298,33 +295,12 @@ _buildRoulette(tier, dur) {
 
 ---
 
-## 6. «Патефон» — legendary-exclusive decoy gadget
+## 6. Crate-exclusive item — DROPPED
 
-Soviet suitcase gramophone; **drops only from crates** (not purchasable). Gadget class, loadout
-slot deployable (registered like other gadgets but excluded from the shop catalog: add it to
-`GADGETS` with `crateOnly: true` and filter it out of `_catalogItems`; notional `price: 3000` for
-dup-conversion only).
-
-- **Deploy:** holding patefon + click → places prop on the ground at the aim point (reuse the
-  flare/structure placement pattern); 1.2 s wind-up (crank rig rotates, ratchet sound) → plays a
-  RANDOM track from the jukebox catalog **positionally** (reuse the diegetic Radio prop machinery:
-  distance-based volume + music duck + co-op sync of song index).
-- **Lure (the mechanic, host-authoritative — `hostSim = !mp.active || mp.isHost` gate!):** while
-  the song plays (~30 s), enemies within **25 m** of the patefon prefer it as their steering
-  target: `EnemyManager` gains `lurePoint = { pos, expiry, hp }`; in target selection an enemy
-  takes the lure when `dist(enemy, lure) < dist(enemy, nearestPlayer) * 1.5`. Enemies in contact
-  range "attack" it (reuse contact-damage tick) → **HP 300**; destroyed = sad slow-down warble
-  (pitch ramp down on the audio) + wood splinter burst + item lost.
-- **After the song:** 60 s cooldown (silent, closed); then E-interact picks it back up into the
-  loadout. If destroyed, it's gone (re-roll another from crates — chase item).
-- **Co-op:** host broadcasts spawn/song-index/hp/death; clients render + play positional audio
-  locally (same pattern as the Radio prop). Lure logic runs ONLY on the host (clients see enemy
-  movement via esnap as usual).
-- Model: `models/patefon/spec.json` (rigs: `crank`, `platter` spin) — fallback: small wooden
-  suitcase MeshBuilder box with open lid + dark platter cylinder.
-
-Why it's the chase item: the only crowd-control/decoy in the game, synergizes with the 62-song
-jukebox, peak Soviet flavor, and a brother-flex («У тебя ещё нет патефона?!»).
+There is deliberately NO crate-exclusive legendary item. The original design used a «Патефон»
+decoy gadget, but the game is independently getting its own patefon (owner, 2026-06-10) — do not
+add another or wire `models/patefon/` into anything. The legendary pool is bazooka + the cash
+jackpot. If a chase item is wanted later, design it fresh against whatever the live patefon does.
 
 ---
 
@@ -370,7 +346,6 @@ Append a `// ---- crate ceremony («Посылка» lootbox) ----` section afte
 | `coinTick(k)` | `_metalPing(t0, 2200+rnd·1800+k·40, .07, .06)`; every ~3rd + tiny highpass burst. Schedule ~16 over .9 s, interval .03→.09 |
 | `crateChute()` | fabric snap `noise(.18,.4,'bandpass',900,1.2)` + flutter `noise(.4,.18,'highpass',2400,.8)` |
 | `crateWind()/crateWindStop()` | looping `_noiseBuffer(2)` → lowpass 320 Q.6 → gain .05, .4 s fade-in; handle `this._crateWind`; stop = .5 s exp fade + `src.stop()`. `close()`/`abort()` ALWAYS call stop |
-| patefon | `patefonCrank()` ratchet (6× `_clank` ascending), `patefonWarble(deathRamp)` pitch-down on destroy |
 
 Jet reuse: `startJetClip() || startJet()` + per-frame `set(level, near)` + `stop()` (contract in
 loot.js supply drop). Music duck: 0.3 on open → 0.25 at impact → restore `setMusicDuck(1)` in
@@ -408,7 +383,7 @@ for (let i=0,n={};i<20000;i++){ GAME.meta.crates=1; const r=(await import('./src
 Manual: buy flow → first open un-skippable → skip on 2nd → pry debounce → roulette visibly passes
 gold → Esc at every phase (reward kept) → express ×5 → return lands on crate tile → lobby returnTo →
 co-op host-start abort → reload persistence → model-fallback test (rename spec.json → procedural
-crate + warning, ceremony identical) → patefon deploy/lure/destroy/cooldown/pickup/co-op sync.
+crate + warning, ceremony identical).
 
 Ship: cache-bust ritual (`index.html ?v=N+1` + `GAME_BUILD` to the local minute), push,
 `gh pr create`, brother review.
