@@ -1,0 +1,118 @@
+{
+  "id": "dshk-ammo-box",
+  "name": "Soviet DShK 12.7mm Ammunition Box",
+  "description": "Galvanized-steel transport container for 85 rounds of 12.7×108mm ammunition, with olive drab paint, brass latches, and leather carrying straps.",
+  "scale": 1,
+  "needs": [
+    "Exact dimensions (W×H×D) from museum catalog or GOST standard — TA072 scale model kit lacks metric specs"
+  ],
+  "parts": [
+    {
+      "id": "body",
+      "name": "Main galvanized steel box",
+      "op": "bevelBox",
+      "args": {
+        "w": 280,
+        "h": 140,
+        "d": 140
+      },
+      "at": [0, 70, 0],
+      "mat": "galvanized",
+      "src": "TA072 scale model kit (Tank Model), Soviet 12.7mm DShK ammunition box proportions",
+      "derivation": "85-round capacity in alternating rows; scale inferred from round count (12.7×108mm ≈130mm length)"
+    },
+    {
+      "id": "lid",
+      "name": "Hinged steel lid with lever lock",
+      "op": "bevelBox",
+      "args": {
+        "w": 285,
+        "h": 25,
+        "d": 145
+      },
+      "at": [0, 145, 0],
+      "mat": "galvanized",
+      "src": "TA072 scale model kit; Soviet lever-lock mechanism standard",
+      "note": "Lid overlaps body edges slightly; lever latch detail omitted (voxel limitation)"
+    },
+    {
+      "id": "handle",
+      "name": "Flat-folding steel handle (closed position)",
+      "op": "bevelBox",
+      "args": {
+        "w": 260,
+        "h": 40,
+        "d": 20
+      },
+      "at": [0, 170, -70],
+      "mat": "steel",
+      "src": "Soviet ammunition box standard design (Шпагин feed system documentation)",
+      "note": "Modeled in closed/stowed position lying flat on the lid"
+    },
+    {
+      "id": "latch-left",
+      "name": "Brass latch (left side)",
+      "op": "panel",
+      "args": {
+        "w": 28,
+        "h": 35,
+        "th": 0.02
+      },
+      "at": [-140, 95, 72],
+      "mat": "brass",
+      "src": "TA072 scale model kit; Soviet bronze/brass hardware standard finish"
+    },
+    {
+      "id": "latch-right",
+      "name": "Brass latch (right side)",
+      "op": "panel",
+      "args": {
+        "w": 28,
+        "h": 35,
+        "th": 0.02
+      },
+      "at": [140, 95, 72],
+      "mat": "brass",
+      "src": "TA072 scale model kit"
+    },
+    {
+      "id": "strap-top",
+      "name": "Leather carrying strap (top)",
+      "op": "plate",
+      "args": {
+        "w": 250,
+        "d": 12
+      },
+      "at": [0, 165, 0],
+      "mat": "leather",
+      "src": "Soviet ammunition container field equipment standard (Военная энциклопедия)",
+      "note": "Canvas-backed leather webbing for lashing/carrying"
+    },
+    {
+      "id": "markings",
+      "name": "Stenciled identification (left face)",
+      "op": "panel",
+      "args": {
+        "w": 200,
+        "h": 60
+      },
+      "at": [-140, 70, 0],
+      "mat": "paintBlack",
+      "src": "Decoding Soviet Military Surplus Ammunition Labels (DCAF CAR research)",
+      "note": "Cyrillic lot/factory/year stencils; simplified as flat decal in voxel model"
+    },
+    {
+      "id": "soviet-star",
+      "name": "Red star (center front)",
+      "op": "panel",
+      "args": {
+        "w": 40,
+        "h": 40
+      },
+      "at": [0, 70, -72],
+      "mat": "paintRed",
+      "src": "Soviet state insignia standard (ГОСТ) on all military ordnance containers",
+      "note": "Embossed/painted red star; voxel simplified as flat marking"
+    }
+  ]
+}

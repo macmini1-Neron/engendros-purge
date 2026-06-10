@@ -4,6 +4,11 @@
 .playwright-mcp
 .agents
 docs
+# modelgen dev surface — the game only needs models/*/spec.json at runtime
+tools
+tests
+models/*/renders
+models/*/BUILD.md
 # Runtime audio assets must deploy; otherwise browsers fall back to generated synth sounds.
 README.md
 

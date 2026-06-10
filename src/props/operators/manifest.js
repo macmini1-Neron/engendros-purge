@@ -1,20 +1,32 @@
 // manifest.js — operator vocabulary as pure data (no impl, no THREE).
-//   args: required arg keys.
-//   dims: the subset of args that are REAL-WORLD dimensions → any part using this
-//         operator must carry an `src` provenance citation (no invented sizes).
+//   args:   required arg keys.
+//   dims:   the subset of args that are REAL-WORLD dimensions → any part using this
+//           operator must carry an `src` provenance citation (no invented sizes).
+//   anchor: where the part's `at` sits — 'floor' = at is the BOTTOM-centre,
+//           'center' = at is the volumetric centre. Mixing these up is the #1
+//           placement bug; check here before authoring.
 export const MANIFEST = {
-  bevelBox:    { args: ['w', 'h', 'd'],          dims: ['w', 'h', 'd'] },
-  panel:       { args: ['w', 'h'],               dims: ['w', 'h'] },
-  plate:       { args: ['w', 'd'],               dims: ['w', 'd'] },
-  drawerStack: { args: ['w', 'h', 'd', 'count'], dims: ['w', 'h', 'd'] },
-  legs:        { args: ['w', 'd', 'h'],          dims: ['w', 'd', 'h'] },
-  cylinder:    { args: ['r', 'h'],                dims: ['r', 'h'] },
-  cone:        { args: ['r', 'h'],                dims: ['r', 'h'] },
-  finSet:      { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
-  deltaFins:   { args: ['count', 'root', 'span'], dims: ['root', 'span'] },
-  texturedCylinder: { args: ['r', 'h'],           dims: ['r', 'h'] },
-  latticeBeam: { args: ['len', 'w', 'h'],         dims: ['len', 'w', 'h'] },
-  cabinet:     { args: ['w', 'h', 'd'],           dims: ['w', 'h', 'd'] },
+  // structural (box-only, pure)
+  bevelBox:    { args: ['w', 'h', 'd'],          dims: ['w', 'h', 'd'],        anchor: 'center' },
+  panel:       { args: ['w', 'h'],               dims: ['w', 'h'],             anchor: 'center' },
+  plate:       { args: ['w', 'd'],               dims: ['w', 'd'],             anchor: 'center' },
+  stencil:     { args: ['w', 'h'],               dims: ['w', 'h'],             anchor: 'center' },
+  planks:      { args: ['w', 'h', 'd', 'count'], dims: ['w', 'h', 'd'],        anchor: 'floor'  },
+  finSet:      { args: ['count', 'root', 'span'], dims: ['root', 'span'],      anchor: 'center' },
+  latticeBeam: { args: ['len', 'w', 'h'],        dims: ['len', 'w', 'h'],      anchor: 'center' },
+  cabinet:     { args: ['w', 'h', 'd'],          dims: ['w', 'h', 'd'],        anchor: 'center' },
+  // furniture (box-only, pure)
+  drawerStack: { args: ['w', 'h', 'd', 'count'], dims: ['w', 'h', 'd'],        anchor: 'floor'  },
+  legs:        { args: ['w', 'd', 'h'],          dims: ['w', 'd', 'h'],        anchor: 'floor'  },
+  // containers/hardware (box-only, pure)
+  lidBox:      { args: ['w', 'h', 'd', 'lid'],   dims: ['w', 'h', 'd', 'lid'], anchor: 'floor'  },
+  strapBand:   { args: ['w', 'h', 'd'],          dims: ['w', 'h', 'd'],        anchor: 'center' },
+  handleU:     { args: ['w', 'h'],               dims: ['w', 'h'],             anchor: 'floor'  },
+  // round (THREE-bound — browser-verified, not node-tested)
+  cylinder:    { args: ['r', 'h'],                dims: ['r', 'h'],            anchor: 'center' },
+  cone:        { args: ['r', 'h'],                dims: ['r', 'h'],            anchor: 'center' },
+  deltaFins:   { args: ['count', 'root', 'span'], dims: ['root', 'span'],      anchor: 'center' },
+  texturedCylinder: { args: ['r', 'h'],           dims: ['r', 'h'],            anchor: 'center' },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);

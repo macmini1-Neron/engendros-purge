@@ -6,7 +6,10 @@ import * as THREE from 'three';
 import { MeshBuilder, voxelMaterial } from '../util.js';
 import { validateSpec } from './spec.js';
 import { planBuild } from './plan.js';
+import { rotatedBuilder } from './rotated-builder.js';
 import * as OPS from './operators/index.js';
+
+const D2R = Math.PI / 180;
 
 export function buildSpec(spec) {
   validateSpec(spec);                       // hard-fail on any invented dimension
@@ -23,8 +26,21 @@ export function buildSpec(spec) {
     if (!fn) throw new Error(`no voxel impl for operator '${o.op}'`);
     const key = o.rig || '__base';
     ensure(key);
-    const ret = fn(builders.get(key), o.args, o.tones, o.origin);
-    if (ret && ret.isObject3D) extras.get(key).push(ret);   // a textured/standalone-mesh operator
+    const hasRot = !!(o.rot.x || o.rot.y || o.rot.z);
+    const b = hasRot
+      ? rotatedBuilder(builders.get(key), o.origin, [o.rot.x, o.rot.y, o.rot.z])  // spec rot (degrees) → rigid rotation about the part origin
+      : builders.get(key);
+    const ret = fn(b, o.args, o.tones, o.origin);
+    if (ret && ret.isObject3D) {              // a textured/standalone-mesh operator
+      if (hasRot) {                           // rotate the standalone mesh about the part origin too
+        const piv = new THREE.Group();
+        piv.position.set(o.origin.x, o.origin.y, o.origin.z);
+        piv.rotation.set(o.rot.x * D2R, o.rot.y * D2R, o.rot.z * D2R);
+        ret.position.sub(new THREE.Vector3(o.origin.x, o.origin.y, o.origin.z));
+        piv.add(ret);
+        extras.get(key).push(piv);
+      } else extras.get(key).push(ret);
+    }
   }
 
   // 2) a group per rig — ANY rig with a `pivot` gets an outer (named, carries rotation about the
