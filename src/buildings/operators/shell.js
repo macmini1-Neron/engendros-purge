@@ -79,8 +79,10 @@ export function column(b, a, ctx) {
 
 // Straight stair flight — N stacked boxes, each FULL height from the base ((i+1)·rise), so the
 // player's ≤0.62 m step-up collision climbs them with no special-casing (world._stairs pattern).
-// origin = foot of the flight (floor-anchored, centre of the first step's leading edge); marches `dir`.
+// origin = foot of the flight (floor-anchored, centre of the first step's leading edge); marches
+// `dir`. A 2 mm seat lift keeps the step bottoms off the floor/ground plane (z-fight law).
 export function stairs(b, a, ctx) {
+  const SEAT = 0.002;
   const o = ctx.origin;
   const [dx, dz] = DIRV[a.dir] ?? DIRV.N;
   const mat = ctx.mat ?? ctx.materials?.trim;
@@ -88,6 +90,6 @@ export function stairs(b, a, ctx) {
     const hY = (i + 1) * a.rise;
     const cx = o.x + dx * a.run * (i + 0.5);
     const cz = o.z + dz * a.run * (i + 0.5);
-    b.box(dx !== 0 ? a.run : a.width, hY, dz !== 0 ? a.run : a.width, cx, o.y + hY / 2, cz, { mat, collide: ctx.collide });
+    b.box(dx !== 0 ? a.run : a.width, hY, dz !== 0 ? a.run : a.width, cx, o.y + SEAT + hY / 2, cz, { mat, collide: ctx.collide });
   }
 }

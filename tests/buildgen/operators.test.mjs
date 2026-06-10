@@ -87,13 +87,13 @@ test('floorSlab storey 0 → recorder error (storey 0 is the shellBox base)', ()
   assert.ok(b.errors[0].includes('storey 0'));
 });
 
-test('stairs → N stacked full-height boxes, top = steps·rise, marching the dir', () => {
+test('stairs → N stacked full-height boxes, top = steps·rise (+2 mm seat), marching the dir', () => {
   const b = mock();
   stairs(b, { steps: 5, rise: 0.3, run: 0.3, width: 1.2, dir: 'N' }, ctx());
   assert.equal(b.calls.length, 5);
   for (let i = 0; i < 5; i++) {
     assert.ok(Math.abs(b.calls[i].h - (i + 1) * 0.3) < 1e-9, `step ${i} is full height from the base`);
-    assert.ok(Math.abs((b.calls[i].y + b.calls[i].h / 2) - (i + 1) * 0.3) < 1e-9, 'step top at (i+1)·rise');
+    assert.ok(Math.abs((b.calls[i].y + b.calls[i].h / 2) - ((i + 1) * 0.3 + 0.002)) < 1e-9, 'step top at (i+1)·rise + seat');
   }
   assert.ok(b.calls[4].z > b.calls[0].z, 'marches north (+Z)');
   assert.ok(b.calls.every((c) => c.collide === true));
