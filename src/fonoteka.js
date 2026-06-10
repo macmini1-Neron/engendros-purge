@@ -5,13 +5,69 @@
 import * as THREE from 'three';
 import { buildSpec } from './props/voxel-interp.js';
 import { registerModel, getSpec, hasModel } from './props/registry.js';
-import { makeRecordLabelTexture } from './props/operators/round.js';
+import { makeRecordLabelTexture, randomLabelStyle } from './props/operators/round.js';
 import { GENRES, GENRE_BY_ID, SONG_GENRES, SONG_INFO } from './music.js';
 import { radioAttenuation } from './radio.js';
 import { icon } from './icons.js';
 
-const RECORD_RPS = 78 / 60;                 // 1.3 rev/s
-const RECORD_SPIN = RECORD_RPS * Math.PI * 2; // 8.168 rad/s
+const DISPLAY_RPS = 0.34;                      // the showpiece/prop spin — a calm, readable turn, not the 78-rpm blur
+const DISPLAY_SPIN = DISPLAY_RPS * Math.PI * 2; // ~2.14 rad/s
+
+// Tonearm sweep (rotation.y about its base pivot), found from the rig geometry — where the needle
+// actually sits over the record. A track plays OUTER→INNER; the arm lifts & parks when stopped.
+// The needle traces an ARC (offset pivot), so radius is NOT linear in angle — it bottoms out near
+// the centre. These two angles are the monotonic outer→inner branch found from the rig geometry:
+// the needle goes from the outer groove to the LABEL EDGE and never crosses onto the paper label.
+const ARM_OUTER = 0.484;   // start of a track: needle on the outer groove (R≈0.112 m from spindle)
+const ARM_INNER = 0.122;   // end of a track: needle at the label edge (R≈0.060 m; label is r0.05 — stops just outside the paper)
+const ARM_PARK  = 0.95;    // off to the side, clear of the disc (cradle) — where it waits while a record is changed
+const ARM_LIFT  = -0.30;   // rotation.z that raises the needle clear of the disc (the lift gesture)
+const LIFT_DISC = 0.085;   // how far the record rises off the platter during a swap (m, local)
+// Record-change choreography (like a real patefon, no collisions). Phase boundaries are elapsed seconds:
+const CHG_DUR  = 2.05;     // total length of a record change
+const CHG_AWAY = 0.55;     // 0  →0.55: lift + swing the needle OFF to the side (clear of the disc)
+const CHG_SWAP = 1.45;     // 0.55→1.45: lift the whole record off, fit a fresh one, set it down
+const CHG_MID  = 1.00;     // …the label flips at the apex (record fully lifted)
+                           // 1.45→2.05: swing back and set the needle on the OUTER edge
+
+// One unified per-gramophone animator. `st` = { disc, y, lift, discY, chg, swapped, pendingTitle,
+// pendingStyle }. Idle play → the needle travels edge→centre by `progress`. A change runs the strict
+// sequence above so the arm is always clear of the disc while it's lifted/swapped. Returns the change flag.
+function animateGramophone(g, st, dt, playing, progress) {
+  const rig = g.userData.rig; if (!rig) return false;
+  let yT, liftT, discT = 0;
+  const changing = st.chg > 0;
+  if (changing) {
+    const e = CHG_DUR - st.chg; st.chg = Math.max(0, st.chg - dt);
+    if (e < CHG_AWAY) { yT = ARM_PARK; liftT = 1; }                                  // A — needle away to the side
+    else if (e < CHG_SWAP) {                                                          // B — change the whole record
+      yT = ARM_PARK; liftT = 1;
+      discT = Math.sin(((e - CHG_AWAY) / (CHG_SWAP - CHG_AWAY)) * Math.PI) * LIFT_DISC; // lift off → set down
+      if (!st.swapped && e >= CHG_MID) { st.swapped = true; setGramophoneLabel(g, st.pendingTitle, st.pendingStyle); }
+    } else { yT = ARM_OUTER; liftT = Math.max(0, 1 - (e - CHG_SWAP) / (CHG_DUR - CHG_SWAP)); } // C — set on the outer edge
+  } else if (!playing) { yT = ARM_PARK; liftT = 1; }                                  // parked when stopped
+  else { yT = ARM_OUTER + (ARM_INNER - ARM_OUTER) * Math.min(1, Math.max(0, progress || 0)); liftT = 0; } // travel edge→centre
+  st.y += (yT - st.y) * Math.min(1, dt * 5);
+  st.lift += (liftT - st.lift) * Math.min(1, dt * 6);
+  st.discY += (discT - st.discY) * Math.min(1, dt * (changing ? 12 : 6));
+  if (rig.tonearm) { rig.tonearm.rotation.y = st.y; rig.tonearm.rotation.z = st.lift * ARM_LIFT; }
+  if (st.disc) st.disc.position.y = st.discY;
+  return changing;
+}
+const newAnim = (disc) => ({ disc: disc || null, y: ARM_PARK, lift: 1, discY: 0, chg: 0, swapped: false, pendingTitle: null, pendingStyle: null });
+function startChange(st, title) { st.chg = CHG_DUR; st.swapped = false; st.pendingTitle = title; st.pendingStyle = randomLabelStyle(); }
+
+// The Soviet office desk the showpiece stands on (a real modelgen spec; only a corner shows on screen).
+let _deskPromise = null;
+function ensureDeskSpec() {
+  if (!_deskPromise) {
+    _deskPromise = fetch('./models/desk_soviet/spec.json')
+      .then((r) => r.json())
+      .then((spec) => { if (!hasModel('desk_soviet')) registerModel('desk_soviet', spec); return getSpec('desk_soviet'); })
+      .catch(() => null);
+  }
+  return _deskPromise;
+}
 
 // One shared async load of the gramophone spec → registry. buildSpec is sync once registered.
 let _specPromise = null;
@@ -31,23 +87,40 @@ export function buildGramophone() {
   const spec = getSpec('gramophone');
   if (!spec) return null;
   const g = buildSpec(spec);
+  // isolate the centre label (CircleGeometry) + the vinyl (widest CylinderGeometry) so they can be
+  // lifted off the platter together as one "disc" — the record-swap animation pulls the old record
+  // and sets a fresh one down. They live UNDER the turntable container so they still spin in place.
   let label = null, record = null;
-  g.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.type === 'CircleGeometry') label = o; });
+  g.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    if (o.geometry.type === 'CircleGeometry') label = o;
+    else if (o.geometry.type === 'CylinderGeometry') {
+      const r = o.geometry.parameters.radiusTop || 0, cur = record ? (record.geometry.parameters.radiusTop || 0) : -1;
+      if (r > cur) record = o;
+    }
+  });
+  let disc = null;
+  if (label) {
+    disc = new THREE.Group(); disc.name = 'disc';
+    label.parent.add(disc);                       // same container (turntable inner group)
+    for (const m of [record, label]) { if (m && m.parent !== disc) { const p = m.position.clone(); m.parent.remove(m); disc.add(m); m.position.copy(p); } }
+  }
   g.userData.rig = {
     turntable: g.getObjectByName('turntable'),
     tonearm: g.getObjectByName('tonearm'),
     lid: g.getObjectByName('lid'),
     crank: g.getObjectByName('crank'),
-    label,
+    label, disc,
   };
   return g;
 }
 
-// Re-skin a built gramophone's record label to the given track (canvas CCCP label).
-export function setGramophoneLabel(g, title) {
+// Re-skin a built gramophone's record label to a track, with a random authentic pressing style
+// (red/blue Апрелевка, cream Мелодия, gold-on-black). Pass an explicit style to keep it stable.
+export function setGramophoneLabel(g, title, style) {
   const lbl = g && g.userData.rig && g.userData.rig.label;
   if (!lbl) return;
-  const tex = makeRecordLabelTexture({ title: title || 'СССР', mode: 'black' });
+  const tex = makeRecordLabelTexture({ title: title || 'СССР', style: style || randomLabelStyle() });
   if (lbl.material.map) lbl.material.map.dispose();
   lbl.material.map = tex; lbl.material.needsUpdate = true;
 }
@@ -65,8 +138,8 @@ class GramophoneViewer {
     const fill = new THREE.DirectionalLight(0xffe0b0, 0.55); fill.position.set(-1, -2, 5); this.scene.add(fill); // lifts the lid logo
     this.cam = new THREE.PerspectiveCamera(33, 1.4, 0.01, 60);
     this.holder = new THREE.Group(); this.scene.add(this.holder);
-    this.model = null; this.rig = null; this._dist = 1.0;
-    this.playing = false; this.armPlay = 0; this._yaw = 0.5; this._spin = 0;
+    this.model = null; this.rig = null; this._dist = 1.0; this._stage = false;
+    this.playing = false; this.progress = 0; this._anim = newAnim(null); this._yaw = 0.5; this._spin = 0;
     this._drag = false; this._lx = 0;
     canvas.addEventListener('pointerdown', (e) => { this._drag = true; this._lx = e.clientX; });
     window.addEventListener('pointerup', () => { this._drag = false; });
@@ -85,27 +158,54 @@ class GramophoneViewer {
     if (!g) return false;
     const box = new THREE.Box3().setFromObject(g), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
     g.position.set(-c.x, -box.min.y - s.y / 2, -c.z);   // sit centred at the holder origin
-    this.holder.add(g); this.model = g; this.rig = g.userData.rig;
+    this.holder.add(g); this.model = g; this.rig = g.userData.rig; this._anim.disc = this.rig.disc;
     this._dist = Math.max(s.x, s.y, s.z) * 1.85 + 0.18;
+    this._buildStage(-s.y / 2);                  // the desk + a faint record behind, both fixed (don't rotate on drag)
     if (this._pendingLabel) { this.setLabel(this._pendingLabel); this._pendingLabel = null; }
     return true;
+  }
+  // A quiet stage under/behind the showpiece: the Soviet desk it stands on (only a corner shows) and a
+  // faint record propped behind — both added to the scene, NOT the holder, so they hold still while the
+  // gramophone is hand-rotated.
+  async _buildStage(baseY) {
+    if (this._stage) return; this._stage = true;
+    const bg = new THREE.Group();                // dim record leaning in the back, mostly out of frame
+    const dim = (hex) => new THREE.MeshLambertMaterial({ color: hex });
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.42, 48), dim(0x140f0a));
+    const hub = new THREE.Mesh(new THREE.CircleGeometry(0.12, 36), dim(0x281b0e));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.405, 0.006, 8, 56), dim(0x4a3a1e));
+    disc.position.set(0.16, baseY + 0.36, -0.62); disc.rotation.set(-0.1, -0.34, 0);
+    hub.position.set(disc.position.x, disc.position.y, disc.position.z + 0.003); hub.rotation.copy(disc.rotation);
+    rim.position.copy(disc.position); rim.rotation.copy(disc.rotation);
+    bg.add(disc, hub, rim); this.scene.add(bg);
+    await ensureDeskSpec();
+    const desk = buildSpec(getSpec('desk_soviet'));
+    if (desk) {
+      const db = new THREE.Box3().setFromObject(desk), dc = db.getCenter(new THREE.Vector3()), ds = db.getSize(new THREE.Vector3());
+      desk.position.set(-dc.x, baseY - 0.001 - (db.min.y + ds.y), -dc.z + 0.18); // tabletop just under the gramophone; pulled forward so only the top + front lip show
+      this.scene.add(desk);
+    }
   }
   setLabel(title) {
     if (!this.model) { this._pendingLabel = title; return; }
     setGramophoneLabel(this.model, title);
   }
+  // Track changed → run the full record-change choreography (needle off to the side → lift the whole
+  // record off and fit a fresh randomly-styled one → set the needle on the outer edge). Pre-model: instant reskin.
+  swapRecord(title) {
+    if (!this.model || !this._anim.disc) { this.setLabel(title); return; }
+    startChange(this._anim, title);
+  }
   render(dt) {
     if (!this.model) { this.ensureModel(); this.renderer.render(this.scene, this.cam); return; }
-    // record spins clockwise (−Y) while playing, eases to a stop when paused
-    const target = this.playing ? 1 : 0;
-    this._spin += (target - this._spin) * Math.min(1, dt * 3);
-    if (this.rig.turntable) this.rig.turntable.rotation.y -= RECORD_SPIN * dt * this._spin;
-    // tonearm settles onto the record while playing, lifts back when stopped (subtle)
-    this.armPlay += ((this.playing ? 1 : 0) - this.armPlay) * Math.min(1, dt * 2.5);
-    if (this.rig.tonearm) this.rig.tonearm.rotation.y = -0.5 + this.armPlay * 0.28;
-    this.holder.rotation.y = this._yaw + (this._drag ? 0 : dt * 0.12) * 0; // slow idle drift handled below
-    if (!this._drag) this._yaw += dt * 0.10;
-    this.holder.rotation.y = this._yaw;
+    const changing = animateGramophone(this.model, this._anim, dt, this.playing, this.progress); // needle + record-change sequence
+    // disc eases to its calm display speed while playing; winds to a FULL stop when paused — and stops
+    // (faster) during a record change so it's still while the record is lifted out and swapped.
+    const spinTarget = (this.playing && !changing) ? 1 : 0;
+    this._spin += (spinTarget - this._spin) * Math.min(1, dt * (changing ? 4 : 1.6));
+    if (this._spin < 0.002) this._spin = 0;       // settle completely — no residual creep
+    if (this.rig.turntable) this.rig.turntable.rotation.y -= DISPLAY_SPIN * dt * this._spin;
+    this.holder.rotation.y = this._yaw;           // hand-drag only — the gramophone no longer auto-rotates
     const d = this._dist;
     this.cam.position.set(d * 0.55, d * 0.42, d * 0.92); this.cam.lookAt(0, 0.02, 0);
     this.renderer.render(this.scene, this.cam);
@@ -160,6 +260,7 @@ export class Fonoteka {
               `<button class="fono-t big" id="fono-play" title="Играть · play / pause">${icon('play')}</button>` +
               `<button class="fono-t" id="fono-next" title="Вперёд · next">${icon('skipfwd')}</button>` +
               `<button class="fono-t tg" id="fono-repeat" title="Повтор · repeat one">${icon('repeat')}</button>` +
+              `<span class="fono-vol" title="Громкость · volume">${icon('volume')}<input id="fono-vol" type="range" min="0" max="100" value="50"></span>` +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -172,14 +273,27 @@ export class Fonoteka {
     $('fono-genres').querySelectorAll('.fono-g').forEach((b) => b.addEventListener('click', () => {
       this.genre = b.dataset.g;
       $('fono-genres').querySelectorAll('.fono-g').forEach((x) => x.classList.toggle('on', x === b));
+      const mm = m(); if (mm) mm.jukeboxSetScope(this.genre === 'all' ? 'songs' : this.genre); // shuffle/advance stays inside the chosen category
       this._renderList();
     }));
+    $('fono-vol').addEventListener('input', (e) => { this.game.audio.init(); this.game.audio.setMusicVolume(Math.max(0, Math.min(1, (+e.target.value) / 100))); this._volFill(e.target); });
     $('fono-prev').onclick = () => m() && m().jukeboxPrev();
     $('fono-next').onclick = () => m() && m().jukeboxNext();
     $('fono-play').onclick = () => m() && m().jukeboxToggle();
     $('fono-shuffle').onclick = () => m() && m().jukeboxSetShuffle();
     $('fono-repeat').onclick = () => m() && m().jukeboxSetRepeatOne();
-    $('fono-bar').addEventListener('click', (e) => { const r = e.currentTarget.getBoundingClientRect(); m() && m().jukeboxSeek((e.clientX - r.left) / r.width); });
+    const bar = $('fono-bar');                                  // click OR drag to scrub; the needle follows at once
+    const seekTo = (clientX) => {
+      const r = bar.getBoundingClientRect(); const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      const mm = m(); if (mm) mm.jukeboxSeek(frac);
+      if (this.viewer) this.viewer.progress = frac;             // move the tonearm to the sought part of the record instantly
+      const fill = $('fono-fill'); if (fill) fill.style.width = (frac * 100) + '%';
+    };
+    let seeking = false;
+    bar.addEventListener('pointerdown', (e) => { seeking = true; try { bar.setPointerCapture(e.pointerId); } catch (x) {} seekTo(e.clientX); });
+    bar.addEventListener('pointermove', (e) => { if (seeking) seekTo(e.clientX); });
+    const endSeek = () => { seeking = false; };
+    bar.addEventListener('pointerup', endSeek); bar.addEventListener('pointercancel', endSeek);
 
     this.viewer = new GramophoneViewer($('fonoCanvas'));
     this.built = true;
@@ -192,9 +306,12 @@ export class Fonoteka {
     list.innerHTML = '';
     this._rows = [];
     let shown = 0;
+    const q = this.query;
     tracks.forEach((t, i) => {
-      if (this.genre !== 'all' && t.genre !== this.genre) return;
-      if (this.query && !(`${t.title} ${t.en || ''}`.toLowerCase().includes(this.query))) return;
+      if (!t.genre) return;                                    // hide the Korobeiniki chiptune — the ФОНОТЕКА lists real songs only
+      if (q) {                                                 // searching = look across the WHOLE catalogue (ignore the genre filter), match RU + EN + year
+        if (!`${t.title} ${t.en || ''} ${t.year || ''}`.toLowerCase().includes(q)) return;
+      } else if (this.genre !== 'all' && t.genre !== this.genre) return;
       const g = GENRE_BY_ID[t.genre];
       const el = document.createElement('div');
       el.className = 'fono-row';
@@ -209,20 +326,29 @@ export class Fonoteka {
       shown++;
     });
     const c = document.getElementById('fono-count');
-    if (c) { const gname = this.genre === 'all' ? 'ВСЕ ЖАНРЫ · ALL' : `${GENRE_BY_ID[this.genre].ru} · ${GENRE_BY_ID[this.genre].en}`; c.textContent = `${gname} — ${shown}`; }
+    if (c) {
+      const gname = this.query ? 'ПОИСК · SEARCH' : (this.genre === 'all' ? 'ВСЕ ЖАНРЫ · ALL' : `${GENRE_BY_ID[this.genre].ru} · ${GENRE_BY_ID[this.genre].en}`);
+      c.textContent = `${gname} — ${shown}`;
+    }
   }
 
   open() {
     this._build();
     this.game.audio.init();
     const m = this.game.audio.music;
-    if (m && !m.playlist) m.setPlaylist('soviet');
+    if (m) {
+      m.jukeboxSetScope(this.genre === 'all' ? 'songs' : this.genre); // play real songs only (never the chiptune), honouring the filter
+      if (!m.playlist) m.setPlaylist('soviet');
+    }
+    this._syncVol();
     this._renderList();
     // size + spin up the 3D once the overlay is visible (clientWidth valid next frame)
     requestAnimationFrame(() => { if (this.viewer) { this.viewer.setSize(); this.viewer.ensureModel(); } });
     this._startTick();
   }
-  close() { this._stopTick(); }
+  close() { this._stopTick(); const m = this.game.audio && this.game.audio.music; if (m) m.jukeboxSetScope(null); } // restore the menu/lobby rotation (chiptune allowed again)
+  _syncVol() { const el = document.getElementById('fono-vol'); if (el && this.game.audio) { el.value = Math.round((this.game.audio.musicVolume == null ? 0.5 : this.game.audio.musicVolume) * 100); this._volFill(el); } }
+  _volFill(el) { const v = +el.value; el.style.background = `linear-gradient(90deg, var(--brass) 0%, var(--brass) ${v}%, rgba(216,176,102,.22) ${v}%)`; }
 
   render(dt) { if (this.viewer) this.viewer.render(dt); }   // called from Game._frame in state 'music'
 
@@ -249,10 +375,11 @@ export class Fonoteka {
     const fill = $('fono-fill'), time = $('fono-time');
     if (fill) fill.style.width = (s.duration ? (s.time / s.duration * 100) : 0) + '%';
     if (time) time.textContent = this._fmt(s.time) + ' / ' + this._fmt(s.duration);
-    // viewer state: spin while a real track plays; swap the record label on track change
+    // viewer state: spin + travel the tonearm by song progress; run the record swap on a track change
     if (this.viewer) {
       this.viewer.playing = !!(s.active && !s.paused);
-      if (s.slug !== this._lastSlug) { this._lastSlug = s.slug; this.viewer.setLabel(s.title || 'СССР'); }
+      this.viewer.progress = s.duration ? (s.time / s.duration) : 0;
+      if (s.slug !== this._lastSlug) { this._lastSlug = s.slug; this.viewer.swapRecord(s.title || 'СССР'); }
     }
     // highlight the active row
     this._rows.forEach((r) => r.el.classList.toggle('on', r.index === s.index));
@@ -267,7 +394,6 @@ export class Fonoteka {
 // host-authoritative + co-op-synced (gramoreq/gramoset), mirroring the radio prop.
 // ============================================================================
 const PROP_SCALE = 3.2;                       // ~0.31 m case → ~1 m floor prop (a visible aim target)
-const PROP_SPIN = RECORD_SPIN;
 
 export class GramophoneManager {
   constructor(game) {
@@ -283,7 +409,7 @@ export class GramophoneManager {
     g.scale.setScalar(PROP_SCALE); g.position.set(x, y, z); g.rotation.y = yaw;
     scene.add(g);
     const slugs = (SONG_GENRES[genre] && SONG_GENRES[genre].length) ? SONG_GENRES[genre] : SONG_GENRES.disco;
-    const p = { id: this._idc++, pos: new THREE.Vector3(x, y, z), genre, mesh: g, on: false, songIdx: 0, audio: null, slugs, _spin: 0 };
+    const p = { id: this._idc++, pos: new THREE.Vector3(x, y, z), genre, mesh: g, on: false, songIdx: 0, audio: null, slugs, _spin: 0, _anim: newAnim(g.userData.rig.disc) };
     setGramophoneLabel(g, (SONG_INFO[slugs[0]] || {}).title);
     this.props.push(p);
     return p;
@@ -306,8 +432,11 @@ export class GramophoneManager {
     let nearest = 0;
     for (const p of this.props) {
       const rig = p.mesh.userData.rig;
-      p._spin += ((p.on ? 1 : 0) - p._spin) * Math.min(1, dt * 3);
-      if (rig && rig.turntable) rig.turntable.rotation.y -= PROP_SPIN * dt * p._spin;
+      const progress = (p.audio && isFinite(p.audio.duration) && p.audio.duration) ? (p.audio.currentTime / p.audio.duration) : 0;
+      const changing = animateGramophone(p.mesh, p._anim, dt, p.on, progress); // needle sequence + record change
+      p._spin += ((p.on && !changing ? 1 : 0) - p._spin) * Math.min(1, dt * (changing ? 4 : 1.6));
+      if (p._spin < 0.002) p._spin = 0;                          // settle fully — smooth stop
+      if (rig && rig.turntable) rig.turntable.rotation.y -= DISPLAY_SPIN * dt * p._spin;
       if (!p.on || !p.audio) continue;
       const dist = Math.hypot(pp.x - p.pos.x, pp.z - p.pos.z);
       const att = radioAttenuation(dist);
@@ -362,8 +491,11 @@ export class GramophoneManager {
   }
   applySet(d) {
     const p = this.props.find((x) => x.id === d.id); if (!p) return;
+    const wasOn = p.on, wasIdx = p.songIdx;
     p.on = !!d.on; p.songIdx = d.songIdx | 0;
-    setGramophoneLabel(p.mesh, (SONG_INFO[this._slug(p)] || {}).title);
+    const title = (SONG_INFO[this._slug(p)] || {}).title;
+    if (p.on && p._anim.disc && (!wasOn || p.songIdx !== wasIdx)) startChange(p._anim, title); // full record-change sequence on play / song change
+    else setGramophoneLabel(p.mesh, title);
     if (p.on) this._start(p); else this._stop(p);
     if (this.game.audio && this.game.audio.uiClick) this.game.audio.uiClick();
   }
