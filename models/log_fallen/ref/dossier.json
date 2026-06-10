@@ -1,0 +1,77 @@
+{
+  "id": "log_fallen",
+  "title": "Fallen Scots pine trunk section — forest/forest-steppe landscape prop",
+  "era": "natural (Ukrainian/Russian forest-steppe and pine bor landscape)",
+  "sources": {
+    "scots_pine_wiki": "Pinus sylvestris — Wikipedia: 'mature 25–35 m (exceptionally >45 m), trunk to ~1 m diameter, orange-brown upper bark; foundation species on poor dry sandy sites'",
+    "scots_pine_jrc": "EU JRC Forest Atlas via research brief: 'trunk diameter range 0.5–1.3 m (exceptionally >1.7 m)'",
+    "bark_texture_conifers": "conifers.org + Wikipedia — 'Scots pine bark is TWO-TONE (signature): lower trunk thick scaly grey-brown deeply fissured plates up to ~5 cm thick; upper trunk + branches thin flaking orange-red/copper'",
+    "bor_ground_layer": "EUNIS habitat 1283; Kytöviita 2009, Functional Ecology — зеленомошник type = deep-green Pleurozium moss ground layer characteristic of nutrient-poor acidic late-successional pine forest; fallen logs in this biome accumulate damp Pleurozium on ground-contact surface",
+    "research_brief": "Ecology + visual character of Ukrainian/Russian regional landscape biomes — ENGENDROS PURGE world plan + model dossiers (2026-06-10)"
+  },
+  "specifications": {
+    "trunk_dims": {
+      "diameter_mm": 500,
+      "radius_mm": 250,
+      "src": "scots_pine_wiki + scots_pine_jrc",
+      "note": "0.50 m diameter = lower bound of the sourced 0.5–1.3 m DBH range (EU JRC/Wikipedia); a younger-to-mid-age mature specimen appropriate for a forest-steppe prop; using this as the butt-end radius (widest end)"
+    },
+    "taper": {
+      "butt_radius_mm": 250,
+      "top_radius_mm": 220,
+      "note": "UNSOURCED specific taper rate — typical pine trunk taper is in the range 1–2 cm/m but no field measurement cited. 30 mm taper over 2.4 m section (~1.25 cm/m) is mid-range plausible. Flagged in needs[]",
+      "src": "derivation"
+    },
+    "bark_texture": {
+      "lower_bark_thickness_mm": 40,
+      "bark_type": "two-tone: lower = thick scaly grey-brown deeply fissured plates (up to ~50 mm); upper/exposed = thin flaking orange-red/copper",
+      "src": "bark_texture_conifers",
+      "note": "Bark thickness stated as 'up to ~5 cm' — using 40 mm as nominal lower-trunk value; precise mean not sourced → needs[]"
+    },
+    "log_length": {
+      "length_mm": 2400,
+      "note": "DESIGN VALUE — no field or forestry standard sourced for a prop log section length. 2.4 m chosen as FPS-scale obstacle: climbable/crouchable cover at ~1.5–1.6× player height. Flagged in needs[]",
+      "src": "derivation"
+    },
+    "moss_feature": {
+      "desc": "Pleurozium schreberi (зеленомошник) deep-green moss accumulates on the ground-contact face of fallen logs in pine bor biome",
+      "src": "bor_ground_layer",
+      "note": "Presence sourced; exact coverage dimensions are a design estimate from trunk footprint"
+    },
+    "derivation": {
+      "shadow_band_h_mm": 120,
+      "hi_strip_h_mm": 60,
+      "hi_strip_w_mm": 140,
+      "bark_ridge_w_mm": 60,
+      "bark_ridge_h_mm": 280,
+      "end_grain_radius_mm": 190,
+      "root_bulge_w_mm": 480,
+      "root_bulge_h_mm": 140,
+      "root_bulge_d_mm": 200,
+      "knot_w_mm": 100,
+      "knot_h_mm": 140,
+      "knot_d_mm": 80,
+      "moss_w_mm": 240,
+      "moss_h_mm": 40,
+      "moss_d_mm": 1500,
+      "src": "geometric derivation from trunk_dims + bark_texture",
+      "derivation": "shadow_band h = ~0.5 × diameter (120/500=24%); hi_strip h = ~12% diameter; bark ridges w = bark_thickness; end_grain r = trunk_radius - bark_thickness (250-40=210 trimmed to 190 for visible ring gap); root_bulge slightly wider than trunk (480 vs 500 mm diameter); knot = proportional scar; moss patch covers ~50% of bottom arc width × 62% of log length"
+    }
+  },
+  "feature_inventory": {
+    "main_body": { "desc": "Tapered cylinder, butt end wider, top end narrower", "src": "trunk_dims + taper" },
+    "bottom_shadow": { "desc": "Dark lower bark zone: old grey-brown scaly plates + ground-shadow darkening", "src": "bark_texture + derivation" },
+    "top_highlight": { "desc": "Lighter sunlit strip along the top of the log: exposed thin upper orange-copper bark layer", "src": "bark_texture + derivation" },
+    "bark_ridges_lr": { "desc": "Longitudinal bark plate ridges on left/right flanks — the fissured grey-brown lower-bark texture", "src": "bark_texture" },
+    "end_grain": { "desc": "Pale exposed heartwood at the cut/broken end, circular face showing raw wood", "src": "trunk_dims + derivation" },
+    "root_bulge": { "desc": "Slight flare/bulge at the wider butt end — root collar and soil flare", "src": "trunk_dims + taper" },
+    "knot": { "desc": "Dark old branch-knot scar on the flank — a circular dark recess in the bark", "src": "bark_texture" },
+    "moss": { "desc": "Damp green moss (Pleurozium) on the ground-contact underside", "src": "moss_feature" }
+  },
+  "game_model_purpose": "World prop — horizontal obstacle/cover piece in forest-steppe and pine bor biomes; climbable/crouchable cover at FPS human scale; can be scattered as environmental debris or placed near treelines/shelterbelts",
+  "needs": [
+    "Specific Scots pine trunk taper rate (cm/m) from a forestry or silviculture reference — current taper (r=0.25 m → r=0.22 m over 2.4 m) is a design estimate",
+    "Precise lower-bark thickness for Scots pine: 'up to ~5 cm' is the stated maximum; mean/typical value not sourced",
+    "Standard or common log-section length for a fallen forest obstacle — current 2.4 m is a game-design value with no field or forestry source"
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "id": "rock_outcrop",
+  "name": "Steppe Rock Outcrop",
+  "description": "Low exposed bedrock shelf — Ukrainian steppe granite. Four-layer tapering granite stack (base slab→body→shelf→crest) with offset layers for organic irregular form; lichen/moss crown on crest and upper shelf; satellite pebble and dry-grass tufts at perimeter.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 1.20, "h": 0.42, "d": 1.06 },
+  "dossier": "models/rock_outcrop/ref/dossier.json",
+  "parts": [
+    {
+      "id": "base",
+      "name": "Base slab — widest floor-contact granite layer",
+      "op": "bevelBox",
+      "args": { "w": 1.20, "h": 0.08, "d": 0.80 },
+      "at": [0.00, 0.04, 0.00],
+      "mat": "granite",
+      "src": "dossier#layer_derivation",
+      "note": "1200×80×800 mm; bevelBox CENTER-anchored so at.y = h/2 = 0.04 puts bottom at y=0.00 (floor)"
+    },
+    {
+      "id": "body",
+      "name": "Main rock body — primary granite mass",
+      "op": "bevelBox",
+      "args": { "w": 1.04, "h": 0.14, "d": 0.68 },
+      "at": [0.04, 0.15, 0.02],
+      "mat": "granite",
+      "src": "dossier#layer_derivation",
+      "note": "Sits on base: at.y = 0.08 (base top) + 0.14/2 = 0.15. Offset +40 mm x, +20 mm z for irregular form"
+    },
+    {
+      "id": "shelf",
+      "name": "Upper shelf ledge — differential-weathering step",
+      "op": "bevelBox",
+      "args": { "w": 0.82, "h": 0.10, "d": 0.54 },
+      "at": [-0.03, 0.27, -0.02],
+      "mat": "granite",
+      "src": "dossier#layer_derivation",
+      "note": "Sits on body: at.y = 0.22 + 0.10/2 = 0.27. Offset −30 mm x, −20 mm z (leans opposite to body)"
+    },
+    {
+      "id": "crest",
+      "name": "Crest — sub-rounded summit",
+      "op": "bevelBox",
+      "args": { "w": 0.54, "h": 0.06, "d": 0.36 },
+      "at": [0.05, 0.35, 0.03],
+      "mat": "granite",
+      "src": "dossier#layer_derivation",
+      "note": "Sits on shelf: at.y = 0.32 + 0.06/2 = 0.35. Offset +50 mm x, +30 mm z"
+    },
+    {
+      "id": "moss_crest",
+      "name": "Lichen / bryophyte crust on crest top",
+      "op": "bevelBox",
+      "args": { "w": 0.34, "h": 0.02, "d": 0.20 },
+      "at": [0.03, 0.39, 0.02],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_dimensions",
+      "note": "Sits on crest: at.y = 0.38 + 0.02/2 = 0.39. Opposite-normal stack — no z-fight"
+    },
+    {
+      "id": "moss_shelf",
+      "name": "Moss patch in upper shelf depression",
+      "op": "bevelBox",
+      "args": { "w": 0.25, "h": 0.02, "d": 0.11 },
+      "at": [-0.05, 0.33, 0.08],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_dimensions",
+      "note": "Sits on shelf: at.y = 0.32 + 0.02/2 = 0.33. Set forward (z=+80 mm) to occupy the exposed shelf face area"
+    },
+    {
+      "id": "pebble",
+      "name": "Satellite pebble — eroded granite fragment",
+      "op": "bevelBox",
+      "args": { "w": 0.14, "h": 0.10, "d": 0.12 },
+      "at": [0.50, 0.05, 0.47],
+      "mat": "granite",
+      "src": "dossier#layer_derivation",
+      "note": "Front-right of base; z_min=0.41 > base z_max=0.40 → no ground-plane z-fight with base"
+    },
+    {
+      "id": "grass_front",
+      "name": "Dry grass tuft at front-left rock margin",
+      "op": "bevelBox",
+      "args": { "w": 0.10, "h": 0.10, "d": 0.08 },
+      "at": [-0.35, 0.05, 0.45],
+      "mat": "grassDry",
+      "src": "dossier#grass_tuft",
+      "note": "z_min=0.41 > base z_max=0.40; x=[-0.40,-0.30] left of pebble → no y=0 z-fight with either"
+    },
+    {
+      "id": "grass_back",
+      "name": "Dry grass tuft at back-right rock margin",
+      "op": "bevelBox",
+      "args": { "w": 0.10, "h": 0.10, "d": 0.08 },
+      "at": [0.40, 0.05, -0.47],
+      "mat": "grassDry",
+      "src": "dossier#grass_tuft",
+      "note": "z_max=-0.43 < base z_min=-0.40 → no ground-plane z-fight with base"
+    }
+  ],
+  "needs": [
+    "Precise measured plan and height dimensions for low (<0.5 m) Ukrainian Shield granite shelf outcrops — derivation relies on geomorphological class range only (Twidale & Vidal Romani 2005)",
+    "Crack / exfoliation joint stencil parts on body front/side faces — not modeled; sourced joint-spacing data needed first"
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "id": "stump_cut",
+  "name": "Cut Pine Stump (Scots Pine)",
+  "description": "A freshly felled Scots pine stump: low bark cylinder with tapered root flare, exposed growth rings on the cut face, and a soil-disturbance disc at the base. barkDark root → barkPine trunk → woodMid/woodDark concentric rings on top.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.72, "h": 0.39, "d": 0.72 },
+  "dossier": "models/stump_cut/ref/dossier.json",
+  "parts": [
+    {
+      "id": "soil_base",
+      "name": "Disturbed-soil / moss ground disc",
+      "op": "cylinder",
+      "args": { "r": 0.36, "h": 0.018, "axis": "y", "tone": "lo" },
+      "at": [0, 0.007, 0],
+      "mat": "sandSoil",
+      "src": "dossier#soil_disc_r_mm",
+      "note": "r=360 mm, h=18 mm; centre at y=0.007 → bottom at y=−0.002 (within −0.02 floor tolerance); top at y=0.016. Widest part — sets footprint w/d. tone lo = dark pressed earth."
+    },
+    {
+      "id": "root_flare",
+      "name": "Root flare — wider tapered base zone",
+      "op": "cylinder",
+      "args": { "r": 0.31, "r2": 0.25, "h": 0.10, "axis": "y" },
+      "at": [0, 0.04, 0],
+      "mat": "barkDark",
+      "src": "dossier#root_flare_r_mm",
+      "note": "r=310 mm at base, r2=250 mm at top (taper to trunk radius); centre at y=0.04 → bottom at y=−0.01, top at y=0.09. Dark bark at soil contact. No z-fight: bottom at −0.01 ≠ soil_base bottom −0.002 ≠ stump_body bottom 0."
+    },
+    {
+      "id": "stump_body",
+      "name": "Main stump trunk cylinder — orange-brown Scots pine bark",
+      "op": "cylinder",
+      "args": { "r": 0.25, "h": 0.35, "axis": "y" },
+      "at": [0, 0.175, 0],
+      "mat": "barkPine",
+      "src": "dossier#stump_h_mm",
+      "note": "r=250 mm (dossier#trunk_r_mm), h=350 mm (dossier#stump_h_mm); centre at y=0.175 → bottom at y=0.00, top at y=0.35. Lower Scots pine bark: orange-brown scaly plates."
+    },
+    {
+      "id": "cut_face",
+      "name": "Exposed sapwood — cut top face",
+      "op": "cylinder",
+      "args": { "r": 0.25, "h": 0.008, "axis": "y", "tone": "hi" },
+      "at": [0, 0.354, 0],
+      "mat": "woodMid",
+      "src": "dossier#trunk_r_mm",
+      "note": "r=250 mm, h=8 mm (dossier#cut_face_th_mm); centre at y=0.354 → bottom at y=0.350 = stump_body top (opposite-normal contact, no z-fight), top at y=0.358. Pale exposed sapwood. tone hi = freshly cut lighter face."
+    },
+    {
+      "id": "ring_1",
+      "name": "Growth ring band 1 — latewood (darker)",
+      "op": "cylinder",
+      "args": { "r": 0.175, "h": 0.008, "axis": "y", "tone": "lo" },
+      "at": [0, 0.362, 0],
+      "mat": "woodDark",
+      "src": "dossier#trunk_r_mm",
+      "note": "r=175 mm (70% of trunk_r); stacked on cut_face: bottom at y=0.358 = cut_face top (opposite-normal, safe), top at y=0.366. Darker latewood annular band."
+    },
+    {
+      "id": "ring_2",
+      "name": "Growth ring band 2 — earlywood (lighter)",
+      "op": "cylinder",
+      "args": { "r": 0.10, "h": 0.008, "axis": "y", "tone": "hi" },
+      "at": [0, 0.370, 0],
+      "mat": "woodMid",
+      "src": "dossier#trunk_r_mm",
+      "note": "r=100 mm (40% of trunk_r); stacked on ring_1: bottom at y=0.366, top at y=0.374. Lighter earlywood band."
+    },
+    {
+      "id": "heartwood",
+      "name": "Heartwood centre — dark core",
+      "op": "cylinder",
+      "args": { "r": 0.05, "h": 0.008, "axis": "y", "tone": "lo" },
+      "at": [0, 0.378, 0],
+      "mat": "woodDark",
+      "src": "dossier#trunk_r_mm",
+      "note": "r=50 mm (20% of trunk_r); stacked on ring_2: bottom at y=0.374, top at y=0.382. Dense dark heartwood core reads as a knot at centre. Sets spec height max."
+    }
+  ],
+  "needs": [
+    "Sourced stump height (mm) for a felled Scots pine — no quantified standard in research; 350 mm (dossier#stump_h_mm) is a design estimate",
+    "Sourced root flare radius (mm) for Pinus sylvestris at soil level — 310 mm / 124% of trunk radius (dossier#root_flare_r_mm) is a design estimate",
+    "Sourced visible root-flare height above soil (mm) — 100 mm (dossier#root_flare_h_mm) is a design estimate"
+  ]
+}

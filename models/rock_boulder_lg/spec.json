@@ -1,0 +1,117 @@
+{
+  "id": "rock_boulder_lg",
+  "name": "Granite Boulder, Large",
+  "description": "Large rounded granite field/stream boulder with mossy top — stacked bevelBox cluster approximates spheroidal-weathering profile; graniteMoss crown + shoulder patches; charBlack crack detail on right face.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 1.20, "h": 0.80, "d": 1.00 },
+  "dossier": "models/rock_boulder_lg/ref/dossier.json",
+  "parts": [
+    {
+      "id": "base_slab",
+      "name": "Base slab — widest bottom layer (spheroidal-weathering base spread)",
+      "op": "bevelBox",
+      "args": { "w": 1.10, "h": 0.20, "d": 0.90 },
+      "at": [0, 0.10, 0],
+      "mat": "granite",
+      "src": "dossier#boulder_chosen_dims",
+      "note": "1100×200×900 mm; centre at y=0.10 so bottom touches y=0 (floor). Widest layer — tapers above."
+    },
+    {
+      "id": "mid_bulk",
+      "name": "Mid body — main mass, slightly narrower",
+      "op": "bevelBox",
+      "args": { "w": 0.96, "h": 0.32, "d": 0.78 },
+      "at": [0, 0.36, 0],
+      "mat": "granite",
+      "src": "dossier#boulder_chosen_dims",
+      "note": "960×320×780 mm; stacked on base_slab (bottom at y=0.20)."
+    },
+    {
+      "id": "upper_dome",
+      "name": "Upper shoulder — narrowed dome section",
+      "op": "bevelBox",
+      "args": { "w": 0.74, "h": 0.20, "d": 0.60 },
+      "at": [0, 0.58, 0],
+      "mat": "granite",
+      "src": "dossier#boulder_chosen_dims",
+      "note": "740×200×600 mm; centre y=0.58 (bottom y=0.48, within mid_bulk — natural overlap for rounded profile)."
+    },
+    {
+      "id": "top_cap",
+      "name": "Top granite cap — smallest, rounded apex",
+      "op": "bevelBox",
+      "args": { "w": 0.48, "h": 0.12, "d": 0.40 },
+      "at": [0, 0.74, 0],
+      "mat": "granite",
+      "src": "dossier#boulder_chosen_dims",
+      "note": "480×120×400 mm; sits exactly on upper_dome top (y=0.68 + 0.06 = top at 0.80)."
+    },
+    {
+      "id": "moss_crown",
+      "name": "Moss mat — crown of boulder (thickest accumulation, most sheltered)",
+      "op": "bevelBox",
+      "args": { "w": 0.36, "h": 0.06, "d": 0.28 },
+      "at": [0, 0.83, 0],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_coverage",
+      "note": "360×60×280 mm; sits on top_cap top (y=0.80); centre y=0.83, top y=0.86."
+    },
+    {
+      "id": "moss_shoulder_l",
+      "name": "Moss patch — left rear shoulder",
+      "op": "bevelBox",
+      "args": { "w": 0.22, "h": 0.04, "d": 0.18 },
+      "at": [-0.30, 0.67, 0.06],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_coverage",
+      "note": "220×40×180 mm; upper_dome left shoulder (top at y=0.69, 10 mm above upper_dome top y=0.68 — no coplanar face). Slightly forward-right of centre for asymmetry."
+    },
+    {
+      "id": "moss_shoulder_r",
+      "name": "Moss patch — right rear shoulder",
+      "op": "bevelBox",
+      "args": { "w": 0.18, "h": 0.04, "d": 0.16 },
+      "at": [0.26, 0.67, -0.04],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_coverage",
+      "note": "180×40×160 mm; +X face at x=0.35 (2 cm inboard of upper_dome +X face at x=0.37 — avoids coplanar z-fight). Top at y=0.69."
+    },
+    {
+      "id": "lobe_front",
+      "name": "Front protrusion — un-exfoliated rock ear, irregular forward face",
+      "op": "bevelBox",
+      "args": { "w": 0.44, "h": 0.26, "d": 0.18 },
+      "at": [0.09, 0.24, 0.48],
+      "mat": "granite",
+      "src": "dossier#boulder_form",
+      "note": "440×260×180 mm; offset right (+x 0.09) for asymmetry. Centre z=0.48, front face at z=0.57 (extends beyond base_slab front z=0.45)."
+    },
+    {
+      "id": "lobe_left",
+      "name": "Left side lobe — irregular mass protrusion",
+      "op": "bevelBox",
+      "args": { "w": 0.14, "h": 0.22, "d": 0.32 },
+      "at": [-0.51, 0.22, -0.06],
+      "mat": "granite",
+      "src": "dossier#boulder_form",
+      "note": "140×220×320 mm; extends beyond base_slab left face (lobe -X at x=-0.58 vs base_slab -X at x=-0.55)."
+    },
+    {
+      "id": "crack_v",
+      "name": "Vertical thermal crack — charBlack fissure, right face mid-body",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.28, "d": 0.06 },
+      "at": [0.46, 0.37, -0.08],
+      "mat": "charBlack",
+      "src": "dossier#boulder_form",
+      "note": "60×280×60 mm; straddles mid_bulk +X face (crack +X at x=0.49, mid_bulk +X at x=0.48 — 10 mm proud, visible). Top y=0.51 (≠ mid_bulk top y=0.52), bottom y=0.23 (≠ mid_bulk bottom y=0.20) — no coplanar y-faces."
+    }
+  ],
+  "needs": [
+    "Exact dimensions sourced from a measured Ukrainian granite boulder specimen — boulder_chosen_dims are within the sourced size range but not tied to a named rock",
+    "Quantified moss coverage % for exposed granite in steppe climate — model uses proportional estimate within qualitative 40–80% sourced range",
+    "Lobe size/position are game-design choices consistent with boulder_form description — photogrammetric reference would resolve"
+  ]
+}

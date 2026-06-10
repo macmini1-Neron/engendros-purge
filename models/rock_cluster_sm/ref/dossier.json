@@ -1,0 +1,77 @@
+{
+  "id": "rock_cluster_sm",
+  "title": "Small Fieldstone Cluster — Ukrainian steppe / forest-steppe terrain feature",
+  "era": "Timeless geological / landscape feature",
+  "sources": {
+    "wentworth1922": "Wentworth, C.K. (1922) — 'A scale of grade and class terms for clastic sediments', Journal of Geology vol. 30 no. 5, pp. 377–392. The global standard for sediment grain-size classification: pebble 4–64 mm, cobble 64–256 mm, boulder >256 mm.",
+    "usgs_sediment": "United States Geological Survey — 'Glossary of Geology', 5th ed. 2005 (American Geological Institute): cobble 64–256 mm (2.5–10 in), boulder >256 mm (>10 in), following Wentworth 1922.",
+    "ukraine_geology": "Lazarenko E.K. et al. — Mineralogy of Ukraine (1975, Naukova Dumka, Kyiv); Precambrian Ukrainian Shield (granites, gneisses, quartzites) crops out across the Dnipropetrovsk / Zaporizhzhia steppe belt and supplies sub-rounded fieldstones to the soil surface after glaciofluvial reworking, ploughing, or erosion."
+  },
+  "specifications": {
+    "size_class": {
+      "note": "Cluster of 6 fieldstones spanning upper cobble to lower small-boulder range (100–240 mm longest axis). Stones are sub-rounded to sub-angular — Precambrian granite/gneiss cobbles typical of Ukrainian steppe verges and cultivated fields.",
+      "cobble_range_mm": "64–256",
+      "boulder_range_mm": ">256",
+      "src": "wentworth1922"
+    },
+    "stone_a": {
+      "desc": "Largest stone — oblate upper cobble / sub-boulder, longest axis 220 mm. Longest dimension falls below the 256 mm Wentworth cobble/boulder boundary.",
+      "w_mm": 220,
+      "h_mm": 170,
+      "d_mm": 200,
+      "src": "wentworth1922",
+      "note": "Dimensions are design values within the sourced Wentworth cobble range; exact field measurements are in needs[]."
+    },
+    "stone_b": {
+      "desc": "Large stone — oblate upper cobble, 190 mm longest axis.",
+      "w_mm": 190,
+      "h_mm": 140,
+      "d_mm": 170,
+      "src": "wentworth1922"
+    },
+    "stone_c": {
+      "desc": "Medium stone — mid cobble, 160 mm longest axis.",
+      "w_mm": 160,
+      "h_mm": 120,
+      "d_mm": 140,
+      "src": "wentworth1922"
+    },
+    "stone_d": {
+      "desc": "Medium stone — mid cobble, 140 mm longest axis.",
+      "w_mm": 140,
+      "h_mm": 100,
+      "d_mm": 130,
+      "src": "wentworth1922"
+    },
+    "stone_e": {
+      "desc": "Small stone — lower-mid cobble, 110 mm longest axis.",
+      "w_mm": 110,
+      "h_mm": 80,
+      "d_mm": 100,
+      "src": "wentworth1922"
+    },
+    "stone_f": {
+      "desc": "Smallest stone — lower cobble, 90 mm longest axis.",
+      "w_mm": 90,
+      "h_mm": 70,
+      "d_mm": 80,
+      "src": "wentworth1922"
+    }
+  },
+  "feature_inventory": {
+    "stones": "6 sub-rounded fieldstones, paired large / medium / small; alternating plain granite and moss-colonised granite faces for visual variation",
+    "surface_texture": "Precambrian granite/gneiss — pale grey speckled (plagioclase + quartz + biotite); moss/lichen on shaded or partially buried faces",
+    "shape": "Oblate (flat-bottomed) cobbles — height roughly 0.7× plan width; partially embedded in the soil in the field, modelled floor-flush for game placement",
+    "src": "ukraine_geology"
+  },
+  "material_notes": {
+    "granite": "palette material 'granite' — pale grey mid-tones (hi: #a8a8a4 / mid: #787874 / lo: #585854); plagioclase-quartzite character",
+    "graniteMoss": "palette material 'graniteMoss' — moss/lichen colonised surface, green-grey tones (hi: #788c58 / mid: #506040 / lo: #3c4a2e); upper and shaded faces of partially buried stones",
+    "src": "ukraine_geology"
+  },
+  "game_model_purpose": "Landscape scatter prop — steppe and forest-steppe terrain decoration; breaks up flat ground; can mark the edges of ruined structures or road verges",
+  "needs": [
+    "Exact fieldstone dimensions from a Ukrainian geological field survey or a museum/catalog measurement (individual stone w/h/d values within the Wentworth cobble range are design values, not independently measured)",
+    "Height-to-width oblateness ratio for sub-rounded Ukrainian Shield granite cobbles (assumed ~0.77; not independently sourced from a field study)"
+  ]
+}

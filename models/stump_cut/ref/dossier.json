@@ -1,0 +1,93 @@
+{
+  "id": "stump_cut",
+  "title": "Scots Pine (Pinus sylvestris) Cut Stump — Ukrainian / Russian forest-steppe biome",
+  "era": "Timeless forest scatter prop",
+  "sources": {
+    "pinus_wiki": "Pinus sylvestris — Wikipedia (trunk DBH range; bark description; two-tone bark)",
+    "conifers_org": "conifers.org — Pinus sylvestris species profile (lower bark thickness, colour and texture)",
+    "eu_jrc": "EU JRC Forest Atlas — Pinus sylvestris stand dimension tables",
+    "research_trees": "docs/2026-06-10-nature-research-trees.md — regionally sourced tree dimensions (Scots pine 0.5–1.3 m DBH, upper bark orange-red/copper, lower bark up to 5 cm thick)"
+  },
+  "specifications": {
+    "trunk_dbh_mm": {
+      "value": 500,
+      "unit": "mm (diameter at breast height, 1.3 m above ground)",
+      "src": "pinus_wiki, eu_jrc — range 500–1300 mm (exceptionally >1700 mm); lower end used for a typical younger forest specimen",
+      "note": "Using 500 mm DBH as a realistic medium-sized pine, not an old-growth giant"
+    },
+    "trunk_r_mm": {
+      "value": 250,
+      "unit": "mm (cross-section radius at the cut face)",
+      "src": "pinus_wiki",
+      "derivation": "trunk_dbh_mm / 2 = 500 / 2 = 250 mm"
+    },
+    "stump_h_mm": {
+      "value": 350,
+      "unit": "mm (height of stump above ground to cut face)",
+      "src": "DESIGN — not quantified in any source; typical chainsaw felling leaves a 300–500 mm stump; 350 mm chosen as a mid-range design value",
+      "note": "Flagged in needs[] — a sourced stump-height standard would supersede this estimate"
+    },
+    "bark_th_lower_mm": {
+      "value": 50,
+      "unit": "mm (lower-trunk bark plate thickness)",
+      "src": "conifers_org — Scots pine lower trunk: thick scaly grey-brown deeply fissured plates up to ~5 cm thick"
+    },
+    "root_flare_r_mm": {
+      "value": 310,
+      "unit": "mm (stump radius at soil level, including root-flare buttresses)",
+      "src": "DESIGN — no quantified source found; set at trunk_r_mm × 1.24 (24% wider at base, a typical visual proportion for pine root flares)",
+      "derivation": "trunk_r_mm × 1.24 = 250 × 1.24 = 310 mm",
+      "note": "Flagged in needs[]"
+    },
+    "root_flare_h_mm": {
+      "value": 100,
+      "unit": "mm (visible height of root-flare zone above soil level)",
+      "src": "DESIGN — not directly sourced; set as ~28% of stump height for a visually readable proportion",
+      "note": "Flagged in needs[]"
+    },
+    "cut_face_th_mm": {
+      "value": 8,
+      "unit": "mm (stand-proud thickness of the exposed wood disk on top of the stump)",
+      "src": "DESIGN — geometric detail; 8 mm reads as a distinct face without excessive bulk"
+    },
+    "soil_disc_r_mm": {
+      "value": 360,
+      "unit": "mm (radius of the disturbed-soil / moss base disc around the stump)",
+      "src": "DESIGN",
+      "derivation": "root_flare_r_mm + 50 mm = 310 + 50 = 360 mm — a thin soil-disturbance disc surrounding the root flare"
+    },
+    "soil_disc_h_mm": {
+      "value": 18,
+      "unit": "mm (height of the ground-level soil/moss base pad)",
+      "src": "DESIGN — a minimal visual base pad to prevent the stump from looking cut-off at ground level"
+    },
+    "growth_ring_step_mm": {
+      "value": 8,
+      "unit": "mm (stand-proud height per concentric ring disk on the cut face)",
+      "src": "DESIGN — each ring disk stands 8 mm proud of the one below; matches cut_face_th_mm for visual consistency"
+    }
+  },
+  "construction": {
+    "bark_lower": "Thick scaly grey-brown deeply fissured plates, up to 5 cm thick on lower trunk",
+    "bark_upper": "Thin flaking orange-red / copper coloured bark on upper trunk and branches",
+    "bark_src": "conifers_org; pinus_wiki",
+    "wood_tone": "Fresh-cut sapwood: pale yellow to light tan (woodMid); heartwood: slightly darker reddish-brown (woodDark)",
+    "growth_rings": "Concentric annual rings visible on cut face — alternating lighter earlywood / darker latewood bands",
+    "root_flare": "Roots flare out at soil level forming low buttresses; darker coloration from soil contact"
+  },
+  "feature_inventory": [
+    { "feature": "soil / moss base disc",         "mat": "sandSoil",  "src": "DESIGN — visual grounding at soil level" },
+    { "feature": "root flare (tapered base)",      "mat": "barkDark",  "src": "conifers_org — darker bark at soil contact" },
+    { "feature": "main stump trunk cylinder",      "mat": "barkPine",  "src": "conifers_org — orange-brown scaly lower bark" },
+    { "feature": "cut face (exposed sapwood)",     "mat": "woodMid",   "src": "construction — pale fresh-cut sapwood disk" },
+    { "feature": "growth ring band 1 (latewood)",  "mat": "woodDark",  "src": "construction — alternating darker latewood ring" },
+    { "feature": "growth ring band 2 (earlywood)", "mat": "woodMid",   "src": "construction — lighter earlywood band" },
+    { "feature": "heartwood centre (dark core)",   "mat": "woodDark",  "src": "construction — dense dark heartwood at centre" }
+  ],
+  "game_model_purpose": "World scatter prop — cut pine stump for pine bor, forest-steppe shelterbelts, and shelled front-line forest biomes in ENGENDROS PURGE",
+  "needs": [
+    "Sourced stump height (mm) for a felled Scots pine — no quantified standard found in research; 350 mm (dossier#stump_h_mm) is a design estimate",
+    "Sourced root flare radius at soil level (mm) for Pinus sylvestris — no quantified ratio found; 310 mm / 124% of trunk radius (dossier#root_flare_r_mm) is a design estimate",
+    "Sourced visible root-flare height above soil (mm) for Pinus sylvestris — 100 mm (dossier#root_flare_h_mm) is a design estimate"
+  ]
+}
