@@ -14,7 +14,7 @@ const PURE_OPS = {
   drawerStack: FURN.drawerStack, legs: FURN.legs,
   lidBox: CONT.lidBox, strapBand: CONT.strapBand, handleU: CONT.handleU,
 };
-const ROUND_OPS = ['cylinder', 'cone', 'deltaFins', 'texturedCylinder'];  // THREE-bound: browser-verified
+const ROUND_OPS = ['cylinder', 'cone', 'deltaFins', 'texturedCylinder', 'torus', 'tube', 'texturedDisc', 'decal'];  // THREE-bound: browser-verified
 
 function mock() {
   const calls = [];
@@ -45,6 +45,10 @@ const ROUND_SAMPLES = {
   cone: { r: 0.25, h: 0.96 },
   deltaFins: { count: 4, root: 1.8, span: 0.97, r0: 0.33 },
   texturedCylinder: { r: 0.25, h: 6.98 },
+  torus: { r: 0.12, tube: 0.009, axis: 'y' },
+  tube: { pts: [[0, 0, 0], [0, 0.05, 0.05], [0.1, 0.05, 0.05]], tube: 0.011 },
+  texturedDisc: { r: 0.045, axis: 'y' },
+  decal: { w: 0.11, h: 0.14, axis: 'z' },
 };
 
 test('every manifest operator has an impl (pure or round), extents, sample args, and a valid anchor', () => {

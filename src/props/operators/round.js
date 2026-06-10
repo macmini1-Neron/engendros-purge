@@ -101,3 +101,158 @@ export function texturedCylinder(b, a, t, o) {
   mesh.position.set(o.x, o.y, o.z);
   return mesh;
 }
+
+// ============================================================================
+// Curve / flat-decal operators — added for the H.K.M. suitcase gramophone.
+// THREE-bound like the round ops above (browser-verified, not node-tested); the
+// pure layers (manifest, validateSpec, extents) dispatch them by name only.
+// ============================================================================
+
+// Orient a primitive that lies in the XY plane (its NORMAL is +Z by default) so the
+// normal points along `axis` — used by torus (ring plane) and flat discs/decals.
+// y → faces +Y (a record lying flat, a horizontal chrome rim); x → faces +X.
+const NORMAL = { z: {}, y: { rx: -Math.PI / 2 }, x: { ry: Math.PI / 2 } };
+
+// torus — a ring of ring-radius `r`, tube-radius `tube`, lying in the plane whose normal
+// is `axis` (chrome platter rim, tonearm S-bends, reproducer bezel, hinge knuckles). `arc`
+// (radians) draws a partial ring. Default axis y = a horizontal ring.
+export function torus(b, a, t, o) {
+  const seg = a.seg ?? 28, tubeSeg = a.tubeSeg ?? 12, arc = a.arc ?? Math.PI * 2;
+  const g = new THREE.TorusGeometry(a.r, a.tube, tubeSeg, seg, arc);
+  b.geo(g, o.x, o.y, o.z, a.tone ? t[a.tone] : t.mid, { ...NORMAL[a.axis ?? 'y'], tint: 0.02 });
+  g.dispose();
+}
+
+// tube — a swept round bar (radius `tube`) following the polyline `pts` ([[x,y,z]…] in metres,
+// RELATIVE to the part origin) as a smooth CatmullRom curve. This is the gramophone's hero part:
+// the S-curved chromed tonearm — a true swept curve, not stepped boxes.
+export function tube(b, a, t, o) {
+  const pts = a.pts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+  const curve = new THREE.CatmullRomCurve3(pts, !!a.closed, 'catmullrom', a.tension ?? 0.5);
+  const seg = a.seg ?? Math.max(20, pts.length * 10), radial = a.radial ?? 10;
+  const g = new THREE.TubeGeometry(curve, seg, a.tube, radial, !!a.closed);
+  b.geo(g, o.x, o.y, o.z, a.tone ? t[a.tone] : t.mid, { tint: 0.02 });
+  g.dispose();
+}
+
+// texturedDisc — a flat circular face carrying a CanvasTexture: the 78-rpm record's swappable
+// centre label. Returns its OWN Mesh (buildSpec drops it into the part's rig group, so the live
+// gramophone can find it by rig name and re-skin the label per song). Default axis y (faces up).
+export function texturedDisc(b, a, t, o) {
+  const g = new THREE.CircleGeometry(a.r, a.seg ?? 48);
+  const tex = makeRecordLabelTexture({ title: a.title || 'СССР', sub: a.sub, mode: a.mode || 'black' });
+  const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex }));
+  const or = NORMAL[a.axis ?? 'y'];
+  mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
+  mesh.position.set(o.x, o.y, o.z);
+  return mesh;
+}
+
+// decal — a flat rectangular plane carrying a named CanvasTexture: the lid maker's diamond logo
+// and the small engraved control plates. `kind` picks the generator. Returns its own Mesh.
+export function decal(b, a, t, o) {
+  const g = new THREE.PlaneGeometry(a.w, a.h);
+  const transparent = a.kind === 'lidLogo';
+  const map = _decalTexture(a.kind, t[a.tone || 'mid']);
+  const mat = new THREE.MeshLambertMaterial({ map, transparent, depthWrite: !transparent });
+  if (a.kind === 'lidLogo') { mat.emissive = new THREE.Color(0xffffff); mat.emissiveMap = map; mat.emissiveIntensity = 0.35; }  // the printed mark self-lights so it reads on the shadowed lid lining
+  const mesh = new THREE.Mesh(g, mat);
+  const or = NORMAL[a.axis ?? 'z'];
+  mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
+  mesh.position.set(o.x, o.y, o.z);
+  return mesh;
+}
+
+// ---- canvas generators (exported where the live gramophone re-uses them) ----
+
+function _star(c, R, color) {                              // 5-point gold star, centred at the cursor
+  c.fillStyle = color; c.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const ang = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? R * 0.42 : R;
+    c[i ? 'lineTo' : 'moveTo'](Math.cos(ang) * rr, Math.sin(ang) * rr);
+  }
+  c.closePath(); c.fill();
+}
+function _arcText(c, text, cx, cy, radius, mid, step, size, flip = false) {
+  c.save(); c.font = `bold ${size}px "Arial Narrow","PT Sans Narrow",sans-serif`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  const n = text.length, start = mid - (n - 1) * step / 2;
+  for (let i = 0; i < n; i++) {
+    const ang = start + i * step;
+    c.save();
+    c.translate(cx + Math.cos(ang) * radius, cy + Math.sin(ang) * radius);
+    c.rotate(ang + (flip ? -Math.PI / 2 : Math.PI / 2));
+    c.fillText(text[i], 0, 0);
+    c.restore();
+  }
+  c.restore();
+}
+
+// makeRecordLabelTexture — the gold-on-black Апрелевский / СССР 78-rpm centre label. Exported so
+// the live gramophone re-skins the disc per song (set mesh.material.map = this; map.needsUpdate).
+export function makeRecordLabelTexture({ title = 'СССР', sub = 'АПРЕЛЕВСКИЙ ЗАВОД', mode = 'black' } = {}) {
+  const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const c = cv.getContext('2d'), R = S / 2;
+  const ink = mode === 'cream' ? '#7a1a14' : '#d8b15a';                       // print colour
+  const bg = c.createRadialGradient(R, R, 8, R, R, R);
+  if (mode === 'cream') { bg.addColorStop(0, '#ecdfc4'); bg.addColorStop(1, '#cdbd96'); }
+  else { bg.addColorStop(0, '#1c1c1c'); bg.addColorStop(1, '#050505'); }
+  c.fillStyle = bg; c.beginPath(); c.arc(R, R, R, 0, 7); c.fill();
+  c.strokeStyle = ink; c.lineWidth = 5; c.beginPath(); c.arc(R, R, R - 20, 0, 7); c.stroke();
+  c.lineWidth = 2; c.beginPath(); c.arc(R, R, R - 32, 0, 7); c.stroke();
+  c.fillStyle = ink;
+  _arcText(c, sub, R, R, R - 56, -Math.PI / 2, 0.052, 28);                    // top banner
+  _arcText(c, 'ГОСТ 5289-50', R, R, R - 56, Math.PI / 2, 0.060, 22, true);     // bottom
+  c.save(); c.translate(R, R * 0.60); _star(c, 30, ink); c.restore();          // emblem
+  c.fillStyle = ink; c.textAlign = 'center'; c.textBaseline = 'middle';        // title block
+  const words = title.toUpperCase().split(' '); const lines = [];
+  let ln = ''; for (const w of words) { if ((ln + ' ' + w).trim().length > 16) { lines.push(ln.trim()); ln = w; } else ln += ' ' + w; } if (ln.trim()) lines.push(ln.trim());
+  const fs = lines.length > 2 ? 30 : 38; c.font = `bold ${fs}px "PT Sans Narrow","Arial Narrow",sans-serif`;
+  lines.slice(0, 3).forEach((l, i) => c.fillText(l, R, R * 1.04 + (i - (lines.length - 1) / 2) * (fs + 4)));
+  c.font = '17px "PT Sans Narrow",sans-serif'; c.fillText('Министерство культуры СССР', R, R * 1.46);
+  c.fillStyle = mode === 'cream' ? '#1d130a' : '#000'; c.beginPath(); c.arc(R, R, 11, 0, 7); c.fill();
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  return tex;
+}
+
+// _decalTexture — the lid maker's diamond logo and the engraved control plates.
+function _decalTexture(kind, baseHex) {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 512;
+  const c = cv.getContext('2d');
+  if (kind === 'lidLogo') {
+    // transparent ground; a cream diamond stamp, a red СССР flag, a clef curl + factory caption
+    c.clearRect(0, 0, 512, 512);
+    c.save(); c.translate(248, 190); c.rotate(Math.PI / 4);
+    c.fillStyle = '#e0d4af'; c.fillRect(-140, -140, 280, 280);              // bright cream diamond
+    c.strokeStyle = 'rgba(40,28,16,.55)'; c.lineWidth = 5; c.strokeRect(-140, -140, 280, 280);
+    c.restore();
+    c.strokeStyle = '#1a120a'; c.lineWidth = 13; c.lineCap = 'round';        // stylised treble-clef stem
+    c.beginPath(); c.moveTo(232, 92); c.bezierCurveTo(312, 138, 246, 262, 230, 290); c.stroke();
+    c.fillStyle = '#1a120a'; c.beginPath(); c.arc(228, 304, 20, 0, 7); c.fill();
+    c.save(); c.translate(296, 130); c.rotate(-0.12);                        // red СССР flag
+    c.fillStyle = '#c0241f'; c.fillRect(0, 0, 116, 72);
+    c.fillStyle = '#e7c463'; c.font = 'bold 30px "PT Sans Narrow",sans-serif'; c.textAlign = 'center'; c.fillText('СССР', 62, 44);
+    c.restore();
+    c.fillStyle = '#d8b15a'; c.textAlign = 'center'; c.font = 'bold 38px "PT Sans Narrow",sans-serif';
+    c.fillText('Н.К.М. ГЛАВШИРПОТРЕБ', 256, 372);
+    c.font = 'bold 28px "PT Sans Narrow",sans-serif'; c.fillStyle = '#c49a48';
+    ['ЛЕНИНГРАДСКИЙ', 'ГРАММОФОННЫЙ ЗАВОД'].forEach((s, i) => c.fillText(s, 256, 414 + i * 34));
+  } else {
+    // nickel control plate (speed regulator / auto-stop), engraved dark text
+    const g = c.createLinearGradient(0, 0, 0, 512); g.addColorStop(0, '#c9ced3'); g.addColorStop(.5, '#9aa0a6'); g.addColorStop(1, '#787e84');
+    c.fillStyle = g; c.fillRect(0, 0, 512, 512);
+    c.strokeStyle = '#5a5f64'; c.lineWidth = 8; c.strokeRect(8, 8, 496, 496);
+    c.fillStyle = '#2a2d30'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    if (kind === 'speedPlate') {
+      c.font = 'bold 84px "PT Sans Narrow",sans-serif'; c.fillText('FH 78', 256, 150);
+      c.font = '54px "PT Sans Narrow",sans-serif'; c.fillText('Bremze', 256, 250);
+      c.strokeStyle = '#2a2d30'; c.lineWidth = 5;                            // speed scale ticks
+      for (let i = 0; i <= 10; i++) { const x = 70 + i * 37; c.beginPath(); c.moveTo(x, 350); c.lineTo(x, i % 5 ? 390 : 410); c.stroke(); }
+    } else {                                                                 // autoPlate
+      c.font = 'bold 70px "PT Sans Narrow",sans-serif'; c.fillText('АВТОСТОП', 256, 170);
+      c.font = '60px "PT Sans Narrow",sans-serif'; c.fillText('ВКЛ  ·  ВЫКЛ', 256, 300);
+    }
+  }
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  return tex;
+}

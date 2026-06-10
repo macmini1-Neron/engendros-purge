@@ -5,4 +5,4 @@
 export { bevelBox, panel, plate, stencil, planks, finSet, latticeBeam, cabinet } from './structural.js';
 export { drawerStack, legs } from './furniture.js';
 export { lidBox, strapBand, handleU } from './container.js';
-export { cylinder, cone, deltaFins, texturedCylinder } from './round.js';
+export { cylinder, cone, deltaFins, texturedCylinder, torus, tube, texturedDisc, decal } from './round.js';

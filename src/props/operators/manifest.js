@@ -27,6 +27,10 @@ export const MANIFEST = {
   cone:        { args: ['r', 'h'],                dims: ['r', 'h'],            anchor: 'center' },
   deltaFins:   { args: ['count', 'root', 'span'], dims: ['root', 'span'],      anchor: 'center' },
   texturedCylinder: { args: ['r', 'h'],           dims: ['r', 'h'],            anchor: 'center' },
+  torus:       { args: ['r', 'tube'],             dims: ['r', 'tube'],         anchor: 'center' },
+  tube:        { args: ['pts', 'tube'],           dims: ['tube'],              anchor: 'center' },
+  texturedDisc: { args: ['r'],                     dims: ['r'],                anchor: 'center' },
+  decal:       { args: ['w', 'h'],                dims: ['w', 'h'],            anchor: 'center' },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);
