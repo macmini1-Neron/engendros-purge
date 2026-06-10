@@ -147,80 +147,124 @@ export const SCENES = {
 // --- Soviet song jukebox: real recordings (assets/*.mp3, sourced from the Internet Archive +
 //     the owner's own Katyusha). Each is a "sample scene" — the MusicDirector plays the MP3 and
 //     segues to the next on end; no synth. The title menu points at the `soviet` playlist. ---
-const SONGS = [
-  ['slavyanka', 'Прощание славянки', 1912],
-  ['aviamarsh', 'Марш авиаторов', 1923],
-  ['rodina', 'Широка страна моя родная', 1936],
-  ['katyusha', 'Катюша', 1938],
-  ['katyusha_frontline', 'Фронтовая Катюша', 1938],
-  ['svyashchennaya_voyna', 'Священная война', 1941],
-  ['vzemlyanke', 'В землянке', 1942],
-  ['platochek', 'Синий платочек', 1942],
-  ['gimn_sssr', 'Государственный гимн СССР', 1944],
-  ['smuglyanka', 'Смуглянка', 1944],
-  ['dorogi', 'Эх, дороги', 1945],
-  ['podmoskovnye', 'Подмосковные вечера', 1956],
-  ['khotyat', 'Хотят ли русские войны', 1962],
-  ['solnce', 'Пусть всегда будет солнце', 1962],
-  ['vysote', 'На безымянной высоте', 1963],
-  ['nezhnost', 'Нежность', 1965],
-  ['srodina', 'С чего начинается Родина', 1968],
-  ['zhuravli', 'Журавли', 1969],
-  ['den_pobedy', 'День Победы', 1975],
-  ['million_roz', 'Миллион алых роз', 1982],
-  ['komarovo', 'Комарово', 1985],
-  ['peremen', 'Хочу перемен', 1987],
-  // --- +20 expansion (2026-06-05): more classics + hidden gems + special versions, 1920–1988.
-  //     Real recordings (Internet Archive + sovmusic.ru), normalized to 128k stereo. See
-  //     docs/2026-06-05-soviet-songs-expansion-shortlist.md for sources/notes. ---
-  ['krasnaya_armiya', 'Красная Армия всех сильней', 1920],
-  ['podolinam', 'По долинам и по взгорьям', 1929],
-  ['polyushko', 'Полюшко-поле', 1933],
-  ['tachanka', 'Тачанка', 1937],
-  ['tri_tankista', 'Три танкиста', 1939],
-  ['vecher_na_reyde', 'Вечер на рейде', 1941],
-  ['temnaya_noch', 'Тёмная ночь', 1943],
-  ['ogonyok', 'Огонёк', 1943],
-  ['sluchayny_vals', 'Случайный вальс', 1943],
-  ['solovyi', 'Соловьи', 1944],
-  ['vput', 'В путь', 1954],
-  ['buchenwald', 'Бухенвальдский набат', 1958],
-  ['ne_vernulsya', 'Он не вернулся из боя', 1969],
-  ['odna_pobeda', 'Нам нужна одна победа', 1970],
-  ['ot_geroev', 'От героев былых времён', 1971],
-  ['nadezhda', 'Надежда', 1971],
-  ['mgnoveniya', 'Мгновения', 1973],
-  ['vnov_boy', 'И вновь продолжается бой', 1974],
-  ['gorod_zolotoy', 'Город золотой', 1986],
-  ['gruppa_krovi', 'Группа крови', 1988],
-  // --- +20 pop/estrada/disco expansion (2026-06-07): danceable «vypalovačky» 1970–1989 —
-  //     VIA, disco, synth-pop, italo-disco. Real recordings (Internet Archive 70s_hits +
-  //     YouTube), normalized to 128k stereo. See docs/2026-06-07-soviet-pop-disco-shortlist.md. ---
-  ['svadba', 'Свадьба', 1970],
-  ['siniy_iney', 'Синий иней', 1971],
-  ['moy_adres', 'Мой адрес — Советский Союз', 1972],
-  ['lyudi_vstrechayutsya', 'Люди встречаются', 1972],
-  ['zvezdochka', 'Звёздочка моя ясная', 1974],
-  ['arlekino', 'Арлекино', 1975],
-  ['zodiak', 'Зодиак', 1980],
-  ['tanec_na_barabane', 'Танец на барабане', 1980],
-  ['uchkuduk', 'Учкудук, три колодца', 1981],
-  ['trava_u_doma', 'Трава у дома', 1982],
-  ['cherny_kot', 'Чёрный кот', 1983],
-  ['deltaplan', 'Дельтаплан', 1983],
-  ['zelyony_svet', 'Зелёный свет', 1984],
-  ['luna_luna', 'Луна-луна', 1986],
-  ['lavanda', 'Лаванда', 1986],
-  ['belaya_noch', 'Белая ночь', 1986],
-  ['muzyka_svyazala', 'Музыка нас связала', 1987],
-  ['belye_rozy', 'Белые розы', 1988],
-  ['fantazyor', 'Фантазёр', 1988],
-  ['rozovye_rozy', 'Розовые розы', 1989],
+// Genre taxonomy — 8 buckets spanning the catalog. `id` is the code key (also a per-genre
+// PLAYLISTS entry + the genre a world gramophone prop plays); ru/en are the display labels;
+// `icon` is the monochrome glyph id drawn by the ФОНОТЕКА filter bar (see fonoteka.js). ---
+export const GENRES = [
+  { id: 'marshi',    ru: 'Военные марши',      en: 'War Marches',          icon: 'star' },
+  { id: 'gimny',     ru: 'Гимны и пропаганда', en: 'Anthems & Propaganda', icon: 'sickle' },
+  { id: 'narod',     ru: 'Народная',           en: 'Folk',                 icon: 'wheat' },
+  { id: 'frontline', ru: 'Военная лирика',     en: 'WWII Ballads',         icon: 'crane' },
+  { id: 'estrada',   ru: 'Эстрада',            en: 'Soviet Pop',           icon: 'mic' },
+  { id: 'disco',     ru: 'ВИА и диско',        en: 'VIA & Disco',          icon: 'disc' },
+  { id: 'bard',      ru: 'Бардовская',         en: 'Bard Song',            icon: 'guitar' },
+  { id: 'rock',      ru: 'Рок',                en: 'Rock',                 icon: 'bolt' },
 ];
-for (const [slug, title, year] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, year, bpm: 120, drones: [], step() {} };
+export const GENRE_BY_ID = Object.fromEntries(GENRES.map((g) => [g.id, g]));
+
+// Each song: [slug, Русское название, year, genre, English title]. Real recordings (assets/*.mp3,
+// Internet Archive + sovmusic.ru + the owner's own Katyusha + the 2026-06-10 folk/bard/rock fill).
+const SONGS = [
+  ['slavyanka', 'Прощание славянки', 1912, 'marshi', 'Farewell of Slavianka'],
+  ['aviamarsh', 'Марш авиаторов', 1923, 'marshi', "The Aviators' March"],
+  ['rodina', 'Широка страна моя родная', 1936, 'gimny', 'Song of the Motherland'],
+  ['katyusha', 'Катюша', 1938, 'frontline', 'Katyusha'],
+  ['katyusha_frontline', 'Фронтовая Катюша', 1938, 'frontline', 'Frontline Katyusha'],
+  ['svyashchennaya_voyna', 'Священная война', 1941, 'marshi', 'The Sacred War'],
+  ['vzemlyanke', 'В землянке', 1942, 'frontline', 'In the Dugout'],
+  ['platochek', 'Синий платочек', 1942, 'frontline', 'The Blue Kerchief'],
+  ['gimn_sssr', 'Государственный гимн СССР', 1944, 'gimny', 'State Anthem of the USSR'],
+  ['smuglyanka', 'Смуглянка', 1944, 'narod', 'Smuglyanka'],
+  ['dorogi', 'Эх, дороги', 1945, 'frontline', 'Oh, the Roads'],
+  ['podmoskovnye', 'Подмосковные вечера', 1956, 'estrada', 'Moscow Nights'],
+  ['khotyat', 'Хотят ли русские войны', 1962, 'gimny', 'Do the Russians Want War?'],
+  ['solnce', 'Пусть всегда будет солнце', 1962, 'estrada', 'May There Always Be Sunshine'],
+  ['vysote', 'На безымянной высоте', 1963, 'frontline', 'On the Nameless Height'],
+  ['nezhnost', 'Нежность', 1965, 'estrada', 'Tenderness'],
+  ['srodina', 'С чего начинается Родина', 1968, 'gimny', 'Where Does the Motherland Begin?'],
+  ['zhuravli', 'Журавли', 1969, 'frontline', 'Cranes'],
+  ['den_pobedy', 'День Победы', 1975, 'frontline', 'Victory Day'],
+  ['million_roz', 'Миллион алых роз', 1982, 'estrada', 'A Million Scarlet Roses'],
+  ['komarovo', 'Комарово', 1985, 'disco', 'Komarovo'],
+  ['peremen', 'Хочу перемен', 1987, 'rock', 'I Want Change'],
+  ['krasnaya_armiya', 'Красная Армия всех сильней', 1920, 'marshi', 'The Red Army Is the Strongest'],
+  ['podolinam', 'По долинам и по взгорьям', 1929, 'marshi', 'Through the Valleys and Over the Hills'],
+  ['polyushko', 'Полюшко-поле', 1933, 'narod', 'Polyushko-Pole'],
+  ['tachanka', 'Тачанка', 1937, 'marshi', 'Tachanka'],
+  ['tri_tankista', 'Три танкиста', 1939, 'narod', 'Three Tankmen'],
+  ['vecher_na_reyde', 'Вечер на рейде', 1941, 'frontline', 'Evening on the Roadstead'],
+  ['temnaya_noch', 'Тёмная ночь', 1943, 'frontline', 'Dark Night'],
+  ['ogonyok', 'Огонёк', 1943, 'frontline', 'The Little Light'],
+  ['sluchayny_vals', 'Случайный вальс', 1943, 'frontline', 'Chance Waltz'],
+  ['solovyi', 'Соловьи', 1944, 'frontline', 'Nightingales'],
+  ['vput', 'В путь', 1954, 'marshi', 'On the Road'],
+  ['buchenwald', 'Бухенвальдский набат', 1958, 'gimny', 'The Buchenwald Tocsin'],
+  ['ne_vernulsya', 'Он не вернулся из боя', 1969, 'bard', 'He Did Not Return from Battle'],
+  ['odna_pobeda', 'Нам нужна одна победа', 1970, 'bard', 'We Need But One Victory'],
+  ['ot_geroev', 'От героев былых времён', 1971, 'frontline', 'From the Heroes of Bygone Times'],
+  ['nadezhda', 'Надежда', 1971, 'estrada', 'Hope'],
+  ['mgnoveniya', 'Мгновения', 1973, 'estrada', 'Moments'],
+  ['vnov_boy', 'И вновь продолжается бой', 1974, 'gimny', 'And the Battle Goes On Again'],
+  ['gorod_zolotoy', 'Город золотой', 1986, 'rock', 'The Golden City'],
+  ['gruppa_krovi', 'Группа крови', 1988, 'rock', 'Blood Type'],
+  ['svadba', 'Свадьба', 1970, 'estrada', 'The Wedding'],
+  ['siniy_iney', 'Синий иней', 1971, 'disco', 'Blue Hoarfrost'],
+  ['moy_adres', 'Мой адрес — Советский Союз', 1972, 'disco', 'My Address Is the Soviet Union'],
+  ['lyudi_vstrechayutsya', 'Люди встречаются', 1972, 'disco', 'People Meet'],
+  ['zvezdochka', 'Звёздочка моя ясная', 1974, 'disco', 'My Bright Little Star'],
+  ['arlekino', 'Арлекино', 1975, 'estrada', 'Harlequin'],
+  ['zodiak', 'Зодиак', 1980, 'disco', 'Zodiac'],
+  ['tanec_na_barabane', 'Танец на барабане', 1980, 'disco', 'Dance on the Drum'],
+  ['uchkuduk', 'Учкудук, три колодца', 1981, 'disco', 'Uchkuduk, Three Wells'],
+  ['trava_u_doma', 'Трава у дома', 1982, 'disco', 'Grass by the Home'],
+  ['cherny_kot', 'Чёрный кот', 1983, 'disco', 'Black Cat'],
+  ['deltaplan', 'Дельтаплан', 1983, 'disco', 'Hang Glider'],
+  ['zelyony_svet', 'Зелёный свет', 1984, 'disco', 'Green Light'],
+  ['luna_luna', 'Луна-луна', 1986, 'disco', 'Moon-Moon'],
+  ['lavanda', 'Лаванда', 1986, 'disco', 'Lavender'],
+  ['belaya_noch', 'Белая ночь', 1986, 'disco', 'White Night'],
+  ['muzyka_svyazala', 'Музыка нас связала', 1987, 'disco', 'Music Bound Us Together'],
+  ['belye_rozy', 'Белые розы', 1988, 'disco', 'White Roses'],
+  ['fantazyor', 'Фантазёр', 1988, 'disco', 'Dreamer'],
+  ['rozovye_rozy', 'Розовые розы', 1989, 'disco', 'Pink Roses'],
+  // --- +20 genre-balance fill (2026-06-10): folk / bard / rock so every genre is represented.
+  //     Real recordings (yt-dlp), normalized 128k stereo. See docs/2026-06-10-fonoteka-gramophone-plan.md. ---
+  ['kalinka', 'Калинка', 1860, 'narod', 'Kalinka'],
+  ['oy_to_ne_vecher', 'Ой, то не вечер', 1810, 'narod', "Oh, It's Not Yet Evening"],
+  ['step_da_step', 'Степь да степь кругом', 1865, 'narod', 'The Steppe All Around'],
+  ['vo_pole_bereza', 'Во поле берёза стояла', 1790, 'narod', 'A Birch Tree Stood in the Field'],
+  ['stenka_razin', 'Из-за острова на стрежень', 1883, 'narod', 'Stenka Razin'],
+  ['kalina_krasnaya', 'Калина красная', 1973, 'narod', 'Red Snowball Tree'],
+  ['vdol_po_piterskoy', 'Вдоль по Питерской', 1900, 'narod', 'Down Petersburg Road'],
+  ['tonkaya_ryabina', 'Тонкая рябина', 1905, 'narod', 'The Slender Rowan'],
+  ['song_o_druge', 'Песня о друге', 1966, 'bard', 'Song About a Friend'],
+  ['koni_priveredlivye', 'Кони привередливые', 1972, 'bard', 'Capricious Horses'],
+  ['arbat', 'Песенка об Арбате', 1959, 'bard', 'Song About the Arbat'],
+  ['beri_shinel', 'Бери шинель, пошли домой', 1975, 'bard', 'Take Your Greatcoat'],
+  ['milaya_moya', 'Милая моя', 1973, 'bard', 'My Dear'],
+  ['atlanty', 'Атланты', 1963, 'bard', 'The Atlanteans'],
+  ['zvezda_po_imeni_solnce', 'Звезда по имени Солнце', 1989, 'rock', 'A Star Called Sun'],
+  ['pachka_sigaret', 'Пачка сигарет', 1989, 'rock', 'A Pack of Cigarettes'],
+  ['skovannye', 'Скованные одной цепью', 1986, 'rock', 'Bound by One Chain'],
+  ['ya_hochu_byt_s_toboy', 'Я хочу быть с тобой', 1989, 'rock', 'I Want To Be With You'],
+  ['povorot', 'Поворот', 1979, 'rock', 'The Turn'],
+  ['my_vmeste', 'Мы вместе', 1987, 'rock', 'We Are Together'],
+];
+for (const [slug, title, year, genre, en] of SONGS) SCENES[slug] = { audioUrl: 'assets/' + slug + '.mp3', title, en, year, genre, bpm: 120, drones: [], step() {} };
+
+// slug lists per genre, in catalog order (drives the ФОНОТЕКА filter + each world prop's playlist).
+export const SONG_GENRES = {};
+for (const [slug, , , genre] of SONGS) (SONG_GENRES[genre] = SONG_GENRES[genre] || []).push(slug);
+
+// slug → {title, en, year, genre} (used by the gramophone world-prop to label/announce a track
+// without a MusicDirector instance).
+export const SONG_INFO = Object.fromEntries(SONGS.map(([slug, title, year, genre, en]) => [slug, { title, en, year, genre }]));
+
 // The jukebox mix = the Korobeiniki "Tetris" chiptune (synth) + every real recording. Korobeiniki
 // is a synth scene (no MP3); the engine times it out after a few loops to keep the rotation moving.
+// Per-genre playlists let a world gramophone prop play just one category.
 const PLAYLISTS = { soviet: ['menu', ...SONGS.map((s) => s[0])] };
+for (const g of GENRES) PLAYLISTS[g.id] = (SONG_GENRES[g.id] || []).slice();
 
 export class MusicDirector {
   constructor(audio) {
@@ -471,8 +515,9 @@ export class MusicDirector {
 
   // ---- jukebox player API (drives the asset-viewer "Music" tab, Spotify-style) ----
   jukeboxTracks() {
-    return (PLAYLISTS.soviet || []).map((slug) => ({ slug, title: SCENES[slug].title || slug, year: SCENES[slug].year || null }));
+    return (PLAYLISTS.soviet || []).map((slug) => ({ slug, title: SCENES[slug].title || slug, en: SCENES[slug].en || null, year: SCENES[slug].year || null, genre: SCENES[slug].genre || null }));
   }
+  jukeboxGenreOf(slug) { return (SCENES[slug] && SCENES[slug].genre) || null; }
   jukeboxPlayAt(index, { fade = 0.5 } = {}) {
     const members = PLAYLISTS.soviet || [];
     if (!members.length) return;
@@ -512,7 +557,9 @@ export class MusicDirector {
       index: on ? pl.idx : -1,
       slug: on ? pl.members[pl.idx] : null,
       title: on ? (SCENES[pl.members[pl.idx]].title || pl.members[pl.idx]) : null,
+      en: on ? (SCENES[pl.members[pl.idx]].en || null) : null,
       year: on ? (SCENES[pl.members[pl.idx]].year || null) : null,
+      genre: on ? (SCENES[pl.members[pl.idx]].genre || null) : null,
       paused: el ? el.paused : false,
       time: el ? (el.currentTime || 0) : (synth ? Math.max(0, this.t - this._synthStart) : 0),
       duration: el && isFinite(el.duration) ? el.duration : (synth ? this._synthDur : 0),

@@ -65,6 +65,21 @@ const ICONS = {
   supply:   '<path d="M3 9a9 5 0 0 1 18 0z"/><rect x="8" y="14" width="8" height="6"/>'
     + '<g stroke="currentColor" stroke-width="1.4" fill="none"><path d="M4 9l4 5M20 9l-4 5M12 9v5"/></g>',
   star:     '<path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.6 5 20.4l1.4-6.8L1.3 9l6.9-.7z"/>',
+  // ---- ФОНОТЕКА transport ----
+  pause:    '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>',
+  skipback: '<path d="M7 5h2.4v14H7z"/><path d="M21 5v14l-11-7z"/>',
+  skipfwd:  '<path d="M14.6 5H17v14h-2.4z"/><path d="M3 5l11 7-11 7z"/>',
+  shuffle:  '<g fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h3.5l9 10H19"/><path d="M3 17h3.5l3-3.3"/><path d="M12.5 9.3L15.5 7H19"/></g><path d="M17.5 4.5L22 7l-4.5 2.5z"/><path d="M17.5 14.5L22 17l-4.5 2.5z"/>',
+  repeat:   '<g fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h11v4"/><path d="M17 17H6v-4"/></g><path d="M16 3.5L20.5 7 16 10.5z"/><path d="M8 20.5L3.5 17 8 13.5z"/>',
+  search:   '<circle cx="10.5" cy="10.5" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.2 15.2l6 6" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/>',
+  // ---- genre glyphs (mono, for the filter bar) ----
+  sickle:   '<path d="M4 3l2-1 6 10.5-2 1z"/><path d="M11 11c5 1 8-1 9-5 1 4-1 9-7 9-3 0-5-1.5-5-3 0-.7.4-1.2 1.5-1.2 1.4 0 1.6 1 3 1 1 0 1.6-.5 1.6-1.2 0-.8-1.3-1.2-3.6-1.6z"/>',
+  wheat:    '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 21V8"/><path d="M12 8c0-2-1.4-3.4-3-4 0 2 1.2 3.4 3 4zM12 8c0-2 1.4-3.4 3-4 0 2-1.2 3.4-3 4z"/><path d="M12 13c0-2-1.4-3.4-3-4 0 2 1.2 3.4 3 4zM12 13c0-2 1.4-3.4 3-4 0 2-1.2 3.4-3 4z"/><path d="M12 18c0-2-1.4-3.4-3-4 0 2 1.2 3.4 3 4zM12 18c0-2 1.4-3.4 3-4 0 2-1.2 3.4-3 4z"/></g>',
+  crane:    '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 13c3.2 0 4.2-3.2 6-3.2s2.4 2.2 4 2.2 2.2-2.2 4-2.2 2.8 3.2 6 3.2"/></g>',
+  mic:      '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0012 0" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 17.5v3.5M8.5 21h7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  disc:     '<path fill-rule="evenodd" d="M12 3a9 9 0 100 18 9 9 0 000-18zm0 7a2 2 0 100 4 2 2 0 000-4z"/><circle cx="12" cy="12" r="5.2" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>',
+  guitar:   '<path d="M18.5 2.5l3 3-2.2 1.7.9.9-1.8 1.8-1-1-3.6 3.6a4.2 4.2 0 11-2.1-2.1l3.6-3.6-1-1 1.8-1.8.9.9z"/><circle cx="9.5" cy="14.5" r="1.5" fill="#1a120a"/>',
+  bolt:     '<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>',
 };
 
 export function icon(name) { return OPEN + (ICONS[name] || ICONS.crate) + '</svg>'; }
