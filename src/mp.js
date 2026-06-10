@@ -565,6 +565,8 @@ export class MP {
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio
+    n.on('gramoset', (d) => g.gramophone.applySet(d));                          // authoritative gramophone on/off/song (host → clients)
+    n.on('gramoreq', (d, from) => { if (this.isHost) { g.gramophone.applySet(d); n.broadcast('gramoset', d); } }); // client asks host to toggle/change a gramophone
     n.on('gateset', (d) => { if (d && g.world.applyGateSet) g.world.applyGateSet(d.open); });                         // authoritative works-gate open/close (host → clients)
     n.on('gatereq', (d, from) => { if (this.isHost && d && g.world.applyGateSet) { g.world.applyGateSet(d.open); n.broadcast('gateset', { open: !!d.open }); } }); // client asks host to open/close the gate
     n.on('doorset', (d) => { if (d && g.world.applyDoorSet) g.world.applyDoorSet(d.id, d.open); });                   // authoritative bunker гермодверь open/closed (host → clients)
@@ -1005,6 +1007,7 @@ export class MP {
     if (snap.length) this.net.sendTo(pid, 'esnap', snap);                                   // immediate exact positions/HP (don't make the joiner wait ~80ms)
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
     for (const s of this.game.build.structures) if (s.kind === 'radio' && s.on) this.net.sendTo(pid, 'radioset', { id: s.id, on: true, station: s.station }); // late-join: tune newcomers into playing radios
+    if (this.game.gramophone) for (const p of this.game.gramophone.props) if (p.on) this.net.sendTo(pid, 'gramoset', { id: p.id, on: true, songIdx: p.songIdx }); // late-join: start newcomers' playing gramophones
     if (this.game.world._slideGate) this.net.sendTo(pid, 'gateset', { open: !!this.game.world._slideGate.open }); // late-join: current works-gate state
     if (this.game.world._doors) for (const dr of this.game.world._doors) this.net.sendTo(pid, 'doorset', { id: dr.id, open: !!dr.open }); // late-join: current bunker гермодверь states
     for (const pu of this.game.loot.pickups) if (pu.id != null) this.net.sendTo(pid, 'pickup', { id: pu.id, kind: pu.kind, x: pu.mesh.position.x, z: pu.mesh.position.z, value: pu.value, life: pu.life }); // late-join: existing shared ground pickups

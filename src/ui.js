@@ -201,7 +201,7 @@ export class UI {
       pause: document.getElementById('pause'),
       shop: document.getElementById('shop'), gameover: document.getElementById('gameover'),
       settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
-      admin: document.getElementById('admin'),
+      admin: document.getElementById('admin'), music: document.getElementById('music'),
     };
     this.hint = document.getElementById('hint');
   }
