@@ -138,13 +138,25 @@ fed by a `SAMPLES` entry.
 `palette.js` extends the modelgen palette with **procedural `CanvasTexture` materials**:
 `brickRed` / `brickGrey` (brick courses), `concretePanel` (panel grid with seams),
 `corrugatedTin` (vertical ribbing), `plaster`, `glassPane` (semi-transparent + mullion frame),
-`glassGrid`. They map with `repeat = surface_size / tile` and `NearestFilter`, so a texture is
+`glassGrid`. They tile with `NearestFilter`, so a texture is
 **never stretched or overlapping** — always tiled per real module. The 5-tone vertex-colour
 shading from modelgen still rides on edges/shadow bands.
 
-**Glass:** `glassPane` is `transparent: true` with a mullion frame; it renders in the opaque
-pass with the world (the viewmodel two-pass already draws over it). Transparency sorting is kept
-sane by keeping glass panes coplanar-free and few per facade.
+**Tiling = UVs in metres.** Because one shared material spans faces of different sizes, tiling
+is implemented by generating UVs from the face's real dimensions (metres / tile size) with
+`RepeatWrapping` and `texture.repeat = 1` — never by stretching one texture across a facade and
+never via per-face `texture.repeat` (which can't differ per face on a shared material).
+
+**Determinism (consistent results law):** every procedural texture derives ALL randomness
+(brick tone jitter, weathering streaks, seam noise) from a spec-level `seed` through the seeded
+`makeRNG` family in `util.js` — never the unseeded gameplay helpers (`rr`/`ri`/`pick`). The same
+spec must render pixel-identical across runs, so render diffs between build rounds stay
+meaningful.
+
+**Glass:** reuse the airfield's proven recipe (`src/airfield.js` `glassPane`):
+`MeshLambertMaterial({ transparent: true, opacity ~0.3, side: DoubleSide, depthWrite: false,
+slight emissive })` as a separate pane mesh inside the window gap. `depthWrite: false` sidesteps
+transparency-sorting artefacts; keep panes coplanar-free and few per facade.
 
 ## Validator — the laws (modelgen-style)
 
@@ -203,7 +215,12 @@ node --test 'tests/buildgen/*.test.mjs'   # after any operator/validator change 
 
 `interp.js` -> `placeBuilding(world, scene, id, x, z, yaw)` returns **(a)** merged meshes
 per-material (few draw calls) added to the scene at `(x,z,yaw)` and **(b)** a list of AABBs
-pushed to `world.boxes`. Because colliders are deterministic from the spec, **co-op needs no
+pushed to `world.boxes`.
+
+**`yaw` must be a multiple of 90° (runtime assert).** `world.boxes` colliders are axis-aligned
+AABBs (`{min,max}` vectors — verified in `world.js`); at 90°/180°/270° the interp swaps box
+extents exactly, but any other angle would silently ship wrong (inflated or misaligned)
+colliders. Visual-only parts may rotate freely; collidable ones may not. Because colliders are deterministic from the spec, **co-op needs no
 collider sync**; only interactive elements (a gate/door on `E`) stay hand-coded hooks behind
 `hostSim = !mp.active || mp.isHost`. The interior is furnished by `propRef` (modelgen props) plus
 a few hand hooks. An Admin Asset Viewer entry makes the building inspectable in-game.
@@ -271,7 +288,8 @@ Modelgen viewer pattern, building-flavoured. `VIEWER.load(id)` -> `{dims, boxes,
   reference overlay is missing during the Pillar-B reference-confirm stage.
 
 **Definition of done:** lint clean · tests green · render set + ghost + collider shot + 300 m
-shot at the final spec · 0 console errors · interior has ≥ 2 walkable exits · BUILD.md updated.
+shot at the final spec · **in-game day/night/interior shots** (pipeline step 6) · 0 console
+errors · interior has ≥ 2 walkable exits · BUILD.md updated.
 
 ## Per-building pipeline (the SKILL.md flow)
 
@@ -281,8 +299,13 @@ shot at the final spec · 0 console errors · interior has ≥ 2 walkable exits 
 3. **Research dossier** (subagent, sourced facts -> `ref/dossier.json`; gaps -> `needs[]`).
 4. **Author `spec.json`** (operators + materials, mm -> m, every dim cites `dossier#`); `lint`.
 5. **Build + self-verify loop** in the viewer until defect-free; log rounds in `BUILD.md`.
-6. **Approve** (`AskUserQuestion` with concrete named next steps), `placeBuilding` into `world.js`,
-   add an Admin viewer entry, screenshot in-game.
+6. **In-game verification** — register + `placeBuilding` on the feature branch, serve a fresh
+   port, fly the dev freecam (`Ctrl+F` / `N` / `?fly=1`): day AND night exterior shots, the
+   300 m fog approach, and a first-person interior walk with the real player controller;
+   console errors = 0; `GAME.world.boxes` delta sane. **The viewer proves the model; only the
+   game proves the building.**
+7. **Approve** (`AskUserQuestion` with concrete named next steps); `world.js` keeps a single
+   `placeBuilding` call; add an Admin viewer entry.
 
 ## Build order (for the implementation plan)
 
