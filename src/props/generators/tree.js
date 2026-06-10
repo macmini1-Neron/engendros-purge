@@ -316,7 +316,7 @@ function buildBranches(mb, r, cfg, trunkPts, height, baseDia) {
 // `cfg.crown`, then each cluster is itself broken into a few jittered sub-boxes
 // using the 5-tone ramp so it reads as lumpy leaf mass, not a cube.
 // ---------------------------------------------------------------------------
-function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
+function buildFoliage(mb, r, cfg, trunkPts, branchTips, height, lod = 0) {
   const leaf = toneSet(cfg.foliage);
   const top = trunkPts[trunkPts.length - 1];
   const crownBottom = height * (1 - cfg.crownFrac);
@@ -337,31 +337,32 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
     }
   };
 
-  // cluster count scales with crown volume
-  const nClusters = Math.round(
-    Math.max(8, (wMax * crownH) * (cfg.crown === 'columnar' ? 2.2 : 1.4))
-  );
+  // HOLLOW crown: clusters sit on the SHELL only (the interior is never seen), and
+  // the count scales with surface, not volume, and is capped — so a broad oak no
+  // longer explodes to ~25k tris. lod thins it further for distant forest trees.
+  const lodMul = lod >= 2 ? 0.34 : lod === 1 ? 0.6 : 1;
+  const nClusters = Math.max(8, Math.round(
+    Math.min(46, (wMax + crownH * 2) * (cfg.crown === 'columnar' ? 1.9 : 1.45)) * lodMul
+  ));
 
   const placeCluster = (px, py, pz, size) => {
-    // break each cluster into 3–5 overlapping jittered sub-boxes
-    const subs = ri(r, 3, 5);
+    // break each cluster into 2–3 overlapping jittered sub-boxes (was 3–5 + flecks)
+    const subs = lod >= 1 ? 2 : ri(r, 2, 3);
     for (let k = 0; k < subs; k++) {
-      const js = size * rr(r, 0.55, 1.0);
+      const js = size * rr(r, 0.6, 1.05);
       const jx = px + rr(r, -size, size) * 0.5;
       const jy = py + rr(r, -size, size) * 0.4;
       const jz = pz + rr(r, -size, size) * 0.5;
       // tone by height within the sub-box: lit on top, shadow underneath
       const tone = k === 0 ? leaf.mid : (jy > py ? leaf.hi : leaf.lo);
       mb.box(js, js * 0.85, js, jx, jy, jz, tone, { tint: 0.06 });
-      // occasional bright fleck for sparkle
-      if (r() < 0.25) mb.box(js * 0.3, js * 0.3, js * 0.3, jx + js * 0.2, jy + js * 0.3, jz, leaf.bright, { tint: 0.04 });
     }
   };
 
   // 1) hang a cluster off each real branch tip that sits inside the crown
   for (const tip of branchTips) {
     if (tip.y < crownBottom - 1) continue;
-    placeCluster(tip.x, tip.y, tip.z, wMax * 0.16 + 0.4);
+    placeCluster(tip.x, tip.y, tip.z, wMax * 0.2 + 0.6);
   }
 
   // 2) fill the crown volume with the remaining clusters
@@ -370,8 +371,8 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
     const y = crownBottom + t * crownH;
     const rad = radiusAt(t);
     const ang = rr(r, 0, Math.PI * 2);
-    // bias toward the shell so the interior isn't packed solid
-    const rr2 = Math.sqrt(rr(r, 0.25, 1)) * rad;
+    // HOLLOW core: a THICK opaque shell (no see-through holes), only the dead centre empty
+    const rr2 = (0.5 + 0.5 * r()) * rad;
     // trunk drifts with lean; follow the centreline at this height
     const fi = Math.max(0, Math.min(trunkPts.length - 1, Math.round(t * (1 - cfg.crownFrac) * (trunkPts.length - 1) + (1 - cfg.crownFrac) * (trunkPts.length - 1))));
     const center = trunkPts[Math.min(trunkPts.length - 1, fi)] || top;
@@ -379,12 +380,12 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
     const pz = center.z + Math.sin(ang) * rr2;
     let py = y;
     if (cfg.crown === 'weeping') py -= (rr2 / Math.max(0.1, rad)) * crownH * 0.35; // skirt droops at the edges
-    placeCluster(px, py, pz, wMax * 0.14 + 0.45);
+    placeCluster(px, py, pz, wMax * 0.2 + 0.78);
   }
 
   // 3) close the canopy apex so no bare branch tip pokes out the top
   if (cfg.crown !== 'conical') {
-    placeCluster(top.x, top.y - wMax * 0.08, top.z, wMax * 0.20 + 0.4);
+    placeCluster(top.x, top.y - wMax * 0.10, top.z, wMax * 0.28 + 0.55);
   }
 }
 
@@ -456,7 +457,7 @@ export function makeTree(opts = {}) {
     if (snapped) applyDamage(mb, r, cfg, trunkPts, baseDia);
   } else {
     const tips = buildBranches(mb, r, cfg, trunkPts, effHeight, baseDia);
-    buildFoliage(mb, r, cfg, trunkPts, tips, effHeight);
+    buildFoliage(mb, r, cfg, trunkPts, tips, effHeight, opts.lod | 0);
   }
 
   const geometry = mb.build();
