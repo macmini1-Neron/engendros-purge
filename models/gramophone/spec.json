@@ -28,16 +28,16 @@
     { "op": "bevelBox", "id": "handleFront", "args": { "w": 0.10, "h": 0.012, "d": 0.012, "tone": "hi" }, "at": [0, 0.045, 0.152], "mat": "chrome", "src": "dossier#hardware" },
     { "op": "bevelBox", "id": "handleSide", "args": { "w": 0.012, "h": 0.012, "d": 0.10, "tone": "hi" }, "at": [-0.156, 0.058, 0], "mat": "chrome", "src": "dossier#hardware" },
 
-    { "op": "decal", "id": "speedPlate", "args": { "w": 0.05, "h": 0.02, "kind": "speedPlate" }, "at": [0.05, 0.1145, -0.065], "rot": [0, 0, 0], "mat": "chrome", "src": "dossier#hardware" },
-    { "op": "decal", "id": "autoPlate", "args": { "w": 0.05, "h": 0.016, "kind": "autoPlate" }, "at": [-0.06, 0.1145, 0.08], "rot": [0, 0, 0], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "decal", "id": "speedPlate", "args": { "w": 0.05, "h": 0.02, "axis": "y", "kind": "speedPlate" }, "at": [0.05, 0.1145, -0.065], "rot": [0, 0, 0], "mat": "chrome", "src": "dossier#hardware" },
+    { "op": "decal", "id": "autoPlate", "args": { "w": 0.05, "h": 0.016, "axis": "y", "kind": "autoPlate" }, "at": [-0.06, 0.1145, 0.08], "rot": [0, 0, 0], "mat": "chrome", "src": "dossier#hardware" },
 
     { "op": "bevelBox", "id": "lidShell", "args": { "w": 0.31, "h": 0.05, "d": 0.29 }, "at": [0, 0.135, 0], "mat": "granitol", "rig": "lid", "src": "dossier#lid" },
     { "op": "bevelBox", "id": "lidLining", "args": { "w": 0.285, "h": 0.006, "d": 0.265, "tone": "hi" }, "at": [0, 0.106, 0], "mat": "granitol", "rig": "lid", "src": "dossier#lid" },
-    { "op": "decal", "id": "lidLogo", "args": { "w": 0.15, "h": 0.19, "kind": "lidLogo" }, "at": [0, 0.102, -0.01], "rot": [180, 0, 0], "mat": "cream", "rig": "lid", "src": "dossier#lid" },
+    { "op": "decal", "id": "lidLogo", "args": { "w": 0.15, "h": 0.19, "axis": "y", "kind": "lidLogo" }, "at": [0, 0.1015, -0.01], "rot": [180, 0, 0], "mat": "cream", "rig": "lid", "src": "dossier#lid" },
 
     { "op": "cylinder", "id": "platter", "args": { "r": 0.118, "h": 0.018, "axis": "y", "tone": "hi" }, "at": [-0.04, 0.118, 0.01], "mat": "chrome", "rig": "turntable", "src": "dossier#platter" },
     { "op": "cylinder", "id": "platterFelt", "args": { "r": 0.112, "h": 0.004, "axis": "y" }, "at": [-0.04, 0.1285, 0.01], "mat": "feltTeal", "rig": "turntable", "src": "dossier#platter" },
-    { "op": "cylinder", "id": "record", "args": { "r": 0.125, "h": 0.003, "axis": "y" }, "at": [-0.04, 0.131, 0.01], "mat": "shellac", "rig": "turntable", "src": "dossier#record" },
+    { "op": "disc", "id": "record", "args": { "r": 0.125, "h": 0.003, "axis": "y" }, "at": [-0.04, 0.131, 0.01], "mat": "shellac", "rig": "turntable", "src": "dossier#record" },
     { "op": "texturedDisc", "id": "recordLabel", "args": { "r": 0.05, "axis": "y", "title": "АМУРСКИЕ ВОЛНЫ", "mode": "black" }, "at": [-0.04, 0.1331, 0.01], "mat": "cream", "rig": "turntable", "src": "dossier#record" },
     { "op": "cylinder", "id": "spindle", "args": { "r": 0.004, "h": 0.014, "axis": "y", "tone": "bright" }, "at": [-0.04, 0.137, 0.01], "mat": "chrome", "rig": "turntable", "src": "dossier#derivation" },
 
