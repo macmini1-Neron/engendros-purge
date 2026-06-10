@@ -56,6 +56,9 @@ buildings/<id>/
   ref/dossier.json  sourced research (+ dropped reference images, gitignored)
   renders/          self-verify render set (committed)
   BUILD.md          per-round build log
+buildings/_smoke/   tiny test fixture (NOT shipped) — shell+floor+roof+doorway+window+tiled
+                    material+collider; exercises validator+viewer before the first real building
+tests/buildgen/     node --test suites (operator extents + z-fight + validator-law fixtures)
 docs/superpowers/specs/2026-06-10-player-friendly-building-design.md   research doc (Pillar A source)
 .claude/skills/buildgen/SKILL.md
 ```
@@ -92,6 +95,14 @@ angled roofs and cylinders (which modelgen's box-only ops cannot).
   ]
 }
 ```
+
+**Coordinate system (hard definition — restated from CLAUDE.md so doors/windows can't land on
+the wrong wall):**
+- **X = east(+)/west(−)**, **Y = vertical height(+up)**, **Z = north(+)/south(−)**; **1 unit ≈ 1 m.**
+- **Origin = centre of the footprint at ground level** (`y = 0` is the floor).
+- A part's `at: [x,y,z]` is in **local building space**; `face: "N"|"S"|"E"|"W"` is resolved in
+  local space **before** the world `yaw` of `placeBuilding` is applied.
+- `rot` is `[x,y,z]` degrees about the part's `at` (modelgen convention).
 
 What is new versus the modelgen spec:
 - **`intent`** — the frozen answers from the Pillar A questionnaire (drives validator strictness
@@ -135,7 +146,14 @@ shading from modelgen still rides on edges/shadow bands.
 pass with the world (the viewmodel two-pass already draws over it). Transparency sorting is kept
 sane by keeping glass panes coplanar-free and few per facade.
 
-## Validator — the laws (hard error, modelgen-style)
+## Validator — the laws (modelgen-style)
+
+**Diagnostic levels** (modelgen today is all-hard-errors and works — we add only a light
+ERROR/WARN split because some building rules are genuinely advisory):
+- **ERROR** — cannot be approved (laws 1–9, 12).
+- **WARN** — allowed only with a one-line justification in `BUILD.md` (e.g. high collider count,
+  budget overruns, law 10/11/13 soft cases).
+- **INFO** — advisory only.
 
 1. **Metres.** `footprint` required; `maxDim` default 60 m (> 200 reads as "millimetres").
 2. **Wall thickness ≥ 0.2 m** — thinner only with `detail: true`. (kills "1px walls")
@@ -155,6 +173,25 @@ sane by keeping glass panes coplanar-free and few per facade.
 11. **Intent coherence:** `intent.furnitureReady` -> ceiling ≥ 2.6 m + ≥ 1 `propRef` anchor zone;
     `intent.roofAccess` -> a stair/ladder to the roof; `intent.glassWindows` -> window bays use
     the `glass` material. (these thresholds come from the Pillar A research doc)
+12. **`propRef` contract (ERROR):** the referenced model must exist in the modelgen registry; its
+    footprint must fit inside a declared anchor zone; `scale` must stay `1.0` unless explicitly
+    allowed (a scale fudge = a units bug, modelgen's own law); the prop must not overlap a
+    required `doorway` gap.
+13. **Pathing gate (WARN, minimal — NOT a navmesh):** for `intent.enterable` buildings, every
+    required entrance must have a clear walkable span to at least one other entrance with no
+    `propRef`/`interiorWall` blocking it. Full room-graph reachability is deferred — this only
+    catches a "walkable on paper, impassable in practice" building.
+
+### Performance budget (principle adopted; numbers are PROVISIONAL — calibrate against a real frame capture, do not treat as gospel)
+
+The spatial grid (`src/grid.js`, O(1) broad-phase) already softens the collider-count worry, so
+these are guard-rails (WARN), not hard limits — except triangles, which is a real GPU concern:
+- Merged visual meshes: **1 per material** (hard target).
+- Materials: **≤ 8** default, **≤ 12** for a landmark (WARN over).
+- Collider AABBs: **≤ 32** default, **≤ 64** for a large enterable building (WARN over).
+- Procedural texture canvas: **≤ 512×512** per material unless justified.
+- Triangles: **WARN > 8k, ERROR > 20k** per building *(re-tune once we have a real per-building
+  frame-time number — these are placeholders, not measured)*.
 
 Run before the viewer and before "done":
 ```bash
@@ -170,6 +207,13 @@ pushed to `world.boxes`. Because colliders are deterministic from the spec, **co
 collider sync**; only interactive elements (a gate/door on `E`) stay hand-coded hooks behind
 `hostSim = !mp.active || mp.isHost`. The interior is furnished by `propRef` (modelgen props) plus
 a few hand hooks. An Admin Asset Viewer entry makes the building inspectable in-game.
+
+**Hard rule (the single most important guard against backsliding):** a new building's
+**geometry/spec is never authored directly in `world.js`** — `world.js` only *calls*
+`placeBuilding(...)`. Every new building goes through `/buildgen`:
+**spec.json -> lint -> viewer -> snapshots -> registry -> `placeBuilding`.** Hand-built box
+geometry in a world builder is exactly the failure mode this harness exists to replace. (Existing
+hand-coded buildings are grandfathered — see non-goals.)
 
 ## Pillar A — the intent questionnaire (always, before authoring)
 
@@ -204,7 +248,12 @@ Per building, before the dossier:
    achieve* before the dossier/spec exist. This is a hard gate, not optional.
 
 The upload endpoint is **dev-tooling only** — production stays the static Vercel site; nothing
-in the shipped game depends on it.
+in the shipped game depends on it. Even on localhost it must be hardened against the one real
+footgun (a bad filename overwriting a repo file):
+- Accept **image MIME types only**; cap file size (e.g. ≤ 8 MB).
+- **Normalise the filename** and **confine writes to `buildings/<id>/ref/`** — reject any path
+  traversal (`..`, leading `/`, absolute paths) so nothing outside `ref/` is ever written.
+- Write the bytes as-is; the server never interprets/executes uploaded content (it isn't run).
 
 ## Viewer + verify loop (`tools/buildgen/viewer.html`)
 
@@ -215,6 +264,11 @@ Modelgen viewer pattern, building-flavoured. `VIEWER.load(id)` -> `{dims, boxes,
 - **Reference overlay** from the dropped image; **drag-drop** intake (Pillar B).
 - Drive via Playwright; `VIEWER.snapshot()` -> PNG dataURL saved to `buildings/<id>/renders/`;
   **`Read` every PNG** (a blank/unrelated render means the loop did not happen).
+- **Automated snapshot self-checks** (directly addresses the documented "verified a white
+  screenshot + an unrelated Su-24 photo" incident) — `VIEWER.snapshot()` returns metadata and a
+  capture **fails loudly** if: the image is blank / single-colour; the model AABB is outside the
+  camera frustum; the collider overlay is empty while any `collide:true` part exists; or the
+  reference overlay is missing during the Pillar-B reference-confirm stage.
 
 **Definition of done:** lint clean · tests green · render set + ghost + collider shot + 300 m
 shot at the final spec · 0 console errors · interior has ≥ 2 walkable exits · BUILD.md updated.
@@ -233,9 +287,11 @@ shot at the final spec · 0 console errors · interior has ≥ 2 walkable exits 
 ## Build order (for the implementation plan)
 
 1. Research doc: player-friendly building design (feeds Pillar A + law 11).
-2. Harness skeleton: `palette.js` (tiled materials), `spec.js` (laws), `interp.js`,
-   `registry.js`, `operators/` (shell + floor first), `manifest.js`, `extents.js`.
-3. `tools/buildgen/` server + lint + viewer + viewer.js; `tests/buildgen/`.
+2. Harness skeleton: `palette.js` (tiled materials), `spec.js` (laws + diagnostic levels),
+   `interp.js`, `registry.js`, `operators/` (shell + floor first), `manifest.js`, `extents.js`.
+3. `tools/buildgen/` server (hardened upload) + lint + viewer (snapshot self-checks) + viewer.js;
+   `tests/buildgen/` + the `buildings/_smoke/` fixture (validate the harness on the fixture
+   BEFORE any real building).
 4. Roof + facade + landmark + sign + ref operators, each with extents + property tests.
 5. `SKILL.md` for `/buildgen` (laws, kit, anchors, Pillars A/B, pipeline, DoD).
 6. Prove on the first real building (chosen via the Pillar A questionnaire at first run).
@@ -248,3 +304,10 @@ shot at the final spec · 0 console errors · interior has ≥ 2 walkable exits 
 - Full interior authoring in the spec (interiors = composed props + hand hooks).
 - Sloped/ramped **colliders** (AABB only; visual roofs may be angled, colliders stay boxes).
 - Any production dependency on the dev upload server.
+- **`schemaVersion` field — deliberately omitted.** Modelgen ships none and is fine; all specs
+  live in-repo and are re-linted when operators change, so there is no out-of-our-control consumer
+  to version against. Revisit only if specs are ever distributed outside the repo.
+- **LOD / distance material degradation — deferred.** The engine has no LOD system (meshes are
+  merged static geometry); building one is its own project. Landmark legibility is covered by the
+  DoD "from 300 m" silhouette check, not by runtime LOD. Full room-graph pathing reachability is
+  likewise deferred (see validator law 13 for the minimal gate we keep).
