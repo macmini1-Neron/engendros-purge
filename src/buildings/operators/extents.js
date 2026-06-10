@@ -8,16 +8,15 @@ const fp = (spec) => spec?.footprint ?? { w: 1, h: 1, d: 1 };
 
 // Face-anchored parts (openings/signs/pilasters): conservative extent = the whole wall plane
 // they decorate (thin slab on that face). Keeps containment honest without re-deriving u/v.
-function faceExtent(args, spec, proud = 0.05) {
+function faceExtent(args, spec, proud = 0.06) {
   const { w, d } = fp(spec);
   const H = specTopY(spec);
   const f = faceFrame(args.face ?? 'N', fp(spec), 0.3);
+  const half = f.t / 2 + proud;                       // whole wall thickness + proudness, both sides
   if (f.axis === 'x') {
-    const z = f.fixed + f.out * (f.t / 2 + proud);
-    return { min: [-w / 2, 0, Math.min(f.fixed, z)], max: [w / 2, H, Math.max(f.fixed, z)] };
+    return { min: [-w / 2, 0, f.fixed - half], max: [w / 2, H, f.fixed + half] };
   }
-  const x = f.fixed + f.out * (f.t / 2 + proud);
-  return { min: [Math.min(f.fixed, x), 0, -d / 2], max: [Math.max(f.fixed, x), H, d / 2] };
+  return { min: [f.fixed - half, 0, -d / 2], max: [f.fixed + half, H, d / 2] };
 }
 
 export const EXTENTS = {
@@ -66,24 +65,27 @@ export const EXTENTS = {
     return { min: [-w / 2, y, -d / 2], max: [w / 2, y + a.h, d / 2] };
   },
   // --- openings / facade / signs (face-anchored) ---
-  windowBays: (a, spec) => faceExtent(a, spec, 0.06),
-  doorway: (a, spec) => faceExtent(a, spec, 0.06),
-  gateOpening: (a, spec) => faceExtent(a, spec, 0.06),
+  windowBays: (a, spec) => faceExtent(a, spec),
+  doorway: (a, spec) => faceExtent(a, spec),
+  gateOpening: (a, spec) => faceExtent(a, spec),
   cornice: (a, spec) => {
     const { w, d } = fp(spec); const y = specTopY(spec); const p = a.proud;
     return { min: [-w / 2 - p, y - a.h, -d / 2 - p], max: [w / 2 + p, y, d / 2 + p] };
   },
-  pilaster: (a, spec) => faceExtent(a, spec, a.proud ?? 0.06),
+  pilaster: (a, spec) => faceExtent(a, spec, (a.proud ?? 0.06) + 0.01),
   // --- landmarks (floor-anchored cylinders) ---
   chimney: (a) => {
     const r = Math.max(a.rBase, a.rTop);
     return { min: [-r, 0, -r], max: [r, a.h, r] };
   },
-  waterTank: (a) => ({ min: [-a.r, 0, -a.r], max: [a.r, a.legH + a.h, a.r] }),
+  waterTank: (a) => {
+    const r = a.r + 0.05;                                // tank drum + the cap lip
+    return { min: [-r, 0, -r], max: [r, a.legH + a.h + 0.08, r] };
+  },
   mast: (a) => ({ min: [-a.r, 0, -a.r], max: [a.r, a.h, a.r] }),
   // --- signage ---
-  sign: (a, spec) => faceExtent(a, spec, 0.05),
-  stencil: (a, spec) => faceExtent(a, spec, 0.05),
+  sign: (a, spec) => faceExtent(a, spec),
+  stencil: (a, spec) => faceExtent(a, spec),
   // --- reuse ---
   propRef: () => ({ min: [0, 0, 0], max: [0, 0, 0] }),   // prop bounds live in the prop's own spec (law 12)
   repeat: () => null,                                     // plan-time macro — expanded before bounds run
