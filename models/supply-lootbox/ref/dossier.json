@@ -1,0 +1,96 @@
+{
+  "id": "supply-lootbox",
+  "title": "Soviet/Warsaw Pact PG-7V (RPG-7) 6-round wooden ammunition crate — ящик укупорочный для выстрелов ПГ-7В",
+  "era": "1961–1980s Soviet/Warsaw Pact pattern (PG-7V adopted 1961 with RPG-7); pattern unchanged through late Cold War, photographed example is Bulgarian export production with English export stencils",
+  "sources": {
+    "arcon_pg7v": "Arcon Partners Ltd (licensed Bulgarian arms exporter), PG-7V round datasheet, PACKING section — verbatim: 'Rounds in a wooden case for transportation: 6 grenades and 6 start boosters, packed separately … Wooden case dimensions: Overall, (mm): 798 x 452 x 245. Gross weight, (kg): 33. Case volume, (m3): 0.088. Class of explosion hazard: UN 0292, 1.1F' — https://arconpartners.net/products/ammunition/grenade-launchers/40-mm-pg-7v-round-with-high-explosive-anti-tank-grenade-pg-7-heat-for-40-mm-hand-grenade-launcher-rpg-7v/",
+    "arcon_pg7vm": "Arcon Partners Ltd, PG-7VM round datasheet, PACKING: wooden case 899 x 498 x 294 mm, 39 kg gross, 0.128 m3, 6 rounds — https://arconpartners.net/products/ammunition/grenade-launchers/40-mm-pg-7vm-round-with-high-explosive-anti-tank-grenade-pg-7m-heat-for-40-mm-hand-grenade-launcher-rpg-7v/",
+    "arcon_og7v": "Arcon Partners Ltd, OG-7V round datasheet, PACKING: wooden case 830 x 430 x 275 mm, 50 kg gross, 0.100 m3, 18 rounds — https://arconpartners.net/products/ammunition/grenade-launchers/40-mm-og-7v-round-with-high-explosive-fragmentation-grenade-og-7-for-40-mm-hand-grenade-launcher-rpg-7v/",
+    "militarysklad_listing": "MILITARY RANGE (militarysklad.cz) Czech surplus listing 'Bedna dřevěná od munice PG 7, použitá': approx 80 x 40 x 22 cm, 16 kg empty, wooden crate with lid, two metal folding carry handles, lid hinged on two metal hinges, two front latches (přezky) — https://www.militarysklad.cz/detail/bedna-drevena-od-munice-pg-7-pouzita-1000086506",
+    "militarysklad_photo_closed": "Product photo 1 (closed crate, 3/4 view) — olive-green crate, 2 lid battens with steel end-straps, 2 front flip-latches, end bail handle, black stencils 'PG-7VM Practice-T / 01-⑪-16 / Gross wt 32 kg / 6pcs / 87dm³ / HEAD END / T / -40C +50C', UN 1.4S diamond label — https://www.militarysklad.cz/Content/custom/img_products/87027129.jpg",
+    "militarysklad_photo_open": "Product photo 2 (open crate) — raw unpainted pine interior and lid underside (3 lid planks), paper packing list glued under lid, scalloped transverse cradle dividers for 6 rounds, square vertical corner/intermediate posts, rear strap hinge visible — https://www.militarysklad.cz/Content/custom/img_products/87027129-1.jpg",
+    "militarysklad_photo_end": "Product photo 3 (end face) — folding steel wire bail handle on riveted plate, riveted steel corner angle straps on both vertical corners, chamfered lid-batten ends with screwed steel straps, end stencil 'PG-7M / 01-⑪-16 / Practice' — https://www.militarysklad.cz/Content/custom/img_products/87027129-2.jpg",
+    "inertproducts_replica": "Inert Products LLC replica PG-7V crate (copied from original): 32.13 x 18.03 x 9.84 in = 816 x 458 x 250 mm — https://inertproducts.com/product/pg-7-rockets-in-crate-replica-weapon-cache-crate/",
+    "studfile_okraska": "Russian artillery textbook §4.4 'Окраска и маркировка боеприпасов' — verbatim: '…зеленого цвета на деревянную укупорку боеприпасов'; 'На укупорочных ящиках с выстрелами, снарядами и боевыми зарядами на боковой и торцевой стенках наносят маркировку, характеризующую содержимое. Кроме обычных сведений указываются количество штук и масса брутто.' — https://studfile.net/preview/5082433/page:19/",
+    "ruwiki_marking": "Wikipedia (ru) «Маркировка боеприпасов», crate marking: lid carries масса брутто + transport danger sign (digit '2' in triangle, apex toward the hinge side); side wall carries designation, lot, year, factory code, quantity — https://ru.wikipedia.org/wiki/Маркировка_боеприпасов",
+    "weaponland_marking": "weaponland.ru «Маркировка инженерных боеприпасов Советской Армии» — 'Ящики… обычно окрашены в темно-зеленый цвет, реже некрашеные.'; black stencil layout: designation + quantity, factory–batch–year with dashes, explosive type, gross weight; warning stencils; danger triangle — https://weaponland.ru/publ/markirovka_inzhenernykh_boepripasov_sovetskoj_armii/20-1-0-577",
+    "livinghistory_ukuporka": "livinghistory.ru reenactor thread 'Изготовление деревянной укупорки и ящиков' — measured original WW2 45mm crate: 520x380x200, board thickness 20 mm, lid/bottom batten (рейка) 50x25 mm; ZIS-3 76mm crate 785x510x160 per 1949 manual; ГОСТ/ОСТ dovetail → wartime nailed butt joints; turn-latch sealed with wire — http://livinghistory.ru/topic/62192-izgotovlenie-dereviannoi-ukuporki-i-iaschikov/",
+    "ge_catalogue": "General Equipment RPG-7V2 product catalogue PDF — new-production RPG-7 launcher crate (raw wood photo): 1200 x 440 x 331 mm, 4 launchers, 60 kg — https://www.generalequipment.info/RPG-7V2%20Product%20Catalogue.pdf",
+    "user_ref_photos": "User-supplied reference photos: (1) opened olive crate, raw pine plank interior, internal corner blocks, riveted steel flip-latches, steel strap hinges, black Cyrillic stencils «125-Д81 …» (= 125mm Д-81 tank-gun crate, larger alternate type); (2) closed grey-green crate with two lid battens, front flip-latches, steel side carry handle, dense stencils (= matches the PG-7 family pattern)"
+  },
+  "specifications": {
+    "box_dimensions": {
+      "length_mm": 798,
+      "width_mm": 452,
+      "height_mm": 245,
+      "src": "arcon_pg7v (manufacturer datasheet); cross-corroborated: photographed crate's own '87dm³ / Gross wt 32 kg' stencil vs computed 798×452×245 = 88.4 dm³ (militarysklad_photo_closed); replica 816×458×250 (inertproducts_replica); Czech surplus rough 80×40×22 cm, 16 kg empty (militarysklad_listing)",
+      "note": "Primary type = PG-7V (RPG-7) 6-round crate, standard two-man-carry укупорка. Family variants: PG-7VM 899×498×294, OG-7V 830×430×275. Gross 33 kg / 16 kg empty."
+    },
+    "construction": {
+      "body_walls": "Long walls of 2 horizontal planks (visible seam on front face); butt-jointed and nailed, riveted steel corner angle straps on the end-face vertical corners; 2 proud vertical wooden cleats on the front face between latch positions",
+      "board_thickness_mm": 20,
+      "board_thickness_note": "ANALOG value measured on an original WW2 45mm crate (livinghistory_ukuporka), not on a PG-7 crate; photo proportions consistent",
+      "corner_joinery": "Postwar: nailed butt joints + internal vertical corner posts + external riveted steel corner angles",
+      "interior": "RAW unpainted pine throughout: corner + intermediate posts, longitudinal rails, scalloped transverse cradles for 6 rounds; paper packing list glued to lid underside",
+      "src": "militarysklad_photo_open, militarysklad_photo_end, militarysklad_photo_closed, arcon_pg7v, livinghistory_ukuporka"
+    },
+    "hardware": {
+      "latches": "2 riveted steel flip-latches (hasp-and-toggle) on the long front face at the lid seam, in line with internal post positions; Soviet turn-latches carry sealing-wire holes + lead seal",
+      "hinges": "2 steel strap hinges at the rear long face; Soviet convention: danger-triangle apex on lid points toward the hinges",
+      "handles": "2 folding steel wire bail handles, one centered on each END face, mounted on riveted steel plates — two-man carry; NO rope handles on this type",
+      "corner_hardware": "Riveted steel angle straps wrapping both vertical corners of each end face; short steel straps screwed over the chamfered lid-batten ends",
+      "src": "militarysklad_listing, militarysklad_photo_closed, militarysklad_photo_end, militarysklad_photo_open, livinghistory_ukuporka, ruwiki_marking"
+    },
+    "paint_markings": {
+      "exterior_color": "Protective green / olive-drab (studfile_okraska; weaponland_marking; photographed crate is worn olive-khaki)",
+      "interior": "Raw unpainted pine — exterior painted only",
+      "stencil_color": "Black paint on the green ground",
+      "stencil_content_layout": "Front long wall: round index («ПГ-7В»), lot–factory–year group, «БРУТТО … КГ», piece count «6 ШТ», volume dm³, temperature ovals; end wall: index + lot group + nature; lid (convention): масса брутто + danger triangle '2' apex toward hinges (photographed export lid unstencilled)",
+      "star": "NO star on this crate type — none present in any photo of the pattern; do not add one",
+      "src": "studfile_okraska, weaponland_marking, ruwiki_marking, militarysklad_photo_closed, militarysklad_photo_end"
+    },
+    "lid": {
+      "planks": "3 longitudinal planks (lid underside visible in open photo)",
+      "battens": "2 transverse battens on top, one near each end, ends chamfered ~45°, secured by screwed steel straps",
+      "batten_section_mm": "50 x 25 (ANALOG: measured WW2 45mm crate lid рейка — livinghistory_ukuporka; photo proportions consistent)",
+      "thickness_mm": "≈20 (ANALOG, same source)",
+      "src": "militarysklad_photo_closed, militarysklad_photo_open, militarysklad_photo_end, livinghistory_ukuporka"
+    },
+    "derivation": {
+      "volume_check": "798 × 452 × 245 mm = 0.0884 m³ — matches manufacturer 0.088 m³ and the crate's own '87dm³' stencil; src: geometric derivation from arcon_pg7v + militarysklad_photo_closed",
+      "wall_plank_width_mm": "≈100 each: body side ≈ 245 − 20 (lid) − 25 (batten) ≈ 200 mm over 2 visible planks; src: geometric derivation from arcon_pg7v envelope + plank count + 20 mm analog thickness",
+      "lid_plank_width_mm": "≈150 each: 452 mm over 3 lid planks; src: geometric derivation from arcon_pg7v + militarysklad_photo_open",
+      "body_lid_split_mm": "lid board 20 + battens 25 proud; body 0→225, seam at 225; src: geometric derivation from box_dimensions + lid.thickness + battens",
+      "hardware_sizes_mm": "flip-latch plate ≈ 60×90, strap hinge ≈ 50×100, bail handle ≈ 150 wide × 60 reach, corner angle strap ≈ 30 wide × 200 tall, front cleat ≈ 40 wide × 200 tall × 15 proud — scaled from militarysklad photos against the 798/452/245 envelope; src: geometric derivation from box_dimensions + militarysklad_photo_closed/_end",
+      "empty_vs_gross_weight": "33 kg gross − 16 kg empty ≈ 17 kg contents — consistent, mutually corroborating"
+    }
+  },
+  "feature_inventory": [
+    "Rectangular plank chest 798×452×245 mm, olive/protective-green exterior — arcon_pg7v + militarysklad_photo_closed + studfile_okraska",
+    "Lid of 3 longitudinal planks with 2 transverse chamfered battens, steel straps over batten ends — militarysklad_photo_closed/_open/_end",
+    "2 riveted steel flip-latches (hasp + toggle) on front face at lid joint — militarysklad_listing + militarysklad_photo_closed",
+    "2 steel strap hinges on rear face — militarysklad_listing + militarysklad_photo_open + ruwiki_marking",
+    "2 folding steel-wire bail carry handles, one per end face, riveted plates — militarysklad_listing + militarysklad_photo_end",
+    "Riveted steel corner angle straps on end-face vertical corners — militarysklad_photo_end",
+    "2 proud vertical wooden cleats on front face — militarysklad_photo_closed/_open",
+    "Raw unpainted pine interior + lid underside; packing list under lid — militarysklad_photo_open + user_ref_photos",
+    "Black front stencils: index / lot–factory–year / gross weight / piece count / volume — militarysklad_photo_closed + weaponland_marking",
+    "End-face stencils: index + lot group — militarysklad_photo_end",
+    "No red star, no rope handles on this type — militarysklad photos (absence)"
+  ],
+  "images": [
+    { "view": "closed crate, 3/4 front-top", "url": "https://www.militarysklad.cz/Content/custom/img_products/87027129.jpg", "shows": "olive paint, 2 front flip-latches, 2 lid battens w/ steel straps, end bail handle, black stencil block, 1.4S diamond, HEAD END" },
+    { "view": "open crate, front-top", "url": "https://www.militarysklad.cz/Content/custom/img_products/87027129-1.jpg", "shows": "raw pine interior + lid underside (3 planks), scalloped cradles, vertical posts, packing list, rear strap hinge, front cleats" },
+    { "view": "end face close-up", "url": "https://www.militarysklad.cz/Content/custom/img_products/87027129-2.jpg", "shows": "folding wire bail handle on riveted plate, riveted corner angle straps, chamfered batten ends, end stencils" }
+  ],
+  "needs": [
+    "User's photo-1 crate («125-Д81…») is a 125mm Д-81 tank-gun ammo crate — NO sourced dimensions found (longer, ~1.0–1.3 m class); treated as stencil-style reference only",
+    "Board thickness (20 mm) and batten section (50×25 mm) are ANALOG values from a WW2 45mm crate — convention-grade, photo-consistent",
+    "Photographed stencils are Bulgarian-export English; Cyrillic layout reconstructed from manual conventions — stencil TEXT is reconstruction",
+    "Latch mechanism close-up geometry unsourced — visible only at distance",
+    "Hardware sizes (latch/hinge/handle/corner/cleat) are photo-proportion derivations against the sourced envelope, not measured",
+    "Whether this type carried lid stencils — photographed export lid is blank; lid stencil optional",
+    "Exact paint specification (ХВ-518 / ПФ-115 etc.) unsourced — 'protective green / dark green' per manuals",
+    "UN 1.4S diamond paper label omitted from the model (paper label, not stencil)"
+  ]
+}

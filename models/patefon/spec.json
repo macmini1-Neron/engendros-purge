@@ -1,0 +1,423 @@
+{
+  "id": "patefon",
+  "name": "Патефон ПТ-3 — portable gramophone",
+  "description": "Soviet ПТ-3 suitcase wind-up gramophone (Molotov plant, HMV-102 pattern): black leatherette case, rear-hinged lid with cloth lining + rhombus decal, steel platter with light-green felt, chrome tonearm with round soundbox parked right, removable crank in the right wall, front strap handle and latch. Rigs: lid (hinge), crank (spin), platter (spin) — the in-game legendary decoy gadget.",
+  "category": "civilian",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": {
+    "w": 0.51,
+    "h": 0.16,
+    "d": 0.305
+  },
+  "dossier": "models/patefon/ref/dossier.json",
+  "rig": [
+    {
+      "name": "lid",
+      "pivot": [
+        0,
+        0.105,
+        -0.144
+      ],
+      "axis": "x",
+      "pose": 0,
+      "type": "hinge",
+      "range": [
+        -1.78,
+        0
+      ]
+    },
+    {
+      "name": "crank",
+      "pivot": [
+        0.207,
+        0.045,
+        0.06
+      ],
+      "axis": "x",
+      "pose": 0,
+      "type": "spin"
+    },
+    {
+      "name": "platter",
+      "pivot": [
+        -0.02,
+        0.111,
+        0
+      ],
+      "axis": "y",
+      "pose": 0,
+      "type": "spin"
+    }
+  ],
+  "parts": [
+    {
+      "id": "body",
+      "name": "Case body — black leatherette over wood",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.414,
+        "h": 0.105,
+        "d": 0.288
+      },
+      "at": [
+        0,
+        0.0525,
+        0
+      ],
+      "mat": "bakelite",
+      "src": "dossier#case_dimensions",
+      "note": "body/lid split 105/55 of the 160 mm closed height (dossier#derivation body_lid_split_mm)"
+    },
+    {
+      "id": "lid_shell",
+      "name": "Lid shell",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.414,
+        "h": 0.055,
+        "d": 0.288
+      },
+      "at": [
+        0,
+        0.1325,
+        0
+      ],
+      "rig": "lid",
+      "mat": "bakelite",
+      "src": "dossier#case_dimensions"
+    },
+    {
+      "id": "lid_lining",
+      "name": "Lid inner cloth lining (grey-blue), nests into the body mouth",
+      "op": "plate",
+      "args": {
+        "w": 0.398,
+        "d": 0.272,
+        "th": 0.01
+      },
+      "at": [
+        0,
+        0.1009,
+        0
+      ],
+      "rig": "lid",
+      "mat": "steel",
+      "src": "dossier#lid",
+      "note": "reads as the lining when the lid opens; hidden in the body mouth when closed"
+    },
+    {
+      "id": "lid_decal",
+      "name": "Factory rhombus decal on the lining",
+      "op": "stencil",
+      "args": {
+        "w": 0.05,
+        "h": 0.05
+      },
+      "at": [
+        0,
+        0.0955,
+        0
+      ],
+      "rot": [
+        90,
+        0,
+        45
+      ],
+      "rig": "lid",
+      "mat": "brass",
+      "src": "dossier#lid"
+    },
+    {
+      "id": "deck",
+      "name": "Motor board (deck), recessed below the rim",
+      "op": "plate",
+      "args": {
+        "w": 0.398,
+        "d": 0.272,
+        "th": 0.012
+      },
+      "at": [
+        0,
+        0.097,
+        0
+      ],
+      "mat": "bakelite",
+      "src": "dossier#case_dimensions"
+    },
+    {
+      "id": "platter_disc",
+      "name": "Stamped-steel platter, polished rim",
+      "op": "cylinder",
+      "args": {
+        "r": 0.12,
+        "h": 0.012,
+        "axis": "y",
+        "tone": "hi"
+      },
+      "at": [
+        -0.02,
+        0.109,
+        0
+      ],
+      "rig": "platter",
+      "mat": "steel",
+      "src": "dossier#platter"
+    },
+    {
+      "id": "platter_felt",
+      "name": "Light-green felt mat",
+      "op": "cylinder",
+      "args": {
+        "r": 0.112,
+        "h": 0.004,
+        "axis": "y"
+      },
+      "at": [
+        -0.02,
+        0.117,
+        0
+      ],
+      "rig": "platter",
+      "mat": "linoleum",
+      "src": "dossier#platter"
+    },
+    {
+      "id": "spindle",
+      "name": "Centre spindle",
+      "op": "cylinder",
+      "args": {
+        "r": 0.003,
+        "h": 0.018,
+        "axis": "y",
+        "tone": "bright"
+      },
+      "at": [
+        -0.02,
+        0.124,
+        0
+      ],
+      "rig": "platter",
+      "mat": "steel",
+      "src": "dossier#platter"
+    },
+    {
+      "id": "tonearm_post",
+      "name": "Tonearm base post (right-rear)",
+      "op": "cylinder",
+      "args": {
+        "r": 0.01,
+        "h": 0.025,
+        "axis": "y",
+        "tone": "bright"
+      },
+      "at": [
+        0.165,
+        0.1155,
+        -0.075
+      ],
+      "mat": "steel",
+      "src": "dossier#tonearm"
+    },
+    {
+      "id": "tonearm_tube",
+      "name": "Chrome tonearm tube (simplified S — parked over the platter)",
+      "op": "cylinder",
+      "args": {
+        "r": 0.006,
+        "h": 0.17,
+        "axis": "x",
+        "tone": "bright"
+      },
+      "at": [
+        0.085,
+        0.126,
+        -0.04
+      ],
+      "rot": [
+        0,
+        24,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#tonearm"
+    },
+    {
+      "id": "soundbox",
+      "name": "Round soundbox head (chrome slotted cap)",
+      "op": "cylinder",
+      "args": {
+        "r": 0.035,
+        "h": 0.022,
+        "axis": "z",
+        "tone": "hi"
+      },
+      "at": [
+        0.01,
+        0.118,
+        -0.005
+      ],
+      "mat": "steel",
+      "src": "dossier#tonearm"
+    },
+    {
+      "id": "crank_shaft",
+      "name": "Crank shaft (right wall hole)",
+      "op": "cylinder",
+      "args": {
+        "r": 0.005,
+        "h": 0.04,
+        "axis": "x",
+        "tone": "bright"
+      },
+      "at": [
+        0.225,
+        0.045,
+        0.06
+      ],
+      "rig": "crank",
+      "mat": "steel",
+      "src": "dossier#crank"
+    },
+    {
+      "id": "crank_arm",
+      "name": "Crank arm",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.012,
+        "h": 0.012,
+        "d": 0.07
+      },
+      "at": [
+        0.243,
+        0.045,
+        0.095
+      ],
+      "rig": "crank",
+      "mat": "steel",
+      "src": "dossier#crank"
+    },
+    {
+      "id": "crank_grip",
+      "name": "Carbolite grip",
+      "op": "cylinder",
+      "args": {
+        "r": 0.008,
+        "h": 0.04,
+        "axis": "x"
+      },
+      "at": [
+        0.263,
+        0.045,
+        0.126
+      ],
+      "rig": "crank",
+      "mat": "bakelite",
+      "src": "dossier#crank"
+    },
+    {
+      "id": "handle",
+      "name": "Front strap carry handle",
+      "op": "handleU",
+      "args": {
+        "w": 0.12,
+        "h": 0.045,
+        "th": 0.014
+      },
+      "at": [
+        0,
+        0.085,
+        0.142
+      ],
+      "rot": [
+        90,
+        0,
+        0
+      ],
+      "mat": "leather",
+      "src": "dossier#case_finish"
+    },
+    {
+      "id": "latch",
+      "name": "Nickel spring latch (front centre, at the seam)",
+      "op": "panel",
+      "args": {
+        "w": 0.03,
+        "h": 0.04,
+        "th": 0.008
+      },
+      "at": [
+        0,
+        0.105,
+        0.1455
+      ],
+      "mat": "steel",
+      "src": "dossier#case_finish"
+    },
+    {
+      "id": "speed_dial",
+      "name": "Speed regulator dial МЕДЛЕН/78/БЫСТРО (deck left)",
+      "op": "stencil",
+      "args": {
+        "w": 0.02,
+        "h": 0.02
+      },
+      "at": [
+        -0.155,
+        0.103,
+        0.04
+      ],
+      "rot": [
+        -90,
+        0,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#horn_vents"
+    },
+    {
+      "id": "needle_box",
+      "name": "Needle box (front-left deck corner)",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.03,
+        "h": 0.008,
+        "d": 0.03
+      },
+      "at": [
+        -0.165,
+        0.107,
+        0.105
+      ],
+      "mat": "brass",
+      "src": "dossier#horn_vents"
+    },
+    {
+      "id": "sound_window",
+      "name": "Horn sound window (rear deck, dark opening)",
+      "op": "stencil",
+      "args": {
+        "w": 0.1,
+        "h": 0.035
+      },
+      "at": [
+        -0.05,
+        0.103,
+        -0.105
+      ],
+      "rot": [
+        -90,
+        0,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#horn_vents"
+    }
+  ],
+  "needs": [
+    "Platter Ø240 / soundbox Ø78 / crank length 140 / lid 102° / body-lid split 105/55 are photo-derived (dossier#derivation + needs)",
+    "Tonearm S-curve simplified to one angled tube + post; soundbox slots not modeled",
+    "Internal horn not modeled (sound window stencil represents the outlet)",
+    "Black leatherette approximated by the bakelite palette; corner protectors omitted (variant hardware)"
+  ]
+}
