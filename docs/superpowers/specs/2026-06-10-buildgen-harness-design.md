@@ -334,3 +334,46 @@ errors · interior has ≥ 2 walkable exits · BUILD.md updated.
   merged static geometry); building one is its own project. Landmark legibility is covered by the
   DoD "from 300 m" silhouette check, not by runtime LOD. Full room-graph pathing reachability is
   likewise deferred (see validator law 13 for the minimal gate we keep).
+
+## Addendum (implementation, 2026-06-10)
+
+Decisions crystallised while planning the build — these refine, not change, the design above.
+
+**(a) `stairs` operator added to the shell/massing family (v1).** The operator list above missed
+it, but law 6 (step-up ≤ 0.62 m), `intent.roofAccess` ("stairs/ladder to the roof") and
+multi-`storeys` buildings all require one. Modeled on `world._stairs`: N stacked boxes, each
+full height from the base (`(i+1)·rise`), so the player's step-up collision climbs them with no
+special-casing. Args: `{steps, rise, run, width, dir}`.
+
+**(b) Neutral primitive records are the operator emission contract.** Operators stay pure (no
+`three`) but are NOT box-only — they emit plain records through a recorder interface that tests
+can mock:
+
+```js
+{ kind:'box',   w,h,d, x,y,z, mat, collide, detail, rot:[deg], uv:'m' }
+{ kind:'wedge', w,h,d, x,y,z, mat, axis:'x'|'z', hi:'N'|'S'|'E'|'W' }  // ramp slab, 8 tris
+{ kind:'prism', w,h,d, x,y,z, mat, axis:'x'|'z' }                      // gable cross-section, 8 tris
+{ kind:'cyl',   rBot,rTop,h, x,y,z, mat, collide, seg }                // vertical, 4·seg tris
+{ kind:'pane',  w,h, x,y,z, mat, ry, lean }                            // glass/sign plane, never collides
+{ kind:'propRef', model, x,y,z, yaw }                                  // resolved by validator/interp
+```
+
+Roofs and cylinders are pure records (unlike modelgen's browser-only `round.js`) because law 4
+(roof closes the top) must be checkable in node. Only `interp.js` realizes records as THREE
+geometry. Colliders derive from `collide:true` records (AABB of the record; non-90° `rot` on a
+collide record is an ERROR).
+
+**(c) `wallcut.js` is the compile step that realizes "openings are real GAPS".** `shellBox`
+does not emit four monolithic walls; the compiler gathers every `doorway`/`windowBays`/
+`gateOpening` per face and cuts each wall into segments (jambs / sill band / lintel band) via
+horizontal-band decomposition with vertical merge — a door yields 3 segments (the `world._wall`
+semantics), a window 4, k uniform windows k+3 (which is what keeps the collider budget of law
+14 honest). Property invariants (Σ segment areas = wall − openings; pairwise non-overlap;
+segment∩opening = ∅) are enforced by tests.
+
+**(d) Corner policy (law 5 made deterministic):** N/S walls run the full footprint width `w`;
+E/W walls run `d − 2·wallT` between them — no overlap, no gap, no coplanar corner faces.
+
+**(e) Deferred to v2 (not needed by the smoke fixture or the first building):** `balcony`,
+`poster`, `coolingTower` (hyperboloid), `gasholder`. Adding one later = impl + extents fn +
+SAMPLES entry, per the skill's operator rule.
