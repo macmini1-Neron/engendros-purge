@@ -1,119 +1,145 @@
 ---
 name: modelgen
-description: Use when building or upgrading ANY small/medium technical model or prop for ENGENDROS PURGE that is NOT a weapon and NOT a whole building — furniture (desks, chairs, beds, shelves, lockers, tables), Soviet industrial machinery (lathes, generators, switchboards, transformers, pipes, valves, compressors, cranes), electronics/instruments (control consoles, CRTs, radars, gauges, field phones, radios, button panels), or civilian fittings (samovars, stoves, kitchen kit, lamps, clocks). Drives the data-driven `modelgen` harness — research real sourced references, write a provenance-clean JSON spec, then build + self-verify in the browser viewer until it reads right. Trigger this even when the user just says "make a desk / build a lathe / put some furniture in the bunker / model a control panel" — not only when they say "skill" or "modelgen". Furniture/props/machines that fill rooms are THIS skill; first-person guns are voxel-weapon-modeling; whole buildings/POIs/districts are voxel-building-modeling.
+description: Use when building or upgrading ANY small/medium technical model or prop for ENGENDROS PURGE that is NOT a weapon and NOT a whole building — furniture (desks, chairs, beds, shelves, lockers, tables), military containers (ammo boxes, crates, footlockers, fuel cans), Soviet industrial machinery (lathes, generators, switchboards, transformers, pipes, valves, compressors, cranes), electronics/instruments (control consoles, CRTs, radars, gauges, field phones, radios, button panels), or civilian fittings (samovars, stoves, kitchen kit, lamps, clocks). Drives the data-driven `modelgen` harness — research real sourced references, write a provenance-clean JSON spec, then build + self-verify in the browser viewer until it reads right. Trigger this even when the user just says "make a desk / build a lathe / put some furniture in the bunker / model a control panel" — not only when they say "skill" or "modelgen". Furniture/props/machines that fill rooms are THIS skill; first-person guns are voxel-weapon-modeling; whole buildings/POIs/districts are voxel-building-modeling.
 ---
 
 # modelgen — tech-model harness (ENGENDROS PURGE)
 
-Build believable, real-referenced **technical models** (furniture, machinery, electronics, fittings)
-as **data-driven specs**, then self-verify them in a browser viewer you drive yourself. The harness
-lives at `tools/modelgen/` + `src/props/` in the repo root. Full design:
-`docs/superpowers/specs/2026-06-05-tech-model-harness-design.md`; F0 plan + file map:
-`docs/superpowers/plans/2026-06-05-modelgen-f0.md`.
+Build believable, real-referenced **technical models** as data-driven specs, then self-verify
+them in a viewer you drive yourself. Harness: `tools/modelgen/` + `src/props/` in
+`/Users/macmini1/game 4.8`. Design: `docs/superpowers/specs/2026-06-05-tech-model-harness-design.md`.
+Middle layer of the modeling family: guns → `voxel-weapon-modeling`, buildings → `voxel-building-modeling`.
 
-This is the **middle layer** of the modeling family: guns → `voxel-weapon-modeling`, whole
-buildings/POIs → `voxel-building-modeling`, everything that fills a room → **here**.
+The quality bet: **detail lives in hand-tuned operators, provenance lives in the dossier,
+and the validator mechanically enforces what prose used to beg for.** Your judgment goes
+where machines can't: picking the right features, proportions, and reading the renders.
 
-## The #1 principle: provenance beats vibes — never invent a dimension
+## The laws (validator-enforced — you will get a hard error, so author right the first time)
 
-A prop modelled from memory comes out generic and wrong-proportioned, then gets thrown away. The whole
-point of this harness is that **every dimension is sourced**, and the validator enforces it: a spec
-part with a real-world size and no `src` citation is a HARD ERROR, not a guess. So the rule is simple
-and absolute — **if you don't have a source for a number, you don't have the number.** Research it, or
-put it in `needs[]` and ask. The 1st and 2nd build are never right either; you reach quality by
-**self-verifying against the references and iterating**, not by getting it right in one shot.
+1. **Specs are METRES.** The dossier records mm; *you* convert when authoring (1400 mm → `1.40`).
+   Any dimension > 50 is rejected as "looks like MILLIMETRES"; > 8 m needs an explicit `spec.maxDim`.
+   *Real incident this guards: an ammo box authored in mm built **280 m** wide, the verify screenshot
+   was pure white (camera inside it), and it shipped behind a `scale.setScalar(0.4)` fudge.*
+2. **`footprint {w,h,d}` is required** and must match what the parts actually build (±10%+6 cm
+   contain / ≥55% fill per axis, roughly centred on x=z=0, floor-anchored specs touch y=0).
+   This is what catches floaters, misplaced markings, and unit mix-ups *mechanically*.
+3. **`src` must be `dossier#<key>`** that resolves into `ref/dossier.json` — prose like
+   `"TA072 scale model kit"` is rejected: *prose is not provenance*. Derived dims cite the
+   dossier's `derivation` block (sourced math is allowed; invention is not). No source → the
+   fact goes to `needs[]` and the part is NOT built.
+4. **`rot` is `[x,y,z]` DEGREES** (prefer multiples of 90; 45° for insignia diamonds). It rotates
+   the part rigidly about its `at` — this is how stencils/panels get onto side faces.
+5. **A scale fudge in game code = a units bug in the spec.** If `placeProp`/pickup code needs
+   `scale ≠ 1`, stop and fix the spec. (Documented inline in `loot.js` — keep it true.)
 
-(Layered-shading "prettiness" recipe — the 5-tone Hi/Mid/Lo/Slot/Bright logic — is shared with
-`.claude/skills/voxel-weapon-modeling/SKILL.md`. The same palette discipline applies to steel, wood,
-enamel, bakelite.)
+Gate everything with the pre-flight linter — run it before the viewer and before calling done:
+```bash
+node tools/modelgen/lint.mjs models/<id>     # spec + dossier cross-check + bounds vs footprint
+node --test 'tests/modelgen/*.test.mjs'      # after ANY operator/validator change (glob, not bare dir)
+```
 
-## How the harness fits together
+## The kit (operators · materials · anchors)
 
-One semantic JSON spec → a pure validated core → a THREE interpreter → a viewer you drive:
-
-- **Spec** `models/<id>/spec.json` — a tree of `parts`, each = an **operator** + args + a **material by
-  name** + an `src` provenance citation + optional `rig`.
-- **Operators** (`src/props/operators/`) carry the detail (layered, z-fight-free). F0 kit: `bevelBox{w,h,d}`,
-  `panel{w,h}`, `plate{w,d}`, `drawerStack{w,h,d,count}`, `legs{w,d,h}`. Add a new shape here when a model
-  needs one — keep it **box-only** (no `THREE.*` geometry) so it stays unit-testable.
-- **Materials by name** (`src/props/palette.js`): `woodMid`, `woodDark`, `steel`, `linoleum`, `bakelite`,
-  `brass`. Add new ones here. **Raw hex in a spec is rejected** — keeps everything on-style.
-- **Viewer** `tools/modelgen/viewer.html` — exposes `window.VIEWER`, which YOU drive via the Playwright MCP.
-
-Coordinates: **+X right, +Y up, +Z forward**, ~1 unit = 1 m; `at` is the part centre, anchored on the
-floor (y=0) unless stated.
+- **Operators** (`src/props/operators/`, vocabulary in `manifest.js`): `bevelBox`, `panel{+th}`,
+  `plate{+th}`, `stencil{+lines}`, `drawerStack`, `legs`, `lidBox` (lidded crate: body+overhang
+  lid+hinges+hasp), `strapBand` (wrap-around strap), `handleU` (carry handle, stowed flat).
+  **Anchors differ:** `bevelBox/panel/plate/stencil/strapBand` are CENTER-anchored at `at`;
+  `drawerStack/legs/lidBox/handleU` are FLOOR-anchored (`at` = bottom). Check `MANIFEST[op].anchor`
+  before placing — mixing these up is the #1 placement bug.
+- **Add an operator** when a shape class is missing — keep it **box-only** (no `THREE.*`, stays
+  node-testable), layered (stacked full-footprint bands, not overlaid caps), with a matching
+  extents fn (the bounds validator depends on it) and a test. The z-fight + extents-containment
+  property tests in `tests/modelgen/ops-v2.test.mjs` cover every op via its `SAMPLES` entry.
+- **Materials by name** (`src/props/palette.js`): wood/steel/linoleum/bakelite/brass/galvanized/
+  leather/paintOD/paintRed/paintBlack… Raw hex in a spec is rejected; add new materials to the
+  palette (5 voxel tones + a glb PBR stub).
 
 ## The pipeline — per model, in order
 
-Run as an **orchestration**: think hard yourself, dispatch a fresh subagent per heavy phase, review each
-result before the next. One model at a time.
-
 ### Phase 0 — Scope exactly ONE model
-Name it precisely (era + type, e.g. "Soviet 1960s–80s двухтумбовый office desk", not "a desk"). Decide
-voxel (default, F0) — GLB/Blender is F2 and not built yet, so stay voxel.
+Era + type precisely ("Soviet 1960s двухтумбовый office desk", not "a desk"). Voxel is the
+default and only built target (GLB is F2, not built).
 
-### Phase 1 — Research the REAL thing (dispatch a research subagent, via the Agent tool)
-The subagent gathers **sourced** facts only: dimensions (mm) each with a source (a GOST/ГОСТ standard,
-museum/catalog/marketplace listing with measurements), layout, materials/finish, and a few reference
-image URLs. **It must be honest:** any number it can't source goes in `needs[]`, never a guess. Save
-`models/<id>/ref/dossier.json` with every fact carrying a `src`, plus a `derivation` block when you
-compute a dimension from sourced ones (that's allowed — sourced math, not invention). Download a couple
-of reference images locally for overlay; keep third-party photos out of git (see gotchas).
+### Phase 1 — Research the REAL thing (dispatch a research subagent via the Agent tool)
+Sourced facts only → `models/<id>/ref/dossier.json`: dimensions (mm, each with a `src` — ГОСТ,
+museum/catalog/marketplace listing), materials/finish, and a **feature inventory** — every
+visible feature enumerated with a source (hinges: how many/where; latch type; strap routing;
+handle; feet; markings layout). Unsourced facts go to `needs[]`, never guessed. A `derivation`
+block holds computed dims (formula + which sourced facts feed it). Download 1–2 reference
+images locally for overlay (`ref/` is gitignored for third-party photos; commit only
+dossier.json + your own renders).
 
 ### Phase 2 — Author the spec (`models/<id>/spec.json`)
-Translate the dossier into operators + materials. **Every dimensional part cites a dossier key in `src`**
-(derived dims cite the `derivation` key). Put honest gaps in the spec's `needs[]` too. Validate before
-rendering — `validateSpec` (in `src/props/spec.js`) hard-rejects a missing `src`, raw hex, an unknown
-operator, or an unknown material.
+Translate dossier → operators + materials, **converting mm → m**. Every dimensional part cites
+`dossier#<key>`. Map **every feature from the inventory** to a part — or an explicit `needs[]`
+omission. A believable prop is usually **6–20 parts with 2–3+ materials** (paint + metal
+hardware + wood/leather); a 3-part model reads as a placeholder. Placement idioms:
+- Markings: `stencil` with `at` ON the face plane, `rot` to face outward (+Z is its normal);
+  it stands 4 mm proud. Use `lines: 3` for text blocks (a solid black patch reads as a HOLE);
+  rotate 45° (`rot:[0,0,45]`) for a star/insignia diamond.
+- Hardware (latches, hinges): embed ~4 mm into the parent face, stand 6–8 mm proud — never
+  coplanar with another face, never floating off it.
+- Compute face positions from the body dims you already cited (body d=0.14 → face at z=±0.07).
+Then `node tools/modelgen/lint.mjs models/<id>` until clean — BEFORE the viewer.
 
-### Phase 3 — Build + self-verify loop (you drive the viewer; REQUIRED)
-This is where quality happens. Serve the repo and open the viewer:
+### Phase 3 — Build + self-verify loop (REQUIRED — this is where quality happens)
 ```bash
-python3 -m http.server 8000        # from the repo root; if the port is busy pick another + --directory <root>
-# http://localhost:8000/tools/modelgen/viewer.html
+python3 -m http.server <fresh-port> --directory "/Users/macmini1/game 4.8"
+# open http://localhost:<port>/tools/modelgen/viewer.html?model=<id>   ← autoloads spec + dossier
 ```
-Drive it with the Playwright MCP against `window.VIEWER`:
-- `browser_evaluate` → `await window.VIEWER.loadSpec(await (await fetch('/models/<id>/spec.json?cb='+Math.random())).json())`
-- `browser_evaluate` → `window.VIEWER.setCamera(az, el, dist)` — sweep several angles: front `(0,12)`,
-  3/4 `(35,18)`, side `(90,12)`, top `(0,80)`, and a **low grazing** angle `(28,11)` (grazing angles
-  expose z-fighting that head-on views hide).
-- `browser_evaluate` → `window.VIEWER.overlay('/models/<id>/ref/<img>', 0.5)` to compare against a reference.
-- `browser_take_screenshot` with `filename: 'models/<id>/renders/<view>.png'`, then **`Read` that PNG to
-  actually SEE it** — the tool only saves a file; you must read it back.
-- Compare each view to the dossier facts + references. List concrete defects (proportions off, z-fighting,
-  a part floating, illogical layout, reads flat/no shading). Fix the **spec** (or an **operator** if a shape
-  is structurally wrong), reload, re-shoot. **Repeat until it reads unmistakably as the real object from
-  every angle** — typically 2–4 iterations.
+Drive `window.VIEWER` via the Playwright MCP (`browser_evaluate`):
+- `await VIEWER.load('<id>')` → returns `{dims, needs}` — **compare dims (mm) to the dossier
+  numbers immediately**; the eyes can't judge scale, numbers can.
+- `VIEWER.view(name)` for the canonical sweep: **front / q34 / side / back34 / top / graze**
+  (graze exposes z-fighting head-on views hide; back34 shows hinge-side detail).
+- `VIEWER.ghost(true)` → 1.75 m human beside the model — THE scale sanity check.
+  `VIEWER.bbox(true)` → actual AABB (yellow) vs declared footprint (cyan).
+- `VIEWER.overlay('/models/<id>/ref/<img>', 0.5)` to compare against a reference photo.
+- **Capture**: `browser_take_screenshot` can time out on rAF pages — the reliable path is
+  `VIEWER.snapshot()` (returns a PNG dataURL; camera is applied instantly) saved via the
+  evaluate `filename` param, then base64-decode to `models/<id>/renders/<view>.png` in Bash —
+  and **`Read` each PNG to actually SEE it**. A render that doesn't show your model (blank,
+  wrong subject) means the loop did NOT happen — the original incident "verified" a white
+  screenshot and an unrelated Su-24 photo.
+- List concrete defects per round (proportion vs dossier, placement, z-shimmer at graze, flat
+  shading, missing features) → fix the spec (or an operator if the shape class is wrong) →
+  `VIEWER.load` again → reshoot. Typically 2–4 rounds. Log each round in `models/<id>/BUILD.md`.
 
-### Phase 4 — Approve + register
-Show the user the final multi-angle renders and get a yes (or specific tweaks → loop again). Then
-`registerModel(id, spec)` and place it in a map with `placeProp(scene, id, x, z, yaw)`.
+⚠️ **Module-cache trap:** `VIEWER.load()` re-fetches the spec JSON fresh, but if you edited
+**operator/validator JS**, the page still runs the old ES modules — hard-reload the page
+(`browser_navigate` with a new `?cb=`) after any `src/props/*.js` change.
+
+**Definition of done:** lint clean · tests green · the canonical render set + ghost shot saved
+in `renders/` at the final spec · every view Read and defect-free · BUILD.md updated.
+
+### Phase 4 — Approve + register + integrate
+Show the user the final multi-angle renders, then **end the presentation with an
+AskUserQuestion popup proposing CONCRETE next steps** (named parts/defects drawn from
+`needs[]` and what you saw in the renders — "add the lid gasket / fix strap routing /
+approve as-is", never a vague "anything else?"). On a yes, wire into the game:
+`game.js` fetches the spec (`fetch('./models/<id>/spec.json?cb=' + Date.now())` →
+`registerModel(id, spec)`), consumers keep a small fallback mesh for the async window, and an
+Admin Asset Viewer entry (`admin.js` props list) makes it inspectable in-game — screenshot it
+there as the final check. Spec groups are floor-anchored: recentre (`m.position.y = -h/2` in a
+wrapper Group) for bobbing pickups. World placement: `placeProp(scene, id, x, z, yaw)`.
 
 ## Z-fighting checklist (the owner explicitly wants this nailed)
-Flicker/shimmer on a flat face = two **coplanar exposed faces** at the same depth. The classic bug: a
-"lit cap" box whose top face sits at the same height as the body's top face. **Fix = stacked
-full-footprint layers** — emit the lit/mid/shadow bands as separate boxes that tile vertically
-edge-to-edge over the full w×d, so there's a single top face and the sides read as bands. Never overlay a
-smaller cap whose top is coplanar with a larger body's top. (This is already how the F0 operators are
-built — match that pattern in any new operator.)
-
-## Verify loop is REQUIRED
-Never call a model done without the Phase 3 loop. Also run the core tests after any operator/spec change:
-```bash
-node --test 'tests/modelgen/*.test.mjs'     # must stay green
-```
+Shimmer = two **same-normal coplanar overlapping faces**. Opposite-normal contact (stacked
+layers, lid resting on body) is safe. Rules: lit/shadow bands are STACKED full-footprint
+layers, never a smaller cap overlaid on a body top; proud details straddle or embed into the
+parent face by ~4 mm, never share its plane. The property test enforces this for every
+operator's sample args — keep new ops covered.
 
 ## Gotchas / red flags
-- **`node --test tests/modelgen/` (bare dir) FAILS on Node 25** → always the glob `'tests/modelgen/*.test.mjs'`.
-- **No `package.json`** anywhere (project invariant). **Pure modules must NOT import `three`** — it breaks
-  `node --test` (the bare specifier won't resolve in Node). `three` lives only in `voxel-interp.js`,
-  `registry.js`, `viewer.js`. Keep new operators box-only.
-- **`browser_take_screenshot` saves to the CWD**, not `.playwright-mcp/`. Pass a `models/<id>/renders/...`
-  path to file it; then `Read` it to see it. ⚠️ **Never `rm -f *.png` in the repo root** — it deletes
-  tracked QA screenshots; `git checkout -- <file>` to restore.
-- **Third-party reference photos**: keep local. `models/<id>/ref/.gitignore` ignores image files; commit
-  only `dossier.json` (which holds the source URLs) + your own `renders/`.
-- This machine hoards stale `http.server` processes — confirm the served `?v=`/files are yours; use a fresh
-  port + explicit `--directory`.
-- Don't bypass the provenance gate with junk `src` values to "make it pass" — a placeholder is only for a
-  throwaway smoke fixture, never a real model claiming real dimensions.
+- **`node --test tests/modelgen/` (bare dir) FAILS on Node 25** → always the glob
+  `'tests/modelgen/*.test.mjs'`. No `package.json` anywhere (project invariant); pure modules
+  must NOT import `three` (only `voxel-interp.js`/`registry.js`/`viewer.js` may).
+- **This machine hoards stale `http.server` processes** — use a fresh port + explicit
+  `--directory`, and confirm the served files are yours before trusting renders.
+- **Never `rm -f *.png` in the repo root** (tracked QA screenshots); renders belong in
+  `models/<id>/renders/`.
+- Don't bypass the gates: junk `dossier#` keys that happen to resolve, inflated `maxDim`,
+  or a footprint puffed up to swallow a misplaced part are all the same lie with extra steps —
+  the validator catches the mechanical cases, you own the honest ones.
+- needs[] is a feature, not shame — an honest gap beats an invented detail, and it tells the
+  next research pass exactly what to find.
