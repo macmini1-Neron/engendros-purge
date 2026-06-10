@@ -43,7 +43,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-10 12:58';
+const GAME_BUILD = '2026-06-10 13:19';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -84,7 +84,8 @@ class Game {
     const _pc = document.getElementById('previewCanvas'); this.preview = _pc ? new WeaponPreview(_pc) : null;
     this.ui = new UI();
     const _ac = document.getElementById('adminCanvas'); this.admin = _ac ? new Admin(this) : null;
-    const _cc = document.getElementById('crateCanvas'); this.crate = _cc ? new CrateCeremony(this) : null; // «Посылка» lootbox ceremony (own renderer, gated on state==='crate')
+    const _cc = document.getElementById('crateCanvas'); // «Посылка» lootbox ceremony (own renderer, gated on state==='crate')
+    try { this.crate = _cc ? new CrateCeremony(this) : null; } catch (e) { console.warn('[crate] ceremony init failed — crates disabled', e); this.crate = null; } // a WebGL/context failure must not brick boot (openCrate guards null)
     this.fonoteka = new Fonoteka(this); ensureGramophoneSpec(); // ФОНОТЕКА music screen + preload the gramophone model
     this.gramophone = new GramophoneManager(this); placeGramophones(this.gramophone, this.engine.scene, this.mapId); // in-world gramophone props (genre per prop, E + ◀/▶)
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov

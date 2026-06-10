@@ -2,9 +2,9 @@
 //
 // Design spec: docs/superpowers/specs/2026-06-10-lootbox-crate-design.md (approved).
 // A maximally thrilling, psychology-engineered opening: a Su-24 flies over, drops a
-// chuted army crate, it thuds down, you PRY 3 latches by hand, a near-miss "light
-// roulette" flickers through tier colours, the lid bursts, the reward rises spinning
-// in a light shaft, then a trophy card. Every beat below carries its justification as
+// chuted army crate, it thuds down, 3 seals pop themselves open (with sparks), a near-miss
+// "light roulette" flickers through tier colours, the lid bursts, the reward rises spinning
+// in a real spotlight, then a trophy card. Every beat below carries its justification as
 // a comment — future tuning must NOT silently delete the psychology.
 //
 // Import-cycle rule (load-fatal trap in this codebase): inventory.js must NOT import
@@ -81,6 +81,7 @@ export function rollCrateReward(game) {
   m.crateOpens = (m.crateOpens | 0) + 1;
   m.pityEpic = (m.pityEpic | 0) + 1; m.pityLegend = (m.pityLegend | 0) + 1;
   let tier = game.crate && game.crate._forceTier;                 // QA hook (GAME.crate._forceTier='epic')
+  if (tier && !LOOT_TABLE[tier]) tier = null;                     // ignore a typo'd force value → fall through to a normal roll (never throws mid-mutation)
   if (!tier) {
     let r = Math.random() * 1000;
     tier = r < TIER_WEIGHTS.legendary ? 'legendary'
@@ -160,7 +161,7 @@ export class CrateCeremony {
   constructor(game) {
     this.game = game;
     this.canvas = document.getElementById('crateCanvas');
-    this.active = false; this.result = null; this.express = false;
+    this.active = false; this.result = null;
     this.phase = 'idle'; this.t = 0; this.chain = 0; this._finishing = false;
     this.pity = PITY;                                              // read by the Shop for the pity-transparency line (no crate.js import there)
     this._shake = 0; this._reducedMotion = false;
@@ -191,7 +192,8 @@ export class CrateCeremony {
   _wire() {
     if (this.elAgain) this.elAgain.addEventListener('click', (e) => { e.stopPropagation(); this._again(); });
     if (this.elBack) this.elBack.addEventListener('click', (e) => { e.stopPropagation(); this.close(); });
-    // The pointer is NOT locked during the ceremony, so plain DOM clicks drive it.
+    // Pointer is NOT locked during the ceremony; these listeners are vestigial — the ceremony is
+    // fully automatic so _onClick() is inert (Esc + the OPEN AGAIN / BACK buttons drive navigation).
     if (this.canvas) this.canvas.addEventListener('click', () => this._onClick());
     if (this.elVig) this.elVig.addEventListener('click', () => this._onClick());
     document.addEventListener('keydown', (e) => {
@@ -333,7 +335,7 @@ export class CrateCeremony {
         this._jet = (a.startJetClip && a.startJetClip()) || (a.startJet && a.startJet());
         break;
       case 'fall':
-        // crate is already parked at its start height (y=16 from _spawnActors, or y=8 for express).
+        // crate is already parked at its start height (y=16 from _spawnActors).
         this.crate.visible = true; this.chute.visible = true;
         this.chute.position.copy(this.crate.position);            // chute rig carries its own canopy height above origin
         if (a.crateChute) a.crateChute();
@@ -537,8 +539,18 @@ export class CrateCeremony {
       return g;
     }
     if (r.key === 'flare') return buildFlare();
-    try { const m = this.game.loot && this.game.loot._pickupMesh(r.key); if (m && this._nonEmpty(m)) return m; } catch (e) {}
+    if (r.key === 'grenade') return this._grenadeMesh();
+    try { const m = this.game.loot && this.game.loot._pickupMesh(r.key); if (m && this._nonEmpty(m)) return m; }
+    catch (e) { console.warn('[crate] _pickupMesh threw for reward', r.key, '— coin-stack fallback', e); }   // surface a builder regression, don't hide it
     return this._coinStack();                                     // last-resort fallback (never blank)
+  }
+  _grenadeMesh() {                                                // F1-style frag (gadget reward with no _pickupMesh case)
+    const b = new MeshBuilder();
+    let g = new THREE.CylinderGeometry(0.085, 0.1, 0.2, 12); b.geo(g, 0, 0.02, 0, 0x3f4a2a); g.dispose();
+    for (let i = 0; i < 3; i++) { g = new THREE.CylinderGeometry(0.105, 0.105, 0.012, 12); b.geo(g, 0, -0.05 + i * 0.06, 0, 0x2c331d); g.dispose(); }
+    b.box(0.06, 0.05, 0.06, 0, 0.135, 0, 0x6a7079);              // fuze top
+    b.box(0.02, 0.13, 0.055, 0.06, 0.075, 0, 0x9aa0a8);          // safety lever / spoon
+    return new THREE.Mesh(b.build(), voxelMaterial());
   }
   _coinStack() {
     const b = new MeshBuilder();
@@ -561,7 +573,7 @@ export class CrateCeremony {
     if (this.elCard) { this.elCard.style.setProperty('--tier', _css(TIER_COLORS[r.tier])); this.elCard.classList.add('show'); }
     if (this.elName) this.elName.textContent = r.name;
     let sub = '';
-    if (r.kind === 'weapon') sub = 'NEW WEAPON UNLOCKED';
+    if (r.kind === 'weapon') sub = (WEAPONS[r.key] && WEAPONS[r.key].class === 'tool') ? 'NEW GEAR UNLOCKED' : 'NEW WEAPON UNLOCKED'; // flashlight/binoculars are tools, not weapons
     else if (r.kind === 'gadget') sub = 'NEW GEAR UNLOCKED';
     else if (r.kind === 'cash') sub = '';
     else if (r.kind === 'dupe') sub = 'DUPLICATE · ' + _nameOf(r.key);
@@ -579,7 +591,7 @@ export class CrateCeremony {
     if (this._counterTimer > this._coinK * 0.055) { this._coinK++; if (this.game.audio.coinTick) this.game.audio.coinTick(this._coinK); this._emit(this.sparks, 0, 0.6, 0, 1, 0.25, 1.4, 0.7, 0xffd23f); }
     this._updateBankLine();
   }
-  _hideCard() { if (this.elCard) this.elCard.classList.remove('show'); this._endQueued = false; }
+  _hideCard() { if (this.elCard) this.elCard.classList.remove('show'); }
   _setHint(t) { if (this.elHint) { this.elHint.textContent = t; this.elHint.classList.toggle('show', !!t); } }
   _showButtons(on) {
     if (this.elBtns) this.elBtns.classList.toggle('show', on);
