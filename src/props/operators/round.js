@@ -17,6 +17,17 @@ export function cylinder(b, a, t, o) {
   g.dispose();
 }
 
+// disc — a thin standalone cylinder (a record, a wheel face) returned as its OWN mesh, so an animator
+// can lift/spin it independently of the merged body (the gramophone's record-swap lifts the whole disc).
+export function disc(b, a, t, o) {
+  const g = new THREE.CylinderGeometry(a.r, a.r, a.h ?? 0.003, a.seg ?? 48);
+  const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: new THREE.Color(a.tone ? t[a.tone] : t.mid) }));
+  const or = ORIENT[a.axis ?? 'y'];
+  mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
+  mesh.position.set(o.x, o.y, o.z);
+  return mesh;
+}
+
 // Cone of base radius r, length h, tip pointing along +axis (nose cones, tapers).
 export function cone(b, a, t, o) {
   const seg = a.seg ?? 16;
@@ -140,7 +151,7 @@ export function tube(b, a, t, o) {
 // gramophone can find it by rig name and re-skin the label per song). Default axis y (faces up).
 export function texturedDisc(b, a, t, o) {
   const g = new THREE.CircleGeometry(a.r, a.seg ?? 48);
-  const tex = makeRecordLabelTexture({ title: a.title || 'СССР', sub: a.sub, mode: a.mode || 'black' });
+  const tex = makeRecordLabelTexture({ title: a.title || 'СССР', mode: a.mode || 'black' });
   const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex }));
   const or = NORMAL[a.axis ?? 'y'];
   mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
@@ -188,29 +199,55 @@ function _arcText(c, text, cx, cy, radius, mid, step, size, flip = false) {
   c.restore();
 }
 
-// makeRecordLabelTexture — the gold-on-black Апрелевский / СССР 78-rpm centre label. Exported so
-// the live gramophone re-skins the disc per song (set mesh.material.map = this; map.needsUpdate).
-export function makeRecordLabelTexture({ title = 'СССР', sub = 'АПРЕЛЕВСКИЙ ЗАВОД', mode = 'black' } = {}) {
+// The real 78/33-rpm Soviet pressing labels, drawn from the owner's reference photos: Апрелевский
+// завод in red and blue, the cream Мелодия, plus the gold-on-black classic. Each is {bg, ink, hub,
+// factory, gost, emblem, foot}. The live gramophone picks a random one per track (record-swap).
+const LABEL_STYLES = {
+  aprelevka_red:  { bg: ['#cf2a22', '#9c1812'], ink: '#e7c45a', hub: '#2a0c0a', factory: 'АПРЕЛЕВСКИЙ ЗАВОД', gost: 'ГОСТ 5289-50', emblem: 'spire', foot: 'КОМИТЕТ РАДИОИНФОРМАЦИИ' },
+  aprelevka_blue: { bg: ['#23538f', '#143461'], ink: '#e7c45a', hub: '#0b1c34', factory: 'АПРЕЛЕВСКИЙ ЗАВОД', gost: 'ГОСТ 5289-50', emblem: 'spire', foot: 'КОМИТЕТ ПО ДЕЛАМ ИСКУССТВ' },
+  melodiya:       { bg: ['#efe7d4', '#d6c8ac'], ink: '#21527a', hub: '#1d130a', factory: 'МЕЛОДИЯ', gost: 'ГОСТ 5289-73', emblem: 'melodiya', foot: 'ВСЕСОЮЗНАЯ ФИРМА ГРАМПЛАСТИНОК' },
+  black:          { bg: ['#1c1c1c', '#050505'], ink: '#d8b15a', hub: '#000000', factory: 'АПРЕЛЕВСКИЙ ЗАВОД', gost: 'ГОСТ 5289-50', emblem: 'star', foot: 'МИНИСТЕРСТВО КУЛЬТУРЫ СССР' },
+};
+export const LABEL_STYLE_KEYS = Object.keys(LABEL_STYLES);
+export function randomLabelStyle() { return LABEL_STYLE_KEYS[Math.floor(Math.random() * LABEL_STYLE_KEYS.length)]; }
+
+// The Апрелевка radio-tower-and-wheat emblem (red/blue labels) — a stepped spire flanked by rays/ears.
+function _spireEmblem(c, ink) {
+  c.save(); c.strokeStyle = ink; c.fillStyle = ink; c.lineWidth = 6; c.lineCap = 'round';
+  for (let i = 0; i < 9; i++) { const a = -Math.PI / 2 + (i - 4) * 0.16; c.beginPath(); c.moveTo(0, -6); c.lineTo(Math.sin(a) * 64, -6 - Math.cos(a) * 64); c.stroke(); } // fanned rays
+  c.lineWidth = 4; for (const s of [-1, 1]) for (let j = 0; j < 4; j++) { const x = s * (20 + j * 11), y = -10 + j * 8; c.beginPath(); c.moveTo(s * 8, 6); c.quadraticCurveTo(x, y, x + s * 8, y - 12); c.stroke(); } // wheat ears
+  c.fillRect(-7, -2, 14, 30); c.fillRect(-11, 26, 22, 8);                      // central tower + base
+  c.beginPath(); c.moveTo(0, -20); c.lineTo(-7, -2); c.lineTo(7, -2); c.closePath(); c.fill(); // spire cap
+  c.restore();
+}
+
+// makeRecordLabelTexture — one authentic centre label. `style` ∈ LABEL_STYLE_KEYS (random per song);
+// legacy `mode` ('cream'→melodiya, else black) still accepted. Exported so the live gramophone reskins.
+export function makeRecordLabelTexture({ title = 'СССР', style, mode } = {}) {
+  const key = style && LABEL_STYLES[style] ? style : (mode === 'cream' ? 'melodiya' : 'black');
+  const st = LABEL_STYLES[key];
   const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const c = cv.getContext('2d'), R = S / 2;
-  const ink = mode === 'cream' ? '#7a1a14' : '#d8b15a';                       // print colour
   const bg = c.createRadialGradient(R, R, 8, R, R, R);
-  if (mode === 'cream') { bg.addColorStop(0, '#ecdfc4'); bg.addColorStop(1, '#cdbd96'); }
-  else { bg.addColorStop(0, '#1c1c1c'); bg.addColorStop(1, '#050505'); }
+  bg.addColorStop(0, st.bg[0]); bg.addColorStop(1, st.bg[1]);
   c.fillStyle = bg; c.beginPath(); c.arc(R, R, R, 0, 7); c.fill();
-  c.strokeStyle = ink; c.lineWidth = 5; c.beginPath(); c.arc(R, R, R - 20, 0, 7); c.stroke();
+  c.strokeStyle = st.ink; c.lineWidth = 5; c.beginPath(); c.arc(R, R, R - 20, 0, 7); c.stroke();
   c.lineWidth = 2; c.beginPath(); c.arc(R, R, R - 32, 0, 7); c.stroke();
-  c.fillStyle = ink;
-  _arcText(c, sub, R, R, R - 56, -Math.PI / 2, 0.052, 28);                    // top banner
-  _arcText(c, 'ГОСТ 5289-50', R, R, R - 56, Math.PI / 2, 0.060, 22, true);     // bottom
-  c.save(); c.translate(R, R * 0.60); _star(c, 30, ink); c.restore();          // emblem
-  c.fillStyle = ink; c.textAlign = 'center'; c.textBaseline = 'middle';        // title block
+  c.fillStyle = st.ink;
+  _arcText(c, st.factory, R, R, R - 56, -Math.PI / 2, key === 'melodiya' ? 0.075 : 0.052, 28);   // top banner
+  _arcText(c, st.foot, R, R, R - 40, Math.PI / 2, 0.044, 18, true);                                // bottom banner
+  c.save(); c.translate(R, R * 0.585);                                          // emblem
+  if (st.emblem === 'star') _star(c, 30, st.ink);
+  else if (st.emblem === 'melodiya') { c.fillStyle = st.ink; c.font = 'bold 86px Georgia,serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('М', 0, 0); }
+  else _spireEmblem(c, st.ink);
+  c.restore();
+  c.fillStyle = st.ink; c.textAlign = 'center'; c.textBaseline = 'middle';      // title block
   const words = title.toUpperCase().split(' '); const lines = [];
   let ln = ''; for (const w of words) { if ((ln + ' ' + w).trim().length > 16) { lines.push(ln.trim()); ln = w; } else ln += ' ' + w; } if (ln.trim()) lines.push(ln.trim());
   const fs = lines.length > 2 ? 30 : 38; c.font = `bold ${fs}px "PT Sans Narrow","Arial Narrow",sans-serif`;
-  lines.slice(0, 3).forEach((l, i) => c.fillText(l, R, R * 1.04 + (i - (lines.length - 1) / 2) * (fs + 4)));
-  c.font = '17px "PT Sans Narrow",sans-serif'; c.fillText('Министерство культуры СССР', R, R * 1.46);
-  c.fillStyle = mode === 'cream' ? '#1d130a' : '#000'; c.beginPath(); c.arc(R, R, 11, 0, 7); c.fill();
+  lines.slice(0, 3).forEach((l, i) => c.fillText(l, R, R * 1.06 + (i - (lines.length - 1) / 2) * (fs + 4)));
+  c.font = '16px "PT Sans Narrow",sans-serif'; c.fillText(st.gost, R, R * 1.44);
+  c.fillStyle = st.hub; c.beginPath(); c.arc(R, R, 11, 0, 7); c.fill();         // spindle hole
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   return tex;
 }

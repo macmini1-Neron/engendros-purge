@@ -283,6 +283,7 @@ export class MusicDirector {
     this.playlist = null;      // active jukebox { id, members[], idx, fade } or null (single-scene mode)
     this.shuffle = true;       // jukebox plays a random next track instead of sequential (default ON)
     this.repeatOne = false;    // loop the current track instead of advancing
+    this.scope = null;         // ФОНОТЕКА playback scope: null=all members (menu incl. chiptune), 'songs'=every real recording, or a genre id
     this._synthAdvanceTimer = null; // for a synth scene in the jukebox (Korobeiniki): timed advance
     this._synthStart = 0; this._synthDur = 78;  // pseudo-duration (s) for a synth jukebox track
 
@@ -469,15 +470,23 @@ export class MusicDirector {
     this.playlist = { id, members, fade, queue, qpos: 0, idx: queue[0] };
     this._applyScene(members[queue[0]], { fade });
   }
-  // A fresh play order over member INDICES. Shuffle on → Fisher–Yates permutation whose first entry
-  // avoids `avoidSlug` (so the opener differs from last time / from the just-played track). Off → sequential.
+  // Member INDICES eligible under the active scope. null → everything (menu/lobby: the Korobeiniki
+  // chiptune included); 'songs' → every real recording (the ФОНОТЕКА never shuffles to the chiptune);
+  // a genre id → only that category. Falls back to all members so the queue is never stranded empty.
+  _eligibleIndices(members) {
+    const all = members.map((_, i) => i);
+    if (this.scope == null) return all;
+    const elig = all.filter((i) => { const s = SCENES[members[i]]; return s && s.genre && (this.scope === 'songs' || s.genre === this.scope); });
+    return elig.length ? elig : all;
+  }
+  // A fresh play order over the ELIGIBLE member indices. Shuffle on → Fisher–Yates permutation whose
+  // first entry avoids `avoidSlug` (so the opener differs from last time / the just-played track). Off → catalog order.
   _freshQueue(members, avoidSlug) {
-    const n = members.length;
-    const order = Array.from({ length: n }, (_, i) => i);
+    const order = this._eligibleIndices(members);
     if (this.shuffle) {
-      for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-      if (n > 1 && avoidSlug != null && members[order[0]] === avoidSlug) {
-        const k = 1 + Math.floor(Math.random() * (n - 1)); [order[0], order[k]] = [order[k], order[0]];
+      for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+      if (order.length > 1 && avoidSlug != null && members[order[0]] === avoidSlug) {
+        const k = 1 + Math.floor(Math.random() * (order.length - 1)); [order[0], order[k]] = [order[k], order[0]];
       }
     }
     return order;
@@ -493,11 +502,13 @@ export class MusicDirector {
       }
       return pl.queue[pl.qpos];
     }
-    if (this.shuffle && pl.members.length > 1) {              // fallback (no queue): non-repeating random
-      let r; do { r = Math.floor(Math.random() * pl.members.length); } while (r === pl.idx);
+    const pool = this._eligibleIndices(pl.members);          // fallback (no queue): stay within scope
+    if (this.shuffle && pool.length > 1) {
+      let r; do { r = pool[Math.floor(Math.random() * pool.length)]; } while (r === pl.idx);
       return r;
     }
-    return (pl.idx + 1) % pl.members.length;
+    const cur = pool.indexOf(pl.idx);
+    return pool.length ? pool[(cur + 1) % pool.length] : (pl.idx + 1) % pl.members.length;
   }
   _advancePlaylist() {
     const pl = this.playlist;
@@ -542,7 +553,23 @@ export class MusicDirector {
     el.pause(); return false;
   }
   jukeboxSeek(frac) { const el = this._sampleEl; if (el && isFinite(el.duration)) el.currentTime = Math.max(0, Math.min(1, frac)) * el.duration; }
-  jukeboxSetShuffle(on) { this.shuffle = on === undefined ? !this.shuffle : !!on; return this.shuffle; }
+  jukeboxSetShuffle(on) {
+    this.shuffle = on === undefined ? !this.shuffle : !!on;
+    const pl = this.playlist;                                  // re-roll the upcoming order so a shuffle toggle takes effect now
+    if (pl && pl.id === 'soviet') { pl.queue = this._freshQueue(pl.members, pl.members[pl.idx]); pl.qpos = Math.max(0, pl.queue.indexOf(pl.idx)); }
+    return this.shuffle;
+  }
+  // Restrict the UPCOMING jukebox queue to a category (or 'songs' = all real recordings, or null =
+  // everything). Picking a category only re-aims what plays NEXT (shuffle/advance/track-end stay inside
+  // it) — it never interrupts the track currently playing, so the player can browse a genre in peace.
+  jukeboxSetScope(scope) {
+    const next = scope || null;
+    if (next === this.scope) return this.scope;
+    this.scope = next;
+    const pl = this.playlist;
+    if (pl && pl.id === 'soviet') { pl.queue = this._freshQueue(pl.members, pl.members[pl.idx]); pl.qpos = Math.max(0, pl.queue.indexOf(pl.idx)); }
+    return this.scope;
+  }
   jukeboxSetRepeatOne(on) {
     this.repeatOne = on === undefined ? !this.repeatOne : !!on;
     if (this._sampleEl) this._sampleEl.loop = !this.playlist || this.repeatOne;  // apply to the current track live
