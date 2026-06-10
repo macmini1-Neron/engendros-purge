@@ -1,0 +1,250 @@
+# `/buildgen` — building harness design (ENGENDROS PURGE)
+
+**Date:** 2026-06-10
+**Status:** design / spec (pre-plan)
+**Supersedes the prose-only `voxel-building-modeling` skill for NEW buildings.**
+
+## Why
+
+Today `modelgen` is a real *harness* — JSON spec + operators + a **validator** that
+mechanically catches lies (wrong units, footprint mismatch, z-fighting). That is why props
+come out consistent. `voxel-building-modeling` is **prose only**: research → "now hand-build
+it in `world.js`". Nothing mechanically checks the result, so buildings come out with the exact
+defects the owner is tired of: **single-pixel walls, missing floors, overlapping/stretched
+textures, wrong angles, open-top boxes.**
+
+This design gives **buildings the modelgen treatment**: a sibling harness `/buildgen` with
+building-specific operators, a validator that enforces structural correctness, a self-verify
+viewer, and — new for buildings — a **player-experience intent gate** and a **reference-image
+vision-confirm gate** before any authoring.
+
+## Locked decisions (from brainstorming)
+
+1. **Full harness**, sibling of modelgen — not just a prose rewrite.
+2. **Scope = exterior shell + skeleton + entrances + colliders.** Interiors are furnished by
+   composing `modelgen` props (`propRef`) plus a few hand-coded interactive hooks. The validator
+   judges the exterior and the colliders.
+3. **Name `/buildgen`**, own home, shares modelgen's palette + viewer-interp *patterns* but has
+   its own operators/validator.
+4. **New buildings only.** Existing hand-coded buildings (gatehouse, strongpoint, bunker,
+   airfield) stay as-is — **no migration** (live, no tests, high blast radius). The **gatehouse
+   is the golden reference** for "compose the interior from props."
+5. **Pillar A — mandatory intent questionnaire** every time, backed by a researched
+   best-practice doc on player-friendly building design.
+6. **Pillar B — reference drag-and-drop into the 3D viewer + AI vision-confirm gate** before
+   authoring, via a **small local upload endpoint** that saves dropped images to
+   `buildings/<id>/ref/`.
+7. **First proof building deferred** — it is chosen at first run *through* the intent
+   questionnaire, not pre-picked here.
+
+## File layout (sibling of modelgen)
+
+```
+tools/buildgen/
+  server.mjs        small static server + /upload endpoint (dev-only, for ref drag-drop)
+  lint.mjs          pre-flight: spec + dossier cross-check + bounds vs footprint + building laws
+  viewer.html       building viewer (ghost human, collider overlay, ref overlay, drag-drop)
+  viewer.js         window.VIEWER driver
+src/buildings/
+  spec.js           the validator (building laws) — pure, no `three`
+  interp.js         spec -> merged THREE meshes + AABB collider list (the ONLY THREE consumer)
+  palette.js        materials (extends modelgen palette with tiled CanvasTexture materials)
+  registry.js       registerBuilding(id, spec) / placeBuilding(world, scene, id, x, z, yaw)
+  operators/        shell.js roof.js facade.js landmark.js sign.js refs.js manifest.js extents.js _math.js
+buildings/<id>/
+  spec.json         the building spec
+  ref/dossier.json  sourced research (+ dropped reference images, gitignored)
+  renders/          self-verify render set (committed)
+  BUILD.md          per-round build log
+docs/superpowers/specs/2026-06-10-player-friendly-building-design.md   research doc (Pillar A source)
+.claude/skills/buildgen/SKILL.md
+```
+
+**Operator purity (inherited from modelgen):** `src/buildings/operators/*` must NOT
+`import three`; they are node-testable and emit a **neutral geometry description** — boxes plus
+parametric *prisms / wedges / cylinders / triangle lists*. Only `interp.js` realizes THREE.
+This keeps the validator and the property tests pure while still letting operators describe
+angled roofs and cylinders (which modelgen's box-only ops cannot).
+
+## Spec format (a building is not a prop)
+
+```jsonc
+{
+  "id": "kombinat-admin",
+  "footprint": { "w": 18, "h": 9, "d": 12 },     // metres — collider box + scale sanity
+  "maxDim": 100,                                  // landmarks (chimney, tower) raise the cap
+  "intent": {                                     // Pillar A answers, frozen into the spec
+    "enterable": true, "furnitureReady": true, "glassWindows": true,
+    "roofAccess": false, "role": "loot-hub", "entrances": ["N","S"], "destructible": false
+  },
+  "storeys": [ { "y": 0, "h": 3.2 }, { "y": 3.2, "h": 3.0 } ],
+  "materials": { "wall": "brickRed", "roof": "tinSheet", "trim": "concrete", "glass": "glassPane" },
+  "parts": [
+    { "op": "shellBox",   "at": [0,0,0], "args": { "wall": 0.3 }, "collide": true, "src": "dossier#footprint" },
+    { "op": "floorSlab",  "storey": 0, "src": "dossier#floor" },
+    { "op": "floorSlab",  "storey": 1, "src": "dossier#floor" },
+    { "op": "windowBays", "face": "S", "count": 5, "module": { "w": 1.2, "h": 1.6, "sill": 0.9 },
+      "glass": true, "src": "dossier#window-rhythm" },
+    { "op": "hipRoof",    "pitch": 30, "overhang": 0.4, "collide": false, "src": "dossier#roof" },
+    { "op": "doorway",    "face": "N", "width": 1.6, "height": 2.4 },
+    { "op": "sign",       "face": "N", "text": "ЗАВОДОУПРАВЛЕНИЕ", "src": "dossier#signage" },
+    { "op": "propRef",    "model": "desk-2tumba", "at": [-3,0,2], "yaw": 90 }
+  ]
+}
+```
+
+What is new versus the modelgen spec:
+- **`intent`** — the frozen answers from the Pillar A questionnaire (drives validator strictness
+  + integration hooks: `glassWindows` -> the `glass` material/transparency path; `furnitureReady`
+  -> min ceiling height + anchor checks; `roofAccess` -> a stair/ladder requirement).
+- **`storeys`** — explicit floor levels; each requires a covering floor slab.
+- **`face` openings as real GAPS** (`doorway`, `windowBays`, `gateOpening`) — never thin boxes.
+- **`collide` flag per part** with a per-operator default (shell/floor/column collide;
+  roof/trim/sign/balcony-rail are visual-only).
+- **`propRef`** — reuse a registered `modelgen` prop for the interior (the gatehouse lesson).
+
+## Operators (families)
+
+- **Shell / massing:** `shellBox` (closed shell: 4 thick walls + base floor, `wall` thickness
+  param), `floorSlab`, `column`, `interiorWall`.
+- **Roofs (custom geometry):** `flatRoof`, `gableRoof`, `hipRoof`, `sawtoothRoof` (цех
+  north-light), `parapet`. The visual roof is angled; its collider stays the box under it.
+- **Facade / openings:** `windowBays` (a master module duplicated × N at a pitch — *build one
+  master window, duplicate it*, the T-62 "zub" lesson), `doorway`, `gateOpening`, `balcony`,
+  `cornice`/`trim`, `pilaster`.
+- **Landmarks (cylinders):** `chimney`, `coolingTower` (hyperboloid), `gasholder`, `waterTank`,
+  `mast`.
+- **Signage:** `sign` (Cyrillic CanvasTexture, proud-offset), `stencil`, `poster`.
+- **Reuse:** `propRef` (insert a registered modelgen prop), `repeat` (generic module × N along
+  an axis).
+
+Adding an operator follows modelgen's rule: keep it `three`-free, give it a matching extents
+function (the bounds validator depends on it), and a z-fight + extents-containment property test
+fed by a `SAMPLES` entry.
+
+## Materials = tiled CanvasTexture (solves "not voxel-limited" + non-overlapping textures)
+
+`palette.js` extends the modelgen palette with **procedural `CanvasTexture` materials**:
+`brickRed` / `brickGrey` (brick courses), `concretePanel` (panel grid with seams),
+`corrugatedTin` (vertical ribbing), `plaster`, `glassPane` (semi-transparent + mullion frame),
+`glassGrid`. They map with `repeat = surface_size / tile` and `NearestFilter`, so a texture is
+**never stretched or overlapping** — always tiled per real module. The 5-tone vertex-colour
+shading from modelgen still rides on edges/shadow bands.
+
+**Glass:** `glassPane` is `transparent: true` with a mullion frame; it renders in the opaque
+pass with the world (the viewmodel two-pass already draws over it). Transparency sorting is kept
+sane by keeping glass panes coplanar-free and few per facade.
+
+## Validator — the laws (hard error, modelgen-style)
+
+1. **Metres.** `footprint` required; `maxDim` default 60 m (> 200 reads as "millimetres").
+2. **Wall thickness ≥ 0.2 m** — thinner only with `detail: true`. (kills "1px walls")
+3. **Every storey has a floor** covering ≥ 80% of the footprint. (kills missing floors)
+4. **Closed roof** — the top must be covered by a roof operator spanning the footprint.
+   (kills open-top boxes)
+5. **Square / plumb corners** — shell parts are axis-aligned, corners meet with no gaps, every
+   part is contained by the footprint (±10% + 6 cm, modelgen's bounds rule).
+6. **Openings:** ≥ 1 walkable `doorway` (a real gap); an interior with `interiorWall` has
+   **≥ 2 exits**; any walkable rise is step-up ≤ 0.62 m.
+7. **Z-fighting:** no coplanar same-normal overlapping faces; details stand ~4 mm proud or embed
+   ~4 mm. (property test, as modelgen)
+8. **Textures:** a tiled material must carry a `tile` size with a derived `repeat` — a single
+   stretched texture across a whole facade is rejected.
+9. **`src` = `dossier#<key>`** for every real-world dimension (provenance, not prose).
+10. **Colliders** sit inside the footprint; a large jump in `world.boxes` count warns.
+11. **Intent coherence:** `intent.furnitureReady` -> ceiling ≥ 2.6 m + ≥ 1 `propRef` anchor zone;
+    `intent.roofAccess` -> a stair/ladder to the roof; `intent.glassWindows` -> window bays use
+    the `glass` material. (these thresholds come from the Pillar A research doc)
+
+Run before the viewer and before "done":
+```bash
+node tools/buildgen/lint.mjs buildings/<id>
+node --test 'tests/buildgen/*.test.mjs'   # after any operator/validator change (glob, not bare dir)
+```
+
+## Compile & integrate
+
+`interp.js` -> `placeBuilding(world, scene, id, x, z, yaw)` returns **(a)** merged meshes
+per-material (few draw calls) added to the scene at `(x,z,yaw)` and **(b)** a list of AABBs
+pushed to `world.boxes`. Because colliders are deterministic from the spec, **co-op needs no
+collider sync**; only interactive elements (a gate/door on `E`) stay hand-coded hooks behind
+`hostSim = !mp.active || mp.isHost`. The interior is furnished by `propRef` (modelgen props) plus
+a few hand hooks. An Admin Asset Viewer entry makes the building inspectable in-game.
+
+## Pillar A — the intent questionnaire (always, before authoring)
+
+`/buildgen` **never starts building** until an `AskUserQuestion` set captures what the building is
+*for the player*. The questions and their thresholds are derived from a research doc
+(`docs/superpowers/specs/2026-06-10-player-friendly-building-design.md`) covering level-design
+best practice: readable silhouette / landmarking, entrance legibility, no dead-end rooms,
+cover-and-sightline rhythm, verticality, interior navigation + lighting, "readable from outside."
+
+Standard set (tunable):
+- **Enterable, or façade-only?**
+- **Furniture-ready interior?** -> clean floors, ceiling ≥ 2.6 m, door/window spacing, `propRef`
+  anchor zones.
+- **Real transparent glass windows?** -> `glassPane` material + transparency handling.
+- **Roof access / verticality?** (stairs / ladder, sniper perch)
+- **Gameplay role:** cover / landmark / loot-hub / hot-zone / through-route shortcut.
+- **Number + side of entrances**, **destructible?**, **day/night interior lighting?**
+- **Player-scale gates** (from the research doc): doors ≥ 1.6 m, ceiling ≥ 2.6 m, corridors ≥ 1.4 m.
+
+Answers are frozen into `spec.intent` and the validator enforces the implied rules (law 11).
+
+## Pillar B — reference drag-and-drop + vision-confirm gate (before authoring)
+
+Per building, before the dossier:
+1. **Drag a reference image onto the 3D viewer.** A small dev-only upload endpoint
+   (`tools/buildgen/server.mjs`, replacing `python http.server` for buildgen) saves it to
+   `buildings/<id>/ref/`, and the viewer loads it as an **overlay plane** (alignment, like
+   modelgen's `VIEWER.overlay`).
+2. **The AI agent `Read`s the saved image and states what it sees** — structure, materials, roof
+   type, era, window rhythm, weathering.
+3. **Discussion gate:** agent + owner agree on *what is in the images and what we want to
+   achieve* before the dossier/spec exist. This is a hard gate, not optional.
+
+The upload endpoint is **dev-tooling only** — production stays the static Vercel site; nothing
+in the shipped game depends on it.
+
+## Viewer + verify loop (`tools/buildgen/viewer.html`)
+
+Modelgen viewer pattern, building-flavoured. `VIEWER.load(id)` -> `{dims, boxes, needs}`:
+- **Ghost human (1.75 m)** for scale; **collider overlay** (yellow AABBs vs the visual mesh).
+- **First-person interior walk-through** + **exterior orbit**; the canonical view sweep.
+- **"From 300 m" landmark shot** (fog / draw distance) for tall structures.
+- **Reference overlay** from the dropped image; **drag-drop** intake (Pillar B).
+- Drive via Playwright; `VIEWER.snapshot()` -> PNG dataURL saved to `buildings/<id>/renders/`;
+  **`Read` every PNG** (a blank/unrelated render means the loop did not happen).
+
+**Definition of done:** lint clean · tests green · render set + ghost + collider shot + 300 m
+shot at the final spec · 0 console errors · interior has ≥ 2 walkable exits · BUILD.md updated.
+
+## Per-building pipeline (the SKILL.md flow)
+
+0. **Scope exactly ONE building** (era + type precisely).
+1. **Intent questionnaire (Pillar A)** — freeze `spec.intent`.
+2. **Reference intake + vision-confirm (Pillar B)** — drop refs, agent confirms, agree on goal.
+3. **Research dossier** (subagent, sourced facts -> `ref/dossier.json`; gaps -> `needs[]`).
+4. **Author `spec.json`** (operators + materials, mm -> m, every dim cites `dossier#`); `lint`.
+5. **Build + self-verify loop** in the viewer until defect-free; log rounds in `BUILD.md`.
+6. **Approve** (`AskUserQuestion` with concrete named next steps), `placeBuilding` into `world.js`,
+   add an Admin viewer entry, screenshot in-game.
+
+## Build order (for the implementation plan)
+
+1. Research doc: player-friendly building design (feeds Pillar A + law 11).
+2. Harness skeleton: `palette.js` (tiled materials), `spec.js` (laws), `interp.js`,
+   `registry.js`, `operators/` (shell + floor first), `manifest.js`, `extents.js`.
+3. `tools/buildgen/` server + lint + viewer + viewer.js; `tests/buildgen/`.
+4. Roof + facade + landmark + sign + ref operators, each with extents + property tests.
+5. `SKILL.md` for `/buildgen` (laws, kit, anchors, Pillars A/B, pipeline, DoD).
+6. Prove on the first real building (chosen via the Pillar A questionnaire at first run).
+7. Point the old `voxel-building-modeling` skill at `/buildgen` for new buildings (keep it as the
+   research-first philosophy note + golden-reference pointer to the gatehouse).
+
+## Out of scope / non-goals
+
+- Migrating existing hand-coded buildings.
+- Full interior authoring in the spec (interiors = composed props + hand hooks).
+- Sloped/ramped **colliders** (AABB only; visual roofs may be angled, colliders stay boxes).
+- Any production dependency on the dev upload server.
