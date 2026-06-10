@@ -9,7 +9,7 @@ import * as FURN from '../../src/props/operators/furniture.js';
 import * as CONT from '../../src/props/operators/container.js';
 
 const PURE_OPS = {
-  bevelBox: STRUCT.bevelBox, panel: STRUCT.panel, plate: STRUCT.plate, stencil: STRUCT.stencil,
+  bevelBox: STRUCT.bevelBox, panel: STRUCT.panel, plate: STRUCT.plate, stencil: STRUCT.stencil, planks: STRUCT.planks,
   finSet: STRUCT.finSet, latticeBeam: STRUCT.latticeBeam, cabinet: STRUCT.cabinet,
   drawerStack: FURN.drawerStack, legs: FURN.legs,
   lidBox: CONT.lidBox, strapBand: CONT.strapBand, handleU: CONT.handleU,
@@ -29,6 +29,7 @@ const SAMPLES = {
   panel: { w: 0.7, h: 0.4 },
   plate: { w: 1.2, d: 0.6 },
   stencil: { w: 0.04, h: 0.04 },
+  planks: { w: 0.798, h: 0.225, d: 0.452, count: 2 },
   finSet: { count: 4, root: 1.8, span: 0.9, r0: 0.33, sweep: 0.6, phase: 0.785 },
   latticeBeam: { len: 7, w: 0.6, h: 0.7 },
   cabinet: { w: 1.6, h: 1.8, d: 2.4 },
@@ -84,6 +85,23 @@ test('handleU emits a crossbar and two posts', () => {
   PURE_OPS.handleU(b, SAMPLES.handleU, T, O);
   assert.equal(b.calls.length, 3);
   assert.equal(b.calls.filter((c) => c.color === T.bright).length, 1);
+});
+
+test('planks emits count boards + count-1 recessed seams, filling 0..h', () => {
+  const b = mock();
+  PURE_OPS.planks(b, { w: 0.8, h: 0.2, d: 0.45, count: 2 }, T, O);
+  assert.equal(b.calls.length, 3);                       // 2 boards + 1 seam
+  const tops = b.calls.map((c) => c.y + c.h / 2);
+  assert.ok(Math.abs(Math.max(...tops) - 0.2) < 1e-9, 'fills to h');
+  assert.equal(b.calls.filter((c) => c.color === T.slot).length, 1, 'one recessed seam');
+});
+
+test('planks axis:z lays boards side-by-side along depth', () => {
+  const b = mock();
+  PURE_OPS.planks(b, { w: 0.8, h: 0.02, d: 0.45, count: 3, axis: 'z' }, T, O);
+  assert.equal(b.calls.length, 5);                       // 3 boards + 2 seams
+  const zs = b.calls.filter((c) => c.color !== T.slot).map((c) => c.z);
+  assert.ok(new Set(zs.map((z) => z.toFixed(3))).size === 3, 'boards at distinct z');
 });
 
 test('stencil is a single proud single-tone box', () => {

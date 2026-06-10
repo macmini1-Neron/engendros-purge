@@ -27,6 +27,8 @@ export const PALETTE = {
                glb: { rgb: [0.66, 0.12, 0.12], rough: 0.35, metal: 0.0 } },
   paintBlack: { voxel: { hi: '#222222', mid: '#0f0f0f', lo: '#080808', slot: '#030303', bright: '#333333' },
                 glb: { rgb: [0.05, 0.05, 0.05], rough: 0.3, metal: 0.0 } },
+  pine:      { voxel: { hi: '#d8c49a', mid: '#b89e6e', lo: '#97805a', slot: '#6e5c40', bright: '#e8d6ac' },
+               glb: { rgb: [0.62, 0.53, 0.38], rough: 0.75, metal: 0.0 } },
   oliveDrab: { voxel: { hi: '#7e8c60', mid: '#52603a', lo: '#3e4a2c', slot: '#2d361f', bright: '#94a274' },
                glb: { rgb: [0.32, 0.37, 0.22], rough: 0.8, metal: 0.0 } },
   missileGrey:{ voxel: { hi: '#c4c8c6', mid: '#9aa09d', lo: '#787e7b', slot: '#5e6360', bright: '#d8dcd9' },

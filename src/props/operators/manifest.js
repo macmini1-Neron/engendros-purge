@@ -11,6 +11,7 @@ export const MANIFEST = {
   panel:       { args: ['w', 'h'],               dims: ['w', 'h'],             anchor: 'center' },
   plate:       { args: ['w', 'd'],               dims: ['w', 'd'],             anchor: 'center' },
   stencil:     { args: ['w', 'h'],               dims: ['w', 'h'],             anchor: 'center' },
+  planks:      { args: ['w', 'h', 'd', 'count'], dims: ['w', 'h', 'd'],        anchor: 'floor'  },
   finSet:      { args: ['count', 'root', 'span'], dims: ['root', 'span'],      anchor: 'center' },
   latticeBeam: { args: ['len', 'w', 'h'],        dims: ['len', 'w', 'h'],      anchor: 'center' },
   cabinet:     { args: ['w', 'h', 'd'],          dims: ['w', 'h', 'd'],        anchor: 'center' },

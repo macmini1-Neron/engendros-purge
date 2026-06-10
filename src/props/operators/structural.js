@@ -50,6 +50,32 @@ export function stencil(b, a, t, o) {
   }
 }
 
+// planks — a slab assembled from `count` boards with recessed shadow gaps
+// between them (a crate wall, a plank lid, board flooring). FLOOR-anchored.
+// axis 'y' (default): boards stack vertically — horizontal seams wrap all four
+// sides (crate body). axis 'z': boards lie side-by-side along depth — seams run
+// along the length (a lid seen from above). Gaps are slot-tone strips inset
+// PLANK_GAP_IN on both faces, so no face is coplanar with the boards (z-safe).
+export const PLANK_GAP = 0.004;     // shadow seam between boards
+export const PLANK_GAP_IN = 0.003;  // how far the seam strip sits back from the board face
+
+export function planks(b, a, t, o) {
+  const { w, h, d } = a, n = a.count, axis = a.axis ?? 'y';
+  const span = axis === 'y' ? h : d;                 // the axis the boards divide
+  const bw = (span - (n - 1) * PLANK_GAP) / n;       // board width along that axis
+  for (let i = 0; i < n; i++) {
+    const c0 = i * (bw + PLANK_GAP) + bw / 2;        // board centre along the axis (from 0)
+    const tone = n >= 3 && i === 0 ? t.lo : i === n - 1 ? t.hi : t.mid;
+    if (axis === 'y') b.box(w, bw, d, o.x, o.y + c0, o.z, tone);
+    else b.box(w, h, bw, o.x, o.y + h / 2, o.z - d / 2 + c0, tone);
+    if (i < n - 1) {                                  // recessed seam strip after this board
+      const g0 = c0 + bw / 2 + PLANK_GAP / 2;
+      if (axis === 'y') b.box(w - 2 * PLANK_GAP_IN, PLANK_GAP, d - 2 * PLANK_GAP_IN, o.x, o.y + g0, o.z, t.slot);
+      else b.box(w - 2 * PLANK_GAP_IN, h - 2 * PLANK_GAP_IN, PLANK_GAP, o.x, o.y + h / 2, o.z - d / 2 + g0, t.slot);
+    }
+  }
+}
+
 // finSet — `count` cruciform fins around the +Z axis (a missile's long axis), each fin a
 // stack of `steps` thin plates whose chord tapers root→tip (a stepped delta, voxel-style).
 // Box-only (rotated boxes), so it stays pure + unit-testable. Args: count, root (root chord),
@@ -121,6 +147,7 @@ export const structuralExtents = {
   panel: (a) => { const th = a.th ?? PANEL_TH; return { min: [-a.w / 2, -a.h / 2, -th / 2], max: [a.w / 2, a.h / 2, th / 2] }; },
   plate: (a) => { const th = a.th ?? PLATE_TH; return { min: [-a.w / 2, -th / 2, -a.d / 2], max: [a.w / 2, th / 2, a.d / 2] }; },
   stencil: (a) => ({ min: [-a.w / 2, -a.h / 2, 0], max: [a.w / 2, a.h / 2, STENCIL_TH] }),
+  planks: (a) => ({ min: [-a.w / 2, 0, -a.d / 2], max: [a.w / 2, a.h, a.d / 2] }),
   finSet: (a) => {
     const r = (a.r0 ?? 0) + a.span + 0.03 + (a.thick ?? 0.04) / 2;       // radial reach (conservative)
     const zMin = -a.root / 2, zMax = Math.max(a.root / 2, (a.sweep ?? 0) + (a.tip ?? a.root * 0.25) / 2);
