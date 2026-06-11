@@ -4,6 +4,7 @@
 **Datum:** 2026-06-11 · **Autoři:** Tomáš (+ bratr), Claude
 **Větev:** `feat/playable-demo` (white paper sdílí domov s prvním vertical slice = current demo)
 **Předchůdci:** `docs/superpowers/plans/2026-06-11-playable-demo-program.md` (engine demo) · `docs/superpowers/RESULTS-demo.md`
+**Výzkumný podklad:** [`2026-06-11-engendros-design-research.md`](2026-06-11-engendros-design-research.md) — proč to lidi hrají + zákony game designu + 🔴 red-flagy naší vize s mitigacemi (6 PhD-level výzkumných agentů). **Část H toho dokumentu navrhuje konkrétní úpravy tohoto white paperu — k rozhodnutí.**
 
 > **Pozn. k jazyku:** dokument je česky (vlastníci jsou Czech-speaking). Klíčové herní/lore termíny nesou azbuku + překlad; viz slovníček §15.
 > **v0.2 změny:** škrtnut „extraction" mechanismus (žádný extract-or-lose); upřesněn perzistentní svět + **wipe = kompletní reset světa**; obchod **jen v lobby**; **žádní lidští NPC** (PvP odloženo); boss-instance **bezešvé jen na boss-místech** (jinak detailní interiéry na mapě); pevná obtížnost (solo brutál); doplněn sběr/váha/kontaminace.
