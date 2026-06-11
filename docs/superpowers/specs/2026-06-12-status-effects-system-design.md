@@ -29,7 +29,7 @@ The dev console already ships `/effect <target> heal|hurt [amount]` (instant, pl
 ## Design
 
 ### 1. Effect model (per entity)
-Every effect-able entity (the player and each pooled `Enemy`) gets `entity.effects` — a `Map<effectKey, Instance>` where `Instance = { ticksLeft, magnitude, stacks, _accum }`. No effect = empty map (cheap). Pooled enemies clear the map on spawn and on death so reuse never leaks state.
+Every effect-able entity (the player and each pooled `Enemy`) gets `entity.effects` — a `Map<effectKey, Instance>` where `Instance = { ticksLeft, stacks }` (`ticksLeft` counts whole effect-ticks; per-tick magnitude is derived from `stacks`). No effect = empty map (cheap). Pooled enemies clear the map on spawn and on death so reuse never leaks state. There is **no per-entity accumulator** — sub-stepping is the shared clock's job (§3).
 
 ### 2. Effect registry (`src/effects-status.js`)
 A pure-ish data registry, one entry per effect. Each entry is the **single source of truth** for that effect — duration, stacking rule, HUD icon/colour, and the **per-kind behaviour**:
@@ -46,20 +46,20 @@ EFFECTS = {
                 onApply: setLimp, onClear: restoreMobility /* no enemy handler */ },
 }
 ```
-`onApply`/`onClear` handle non-tick state (broken_leg toggles mobility on apply, restores on clear; effects with no enemy handler simply no-op on enemies). Nothing outside this registry hard-codes effect behaviour.
+`onApply`/`onClear` handle non-tick state (broken_leg toggles mobility on apply, restores on clear; effects with no enemy handler simply no-op on enemies). Nothing outside this registry hard-codes effect behaviour. Handlers receive `(entity, inst, ctx)` and act through **injected ops** on `ctx` (`hurtPlayer`, `healEnemy`, `fireFx`, …), so `src/effects-status.js` stays **pure** — no THREE/DOM/game imports — and is node-testable like `src/console-core.js` and `src/simclock.js`.
 
-### 3. Deterministic ticking
-Effects tick on a **fixed accumulator** at `EFFECT_TPS` ticks/sec (propose **10/s**, one tunable constant in `tuning.js`), NOT raw frame `dt`. Rates are authored **per second**; each whole tick applies `rate / EFFECT_TPS` (and scales by `stacks`), so 10 s of radiation deals the same total regardless of FPS or stutter (Decision 2).
+### 3. Deterministic ticking — reuse `src/simclock.js`
+The deterministic fixed-step primitive **already exists and is tested**: `makeClock({ step, maxDt })` in `src/simclock.js` (the same clock `fire.js` runs at `step: 1/10`). Don't hand-roll an accumulator — build on it.
 
-One `tickEffects(entity, dt)` helper: advance the entity's `_accum` by `dt`, fire the per-kind handler once per whole `1/EFFECT_TPS` step, decrement `ticksLeft`, delete expired effects (firing `onClear`). Called once for the player (replacing its bespoke `burnT`/`_burnTickT` survival ticking) and once per alive enemy (replacing `enemy.burnT`). This is the **same fixed-tick pattern** the parked [[deterministic-daynight-rework]] will later adopt — but it lands first on its own accumulator, with no dependency on that work.
+Effect rates are authored **per second**; the clock fires at `EFFECT_TPS = 10` ticks/s and each tick applies `rate / EFFECT_TPS` (scaled by `stacks`), so 10 s of radiation deals the same total regardless of FPS or stutter (Decision 2). **One shared effects clock** (`makeClock({ step: 1/EFFECT_TPS, maxDt: 0.05 })`), advanced once per frame **only on `hostSim`** — exactly how `fire.js:209` gates its clock. Each fixed tick runs a `stepEffects` pass over the player **and** every alive enemy: fire the per-kind handler, decrement `ticksLeft`, delete expired effects (firing `onClear`). This replaces the player's bespoke `burnT`/`_burnTickT` ticking and `enemy.burnT`. The parked [[deterministic-daynight-rework]] can adopt the same primitive later — no dependency now.
 
 ### 4. Per-entity-type behaviour (the key idea)
 A handler is chosen by the target's kind: `isEnemy(t) ? def.enemy : def.player`. The two showcase inversions:
 
 - **radiation** — player: `hurt(RAD_DPS)`; enemy: `game.enemies.heal(e, RAD_HEAL)`. Needs a small new `EnemyManager.heal(e, n)` helper (clamps to the enemy's max HP, refreshes its health bar).
-- **bleed** — player: HP drain (`BLEED_DPS`), cleared by a future bandage/medkit (survival-medicine sub-spec) or `/effect clear`. Enemy: **«пух» leak** — *no* HP drain; instead a movement **slow** (reuse the `ENEMY_BURN_SLOW`-style factor) **+ weaken** (a contact-damage multiplier `e._weaken`), with a «пух»/fluff particle drip. Distinct from burn (slow + fire DoT); magnitude stacks deepen the leak up to its cap.
+- **bleed** — player: HP drain (`BLEED_DPS`), cleared by a future bandage/medkit (survival-medicine sub-spec) or `/effect clear`. Enemy: **«пух» leak** — *no* HP drain; instead a movement **slow** **+ weaken** (reduced contact damage), read **passively** by stateless helpers `movementSlow(e)` / `contactWeaken(e)` that scan `e.effects` each frame (so multiple slows compose and nothing goes stale), plus a «пух» particle drip emitted by the per-tick handler. Magnitude stacks deepen the leak up to its cap.
 
-burn keeps its current dual behaviour (player HP DoT; enemy slow + fire FX), now expressed as two handlers on one registry entry instead of two divergent code paths.
+burn keeps its current dual behaviour (player HP DoT; enemy **slow + fire FX, no HP loss** — matching today's code), now expressed as two handlers on one registry entry instead of two divergent code paths. The enemy slow it contributes flows through the same `movementSlow(e)` scan.
 
 ### 5. Console (`/effect`) — extend, don't replace
 Extend the existing command's `kind` enum (today `['heal','hurt']`) to also carry the effect keys + `clear`:
@@ -85,7 +85,7 @@ Extend the existing command's `kind` enum (today `['heal','hurt']`) to also carr
 
 ## Decisions (resolved 2026-06-12)
 1. **Migration set:** burn + broken_leg + new radiation + new bleed move to effects. **Hunger stays a meter, untouched** (a resource, not a transient status); its removal/rework is a separate survival-medicine sub-spec, per the white paper.
-2. **Tick rate:** fixed `EFFECT_TPS` accumulator (propose 10/s), frame-rate independent. Built on its own clock now; the parked [[deterministic-daynight-rework]] can adopt the same source later — no coupling or dependency now.
+2. **Tick rate:** fixed **10 ticks/s** via the existing tested `makeClock` in `src/simclock.js` (the same fixed-step primitive `fire.js` already runs at `1/10`) — **not** a bespoke accumulator. One shared effects clock, advanced once per frame on `hostSim` (mirrors `fire.js`). The parked [[deterministic-daynight-rework]] can adopt the same primitive later.
 3. **Stacking:** re-applying an effect **always refreshes duration** (`ticksLeft = max(remaining, new)`). The `stack` field then governs magnitude: `'refresh'` pins magnitude at 1 (burn, broken_leg — just re-arm the timer); `'magnitude'` grows `stacks` toward a per-effect `cap` (bleed, radiation), and the per-tick rate scales with `stacks`.
 4. **Per-kind inversions:** radiation heals Engendros (locked); **bleed on Engendros = «пух» leak** (slow + weaken) — a second inversion. broken_leg stays player-only.
 5. **Co-op:** effects are **host-authoritative** (the host owns all damage and `pstate`), deferred to **P3**. Solo / ПОЛИГОН (P1–P2) applies and ticks locally.
