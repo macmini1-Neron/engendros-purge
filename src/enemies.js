@@ -333,7 +333,10 @@ export class EnemyManager {
         if (e._wireT >= 0.4) { e._wireT = 0; if (this.damage(e, STRUCT_DEFS.wire.dot * 0.4, 'wire')) continue; }
       }
       e.vel.x = (wx / wl) * spd; e.vel.z = (wz / wl) * spd;
-      e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt; e.pos.y = 0;
+      e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
+      // terrain grounding: sample height every frame so enemies follow hills;
+      // flat maps (hasTerrain = false) keep y=0 — byte-identical to before.
+      e.pos.y = this.world.hasTerrain ? this.world.terrain.terrainHeightAt(e.pos.x, e.pos.z) : 0;
       const lim = this.world.HALF - e.radius;
       e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
       e._blockStruct = null;
@@ -381,7 +384,7 @@ export class EnemyManager {
       if (e.squash > 0) e.squash -= dt;
       if (e.burnT > 0) { e.burnT -= dt; if (Math.random() < 0.16) this.game.effects.firePool(e.pos, 0.45, 0.4); }
       const sq = e.squash > 0 ? 1 - e.squash * 1.6 : 1;
-      e.mesh.position.set(e.pos.x, Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
+      e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
       e.mesh.rotation.y = Math.atan2(dx, dz);
       e.mesh.rotation.z = Math.sin(e.bob) * 0.08;
       e.mesh.scale.set(e.scale, e.scale * sq, e.scale);
