@@ -1,13 +1,14 @@
 # ENGENDROS — White Paper (vize celé hry)
 
-**Status:** v0.2 — schválená vize (brainstorming + clarifikace hotové, čeká na finální review). Toto je **severní hvězda**, ne implementační plán. Jednotlivé pilíře se rozepíšou do vlastních speců (viz §14).
+**Status:** v0.3 — schválená vize (brainstorming + clarifikace + design-research review hotové). Toto je **severní hvězda**, ne implementační plán. Jednotlivé pilíře se rozepíšou do vlastních speců (viz §14).
 **Datum:** 2026-06-11 · **Autoři:** Tomáš (+ bratr), Claude
 **Větev:** `feat/playable-demo` (white paper sdílí domov s prvním vertical slice = current demo)
 **Předchůdci:** `docs/superpowers/plans/2026-06-11-playable-demo-program.md` (engine demo) · `docs/superpowers/RESULTS-demo.md`
 **Výzkumný podklad:** [`2026-06-11-engendros-design-research.md`](2026-06-11-engendros-design-research.md) — proč to lidi hrají + zákony game designu + 🔴 red-flagy naší vize s mitigacemi (6 PhD-level výzkumných agentů). **Část H toho dokumentu navrhuje konkrétní úpravy tohoto white paperu — k rozhodnutí.**
 
 > **Pozn. k jazyku:** dokument je česky (vlastníci jsou Czech-speaking). Klíčové herní/lore termíny nesou azbuku + překlad; viz slovníček §15.
-> **v0.2 změny:** škrtnut „extraction" mechanismus (žádný extract-or-lose); upřesněn perzistentní svět + **wipe = kompletní reset světa**; obchod **jen v lobby**; **žádní lidští NPC** (PvP odloženo); boss-instance **bezešvé jen na boss-místech** (jinak detailní interiéry na mapě); pevná obtížnost (solo brutál); doplněn sběr/váha/kontaminace.
+> **v0.2 změny:** škrtnut „extraction" mechanismus (žádný extract-or-lose); upřesněn perzistentní svět + **wipe = kompletní reset světa**; obchod **jen v lobby**; **žádní lidští NPC** (PvP odloženo); boss-instance **bezešvé jen na boss-místech** (jinak detailní interiéry na mapě); doplněn sběr/váha/kontaminace.
+> **v0.3 změny (po [design-research](2026-06-11-engendros-design-research.md) review, §H):** intenzita **lehce škáluje dle počtu hráčů** (H2); **„náhрobek" stats-screen + rank XP animace** při smrti (H3); loadout committed, jen **scavenge adaptace** (H4); eskalace tieru **NOVÝM chováním, ne HP** (H5); reset přežijí navíc **lore-kodex + osobní rekordy** (H6); AI **silné smysly, ne vševědoucnost** (H7); **cute = JEN Engendros, svět syrový; ULTRA-těžké i ve dne, noc = snížená viditelnost** (H8). **H1 zamítnut** — binární wipe=reset ponechán.
 
 ---
 
@@ -27,7 +28,7 @@ Tento white paper **natvrdo ukotvuje, kam hra směřuje**: ze hry-arény se stá
 |---|---|
 | **Duše** | Sovětský **atmosférický survival-horor**; jediná surrealita = Engendros |
 | **Tón** | **Survival-horor** — nouze, strach, zranitelnost; „těžké, ale zábava" |
-| **Žánr** | Open-world survival + boss-komplexy, **roguelite na úrovni světa**, **co-op-first** (3–4), soloitelné (brutálně) |
+| **Žánr** | Open-world survival + boss-komplexy, **roguelite na úrovni světa**, **co-op-first** (3–4), soloitelné (těžké; intenzita lehce škáluje dle počtu) |
 | **Realismus** | Uvěřitelně-realný základ, ale **6 pilířů jde do ultra-real simulace** |
 | **Éra** | Alternativní **80.–90. léta, funkční SSSR** (žádný rozpad) — problém má *jen tahle oblast* |
 | **Délka hraní** | **Nekonečná** (reinfestace + eskalace; wipe → reset světa, rank přežívá) |
@@ -56,8 +57,8 @@ Tyto pilíře jsou to, čím se hra odlišuje — ne textury, ale **chování a 
 
 - **Éra:** alternativní **1980s–90s**, **plně funkční sovětský režim**. Svět venku je normální SSSR; *naše* oblast je utajená katastrofa.
 - **Místo:** **fiktivní sovětská oblast** — maximální tvůrčí volnost. Jedna **velká bezešvá mapa (1000×1000 od startu)** s biom-zónami: lesní step → průmysl (kombinát/ТЭЦ) → vesnice/kolchoz → mokřad → kopce. Stavíme na stávající stepi (`?map=steppe`, `src/openworld.js`, `src/grid.js`).
-- **Tón:** **survival-horor.** Zdroje docházejí, smrt je blízko, jsi zranitelný.
-- **Art direction:** **kontrast** — roztomilí voxel-plyšáci vs **beznadějný, drsný svět**. Ta disonance JE motor hororu. Voxel-cute zůstává; tíseň dělá světlo, mlha, počasí, zvuk a *to, co ti ti roztomilí tvorové dělají*.
+- **Tón:** **survival-horor.** Zdroje docházejí, smrt je blízko, jsi zranitelný. **ULTRA-těžké pořád** — žádná „denní úleva" fáze; **noc = jen snížená viditelnost** (tma), ne samostatný spawn-surge. Úleva je jen jemná (mezi střety / za vlastní fortifikací).
+- **Art direction:** **cute = JEN Engendros mobové.** Všechno ostatní (svět, prostředí, hráč, výbava) je **syrové, beznadějné, drsné**. Ta disonance (roztomilí plyšáci vs bezútěšný svět) JE motor hororu. Tíseň dělá světlo, tma, mlha, počasí, zvuk a *to, co ti ti roztomilí tvorové dělají*.
 - **Audio:** stávající procedurální Web-Audio základ + sovětská hudba (ФОНОТЕКА/gramofon) — diegetická hudba v kontrastu s hrůzou je silná.
 
 ---
@@ -107,7 +108,7 @@ Fikčně **zombie**: neúprosní, infekční, materiál „chce" se šířit. Ne
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Roguelite na úrovni světa:** jeden „svět" = běh, který **persistuje napříč sezeními** (zapneš hru, pokračuješ, kde jsi byl; svět mezitím žil reinfestací). Po **deployi jsi committed** — z pole se do lobby nevrátíš, nenakupuješ. **Wipe celého týmu = kompletní reset světa**; **hodnost + banka přežívá** → utratíš nasbírané při startu **dalšího** světa. Cennosti zpeněžíš v lobby mezi běhy. Tím vzniká klasická roguelite meta-smyčka: *vyděláš v běhu N → utratíš na začátku běhu N+1; hodnost odemyká lepší obchod napříč mnoha běhy.*
+**Roguelite na úrovni světa:** jeden „svět" = běh, který **persistuje napříč sezeními** (zapneš hru, pokračuješ, kde jsi byl; svět mezitím žil reinfestací). Po **deployi jsi committed** — z pole se do lobby nevrátíš, nenakupuješ; loadout volíš naslepo (žádné recon okno), ale v poli ho **změkčíš nalezenými zbraněmi** (scavenge adaptace = loadout není totální zámek). **Wipe celého týmu = kompletní reset světa**; **hodnost + banka přežívá** → utratíš nasbírané při startu **dalšího** světa. Cennosti zpeněžíš v lobby mezi běhy. Tím vzniká klasická roguelite meta-smyčka: *vyděláš v běhu N → utratíš na začátku běhu N+1; hodnost odemyká lepší obchod napříč mnoha běhy.*
 
 **Proč lobby a ne in-world hub:** v poli **nejsou bezpečné zóny** (viz §11). Progrese i nákup se proto dějí v **lobby/velitelství** (diegeticky: brífink/rekvizice před výsadkem) — využívá stávající architekturu „lobby Armory → deploy".
 
@@ -131,10 +132,10 @@ Reálné: spad střely, čas letu, penetrace (váže se na destrukční materiá
 Engine z current demo (`src/destruct.js`, `src/forest.js`, `src/fire.js`, `src/terrain.js`): per-ráže poškození, materiálové tiery, HE breach, APFSDS, kácení & hoření stromů, šíření ohně (umírá na kameni). Dotáhnout do hloubky + napojit na AI (chytří Engendros to využijí/způsobí).
 
 ### ⑤ AI nepřátel
-**Zombie chování + herně velmi chytrá AI.** Pathfinding na heightfield terénu, obchvaty, koordinace rojů, reakce na hluk/světlo/oheň, využití průlomů a terénu. Boss-golemy = taktické chování + velitelská inteligence. *(AI design = vlastní spec; je to klíčový „depth via code" pilíř.)*
+**Zombie chování + herně velmi chytrá AI.** Pathfinding na heightfield terénu, obchvaty, koordinace rojů, reakce na hluk/světlo/oheň, využití průlomů a terénu. **Loví silnými smysly (sluch/zrak), ale NE vševědoucně** — vyladěný střed: těžko úplně unikneš, přesto se dá férově oklamat (hluk/světlo tě prozradí). Vševědoucí AI je frustrující, ne děsivá. Boss-golemy = taktické chování + velitelská inteligence. *(AI design = vlastní spec; je to klíčový „depth via code" pilíř.)*
 
 ### ⑥ Simulace prostředí
-Den/noc (máme) + **dynamické počasí** (déšť/mlha/sníh/bouře) ovlivňující viditelnost, zvuk, chování Engendros, survival. **Noc = nebezpečnější** (riziko/odměna v načasování). *(Počasí systém = vlastní spec.)*
+Den/noc (máme) + **dynamické počasí** (déšť/mlha/sníh/bouře) ovlivňující viditelnost, zvuk, chování Engendros, survival. **Ultra-těžké je to ve dne i v noci** — žádná denní úleva. **Noc = hlavně snížená viditelnost** (tma), ne samostatný spawn-surge. *(Počasí systém = vlastní spec.)*
 
 ### Inventář & nošení
 **Váhový/kapacitní limit** (kolik uneseš), ale **bez zpomalení pohybu** — limit nutí rozhodovat, co vzít. **Batoh** = kupovatelný v lobby → **extra sloty/kapacita** (upgrade). Sběr je plný: munice, léky, palivo, díly na opravy, cennosti (zpeněžit po wipe v lobby).
@@ -152,7 +153,7 @@ Den/noc (máme) + **dynamické počasí** (déšť/mlha/sníh/bouře) ovlivňuj�
 **+ funkční role:** střelec/pliváč (ranged), support, charger…
 **+ vzácné varianty** (tematické/experimentální kusy pro pestrost).
 
-**AI:** viz §6⑤ — neúprosní jako zombie, ale chytří v herní logice. Reinfestace přináší v čase **silnější/jiné** složení (eskalace → nekonečno).
+**AI:** viz §6⑤ — neúprosní jako zombie, ale chytří v herní logice (silné smysly, ne vševědoucnost). **Cute-horor aktivace:** Engendros (jediná roztomilá věc ve hře) musí *jednat špatně* — špatné načasování pohybu, otáčení hlavy moc daleko, kontextově nevhodné/tlumené zvuky, zvuky vycpávky/stehů; hráno **vážně, ne ironicky** (jinak sklouzne do komedie). Reinfestace přináší v čase **silnější/jiné** složení (eskalace → nekonečno).
 
 ---
 
@@ -163,7 +164,7 @@ Den/noc (máme) + **dynamické počasí** (déšť/mlha/sníh/bouře) ovlivňuj�
 - **Boss-komplexy = bezešvé instancované interiéry (à la GTA San Andreas), JEN na speciálních boss-místech:** vejdeš do dveří → **skrytý teleport** do mimo-mapové arény (např. podzemní komplex pod letištěm) → probojuješ se k bossovi → ven **jiným východem nebo zpět týmiž dveřmi** (dle level-designu). Hráč přechod nepozná. Důvody: kontrolovaný level-design pro boss fighty a **minihry**; reálné mega-interiéry by jinak byly neúnosné; **vozidlo se do boss fightu nedostane**. *(Instancing + level-design = vlastní spec.)*
 - **Náplň výprav (mix):** emergentní sandbox (sběr, čištění hnízd) **+ volitelné kontrakty velení** (rádio: znič X / přines Y / ubraň Z) **+ objevování** POI a pravdy o programu.
 - **Cíl jednoho světa = mix:** boss-komplexy a odhalování pravdy КОЛЫБЕЛЬ jako **milníky**, ale svět jede **nekonečně dál** (reinfestace eskaluje). Žádná pevná „výhra" — jen milníky uvnitř nekonečna; konec běhu = wipe.
-- **Nekonečno = reinfestace + eskalace:** vyčištěné POI Engendros časem **znovu obsadí**, pokaždé **silnější/jiní**. Zvedá se **threat-tier** zóny → vyšší tier = víc XP/peněz/lepší loot (risk/reward).
+- **Nekonečno = reinfestace + eskalace:** vyčištěné POI Engendros časem **znovu obsadí**, pokaždé **silnější/jiní**. Zvedá se **threat-tier** zóny → vyšší tier = víc XP/peněz/lepší loot (risk/reward). **Eskalace přidává NOVÉ chování/archetypy** (flanker, crawler, armored vyžadující jinou ráži, koordinovaný breach, commander mini-boss), **ne jen víc HP** (bullet-sponge = false difficulty). *(Detailní ladění tierů + roster = vlastní spec, až později.)*
 
 ---
 
@@ -178,7 +179,7 @@ Den/noc (máme) + **dynamické počasí** (déšť/mlha/sníh/bouře) ovlivňuj�
 1. **Dvě koleje.**
    - **XP → Hodnost / Clearance** — *TRVALÁ*, přežívá reset světa. Odemyká **úrovně lobby-obchodu** (vyšší hodnost = lepší dostupná výzbroj) a přístup do těžších zón. (Tarkov loyalty × Hunt bloodline.)
    - **Peníze (banka)** — vyděláš v běhu, **utratíš v lobby na začátku dalšího běhu**; v poli se nenakupuje. Cennosti zpeněžíš mezi běhy. Banka přežívá wipe.
-2. **Klíč pro „těžké, ale fér":** **wipe nikdy nebere progresi** (hodnost + banka jsou svaté); resetuje se jen **svět** (POI, nesený loot, postavené krytí, stav zóny). I **neúspěšný běh dá XP** → čas není nikdy zmarněný.
+2. **Klíč pro „těžké, ale fér":** **wipe nikdy nebere progresi** (hodnost + banka jsou svaté; **navíc přežije lore-kodex** nasbíraných střípků příběhu a **osobní rekordy** = nejvyšší tier/vlna na POI); resetuje se jen **svět** (POI, nesený loot, postavené krytí, stav zóny). I **neúspěšný běh dá XP** → čas není nikdy zmarněný. *(Nepřežijí: gear, pasivní perky, fast-start — veterán začíná začátek nanovo, vědomě.)*
 3. **Nekonečno přes eskalaci:** threat-tier zóny škáluje odměnu (víc XP/peněz/lepší loot na vyšším tieru).
 4. **Sinky proti přebytku:** munice + léky + palivo jsou **spotřební** (survival-horor nouze); ceny gearu rostou s hodností; batoh/upgrady = další sink.
 
@@ -197,8 +198,9 @@ V poli se nenakupuje → **přežiješ z toho, co najdeš**. Loot se generuje **
 ## 10. Smrt, co-op, lidé v zóně
 
 - **Smrt (striktní):** stávající **CPR revive** — spoluhráč tě zvedne. **3× a dost** → trvale mrtvý → **spectate** živé spoluhráče.
-- **Wipe celého týmu** → **kompletní reset světa**, návrat do lobby. Hodnost + banka zůstává.
-- **Co-op-first:** navrženo kolem **party 3–4** (intro = přeživší squady), ale **soloitelné** (brutálně těžké). **Obtížnost je PEVNÁ** — neškáluje podle počtu hráčů; solo je tvrdé by design. Stávající **host-authoritative** model (WebRTC / LAN-Hamachi) — nová autoritativní logika za `hostSim = !mp.active || mp.isHost`, `pstate` = pravda o životě.
+- **Wipe celého týmu** → **kompletní reset světa**, návrat do lobby. Hodnost + banka (+ lore-kodex + rekordy) zůstává.
+- **„Náhrobek" stats-screen** (při smrti/wipe): nasbírané XP, peníze, zabití Engendros, zabití bossové (+ co vymyslíme) **+ animace progresu na XP baru hodnosti**. Smrt = záznam, ne jen vymazání (Hades zákon „každá smrt něco dá").
+- **Co-op-first:** navrženo kolem **party 3–4** (intro = přeživší squady), ale **soloitelné** (těžké). **Obtížnost:** kategorie/threat-tier hrozby je fixní, ale **intenzita (hustota/agrese Engendros) lehce škáluje dle počtu nasazených** — i mrtvý spoluhráč sníží count; **nejvyšší tiery laděné na 2–3, ne na 4**. Solo zůstává tvrdé, ale ne nemožné. Stávající **host-authoritative** model (WebRTC / LAN-Hamachi) — nová autoritativní logika za `hostSim = !mp.active || mp.isHost`, `pstate` = pravda o životě.
 - **Lidé v zóně:** **žádní živí lidští NPC** — jen ty (+ co-op) a Engendros. **PvP** (vetřelci-hráči, volba teamu pro interakci) = **možnost do budoucna, teď neřešíme**.
 
 ---
@@ -228,7 +230,7 @@ V poli se nenakupuje → **přežiješ z toho, co najdeš**. Loot se generuje **
 
 ## 13. Co je vědomě MIMO rozsah (zatím)
 
-Hlad/žízeň/teplota (life-sim) · psychika/sanity · ovládání/zajímání Engendros · degradace/záseky zbraní · hluboký base-building / trvalé pevnosti · pevný in-world hub · in-field nákup · lidští NPC · **PvP (odloženo na budoucnost)** · škálování obtížnosti dle počtu hráčů · roční období · realistická mm-RHA tank-vs-tank · ECS rewrite / externí fyzikální engine / navmesh (držíme voxel + stávající architekturu).
+Hlad/žízeň/teplota (life-sim) · psychika/sanity · ovládání/zajímání Engendros · degradace/záseky zbraní · hluboký base-building / trvalé pevnosti · pevný in-world hub · in-field nákup · recon/intel okno před deployem (jen scavenge adaptace) · lidští NPC · **PvP (odloženo na budoucnost)** · plné adaptivní DDA skrývající challenge (máme jen *lehké* škálování intenzity dle počtu, §10) · pasivní perky/fast-start přežívající wipe · roční období · realistická mm-RHA tank-vs-tank · ECS rewrite / externí fyzikální engine / navmesh (držíme voxel + stávající architekturu).
 
 ---
 
@@ -261,8 +263,8 @@ Hlad/žízeň/teplota (life-sim) · psychika/sanity · ovládání/zajímání E
 ## 16. Otevřené otázky (k pozdějšímu rozhodnutí)
 
 Drobnosti, které ještě nejsou uzamčené a vyřeší se v navazujících specech / balancem:
-- Přesně **co přežívá wipe** kromě hodnosti (banka ano; rozpracované kontrakty? znalost mapy?).
-- **Délka dne/noci** a jak tvrdě noc nutí k akci.
+- **Co přesně tvoří lore-kodex / osobní rekordy** a jak se zobrazují v lobby (rozpracované kontrakty přežijí? znalost mapy?).
+- **Délka dne/noci** (jen vizuál/viditelnost — ne relief-rytmus; ultra-těžké pořád).
 - **Frekvence bossů** a kolik jich „svět" má, než se stane čistě eskalačním.
 - **Sovětské hodnosti** — kolik tierů, názvy, co každý odemyká.
 - Konkrétní **efekty počasí** na boj a Engendros.
