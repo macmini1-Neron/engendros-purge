@@ -63,7 +63,8 @@ const VIEWS = {
 };
 
 function setFog(on) {
-  scene.fog = on ? new THREE.Fog(0x33333f, 60, 380) : null;
+  // 80–600 m ≈ the game's generous steppe fog: a silhouette must SURVIVE 300 m, not vanish.
+  scene.fog = on ? new THREE.Fog(0x33333f, 80, 600) : null;
   scene.background = on ? new THREE.Color(0x33333f) : SKY;
 }
 
@@ -217,12 +218,15 @@ window.VIEWER = {
     if (!building) failures.push('no building loaded');
     else {
       const box = new THREE.Box3().setFromObject(building);
-      let inside = 0;
+      let cornersIn = 0;
       for (let i = 0; i < 8; i++) {
         const v = new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
-        if (Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 && v.z >= -1 && v.z <= 1) inside++;
+        if (Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 && v.z >= -1 && v.z <= 1) cornersIn++;
       }
-      if (!inside) failures.push('model out of frustum — the camera is not looking at the building');
+      // standing INSIDE the building (interior walk) is looking at it too
+      if (!cornersIn && !box.containsPoint(camera.position)) {
+        failures.push('model out of frustum — the camera is not looking at the building');
+      }
     }
     if (opts.expectColliders && lastBuild?.colliders?.length && !colGroup) failures.push('collider overlay empty while collide parts exist');
     if (opts.expectRef && (!overlayImg.src || +overlayImg.style.opacity === 0)) failures.push('reference overlay missing during the reference-confirm stage');
