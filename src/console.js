@@ -1,7 +1,7 @@
 // console.js — in-game dev console («ПОЛИГОН» creative backbone). Minecraft-style syntax.
 // Pure parsing lives in console-core.js; this wires commands to live game subsystems.
 import * as THREE from 'three';
-import { createRegistry } from './console-core.js';
+import { createRegistry, suggest } from './console-core.js';
 import { ENEMY_TYPES } from './enemies.js';
 
 const ENEMY_KEYS = Object.keys(ENEMY_TYPES);
@@ -95,14 +95,18 @@ export class DevConsole {
     this._log = document.getElementById('console-log');
     this._input = document.getElementById('console-input');
     this._f3 = document.getElementById('f3debug');
+    this._suggestEl = document.getElementById('console-suggest');
+    this._sugList = []; this._sugIdx = 0;
     if (!this._input) return;
     this._input.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.code === 'Enter') { this._submit(this._input.value); this._input.value = ''; }
-      else if (e.code === 'Escape') { this.close(); }
-      else if (e.code === 'ArrowUp') { this._recall(-1); e.preventDefault(); }
-      else if (e.code === 'ArrowDown') { this._recall(1); e.preventDefault(); }
+      if (e.code === 'Tab') { e.preventDefault(); this._complete(); }
+      else if (e.code === 'Enter') { this._submit(this._input.value); this._input.value = ''; this._refreshSuggest(); }
+      else if (e.code === 'Escape') { if (this._sugList.length) { this._sugList = []; this._renderSuggest(); } else this.close(); }
+      else if (e.code === 'ArrowUp') { e.preventDefault(); if (this._sugList.length) { this._sugIdx = (this._sugIdx - 1 + this._sugList.length) % this._sugList.length; this._renderSuggest(); } else this._recall(-1); }
+      else if (e.code === 'ArrowDown') { e.preventDefault(); if (this._sugList.length) { this._sugIdx = (this._sugIdx + 1) % this._sugList.length; this._renderSuggest(); } else this._recall(1); }
     });
+    this._input.addEventListener('input', () => this._refreshSuggest());
   }
 
   _submit(line) {
@@ -125,18 +129,48 @@ export class DevConsole {
     this._input.value = this.history[this._hi] || '';
   }
 
+  _refreshSuggest() {
+    this._sugList = this._input ? suggest(this._input.value, this.reg) : [];
+    this._sugIdx = 0;
+    this._renderSuggest();
+  }
+  _renderSuggest() {
+    const el = this._suggestEl; if (!el) return;
+    if (!this._sugList.length) { el.classList.remove('show'); el.innerHTML = ''; return; }
+    el.classList.add('show'); el.innerHTML = '';
+    this._sugList.forEach((s, i) => {
+      const d = document.createElement('div');
+      d.textContent = s; d.className = 'sug' + (i === this._sugIdx ? ' on' : '');
+      el.appendChild(d);
+    });
+  }
+  _complete() {
+    if (!this._sugList.length) return;
+    const pick = this._sugList[Math.max(0, this._sugIdx)];
+    const v = this._input.value;
+    const hasSlash = v.startsWith('/');
+    const body = hasSlash ? v.slice(1) : v;
+    const endsWithSpace = /\s$/.test(body);
+    const parts = body.trim().length ? body.trim().split(/\s+/) : [];
+    if (endsWithSpace || !parts.length) parts.push(pick); else parts[parts.length - 1] = pick;
+    this._input.value = (hasSlash ? '/' : '') + parts.join(' ') + ' ';
+    this._refreshSuggest();
+  }
+
   toggle() { this.open ? this.close() : this.openConsole(); }
   openConsole(prefill = '') {
     if (!this._el || !this._input) return;
     this.open = true; this._el.classList.add('show');
     this.game.input.exitLock(); this.game.input.enabled = false;
     this._input.value = prefill; this._input.focus();
+    this._refreshSuggest();
   }
   close() {
     if (!this._el) return;
     this.open = false; this._el.classList.remove('show');
     this.game.input.enabled = true;
     if (this.game.state === 'playing') this.game.input.requestLock();
+    this._sugList = []; this._renderSuggest();
   }
 
   // ---- F3 debug overlay (updated each frame from game) ----
