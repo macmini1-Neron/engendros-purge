@@ -103,6 +103,33 @@ window gap — `depthWrite:false` sidesteps sorting artefacts; keep panes few an
 plinth/socle 0.4–0.8 · parapet 0.6–1.0 · corridor ≥ 1.4 · enterable ceiling ≥ 2.6 · brick course
 0.075 · concrete panel ~3.0 × 2.8.
 
+## Texture variation — the repeat must NEVER read (owner feedback, 2026-06-11)
+
+A uniform tile turns a facade into cloned wallpaper — the `_smoke` fixture showed it: every
+brick cluster repeating in a visible grid, the roof one monotone rib field. Ugly. When
+authoring or upgrading a material generator (`textures.js`), build variety at three scales —
+ALL of it seeded through `makeRNG` (law 8: never `Math.random`, re-renders stay pixel-identical):
+
+1. **Inside the tile** — per-element variation, not a flat field: each brick rolls its tone
+   (hi/mid/lo + the occasional bright or burnt brick + weathered lower edges); corrugated
+   sheets get per-rib shade wobble, sparse rust runs and the odd replaced-panel patch; concrete
+   panels differ in stain/streak layout. A tile where every element is `mid` is wallpaper.
+2. **Across the repeat** — widen the visual period: bake a **2×2 or 3×3 block of DIFFERENT
+   variants into ONE canvas** (e.g. four panel modules with four stain patterns in one 512²
+   texture, tile = the whole block) so the repeat period is 2–3× the physical module. Cheap,
+   seeded, no engine change. Roofs especially: long roof planes need seam lines / patch panels
+   every few metres, or they read as one flat sticker from any distance.
+3. **Per face** — if the same pattern still lines up identically on every wall (same brick at
+   the same height on N and S), add a seeded **per-face UV offset** in `interp.js` (translate
+   the metric UVs by a hash of face+seed). This is a small interp feature to add WHEN a build
+   round shows the problem — don't pre-build it speculatively.
+
+**Geometry-anchored weathering beats more noise:** splash-zone darkening at the plinth, streaks
+under the sills, soot above openings (facade grammar) break uniformity far better than cranking
+noise amplitude — they are *placed*, not random. Verify at **q34 + graze + far300**: if you can
+point at the same brick cluster repeating on a grid, or the roof reads as one pattern, fix the
+generator before approval — more proud geometry is not the cure for a flat texture.
+
 ## Facade grammar — what makes it read as a real building
 
 The modelgen heuristic ("6–20 parts or it reads as a placeholder") scaled up: a believable
@@ -177,8 +204,9 @@ hand interactive hooks (doors/gates on E) their `hostSim` guard, cache-bust ritu
 ## Definition of done
 
 Lint clean · tests green · canonical render set + ghost + collider + 300 m shot at the FINAL
-spec · in-game day/night/interior shots · 0 console errors · ≥ 2 walkable exits · every PNG
-actually `Read` · `BUILD.md` updated · WARNs justified.
+spec · in-game day/night/interior shots · 0 console errors · ≥ 2 walkable exits · **no readable
+texture repeat at q34/graze and the roof is not one flat pattern** (variation rules above) ·
+every PNG actually `Read` · `BUILD.md` updated · WARNs justified.
 
 ## Gotchas / red flags
 
