@@ -83,20 +83,43 @@ export function createRegistry() {
   return api;
 }
 
+const _SELECTORS = ['@a', '@e', '@p', '@s'];
+// Enumerable suggestions for one arg. A 'target' may be omitted, so it also offers the NEXT arg's values.
+function _optsForArg(a, args, ai) {
+  if (!a) return [];
+  switch (a.type) {
+    case 'target': return [..._SELECTORS, ..._optsForArg(args[ai + 1], args, ai + 1)];
+    case 'enum':   return a.choices.slice();
+    case 'int': case 'num': return [String(a.default ?? 1)];
+    case 'pos':    return ['~'];
+    default:       return []; // word / sel / rest — no enumerable values
+  }
+}
+// Walk the spec like dispatch (target peeks @, pos eats 3) to find the arg under the token being completed.
+function _argSuggest(argDefs, tokens, completingIdx) {
+  let ai = 0, ti = 0;
+  while (ai < argDefs.length) {
+    const a = argDefs[ai];
+    if (a.type === 'pos') { if (completingIdx >= ti && completingIdx < ti + 3) return _optsForArg(a, argDefs, ai); ti += 3; ai++; continue; }
+    if (a.type === 'rest') return completingIdx >= ti ? _optsForArg(a, argDefs, ai) : [];
+    if (ti === completingIdx) return _optsForArg(a, argDefs, ai);
+    if (a.type === 'target' && !(tokens[ti] && tokens[ti][0] === '@')) { ai++; continue; } // bare token ⇒ target omitted (consumes nothing)
+    ti++; ai++;
+  }
+  return [];
+}
+
 export function suggest(line, registry) {
   const raw = String(line).replace(/^\//, '');
   const endsWithSpace = /\s$/.test(raw);
   const parts = raw.trim().length ? raw.trim().split(/\s+/) : [];
   const partial = endsWithSpace ? '' : (parts[parts.length - 1] ?? '');
-  const tokenIndex = endsWithSpace ? parts.length : Math.max(0, parts.length - 1);
-  if (tokenIndex <= 0) {                       // completing the command name
-    return registry.names().filter((n) => n.startsWith(partial)).sort();
-  }
+  const completing = endsWithSpace ? parts.length : Math.max(0, parts.length - 1);
+  if (completing <= 0) return registry.names().filter((n) => n.startsWith(partial)).sort(); // completing the command name
   const spec = registry.get(parts[0]);
   if (!spec || !spec.args) return [];
-  const arg = spec.args[tokenIndex - 1];       // arg position (1 token per arg; good enough — enums are single-token leading args)
-  if (arg && arg.type === 'enum' && arg.choices) return arg.choices.filter((c) => c.startsWith(partial));
-  return [];                                    // pos/int/num/word/rest → no value suggestions
+  const opts = _argSuggest(spec.args, parts.slice(1), completing - 1);
+  return [...new Set(opts)].filter((c) => c.startsWith(partial)); // arg suggestions keep their natural order
 }
 
 export function parseSelector(tok) {

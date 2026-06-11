@@ -130,6 +130,7 @@ function sugReg() {
   });
   r.register('say', { args: [{ name: 'msg', type: 'rest' }], run: (a) => `say:${a.msg}` });
   r.register('mode', { args: [{ name: 'm', type: 'enum', choices: ['creative', 'survival'] }], run: (a) => `mode:${a.m}` });
+  r.register('give', { args: [{ name: 't', type: 'target' }, { name: 'what', type: 'enum', choices: ['money', 'health', 'armor'] }, { name: 'amt', type: 'int', optional: true, default: 100 }], run: () => '' });
   return r;
 }
 
@@ -174,13 +175,30 @@ test('suggest: /mode c returns [\'creative\']', () => {
   const r = sugReg();
   assert.deepEqual(suggest('/mode c', r), ['creative']);
 });
-test('suggest: /tp<space> returns [] (pos arg has no value suggestions)', () => {
+test('suggest: /tp<space> suggests ~ for the position arg', () => {
   const r = sugReg();
-  assert.deepEqual(suggest('/tp ', r), []);
+  assert.deepEqual(suggest('/tp ', r), ['~']);
 });
 test('suggest: /nope<space> returns [] (unknown command)', () => {
   const r = sugReg();
   assert.deepEqual(suggest('/nope ', r), []);
+});
+test('suggest: /give<space> offers the selectors AND the omittable first real arg', () => {
+  const s = suggest('/give ', sugReg());
+  for (const sel of ['@a', '@e', '@p', '@s']) assert.ok(s.includes(sel), `missing ${sel}`);
+  for (const v of ['money', 'health', 'armor']) assert.ok(s.includes(v), `missing ${v}`);
+});
+test('suggest: /give @ filters to the selectors', () => {
+  assert.deepEqual(suggest('/give @', sugReg()), ['@a', '@e', '@p', '@s']);
+});
+test('suggest: after an explicit @target ⇒ the next arg (enum choices)', () => {
+  assert.deepEqual(suggest('/give @p ', sugReg()), ['money', 'health', 'armor']);
+});
+test('suggest: omitted target shifts ⇒ value position maps to the right arg', () => {
+  assert.deepEqual(suggest('/give money ', sugReg()), ['100']); // money=what ⇒ next is amount(int) default
+});
+test('suggest: int arg suggests its default value', () => {
+  assert.deepEqual(suggest('/give @p money ', sugReg()), ['100']);
 });
 
 // ---- highlight: Minecraft-style live syntax coloring ----
