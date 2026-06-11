@@ -58,7 +58,7 @@ class Game {
     // Priority: ?map= URL override (dev) -> the menu's saved pick (localStorage) -> 'arena' default.
     this.mapId = (() => { try {
       const p = new URLSearchParams(location.search).get('map');
-      if (p === 'steppe' || p === 'arena') return p;
+      if (p === 'steppe' || p === 'arena' || p === 'demo') return p; // 'demo' = Phase-4+ walkable-terrain slice (?map=demo)
       return localStorage.getItem('engendros_map') === 'steppe' ? 'steppe' : 'arena';
     } catch (e) { return 'arena'; } })();
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.

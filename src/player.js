@@ -33,6 +33,12 @@ export class Player {
   reset() {
     this.pos.set(0, 0, 30); this.vel.set(0, 0, 0); this.yaw = Math.PI; this.pitch = 0;
     if (this.game && this.game.mapId === 'steppe') { this.pos.set(-330, 0, -282); this.yaw = Math.PI; } // spawn in the field strongpoint (home base, far SW), facing in
+    else if (this.game && this.game.mapId === 'demo') { // ?map=demo: spawn ON the terrain, near + facing the big hill (60,-40) so it's a short walk up
+      const t = this.game.world && this.game.world.terrain;
+      const sx = 35, sz = -8;
+      this.pos.set(sx, t ? t.terrainHeightAt(sx, sz) : 0, sz);
+      this.yaw = Math.atan2(-(60 - sx), -(-40 - sz)); // fwd = (-sin yaw, 0, -cos yaw) aimed at the hill
+    }
     this.onGround = true; this._regenT = 0; this.resetStats();
   }
 
