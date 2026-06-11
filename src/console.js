@@ -5,6 +5,7 @@ import { createRegistry, suggest, highlight } from './console-core.js';
 import { ENEMY_TYPES } from './enemies.js';
 
 const ENEMY_KEYS = Object.keys(ENEMY_TYPES);
+const _projV = new THREE.Vector3(); // scratch for projecting enemy world positions to screen (F3 labels)
 
 export class DevConsole {
   constructor(game) {
@@ -119,6 +120,9 @@ export class DevConsole {
     this._input = document.getElementById('console-input');
     this._hl = document.getElementById('console-hl');   // colour overlay painted behind the (transparent-text) input
     this._f3 = document.getElementById('f3debug');
+    this._entCanvas = document.getElementById('entlabels');
+    this._entCtx = this._entCanvas ? this._entCanvas.getContext('2d') : null;
+    this._entSize = { w: 0, h: 0 };
     this._suggestEl = document.getElementById('console-suggest');
     this._sugList = []; this._sugIdx = 0;
     if (!this._input) return;
@@ -263,6 +267,33 @@ export class DevConsole {
       `Day #${di.n}  ${di.night ? 'NIGHT' : 'DAY'}${di.blood ? '  · BLOOD MOON' : ''}`,
       `HP ${Math.round(p.hp)}/${p.maxHp}   ARM ${Math.round(p.armor)}   food ${Math.round(p.hunger)}`,
     ].join('\n');
+  }
+
+  // F3-gated floating tags (+HP) over the nearest living enemies, drawn on one canvas overlay.
+  updateEntityLabels(visible) {
+    const cv = this._entCanvas, ctx = this._entCtx; if (!cv || !ctx) return;
+    if (!visible) { if (cv.classList.contains('show')) cv.classList.remove('show'); return; }
+    cv.classList.add('show');
+    const W = window.innerWidth, H = window.innerHeight;
+    if (this._entSize.w !== W || this._entSize.h !== H) { cv.width = W; cv.height = H; this._entSize.w = W; this._entSize.h = H; }
+    ctx.clearRect(0, 0, W, H);
+    const g = this.game, cam = g.engine.camera, px = g.player.pos;
+    const near = g.enemies.active
+      .filter((e) => e.alive)
+      .map((e) => ({ e, d: e.pos.distanceTo(px) }))
+      .filter((o) => o.d <= 50)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 24);
+    ctx.font = '12px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    for (const { e } of near) {
+      _projV.set(e.pos.x, e.pos.y + (e.def && e.def.scale ? e.def.scale * 2.2 : 2.2), e.pos.z).project(cam);
+      if (_projV.z > 1) continue; // behind the camera / beyond the far plane
+      const sx = (_projV.x * 0.5 + 0.5) * W, sy = (-_projV.y * 0.5 + 0.5) * H;
+      const label = `${e.tag}  ${Math.max(0, Math.round(e.hp))}/${e.maxHp}`;
+      ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillText(label, sx + 1, sy + 1);
+      ctx.fillStyle = '#d7ecd0'; ctx.fillText(label, sx, sy);
+    }
   }
 }
 

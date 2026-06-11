@@ -794,7 +794,7 @@ class Game {
     if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
     if (this.state === 'playing') this._updatePlaying(dt);
     this.engine.update(dt); this.engine.render();
-    if (this.devconsole) this.devconsole.updateF3(this.f3 && this.state === 'playing');
+    if (this.devconsole) { const dbg = this.f3 && this.state === 'playing'; this.devconsole.updateF3(dbg); this.devconsole.updateEntityLabels(dbg); }
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
     if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
