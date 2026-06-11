@@ -13,6 +13,7 @@ import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
+import { installDemoBuilding } from './demobuilding.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
@@ -72,6 +73,10 @@ class Game {
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
     this.forest = new Forest(this); // ?map=demo forest kit: destructible/flammable trees + groundcover (no-op on flat maps)
+    // Phase 7: destructible building (the ПРОХОДНАЯ made destroyable-ready). Constructs AFTER
+    // forest so it can clearArea() the trees on its footprint. Sets game.world.demoBuilding;
+    // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
+    this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
     const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
     const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
