@@ -27,6 +27,7 @@ import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
+import { DevConsole } from './console.js';
 
 // Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
 // Specs are authored in METRES — never compensate a wrong-sized spec with a
@@ -71,6 +72,9 @@ class Game {
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
+    this.rules = { god: false };       // «ПОЛИГОН» gamerules
+    this.devconsole = new DevConsole(this);
+    this.f3 = false;
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
@@ -231,6 +235,9 @@ class Game {
   _wireInput() {
     this.input.on('key', (code) => {
       if (this.state !== 'playing') return;
+      if (this.devconsole && this.devconsole.open) return; // console eats input while open
+      if (code === 'Backquote' || code === 'Slash') { this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; }
+      if (code === 'F3') { this.f3 = !this.f3; return; }
       // dev fly-cam toggle (solo only): N, or Ctrl+F
       if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
       if (this.mpMenuOpen) {
@@ -779,6 +786,7 @@ class Game {
     if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
     if (this.state === 'playing') this._updatePlaying(dt);
     this.engine.update(dt); this.engine.render();
+    if (this.devconsole) this.devconsole.updateF3(this.f3 && this.state === 'playing');
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
     if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);

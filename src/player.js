@@ -45,6 +45,7 @@ export class Player {
   hurt(dmg, bypassArmor = 0) {
     if (this.game.freecam) return;            // observation/fly-cam: invulnerable
     if (!this.alive) return;
+    if (this.game.rules && this.game.rules.god) return;
     const mp = this.game.mp;
     if (mp && mp.active) { mp.claimPlayerHit(mp.myId, dmg); return; } // co-op: player damage is host-authoritative (pstate owns hp/armor/down/3-down death)
     // bypassArmor 0..1 = fraction of dmg armor cannot soak (blunt trauma). 0 = bullets, 1 = ignores armor.
