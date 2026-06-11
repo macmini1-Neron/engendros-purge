@@ -411,7 +411,8 @@ class Game {
       if (!f.grounded) {
         f.vel.y -= 20 * dt; f.mesh.position.addScaledVector(f.vel, dt);
         f.mesh.rotation.x += f.spin.x * dt; f.mesh.rotation.y += f.spin.y * dt; f.mesh.rotation.z += f.spin.z * dt;
-        if (f.mesh.position.y <= 0.06) { f.mesh.position.y = 0.06; f.grounded = true; f.vel.set(0, 0, 0); f.mesh.rotation.set(Math.PI / 2, f.mesh.rotation.y, 0); } // settle lying down
+        const fgy = this.world.groundY(f.mesh.position.x, f.mesh.position.z);   // settle on the terrain surface (groundY≡0 on flat maps)
+        if (f.mesh.position.y <= fgy + 0.06) { f.mesh.position.y = fgy + 0.06; f.grounded = true; f.vel.set(0, 0, 0); f.mesh.rotation.set(Math.PI / 2, f.mesh.rotation.y, 0); } // settle lying down
       }
       if (f.out) continue;                               // spent: just a dark stick on the ground
       f.life -= dt;

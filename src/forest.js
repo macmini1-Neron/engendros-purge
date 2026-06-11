@@ -278,13 +278,17 @@ export class Forest {
 
     this._hideInstance(tree);
     this._stumpify(tree);
-    if (this.debris) this.debris.burst('splints', [tree.pos.x, tree.pos.y + tree.breakPoint, tree.pos.z], seed);
+    if (this.debris) this.debris.burst('splints', [tree.pos.x, tree.pos.y + tree.breakPoint, tree.pos.z], seed, tree.pos.y);
 
     // FallingBody hinge about the break point (deterministic, fixed-substep — reused by co-op).
     const pivot = [tree.pos.x, tree.pos.y + tree.breakPoint, tree.pos.z];
     const length = Math.max(0.6, tree.height - tree.breakPoint);
     const obstacles = this._nearbyObstacles(tree.pos.x, tree.pos.z, length, tree.box);
-    const body = makeHinge({ pivot, dirXZ: [dx, dz], length, radius: tree.trunkRadius * 1.3, seed, obstacles });
+    // Slope-aware settle: rest the toppled trunk ON the terrain under each sample (pure → co-op-safe),
+    // so a tree felled on a hilltop lies along the slope instead of swinging down to y=0.
+    const terr = this.world.terrain;
+    const groundAt = (this.world.hasTerrain && terr) ? ((x, z) => terr.terrainHeightAt(x, z)) : null;
+    const body = makeHinge({ pivot, dirXZ: [dx, dz], length, radius: tree.trunkRadius * 1.3, seed, obstacles, groundAt });
 
     // Visual: spawn the toppling upper tree as a one-off mesh pivoting at the break point.
     const geo = this._variantGeo(tree);
@@ -397,7 +401,7 @@ export class Forest {
     }
     hits.sort((a, b) => a.t - b.t);
     for (const h of hits) {
-      if (this.debris) this.debris.burst('splints', [h.tree.pos.x, h.tree.pos.y + h.tree.breakPoint, h.tree.pos.z], (h.tree.id * 2654435761) >>> 0);
+      if (this.debris) this.debris.burst('splints', [h.tree.pos.x, h.tree.pos.y + h.tree.breakPoint, h.tree.pos.z], (h.tree.id * 2654435761) >>> 0, h.tree.pos.y);
       this.fellTree(h.tree, [dir.x, dir.z], (h.tree.id * 2654435761) >>> 0);
     }
     return hits.length;

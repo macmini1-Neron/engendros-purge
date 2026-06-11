@@ -39,7 +39,7 @@ export class DebrisPool {
     this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix);
   }
   // kind is a RECIPES key OR a MATERIALS key (auto-resolved to its debris recipe).
-  burst(kind, at, seed = 1) {
+  burst(kind, at, seed = 1, floorY = 0) {
     const r = RECIPES[kind] || RECIPES[MATERIALS[kind]?.debris]; if (!r) return;
     let s = seed >>> 0;
     const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -47,6 +47,7 @@ export class DebrisPool {
       const i = this.head; this.head = (this.head + 1) % POOL;
       const it = this.items[i];
       it.live = true; it.life = r.life * (0.7 + rnd() * 0.6);
+      it.floorY = floorY;   // settle on the terrain under the burst (0 on flat maps)
       it.pos = [at[0], at[1], at[2]];
       const a = rnd() * Math.PI * 2, up = 1 + rnd() * 2;
       it.vel = [Math.cos(a) * r.speed * rnd(), up + rnd() * r.speed * 0.5, Math.sin(a) * r.speed * rnd()];
@@ -66,8 +67,9 @@ export class DebrisPool {
       live++;
       it.vel[1] -= G * dt;
       for (let k = 0; k < 3; k++) it.pos[k] += it.vel[k] * dt;
-      if (it.pos[1] < it.size[1] / 2) {
-        it.pos[1] = it.size[1] / 2;
+      const fy = (it.floorY || 0) + it.size[1] / 2;
+      if (it.pos[1] < fy) {
+        it.pos[1] = fy;
         if (!it.bounced) { it.vel[1] *= -0.3; it.vel[0] *= 0.5; it.vel[2] *= 0.5; it.bounced = true; }
         else { it.vel = [0, 0, 0]; it.spin = 0; }
       }

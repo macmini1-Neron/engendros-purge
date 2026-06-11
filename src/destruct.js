@@ -226,10 +226,13 @@ function mulberry32(seed) {
 
 // Hinged trunk above a break point. pivot=[x,y,z]; dirXZ=[x,z] horizontal fall dir (normalized);
 // length/radius in metres; obstacles = [{min,max}, ...] static AABBs to rest against.
-export function makeHinge({ pivot, dirXZ, length, radius, seed = 1, obstacles = [] }) {
+// `groundAt(x,z)→y` (optional) makes the rod settle on a heightfield instead of the y=0 plane —
+// pass terrain.terrainHeightAt so a felled tree on a hill rests ON the slope, not hanging down to
+// y=0. Must be PURE/deterministic (no RNG) for co-op replay. Omitted ⇒ flat y=0 (node tests, arena).
+export function makeHinge({ pivot, dirXZ, length, radius, seed = 1, obstacles = [], groundAt = null }) {
   const rng = mulberry32(seed);
   return {
-    kind: 'hinge', pivot, dirXZ, length, radius, obstacles,
+    kind: 'hinge', pivot, dirXZ, length, radius, obstacles, groundAt,
     angle: 0.03 + rng() * 0.04,   // seeded initial lean — the only randomness
     angVel: 0, bounces: 0, settled: false, acc: 0, rng,
   };
@@ -267,7 +270,8 @@ export function stepBody(b, dt) {
 function hingeContact(b) {
   for (const f of [0.35, 0.55, 0.75, 0.92, 1.0]) {
     const p = hingePoint(b, f);
-    if (p[1] - b.radius <= 0) return true;                       // ground
+    const gy = b.groundAt ? b.groundAt(p[0], p[2]) : 0;          // terrain surface under this sample (else flat 0)
+    if (p[1] - b.radius <= gy) return true;                      // ground
     for (const o of b.obstacles) if (pointInAABB(p, o.min, o.max, b.radius)) return true;
   }
   return false;

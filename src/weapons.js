@@ -1594,14 +1594,15 @@ export class WeaponSystem {
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
         g.mesh.position.addScaledVector(g.vel, dt);
         const rp = g.mesh.position;
-        if (rp.y < 0.2) boom = true;
+        if (rp.y < this.game.world.groundY(rp.x, rp.z) + 0.2) boom = true;   // detonate on the terrain surface (groundY≡0 on flat maps)
         if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + 0.7 && rp.y < e.pos.y + e.height + 0.5) { boom = true; break; } }
         if (!boom) { const wh = this.game.world.rayHit(rp, dir, stepLen + 0.5); if (wh) boom = true; }
         this.game.effects.impact(rp, dir, 'spark'); // smoke trail
       } else { // tossed grenade: gravity + bounce
         g.vel.y -= 22 * dt; g.mesh.position.addScaledVector(g.vel, dt);
         g.mesh.rotation.x += dt * 6; g.mesh.rotation.y += dt * 4;
-        if (g.mesh.position.y < 0.11) { g.mesh.position.y = 0.11; g.vel.y *= -0.4; g.vel.x *= 0.6; g.vel.z *= 0.6; }
+        const gy = this.game.world.groundY(g.mesh.position.x, g.mesh.position.z);   // bounce on the terrain surface (groundY≡0 on flat maps)
+        if (g.mesh.position.y < gy + 0.11) { g.mesh.position.y = gy + 0.11; g.vel.y *= -0.4; g.vel.x *= 0.6; g.vel.z *= 0.6; }
       }
       if (boom) {
         if (g.molotov) {

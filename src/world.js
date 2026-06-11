@@ -415,6 +415,11 @@ export class World {
     }
   }
 
+  // Ground height under (x,z): the terrain surface on the heightfield demo slice, else the
+  // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
+  // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
+  groundY(x, z) { return (this.hasTerrain && this.terrain) ? this.terrain.terrainHeightAt(x, z) : 0; }
+
   rayHit(origin, dir, maxDist, ignore = null) {
     const ignored = Array.isArray(ignore) ? ignore : null;
     const filter = (ignore != null) ? (b => !(b === ignore || (ignored && ignored.includes(b)))) : null;
