@@ -20,6 +20,7 @@ export class DevConsole {
   // ---- command registry (verified APIs only) ----
   _registerCommands() {
     const g = this.game;
+    const isEnemy = (t) => t && t !== g.player && t.alive !== undefined; // enemy targets carry .alive; the player does not
 
     this.reg.register('help', { args: [], run: () => 'Commands: /' + this.reg.names().join('  /') });
     this.reg.register('pos', { args: [], run: () => { const p = g.player.pos; return `x ${p.x.toFixed(1)}  y ${p.y.toFixed(1)}  z ${p.z.toFixed(1)}`; } });
@@ -27,13 +28,16 @@ export class DevConsole {
     this.reg.register('clear', { args: [], run: () => { if (this._log) this._log.innerHTML = ''; return ''; } });
 
     this.reg.register('tp', {
-      args: [{ name: 'dest', type: 'pos' }],
+      args: [{ name: 'target', type: 'target' }, { name: 'dest', type: 'pos' }],
       run: (a) => {
-        const [x, , z] = a.dest;
-        let y = a.dest[1];
+        const [x, , z] = a.dest; let y = a.dest[1];
         if (g.world.hasTerrain) y = Math.max(y, g.world.groundY(x, z)); // never under the terrain
-        g.player.pos.set(x, y, z); g.player.vel.set(0, 0, 0);
-        return `Teleported to ${x.toFixed(1)} ${y.toFixed(1)} ${z.toFixed(1)}`;
+        let n = 0;
+        for (const t of (a.target || [])) {
+          if (t === g.player) { t.pos.set(x, y, z); t.vel.set(0, 0, 0); n++; }
+          else if (isEnemy(t)) { t.pos.set(x, y, z); n++; }
+        }
+        return `Teleported ${n} to ${x.toFixed(1)} ${y.toFixed(1)} ${z.toFixed(1)}`;
       },
     });
 
@@ -54,25 +58,44 @@ export class DevConsole {
       },
     });
 
-    this.reg.register('kill', { args: [], run: () => { const n = g.enemies.aliveCount; g.enemies.clearAll(); return `Cleared ${n} Engendros`; } });
+    this.reg.register('kill', {
+      args: [{ name: 'target', type: 'target', optional: true, default: null }],
+      run: (a) => {
+        if (!a.target) { const n = g.enemies.aliveCount; g.enemies.clearAll(); return `Cleared ${n} Engendros`; } // no target = wipe enemies (legacy)
+        let n = 0;
+        for (const t of a.target) {
+          if (t === g.player) { g.player.hurt(99999); n++; }
+          else if (isEnemy(t)) { g.enemies.damage(t, t.hp + 9999, 'console'); n++; }
+        }
+        return `Killed ${n}`;
+      },
+    });
 
     this.reg.register('give', {
-      args: [{ name: 'what', type: 'enum', choices: ['money', 'health', 'armor'] }, { name: 'amount', type: 'int', optional: true, default: 100 }],
+      args: [{ name: 'target', type: 'target' }, { name: 'what', type: 'enum', choices: ['money', 'health', 'armor'] }, { name: 'amount', type: 'int', optional: true, default: 100 }],
       run: (a) => {
+        const ps = (a.target || []).filter((t) => t === g.player); // v1: only the local player is actionable (co-op = Phase 2)
+        if (!ps.length) return 'No player target (give affects players).';
         const n = a.amount;
-        if (a.what === 'money') g.player.addMoney(n);
-        else if (a.what === 'health') { g.player.hp = Math.min(g.player.maxHp, g.player.hp + n); g.hud.setHealth(g.player.hp, g.player.maxHp); }
-        else if (a.what === 'armor') { g.player.armor = Math.min(g.player.armorMax, g.player.armor + n); g.hud.setArmor(g.player.armor, g.player.armorMax); }
+        for (const p of ps) {
+          if (a.what === 'money') p.addMoney(n);
+          else if (a.what === 'health') { p.hp = Math.min(p.maxHp, p.hp + n); g.hud.setHealth(p.hp, p.maxHp); }
+          else { p.armor = Math.min(p.armorMax, p.armor + n); g.hud.setArmor(p.armor, p.armorMax); }
+        }
         return `Gave ${n} ${a.what}`;
       },
     });
 
     this.reg.register('effect', {
-      args: [{ name: 'kind', type: 'enum', choices: ['heal', 'hurt'] }, { name: 'amount', type: 'int', optional: true, default: 20 }],
+      args: [{ name: 'target', type: 'target' }, { name: 'kind', type: 'enum', choices: ['heal', 'hurt'] }, { name: 'amount', type: 'int', optional: true, default: 20 }],
       run: (a) => {
-        if (a.kind === 'heal') { g.player.hp = Math.min(g.player.maxHp, g.player.hp + a.amount); g.hud.setHealth(g.player.hp, g.player.maxHp); }
-        else g.player.hurt(a.amount);
-        return `${a.kind} ${a.amount}`;
+        const amt = a.amount; let n = 0;
+        for (const t of (a.target || [])) {
+          if (a.kind === 'heal') { if (t === g.player) { t.hp = Math.min(t.maxHp, t.hp + amt); g.hud.setHealth(t.hp, t.maxHp); n++; } }
+          else if (t === g.player) { t.hurt(amt); n++; }
+          else if (isEnemy(t)) { g.enemies.damage(t, amt, 'console'); n++; }
+        }
+        return `${a.kind} ${amt} → ${n} target(s)`;
       },
     });
 
@@ -116,7 +139,18 @@ export class DevConsole {
     this.history.push(line); this._hi = this.history.length;
     const shown = line.trim();
     this._print('› ' + (shown[0] === '/' ? shown : '/' + shown), 'c-echo'); // echo the sent command in gray (like Minecraft chat shows your message)
-    const ctx = { origin: [this.game.player.pos.x, this.game.player.pos.y, this.game.player.pos.z], game: this.game };
+    const g = this.game;
+    const sel = {
+      self: g.player,
+      players: () => [g.player], // co-op teammates added in Phase 2
+      entities: (f) => { const a = g.enemies.active.filter((e) => e.alive); return (f && f.type) ? a.filter((e) => e.type === f.type) : a; },
+      byName: (tok) => {
+        const ent = g.enemies.active.filter((e) => e.alive && e.tag === tok);
+        if (ent.length) return ent;                                         // an enemy by its tag (swarmer#7)
+        return ((g.player.nick || g.player.name) === tok) ? [g.player] : []; // a player by nick
+      },
+    };
+    const ctx = { origin: [g.player.pos.x, g.player.pos.y, g.player.pos.z], game: g, sel };
     const res = this.reg.dispatch(line, ctx);
     if (res.ok) { if (res.message) this._print(res.message, 'c-ok'); }   // feedback near-white; stays silent on empty output (e.g. /clear)
     else this._print(res.error, 'c-err');                               // errors in red
