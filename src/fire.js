@@ -1,7 +1,8 @@
 // fire.js — FIRE SPREAD system (Phase 8 of the playable-demo engine overhaul).
 //
 // Far-Cry-2-style hybrid, deterministic + host-authoritative:
-//   • A molotov pool ignites the flammable things it lands near.
+//   • A registered ignition SOURCE (a molotov puddle, a rocket fire, …) ignites the flammables
+//     it sits near — sources are source-agnostic emitters (addEmitter), not hardcoded weapons.
 //   • Fire spreads tree↔tree, tree↔grass and grass↔grass by an EMBER CHAIN: every burning
 //     source, on each fixed tick, rolls to ignite the nearest untouched flammable within a
 //     spread radius — line-of-sight gated against WALLS (not vegetation) so fire can't jump
@@ -47,7 +48,7 @@ const KIND = {
   grass: { radius: 4.5, chance: 0.55, flameW: 0.85, flameH: 0.8 },
   wood:  { radius: 4.0, chance: 0.30, flameW: 0.75, flameH: 1.5 },
 };
-const MOLOTOV_MARGIN = 1.2;         // a molotov pool ignites flammables within radius + this
+const EMITTER_MARGIN = 1.2;         // a persistent fire-source ignites flammables within radius + this
 
 // ── dedicated instanced flame pool (one draw call, ~no shared-pool cost) ────────────
 class FlamePool {
@@ -87,6 +88,7 @@ export class FireManager {
     this.scene = game.engine.scene;
 
     this.fires = [];          // active fire records (see ignite())
+    this.emitters = [];       // persistent ignition SOURCES (source-agnostic — see addEmitter)
     this._objN = 0;           // burning object count (trees + wood) — capped at OBJ_CAP
     this._grassN = 0;         // burning grass-cell count — capped at GRASS_CAP
     this._warned = 0;         // throttle the "fire cap reached" log
@@ -157,6 +159,16 @@ export class FireManager {
     return rec;
   }
 
+  // ── persistent ignition-SOURCE registry (source-agnostic) ─────────────────────────
+  // A registered emitter re-ignites the flammables it sits near on every host tick — so a
+  // burning AREA (a molotov puddle, a future fougasse, a wreck fire…) starts the ember chain
+  // without FireManager knowing what kind of source it is. Shape:
+  //   { pos: THREE.Vector3 | {x,y,z} | [x,y,z], radius:number, alive:()=>bool, seed?:number }
+  // Each tick: skip if alive() is false, else igniteAt(pos, radius + EMITTER_MARGIN, seed).
+  // Instant one-shot sources (a rocket impact) DON'T register — they just call igniteAt once.
+  addEmitter(em) { if (em && this.emitters.indexOf(em) < 0) this.emitters.push(em); return em; }
+  removeEmitter(em) { const i = this.emitters.indexOf(em); if (i >= 0) this.emitters.splice(i, 1); }
+
   // Mirror a host ignition on a client (Phase 10 net handler calls this).
   // `owner` ('b' building / 't' forest) DISAMBIGUATES the id: forest part-ids and building
   // part-ids are separate counters that COLLIDE (both start at 1), so a bare id is ambiguous.
@@ -184,7 +196,7 @@ export class FireManager {
   clear() {
     if (!this.active) return;
     for (const f of this.fires) { if (f.part) f.part._fire = null; this.flames.release(f.slotA); this.flames.release(f.slotB); }
-    this.fires.length = 0; this._objN = 0; this._grassN = 0;
+    this.fires.length = 0; this.emitters.length = 0; this._objN = 0; this._grassN = 0;
     this.light.intensity = 0; this.light.position.set(0, -999, 0);
     this.flames.flush();
     this._clock.reset();
@@ -220,12 +232,15 @@ export class FireManager {
   _tick() {
     const step = this._clock.step;
 
-    // 1. Molotov pools act as ignition emitters — they light the flammables they land near
-    //    so the ember chain starts from the fire the player threw. (Pools are host-auth.)
-    const pools = this.game.molotovPools;
-    if (pools && pools.length) for (const p of pools) {
-      if (p.life <= 0) continue;
-      this.igniteAt([p.pos.x, p.pos.y, p.pos.z], p.radius + MOLOTOV_MARGIN, ((p.pos.x * 73856093) ^ (p.pos.z * 19349663)) >>> 0);
+    // 1. Persistent ignition SOURCES (the emitter registry) light the flammables they sit near,
+    //    so the ember chain starts from whatever burning area is registered — molotov puddle,
+    //    rocket fire, a future fougasse… FireManager is source-agnostic here (no weapon knowledge).
+    for (const em of this.emitters) {
+      if (em.alive && !em.alive()) continue;
+      const p = em.pos;
+      const px = Array.isArray(p) ? p[0] : p.x, py = Array.isArray(p) ? p[1] : p.y, pz = Array.isArray(p) ? p[2] : p.z;
+      const seed = (em.seed != null) ? em.seed : (((px * 73856093) ^ (pz * 19349663)) >>> 0);
+      this.igniteAt([px, py, pz], (em.radius || 4) + EMITTER_MARGIN, seed);
     }
 
     // 2. Advance every active fire: age, char/fell trees, spread the ember chain, burn out.

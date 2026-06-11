@@ -453,7 +453,11 @@ class Game {
     const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200);
     const py = gh ? gh.point.y + 0.02 : 0.05;
     const light = new THREE.PointLight(0xff5a26, 7, 14, 1.4); light.position.set(pos.x, py + 0.45, pos.z); this.engine.scene.add(light);
-    this.molotovPools.push({ pos: new THREE.Vector3(pos.x, py, pos.z), light, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 });
+    const pool = { pos: new THREE.Vector3(pos.x, py, pos.z), light, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 };
+    this.molotovPools.push(pool);
+    // Register the burning puddle as a generic fire SOURCE — FireManager re-ignites flammables near
+    // it without any molotov-specific knowledge (the only coupling; removed again on dispose).
+    if (this.fire) pool._emitter = this.fire.addEmitter({ pos: pool.pos, radius: pool.radius, alive: () => pool.life > 0 });
     if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
   }
   _fxBeam(from, dir) { // transient red boss-laser beam for clients (visual only — damage is host-authoritative)
@@ -463,7 +467,7 @@ class Game {
     this.engine.scene.add(beam);
     setTimeout(() => { this.engine.scene.remove(beam); beam.geometry.dispose(); beam.material.dispose(); }, 180);
   }
-  _disposeMolotovPool(p) { if (p && p.light) this.engine.scene.remove(p.light); }
+  _disposeMolotovPool(p) { if (p && p.light) this.engine.scene.remove(p.light); if (this.fire && p && p._emitter) this.fire.removeEmitter(p._emitter); }
   _clearMolotovPools() { if (this.molotovPools) { for (const p of this.molotovPools) this._disposeMolotovPool(p); this.molotovPools.length = 0; } }
   _updateMolotovPools(dt) {
     if (!this.molotovPools || !this.molotovPools.length) return;
