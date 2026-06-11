@@ -267,36 +267,67 @@ export class DemoBuilding {
   }
 
   // Retire dead parts: drop their collision box, dispose dead panes; rebuild the merged
-  // opaque mesh only if an opaque (brick/wood) part actually died. Returns elapsed ms.
+  // opaque mesh only if an opaque (brick/wood) part actually died. Returns the list of part
+  // ids newly retired by THIS call (so the host can broadcast exactly the co-op delta).
   _refresh() {
     let opaqueDied = false;
+    const newlyDead = [];
     for (const part of this.parts) {
       if (!part.dead || this._removed.has(part.dpart)) continue;
       this._removed.add(part.dpart);
+      newlyDead.push(part.dpart);
       const box = this._boxById.get(part.dpart);
       if (box) { this.world.grid.removeBox(box); const i = this.world.boxes.indexOf(box); if (i >= 0) this.world.boxes.splice(i, 1); this._boxById.delete(part.dpart); }
       if (part.glass && part.paneMesh) { this.group.remove(part.paneMesh); part.paneMesh.geometry.dispose(); part.paneMesh.material.dispose(); part.paneMesh = null; }
       else opaqueDied = true;
     }
-    if (opaqueDied) return this.rebuild();
-    // glass-only event: nothing to merge — report the (tiny) retire cost as 0-ish
-    this.lastRebuildMs = 0;
-    return 0;
+    if (opaqueDied) this.rebuild();
+    else this.lastRebuildMs = 0;   // glass-only event: nothing to merge
+    return newlyDead;
   }
 
   // ── public destruct entry points (Phase 9 / verification call these) ────────────
   // The resolve* core reads PLAIN [x,y,z] arrays; accept either an array or a
   // THREE.Vector3/{x,y,z} (the live rayHit returns Vector3s) and coerce.
-  applyHit(point, normal, dir, weaponDef) { const r = this.runtime.applyHit(_a(point), _a(normal), _a(dir), weaponDef); this._refresh(); return r; }
-  applyBlast(pos, radius, ammoDef) { const r = this.runtime.applyBlast(_a(pos), radius, ammoDef); this._refresh(); return r; }
+  applyHit(point, normal, dir, weaponDef) { const r = this.runtime.applyHit(_a(point), _a(normal), _a(dir), weaponDef); this._broadcast(this._refresh(), null); return r; }
+  applyBlast(pos, radius, ammoDef) { const r = this.runtime.applyBlast(_a(pos), radius, ammoDef); this._broadcast(this._refresh(), null); return r; }
   applyPenetration(origin, dir, weaponDef) {
     const r = this.runtime.applyPenetration(_a(origin), _a(dir), weaponDef);
-    this._refresh();
+    const dead = this._refresh();
     // A through-hole leaves the brick part ALIVE (no merge change), so punch a visible dark
     // entry/exit hole at each structural penetration so the rod reads as having gone through.
-    for (const h of (r.hits || [])) if (h.kind === 'hole') { this._addHole(h.entry); this._addHole(h.exit); }
+    const holes = [];
+    for (const h of (r.hits || [])) if (h.kind === 'hole') { if (h.entry) { this._addHole(h.entry); holes.push(h.entry); } if (h.exit) { this._addHole(h.exit); holes.push(h.exit); } }
+    this._broadcast(dead, holes);
     return r;
   }
+
+  // ── CO-OP host→client replay (Phase 10) ─────────────────────────────────────────
+  // Host broadcasts exactly the destruction DELTA (newly-dead part ids + new APFSDS holes)
+  // as one 'bdestroy' event. There is a single demoBuilding per world, so its part ids are
+  // unambiguous — no owner flag needed (the 'bdestroy' type itself routes to the building).
+  _broadcast(deadIds, holes) {
+    const mp = this.game.mp;
+    if (!mp || !mp.active || !mp.isHost || !mp.net) return;
+    if ((!deadIds || !deadIds.length) && (!holes || !holes.length)) return;
+    try { mp.net.send('bdestroy', { parts: deadIds || [], holes: holes || [] }); } catch (e) {}
+  }
+
+  // Client mirror: mark the host's dead parts dead, retire them (NO re-broadcast — _refresh
+  // alone doesn't emit), and punch the same through-holes. Idempotent (_removed dedupes).
+  applyNetDestroy(deadIds, holes) {
+    if (deadIds && deadIds.length) { for (const id of deadIds) { const part = this._partById(id); if (part) part.dead = true; } this._refresh(); }
+    if (holes && holes.length) for (const h of holes) this._addHole(h);
+  }
+
+  // Host helper for fire burn-through (the wood door): kill one part, retire it, broadcast.
+  netKillPart(id) { const part = this._partById(id); if (!part || part.dead) return; part.dead = true; this._broadcast(this._refresh(), null); }
+
+  // Late-join snapshot: every dead part id + every existing hole position, so a fresh joiner
+  // sees the breaches/shattered panes/holes the host already has.
+  netSnapshot() { return { parts: [...this._removed], holes: (this._holes || []).map(m => [m.position.x, m.position.y, m.position.z]) }; }
+
+  _partById(id) { for (const p of this.parts) if (p.dpart === id) return p; return null; }
 
   // small dark recessed cube marking an APFSDS through-hole (purely visual; the wall still collides)
   _addHole(p) {

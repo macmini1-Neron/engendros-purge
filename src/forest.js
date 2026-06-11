@@ -269,6 +269,13 @@ export class Forest {
     else { const a = (seed % 628) / 100; dx = Math.cos(a); dz = Math.sin(a); }
     const n = Math.hypot(dx, dz) || 1; dx /= n; dz /= n;
 
+    // remember the exact fall dir + seed so a co-op late-joiner can reconstruct this topple.
+    tree._fellDir = [dx, dz]; tree._fellSeed = seed;
+    // Host-auth co-op sync (Phase 10): broadcast WHICH tree fell + its dir + seed so every peer
+    // replays the identical deterministic FallingBody. Clients never call fellTree locally
+    // (destruction is host-gated) — they only mirror via fellTreeById in the 'forestfx' handler.
+    this._emitForest('fell', tree.id, { dx, dz, seed });
+
     this._hideInstance(tree);
     this._stumpify(tree);
     if (this.debris) this.debris.burst('splints', [tree.pos.x, tree.pos.y + tree.breakPoint, tree.pos.z], seed);
@@ -301,6 +308,7 @@ export class Forest {
   charTree(tree) {
     if (!tree || tree.charred) return tree;
     tree.charred = true;
+    this._emitForest('char', tree.id);   // host-auth: mirror the charred snag on every peer
     if (tree.standing) {
       this._hideInstance(tree);
       try {
@@ -313,6 +321,48 @@ export class Forest {
     }
     if (!tree.part.dead) tree.part.dhp = Math.max(1, tree.part.dhp * 0.4);  // charred wood snaps easy
     return tree;
+  }
+
+  // ── CO-OP host→client replay (Phase 10) ─────────────────────────────────────────
+  // A tree record by id (trees register sequential ids off the shared _nextId counter,
+  // seeded off the terrain seed → identical on every peer).
+  _treeById(id) { for (const t of this.trees) if (t.id === id) return t; return null; }
+
+  // Host emits exactly one 'forestfx' message per fell/char/grass-consume; clients mirror.
+  // No-op unless we're the authoritative host in an active co-op session.
+  _emitForest(k, id, extra = null) {
+    const mp = this.game.mp;
+    if (!mp || !mp.active || !mp.isHost || !mp.net) return;
+    try { mp.net.send('forestfx', Object.assign({ k, id }, extra || {})); } catch (e) {}
+  }
+
+  // Client mirrors of the three authoritative forest mutations. Each is idempotent and
+  // re-broadcast-safe (fellTree/charTree guard on standing/charred; the host guard in
+  // _emitForest prevents a client echo).
+  fellTreeById(id, dx, dz, seed) { const t = this._treeById(id); if (t) this.fellTree(t, (dx || dz) ? [dx, dz] : null, seed); }
+  charTreeById(id)               { const t = this._treeById(id); if (t) this.charTree(t); }
+  consumeGrassById(id)           { const rec = this.cover.find(c => c.id === id); if (rec) this._consumeGrass(rec); }
+
+  // Burn a grass tuft out (visual + part death). Host path also broadcasts so clients match;
+  // the fire system (host) calls this from _burnout, the net handler calls consumeGrassById.
+  consumeGrass(rec) { this._consumeGrass(rec); this._emitForest('grass', rec.id); }
+  _consumeGrass(rec) {
+    if (!rec || rec.dead) return;
+    rec.dead = true; if (rec.part) rec.part.dead = true;
+    if (rec.inst && rec.inst.mesh) { rec.inst.mesh.setMatrixAt(rec.inst.index, ZERO_MAT); rec.inst.mesh.instanceMatrix.needsUpdate = true; }
+  }
+
+  // Late-join snapshot: every authoritative forest mutation a fresh joiner missed, as a list
+  // of 'forestfx'-shaped records the host replays into the joiner. (clearArea'd trees are NOT
+  // included — building placement is deterministic, so the joiner clears the same footprint.)
+  netSnapshot() {
+    const out = [];
+    for (const t of this.trees) {
+      if (t.felled) out.push({ k: 'fell', id: t.id, dx: (t._fellDir && t._fellDir[0]) || 0, dz: (t._fellDir && t._fellDir[1]) || 0, seed: t._fellSeed || ((t.id * 2654435761) >>> 0) });
+      else if (t.charred) out.push({ k: 'char', id: t.id });   // charred-but-standing
+    }
+    for (const c of this.cover) if (c.dead) out.push({ k: 'grass', id: c.id });
+    return out;
   }
 
   // Parts the fire system may ignite (fuel > 0, still alive). Phase 8 enumerates this.

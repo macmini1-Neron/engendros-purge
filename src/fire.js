@@ -158,10 +158,25 @@ export class FireManager {
   }
 
   // Mirror a host ignition on a client (Phase 10 net handler calls this).
-  igniteById(id, seed) {
+  // `owner` ('b' building / 't' forest) DISAMBIGUATES the id: forest part-ids and building
+  // part-ids are separate counters that COLLIDE (both start at 1), so a bare id is ambiguous.
+  // Dispatch on owner → search ONLY that source's flammable parts, never a global id match.
+  igniteById(id, owner, seed) {
     if (!this.active) return null;
-    for (const p of this._candidates()) if (p.part.dpart === id) return this.ignite(p.part, seed);
+    const src = owner === 'b'
+      ? (this.world.demoBuilding && this.world.demoBuilding.flammableParts ? this.world.demoBuilding.flammableParts() : [])
+      : (this.game.forest && this.game.forest.flammableParts ? this.game.forest.flammableParts() : []);
+    for (const part of src) if (part.dpart === id) return this.ignite(part, seed);
     return null;
+  }
+
+  // Late-join snapshot: the currently-burning parts as host→client ignition descriptors
+  // (same {id, owner, seed} shape as the live 'fireignite' broadcast). A fresh joiner replays
+  // these via igniteById to light the fires the host already has going.
+  netSnapshot() {
+    const out = [];
+    for (const f of this.fires) if (f.part) out.push({ id: f.part.dpart, owner: f.owner === this.world.demoBuilding ? 'b' : 't', seed: f.seed });
+    return out;
   }
 
   activeCount() { return this.fires.length; }
@@ -180,7 +195,25 @@ export class FireManager {
     if (!this.active) return;
     const hostSim = !this.game.mp.active || this.game.mp.isHost;  // only the host drives spread/burn
     if (hostSim) this._clock.advance(dt, () => this._tick());
+    else this._clientAge(dt);                                      // clients: fade+retire flame visuals only
     this._renderFlames(dt);                                        // visual flicker every frame
+  }
+
+  // CLIENT-ONLY visual ager. Clients never run _tick (spread/char/fell are host-authoritative
+  // and arrive as synced events), but their mirrored 'fireignite' flames must still fade out and
+  // free their pool slots — otherwise a client's flames would burn forever. The structural
+  // consequences (tree char/fell, grass/door consume) come from the host as 'forestfx'/'bdestroy',
+  // so here we ONLY retire the visual (no char/fell/consume).
+  _clientAge(dt) {
+    for (let i = this.fires.length - 1; i >= 0; i--) {
+      const f = this.fires[i]; f.age += dt;
+      if (f.age >= f.duration) {
+        if (f.part) f.part._fire = null;
+        this.flames.release(f.slotA); this.flames.release(f.slotB); f.slotA = f.slotB = -1;
+        if (f.kind === 'grass') this._grassN--; else this._objN--;
+        this.fires.splice(i, 1);
+      }
+    }
   }
 
   // ── one fixed fire tick ─────────────────────────────────────────────────────────────
@@ -233,15 +266,15 @@ export class FireManager {
           if (FELL_ON_BURNOUT && f.owner && f.owner.standing) fr.fellTree(f.owner, null, f.seed);
         }
       } else if (f.kind === 'grass') {
-        f.part.dead = true;                                  // grass is consumed
-        const rec = f.owner;
-        if (rec && rec.inst && rec.inst.mesh) {              // hide the burnt tuft instance
-          rec.inst.mesh.setMatrixAt(rec.inst.index, new THREE.Matrix4().makeScale(0, 0, 0));
-          rec.inst.mesh.instanceMatrix.needsUpdate = true;
-        }
+        // grass is consumed — route through forest so the host broadcasts the consume (co-op).
+        const fr = this.game.forest, rec = f.owner;
+        if (fr && typeof fr.consumeGrass === 'function' && rec) fr.consumeGrass(rec);
+        else { f.part.dead = true; if (rec && rec.inst && rec.inst.mesh) { rec.inst.mesh.setMatrixAt(rec.inst.index, new THREE.Matrix4().makeScale(0, 0, 0)); rec.inst.mesh.instanceMatrix.needsUpdate = true; } }
       } else {                                               // building wood (door) — burns through
-        f.part.dead = true;
-        if (f.owner && typeof f.owner._refresh === 'function') f.owner._refresh();
+        // route through the building so the host broadcasts the part death (co-op 'bdestroy').
+        const b = f.owner;
+        if (b && typeof b.netKillPart === 'function') b.netKillPart(f.part.dpart);
+        else { f.part.dead = true; if (b && typeof b._refresh === 'function') b._refresh(); }
       }
     } catch (e) { /* non-fatal */ }
   }
