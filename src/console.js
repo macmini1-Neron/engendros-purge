@@ -20,12 +20,11 @@ export class DevConsole {
   // ---- command registry (verified APIs only) ----
   _registerCommands() {
     const g = this.game;
-    const playerPos = () => g.player.pos;
 
     this.reg.register('help', { args: [], run: () => 'Commands: /' + this.reg.names().join('  /') });
-    this.reg.register('pos', { args: [], run: () => { const p = playerPos(); return `x ${p.x.toFixed(1)}  y ${p.y.toFixed(1)}  z ${p.z.toFixed(1)}`; } });
+    this.reg.register('pos', { args: [], run: () => { const p = g.player.pos; return `x ${p.x.toFixed(1)}  y ${p.y.toFixed(1)}  z ${p.z.toFixed(1)}`; } });
     this.reg.register('seed', { args: [], run: () => `seed ${g.world.terrain ? g.world.terrain.seed ?? 1337 : 'flat'} (map ${g.mapId})` });
-    this.reg.register('clear', { args: [], run: () => { this._log.innerHTML = ''; return ''; } });
+    this.reg.register('clear', { args: [], run: () => { if (this._log) this._log.innerHTML = ''; return ''; } });
 
     this.reg.register('tp', {
       args: [{ name: 'dest', type: 'pos' }],
@@ -95,6 +94,7 @@ export class DevConsole {
     this._el = document.getElementById('console');
     this._log = document.getElementById('console-log');
     this._input = document.getElementById('console-input');
+    this._f3 = document.getElementById('f3debug');
     if (!this._input) return;
     this._input.addEventListener('keydown', (e) => {
       e.stopPropagation();
@@ -127,7 +127,7 @@ export class DevConsole {
 
   toggle() { this.open ? this.close() : this.openConsole(); }
   openConsole(prefill = '') {
-    if (!this._el) return;
+    if (!this._el || !this._input) return;
     this.open = true; this._el.classList.add('show');
     this.game.input.exitLock(); this.game.input.enabled = false;
     this._input.value = prefill; this._input.focus();
@@ -140,7 +140,7 @@ export class DevConsole {
 
   // ---- F3 debug overlay (updated each frame from game) ----
   updateF3(visible) {
-    const el = document.getElementById('f3debug');
+    const el = this._f3;
     if (!el) return;
     el.classList.toggle('show', !!visible);
     if (!visible) return;
