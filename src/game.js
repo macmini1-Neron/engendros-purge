@@ -62,7 +62,8 @@ class Game {
     this.mapId = (() => { try {
       const p = new URLSearchParams(location.search).get('map');
       if (p === 'steppe' || p === 'arena' || p === 'demo') return p; // 'demo' = Phase-4+ walkable-terrain slice (?map=demo)
-      return localStorage.getItem('engendros_map') === 'steppe' ? 'steppe' : 'arena';
+      const saved = localStorage.getItem('engendros_map');
+      return (saved === 'steppe' || saved === 'demo') ? saved : 'arena';
     } catch (e) { return 'arena'; } })();
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
     this.freecam = false;
@@ -119,6 +120,7 @@ class Game {
     const NOTES = {
       arena: 'de_dust2 arena — the classic wave-defence map.',
       steppe: 'Soviet steppe — airfield, kombinát, проходная, field base + POIs.',
+      demo: 'ПОЛИГОН — destruction demo: walkable hills, forest, destructible building & spreading fire. Bazooka/molotov/APFSDS in hand. (single-player slice)',
     };
     const tabs = Array.from(document.querySelectorAll('#map-pick .tab'));
     const note = document.getElementById('map-note');
