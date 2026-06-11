@@ -34,9 +34,9 @@ export const EXTENTS = {
     return { min: [-w / 2, y - 0.15, -d / 2], max: [w / 2, y, d / 2] };
   },
   interiorWall: (a) => a.axis === 'x'
-    ? { min: [-a.len / 2, 0, -a.t / 2], max: [a.len / 2, a.h, a.t / 2] }
-    : { min: [-a.t / 2, 0, -a.len / 2], max: [a.t / 2, a.h, a.len / 2] },
-  column: (a) => ({ min: [-a.w / 2, 0, -a.d / 2], max: [a.w / 2, a.h, a.d / 2] }),
+    ? { min: [-a.len / 2, 0, -a.t / 2], max: [a.len / 2, a.h + 0.003, a.t / 2] }
+    : { min: [-a.t / 2, 0, -a.len / 2], max: [a.t / 2, a.h + 0.003, a.len / 2] },
+  column: (a) => ({ min: [-a.w / 2, 0, -a.d / 2], max: [a.w / 2, a.h + 0.003, a.d / 2] }),
   stairs: (a) => {
     const [dx, dz] = DIRV[a.dir] ?? DIRV.N;
     const len = a.steps * a.run;

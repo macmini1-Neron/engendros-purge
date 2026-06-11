@@ -12,6 +12,31 @@ import { faceFrame, specTopY } from './operators/_math.js';
 const TRIS = { box: 12, wedge: 8, prism: 8, pane: 2 };
 const OPENING_OPS = new Set(['doorway', 'windowBays', 'gateOpening']);
 
+// Same-normal coplanar overlap detector over box prims (law 7 — the shimmer bug, mechanised).
+// min↔min or max↔max equal on one axis + STRICT overlap on both others. Opposite-normal
+// contact (stacked slabs, frames lining a reveal) is the safe kind and is NOT flagged.
+const ZEPS = 1e-6;
+export function zFightPairs(boxes) {
+  const bs = boxes.map((c) => ({
+    min: [c.x - c.w / 2, c.y - c.h / 2, c.z - c.d / 2],
+    max: [c.x + c.w / 2, c.y + c.h / 2, c.z + c.d / 2],
+  }));
+  const bad = [];
+  for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+    const A = bs[i], B = bs[j];
+    for (let ax = 0; ax < 3; ax++) {
+      const o1 = (ax + 1) % 3, o2 = (ax + 2) % 3;
+      const overlap = A.min[o1] < B.max[o1] - ZEPS && B.min[o1] < A.max[o1] - ZEPS
+        && A.min[o2] < B.max[o2] - ZEPS && B.min[o2] < A.max[o2] - ZEPS;
+      if (!overlap) continue;
+      if (Math.abs(A.min[ax] - B.min[ax]) < ZEPS || Math.abs(A.max[ax] - B.max[ax]) < ZEPS) {
+        bad.push({ i: boxes[i].part, j: boxes[j].part, axis: 'xyz'[ax] });
+      }
+    }
+  }
+  return bad;
+}
+
 export function planBuild(spec) {
   const errors = [];
   const prims = [];

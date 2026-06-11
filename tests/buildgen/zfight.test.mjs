@@ -4,31 +4,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { planBuild } from '../../src/buildings/plan.js';
+import { planBuild, zFightPairs } from '../../src/buildings/plan.js';
 
 const SMOKE = JSON.parse(readFileSync(new URL('../../buildings/_smoke/spec.json', import.meta.url), 'utf8'));
 const EPS = 1e-6;
-
-const aabb = (c) => ({ min: [c.x - c.w / 2, c.y - c.h / 2, c.z - c.d / 2], max: [c.x + c.w / 2, c.y + c.h / 2, c.z + c.d / 2] });
-
-// Same-normal coplanar overlap: min↔min or max↔max equal on one axis + STRICT overlap on both others.
-export function zFightPairs(boxes) {
-  const bad = [];
-  const bs = boxes.map(aabb);
-  for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
-    const A = bs[i], B = bs[j];
-    for (let ax = 0; ax < 3; ax++) {
-      const o1 = (ax + 1) % 3, o2 = (ax + 2) % 3;
-      const overlap = A.min[o1] < B.max[o1] - EPS && B.min[o1] < A.max[o1] - EPS
-        && A.min[o2] < B.max[o2] - EPS && B.min[o2] < A.max[o2] - EPS;
-      if (!overlap) continue;
-      if (Math.abs(A.min[ax] - B.min[ax]) < EPS || Math.abs(A.max[ax] - B.max[ax]) < EPS) {
-        bad.push({ i: boxes[i].part, j: boxes[j].part, axis: 'xyz'[ax] });
-      }
-    }
-  }
-  return bad;
-}
 
 // Building-shaped compile targets, each exercising different operator interactions.
 const TARGETS = {

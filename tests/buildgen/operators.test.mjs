@@ -104,7 +104,7 @@ test('column + interiorWall counts and anchoring', () => {
   column(b, { w: 0.4, d: 0.4, h: 3 }, ctx({ origin: { x: 1, y: 0, z: -2 } }));
   interiorWall(b, { len: 4, h: 3, t: 0.2, axis: 'x' }, ctx({ origin: { x: 0, y: 0, z: 0 } }));
   assert.equal(b.calls.length, 2);
-  assert.ok(Math.abs(b.calls[0].y - 1.5) < 1e-9, 'column floor-anchored');
+  assert.ok(Math.abs(b.calls[0].y - 1.502) < 1e-9, 'column floor-anchored (+2 mm seat)');
   assert.ok(Math.abs(b.calls[1].w - 4) < 1e-9 && Math.abs(b.calls[1].d - 0.2) < 1e-9, 'interior wall axis x');
 });
 

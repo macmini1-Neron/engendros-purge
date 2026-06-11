@@ -63,26 +63,28 @@ export function floorSlab(b, a, ctx) {
   const eW = x1 - hx1; if (eW > 0.05) b.box(eW, SLAB_T, midD, x1 - eW / 2, yC, midZ, { mat, collide });     // east of hole
 }
 
-// Interior partition wall (solid in v1 — exits are counted on the shell). Floor-anchored at origin.
+// Interior partition wall (solid in v1 — exits are counted on the shell). Floor-anchored at
+// origin, with a 2 mm seat lift so its bottom never shares the base slab's bottom plane
+// (authors naturally write at:[x,0,z]; without the lift that is a guaranteed z-fight).
+const SEAT = 0.002;
 export function interiorWall(b, a, ctx) {
   const o = ctx.origin;
   const mat = ctx.mat ?? ctx.materials?.wall;
-  if (a.axis === 'x') b.box(a.len, a.h, a.t, o.x, o.y + a.h / 2, o.z, { mat, collide: ctx.collide });
-  else b.box(a.t, a.h, a.len, o.x, o.y + a.h / 2, o.z, { mat, collide: ctx.collide });
+  if (a.axis === 'x') b.box(a.len, a.h, a.t, o.x, o.y + SEAT + a.h / 2, o.z, { mat, collide: ctx.collide });
+  else b.box(a.t, a.h, a.len, o.x, o.y + SEAT + a.h / 2, o.z, { mat, collide: ctx.collide });
 }
 
-// Structural column, floor-anchored at origin.
+// Structural column, floor-anchored at origin (same 2 mm seat lift).
 export function column(b, a, ctx) {
   const o = ctx.origin;
-  b.box(a.w, a.h, a.d, o.x, o.y + a.h / 2, o.z, { mat: ctx.mat ?? ctx.materials?.trim, collide: ctx.collide });
+  b.box(a.w, a.h, a.d, o.x, o.y + SEAT + a.h / 2, o.z, { mat: ctx.mat ?? ctx.materials?.trim, collide: ctx.collide });
 }
 
 // Straight stair flight — N stacked boxes, each FULL height from the base ((i+1)·rise), so the
 // player's ≤0.62 m step-up collision climbs them with no special-casing (world._stairs pattern).
 // origin = foot of the flight (floor-anchored, centre of the first step's leading edge); marches
-// `dir`. A 2 mm seat lift keeps the step bottoms off the floor/ground plane (z-fight law).
+// `dir`. The same 2 mm seat lift keeps the step bottoms off the floor/ground plane.
 export function stairs(b, a, ctx) {
-  const SEAT = 0.002;
   const o = ctx.origin;
   const [dx, dz] = DIRV[a.dir] ?? DIRV.N;
   const mat = ctx.mat ?? ctx.materials?.trim;
