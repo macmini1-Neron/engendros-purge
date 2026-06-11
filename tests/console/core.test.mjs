@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { tokenize } from '../../src/console-core.js';
 import { parseNum, parseInt_, parseCoord } from '../../src/console-core.js';
 import { createRegistry } from '../../src/console-core.js';
+import { parseSelector, resolveSelector } from '../../src/console-core.js';
 
 test('tokenize: strips one leading slash and splits on whitespace', () => {
   assert.deepEqual(tokenize('/summon grunt 1 2 3'), ['summon', 'grunt', '1', '2', '3']);
@@ -74,4 +75,19 @@ test('dispatch: enum rejects bad value', () => {
   const res = r.dispatch('/mode flying');
   assert.equal(res.ok, false);
   assert.match(res.error, /creative\|survival/);
+});
+
+test('parseSelector: @p/@a/@e/@s recognised; bare word ⇒ name target', () => {
+  assert.deepEqual(parseSelector('@e'), { kind: 'e' });
+  assert.deepEqual(parseSelector('@s'), { kind: 's' });
+  assert.deepEqual(parseSelector('Boris'), { kind: 'name', value: 'Boris' });
+});
+test('resolveSelector: routes to the injected provider', () => {
+  const self = { id: 'me' };
+  const others = [{ id: 'a' }, { id: 'b' }];
+  const provider = { self, players: () => [self, ...others], entities: () => [{ id: 'z1' }] };
+  assert.deepEqual(resolveSelector({ kind: 's' }, provider), [self]);
+  assert.deepEqual(resolveSelector({ kind: 'a' }, provider), [self, ...others]);
+  assert.deepEqual(resolveSelector({ kind: 'p' }, provider), [self]);              // nearest = first for now
+  assert.deepEqual(resolveSelector({ kind: 'e' }, provider), [{ id: 'z1' }]);
 });

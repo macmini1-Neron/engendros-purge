@@ -72,3 +72,19 @@ export function createRegistry() {
   const api = { register, dispatch, has: (n) => cmds.has(n), names: () => [...cmds.keys()] };
   return api;
 }
+
+export function parseSelector(tok) {
+  const m = /^@([paes])$/.exec(tok);
+  return m ? { kind: m[1] } : { kind: 'name', value: tok };
+}
+// provider: { self, players(): [], entities(): [], byName?(name): [] }
+export function resolveSelector(sel, provider) {
+  switch (sel.kind) {
+    case 's': return [provider.self].filter(Boolean);
+    case 'p': return provider.players().slice(0, 1);   // v0: "nearest" = first; refine later
+    case 'a': return provider.players();
+    case 'e': return provider.entities();
+    case 'name': return provider.byName ? provider.byName(sel.value) : [];
+    default: return [];
+  }
+}
