@@ -252,3 +252,42 @@ test('resolveSelector: @e[type=X] passes the type filter to provider.entities', 
   resolveSelector({ kind: 'e' }, provider);
   assert.equal(calls[1], undefined); // bare @e ⇒ no filter arg
 });
+
+// ---- 'target' arg type ----
+function tgtReg() {
+  const r = createRegistry();
+  r.register('give', { args: [{ name: 't', type: 'target' }, { name: 'what', type: 'word' }, { name: 'amt', type: 'int', optional: true, default: 100 }], run: (a) => a });
+  r.register('kill', { args: [{ name: 't', type: 'target', optional: true, default: null }], run: (a) => a });
+  return r;
+}
+const stubSel = {
+  self: { id: 'me' },
+  players: () => [{ id: 'me' }],
+  entities: () => [{ id: 'e1' }, { id: 'e2' }],
+  byName: (n) => (n === 'Boris' ? [{ id: 'Boris' }] : []),
+};
+test('target: omitted ⇒ defaults to @s (self), token stays for next arg', () => {
+  const res = tgtReg().dispatch('/give money 50', { sel: stubSel });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.message.t, [{ id: 'me' }]);   // @s
+  assert.equal(res.message.what, 'money');           // 'money' consumed by <what>, not the target
+  assert.equal(res.message.amt, 50);
+});
+test('target: @a is consumed as the target', () => {
+  const res = tgtReg().dispatch('/give @a money', { sel: stubSel });
+  assert.deepEqual(res.message.t, [{ id: 'me' }]);    // players()
+  assert.equal(res.message.what, 'money');
+});
+test('target: a known name is consumed as the target', () => {
+  const res = tgtReg().dispatch('/give Boris money', { sel: stubSel });
+  assert.deepEqual(res.message.t, [{ id: 'Boris' }]);
+  assert.equal(res.message.what, 'money');
+});
+test('target: optional omitted ⇒ its literal default (null), not @s', () => {
+  const res = tgtReg().dispatch('/kill', { sel: stubSel });
+  assert.equal(res.message.t, null);
+});
+test('target: @e[type=…] resolves through the provider', () => {
+  const res = tgtReg().dispatch('/kill @e', { sel: stubSel });
+  assert.deepEqual(res.message.t, [{ id: 'e1' }, { id: 'e2' }]);
+});

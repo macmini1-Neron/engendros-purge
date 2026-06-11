@@ -60,6 +60,14 @@ export function createRegistry() {
           i += 3;
           continue;
         }
+        if (a.type === 'target') {
+          const tok = rest[i];
+          const looks = tok != null && (tok[0] === '@' || (ctx.sel && ctx.sel.byName && ctx.sel.byName(tok).length > 0));
+          if (looks) { args[a.name] = resolveSelector(parseSelector(tok), ctx.sel); i++; }
+          else if (a.optional) { args[a.name] = a.default ?? null; }                         // e.g. /kill ⇒ null ⇒ "all" in run
+          else { args[a.name] = ctx.sel ? resolveSelector({ kind: 's' }, ctx.sel) : []; }    // required ⇒ @s (you)
+          continue;
+        }
         if (i >= rest.length) {
           if (a.optional) { args[a.name] = a.default ?? null; continue; }
           throw new Error(`/${name}: missing <${a.name}>`);
