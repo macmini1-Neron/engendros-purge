@@ -640,6 +640,7 @@ export class MP {
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
     n.on('molotov', (d) => { if (this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('firepool', (d) => { if (!this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
+    n.on('fireignite', (d) => { if (!this.isHost && this.game.fire) this.game.fire.igniteById(d.id, d.seed); }); // host-auth fire SPREAD: mirror the exact part+seed the host lit (forest/building parts are seeded identically → dpart matches on every peer)
     n.on('kill', (d) => this._clientKill(d));
     n.on('burn', () => { this.game.player.burnT = PLAYER_BURN_DUR; });
     n.on('bleed', (d) => { if (d && typeof d.t === 'number') this._bleedT = d.t; }); // host re-syncs the downed player's bleed-out bar to the authoritative downT

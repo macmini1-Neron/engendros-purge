@@ -14,6 +14,7 @@ import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
+import { FireManager } from './fire.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
@@ -77,6 +78,7 @@ class Game {
     // forest so it can clearArea() the trees on its footprint. Sets game.world.demoBuilding;
     // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
     this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
     const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
     const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
@@ -352,6 +354,7 @@ class Game {
     this.waves.reset();
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
+    if (this.fire) this.fire.clear();
     this.dayNight.reset(this.mode === 'longnight'); // bright noon for PURGE, dawn-into-night for LONG NIGHT
     this._surviveTime = 0;
     this.score = 0; this.kills = 0;
@@ -626,6 +629,7 @@ class Game {
     this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
+    if (this.fire) this.fire.clear();
     this.dayNight.reset(this.mode === 'longnight');
     if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false); // lobby plays the shuffled song jukebox
     this.hud.setBleed(-1); this.hud.hideBoss(); this.hud.clearWaveTag();
@@ -811,6 +815,7 @@ class Game {
     if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
     this._updateFlares(dt);       // flare is a deployable gadget in EVERY mode → tick gravity/burn/smoke unconditionally (mirrors _updateMolotovPools), else a flare thrown in purge hangs in mid-air
     this._updateMolotovPools(dt);
+    if (this.fire) this.fire.update(dt); // Phase 8: ember-chain spread + burn-through (own fixed clock; reads molotovPools as sources)
     if (hostSim) this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount); // clients get the authoritative count via 'clock'
     this.effects.update(dt);
     this.hud.update(dt);
