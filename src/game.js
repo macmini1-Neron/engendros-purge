@@ -12,6 +12,7 @@ import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
+import { Forest } from './forest.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
@@ -70,6 +71,7 @@ class Game {
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
+    this.forest = new Forest(this); // ?map=demo forest kit: destructible/flammable trees + groundcover (no-op on flat maps)
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
     const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
     const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
@@ -792,6 +794,7 @@ class Game {
     if (this.world.updateDoors) this.world.updateDoors(dt); // steppe: ease bunker гермодвери open/closed + track leaf colliders
     if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
+    if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies (demo forest)
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);
