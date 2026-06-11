@@ -15,7 +15,7 @@ export class Player {
     this.pos = new THREE.Vector3(0, 0, 30); this.vel = new THREE.Vector3();
     this.yaw = Math.PI; this.pitch = 0;
     this.radius = 0.35; this.height = 1.7; this.eye = 1.62;
-    this.onGround = true; this.sens = 0.0022;
+    this.onGround = true; this.sens = 0.0022; this.nick = 'Player'; // identity for console selectors (set live from Settings)
     this._footT = 0; this._fallVel = 0; this._regenT = 0; this._camY = this.eye;
     this.resetStats();
   }
