@@ -165,6 +165,10 @@ export function highlight(line, registry) {
     const defs = spec.args || [];
     for (let ai = 0; ai < defs.length && wi < words.length; ai++) {
       const a = defs[ai], cls = ARG_STYLES[colorNo % ARG_STYLES.length];
+      if (a.type === 'target') { // optional leading target: colour an explicit @selector; a bare token means it defaulted to @s, so leave it for the next arg
+        if (words[wi].text[0] === '@') { wordCls[wi] = cls; wi++; colorNo++; }
+        continue;
+      }
       if (a.type === 'rest') { for (; wi < words.length; wi++) wordCls[wi] = cls; colorNo++; break; }
       if (a.type === 'pos') { // a coordinate triple is ONE argument ⇒ one colour for all three
         for (let k = 0; k < 3 && wi < words.length; k++, wi++) wordCls[wi] = coordOk(words[wi].text) ? cls : 'mc-err';

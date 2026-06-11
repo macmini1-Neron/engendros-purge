@@ -291,3 +291,21 @@ test('target: @e[type=…] resolves through the provider', () => {
   const res = tgtReg().dispatch('/kill @e', { sel: stubSel });
   assert.deepEqual(res.message.t, [{ id: 'e1' }, { id: 'e2' }]);
 });
+
+// ---- highlight: optional 'target' arg colouring ----
+function hlTgtReg() {
+  const r = createRegistry();
+  r.register('give', { args: [{ name: 't', type: 'target' }, { name: 'what', type: 'enum', choices: ['money', 'health', 'armor'] }, { name: 'amt', type: 'int', optional: true }], run: () => '' });
+  return r;
+}
+test('highlight: omitted target ⇒ value tokens keep their real colours (no false red)', () => {
+  const segs = highlight('/give money 999', hlTgtReg()).filter((s) => s.text.trim());
+  assert.equal(segs.find((s) => s.text === 'money').cls, 'mc-aqua');   // <what> = first arg colour, valid enum
+  assert.equal(segs.find((s) => s.text === '999').cls, 'mc-yellow');   // <amount> = second colour, valid int
+});
+test('highlight: explicit @ target is coloured and shifts the value colours', () => {
+  const segs = highlight('/give @a money 5', hlTgtReg()).filter((s) => s.text.trim());
+  assert.equal(segs.find((s) => s.text === '@a').cls, 'mc-aqua');
+  assert.equal(segs.find((s) => s.text === 'money').cls, 'mc-yellow');
+  assert.equal(segs.find((s) => s.text === '5').cls, 'mc-green');
+});
