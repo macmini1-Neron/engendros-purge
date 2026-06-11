@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MeshBuilder, rr, voxelMaterial } from './util.js';
 import { buildFlare, buildFieldRadio } from './props.js';
-import { WEAPONS, WEAPON_ORDER, buildViewmodel } from './weapons.js';
+import { WEAPONS, WEAPON_ORDER, buildViewmodel, DEMO_LOADOUT } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { WEAPON_LAYER } from './engine.js';
 import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
@@ -319,7 +319,9 @@ export class Inventory {
   deployLoadout() {
     this.slots.fill(null);
     const w = this.game.weapons;
-    const lo = (this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : []; // flat array of equal slots
+    const lo = (this.game.mapId === 'demo')
+      ? DEMO_LOADOUT.slice()                                                            // ?map=demo: forced demo loadout (matches WeaponSystem.resetLoadout)
+      : ((this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : []); // flat array of equal slots
     const granted = new Set();                                                          // grant() is ammo-init (idempotent) — once per weapon kind
     for (const k of lo) {
       if (!k) continue;

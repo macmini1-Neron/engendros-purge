@@ -7,7 +7,7 @@ import { TAU, randRange } from './util.js';
 import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER } from './tuning.js';
 import { KILL_CASH } from './economy.js';
 import { buildFlare, buildFlopo } from './props.js';
-import { MountedGun, WeaponSystem } from './weapons.js';
+import { MountedGun, WeaponSystem, WEAPONS } from './weapons.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
@@ -432,6 +432,16 @@ class Game {
     const start = from.clone().addScaledVector(dir, OCCLUSION_INSET);
     return this.world.rayHit(start, dir, dist - OCCLUSION_INSET * 2) !== null;
   }
+  // Console hook (?map=demo): fire an APFSDS long-rod straight out of the camera. Lets a
+  // tester demonstrate penetration through-holes + spall without scrolling to the cannon slot.
+  // Usage: GAME.demoFireAPFSDS()
+  demoFireAPFSDS() {
+    const cam = this.engine.camera; cam.updateMatrixWorld();
+    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    this.weapons._fireAPFSDS(origin, dir, WEAPONS.apfsds);
+    return 'APFSDS fired';
+  }
   _spawnMolotovPool(pos, fromNet = false) {
     if (this.mp.active && !this.mp.isHost && !fromNet) { this.mp.net.send('molotov', { x: pos.x, y: pos.y, z: pos.z }); return; }
     if (!this.molotovPools) this.molotovPools = [];
@@ -803,7 +813,8 @@ class Game {
     if (this.world.updateDoors) this.world.updateDoors(dt); // steppe: ease bunker гермодвери open/closed + track leaf colliders
     if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
-    if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies (demo forest)
+    if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
+    if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);

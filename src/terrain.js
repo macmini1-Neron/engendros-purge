@@ -80,16 +80,25 @@ function fbm(x, z, seed, { octaves = 4, freq = 1 / 55, lacunarity = 2, gain = 0.
 export const DEMO_TUNING = {
   fbmAmplitude: 4.2,           // metres — gentle rolling hills (~±4 m)
   fbm: { octaves: 4, freq: 1 / 55, lacunarity: 2, gain: 0.5 },
-  // one larger broad hill — broad sigma keeps its flanks walkable (~11°).
+  // one larger broad hill — broad sigma keeps its flanks walkable (~11°) → the WALKABLE hill.
   bigHill: { x: 60, z: -40, height: 11, sigma: 35 },
+  // one STEEP knoll — a narrow tall Gaussian (height/sigma chosen so its flanks exceed the
+  // 35° slope-limit over a clear ~2–8 m band) → a genuine wall-steep face you bump into.
+  // Max gradient ≈ height / (sigma·√e) = 10 / (4·1.648) ≈ 1.52 → ~56°. Placed within a short
+  // walk of the (35,−8) spawn so the slope-limit can actually be FELT in normal play.
+  steepKnoll: { x: 8, z: -34, height: 10, sigma: 4 },
 };
 
 function demoHeight(x, z, seed, tune) {
   let h = tune.fbmAmplitude * fbm(x, z, seed, tune.fbm);
   const bh = tune.bigHill;
   const dx = x - bh.x, dz = z - bh.z;
-  const r2 = dx * dx + dz * dz;
-  h += bh.height * Math.exp(-r2 / (2 * bh.sigma * bh.sigma));
+  h += bh.height * Math.exp(-(dx * dx + dz * dz) / (2 * bh.sigma * bh.sigma));
+  const sk = tune.steepKnoll;
+  if (sk) {
+    const kx = x - sk.x, kz = z - sk.z;
+    h += sk.height * Math.exp(-(kx * kx + kz * kz) / (2 * sk.sigma * sk.sigma));
+  }
   return h;
 }
 

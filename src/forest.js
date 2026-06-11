@@ -36,7 +36,8 @@ import * as THREE from 'three';
 import { makeRNG, voxelMaterial, clamp, TAU } from './util.js';
 import { makeTree, SPECIES } from './props/generators/tree.js';
 import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, rayAABB } from './destruct.js';
+import { DebrisPool } from './destruct-debris.js';
 
 // Live (foliated) species placed in the wood. The damage-state snags ('deadBroken',
 // 'burntCharred') are reached only via the damage override on fell/char, not scattered.
@@ -79,6 +80,7 @@ export class Forest {
 
     // Only the demo (heightfield) map grows a forest. Flat maps (arena/steppe) untouched.
     if (!this.world.hasTerrain || !this.world.terrain) return;
+    this.debris = new DebrisPool(this.scene);   // splints/chips when a trunk is hit/felled (Phase 9 visuals)
     try { this._build(); }
     catch (e) { console.warn('[forest] build failed — continuing without forest', e); }
   }
@@ -269,6 +271,7 @@ export class Forest {
 
     this._hideInstance(tree);
     this._stumpify(tree);
+    if (this.debris) this.debris.burst('splints', [tree.pos.x, tree.pos.y + tree.breakPoint, tree.pos.z], seed);
 
     // FallingBody hinge about the break point (deterministic, fixed-substep — reused by co-op).
     const pivot = [tree.pos.x, tree.pos.y + tree.breakPoint, tree.pos.z];
@@ -331,8 +334,44 @@ export class Forest {
     return removed;
   }
 
-  // ── per-frame: advance active FallingBodies ──────────────────────────────────────
+  // ── PUBLIC HOOK: APFSDS long-rod through the wood (Phase 9 cannon) ───────────────
+  // Fell every standing tree whose trunk bole the ray pierces, in order along the rod
+  // (trunks are fragile tier-2 → obliterated). origin/dir are THREE.Vector3.
+  penetrate(origin, dir, range = 320, weapon = null) {
+    const o = [origin.x, origin.y, origin.z], dd = [dir.x, dir.y, dir.z];
+    const hits = [];
+    for (const tree of this.trees) {
+      if (!tree.standing || !tree.box) continue;
+      const t = rayAABB(o, dd, [tree.box.min.x, tree.box.min.y, tree.box.min.z], [tree.box.max.x, tree.box.max.y, tree.box.max.z]);
+      if (t !== null && t <= range) hits.push({ tree, t });
+    }
+    hits.sort((a, b) => a.t - b.t);
+    for (const h of hits) {
+      if (this.debris) this.debris.burst('splints', [h.tree.pos.x, h.tree.pos.y + h.tree.breakPoint, h.tree.pos.z], (h.tree.id * 2654435761) >>> 0);
+      this.fellTree(h.tree, [dir.x, dir.z], (h.tree.id * 2654435761) >>> 0);
+    }
+    return hits.length;
+  }
+
+  // ── PUBLIC HOOK: HE blast fells the stand (Phase 9 rocket/grenade) ────────────────
+  // Topple every standing tree within `radius` of `pos`, away from the blast.
+  blast(pos, radius) {
+    const r2 = radius * radius, felled = [];
+    for (const tree of this.trees) {
+      if (!tree.standing) continue;
+      const dx = tree.pos.x - pos.x, dz = tree.pos.z - pos.z;
+      if (dx * dx + dz * dz <= r2) {
+        const n = Math.hypot(dx, dz) || 1;
+        this.fellTree(tree, [dx / n, dz / n], (tree.id * 2654435761) >>> 0);
+        felled.push(tree);
+      }
+    }
+    return felled;
+  }
+
+  // ── per-frame: advance active FallingBodies + debris ─────────────────────────────
   update(dt) {
+    if (this.debris) this.debris.update(dt);
     if (!this._falling.length) return;
     for (let i = this._falling.length - 1; i >= 0; i--) {
       const tree = this._falling[i], b = tree._falling;

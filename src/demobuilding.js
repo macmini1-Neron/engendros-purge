@@ -289,7 +289,28 @@ export class DemoBuilding {
   // THREE.Vector3/{x,y,z} (the live rayHit returns Vector3s) and coerce.
   applyHit(point, normal, dir, weaponDef) { const r = this.runtime.applyHit(_a(point), _a(normal), _a(dir), weaponDef); this._refresh(); return r; }
   applyBlast(pos, radius, ammoDef) { const r = this.runtime.applyBlast(_a(pos), radius, ammoDef); this._refresh(); return r; }
-  applyPenetration(origin, dir, weaponDef) { const r = this.runtime.applyPenetration(_a(origin), _a(dir), weaponDef); this._refresh(); return r; }
+  applyPenetration(origin, dir, weaponDef) {
+    const r = this.runtime.applyPenetration(_a(origin), _a(dir), weaponDef);
+    this._refresh();
+    // A through-hole leaves the brick part ALIVE (no merge change), so punch a visible dark
+    // entry/exit hole at each structural penetration so the rod reads as having gone through.
+    for (const h of (r.hits || [])) if (h.kind === 'hole') { this._addHole(h.entry); this._addHole(h.exit); }
+    return r;
+  }
+
+  // small dark recessed cube marking an APFSDS through-hole (purely visual; the wall still collides)
+  _addHole(p) {
+    if (!p) return;
+    if (!this._holeGeo) this._holeGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
+    if (!this._holeMat) this._holeMat = new THREE.MeshBasicMaterial({ color: 0x07060a });
+    const m = new THREE.Mesh(this._holeGeo, this._holeMat);
+    m.position.set(p[0], p[1], p[2]); m.renderOrder = 3;
+    this.group.add(m);
+    (this._holes || (this._holes = [])).push(m);
+  }
+
+  // per-frame tick (Phase 9 — game.js calls this): advance the debris burst physics.
+  update(dt) { if (this.debris) this.debris.update(dt); }
 
   // Parts the fire system may ignite (fuel > 0, still alive) — the wood door, here.
   flammableParts() { return this.parts.filter(p => !p.dead && MATERIALS[p.dmat] && MATERIALS[p.dmat].fuel > 0); }
