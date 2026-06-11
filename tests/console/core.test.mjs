@@ -233,3 +233,22 @@ test('highlight: extra tokens beyond the spec ⇒ red', () => {
   assert.equal(segs.find((s) => s.text === 'creative').cls, 'mc-aqua');
   assert.equal(segs.find((s) => s.text === 'extra').cls, 'mc-err');
 });
+
+// ---- selector type filter (@e[type=X]) ----
+test('parseSelector: @e[type=swarmer] ⇒ {kind:e, type:swarmer}', () => {
+  assert.deepEqual(parseSelector('@e[type=swarmer]'), { kind: 'e', type: 'swarmer' });
+});
+test('parseSelector: bare @e stays {kind:e} (no type)', () => {
+  assert.deepEqual(parseSelector('@e'), { kind: 'e' });
+});
+test('parseSelector: a tag-looking token is a name target', () => {
+  assert.deepEqual(parseSelector('swarmer#7'), { kind: 'name', value: 'swarmer#7' });
+});
+test('resolveSelector: @e[type=X] passes the type filter to provider.entities', () => {
+  const calls = [];
+  const provider = { self: null, players: () => [], entities: (f) => { calls.push(f); return [{ id: 'z' }]; } };
+  assert.deepEqual(resolveSelector({ kind: 'e', type: 'swarmer' }, provider), [{ id: 'z' }]);
+  assert.deepEqual(calls[0], { type: 'swarmer' });
+  resolveSelector({ kind: 'e' }, provider);
+  assert.equal(calls[1], undefined); // bare @e ⇒ no filter arg
+});

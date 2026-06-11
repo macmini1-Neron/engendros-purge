@@ -92,16 +92,19 @@ export function suggest(line, registry) {
 }
 
 export function parseSelector(tok) {
-  const m = /^@([paes])$/.exec(tok);
-  return m ? { kind: m[1] } : { kind: 'name', value: tok };
+  const m = /^@([paes])(?:\[([^\]]*)\])?$/.exec(tok);   // @p @a @e @s, with an optional [filter]
+  if (!m) return { kind: 'name', value: tok };
+  const sel = { kind: m[1] };
+  if (m[2]) { const t = /(?:^|,)type=([A-Za-z0-9_]+)/.exec(m[2]); if (t) sel.type = t[1]; } // v1: only type=
+  return sel;
 }
-// provider: { self, players(): [], entities(): [], byName?(name): [] }
+// provider: { self, players(): [], entities(filter?): [], byName?(name): [] }
 export function resolveSelector(sel, provider) {
   switch (sel.kind) {
     case 's': return [provider.self].filter(Boolean);
     case 'p': return provider.players().slice(0, 1);   // v0: "nearest" = first; refine later
     case 'a': return provider.players();
-    case 'e': return provider.entities();
+    case 'e': return provider.entities(sel.type ? { type: sel.type } : undefined);
     case 'name': return provider.byName ? provider.byName(sel.value) : [];
     default: return [];
   }
