@@ -799,6 +799,17 @@ export class DayNight {
   toggleFlashlight() { if (this.game.weapons.owns('flashlight')) { this.flashOn = !this.flashOn; this.game.audio.uiClick(); this.game.hud.setNightGear(this.game); this.game.hud.setWeapon(this.game.weapons); } else this.game.hud.bigMessage('NO FLASHLIGHT', 'buy one in the SHOP and put it in your inventory'); }
 
   info() { const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE; const night = c >= DAY_FRAC; return { night, n: this.nightCount, blood: this.bloodMoon && night }; }
+  // Dev console /time — jump the cycle to a named phase and render it immediately. In PURGE it stays frozen
+  // there (the loop only ticks the cycle in LONG NIGHT); in LONG NIGHT it then continues from this point.
+  setTime(which) {
+    const FR = { dawn: 0.0, day: DAY_FRAC * 0.45, noon: DAY_FRAC * 0.45, dusk: DAY_FRAC, night: DAY_FRAC + (1 - DAY_FRAC) * 0.5, midnight: DAY_FRAC + (1 - DAY_FRAC) * 0.5 };
+    const c = FR[which]; if (c == null) return false;
+    this.active = true; this.cel.visible = true;
+    this.t = c * NIGHT_CYCLE;
+    this._wasNight = c >= DAY_FRAC;
+    this._render();
+    return true;
+  }
 
   update(dt) {
     if (!this.active) return;

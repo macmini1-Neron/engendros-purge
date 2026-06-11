@@ -155,7 +155,7 @@ export class Player {
 
   update(dt) {
     const input = this.game.input;
-    if (this.game.freecam) return this._freecamUpdate(dt, input); // dev noclip fly-cam (solo only)
+    if (this.game.freecam || this.game.flyMode) return this._freecamUpdate(dt, input); // dev noclip freecam, or console /fly (sim keeps running)
     const mp = this.game.mp;
     const frozen = mp && mp.active && mp.frozen;
     const controlsPaused = mp && mp.active && this.game.mpMenuOpen;

@@ -200,6 +200,12 @@ test('suggest: omitted target shifts ⇒ value position maps to the right arg', 
 test('suggest: int arg suggests its default value', () => {
   assert.deepEqual(suggest('/give @p money ', sugReg()), ['100']);
 });
+test('suggest: a word arg with an explicit suggest list offers (and filters) it', () => {
+  const r = createRegistry();
+  r.register('give', { args: [{ name: 't', type: 'target' }, { name: 'what', type: 'word', suggest: ['money', 'mosin', 'bandage'] }], run: () => '' });
+  assert.deepEqual(suggest('/give @s ', r), ['money', 'mosin', 'bandage']);
+  assert.deepEqual(suggest('/give @s mo', r), ['money', 'mosin']);
+});
 
 // ---- highlight: Minecraft-style live syntax coloring ----
 function hlReg() {

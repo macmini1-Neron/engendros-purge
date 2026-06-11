@@ -3,6 +3,8 @@
 import * as THREE from 'three';
 import { createRegistry, suggest, highlight } from './console-core.js';
 import { ENEMY_TYPES } from './enemies.js';
+import { WEAPONS, WEAPON_ORDER } from './weapons.js';
+import { ITEM_DEFS } from './loot.js';
 
 const ENEMY_KEYS = Object.keys(ENEMY_TYPES);
 const _projV = new THREE.Vector3(); // scratch for projecting enemy world positions to screen (F3 labels)
@@ -22,6 +24,7 @@ export class DevConsole {
   _registerCommands() {
     const g = this.game;
     const isEnemy = (t) => t && t !== g.player && t.alive !== undefined; // enemy targets carry .alive; the player does not
+    const GIVE_CHOICES = ['money', 'health', 'armor', ...WEAPON_ORDER, ...Object.keys(ITEM_DEFS)]; // /give: resources + any weapon/item key (built lazily so module init order is safe)
 
     this.reg.register('help', { args: [], run: () => 'Commands: /' + this.reg.names().join('  /') });
     this.reg.register('pos', { args: [], run: () => { const p = g.player.pos; return `x ${p.x.toFixed(1)}  y ${p.y.toFixed(1)}  z ${p.z.toFixed(1)}`; } });
@@ -73,18 +76,31 @@ export class DevConsole {
     });
 
     this.reg.register('give', {
-      args: [{ name: 'target', type: 'target' }, { name: 'what', type: 'enum', choices: ['money', 'health', 'armor'] }, { name: 'amount', type: 'int', optional: true, default: 100 }],
+      args: [{ name: 'target', type: 'target' }, { name: 'what', type: 'word', suggest: GIVE_CHOICES }, { name: 'amount', type: 'int', optional: true, default: null }],
       run: (a) => {
         const ps = (a.target || []).filter((t) => t === g.player); // v1: only the local player is actionable (co-op = Phase 2)
         if (!ps.length) return 'No player target (give affects players).';
-        const n = a.amount;
-        for (const p of ps) {
-          if (a.what === 'money') p.addMoney(n);
-          else if (a.what === 'health') { p.hp = Math.min(p.maxHp, p.hp + n); g.hud.setHealth(p.hp, p.maxHp); }
-          else { p.armor = Math.min(p.armorMax, p.armor + n); g.hud.setArmor(p.armor, p.armorMax); }
+        const what = a.what;
+        if (what === 'money' || what === 'health' || what === 'armor') {
+          const n = a.amount ?? 100;
+          for (const p of ps) {
+            if (what === 'money') p.addMoney(n);
+            else if (what === 'health') { p.hp = Math.min(p.maxHp, p.hp + n); g.hud.setHealth(p.hp, p.maxHp); }
+            else { p.armor = Math.min(p.armorMax, p.armor + n); g.hud.setArmor(p.armor, p.armorMax); }
+          }
+          return `Gave ${n} ${what}`;
         }
-        return `Gave ${n} ${a.what}`;
+        if (!WEAPONS[what] && !ITEM_DEFS[what]) return `Unknown item: ${what}`; // weapon/item key or a resource only
+        if (WEAPONS[what] && g.weapons.grant) g.weapons.grant(what);             // own the weapon so it's usable
+        const count = WEAPONS[what] ? 1 : (a.amount ?? 1);                       // weapons don't stack; consumables take a count
+        const ok = g.inventory.addItem(what, count);
+        return ok ? `Gave ${what}${count > 1 ? ' ×' + count : ''}` : 'Backpack full';
       },
+    });
+
+    this.reg.register('time', {
+      args: [{ name: 'op', type: 'enum', choices: ['set'] }, { name: 'phase', type: 'enum', choices: ['day', 'night', 'noon', 'dusk', 'dawn', 'midnight'] }],
+      run: (a) => { if (!(g.dayNight && g.dayNight.setTime)) return 'Day/night not available'; g.dayNight.setTime(a.phase); return `Time set to ${a.phase}`; },
     });
 
     this.reg.register('effect', {
@@ -109,8 +125,8 @@ export class DevConsole {
       },
     });
 
-    // /fly toggles the existing dev freecam (noclip). Verified: Game.toggleFreecam() + Game.freecam.
-    this.reg.register('fly', { args: [], run: () => { if (g.toggleFreecam) g.toggleFreecam(); return `freecam ${g.freecam ? 'on' : 'off'}`; } });
+    // /fly = player fly mode (noclip free movement) with the sim STILL running — NOT the N freecam (which freezes spawns/enemies).
+    this.reg.register('fly', { args: [], run: () => { g.flyMode = !g.flyMode; if (g.flyMode) g.player.onGround = false; g.hud.bigMessage(g.flyMode ? '✈ FLY' : 'FLY OFF', g.flyMode ? 'WASD fly · Space up · Ctrl/C down · world keeps running' : ''); return `fly ${g.flyMode ? 'on' : 'off'}`; } });
   }
 
   // ---- DOM ----
@@ -156,8 +172,8 @@ export class DevConsole {
     };
     const ctx = { origin: [g.player.pos.x, g.player.pos.y, g.player.pos.z], game: g, sel };
     const res = this.reg.dispatch(line, ctx);
-    if (res.ok) { if (res.message) this._print(res.message, 'c-ok'); }   // feedback near-white; stays silent on empty output (e.g. /clear)
-    else this._print(res.error, 'c-err');                               // errors in red
+    if (res.ok) this._print(res.message || 'ok', 'c-ok');   // ALWAYS a positive response — never a silent success (empty ⇒ plain "ok")
+    else this._print(res.error || 'failed', 'c-err');       // ALWAYS a negative response on failure
     return res;
   }
 

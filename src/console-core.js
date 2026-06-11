@@ -92,7 +92,8 @@ function _optsForArg(a, args, ai) {
     case 'enum':   return a.choices.slice();
     case 'int': case 'num': return [String(a.default ?? 1)];
     case 'pos':    return ['~'];
-    default:       return []; // word / sel / rest — no enumerable values
+    case 'word':   return a.suggest ? a.suggest.slice() : []; // a word arg may carry an explicit suggestion list (e.g. /give items)
+    default:       return []; // sel / rest — no enumerable values
   }
 }
 // Walk the spec like dispatch (target peeks @, pos eats 3) to find the arg under the token being completed.
