@@ -76,6 +76,7 @@ class Game {
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
+    this._nextTagId = 1; // per-run id stamped onto each spawned enemy's e.tag (reset in reset())
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
@@ -358,6 +359,7 @@ class Game {
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
+    this._nextTagId = 1; // new run → enemy tag ids restart at 1
     this.resetMountedGuns();
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();

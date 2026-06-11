@@ -243,6 +243,8 @@ export class EnemyManager {
   }
   spawn(typeKey, pos, hp, speed) {
     const def = ENEMY_TYPES[typeKey];
+    if (hp == null) hp = def.hp;       // direct spawn / console /summon (no wave-scaled stats) → fall back to the type's base hp/speed
+    if (speed == null) speed = def.speed;
     let col, variant = def.variant, geoKey, name;
     if (typeKey === 'boss') { col = { body: 0xede7df, name: 'Tolo' }; geoKey = 'boss'; name = 'BOSS TOLO'; }
     else if (typeKey === 'minitolo') { col = { body: 0xede7df, name: 'mini Tolo' }; geoKey = 'tolomini'; name = 'mini Tolo'; }
@@ -253,6 +255,7 @@ export class EnemyManager {
     e.spawn(typeKey, def, col, name, pos, hp, speed);
     if (typeKey === 'boss' && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once Tolo arrives
     e.id = ++this._idc;
+    e.tagId = this.game._nextTagId++; e.tag = `${typeKey}#${e.tagId}`; // per-run debug tag — F3 labels + @e[type]/byName targeting
     this.active.push(e);
     this.game.audio.enemyGrowl();
     if (this.game.mp) this.game.mp.onEnemySpawn(e);
@@ -265,6 +268,7 @@ export class EnemyManager {
     const e = this._get(geoKey, col, variant);
     e.spawn(typeKey, def, col, name, new THREE.Vector3(0, 0, 0), def.hp, def.speed);
     e.id = id; e._ghost = true;
+    e.tagId = this.game._nextTagId++; e.tag = `${typeKey}#${e.tagId}`; // local debug tag (host tag sync = Phase 2)
     this.active.push(e);
     return e;
   }
