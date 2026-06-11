@@ -106,6 +106,7 @@ export class Player {
   }
   // Fall/starvation damage — host-authoritative in MP (the armor-bypass nuance only applies in single-player).
   _takeSurvivalDamage(dmg, bypassArmor = 0) {
+    if (this.game.rules && this.game.rules.god) return;
     const mp = this.game.mp;
     if (mp.active) this.game.mp.claimPlayerHit(mp.myId, dmg);
     else this.hurt(dmg, bypassArmor);

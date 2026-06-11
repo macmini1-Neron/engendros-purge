@@ -352,6 +352,7 @@ class Game {
   }
 
   reset() {
+    if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
@@ -688,6 +689,7 @@ class Game {
   }
   onPlayerDead() {
     if (this.mp && this.mp.active) return; // co-op death is pstate-driven; _mpGameOver handles the squad wipe
+    if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)

@@ -136,6 +136,7 @@ export class DevConsole {
     if (!this._el) return;
     this.open = false; this._el.classList.remove('show');
     this.game.input.enabled = true;
+    if (this.game.state === 'playing') this.game.input.requestLock();
   }
 
   // ---- F3 debug overlay (updated each frame from game) ----
@@ -151,5 +152,5 @@ export class DevConsole {
 }
 
 // Extending: future systems register their own commands, e.g. in their init:
-//   game.devconsole.reg.register('effect', { args:[...], run:(a)=>{ ...bleeding/radiation... } });
+//   game.devconsole.reg.register('bleed', { args:[...], run:(a)=>{ ...bleeding/radiation... } });
 // or add new /threat, /time, /weather once those subsystems exist.
