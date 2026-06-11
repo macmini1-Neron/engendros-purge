@@ -71,8 +71,24 @@ export function createRegistry() {
       return { ok: true, message: spec.run(args, ctx) ?? '' };
     } catch (e) { return { ok: false, error: `/${name} threw: ${e.message}` }; }
   }
-  const api = { register, dispatch, has: (n) => cmds.has(n), names: () => [...cmds.keys()] };
+  const api = { register, dispatch, has: (n) => cmds.has(n), names: () => [...cmds.keys()], get: (n) => cmds.get(n) };
   return api;
+}
+
+export function suggest(line, registry) {
+  const raw = String(line).replace(/^\//, '');
+  const endsWithSpace = /\s$/.test(raw);
+  const parts = raw.trim().length ? raw.trim().split(/\s+/) : [];
+  const partial = endsWithSpace ? '' : (parts[parts.length - 1] ?? '');
+  const tokenIndex = endsWithSpace ? parts.length : Math.max(0, parts.length - 1);
+  if (tokenIndex <= 0) {                       // completing the command name
+    return registry.names().filter((n) => n.startsWith(partial)).sort();
+  }
+  const spec = registry.get(parts[0]);
+  if (!spec || !spec.args) return [];
+  const arg = spec.args[tokenIndex - 1];       // arg position (1 token per arg; good enough — enums are single-token leading args)
+  if (arg && arg.type === 'enum' && arg.choices) return arg.choices.filter((c) => c.startsWith(partial));
+  return [];                                    // pos/int/num/word/rest → no value suggestions
 }
 
 export function parseSelector(tok) {

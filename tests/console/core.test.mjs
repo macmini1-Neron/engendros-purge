@@ -1,7 +1,7 @@
 // tests/console/core.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenize, parseNum, asInt, parseCoord, createRegistry, parseSelector, resolveSelector } from '../../src/console-core.js';
+import { tokenize, parseNum, asInt, parseCoord, createRegistry, parseSelector, resolveSelector, suggest } from '../../src/console-core.js';
 
 test('tokenize: strips one leading slash and splits on whitespace', () => {
   assert.deepEqual(tokenize('/summon grunt 1 2 3'), ['summon', 'grunt', '1', '2', '3']);
@@ -115,4 +115,70 @@ test('dispatch: handler that throws ⇒ ok:false with threw prefix', () => {
   const res = r.dispatch('/boom');
   assert.equal(res.ok, false);
   assert.match(res.error, /\/boom threw: kaboom/);
+});
+
+// ---- autocomplete helpers ----
+function sugReg() {
+  const r = createRegistry();
+  r.register('tp', { args: [{ name: 'dest', type: 'pos' }], run: (a) => `tp -> ${a.dest.join(',')}` });
+  r.register('summon', {
+    args: [
+      { name: 'type', type: 'enum', choices: ['grunt', 'heavy', 'boss'] },
+      { name: 'at', type: 'pos', optional: true, default: null },
+    ],
+    run: (a) => `summon ${a.type}@${a.at ? a.at.join(',') : 'self'}`,
+  });
+  r.register('say', { args: [{ name: 'msg', type: 'rest' }], run: (a) => `say:${a.msg}` });
+  r.register('mode', { args: [{ name: 'm', type: 'enum', choices: ['creative', 'survival'] }], run: (a) => `mode:${a.m}` });
+  return r;
+}
+
+// ---- registry.get ----
+test('registry.get: returns spec for known name, undefined for unknown', () => {
+  const r = sugReg();
+  assert.ok(r.get('tp') !== undefined);
+  assert.equal(typeof r.get('tp').run, 'function');
+  assert.equal(r.get('nope'), undefined);
+});
+
+// ---- suggest: command-name completion ----
+test('suggest: empty line returns all command names sorted', () => {
+  const r = sugReg();
+  const result = suggest('', r);
+  assert.ok(result.includes('mode'));
+  assert.ok(result.includes('summon'));
+  assert.ok(result.includes('tp'));
+  assert.deepEqual(result, [...result].sort());
+});
+test('suggest: /m prefix returns [\'mode\']', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/m', r), ['mode']);
+});
+test('suggest: /su prefix returns [\'summon\']', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/su', r), ['summon']);
+});
+test('suggest: /summon<space> returns full enum choices list', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/summon ', r), ['grunt', 'heavy', 'boss']);
+});
+test('suggest: /summon gr returns choices starting with gr', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/summon gr', r), ['grunt']);
+});
+test('suggest: /mode<space> returns [\'creative\',\'survival\']', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/mode ', r), ['creative', 'survival']);
+});
+test('suggest: /mode c returns [\'creative\']', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/mode c', r), ['creative']);
+});
+test('suggest: /tp<space> returns [] (pos arg has no value suggestions)', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/tp ', r), []);
+});
+test('suggest: /nope<space> returns [] (unknown command)', () => {
+  const r = sugReg();
+  assert.deepEqual(suggest('/nope ', r), []);
 });
