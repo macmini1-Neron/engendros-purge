@@ -218,7 +218,7 @@
     @keyframes kf { 0%{opacity:0; transform: translateX(20px);} 12%{opacity:1; transform:none;} 80%{opacity:1;} 100%{opacity:0;} }
     #f3debug { position: absolute; top: 6px; left: 8px; font: 12px/1.45 ui-monospace, Menlo, monospace; color: #b8e6c0; text-shadow: 0 1px 2px #000; background: rgba(0,0,0,.35); padding: 4px 8px; border-radius: 4px; pointer-events: none; display: none; white-space: pre; }
     #f3debug.show { display: block; }
-    #console { position: absolute; left: 0; right: 0; bottom: 0; display: none; flex-direction: column; background: rgba(8,10,12,.86); border-top: 2px solid #3a4a3a; font: 13px/1.5 ui-monospace, Menlo, monospace; z-index: 60; }
+    #console { position: absolute; left: 0; right: 0; bottom: 0; display: none; flex-direction: column; background: rgba(8,10,12,.86); border-top: 2px solid #3a4a3a; font: 13px/1.5 ui-monospace, Menlo, monospace; z-index: 60; pointer-events: auto; }
     #console.show { display: flex; }
     #console-log { max-height: 38vh; overflow-y: auto; padding: 8px 10px; color: #cde; }
     #console-input { width: 100%; box-sizing: border-box; padding: 8px 10px; background: #0c0f0c; color: #dfe; border: none; border-top: 1px solid #2a3a2a; outline: none; font: inherit; }
@@ -1377,6 +1377,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=252"></script>
+  <script type="module" src="./src/game.js?v=253"></script>
 </body>
 </html>
