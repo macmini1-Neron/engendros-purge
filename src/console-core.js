@@ -11,7 +11,7 @@ export function parseNum(tok) {
   if (!Number.isFinite(n)) throw new Error(`Expected number, got "${tok}"`);
   return n;
 }
-export function parseInt_(tok) {
+export function asInt(tok) {
   const n = parseNum(tok);
   if (!Number.isInteger(n)) throw new Error(`Expected integer, got "${tok}"`);
   return n;
@@ -25,14 +25,14 @@ export function parseCoord(tok, base) {
 
 function coerceArg(tok, a, cmd) {
   switch (a.type) {
-    case 'int':  return parseInt_(tok);
+    case 'int':  return asInt(tok);
     case 'num':  return parseNum(tok);
     case 'word': return tok;
     case 'enum':
       if (!a.choices.includes(tok)) throw new Error(`/${cmd}: <${a.name}> must be ${a.choices.join('|')}`);
       return tok;
     case 'sel':  return parseSelector(tok);
-    default:     return tok;
+    default: throw new Error(`Unknown arg type "${a.type}" for <${a.name}>`);
   }
 }
 
@@ -67,7 +67,9 @@ export function createRegistry() {
         args[a.name] = coerceArg(rest[i++], a, name);
       }
     } catch (e) { return { ok: false, error: e.message }; }
-    return { ok: true, message: spec.run(args, ctx) ?? '' };
+    try {
+      return { ok: true, message: spec.run(args, ctx) ?? '' };
+    } catch (e) { return { ok: false, error: `/${name} threw: ${e.message}` }; }
   }
   const api = { register, dispatch, has: (n) => cmds.has(n), names: () => [...cmds.keys()] };
   return api;

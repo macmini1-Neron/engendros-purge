@@ -1,10 +1,7 @@
 // tests/console/core.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenize } from '../../src/console-core.js';
-import { parseNum, parseInt_, parseCoord } from '../../src/console-core.js';
-import { createRegistry } from '../../src/console-core.js';
-import { parseSelector, resolveSelector } from '../../src/console-core.js';
+import { tokenize, parseNum, asInt, parseCoord, createRegistry, parseSelector, resolveSelector } from '../../src/console-core.js';
 
 test('tokenize: strips one leading slash and splits on whitespace', () => {
   assert.deepEqual(tokenize('/summon grunt 1 2 3'), ['summon', 'grunt', '1', '2', '3']);
@@ -25,9 +22,9 @@ test('parseNum: parses floats, throws on garbage', () => {
   assert.equal(parseNum('-12'), -12);
   assert.throws(() => parseNum('abc'), /Expected number/);
 });
-test('parseInt_: integers only', () => {
-  assert.equal(parseInt_('7'), 7);
-  assert.throws(() => parseInt_('7.5'), /Expected integer/);
+test('asInt: integers only', () => {
+  assert.equal(asInt('7'), 7);
+  assert.throws(() => asInt('7.5'), /Expected integer/);
 });
 test('parseCoord: Minecraft tilde is relative to base; bare number is absolute', () => {
   assert.equal(parseCoord('~', 100), 100);     // ~ = base
@@ -70,11 +67,12 @@ test('dispatch: rest grabs all remaining tokens', () => {
   const r = reg();
   assert.deepEqual(r.dispatch('/say hello brave new world'), { ok: true, message: 'say:hello brave new world' });
 });
-test('dispatch: enum rejects bad value', () => {
+test('dispatch: enum rejects bad value and accepts valid value', () => {
   const r = reg();
   const res = r.dispatch('/mode flying');
   assert.equal(res.ok, false);
   assert.match(res.error, /creative\|survival/);
+  assert.equal(r.dispatch('/mode creative').ok, true);
 });
 
 test('parseSelector: @p/@a/@e/@s recognised; bare word ⇒ name target', () => {
@@ -90,4 +88,31 @@ test('resolveSelector: routes to the injected provider', () => {
   assert.deepEqual(resolveSelector({ kind: 'a' }, provider), [self, ...others]);
   assert.deepEqual(resolveSelector({ kind: 'p' }, provider), [self]);              // nearest = first for now
   assert.deepEqual(resolveSelector({ kind: 'e' }, provider), [{ id: 'z1' }]);
+});
+test('resolveSelector: name selector uses byName', () => {
+  const provider = { self: null, players: () => [], entities: () => [], byName: (n) => [{ id: n }] };
+  assert.deepEqual(resolveSelector({ kind: 'name', value: 'Boris' }, provider), [{ id: 'Boris' }]);
+});
+
+test('dispatch: empty string ⇒ ok:false Empty command', () => {
+  const r = reg();
+  assert.deepEqual(r.dispatch(''), { ok: false, error: 'Empty command' });
+});
+
+test('registry.has and registry.names reflect registered commands', () => {
+  const r = reg();
+  assert.equal(r.has('tp'), true);
+  assert.equal(r.has('nope'), false);
+  const n = r.names();
+  assert.ok(n.includes('tp'));
+  assert.ok(n.includes('say'));
+  assert.ok(n.includes('mode'));
+});
+
+test('dispatch: handler that throws ⇒ ok:false with threw prefix', () => {
+  const r = createRegistry();
+  r.register('boom', { args: [], run: () => { throw new Error('kaboom'); } });
+  const res = r.dispatch('/boom');
+  assert.equal(res.ok, false);
+  assert.match(res.error, /\/boom threw: kaboom/);
 });
