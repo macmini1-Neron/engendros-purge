@@ -106,3 +106,78 @@ export function resolveSelector(sel, provider) {
     default: return [];
   }
 }
+
+// ---- Minecraft-style live syntax highlighting (PURE — node-testable) ----
+// Returns [{ text, cls }] segments that concatenate back to the EXACT input string (every
+// space preserved) so a DOM overlay can mirror the <input> character-for-character. Classes map
+// to colours in CSS: mc-slash / mc-lit = gray, mc-err = red, and arguments cycle through
+// mc-aqua → mc-yellow → mc-green → mc-purple → mc-gold (Brigadier ARGUMENT_STYLES order).
+const ARG_STYLES = ['mc-aqua', 'mc-yellow', 'mc-green', 'mc-purple', 'mc-gold'];
+
+function coordOk(t) {
+  if (t === '~') return true;
+  const body = t[0] === '~' ? t.slice(1) : t;
+  return body === '' ? true : Number.isFinite(Number(body));
+}
+function argTokenOk(a, t) {
+  switch (a.type) {
+    case 'int':  return Number.isInteger(Number(t));
+    case 'num':  return Number.isFinite(Number(t));
+    case 'enum': return a.choices.includes(t);
+    default:     return true; // word / sel / anything else: no value check
+  }
+}
+
+export function highlight(line, registry) {
+  const src = String(line);
+  if (!src.length) return [];
+  // 1) split into runs, preserving whitespace exactly
+  const runs = [];
+  for (let i = 0; i < src.length;) {
+    const ws = /\s/.test(src[i]);
+    let j = i + 1; while (j < src.length && /\s/.test(src[j]) === ws) j++;
+    runs.push({ text: src.slice(i, j), ws });
+    i = j;
+  }
+  const words = runs.filter((r) => !r.ws);
+  // 2) classify each word
+  const wordCls = [];
+  let spec = null;
+  if (words.length) {
+    const w0 = words[0].text;
+    const name = w0[0] === '/' ? w0.slice(1) : w0;
+    spec = (registry && registry.get) ? registry.get(name) : null;
+    wordCls[0] = (name === '') ? 'mc-slash' : (spec ? 'mc-lit' : 'mc-err');
+  }
+  if (spec) {
+    let wi = 1, colorNo = 0;
+    const defs = spec.args || [];
+    for (let ai = 0; ai < defs.length && wi < words.length; ai++) {
+      const a = defs[ai], cls = ARG_STYLES[colorNo % ARG_STYLES.length];
+      if (a.type === 'rest') { for (; wi < words.length; wi++) wordCls[wi] = cls; colorNo++; break; }
+      if (a.type === 'pos') { // a coordinate triple is ONE argument ⇒ one colour for all three
+        for (let k = 0; k < 3 && wi < words.length; k++, wi++) wordCls[wi] = coordOk(words[wi].text) ? cls : 'mc-err';
+        colorNo++; continue;
+      }
+      wordCls[wi] = argTokenOk(a, words[wi].text) ? cls : 'mc-err'; wi++; colorNo++;
+    }
+    for (; wi < words.length; wi++) wordCls[wi] = 'mc-err'; // tokens past the spec = too many args
+  } else {
+    for (let wi = 1; wi < words.length; wi++) wordCls[wi] = 'mc-plain';
+  }
+  // 3) stitch back; split the command word's leading slash into its own gray segment
+  const out = [];
+  let wIdx = 0;
+  for (const r of runs) {
+    if (r.ws) { out.push({ text: r.text, cls: 'mc-plain' }); continue; }
+    const cls = wordCls[wIdx] ?? 'mc-plain';
+    if (wIdx === 0 && r.text[0] === '/' && r.text.length > 1) {
+      out.push({ text: '/', cls: 'mc-slash' });
+      out.push({ text: r.text.slice(1), cls });
+    } else {
+      out.push({ text: r.text, cls });
+    }
+    wIdx++;
+  }
+  return out;
+}

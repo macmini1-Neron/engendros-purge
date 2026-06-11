@@ -1,7 +1,7 @@
 // console.js — in-game dev console («ПОЛИГОН» creative backbone). Minecraft-style syntax.
 // Pure parsing lives in console-core.js; this wires commands to live game subsystems.
 import * as THREE from 'three';
-import { createRegistry, suggest } from './console-core.js';
+import { createRegistry, suggest, highlight } from './console-core.js';
 import { ENEMY_TYPES } from './enemies.js';
 
 const ENEMY_KEYS = Object.keys(ENEMY_TYPES);
@@ -94,6 +94,7 @@ export class DevConsole {
     this._el = document.getElementById('console');
     this._log = document.getElementById('console-log');
     this._input = document.getElementById('console-input');
+    this._hl = document.getElementById('console-hl');   // colour overlay painted behind the (transparent-text) input
     this._f3 = document.getElementById('f3debug');
     this._suggestEl = document.getElementById('console-suggest');
     this._sugList = []; this._sugIdx = 0;
@@ -101,25 +102,30 @@ export class DevConsole {
     this._input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.code === 'Tab') { e.preventDefault(); this._complete(); }
-      else if (e.code === 'Enter') { this._submit(this._input.value); this._input.value = ''; this._refreshSuggest(); }
-      else if (e.code === 'Escape') { if (this._sugList.length) { this._sugList = []; this._renderSuggest(); } else this.close(); }
+      else if (e.code === 'Enter') { const res = this._submit(this._input.value); this._input.value = ''; if (res && res.ok) this.close(); else this._refreshInput(); } // success → close (Minecraft); error → stay open so you can fix it
+      else if (e.code === 'Escape') { if (this._sugList.length) { this._sugList = []; this._renderSuggest(); } else this.close(false); } // Esc closes WITHOUT re-locking (see close()) so it can never bounce into the pause menu
       else if (e.code === 'ArrowUp') { e.preventDefault(); if (this._sugList.length) { this._sugIdx = (this._sugIdx - 1 + this._sugList.length) % this._sugList.length; this._renderSuggest(); } else this._recall(-1); }
       else if (e.code === 'ArrowDown') { e.preventDefault(); if (this._sugList.length) { this._sugIdx = (this._sugIdx + 1) % this._sugList.length; this._renderSuggest(); } else this._recall(1); }
     });
-    this._input.addEventListener('input', () => this._refreshSuggest());
+    this._input.addEventListener('input', () => this._refreshInput());
+    this._input.addEventListener('scroll', () => this._syncScroll());
   }
 
   _submit(line) {
     if (!line.trim()) return;
     this.history.push(line); this._hi = this.history.length;
+    const shown = line.trim();
+    this._print('› ' + (shown[0] === '/' ? shown : '/' + shown), 'c-echo'); // echo the sent command in gray (like Minecraft chat shows your message)
     const ctx = { origin: [this.game.player.pos.x, this.game.player.pos.y, this.game.player.pos.z], game: this.game };
     const res = this.reg.dispatch(line, ctx);
-    this._print((res.ok ? '» ' : '✗ ') + (res.ok ? (res.message || 'ok') : res.error), res.ok ? '#9fd' : '#f88');
+    if (res.ok) { if (res.message) this._print(res.message, 'c-ok'); }   // feedback near-white; stays silent on empty output (e.g. /clear)
+    else this._print(res.error, 'c-err');                               // errors in red
+    return res;
   }
 
-  _print(text, color) {
+  _print(text, cls) {
     if (!this._log) return;
-    const d = document.createElement('div'); d.textContent = text; d.style.color = color || '#cde';
+    const d = document.createElement('div'); d.textContent = text; if (cls) d.className = cls;
     this._log.appendChild(d); this._log.scrollTop = this._log.scrollHeight;
   }
 
@@ -127,10 +133,23 @@ export class DevConsole {
     if (!this.history.length) return;
     this._hi = Math.max(0, Math.min(this.history.length, this._hi + dir));
     this._input.value = this.history[this._hi] || '';
+    this._renderHighlight();
   }
 
+  _refreshInput() { this._renderHighlight(); this._refreshSuggest(); }
+  _renderHighlight() {
+    if (!this._hl) return;
+    this._hl.textContent = ''; // rebuild as DOM nodes (textContent only) — no innerHTML, so user input can't inject markup
+    for (const s of highlight(this._input.value, this.reg)) {
+      const span = document.createElement('span'); span.className = s.cls; span.textContent = s.text;
+      this._hl.appendChild(span);
+    }
+    this._syncScroll();
+  }
+  _syncScroll() { if (this._hl) this._hl.scrollLeft = this._input.scrollLeft; }
   _refreshSuggest() {
-    this._sugList = this._input ? suggest(this._input.value, this.reg) : [];
+    const v = this._input ? this._input.value : '';
+    this._sugList = v.trim() ? suggest(v, this.reg) : []; // empty line ⇒ no popup (Minecraft only shows it once you start a command)
     this._sugIdx = 0;
     this._renderSuggest();
   }
@@ -154,34 +173,62 @@ export class DevConsole {
     const parts = body.trim().length ? body.trim().split(/\s+/) : [];
     if (endsWithSpace || !parts.length) parts.push(pick); else parts[parts.length - 1] = pick;
     this._input.value = (hasSlash ? '/' : '') + parts.join(' ') + ' ';
-    this._refreshSuggest();
+    this._refreshInput();
   }
 
   toggle() { this.open ? this.close() : this.openConsole(); }
   openConsole(prefill = '') {
     if (!this._el || !this._input) return;
     this.open = true; this._el.classList.add('show');
-    this.game.input.exitLock(); this.game.input.enabled = false;
+    // Minecraft-style: opening chat must NOT pause. Mirror the survival inventory overlay —
+    // flag the unlock as intentional so the 'unlock' handler skips pause(), then free the cursor.
+    this.game._intentionalUnlock = true; this.game.input.exitLock(); this.game.input.enabled = false;
     this._input.value = prefill; this._input.focus();
-    this._refreshSuggest();
+    this._refreshInput();
   }
-  close() {
+  close(relock = true) {
     if (!this._el) return;
     this.open = false; this._el.classList.remove('show');
     this.game.input.enabled = true;
-    if (this.game.state === 'playing') this.game.input.requestLock();
+    // Esc passes relock=false. Esc is the browser's "exit pointer lock" key, so re-locking inside the Esc
+    // keystroke bounces straight back to an unlock — and the game's 'unlock' handler turns that into the
+    // pause menu. Closing via Esc therefore leaves the cursor free (the next click re-locks). Enter (success)
+    // keeps relock=true: Enter doesn't release the lock, so re-grabbing it cleanly returns you to mouse-look.
+    if (relock && this.game.state === 'playing') this.game.input.requestLock();
     this._sugList = []; this._renderSuggest();
   }
 
-  // ---- F3 debug overlay (updated each frame from game) ----
+  // ---- F3 debug overlay (Minecraft-style, rebuilt each frame from live game state) ----
   updateF3(visible) {
     const el = this._f3;
     if (!el) return;
     el.classList.toggle('show', !!visible);
     if (!visible) return;
-    const p = this.game.player.pos;
-    const gy = this.game.world.groundY ? this.game.world.groundY(p.x, p.z).toFixed(1) : '0';
-    el.textContent = `XYZ ${p.x.toFixed(1)} / ${p.y.toFixed(1)} / ${p.z.toFixed(1)}   ground ${gy}   map ${this.game.mapId}   seed ${this.game.world.terrain ? (this.game.world.terrain.seed ?? 1337) : '-'}   enemies ${this.game.enemies.aliveCount}`;
+    const g = this.game, p = g.player, pos = p.pos;
+    // Facing — replicate the player forward vector (player.js): fwd = (−sin yaw·cp, sin pitch, −cos yaw·cp).
+    const cp = Math.cos(p.pitch);
+    const fx = -Math.sin(p.yaw) * cp, fy = Math.sin(p.pitch), fz = -Math.cos(p.yaw) * cp;
+    let dir, axis;
+    if (Math.abs(fz) >= Math.abs(fx)) { dir = fz >= 0 ? 'south' : 'north'; axis = fz >= 0 ? 'Towards positive Z' : 'Towards negative Z'; }
+    else { dir = fx >= 0 ? 'east' : 'west'; axis = fx >= 0 ? 'Towards positive X' : 'Towards negative X'; }
+    const mcYaw = Math.atan2(-fx, fz) * 180 / Math.PI;                          // south = 0 (Minecraft convention)
+    const mcPitch = -Math.asin(Math.max(-1, Math.min(1, fy))) * 180 / Math.PI;  // looking down = positive
+    const di = (g.dayNight && g.dayNight.info) ? g.dayNight.info() : { night: false, n: 0, blood: false };
+    const gy = g.world.groundY ? g.world.groundY(pos.x, pos.z).toFixed(1) : '0';
+    el.textContent = [
+      `ENGENDROS PURGE  ${g.gameVersion || ''}`,
+      `${Math.round(g._fps || 0)} fps  (${(g._frameMs || 0).toFixed(1)} ms)`,
+      '',
+      `XYZ: ${pos.x.toFixed(3)} / ${pos.y.toFixed(3)} / ${pos.z.toFixed(3)}`,
+      `Block: ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}   (ground ${gy})`,
+      `Facing: ${dir} (${axis}) (${mcYaw.toFixed(1)} / ${mcPitch.toFixed(1)})`,
+      '',
+      `Map: ${g.mapId}`,
+      `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}`,
+      `Wave ${g.waves.wave}   ·   enemies ${g.enemies.aliveCount}`,
+      `Day #${di.n}  ${di.night ? 'NIGHT' : 'DAY'}${di.blood ? '  · BLOOD MOON' : ''}`,
+      `HP ${Math.round(p.hp)}/${p.maxHp}   ARM ${Math.round(p.armor)}   food ${Math.round(p.hunger)}`,
+    ].join('\n');
   }
 }
 

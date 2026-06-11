@@ -73,8 +73,9 @@ class Game {
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
     this.rules = { god: false };       // «ПОЛИГОН» gamerules
+    this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
-    this.f3 = false;
+    this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
@@ -201,6 +202,7 @@ class Game {
     }));
     click('pauseSettingsBtn', () => this.settings.open('pause'));
     this.canvas.addEventListener('click', () => {
+      if (this.devconsole && this.devconsole.open) return; // chat open: keep the cursor free for clicking in the input — never re-grab pointer-lock
       if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin' || this.state === 'music' || this.state === 'crate') return;
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
@@ -233,10 +235,10 @@ class Game {
   }
 
   _wireInput() {
-    this.input.on('key', (code) => {
+    this.input.on('key', (code, ev) => {
       if (this.state !== 'playing') return;
       if (this.devconsole && this.devconsole.open) return; // console eats input while open
-      if (code === 'Backquote' || code === 'Slash') { this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; }
+      if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
       if (code === 'F3') { this.f3 = !this.f3; return; }
       // dev fly-cam toggle (solo only): N, or Ctrl+F
       if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
@@ -784,7 +786,9 @@ class Game {
   _frame(t) {
     requestAnimationFrame(this._bound);
     let dt = (t - this._last) / 1000; this._last = t;
-    if (!(dt > 0)) dt = 0.0001; dt = Math.min(dt, 0.05);
+    if (!(dt > 0)) dt = 0.0001;
+    const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
+    dt = Math.min(dt, 0.05);
     if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
     if (this.state === 'playing') this._updatePlaying(dt);
     this.engine.update(dt); this.engine.render();
@@ -815,7 +819,7 @@ class Game {
         const reviving = this.mp.active && this.mp.blocksWeaponUse && this.mp.blocksWeaponUse();
         if (edge && !reviving && !this.freecam) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
-      if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
+      if (!this.mp.frozen && !(this.devconsole && this.devconsole.open) && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory — disabled while chat is open
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
       this.gramophone.updateTarget(); // gramophone prop look-target + ←/→ song change (BEFORE player.update reads strafe)
       if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)

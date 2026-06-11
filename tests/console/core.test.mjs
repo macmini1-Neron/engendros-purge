@@ -1,7 +1,7 @@
 // tests/console/core.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenize, parseNum, asInt, parseCoord, createRegistry, parseSelector, resolveSelector, suggest } from '../../src/console-core.js';
+import { tokenize, parseNum, asInt, parseCoord, createRegistry, parseSelector, resolveSelector, suggest, highlight } from '../../src/console-core.js';
 
 test('tokenize: strips one leading slash and splits on whitespace', () => {
   assert.deepEqual(tokenize('/summon grunt 1 2 3'), ['summon', 'grunt', '1', '2', '3']);
@@ -181,4 +181,55 @@ test('suggest: /tp<space> returns [] (pos arg has no value suggestions)', () => 
 test('suggest: /nope<space> returns [] (unknown command)', () => {
   const r = sugReg();
   assert.deepEqual(suggest('/nope ', r), []);
+});
+
+// ---- highlight: Minecraft-style live syntax coloring ----
+function hlReg() {
+  const r = createRegistry();
+  r.register('tp', { args: [{ name: 'dest', type: 'pos' }], run: () => '' });
+  r.register('give', { args: [{ name: 'what', type: 'enum', choices: ['money', 'health', 'armor'] }, { name: 'amount', type: 'int', optional: true }], run: () => '' });
+  r.register('mode', { args: [{ name: 'm', type: 'enum', choices: ['creative', 'survival'] }], run: () => '' });
+  r.register('say', { args: [{ name: 'msg', type: 'rest' }], run: () => '' });
+  return r;
+}
+const joined = (segs) => segs.map((s) => s.text).join('');
+
+test('highlight: empty line ⇒ []', () => {
+  assert.deepEqual(highlight('', hlReg()), []);
+});
+test('highlight: segments ALWAYS concatenate back to the exact input (overlay alignment)', () => {
+  const r = hlReg();
+  for (const s of ['/give money 500', 'tp ~ ~5 50', '  /say  hi  there ', '/mode creative', '/nope x', '/']) {
+    assert.equal(joined(highlight(s, r)), s);
+  }
+});
+test('highlight: known command ⇒ slash gray + literal gray', () => {
+  assert.deepEqual(highlight('/give', hlReg()), [{ text: '/', cls: 'mc-slash' }, { text: 'give', cls: 'mc-lit' }]);
+});
+test('highlight: unknown command ⇒ red', () => {
+  assert.deepEqual(highlight('/nope', hlReg()), [{ text: '/', cls: 'mc-slash' }, { text: 'nope', cls: 'mc-err' }]);
+});
+test('highlight: arguments cycle aqua→yellow; valid enum + int', () => {
+  const segs = highlight('/give money 500', hlReg()).filter((s) => s.text.trim());
+  assert.deepEqual(segs, [
+    { text: '/', cls: 'mc-slash' },
+    { text: 'give', cls: 'mc-lit' },
+    { text: 'money', cls: 'mc-aqua' },
+    { text: '500', cls: 'mc-yellow' },
+  ]);
+});
+test('highlight: bad enum value ⇒ red', () => {
+  const segs = highlight('/mode flying', hlReg()).filter((s) => s.text.trim());
+  assert.equal(segs[segs.length - 1].cls, 'mc-err');
+});
+test('highlight: pos triple shares one colour; non-numeric coord ⇒ red', () => {
+  const segs = highlight('/tp ~ 5 abc', hlReg()).filter((s) => s.text.trim());
+  assert.equal(segs.find((s) => s.text === '~').cls, 'mc-aqua');
+  assert.equal(segs.find((s) => s.text === '5').cls, 'mc-aqua');   // same logical arg ⇒ same colour
+  assert.equal(segs.find((s) => s.text === 'abc').cls, 'mc-err');  // invalid coordinate
+});
+test('highlight: extra tokens beyond the spec ⇒ red', () => {
+  const segs = highlight('/mode creative extra', hlReg()).filter((s) => s.text.trim());
+  assert.equal(segs.find((s) => s.text === 'creative').cls, 'mc-aqua');
+  assert.equal(segs.find((s) => s.text === 'extra').cls, 'mc-err');
 });
