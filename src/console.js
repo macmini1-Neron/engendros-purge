@@ -26,7 +26,7 @@ export class DevConsole {
     this.reg.register('help', { args: [], run: () => 'Commands: /' + this.reg.names().join('  /') });
     this.reg.register('pos', { args: [], run: () => { const p = g.player.pos; return `x ${p.x.toFixed(1)}  y ${p.y.toFixed(1)}  z ${p.z.toFixed(1)}`; } });
     this.reg.register('seed', { args: [], run: () => `seed ${g.world.terrain ? g.world.terrain.seed ?? 1337 : 'flat'} (map ${g.mapId})` });
-    this.reg.register('clear', { args: [], run: () => { if (this._log) this._log.innerHTML = ''; return ''; } });
+    this.reg.register('clear', { args: [], run: () => { const n = g.inventory.slots.filter(Boolean).length; g.inventory.reset(); return n ? `Cleared inventory (${n} item${n === 1 ? '' : 's'})` : 'Inventory already empty'; } }); // Minecraft /clear = wipe items; console scrollback is cleared with F3+H
 
     this.reg.register('tp', {
       args: [{ name: 'target', type: 'target' }, { name: 'dest', type: 'pos' }],
@@ -129,7 +129,7 @@ export class DevConsole {
     this._input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.code === 'Tab') { e.preventDefault(); this._complete(); }
-      else if (e.code === 'Enter') { const res = this._submit(this._input.value); this._input.value = ''; if (res && res.ok) this.close(); else this._refreshInput(); } // success → close (Minecraft); error → stay open so you can fix it
+      else if (e.code === 'Enter' || e.code === 'NumpadEnter') { const res = this._submit(this._input.value); this._input.value = ''; if (res && res.ok) this.close(); else this._refreshInput(); } // Enter (incl. num-pad) submits; success → close (Minecraft), error → stay open
       else if (e.code === 'Escape') { if (this._sugList.length) { this._sugList = []; this._renderSuggest(); } else this.close(false); } // Esc closes WITHOUT re-locking (see close()) so it can never bounce into the pause menu
       else if (e.code === 'ArrowUp') { e.preventDefault(); if (this._sugList.length) { this._sugIdx = (this._sugIdx - 1 + this._sugList.length) % this._sugList.length; this._renderSuggest(); } else this._recall(-1); }
       else if (e.code === 'ArrowDown') { e.preventDefault(); if (this._sugList.length) { this._sugIdx = (this._sugIdx + 1) % this._sugList.length; this._renderSuggest(); } else this._recall(1); }
@@ -166,6 +166,7 @@ export class DevConsole {
     const d = document.createElement('div'); d.textContent = text; if (cls) d.className = cls;
     this._log.appendChild(d); this._log.scrollTop = this._log.scrollHeight;
   }
+  clearLog() { if (this._log) this._log.innerHTML = ''; } // F3+H — wipe the console scrollback (Minecraft's F3+D clears chat)
 
   _recall(dir) {
     if (!this.history.length) return;
