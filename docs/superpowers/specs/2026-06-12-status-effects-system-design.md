@@ -17,7 +17,7 @@ Today these live as bespoke fields + timers, hand-ticked in two update loops:
 
 | Mechanic | Where | Notes |
 |---|---|---|
-| **Burn** (fire) | `player.burnT`/`_burnTickT` (player.js) · `enemy.burnT` + `ENEMY_BURN_SLOW` (enemies.js) | already on **both** kinds, but two separate hand-written code paths |
+| **Burn** (fire) | `player.burnT`/`_burnTickT` (player.js) · `enemy.burnT` + `ENEMY_BURN_SLOW` (enemies.js) · **co-op:** `mp.js` `pstate.burnT`/`_tickBurn` + `burn`/`ignite` msgs + the `bf` snapshot flag | already on **both** kinds, but across **three** hand-written paths incl. co-op netcode → its migration is deferred to **P3**; **radiation** is the cleaner P1 proof (no legacy/co-op path) |
 | **Broken leg** | `player.legBroken` + `_splintT` + `splints` (player.js) | player-only; cured by a splint item |
 | **Hunger / starve** | `player.hunger` + `_starveT` (player.js) | a **meter**, not a transient status — **stays as-is, out of scope** (Decision 1) |
 | **Radiation, Bleed** | — | **do not exist yet**; added as first-class effects here |
@@ -51,7 +51,7 @@ EFFECTS = {
 ### 3. Deterministic ticking — reuse `src/simclock.js`
 The deterministic fixed-step primitive **already exists and is tested**: `makeClock({ step, maxDt })` in `src/simclock.js` (the same clock `fire.js` runs at `step: 1/10`). Don't hand-roll an accumulator — build on it.
 
-Effect rates are authored **per second**; the clock fires at `EFFECT_TPS = 10` ticks/s and each tick applies `rate / EFFECT_TPS` (scaled by `stacks`), so 10 s of radiation deals the same total regardless of FPS or stutter (Decision 2). **One shared effects clock** (`makeClock({ step: 1/EFFECT_TPS, maxDt: 0.05 })`), advanced once per frame **only on `hostSim`** — exactly how `fire.js:209` gates its clock. Each fixed tick runs a `stepEffects` pass over the player **and** every alive enemy: fire the per-kind handler, decrement `ticksLeft`, delete expired effects (firing `onClear`). This replaces the player's bespoke `burnT`/`_burnTickT` ticking and `enemy.burnT`. The parked [[deterministic-daynight-rework]] can adopt the same primitive later — no dependency now.
+Effect rates are authored **per second**; the clock fires at `EFFECT_TPS = 10` ticks/s and each tick applies `rate / EFFECT_TPS` (scaled by `stacks`), so 10 s of radiation deals the same total regardless of FPS or stutter (Decision 2). **One shared effects clock** (`makeClock({ step: 1/EFFECT_TPS, maxDt: 0.05 })`), advanced once per frame **only on `hostSim`** — exactly how `fire.js:209` gates its clock. Each fixed tick runs a `stepEffects` pass over the player **and** every alive enemy: fire the per-kind handler, decrement `ticksLeft`, delete expired effects (firing `onClear`). This becomes the home for all per-tick effect logic; burn's own migration off `burnT` (including its co-op paths) is deferred to **P3** (§Phasing). The parked [[deterministic-daynight-rework]] can adopt the same primitive later — no dependency now.
 
 ### 4. Per-entity-type behaviour (the key idea)
 A handler is chosen by the target's kind: `isEnemy(t) ? def.enemy : def.player`. The two showcase inversions:
@@ -91,9 +91,11 @@ Extend the existing command's `kind` enum (today `['heal','hurt']`) to also carr
 5. **Co-op:** effects are **host-authoritative** (the host owns all damage and `pstate`), deferred to **P3**. Solo / ПОЛИГОН (P1–P2) applies and ticks locally.
 
 ## Phasing
-- **P1 — system + proof:** `entity.effects` + `src/effects-status.js` registry + fixed-tick `tickEffects` (`EFFECT_TPS`). Migrate **burn** (both kinds) as the proof, deleting the bespoke `burnT` paths. Wire `/effect <effect>` + `/effect clear` into the existing console command. Player HUD effects strip.
-- **P2 — new effects + inversions:** add **radiation** (+ `EnemyManager.heal`) and **bleed** (player HP DoT + enemy «пух» leak). Migrate **broken_leg** (apply/clear mobility hooks). Tune constants in `tuning.js`.
-- **P3 — polish + co-op:** enemy effect FX (radiation glow, «пух» drip); host-authoritative apply/tick + broadcast in co-op.
+> **Re-sequenced during planning:** burn is **woven through the co-op netcode** (`mp.js` owns host-side `pstate.burnT` + `_tickBurn`, broadcasts `burn`/`ignite`, ships enemy burn via the `bf` snapshot flag). Migrating it cleanly means touching co-op — so **burn moves to P3**, and **radiation** (brand-new, no legacy/co-op path) becomes the P1 proof. Both headline inversions still land in P1–P2.
+
+- **P1 — system + clean proof (radiation):** pure `src/effects-status.js` (registry for all four effects + `applyEffect`/`stepEffects`/`clearEffects`/`movementSlow`/`contactWeaken`, node-tested) + one shared `makeClock` advanced on `hostSim` in `game.js` + `entity.effects` maps (player + enemies) + `EnemyManager.heal`. Wire **radiation** end-to-end (`/effect @s radiation` hurts you; `/effect @e radiation` **heals** Engendros — the inversion, on screen). Extend the console `/effect` enum + `clear`. Player HUD effect strip.
+- **P2 — bleed + broken_leg:** wire **bleed** (player HP DoT; enemy «пух» leak — `movementSlow`/`contactWeaken` composed alongside the still-legacy burn-slow term, + drip FX). Migrate **broken_leg** into the effect system (player-only, no co-op risk: `breakLeg`/`applySplint` route through `applyEffect`/effect-removal; the leg shows in the HUD strip).
+- **P3 — burn migration + co-op + FX polish (separate plan):** migrate **burn** into effects including its `mp.js` co-op paths (retire `pstate.burnT`/`_tickBurn`/`bf`); host-authoritative effect apply/tick + broadcast; enemy effect FX polish (radiation glow, richer «пух»).
 
 ## Out of scope
 - The deterministic day/night rework itself ([[deterministic-daynight-rework]]) — effect ticking lands first; day/night adopts the shared pattern later.
