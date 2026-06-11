@@ -2,12 +2,14 @@
 
 **Date:** 2026-06-12
 **Branch:** `feat/playable-demo`
-**Status:** design draft — for review, then → implementation plan
-**Relates to:** [[deterministic-daynight-rework]] (shared deterministic-tick foundation), the dev console (`/effect`), the white-paper "ultra-deep mechanics" vision.
+**Status:** design — decisions resolved 2026-06-12; awaiting user spec review → implementation plan
+**Relates to:** [[deterministic-daynight-rework]] (shares the fixed-tick idea), the dev console (`/effect`, `src/console.js`), the [[engendros-white-paper-vision]] survival pillar ("ultra-deep mechanics via code, not graphics").
 
 ## Goal
 
-Unify the game's scattered, ad-hoc status mechanics into **one deterministic, data-driven status-effect system** that works on **any entity (player + enemies)**, and surface it through the console: `/effect <target> <effect> [seconds]` to apply and `/effect <target> clear` to wipe all effects. An effect can mean **different things per entity type** — e.g. *radiation* damages the player but **heals an Engendros**.
+Unify the game's scattered, ad-hoc status mechanics into **one deterministic, data-driven status-effect system** that works on **any entity (player + enemies)**, surfaced through the dev console: `/effect <target> <effect> [seconds]` to apply and `/effect <target> clear` to wipe.
+
+The headline property — and the reason this is worth a system, not four more fields — is that **an effect means different things per entity kind**: *radiation* damages the player but **heals** an Engendros; *bleed* drains the player's HP but makes an Engendros **leak «пух»** (slow + weaken). That cross-kind inversion is the centerpiece, not a side feature.
 
 ## Current state (what we're unifying)
 
@@ -15,62 +17,85 @@ Today these live as bespoke fields + timers, hand-ticked in two update loops:
 
 | Mechanic | Where | Notes |
 |---|---|---|
-| **Burn** (fire) | `player.burnT`/`_burnTickT` (player.js) · `enemy.burnT` (enemies.js, `ENEMY_BURN_SLOW`) | already on **both** entity kinds, but two separate code paths |
-| **Broken leg** | `player.legBroken` + `_splintT` + `splints` (player.js) | cured by a splint item |
-| **Hunger / starve** | `player.hunger` + `_starveT` (player.js) | a **meter**, not a transient status |
-| Radiation, Bleeding | — | **do not exist yet**; to be added as first-class effects |
+| **Burn** (fire) | `player.burnT`/`_burnTickT` (player.js) · `enemy.burnT` + `ENEMY_BURN_SLOW` (enemies.js) | already on **both** kinds, but two separate hand-written code paths |
+| **Broken leg** | `player.legBroken` + `_splintT` + `splints` (player.js) | player-only; cured by a splint item |
+| **Hunger / starve** | `player.hunger` + `_starveT` (player.js) | a **meter**, not a transient status — **stays as-is, out of scope** (Decision 1) |
+| **Radiation, Bleed** | — | **do not exist yet**; added as first-class effects here |
 
-Problems: per-mechanic fields, variable-`dt` ticking (non-deterministic), no shared apply/clear, player-only (except burn), no console control, no HUD list.
+Problems with today's approach: per-mechanic fields, variable-`dt` ticking (frame-rate-dependent totals), no shared apply/clear, player-only except burn, no console control beyond instant heal/hurt, no HUD list.
+
+The dev console already ships `/effect <target> heal|hurt [amount]` (instant, player-only today — `src/console.js`) plus a `target` selector type (`@s/@p/@a/@e[type=…]`) and enum-arg Tab-complete. The console file even anticipates this work — its "Extending" footer uses `register('bleed', …)` as its worked example.
 
 ## Design
 
 ### 1. Effect model (per entity)
-Every effect-able entity (the player and each `Enemy`) gets `entity.effects` — a `Map<effectKey, Instance>` where `Instance = { ticksLeft, magnitude, stacks, _accum }`. No effect = empty map (cheap).
+Every effect-able entity (the player and each pooled `Enemy`) gets `entity.effects` — a `Map<effectKey, Instance>` where `Instance = { ticksLeft, magnitude, stacks, _accum }`. No effect = empty map (cheap). Pooled enemies clear the map on spawn and on death so reuse never leaks state.
 
-### 2. Effect registry (`src/effects-status.js`, pure-ish)
-A data registry, one entry per effect:
+### 2. Effect registry (`src/effects-status.js`)
+A pure-ish data registry, one entry per effect. Each entry is the **single source of truth** for that effect — duration, stacking rule, HUD icon/colour, and the **per-kind behaviour**:
 ```
 EFFECTS = {
-  burn:       { ticks, stackable, onTick(entity, inst, ctx), onApply, onClear, hud: {icon, color} },
-  bleed:      { … },
-  radiation:  { … },   // per-kind behaviour (see §4)
-  broken_leg: { ticks: Infinity-ish, onApply: sets mobility, onClear: restores },
-  …
+  burn:       { secs: 4,  stack: 'refresh',   hud:{icon:'🔥',color:0xff6a2a},
+                player: tickBurnPlayer, enemy: tickBurnEnemy },
+  bleed:      { secs: 8,  stack: 'magnitude', cap: 3, hud:{icon:'🩸',color:0xcc2030},
+                player: tickBleedPlayer, enemy: tickPukhLeak },   // enemy = «пух» leak (Decision 4)
+  radiation:  { secs: 10, stack: 'magnitude', cap: 5, hud:{icon:'☢',color:0x9bd64a},
+                player: (p,i) => p.hurt(rate(RAD_DPS, i), 1),
+                enemy:  (e,i) => game.enemies.heal(e, rate(RAD_HEAL, i)) },  // radiation HEALS Engendros
+  broken_leg: { secs: Infinity, stack: 'refresh', hud:{icon:'🦵',color:0xd23a2a},
+                onApply: setLimp, onClear: restoreMobility /* no enemy handler */ },
 }
 ```
-`onTick` is the only place an effect mutates the world. Definitions carry **duration, stacking rule, HUD icon/colour**, and the per-tick behaviour.
+`onApply`/`onClear` handle non-tick state (broken_leg toggles mobility on apply, restores on clear; effects with no enemy handler simply no-op on enemies). Nothing outside this registry hard-codes effect behaviour.
 
 ### 3. Deterministic ticking
-Effects tick on a **fixed accumulator** (e.g. `EFFECT_TPS` ticks/sec), NOT raw frame `dt` — so 30 s of radiation always deals the same total regardless of FPS/stutter. This shares the foundation of [[deterministic-daynight-rework]] (one fixed-tick clock the sim reads). A single `tickEffects(entity, dt)` advances the accumulator and fires `onTick` per whole tick. Hooked once for the player (replaces the bespoke survival timers it owns) and once per alive enemy (replaces `enemy.burnT`).
+Effects tick on a **fixed accumulator** at `EFFECT_TPS` ticks/sec (propose **10/s**, one tunable constant in `tuning.js`), NOT raw frame `dt`. Rates are authored **per second**; each whole tick applies `rate / EFFECT_TPS` (and scales by `stacks`), so 10 s of radiation deals the same total regardless of FPS or stutter (Decision 2).
+
+One `tickEffects(entity, dt)` helper: advance the entity's `_accum` by `dt`, fire the per-kind handler once per whole `1/EFFECT_TPS` step, decrement `ticksLeft`, delete expired effects (firing `onClear`). Called once for the player (replacing its bespoke `burnT`/`_burnTickT` survival ticking) and once per alive enemy (replacing `enemy.burnT`). This is the **same fixed-tick pattern** the parked [[deterministic-daynight-rework]] will later adopt — but it lands first on its own accumulator, with no dependency on that work.
 
 ### 4. Per-entity-type behaviour (the key idea)
-An effect resolves its action from the target's kind. Cleanest: each effect exposes handlers keyed by kind, e.g.
-```
-radiation: { player: (p, i) => p.hurt(RAD_DPS_TICK, 1),
-             enemy:  (e, i) => game.enemies.heal(e, RAD_HEAL_TICK) }  // radiation HEALS Engendros
-```
-`onTick` dispatches `isEnemy(t) ? def.enemy : def.player`. Effects with no handler for a kind simply do nothing on it. (Needs a small `EnemyManager.heal(e, n)` helper — clamps to maxHp.)
+A handler is chosen by the target's kind: `isEnemy(t) ? def.enemy : def.player`. The two showcase inversions:
+
+- **radiation** — player: `hurt(RAD_DPS)`; enemy: `game.enemies.heal(e, RAD_HEAL)`. Needs a small new `EnemyManager.heal(e, n)` helper (clamps to the enemy's max HP, refreshes its health bar).
+- **bleed** — player: HP drain (`BLEED_DPS`), cleared by a future bandage/medkit (survival-medicine sub-spec) or `/effect clear`. Enemy: **«пух» leak** — *no* HP drain; instead a movement **slow** (reuse the `ENEMY_BURN_SLOW`-style factor) **+ weaken** (a contact-damage multiplier `e._weaken`), with a «пух»/fluff particle drip. Distinct from burn (slow + fire DoT); magnitude stacks deepen the leak up to its cap.
+
+burn keeps its current dual behaviour (player HP DoT; enemy slow + fire FX), now expressed as two handlers on one registry entry instead of two divergent code paths.
 
 ### 5. Console (`/effect`) — extend, don't replace
-- `/effect <target?> heal|hurt <amount>` — keep the current **instant** ops (already shipped).
-- `/effect <target?> <effectKey> [seconds]` — **apply** a timed status (default duration per effect).
-- `/effect <target?> clear` — **remove all** effects from the target(s).
-- `target` uses the existing selector system (`@s/@p/@a/@e/@e[type=]/tag/nick`). Autocomplete: the `kind`/effect arg is an enum/word with the effect keys + `heal|hurt|clear` (works with the Tab-walk we just built).
+Extend the existing command's `kind` enum (today `['heal','hurt']`) to also carry the effect keys + `clear`:
+- `/effect <target> heal|hurt [amount]` — keep the current **instant** ops, now routed through the per-kind dispatch so they work on enemies too (today's heal/hurt is player-only).
+- `/effect <target> <effectKey> [seconds]` — **apply** a timed status (default = the effect's `secs`).
+- `/effect <target> clear` — **remove all** effects from the target(s) (fires each `onClear`).
+- `target` uses the existing selector type; autocomplete reads the enum `choices`, so adding the keys lights up Tab-complete for free.
 
-### 6. HUD
-Player: a small **active-effects strip** (icon + shrinking timer) from `entity.effects` (mirrors how `setSurvival` shows leg/hunger today). Enemies: reuse particle/tint FX (burn already tints); radiation = a faint glow, bleed = drips — optional polish.
+### 6. HUD + FX
+- **Player:** a small **active-effects strip** (icon + shrinking timer bar per effect) read from `entity.effects`, mirroring how `setSurvival` shows leg/hunger today (`ui.js` / `index.html`). `secs: Infinity` effects (broken_leg) show the icon with no countdown.
+- **Enemies:** reuse particle/tint FX — burn already tints + fire-pools; radiation = a faint green glow; bleed = a «пух» drip. Enemy FX is **P3 polish**, not required for the mechanic.
 
-## Decisions to confirm (please react)
-1. **Which mechanics migrate now:** burn + broken_leg + **new** radiation + bleed → effects. **Hunger stays a meter** (it's a resource, not a transient status) — agree?
-2. **Tick rate:** propose a fixed `EFFECT_TPS` (e.g. 5–20/s); should it be the *same* clock the day/night rework will use? (Recommend: yes — one deterministic tick source.)
-3. **Stacking:** refresh-duration vs add-stacks vs independent instances. Recommend **refresh duration, magnitude can stack to a cap** (simple + predictable).
-4. **Radiation-heals-enemies:** confirm the headline example (radiation: −HP player, +HP Engendros). Any other inversions (e.g. bleed does nothing to undead plush)?
-5. **Co-op:** effects on remote players = host-authoritative (Phase 2, like the selector apply), or player-effects local-only for now?
+## Effect catalogue (implementation reference)
+
+| Key | Player | Enemy (Engendros) | Default secs | Stacking | HUD |
+|---|---|---|---|---|---|
+| `burn` | HP DoT (`PLAYER_BURN_DPS`) | slow (`ENEMY_BURN_SLOW`) + fire FX | 4 | refresh | 🔥 |
+| `bleed` | HP DoT (`BLEED_DPS`) | «пух» leak: slow + weaken + drip FX | 8 | magnitude → cap 3 | 🩸 |
+| `radiation` | HP DoT (`RAD_DPS`) | **heal** (`RAD_HEAL`) | 10 | magnitude → cap 5 | ☢ |
+| `broken_leg` | limp, no sprint, until splinted | — (no handler) | ∞ | refresh | 🦵 |
+
+(`heal` / `hurt` stay **instant** — they are not stored in `entity.effects`.)
+
+## Decisions (resolved 2026-06-12)
+1. **Migration set:** burn + broken_leg + new radiation + new bleed move to effects. **Hunger stays a meter, untouched** (a resource, not a transient status); its removal/rework is a separate survival-medicine sub-spec, per the white paper.
+2. **Tick rate:** fixed `EFFECT_TPS` accumulator (propose 10/s), frame-rate independent. Built on its own clock now; the parked [[deterministic-daynight-rework]] can adopt the same source later — no coupling or dependency now.
+3. **Stacking:** re-applying an effect **always refreshes duration** (`ticksLeft = max(remaining, new)`). The `stack` field then governs magnitude: `'refresh'` pins magnitude at 1 (burn, broken_leg — just re-arm the timer); `'magnitude'` grows `stacks` toward a per-effect `cap` (bleed, radiation), and the per-tick rate scales with `stacks`.
+4. **Per-kind inversions:** radiation heals Engendros (locked); **bleed on Engendros = «пух» leak** (slow + weaken) — a second inversion. broken_leg stays player-only.
+5. **Co-op:** effects are **host-authoritative** (the host owns all damage and `pstate`), deferred to **P3**. Solo / ПОЛИГОН (P1–P2) applies and ticks locally.
 
 ## Phasing
-- **P1:** the registry + deterministic tick + `entity.effects`; migrate **burn** (both kinds) as the proof; wire `/effect <effect>` + `/effect clear`; player HUD strip.
-- **P2:** add **radiation** (with the enemy-heal inversion) + **bleed**; migrate **broken_leg**.
-- **P3:** enemy effect FX polish; co-op host-auth apply.
+- **P1 — system + proof:** `entity.effects` + `src/effects-status.js` registry + fixed-tick `tickEffects` (`EFFECT_TPS`). Migrate **burn** (both kinds) as the proof, deleting the bespoke `burnT` paths. Wire `/effect <effect>` + `/effect clear` into the existing console command. Player HUD effects strip.
+- **P2 — new effects + inversions:** add **radiation** (+ `EnemyManager.heal`) and **bleed** (player HP DoT + enemy «пух» leak). Migrate **broken_leg** (apply/clear mobility hooks). Tune constants in `tuning.js`.
+- **P3 — polish + co-op:** enemy effect FX (radiation glow, «пух» drip); host-authoritative apply/tick + broadcast in co-op.
 
 ## Out of scope
-The deterministic day/night rework itself ([[deterministic-daynight-rework]]) — the effect tick can land first and the day/night clock adopt the same source later. No new survival *meters* (hunger stays as-is).
+- The deterministic day/night rework itself ([[deterministic-daynight-rework]]) — effect ticking lands first; day/night adopts the shared pattern later.
+- **No new survival meters.** Hunger stays as-is; removing it is the survival-medicine sub-spec's call.
+- **Effect *sources*** beyond what already exists (molotov → burn, fall → broken_leg). Contamination-zone → radiation, enemy-claw → bleed, and the bandage/medkit cure are hooks for the arsenal/medicine sub-specs; this spec delivers the *system* + console control those will feed.
