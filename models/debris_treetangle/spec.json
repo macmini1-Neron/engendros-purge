@@ -1,0 +1,138 @@
+{
+  "id": "debris_treetangle",
+  "name": "Blown-down Pine Tangle",
+  "description": "A war-blast/storm blow-down: a fallen Scots pine trunk with two side branches, dead needle clusters, a charred scorch band, and scattered bark chips — low crouch cover for the forest-steppe and pine-bor biomes.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 1.60, "h": 0.50, "d": 3.20 },
+  "dossier": "models/debris_treetangle/ref/dossier.json",
+  "parts": [
+    {
+      "id": "trunk",
+      "name": "Main fallen pine trunk — mid-span cylinder",
+      "op": "cylinder",
+      "args": { "r": 0.17, "h": 3.00, "axis": "z" },
+      "at": [0, 0.17, 0],
+      "mat": "barkPine",
+      "src": "dossier#trunk_diameter_fallen",
+      "note": "r=0.17 m (0.34 m diameter); lies along Z (axis='z'); centre-y = r so bottom touches y=0."
+    },
+    {
+      "id": "trunkButt",
+      "name": "Butt-end widening — thicker section near the stump",
+      "op": "cylinder",
+      "args": { "r": 0.22, "h": 0.40, "axis": "z" },
+      "at": [0, 0.22, -1.30],
+      "mat": "barkPine",
+      "src": "dossier#butt_diameter",
+      "note": "r=0.22 m; centre at z=-1.30 so butt spans z -1.50 to -1.10, overlapping the wide end of trunk. Slightly taller centre-y keeps bottom at y=0."
+    },
+    {
+      "id": "breakFace",
+      "name": "Exposed heartwood at the snap end",
+      "op": "bevelBox",
+      "args": { "w": 0.32, "h": 0.32, "d": 0.06 },
+      "at": [0, 0.17, 1.52],
+      "mat": "woodMid",
+      "src": "dossier#derivation",
+      "note": "Pale wood disc at +Z snap end; straddles trunk cap at z=1.50 (no coplanar flat face on cylinder)."
+    },
+    {
+      "id": "scorchL",
+      "name": "War/fire char strip on left trunk flank",
+      "op": "bevelBox",
+      "args": { "w": 0.08, "h": 0.28, "d": 0.80 },
+      "at": [-0.13, 0.17, -0.30],
+      "mat": "charBlack",
+      "src": "dossier#war_damage_feature",
+      "note": "Thin bevelBox embedded 4 mm into the left side of the trunk (outer x face at -0.17 = cylinder edge — curved vs flat, no coplanar z-fight)."
+    },
+    {
+      "id": "branch1",
+      "name": "Primary scaffold branch — right side (+X)",
+      "op": "cylinder",
+      "args": { "r": 0.08, "h": 1.10, "axis": "x" },
+      "at": [0.30, 0.12, 0.20],
+      "mat": "barkPine",
+      "src": "dossier#branch_diameter_primary",
+      "note": "axis='x' → branch lies along X; centre shifted to +X so tip reaches x=+0.85."
+    },
+    {
+      "id": "branch2",
+      "name": "Secondary branch — left side (-X)",
+      "op": "cylinder",
+      "args": { "r": 0.06, "h": 0.90, "axis": "x" },
+      "at": [-0.25, 0.10, -0.50],
+      "mat": "barkPine",
+      "src": "dossier#branch_diameter_secondary",
+      "note": "Lies along X; tip reaches x=-0.70."
+    },
+    {
+      "id": "twig1",
+      "name": "Terminal twig off branch1",
+      "op": "cylinder",
+      "args": { "r": 0.025, "h": 0.55, "axis": "x" },
+      "at": [0.40, 0.09, 0.70],
+      "mat": "barkDark",
+      "src": "dossier#branch_diameter_secondary",
+      "note": "Thin twig at far end of branch1 zone; barkDark reads darker than main branch."
+    },
+    {
+      "id": "foliage1",
+      "name": "Dead needle cluster — branch1 end",
+      "op": "bevelBox",
+      "args": { "w": 0.30, "h": 0.18, "d": 0.40 },
+      "at": [0.60, 0.22, 0.22],
+      "mat": "foliageDry",
+      "src": "dossier#foliage_clump",
+      "note": "Dry rust-orange needle mass resting on/over branch1."
+    },
+    {
+      "id": "foliage2",
+      "name": "Dead needle cluster — branch2 end",
+      "op": "bevelBox",
+      "args": { "w": 0.30, "h": 0.18, "d": 0.40 },
+      "at": [-0.45, 0.20, -0.50],
+      "mat": "foliageDry",
+      "src": "dossier#foliage_clump"
+    },
+    {
+      "id": "groundSoil",
+      "name": "Compressed soil exposure under trunk",
+      "op": "bevelBox",
+      "args": { "w": 0.55, "h": 0.04, "d": 2.60 },
+      "at": [0, 0.02, -0.10],
+      "mat": "sandSoil",
+      "src": "dossier#ground_contact",
+      "note": "Thin ground-contact strip; does not extend under bark chips (no XZ overlap → no bottom-face z-fight)."
+    },
+    {
+      "id": "barkChip1",
+      "name": "Bark fragment — right side",
+      "op": "bevelBox",
+      "args": { "w": 0.18, "h": 0.04, "d": 0.12 },
+      "at": [0.50, 0.02, -0.90],
+      "mat": "barkDark",
+      "src": "dossier#bark_scatter",
+      "note": "Outside groundSoil.x range (0.50 > 0.275) — no coplanar bottom-face overlap."
+    },
+    {
+      "id": "barkChip2",
+      "name": "Bark fragment — left side",
+      "op": "bevelBox",
+      "args": { "w": 0.12, "h": 0.04, "d": 0.15 },
+      "at": [-0.50, 0.02, 0.55],
+      "mat": "barkDark",
+      "src": "dossier#bark_scatter",
+      "note": "Outside groundSoil.x range (-0.50 < -0.275) — no coplanar bottom-face overlap."
+    }
+  ],
+  "needs": [
+    "Scots pine stem taper rate (cm/m) from a forestry reference — trunk_diameter_fallen and butt_diameter are taper-derived estimates (dossier#trunk_diameter_fallen, dossier#butt_diameter)",
+    "Primary branch diameter at junction for mature Scots pine — current 0.16 m is a rule-of-thumb estimate (dossier#branch_diameter_primary)",
+    "Blown-down trunk section length — current 3.0 m is a design estimate (dossier#design_estimate)",
+    "Foliage cluster bounding box for dead Pinus sylvestris needles — no measured size found (dossier#foliage_clump)",
+    "Bark chip dimensions for impact-shed pine bark — design estimate (dossier#bark_scatter)"
+  ]
+}

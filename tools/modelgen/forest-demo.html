@@ -1,0 +1,192 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>ENGENDROS — forest atmosphere demo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0c1410;overflow:hidden;font:13px system-ui;color:#cfe}
+  #c{width:100vw;height:100vh;display:block;cursor:grab}#c.drag{cursor:grabbing}
+  #hud{position:fixed;left:10px;top:8px;background:#0007;padding:7px 11px;border-radius:7px;pointer-events:none;white-space:pre-line;line-height:1.5}
+  #snd{position:fixed;right:12px;top:10px;background:#1c3a22;border:1px solid #3a6;color:#dfe;padding:7px 12px;border-radius:7px;cursor:pointer}
+</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<button id="snd">🔊 zvuk lesa</button>
+<script type="module">
+import * as THREE from 'three';
+import { buildSpec } from '../../src/props/voxel-interp.js';
+import { makeTree, SPECIES } from '../../src/props/generators/tree.js';
+import { makeGrassTuft, makeReedClump, makeShrub, makeFlowerPatch, makeBush } from '../../src/props/generators/groundcover.js';
+
+const canvas = document.getElementById('c'), hud = document.getElementById('hud');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+// tight forest fog — can't see to the far end (greenish, depth haze)
+const FOG = new THREE.Color(0x9cb37a);
+scene.background = FOG.clone();
+scene.fog = new THREE.Fog(FOG, 14, 78);
+
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
+
+// ---- light: low warm sun (long dappled trunk shadows) + soft sky fill ----
+const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x3a4a24, 0.6); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffe6b0, 2.0);
+sun.position.set(-46, 38, 26); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+const sc = sun.shadow.camera; sc.near = 1; sc.far = 200; sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70;
+sun.shadow.bias = -0.0008;
+scene.add(sun); scene.add(sun.target);
+
+// ---- procedural forest-floor ground texture ----
+function groundTexture() {
+  const s = 512, cv = document.createElement('canvas'); cv.width = cv.height = s;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#3f5524'; x.fillRect(0, 0, s, s);                       // mossy base
+  const blob = (col, n, smin, smax) => { x.fillStyle = col; for (let i = 0; i < n; i++) { const r = smin + Math.random() * (smax - smin); x.globalAlpha = 0.5 + Math.random() * 0.5; x.beginPath(); x.ellipse(Math.random() * s, Math.random() * s, r, r * (0.5 + Math.random()), Math.random() * 6.28, 0, 6.28); x.fill(); } x.globalAlpha = 1; };
+  blob('#4c6a2a', 900, 4, 16);   // lighter moss
+  blob('#33491d', 900, 4, 16);   // shadow moss
+  blob('#6b8a36', 500, 2, 8);    // sunlit grass flecks
+  blob('#5a4326', 350, 3, 12);   // needle/dirt patches
+  blob('#2a3a16', 400, 2, 7);    // dark litter
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(26, 26); t.anisotropy = 4; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), new THREE.MeshLambertMaterial({ map: groundTexture() }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+// ---- seeded scatter with min-distance rejection ----
+let _s = 1337; const rnd = () => { _s = (_s * 1664525 + 1013904223) >>> 0; return _s / 4294967296; };
+const rr = (a, b) => a + rnd() * (b - a);
+function scatter(n, radius, minDist, cb) {
+  const placed = []; let tries = 0;
+  while (placed.length < n && tries < n * 40) {
+    tries++; const a = rnd() * 6.28, d = Math.sqrt(rnd()) * radius;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    let ok = true; for (const p of placed) { if ((p[0] - x) ** 2 + (p[1] - z) ** 2 < minDist * minDist) { ok = false; break; } }
+    if (!ok) continue; placed.push([x, z]); cb(x, z, placed.length);
+  }
+}
+const windy = [];   // meshes that sway in the wind: { m, yaw, amp, ph, speed }
+const addMesh = (res, x, z, { yaw = rnd() * 6.28, scale = 1, shadow = true, wind = 0 } = {}) => {
+  if (!res) return; const m = res.isObject3D ? res : new THREE.Mesh(res.geometry, res.material);
+  m.position.set(x, 0, z); m.rotation.y = yaw; if (scale !== 1) m.scale.setScalar(scale);
+  if (shadow) m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  if (wind) windy.push({ m, yaw, amp: wind, ph: rnd() * 6.28, speed: 0.8 + rnd() * 1.2 });
+  scene.add(m); return m;
+};
+
+// ---- specs for forest-floor props ----
+const SPEC_IDS = ['log_fallen','log_split','stump_cut','stump_shattered','rock_boulder_mossy','rock_cluster_sm','debris_treetangle'];
+const specs = {};
+for (const id of SPEC_IDS) { try { specs[id] = await (await fetch(`/models/${id}/spec.json?cb=${Date.now()}`, { cache: 'no-store' })).json(); } catch (e) {} }
+
+// ---- POPULATE: a Scots-pine-dominant stand (the reference) + variety ----
+const DENS = +(new URLSearchParams(location.search).get('dense')) || 1; // ?dense=2 → twice as dense
+const TREE_MIX = [['scotsPine', 64], ['birch', 16], ['oak', 6], ['poplar', 6], ['deadBroken', 4], ['burntCharred', 4]];
+function pickSpecies() { const r = rnd() * 100; let a = 0; for (const [sp, w] of TREE_MIX) { a += w; if (r < a) return sp; } return 'scotsPine'; }
+const md = (base) => base / Math.sqrt(DENS); // tighter spacing when denser
+scatter(Math.round(120 * DENS), 56, md(3.1), (x, z, i) => addMesh(makeTree({ species: pickSpecies(), seed: i * 17 + 3, lod: 0 }), x, z, { scale: rr(0.85, 1.18), wind: 0.013 }));
+// understory: dense low cover (no shadow — cheap), sways more than the trees
+scatter(Math.round(340 * DENS), 60, md(1.0), (x, z, i) => addMesh(makeGrassTuft(i * 7 + 1), x, z, { shadow: false, scale: rr(0.8, 1.5), wind: 0.08 }));
+scatter(Math.round(55 * DENS), 58, md(2.4), (x, z, i) => addMesh(makeShrub(i * 13 + 2), x, z, { scale: rr(0.9, 1.6), wind: 0.05 }));
+scatter(Math.round(26 * DENS), 50, md(2.0), (x, z, i) => addMesh(makeFlowerPatch(i * 23 + 5), x, z, { shadow: false, wind: 0.07 }));
+scatter(Math.round(10 * DENS), 52, md(4.0), (x, z, i) => addMesh(makeBush(i * 11 + 4), x, z, { scale: rr(0.9, 1.3), wind: 0.035 }));
+// forest floor deadfall
+scatter(16, 50, 5.0, (x, z, i) => { const id = SPEC_IDS[i % SPEC_IDS.length]; addMesh(specs[id] ? buildSpec(specs[id]) : null, x, z, { scale: rr(0.9, 1.4) }); });
+
+// ---- light shafts (additive god-rays through the canopy) ----
+function shaftTex() { const cv = document.createElement('canvas'); cv.width = 16; cv.height = 128; const g = cv.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 128); grd.addColorStop(0, 'rgba(255,240,200,0.5)'); grd.addColorStop(1, 'rgba(255,240,200,0)'); g.fillStyle = grd; g.fillRect(0, 0, 16, 128); return new THREE.CanvasTexture(cv); }
+const shaftMat = new THREE.MeshBasicMaterial({ map: shaftTex(), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
+const sunDir = new THREE.Vector3().copy(sun.position).normalize();
+scatter(7, 42, 8, (x, z) => { const h = rr(13, 20); const p = new THREE.Mesh(new THREE.PlaneGeometry(rr(1.2, 2.6), h), shaftMat); p.position.set(x, h * 0.5, z); p.lookAt(x + sunDir.x, h * 0.5, z + sunDir.z); p.rotateY(Math.PI / 2); scene.add(p); });
+
+// ---- particles: pollen motes (drifting bright specks) ----
+function dotTex() { const cv = document.createElement('canvas'); cv.width = cv.height = 32; const g = cv.getContext('2d'); const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16); grd.addColorStop(0, '#fff'); grd.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = grd; g.beginPath(); g.arc(16, 16, 16, 0, 6.28); g.fill(); return new THREE.CanvasTexture(cv); }
+const N = 600, pp = new Float32Array(N * 3), pv = [];
+for (let i = 0; i < N; i++) { pp[i * 3] = rr(-50, 50); pp[i * 3 + 1] = rr(0.5, 16); pp[i * 3 + 2] = rr(-50, 50); pv.push([rr(-0.15, 0.15), rr(-0.05, 0.12), rr(-0.15, 0.15)]); }
+const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+const pollen = new THREE.Points(pg, new THREE.PointsMaterial({ map: dotTex(), size: 0.16, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xfff0c0, fog: true }));
+scene.add(pollen);
+// falling leaves
+const leaves = []; const leafMat = new THREE.MeshLambertMaterial({ color: 0x8a9a3a, side: THREE.DoubleSide });
+for (let i = 0; i < 26; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.12), leafMat.clone()); m.material.color.setHSL(0.18 + Math.random() * 0.1, 0.5, 0.35 + Math.random() * 0.2); m.position.set(rr(-45, 45), rr(2, 15), rr(-45, 45)); leaves.push({ m, sp: rr(0.4, 1.0), ph: rr(0, 6.28) }); scene.add(m); }
+
+// ---- fireflies (night only) + time-of-day ----
+const fireflies = new THREE.Group(); fireflies.visible = false; scene.add(fireflies);
+for (let i = 0; i < 44; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex(), color: 0xccff66, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true })); sp.scale.set(0.32, 0.32, 1); sp.position.set(rr(-42, 42), rr(0.4, 3.2), rr(-42, 42)); sp.userData = { ph: rr(0, 6.28), bs: 0.5 + rnd() * 1.3, vx: rr(-0.04, 0.04), vz: rr(-0.04, 0.04) }; fireflies.add(sp); }
+
+const SKY = { day: 0x9cb37a, dusk: 0xc08a52, night: 0x16242a };
+let timeMode = 'day', timeIdx = 0;
+function setTime(mode) {
+  timeMode = mode; const c = SKY[mode]; scene.fog.color.setHex(c); scene.background.setHex(c);
+  if (mode === 'day') { scene.fog.far = 78; sun.color.setHex(0xffe6b0); sun.intensity = 2.0; sun.position.set(-46, 38, 26); hemi.intensity = 0.6; hemi.color.setHex(0xbfe0ff); hemi.groundColor.setHex(0x3a4a24); fireflies.visible = false; shaftMat.opacity = 0.22; }
+  else if (mode === 'dusk') { scene.fog.far = 66; sun.color.setHex(0xff8434); sun.intensity = 2.3; sun.position.set(-64, 13, 18); hemi.intensity = 0.42; hemi.color.setHex(0xffb070); hemi.groundColor.setHex(0x4a3a20); fireflies.visible = false; shaftMat.opacity = 0.34; }
+  else { scene.fog.far = 50; sun.color.setHex(0x6a86c8); sun.intensity = 0.55; sun.position.set(-26, 44, -22); hemi.intensity = 0.16; hemi.color.setHex(0x2a3a5c); hemi.groundColor.setHex(0x0e1626); fireflies.visible = true; shaftMat.opacity = 0.05; }
+  sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld();
+}
+
+// ---- free-cam: ground-level POV, orbit + WASD fly ----
+const target = new THREE.Vector3(0, 1.7, 0); const cam = { az: 18, el: 2, dist: 0.1 };
+let pov = true; // POV mode: camera AT target looking out (walk the forest)
+function applyCam() {
+  const az = THREE.MathUtils.degToRad(cam.az), el = THREE.MathUtils.degToRad(cam.el);
+  const dir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+  camera.position.copy(target); camera.lookAt(target.x + dir.x, target.y + dir.y, target.z + dir.z);
+}
+const keys = {}; let drag = false, lx = 0, ly = 0;
+canvas.addEventListener('pointerdown', e => { drag = true; lx = e.clientX; ly = e.clientY; canvas.classList.add('drag'); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup', () => { drag = false; canvas.classList.remove('drag'); });
+canvas.addEventListener('pointermove', e => { if (!drag) return; cam.az -= (e.clientX - lx) * 0.25; cam.el = THREE.MathUtils.clamp(cam.el - (e.clientY - ly) * 0.25, -40, 70); lx = e.clientX; ly = e.clientY; });
+addEventListener('keydown', e => { const k = e.key.toLowerCase(); keys[k] = true; if (k === 'n') { timeIdx = (timeIdx + 1) % 3; setTime(['day', 'dusk', 'night'][timeIdx]); } });
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+function fly() {
+  const sp = (keys['shift'] ? 0.6 : 0.22), az = THREE.MathUtils.degToRad(cam.az), fx = Math.sin(az), fz = Math.cos(az);
+  if (keys['w']) { target.x += fx * sp; target.z += fz * sp; } if (keys['s']) { target.x -= fx * sp; target.z -= fz * sp; }
+  if (keys['a']) { target.x -= fz * sp; target.z += fx * sp; } if (keys['d']) { target.x += fz * sp; target.z -= fx * sp; }
+  if (keys['e']) target.y += sp; if (keys['q']) target.y = Math.max(0.4, target.y - sp);
+}
+function resize() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+
+let t = 0, _fc = 0, _ft = 0, _fps = 0;
+function frame() {
+  _fc++; const _n = performance.now(); if (_n - _ft >= 1000) { _fps = _fc; _fc = 0; _ft = _n; }
+  t += 0.016; fly(); resize(); applyCam();
+  // drift pollen, wrap around the camera
+  const a = pollen.geometry.attributes.position;
+  for (let i = 0; i < N; i++) { let x = a.getX(i) + pv[i][0] * 0.04, y = a.getY(i) + pv[i][1] * 0.04 + Math.sin(t + i) * 0.002, z = a.getZ(i) + pv[i][2] * 0.04;
+    if (y > 17) y = 0.5; if (Math.abs(x - target.x) > 55) x = target.x + rr(-50, 50); if (Math.abs(z - target.z) > 55) z = target.z + rr(-50, 50);
+    a.setXYZ(i, x, y, z); } a.needsUpdate = true;
+  for (const L of leaves) { L.m.position.y -= L.sp * 0.02; L.m.position.x += Math.sin(t * L.sp + L.ph) * 0.01; L.m.rotation.x += 0.03; L.m.rotation.z += 0.02; if (L.m.position.y < 0.1) { L.m.position.set(target.x + rr(-30, 30), rr(12, 16), target.z + rr(-30, 30)); } }
+  // wind: a global gust drives per-item sway (trees lean a little, grass a lot)
+  const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
+  for (const w of windy) { const sz = Math.sin(t * w.speed + w.ph) * w.amp * gust; w.m.rotation.set(Math.cos(t * w.speed * 0.7 + w.ph) * w.amp * 0.5 * gust, w.yaw, sz); }
+  // fireflies: drift + blink (night only)
+  if (fireflies.visible) for (const f of fireflies.children) { const u = f.userData; let x = f.position.x + u.vx, z = f.position.z + u.vz, y = f.position.y + Math.sin(t * u.bs + u.ph) * 0.012; if (Math.abs(x - target.x) > 44) x = target.x + rr(-40, 40); if (Math.abs(z - target.z) > 44) z = target.z + rr(-40, 40); f.position.set(x, Math.max(0.3, y), z); f.material.opacity = 0.12 + 0.88 * Math.max(0, Math.sin(t * (1.4 + u.bs) + u.ph)); }
+  renderer.render(scene, camera); requestAnimationFrame(frame);
+}
+applyCam(); requestAnimationFrame(frame);
+hud.textContent = '🌲 LESNÍ DEMO  ·  táhni = rozhlížení  ·  WASD = chůze  ·  Q/E = výška  ·  Shift = běh  ·  N = den / soumrak / noc';
+{ const T0 = new URLSearchParams(location.search).get('time'); const idx = ['day', 'dusk', 'night'].indexOf(T0); if (idx >= 0) { timeIdx = idx; setTime(T0); } }
+window.__READY = true;
+window.DEMO = { setView(az, el, tx, ty, tz) { if (az != null) cam.az = az; if (el != null) cam.el = el; if (tx != null) target.set(tx, ty, tz); applyCam(); }, snap() { resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', 0.92); },
+  perf() { const r = renderer.info.render, m = renderer.info.memory; return { fps: _fps, drawCalls: r.calls, triangles: r.triangles, geometries: m.geometries, textures: m.textures, pixelRatio: renderer.getPixelRatio(), viewport: [canvas.clientWidth, canvas.clientHeight] }; },
+  time: (m) => setTime(m) };
+
+// ---- ambient sound (click to start): wind bed + random birds ----
+document.getElementById('snd').addEventListener('click', function () {
+  if (window.__audio) return; const ctx = new (window.AudioContext || window.webkitAudioContext)(); window.__audio = ctx;
+  // wind: brown noise -> lowpass -> slow gain LFO
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate), d = buf.getChannelData(0); let last = 0;
+  for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+  const wg = ctx.createGain(); wg.gain.value = 0.12; src.connect(lp).connect(wg).connect(ctx.destination); src.start();
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 0.06; lfo.connect(lg).connect(wg.gain); lfo.start();
+  // birds: scheduled chirps
+  function bird() { const o = ctx.createOscillator(), g = ctx.createGain(), n = ctx.currentTime; o.type = 'sine'; const f = 1800 + Math.random() * 2200; o.frequency.setValueAtTime(f, n); o.frequency.exponentialRampToValueAtTime(f * (1.3 + Math.random()), n + 0.08); o.frequency.exponentialRampToValueAtTime(f, n + 0.16); g.gain.setValueAtTime(0, n); g.gain.linearRampToValueAtTime(0.08, n + 0.02); g.gain.exponentialRampToValueAtTime(0.001, n + 0.22); o.connect(g).connect(ctx.destination); o.start(n); o.stop(n + 0.24); setTimeout(bird, 600 + Math.random() * 3500); }
+  bird(); setTimeout(bird, 1500); this.textContent = '🔊 ✓'; this.style.opacity = 0.5;
+});
+</script>
+</body></html>

@@ -1,0 +1,97 @@
+{
+  "id": "debris_treetangle",
+  "title": "Blow-down Debris — Fallen Pine Trunk Tangle (Pinus sylvestris)",
+  "era": "Contemporary — forest-steppe / pine bor biome (Ukraine/Russia); war-damaged state",
+  "sources": {
+    "pinus_wiki":     "Pinus sylvestris — Wikipedia: 'mature 25–35 m (exceptionally >45 m), trunk ~1.0 m DBH (range 0.5–1.3 m, exceptionally >1.7 m), orange-brown upper bark'",
+    "pinus_jrc":      "EU JRC Forest Atlas via research brief — Scots pine trunk diameter range 0.5–1.3 m DBH confirmed",
+    "bark_conifers":  "conifers.org + Wikipedia — 'bark TWO-TONE: lower trunk thick scaly grey-brown deeply fissured plates up to ~5 cm thick; upper trunk + branches thin flaking orange-red/copper'",
+    "war_damage":     "Reuters/VOA 'Ukraine's vast forests devastated'; Grist — war-killed trees = 'field of stumps', 'stripped, broken trunks', 'black sticks', charcoal piles; ~5 million acres burned since 2022",
+    "research_brief": "Ecology + visual character of Ukrainian/Russian regional landscape biomes — ENGENDROS PURGE world plan (2026-06-10)"
+  },
+  "specifications": {
+    "trunk_dims": {
+      "dbh_range_m": [0.5, 1.3],
+      "chosen_dbh_m": 0.60,
+      "src": "pinus_wiki + pinus_jrc",
+      "note": "0.60 m DBH = a mid-aged mature specimen within the sourced range. Used as the base diameter for taper derivation."
+    },
+    "trunk_diameter_fallen": {
+      "value_m": 0.34,
+      "radius_m": 0.17,
+      "src": "derivation",
+      "derivation": "Scots pine taper estimated at ~1 cm/m (mid-range for European conifers; exact taper table not independently sourced — see needs[]). At 4 m height above ground: diameter ≈ 0.60 − 2×0.01×4 = 0.52 m. More conservatively mid-span of fallen section ≈ 0.34 m. r=0.17 m used for main cylinder."
+    },
+    "butt_diameter": {
+      "value_m": 0.44,
+      "radius_m": 0.22,
+      "src": "derivation",
+      "derivation": "Butt end of fallen section (nearest the stump): diameter ≈ 0.60 m DBH × 0.73 ≈ 0.44 m → r=0.22 m. Taper factor estimated — see needs[]."
+    },
+    "branch_diameter_primary": {
+      "value_m": 0.16,
+      "radius_m": 0.08,
+      "src": "design_estimate",
+      "note": "Primary scaffold branch at trunk junction. Roughly 1/4 to 1/3 of trunk diameter (general dendrology rule of thumb). 0.16/0.34 ≈ 47% — slightly high but exaggerated for game-prop readability. See needs[]."
+    },
+    "branch_diameter_secondary": {
+      "value_m": 0.12,
+      "radius_m": 0.06,
+      "src": "design_estimate",
+      "note": "Secondary branch and terminal twig (~half of primary branch diameter). Design estimate; see needs[]."
+    },
+    "foliage_clump": {
+      "value_m": 0.40,
+      "src": "design_estimate",
+      "note": "Bounding box (~0.30 × 0.18 × 0.40 m) of a dead dried-needle cluster on a fallen pine branch. Pinus sylvestris needles in paired tufts (Wikipedia; bark_conifers). No measured cluster size — design estimate; see needs[]."
+    },
+    "war_damage_feature": {
+      "src": "war_damage",
+      "note": "Charred/scorched strip on the blast-facing side of the trunk, evidenced by 'black sticks' and charcoal-pile descriptions (Reuters/VOA/Grist). The charBlack scorch band (0.08 × 0.28 × 0.80 m) represents this; its exact dimensions are design estimates derived from the trunk radius."
+    },
+    "ground_contact": {
+      "src": "derivation",
+      "note": "Compressed bare-soil exposure strip under a fallen trunk, slightly narrower than the trunk diameter (0.55 × 0.04 × 2.60 m). Width and length derived from trunk_diameter_fallen. Included for visual grounding; no specific source for ground-impression geometry."
+    },
+    "bark_scatter": {
+      "src": "bark_conifers + war_damage",
+      "note": "Bark fragments (two small bevelBox pieces) scattered on the ground around the fallen trunk. Pinus sylvestris sheds thick scaly plates on impact; war-damage causes additional fragmentation. Dimensions (0.18 × 0.04 × 0.12 m, 0.12 × 0.04 × 0.15 m) are design estimates."
+    },
+    "derivation": {
+      "scorch_w_m": 0.08,
+      "scorch_h_m": 0.28,
+      "scorch_d_m": 0.80,
+      "breakface_w_m": 0.32,
+      "breakface_h_m": 0.32,
+      "breakface_d_m": 0.06,
+      "src": "geometric derivation from trunk_dims + bark_conifers + war_damage_feature",
+      "derivation": "scorch height ≈ 0.28 m = top-to-near-ground span on the trunk side; breakFace w,h = trunk diameter 0.34 m rounded to 0.32 m; breakFace d = 0.06 m proud cap to read as exposed end grain"
+    },
+    "design_estimate": {
+      "src": "research_brief",
+      "note": "Catch-all key for dimensions that are proportionally reasonable but lack a directly quantified source (branch diameters, foliage clump size, bark chip size, log-section length). All flagged in needs[]."
+    }
+  },
+  "feature_inventory": {
+    "main_trunk":    "Horizontal fallen pine trunk lying along Z, barkPine two-tone; wider butt at −Z (near old stump), narrower snap end at +Z.",
+    "trunk_butt":    "Thicker cylinder at the butt/stump end of the trunk; same barkPine, slightly greater radius.",
+    "break_face":    "Pale exposed heartwood at the +Z snap point: woodMid disc, contrasts dark bark.",
+    "scorch_band":   "War/fire charring strip on one trunk flank (charBlack thin bevelBox embedded in the side).",
+    "branch_1":      "Primary scaffold branch lying outward to the right (+X side), barkPine.",
+    "branch_2":      "Secondary branch to the opposite side (−X), barkPine.",
+    "twig_1":        "Thin terminal twig off the end of branch_1, barkDark.",
+    "foliage_1":     "Dead dried-needle cluster near branch_1 end, foliageDry rust-orange.",
+    "foliage_2":     "Dead dried-needle cluster near branch_2 end, foliageDry.",
+    "ground_soil":   "sandSoil exposure strip where trunk rests — scraped/compressed earth.",
+    "bark_chip_1":   "Small barkDark bark fragment to the right of the trunk.",
+    "bark_chip_2":   "Small barkDark bark fragment to the left."
+  },
+  "game_model_purpose": "World cover prop — a blown-down pine tangle offering low crouch cover. Distinct from log_fallen (single clean log): this is a multi-piece blown-down assemblage with branches, dead foliage, and war-damage scorch — marks blast/fire zones in the forest-steppe or pine bor biome.",
+  "needs": [
+    "Scots pine stem taper rate (cm/m) from a forestry reference — current estimate (~1 cm/m, giving r=0.17 m at mid-span) is unverified; a taper table would confirm or correct trunk_diameter_fallen and butt_diameter",
+    "Primary branch diameter at trunk junction for mature Scots pine — a silviculture or wood-anatomy source (current 0.16 m is a rule-of-thumb estimate)",
+    "Typical blown-down or artillery-felled trunk section length — current 3.0 m is a design estimate with no field or forestry source",
+    "Foliage cluster bounding box for dead Pinus sylvestris needles — no measured cluster size found in sources reviewed",
+    "Bark chip dimensions for impact-shed pine bark — not quantified in any source reviewed"
+  ]
+}

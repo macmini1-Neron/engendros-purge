@@ -1,0 +1,152 @@
+{
+  "id": "stump_shattered",
+  "name": "War-shattered charred pine stump",
+  "description": "A Scots pine stump shattered by artillery / fire: charred black exterior, exposed pale-wood shatter face with concentric rings, three jagged splinters projecting from the break, and a disturbed-soil base disc. charBlack shell / woodMid–woodDark shatter face / barkPine bark splinter.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.72, "h": 0.90, "d": 0.72 },
+  "dossier": "models/stump_shattered/ref/dossier.json",
+  "parts": [
+    {
+      "id": "soil_base",
+      "name": "Char / disturbed-soil ground disc",
+      "op": "cylinder",
+      "args": { "r": 0.36, "h": 0.018, "axis": "y" },
+      "at": [0, 0.009, 0],
+      "mat": "sandSoil",
+      "src": "dossier#soil_disc_r_mm",
+      "note": "r=360 mm, h=18 mm; bottom at y=0.000. Widest part — sets footprint w/d=0.72."
+    },
+    {
+      "id": "root_flare",
+      "name": "Root flare — charred wider tapered base zone",
+      "op": "cylinder",
+      "args": { "r": 0.31, "r2": 0.25, "h": 0.10, "axis": "y" },
+      "at": [0, 0.05, 0],
+      "mat": "charBlack",
+      "src": "dossier#root_flare_r_mm",
+      "note": "r=310 mm at base, r2=250 mm at top; bottom at y=0.000. Charred per war_forests; tapers to trunk radius."
+    },
+    {
+      "id": "trunk_body",
+      "name": "Main charred stump trunk cylinder",
+      "op": "cylinder",
+      "args": { "r": 0.25, "h": 0.65, "axis": "y" },
+      "at": [0, 0.325, 0],
+      "mat": "charBlack",
+      "src": "dossier#stump_shatter_h_mm",
+      "note": "r=250 mm, h=650 mm; bottom at y=0.000, top at y=0.650. Fully charred exterior — 'black stick' silhouette."
+    },
+    {
+      "id": "char_streak_l",
+      "name": "Left longitudinal char-streak / burn groove",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.45, "d": 0.06 },
+      "at": [-0.22, 0.24, 0],
+      "mat": "charBlack",
+      "src": "dossier#char_coverage",
+      "note": "Centre at x=−0.22; outer face at x=−0.25 flush with cylinder surface — curved vs flat, no coplanar z-fight. Reads as deep longitudinal fire groove on bark."
+    },
+    {
+      "id": "char_streak_r",
+      "name": "Right longitudinal char-streak / burn groove",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.45, "d": 0.06 },
+      "at": [0.22, 0.24, 0],
+      "mat": "charBlack",
+      "src": "dossier#char_coverage",
+      "note": "Symmetric right-side groove."
+    },
+    {
+      "id": "break_wood_outer",
+      "name": "Outer sapwood ring at shatter face",
+      "op": "cylinder",
+      "args": { "r": 0.23, "h": 0.012, "axis": "y" },
+      "at": [0, 0.656, 0],
+      "mat": "woodMid",
+      "src": "dossier#break_face_th_mm",
+      "note": "r=230 mm (92% of trunk_r); bottom at y=0.650 = trunk_body top (opposite-normal contact, safe). Pale exposed sapwood ring."
+    },
+    {
+      "id": "break_wood_mid",
+      "name": "Latewood ring at shatter face",
+      "op": "cylinder",
+      "args": { "r": 0.15, "h": 0.012, "axis": "y" },
+      "at": [0, 0.668, 0],
+      "mat": "woodDark",
+      "src": "dossier#break_face_th_mm",
+      "note": "r=150 mm; bottom at y=0.662 = break_wood_outer top (opposite-normal, safe). Darker latewood annual band."
+    },
+    {
+      "id": "break_core",
+      "name": "Charred heartwood core at shatter face",
+      "op": "cylinder",
+      "args": { "r": 0.06, "h": 0.012, "axis": "y" },
+      "at": [0, 0.680, 0],
+      "mat": "charBlack",
+      "src": "dossier#break_face_th_mm",
+      "note": "r=60 mm; bottom at y=0.674 = break_wood_mid top (opposite-normal, safe). Burned heartwood reads as a dark bull's-eye at the centre of the break face."
+    },
+    {
+      "id": "splinter_a",
+      "name": "Largest splintered shard — leans +x / +z",
+      "op": "bevelBox",
+      "args": { "w": 0.07, "h": 0.34, "d": 0.05 },
+      "at": [0.10, 0.70, 0.07],
+      "rot": [14, 0, 20],
+      "mat": "woodMid",
+      "src": "dossier#splinter_dims",
+      "note": "Tall dominant shard; centre y=0.70 (embedded below break). Strong +x/+z lean — rotated top ≈ y=0.88. Pale inner wood exposed by impact, the jagged silhouette the break needs."
+    },
+    {
+      "id": "splinter_b",
+      "name": "Mid splintered shard — leans -x / +z (still barked)",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.28, "d": 0.04 },
+      "at": [-0.11, 0.66, 0.05],
+      "rot": [-8, 0, -24],
+      "mat": "barkPine",
+      "src": "dossier#splinter_dims",
+      "note": "Still-barked outer splinter, leaning hard −x. Rotated top ≈ y=0.82."
+    },
+    {
+      "id": "splinter_c",
+      "name": "Small splintered shard — leans +x / -z",
+      "op": "bevelBox",
+      "args": { "w": 0.05, "h": 0.24, "d": 0.04 },
+      "at": [0.04, 0.64, -0.10],
+      "rot": [12, 0, 10],
+      "mat": "woodDark",
+      "src": "dossier#splinter_dims",
+      "note": "Latewood-side darker shard. Rotated top ≈ y=0.78."
+    },
+    {
+      "id": "splinter_d",
+      "name": "Back-left splinter — leans -x / -z (still barked)",
+      "op": "bevelBox",
+      "args": { "w": 0.055, "h": 0.30, "d": 0.045 },
+      "at": [-0.06, 0.68, -0.08],
+      "rot": [-12, 0, 16],
+      "mat": "barkPine",
+      "src": "dossier#splinter_dims",
+      "note": "Fills the back of the shatter fan; rotated top ≈ y=0.85. Design estimate (see needs[])."
+    },
+    {
+      "id": "splinter_e",
+      "name": "Thin tall sliver — front-right, sharply leaning",
+      "op": "bevelBox",
+      "args": { "w": 0.04, "h": 0.26, "d": 0.035 },
+      "at": [0.08, 0.66, -0.02],
+      "rot": [16, 0, -14],
+      "mat": "woodMid",
+      "src": "dossier#splinter_dims",
+      "note": "Thin pale sliver giving the break a ragged multi-shard crown; rotated top ≈ y=0.80."
+    }
+  ],
+  "needs": [
+    "Sourced stump height (mm) for a war-shattered/snapped pine — no quantified standard exists; 650 mm (dossier#stump_shatter_h_mm) is a design estimate",
+    "Sourced splinter height and angle data for war-shattered conifers — no quantitative field measurement found; dimensions in dossier#splinter_dims are design estimates",
+    "Sourced root flare radius at soil level (mm) for Pinus sylvestris — 310 mm (dossier#root_flare_r_mm) is a design estimate, not independently sourced from a forestry reference"
+  ]
+}

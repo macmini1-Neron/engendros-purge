@@ -1,0 +1,84 @@
+{
+  "id": "rock_outcrop",
+  "title": "Low Exposed Bedrock Shelf — Ukrainian Steppe Granite Outcrop",
+  "era": "Natural feature (Proterozoic exposed granite, Ukrainian crystalline shield / Азово-Подільський щит)",
+  "sources": {
+    "shield_geology": "Ukrainian crystalline shield (Азово-Подільський щит / Azov-Podolian Shield) — Encyclopedia of Ukraine, vol. V (Toronto, 1993); Ukrainian Shield = Precambrian granite-gneiss basement exposed by Cenozoic erosion in the steppe zone, dominantly coarse-grained grey biotite-granite and gneiss",
+    "outcrop_class": "Twidale C.R. & Vidal Romani J.R. 'Landforms and Geology of Granite Terrains' (Taylor & Francis, 2005), Chapter 4 — classification of low bedrock exposures: 'low outcrop' (pavements and low shields) = 0.10–0.50 m above surrounding soil, plan span 0.3–3.0 m; abundant on flat interfluves of dissected shields",
+    "ecotone_hard_rock": "Sharp steppe-to-forest-steppe ecotone edge on hard rock substrates (vs. diffuse edge on loess) — Erdős et al. 2018, Applied Vegetation Science 21:475–488; Chytrý et al. 2022, Journal of Vegetation Science 33:e13136",
+    "granite_colour": "Ukrainian Shield granite colour: medium grey (Munsell N5–N6) on fresh faces, warm iron-ochre staining (10YR 5/4–6/6) on long-exposed upper surfaces — Lazarenko E.K. 'Mineralogy of Ukraine' (1975), Kyiv; field observations in the Ukrainian Geological Survey (ГСУ) crystalline basement mapping reports",
+    "moss_lichen": "Crustose and foliose lichens (Parmelia sulcata, Rhizocarpon geographicum) and thin bryophyte cushions (Grimmia pulvinata) colonise steppe granite outcrops; green-grey lichen crust 5–25 mm thick on sheltered depressions and shaded upper faces — Kondratyuk S.Ya. et al. (2007) 'Checklist of Lichens of Ukraine', NASU, Kyiv; also Makarova I.I. 'Mosses of Rock Outcrops' in Bot. Zhurn. 82(1), 1997",
+    "steppe_grass_margin": "Dry grass (Festuca valesiaca, Stipa capillata) and stonecrop (Sedum acre) occupy thin skeletal soil pockets at rock margins and crevices in the Ukrainian steppe — Encyclopedia of Ukraine, 'Steppe' article; Didukh Ya.P. (2009) 'Red Data Book of Ukrainian vegetation' on rocky steppe communities"
+  },
+  "specifications": {
+    "rock_type": {
+      "mineralogy": "Coarse-grained grey biotite-granite; k-feldspar phenocrysts 10–30 mm; colour N5–N6 grey unweathered, iron-ochre stained on exposed summit faces",
+      "src": "shield_geology"
+    },
+    "height_range_mm": {
+      "min_mm": 100,
+      "max_mm": 500,
+      "design_value_mm": 400,
+      "note": "Low outcrop class (Twidale 2005); design = 400 mm incl. 20 mm lichen/moss crown",
+      "src": "outcrop_class"
+    },
+    "plan_range_mm": {
+      "note": "Small shelf exposure; main rock block 1200 mm length × 800 mm width",
+      "design_length_mm": 1200,
+      "design_width_mm": 800,
+      "src": "outcrop_class"
+    },
+    "layer_derivation": {
+      "src": "outcrop_class",
+      "derivation_note": "Rock stack (floor to apex): base slab 80 mm + main body 140 mm + upper shelf 100 mm + crest 60 mm = 380 mm granite. Width tapers each layer by ~15–20% to approximate weathered, rounded form. Offsets (±30–60 mm in x and z) mimic irregular joint-controlled erosion. All values within the 100–500 mm low-outcrop height range.",
+      "base_slab_h_mm": 80,
+      "base_slab_w_mm": 1200,
+      "base_slab_d_mm": 800,
+      "body_h_mm": 140,
+      "body_w_mm": 1040,
+      "body_d_mm": 680,
+      "shelf_h_mm": 100,
+      "shelf_w_mm": 820,
+      "shelf_d_mm": 540,
+      "crest_h_mm": 60,
+      "crest_w_mm": 540,
+      "crest_d_mm": 360,
+      "pebble_h_mm": 100,
+      "pebble_w_mm": 140,
+      "pebble_d_mm": 120
+    },
+    "moss_dimensions": {
+      "src": "moss_lichen",
+      "note": "Lichen/bryophyte crust modeled as 20 mm thick bevelBox on exposed upper faces — within the 5–25 mm range from literature",
+      "moss_crest_w_mm": 340,
+      "moss_crest_d_mm": 200,
+      "moss_crest_h_mm": 20,
+      "moss_shelf_w_mm": 250,
+      "moss_shelf_d_mm": 110,
+      "moss_shelf_h_mm": 20
+    },
+    "grass_tuft": {
+      "src": "steppe_grass_margin",
+      "note": "Festuca/Stipa tuft 100 mm tall × 100 mm wide × 80 mm deep; placed just outside rock base perimeter in thin skeletal soil",
+      "h_mm": 100,
+      "w_mm": 100,
+      "d_mm": 80
+    }
+  },
+  "feature_inventory": [
+    { "feature": "Base slab (floor-contact granite)", "present": true, "src": "outcrop_class" },
+    { "feature": "Main body (bulk granite mass)", "present": true, "src": "outcrop_class" },
+    { "feature": "Upper shelf ledge (differential weathering step)", "present": true, "src": "outcrop_class" },
+    { "feature": "Crest (sub-rounded summit)", "present": true, "src": "outcrop_class" },
+    { "feature": "Lichen/moss crust on crest", "present": true, "src": "moss_lichen" },
+    { "feature": "Moss patch on upper shelf depression", "present": true, "src": "moss_lichen" },
+    { "feature": "Satellite pebble / eroded fragment", "present": true, "src": "outcrop_class" },
+    { "feature": "Dry grass tufts at rock margin", "present": true, "src": "steppe_grass_margin", "note": "Two tufts placed outside base perimeter (front-left, back-right)" },
+    { "feature": "Iron oxidation staining", "present": false, "note": "Captured by granite palette warm tones; not a separate part" },
+    { "feature": "Crack / exfoliation joint lines", "present": false, "note": "Would need charBlack stencil parts on body front/side faces; omitted pending precise joint-placement reference" }
+  ],
+  "needs": [
+    "Precise measured plan and height dimensions for low (<0.5 m) Ukrainian Shield granite shelf outcrops — current derivation relies on the geomorphological class range from Twidale & Vidal Romani 2005 only",
+    "Crack / exfoliation joint stencil parts — exact position and proportion of joint lines on the body face not sourced; deferred to needs[]"
+  ]
+}

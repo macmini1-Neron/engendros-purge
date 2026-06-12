@@ -1,0 +1,66 @@
+{
+  "id": "rock_boulder_mossy",
+  "title": "Mossy Rounded River Boulder (riparian stream-bed prop)",
+  "era": "N/A — natural geological object",
+  "region": "Ukraine / Russia — Dnieper-basin riparian zones; Wentworth medium-boulder class",
+  "sources": {
+    "wentworth_1922": "Wentworth, C.K. (1922) — 'A scale of grade and class terms for clastic sediments', Journal of Geology 30(5):377–392 — cited via Wikipedia 'Grain size (sedimentology)', https://en.wikipedia.org/wiki/Grain_size",
+    "glime_2017": "Glime, J.M. (2017) — 'Bryophyte Ecology Vol. 4: Habitat & Role', Chapter 7 'Stream Ecology', Michigan Technological University Open Access — documents continuous bryophyte mats 10–60 mm thick on emergent riparian boulders (Platyhypnidium riparioides, Racomitrium aquaticum on mid-stream stones); available at digitalcommons.mtu.edu",
+    "riparian_brief": "ENGENDROS PURGE ecology research brief 2026-06-10 — riparian zone visual: 'soft muddy/silty ground, standing water, reed/sedge fringe; short broken sightlines'; boulder-strewn stream beds in Dnieper-basin riparian gallery forest"
+  },
+  "specifications": {
+    "boulder_class": {
+      "wentworth_class": "medium boulder",
+      "size_range_mm": [256, 512],
+      "src": "wentworth_1922",
+      "note": "Wentworth (1922) defines boulder as > 256 mm across greatest dimension; later refinements subdivide: small boulder 128–256 mm, medium boulder 256–512 mm, large boulder 512–1024 mm. This prop is placed at the lower-medium end (~420 mm) to suit game prop scale without dominating a scene."
+    },
+    "body_dimensions": {
+      "width_mm": 420,
+      "height_mm": 360,
+      "depth_mm": 390,
+      "src": "wentworth_1922",
+      "note": "Width 420 mm sits within the Wentworth medium-boulder range (256–512 mm). Height and depth are derived proportions — see needs[] for a sourced h/w ratio. Rounded river boulders are typically sub-equidimensional; h ≈ 0.85 × w is a common observation from fluvial geomorphology fieldwork, but no quantified source is yet attached."
+    },
+    "moss_cover": {
+      "thickness_mm": 40,
+      "coverage_faces": ["top crown", "front splash-zone face", "shaded left flank"],
+      "src": "glime_2017",
+      "note": "Glime (2017) Chapter 7 documents riparian bryophyte mats 10–60 mm thick on stream-side rocks. 40 mm is the design mid-range. The cap is embedded 4 mm into the granite crown (straddle) so no coplanar face sits on the same plane as the body top."
+    },
+    "soil_ring": {
+      "width_mm": 440,
+      "depth_mm": 410,
+      "thickness_mm": 15,
+      "src": "riparian_brief",
+      "note": "Thin plate of riparian silt/mud representing the substrate contact zone where the boulder is set into soft ground. Slightly wider and deeper than body_base (420 × 390 mm) to read as a muddy surround. Plate is centred at y = 0, straddling the floor plane, so the model visually 'sits into' the ground."
+    },
+    "lichen_patch": {
+      "size_mm": 60,
+      "height_mm": 20,
+      "src": "glime_2017",
+      "note": "Glime (2017) notes algal films and crustose/foliose lichen on rock surfaces above the permanent splash zone. Small green lichen patch on upper dome surface. Size is a design value within the documented range of rock-surface cryptogam colonies."
+    },
+    "derivation": {
+      "straddle_mm": 4,
+      "moss_cap_bottom_y_mm": 356,
+      "body_crown_top_y_mm": 360,
+      "moss_cap_center_y_mm": 376,
+      "lichen_bottom_y_mm": 392,
+      "moss_cap_top_y_mm": 396,
+      "note": "Stacking math (all values in mm): body layers stack from y=0; body_crown top = 80+120+100+60 = 360 mm. moss_cap straddles 4 mm into crown: bottom = 356, center = 376, top = 396. lichen_patch straddling moss_cap top: bottom = 392, center = 402, top = 412. Front/left moss patches straddle body_base faces (front z=195 mm, left x=-210 mm) each by 4 mm — back face = 191 mm and -206 mm respectively."
+    }
+  },
+  "feature_inventory": [
+    { "feature": "Main granite body (4 stacked layers)", "description": "4 bevelBox layers of decreasing w/d approximate a rounded organic boulder dome (wide base tapering to narrow crown); layered-shading palette gives lit top + mid body + shadow foot on each face automatically", "src": "body_dimensions" },
+    { "feature": "Moss cap", "description": "Continuous bryophyte mat on the boulder crown; bevelBox straddling 4 mm into body_crown top to avoid z-fight", "src": "moss_cover" },
+    { "feature": "Front splash-zone moss patch", "description": "Moss colony on the forward-facing (perpetually damp) side — bevelBox straddling 4 mm into body_base front face", "src": "moss_cover" },
+    { "feature": "Left-flank shaded moss patch", "description": "Shaded-side moss colony on the left face of body_base; asymmetry is realistic (north/shade bias)", "src": "moss_cover" },
+    { "feature": "Soil / silt ring", "description": "Thin plate of riparian substrate silt wider than the boulder base, centred on the floor plane to convey the rock is half-set into soft ground", "src": "soil_ring" },
+    { "feature": "Lichen spot", "description": "Small foliose / algal crust patch on the upper dome, offset from centre for an organic irregular look; straddling moss_cap top by 4 mm", "src": "lichen_patch" }
+  ],
+  "needs": [
+    "Sourced h/w ratio for fluvially-rounded medium boulders from a sedimentology or fluvial geomorphology study — current h=360 mm : w=420 mm (≈ 0.86) is design judgement within the medium-boulder class, not independently measured",
+    "Moss mat thickness in Ukrainian / Dnieper-basin riparian zones — Glime (2017) gives a 10–60 mm global range; a region-specific source would sharpen the 40 mm design value"
+  ]
+}

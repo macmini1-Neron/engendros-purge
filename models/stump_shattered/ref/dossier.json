@@ -1,0 +1,104 @@
+{
+  "id": "stump_shattered",
+  "title": "War-shattered charred Scots pine stump — Ukrainian/Russian front-line biome",
+  "era": "2022+ front-line scatter prop",
+  "sources": {
+    "pinus_wiki": "Pinus sylvestris — Wikipedia (trunk DBH range; bark description; two-tone bark)",
+    "conifers_org": "conifers.org — Pinus sylvestris species profile (lower bark thickness, colour and texture)",
+    "eu_jrc": "EU JRC Forest Atlas — Pinus sylvestris stand dimension tables",
+    "research_trees": "docs/2026-06-10-nature-research-trees.md — regionally sourced tree dimensions (Scots pine 0.5–1.3 m DBH, orange-red upper bark, lower bark up to 5 cm thick)",
+    "war_forests": "Reuters/VOA 'Ukraine's vast forests devastated'; Grist — front-line forest becomes 'a field of stumps', 'stripped, broken trunks — a moonscape of black sticks and charcoal piles, fully defoliated' (qualitative; no quantified stump/splinter dimensions)"
+  },
+  "specifications": {
+    "trunk_dbh_mm": {
+      "value": 500,
+      "unit": "mm (diameter at breast height, 1.3 m above ground)",
+      "src": "pinus_wiki, eu_jrc — range 500–1300 mm (exceptionally >1700 mm); lower end used for a medium-aged specimen",
+      "note": "Same tree species as stump_cut; using 500 mm DBH"
+    },
+    "trunk_r_mm": {
+      "value": 250,
+      "unit": "mm (cross-section radius at the shatter face)",
+      "src": "pinus_wiki",
+      "derivation": "trunk_dbh_mm / 2 = 500 / 2 = 250 mm"
+    },
+    "root_flare_r_mm": {
+      "value": 310,
+      "unit": "mm (stump radius at soil level, including root-flare buttresses)",
+      "src": "DESIGN — no quantified source found; set at trunk_r_mm × 1.24 (24% wider at base, same proportional estimate as stump_cut dossier)",
+      "derivation": "trunk_r_mm × 1.24 = 250 × 1.24 = 310 mm",
+      "note": "Flagged in needs[]"
+    },
+    "root_flare_h_mm": {
+      "value": 100,
+      "unit": "mm (visible height of root-flare zone above soil level)",
+      "src": "DESIGN — no quantified source; set as ~15% of stump height for a visually readable proportion",
+      "note": "Flagged in needs[]"
+    },
+    "soil_disc_r_mm": {
+      "value": 360,
+      "unit": "mm (radius of char / disturbed-soil ground disc around the stump base)",
+      "src": "DESIGN",
+      "derivation": "root_flare_r_mm + 50 = 310 + 50 = 360 mm — a thin visual base pad surrounding the root flare"
+    },
+    "stump_shatter_h_mm": {
+      "value": 650,
+      "unit": "mm (height from ground to the war-shatter / break point)",
+      "src": "DESIGN — war shatter height is not quantified in any source (research_trees explicitly flags 'no quantified residual snapped-trunk/stump height'); 650 mm chosen as a mid-range design value consistent with observed 'black sticks' imagery (~knee-to-waist height)",
+      "note": "Flagged in needs[]"
+    },
+    "char_coverage": {
+      "qualitative": "Intensively shelled front-line forest becomes 'a field of stumps / stripped, broken trunks — a moonscape of black sticks and charcoal piles, fully defoliated'",
+      "src": "war_forests",
+      "model_treatment": "Exterior: charBlack throughout (trunk, root flare, streak details, heartwood core at break). Exposed interior wood visible only at the shatter face."
+    },
+    "break_face_th_mm": {
+      "value": 12,
+      "unit": "mm (stand-proud thickness of each concentric wood-ring disc at the shatter face)",
+      "src": "DESIGN — geometric detail; 12 mm reads as a distinct face without excessive bulk at game scale",
+      "note": "Three stacked discs: outer sapwood (woodMid), latewood ring (woodDark), burned core (charBlack)"
+    },
+    "splinter_dims": {
+      "splinter_a_h_mm": 220,
+      "splinter_b_h_mm": 180,
+      "splinter_c_h_mm": 140,
+      "splinter_w_mm": 70,
+      "splinter_d_mm": 50,
+      "unit": "mm (height × width × depth of each splintered shard projecting above the break point)",
+      "src": "DESIGN — no quantitative field measurement found for war-shattered conifer splinter geometry; heights set at 21–34% of stump_shatter_h_mm for visual legibility at game scale",
+      "note": "Flagged in needs[]"
+    },
+    "derivation": {
+      "soil_base_centre_y_mm": 9,
+      "root_flare_centre_y_mm": 50,
+      "trunk_centre_y_mm": 325,
+      "break_wood_outer_centre_y_mm": 656,
+      "break_wood_mid_centre_y_mm": 668,
+      "break_core_centre_y_mm": 680,
+      "splinter_a_centre_y_mm": 720,
+      "splinter_b_centre_y_mm": 700,
+      "splinter_c_centre_y_mm": 680,
+      "note": "break_wood_outer bottom = stump_shatter_h_mm (650) = trunk_body top → opposite-normal contact, no z-fight; each break disc stacks on the previous one; splinter centres above break point with bases embedded ~50 mm below to read as growing from trunk",
+      "src": "derived from trunk_r_mm, stump_shatter_h_mm, break_face_th_mm, splinter_dims"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "char / disturbed-soil ground disc",      "mat": "sandSoil",  "src": "DESIGN — visual grounding at soil level" },
+    { "feature": "root flare (charred tapered base)",      "mat": "charBlack", "src": "conifers_org — root contact; charred per war_forests" },
+    { "feature": "main stump trunk (charred exterior)",    "mat": "charBlack", "src": "war_forests — fully burned exterior" },
+    { "feature": "left longitudinal char-streak groove",   "mat": "charBlack", "src": "war_forests — deep char grooves; bevelBox in cylinder flank" },
+    { "feature": "right longitudinal char-streak groove",  "mat": "charBlack", "src": "war_forests — symmetric right-side groove" },
+    { "feature": "outer sapwood ring at shatter face",     "mat": "woodMid",   "src": "construction — pale fresh-split sapwood ring" },
+    { "feature": "latewood ring at shatter face",          "mat": "woodDark",  "src": "construction — darker annual latewood band" },
+    { "feature": "charred heartwood core at shatter face", "mat": "charBlack", "src": "war_forests — core burned through, reads as dark bull's-eye" },
+    { "feature": "splinter A — largest (leans +x/+z)",    "mat": "woodMid",   "src": "war_forests + splinter_dims — pale inner wood" },
+    { "feature": "splinter B — mid (leans -x/+z)",         "mat": "barkPine",  "src": "war_forests + splinter_dims — still-barked outer splinter" },
+    { "feature": "splinter C — small (leans +x/-z)",       "mat": "woodDark",  "src": "war_forests + splinter_dims — latewood-side shard" }
+  ],
+  "game_model_purpose": "World scatter prop — war-shattered charred pine stump for shelled forest biomes and front-line areas in ENGENDROS PURGE",
+  "needs": [
+    "Sourced stump height (mm) for a war-shattered/snapped pine — no quantified standard exists; 650 mm (dossier#stump_shatter_h_mm) is a design estimate",
+    "Sourced splinter height and angle data for war-shattered conifers — no quantitative field measurement found; dimensions in dossier#splinter_dims are design estimates",
+    "Sourced root flare radius at soil level (mm) for Pinus sylvestris — 310 mm (dossier#root_flare_r_mm) is a design estimate, not independently sourced from a forestry reference"
+  ]
+}

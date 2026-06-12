@@ -1,0 +1,106 @@
+{
+  "id": "rock_boulder_mossy",
+  "name": "Mossy Rounded Boulder",
+  "description": "Medium riparian boulder, Wentworth medium-boulder class (~420 mm across): four granite layers approximating a rounded dome, continuous bryophyte mat on the crown, front and left-flank splash-zone moss patches, a thin soil-silt ring, and a lichen spot on the upper dome. Forest stream-bed prop.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.46, "h": 0.43, "d": 0.44 },
+  "dossier": "models/rock_boulder_mossy/ref/dossier.json",
+  "parts": [
+    {
+      "id": "body_base",
+      "name": "Granite body — base layer (widest, floor-contact)",
+      "op": "bevelBox",
+      "args": { "w": 0.42, "h": 0.08, "d": 0.39 },
+      "at": [0, 0.04, 0],
+      "mat": "granite",
+      "src": "dossier#body_dimensions",
+      "note": "420 mm width from dossier#body_dimensions (Wentworth medium-boulder range). Bottom face sits at y=0 (floor). Top face at y=0.08 — next layer stacks here."
+    },
+    {
+      "id": "body_mid",
+      "name": "Granite body — mid layer",
+      "op": "bevelBox",
+      "args": { "w": 0.40, "h": 0.13, "d": 0.37 },
+      "at": [0.03, 0.12, -0.02],
+      "mat": "granite",
+      "src": "dossier#body_dimensions",
+      "note": "Offset +x/−z and sunk to overlap body_base (bottom y=0.055) — lateral jitter breaks the concentric dome into an irregular rounded mass."
+    },
+    {
+      "id": "body_upper",
+      "name": "Granite body — upper layer (narrowing)",
+      "op": "bevelBox",
+      "args": { "w": 0.33, "h": 0.11, "d": 0.29 },
+      "at": [-0.04, 0.22, 0.03],
+      "mat": "granite",
+      "src": "dossier#body_dimensions",
+      "note": "Offset −x/+z (opposite of body_mid) and sunk (bottom y=0.165) — the alternating lateral jitter is what kills the wedding-cake look."
+    },
+    {
+      "id": "body_crown",
+      "name": "Granite body — crown (narrow apex)",
+      "op": "bevelBox",
+      "args": { "w": 0.24, "h": 0.07, "d": 0.20 },
+      "at": [0.03, 0.29, -0.02],
+      "mat": "granite",
+      "src": "dossier#body_dimensions",
+      "note": "Offset +x/−z apex, sunk into body_upper (bottom y=0.255). Top face at y=0.325 — moss_cap straddles this."
+    },
+    {
+      "id": "moss_cap",
+      "name": "Bryophyte mat — crown cap",
+      "op": "bevelBox",
+      "args": { "w": 0.22, "h": 0.04, "d": 0.18 },
+      "at": [0.03, 0.341, -0.02],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_cover",
+      "note": "40 mm moss mat from dossier#moss_cover, following the offset apex. Straddling body_crown top face (y=0.325) by 4 mm: bottom y=0.321, center y=0.341, top y=0.361. No coplanar face (0.321 ≠ 0.325)."
+    },
+    {
+      "id": "moss_front",
+      "name": "Bryophyte patch — front splash-zone face",
+      "op": "bevelBox",
+      "args": { "w": 0.18, "h": 0.12, "d": 0.026 },
+      "at": [0, 0.14, 0.204],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_cover",
+      "note": "Front-face moss (perpetually damp splash zone). Straddling body_base front face (z=0.195) by 4 mm: back face at z=0.191, center z=0.204. Vertically covers body_mid height range (y=0.08–0.20)."
+    },
+    {
+      "id": "moss_left",
+      "name": "Bryophyte patch — shaded left flank",
+      "op": "bevelBox",
+      "args": { "w": 0.026, "h": 0.12, "d": 0.16 },
+      "at": [-0.219, 0.14, 0],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_cover",
+      "note": "Left (shaded/north-facing) flank moss. Straddling body_base left face (x=-0.21) by 4 mm: right face at x=-0.206, center x=-0.219. Asymmetry vs the right side reads as organic."
+    },
+    {
+      "id": "soil_ring",
+      "name": "Riparian silt / mud contact plate",
+      "op": "plate",
+      "args": { "w": 0.44, "d": 0.41, "th": 0.015 },
+      "at": [0, 0, 0],
+      "mat": "sandSoil",
+      "src": "dossier#soil_ring",
+      "note": "440×410 mm, 15 mm thick from dossier#soil_ring. Centred at y=0 so it straddles the floor plane (−7.5 mm to +7.5 mm) — boulder visually sits into soft substrate. Plate is wider/deeper than body_base (420×390 mm) so the soil ring is visible as a thin surrounding halo."
+    },
+    {
+      "id": "lichen_patch",
+      "name": "Foliose lichen / algal crust spot",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.02, "d": 0.05 },
+      "at": [-0.01, 0.367, 0.06],
+      "mat": "grassGreen",
+      "src": "dossier#lichen_patch",
+      "note": "60 mm lichen patch from dossier#lichen_patch. Straddling moss_cap top (y=0.361) by 4 mm: bottom y=0.357, center y=0.367, top y=0.377. Offset from the apex centre for an organic irregular placement. grassGreen reads distinctly from the graniteMoss patches."
+    }
+  ],
+  "needs": [
+    "Sourced h/w ratio for fluvially-rounded medium boulders — h=360 mm : w=420 mm (≈ 0.86) is design judgement, not independently measured",
+    "Moss mat thickness in Ukrainian/Dnieper-basin riparian zones — Glime (2017) global range 10–60 mm; region-specific source would sharpen the 40 mm value"
+  ]
+}

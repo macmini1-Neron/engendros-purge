@@ -1,0 +1,61 @@
+{
+  "id": "log_pile",
+  "title": "Поленница — Russian/Ukrainian Household Firewood Pile",
+  "era": "timeless (persistent rural practice, Ukraine/Russia)",
+  "sources": {
+    "gost_3243_88": "GOST 3243-88 «Дрова. Технические условия» — Soviet/Russian firewood standard defining length classes (I=1.0 m, II=0.75 m, III=0.50 m, IV=0.25 m) and maximum cross-section dimensions for household fuel wood",
+    "forestry_handbook": "Лесной справочник, Н.П.Анучин (1977) — practical forestry guide, standard поленница dimensions for fuel-wood stacking between end stakes (кольё); pile width 1.0–1.5 m, height 0.5–1.0 m",
+    "tree_dims": "Research brief 2026-06-10-nature-research-trees: Betula pendula DBH <0.40 m; Pinus sylvestris DBH 0.50–1.30 m — regional firewood species"
+  },
+  "specifications": {
+    "log_length_mm": {
+      "value": 250,
+      "unit": "mm",
+      "src": "gost_3243_88",
+      "note": "Class IV household firewood (дрова длиной 0.25 м), standard for wood-burning stoves (печи)"
+    },
+    "log_dia_mm": {
+      "min": 80,
+      "max": 120,
+      "representative": 100,
+      "unit": "mm",
+      "src": "gost_3243_88",
+      "note": "GOST max single-piece thickness ≤150 mm for class IV household дрова; 80–120 mm typical for unsplit rounds or halves of young birch/pine (DBH 10–20 cm)"
+    },
+    "pile_dimensions": {
+      "width_mm": 1140,
+      "height_mm": 650,
+      "depth_mm": 260,
+      "unit": "mm",
+      "src": "forestry_handbook",
+      "note": "Width 1140 mm = pile body between two stakes (within the 1.0–1.5 m standard range); height 650 mm ≈ 3 log-row bands (ergonomic waist-height stack); depth 260 mm ≈ log length 250 mm + 10 mm seating allowance for irregular ends"
+    },
+    "stake_dims": {
+      "height_mm": 800,
+      "section_mm": 80,
+      "unit": "mm",
+      "src": "forestry_handbook",
+      "note": "Кольё (end stake) driven into ground, protrudes 100–150 mm above pile top; section ≈ 80 mm round sapling or squared lumber"
+    },
+    "derivation": {
+      "pile_body_half_depth_m": "pile_dimensions.depth_mm / 2 / 1000 = 0.130 m (front/back face at z = ±0.130 from model origin)",
+      "cylinder_radius_m": "log_dia_mm.representative / 2 / 1000 = 0.050 m",
+      "cylinder_h_m": "0.020 m — end disc stands 10 mm proud of front face (embedded 10 mm, total thickness 20 mm, no z-fight: opposite normals at contact plane)",
+      "cylinder_face_at_z": "pile_body_half_depth_m + cylinder_h/2 = 0.130 + 0.010 = 0.140 m (cylinder centre)",
+      "band_height_m": "three equal body rows 0–0.54 m: 0.54 / 3 = 0.180 m each; residual lit cap = 0.650 – 0.540 = 0.110 m",
+      "stake_centre_x": "(pile_body_w/2) + gap + (stake_sec/2) = 0.570 + 0.000 + 0.040 = 0.610 m (stake butts against pile side edge)"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "stacked log rounds body (4 shaded bands)", "modeled": true, "src": "pile_dimensions" },
+    { "feature": "end-grain cut-log cross-sections (front face discs)", "modeled": true, "src": "log_dia_mm" },
+    { "feature": "end stakes / кольё", "modeled": true, "src": "stake_dims" },
+    { "feature": "floor-contact shadow band (charBlack bottom)", "modeled": true, "src": "pile_dimensions" },
+    { "feature": "lit top strip (exposed top surface)", "modeled": true, "src": "pile_dimensions" },
+    { "feature": "bark texture on long log sides", "modeled": "approximated via barkDark/barkPine/woodMid layered materials", "src": "tree_dims" }
+  ],
+  "needs": [
+    "Primary page/section reference for поленница height/width in Лесной справочник (Анучин 1977) — cited but exact page unverified",
+    "Primary source for кольё stake section (80 mm is plausible round sapling, not a directly measured reference)"
+  ]
+}

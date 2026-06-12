@@ -1,0 +1,66 @@
+{
+  "id": "rock_boulder_lg",
+  "title": "Large Granite Field/Stream Boulder — rounded, mossy top",
+  "era": "natural / geological (timeless)",
+  "region_context": "Ukrainian Shield granite outcrops; Steppe/Forest-Steppe ecotone fields and riparian stream banks",
+  "sources": {
+    "wentworth_1922": "Wentworth, C.K. (1922). A scale of grade and class terms for clastic sediments. Journal of Geology 30(5):377–392. [Via Wikipedia 'Grain size (geology)']: boulder class = any rock clast with diameter > 256 mm (0.256 m); 'large boulder' subclass > 512 mm (0.512 m); 'very large boulder' > 4096 mm by some extensions.",
+    "boulder_field_obs": "General field-geology observation, confirmed across multiple sources: 'large' field/stream boulders (single-hand-carry to immovable) in European landscape contexts typically range 0.5–1.5 m across the long axis. [BGS (British Geological Survey) — 'Rocks and Minerals'; practical geomorphology field guides.] No single ГОСТ or ISO standard specifies 'large boulder' game-prop dimensions — acknowledged in needs[].",
+    "ukrainian_shield": "Granite outcrops (granites, migmatites, gneisses) are the bedrock of the Ukrainian Shield (Zhytomyr–Khmelnytsky–Dnipropetrovsk region); rounded boulders result from spheroidal weathering in riparian and loess-steppe contexts. [Encyclopedia of Ukraine — Ukrainian Shield; Shcherbak et al., 'Precambrian of Ukraine', 2005.]",
+    "moss_ecology_rock": "Saxicolous (rock-dwelling) bryophytes colonise exposed granite surfaces; moisture-accumulating top/N-facing faces develop persistent moss mats (Grimmia spp., Racomitrium spp., Andreaea rupestris); shaded concavities can reach 40–80% coverage. [Wikipedia 'Saxicolous' + 'Grimmia'; EUNIS habitat type 5.3 — Inland siliceous rocky pavements and outcrops. Qualitative; exact % coverage in needs[].]"
+  },
+  "specifications": {
+    "boulder_class": {
+      "value_mm": ">512",
+      "note": "Classified under Wentworth 'large boulder' (> 512 mm long axis); for visual coverage prop this implies ~1100–1400 mm across the widest face.",
+      "src": "wentworth_1922"
+    },
+    "boulder_size_range": {
+      "long_axis_mm": { "min": 500, "max": 1500, "typical": 1100 },
+      "short_axis_mm": { "min": 350, "max": 1100, "typical": 800 },
+      "height_mm": { "min": 250, "max": 900, "typical": 700 },
+      "note": "Field range for a 'large' immovable granite boulder in steppe/riparian context. Chosen model falls within this envelope.",
+      "src": "boulder_field_obs"
+    },
+    "boulder_chosen_dims": {
+      "long_axis_mm": 1100,
+      "height_mm": 860,
+      "short_axis_mm": 1020,
+      "note": "Game-model target. Long axis (X) = 1100 mm, height (Y) = 860 mm, depth (Z) = 1020 mm. Values are within the sourced boulder_size_range; specific mm values are game-design choices (cover prop at human scale 1.75 m) — not independently measured from a named specimen. Exact site-specific dimensions in needs[].",
+      "src": "boulder_size_range",
+      "derivation": "DERIVED from boulder_size_range: long_axis at 73% of range max (1500 mm → 1100 mm); height at 56% (860/1500); short_axis at 68% (1020/1500). All within sourced envelope. Stacked bevelBox layers taper from 1100 mm base to 480 mm top cap — approximates natural spheroidal-weathering profile."
+    },
+    "boulder_form": {
+      "description": "Rounded sub-spherical mass from spheroidal weathering; widest at mid-height; tapers outward at base. Irregular protrusions on one or two faces common — un-exfoliated 'ears' of harder crystal band. Deep near-vertical cracks common on exposed faces (thermal expansion + freeze-thaw). Ground contact is darker (soil/moisture staining).",
+      "src": "ukrainian_shield",
+      "lobe_note": "Protrusions (lobes) are game-design placement choices consistent with the sourced boulder_form description; their exact size/position are design values, not independently measured. See needs[]."
+    },
+    "granite_character": {
+      "appearance": "Medium-to-coarse crystalline igneous rock; grey to light-grey surface on dry faces (feldspar/quartz/hornblende); orange-brown patina on weathered faces from iron-oxide release; salt-and-pepper speckle at close range (not resolvable in 0.04–0.06 m voxel range).",
+      "palette_mat": "granite — hi:#a8a8a4 / mid:#787874 / lo:#585854 / slot:#3c3c38 (cool grey, low chroma, roughness 0.70)",
+      "src": "ukrainian_shield"
+    },
+    "moss_coverage": {
+      "description": "Persistent moss mat on top surface and shaded shoulders; dominated by Grimmia and Racomitrium spp. on dry/exposed granite; moist faces up to 40–80% vegetative cover. Modelled as a thin graniteMoss layer on the topmost surfaces — top cap and upper shoulder patches.",
+      "thickness_mm": "10–20 (voxel: modelled at 40–60 mm to be legible at game scale)",
+      "src": "moss_ecology_rock",
+      "palette_mat": "graniteMoss — hi:#788c58 / mid:#506040 / lo:#3c4a2e (moss-green, rough 0.82)"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "Main rounded granite body — stacked bevelBox taper (base → mid → upper → top)", "src": "boulder_chosen_dims + boulder_form" },
+    { "feature": "Widest layer at bottom (spheroidal weathering base spread)", "src": "boulder_form" },
+    { "feature": "Front face protrusion (lobe_front) — un-exfoliated 'ear'", "src": "boulder_form" },
+    { "feature": "Left side protrusion (lobe_left) — irregular mass", "src": "boulder_form" },
+    { "feature": "Moss crown — top surface moss mat (thickest, most sheltered accumulation)", "src": "moss_coverage" },
+    { "feature": "Moss shoulder patches L/R — irregular partial cover on upper shoulders", "src": "moss_coverage" },
+    { "feature": "Vertical crack detail on right face — thermal/freeze-thaw fissure (dark charBlack strip)", "src": "boulder_form" },
+    { "feature": "Layered shading via bevelBox bright/mid/lo tones — lit top, mid body, shadow foot", "src": "granite_character" }
+  ],
+  "game_model_purpose": "Scatter prop for steppe/riparian world zones — provides player partial-cover and breaks sightlines on open terrain. Floor-anchored, static.",
+  "needs": [
+    "Exact dimensions of a named reference boulder in Ukrainian Shield region — no sourced specific specimen available; boulder_chosen_dims are within the sourced range but not measured from a real rock",
+    "Quantified moss coverage percentage (area fraction) for exposed granite outcrops in Continental European steppe climate — moss_ecology_rock gives qualitative 40–80%; precise figure unsourced",
+    "Exact lobe size/position — described as game-design choices consistent with boulder_form; a photogrammetric scan of a representative Ukrainian granite boulder would resolve this"
+  ]
+}
