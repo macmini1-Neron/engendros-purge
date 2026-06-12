@@ -6,6 +6,7 @@ import { WEAPONS, buildMag, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { mpEscape } from './mp.js';
 import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
+import { EFFECTS, EFFECT_TPS } from './effects-status.js';
 
 
 // ---------------------------------------------------------------------------
@@ -35,7 +36,24 @@ export class HUD {
   setHealth(hp, max) { const f = clamp(hp / max, 0, 1); this.el.hpfill.style.width = (f * 100) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.el.vignette.style.boxShadow = `inset 0 0 200px 40px rgba(200,30,20,${(1 - f) * 0.5})`; }
   setArmor(a, max) { this.el.armorfill.style.width = clamp(a / max, 0, 1) * 100 + '%'; }
   setHunger(h) { if (!this.el.hungerfill) return; this.el.hungerfill.style.width = clamp(h / HUNGER_MAX, 0, 1) * 100 + '%'; this.el.hungerfill.style.filter = h < HUNGER_LOW ? 'saturate(1.7) brightness(1.2)' : 'none'; }
-  setSurvival(p) { if (!this.el.survival) return; let s = ''; if (p.legBroken) s += `<span class="leg">${icon('leg')} LEG BROKEN — X to splint</span> `; if (p.splints > 0) s += `<span class="spl">${icon('splint')} ×${p.splints}</span>`; this.el.survival.innerHTML = s; }
+  setSurvival(p) {
+    if (!this.el.survival) return;
+    let s = '';
+    if (p.legBroken) s += `<span class="leg">${icon('leg')} LEG BROKEN — X to splint</span> `;
+    if (p.splints > 0) s += `<span class="spl">${icon('splint')} ×${p.splints}</span> `;
+    if (p.effects && p.effects.size) {
+      for (const [key, inst] of p.effects) {
+        if (key === 'broken_leg') continue;            // already shown by the leg line above
+        const def = EFFECTS[key];
+        const secs = inst.ticksLeft === Infinity ? '' : ' ' + Math.ceil(inst.ticksLeft / EFFECT_TPS) + 's';
+        const col = '#' + def.hud.color.toString(16).padStart(6, '0');
+        s += `<span class="fxchip" style="color:${col}">${def.hud.icon}${secs}</span> `;
+      }
+    }
+    if (s === this._lastSurvival) return;   // called every frame; the chip string changes ~1 Hz — skip redundant innerHTML
+    this._lastSurvival = s;
+    this.el.survival.innerHTML = s;
+  }
   setWeapon(w) {
     const key = w.cur, d = WEAPONS[key];
     this.el.wepname.textContent = d.name.toUpperCase();
@@ -213,7 +231,7 @@ export class UI {
 // ---------------------------------------------------------------------------
 // Settings — persisted (localStorage) options, applied live.
 // ---------------------------------------------------------------------------
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80 };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player' };
 
 export class Settings {
   constructor(game) {
@@ -222,13 +240,14 @@ export class Settings {
     this.returnTo = 'menu';
     this.load(); this._wire(); this.apply();
   }
-  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; } catch (e) {} }
+  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); } catch (e) {} }
   save() { try { localStorage.setItem('engendros_settings', JSON.stringify(this.data)); } catch (e) {} }
   apply() {
-    if (this.game.player) this.game.player.sens = this.data.sens;
+    if (this.game.player) { this.game.player.sens = this.data.sens; this.game.player.nick = this.data.nick; }
     this.game.audio.setVolume(this.data.sfx);
     this.game.audio.setMusicVolume(this.data.music);
     this.game.engine.setFov(this.data.fov);
+    const mpName = document.getElementById('mp-name'); if (mpName && !mpName.value) mpName.value = this.data.nick; // pre-fill the co-op lobby name
     this._refresh();
   }
   _refresh() {
@@ -240,10 +259,12 @@ export class Settings {
     txt('s-fov-v', this.data.fov + '°');
     val('s-sens', this.data.sens); val('s-sfx', this.data.sfx); val('s-music', this.data.music);
     val('s-fov', this.data.fov);
+    val('s-nick', this.data.nick);
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
     bind('s-sens', 'sens'); bind('s-sfx', 'sfx'); bind('s-music', 'music'); bind('s-fov', 'fov');
+    const nickEl = document.getElementById('s-nick'); if (nickEl) nickEl.addEventListener('input', () => { this.data.nick = (nickEl.value || 'Player').slice(0, 14); this.apply(); this.save(); }); // text field, not parseFloat
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }

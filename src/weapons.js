@@ -4,6 +4,20 @@ import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weigh
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
+import { CALIBERS, resolveHit } from './destruct.js';
+
+// ── ?map=demo destruction wiring (Phase 9) ─────────────────────────────────────
+// Map a gameplay weapon class → destruction PENETRATION class (spec §5 hardness tiers).
+// A bullet only does HP damage to a part when pen ≥ material.tier; below that it's a
+// cosmetic chip. glass=0/wood=1/sheetmetal=trunk=2/brick=3/concrete=4/steel=5. So pistols
+// pop glass; rifles/SMGs also break the wood door & fences; nothing under HE breaches brick.
+const PEN_BY_CLASS = { pistol: 0, smg: 1, rifle: 1, sniper: 2, shotgun: 1, hmg: 2, launcher: 4, cannon: 5 };
+// HE blast profile for the bazooka rocket (CALIBERS.heRocket): tier 3 removes brick segments
+// within r1 (a WALKABLE breach), shatters all glass within r2, ignites + fells nearby trees.
+const DEMO_HE_BLAST = { r1: 2.6, r2: 6.0, tier: 3 };
+// Forced demo loadout so a tester needs no shop: an auto rifle (glass+door+enemies), the
+// BAZOOKA (HE breach + fire), two MOLOTOVs (ignite trees), the debug APFSDS cannon, + a knife.
+export const DEMO_LOADOUT = ['stg44', 'bazooka', 'molotov', 'molotov', 'apfsds', 'knife'];
 
 
 // ---------------------------------------------------------------------------
@@ -39,13 +53,18 @@ export const WEAPONS = {
   mosin:    { name: 'Mosin 91/30', class: 'sniper', shape: 'mosin', dmg: 175, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0020, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 38, scope: false, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54, boltAction: true, reloadStyle: 'mosin', clipReload: 1.95, roundReload: 0.54 },
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 24, auto: false, mag: 1, reserveMax: 5, reload: 4.0, spread: 0.004, bloom: 0, pellets: 1, recoil: 0.6, range: 250, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
+  // DEMO-ONLY debug "tank cannon" firing an APFSDS long-rod (CALIBERS.apfsds): NO explosion —
+  // obliterates fragile parts (glass/wood/trunk) along the ray, leaves a through-hole in
+  // structural brick (wall stays), and spalls fragile parts behind. Only on the ?map=demo
+  // loadout so Phase 11 can demonstrate penetration in normal play. Reuses the bazooka tube viewmodel.
+  apfsds:   { name: 'APFSDS Cannon', class: 'cannon', shape: 'bazooka', apfsds: true, dmg: 220, rpm: 50, auto: false, mag: 5, reserveMax: 25, reload: 1.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 1.4, range: 320, adsFov: 60, price: 0, color: 0x394b2e, accent: 0x6fa8e8 },
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
   flashlight: { name: 'Flashlight', class: 'tool', shape: 'flashlight', color: 0x9aa0a6, accent: 0xc23a2a },
   binoculars: { name: 'Binoculars', class: 'tool', shape: 'binoculars', zoom: true, scope: true, adsFov: 12, color: 0x26282b, accent: 0xb08a3a }, // Soviet Б8×30 field glasses — RMB zooms to a realistic 8× (FOV≈12°)
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98', 'flashlight', 'binoculars'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -925,8 +944,12 @@ export class WeaponSystem {
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
     for (const k of WEAPON_ORDER) { this.mag[k] = 0; this.reserve[k] = 0; this.semi[k] = false; }
-    // deploy the player's saved loadout — now a flat array of EQUAL slots (any gear in any slot, duplicates OK)
-    const lo = (this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : ['knife'];
+    // deploy the player's saved loadout — now a flat array of EQUAL slots (any gear in any slot, duplicates OK).
+    // ?map=demo FORCES a fixed loadout (gun + bazooka + molotovs + APFSDS cannon) so every
+    // destruction/fire feature is reachable with no shop trip; the player's saved meta.loadout is untouched.
+    const lo = (this.game.mapId === 'demo')
+      ? DEMO_LOADOUT.slice()
+      : ((this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : ['knife']);
     this.flares = 0;
     // choose what to hold first: first firearm, else first melee, else the bare knife
     this.cur = null;
@@ -1205,6 +1228,13 @@ export class WeaponSystem {
       return;
     }
 
+    if (d.apfsds) { // DEMO APFSDS cannon — long-rod penetration (no explosion); routes to destruct
+      this._fireAPFSDS(muzzle, fwd, d);
+      this.recoilKick = Math.min(this.recoilKick + 0.20, 0.4); this.recoilPitch += 0.05;
+      this.game.hud.setWeapon(this);
+      return;
+    }
+
     const spread = (d.spread + this.bloom) * (this.ads ? 0.4 : 1);
     const mult = this.effMult(this.cur);
     for (let p = 0; p < d.pellets; p++) {
@@ -1228,6 +1258,7 @@ export class WeaponSystem {
         this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
         if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); } // shoot down fortifications
         else if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(wHit.box.explodable, d.dmg * mult, wHit.point); this.game.hud.hitmarker(false); } // shoot the FAB-500 → detonate
+        else if (wHit.box && wHit.box.downer) { this._destructHit(wHit, dir, d, mult); } // ?map=demo: destructible building pane/door/brick or forest trunk
       } else {
         this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
       }
@@ -1241,6 +1272,62 @@ export class WeaponSystem {
     this._recoilStreak = Math.min(this._recoilStreak + 1, 30);
     if (d.boltCycle) { this._boltLock = d.boltCycle; this.game.audio.boltCycle(); }
     this.game.hud.setWeapon(this);
+  }
+
+  // ── ?map=demo destruction routing (Phase 9 keystone) ───────────────────────────
+  // A bullet/pellet whose world hit `box` carries destructible metadata (box.downer):
+  //   • box.building → the destructible building (glass pane / wood door / brick segment) →
+  //     building.applyHit() resolves the part (pen<tier ⇒ cosmetic; else HP damage → death).
+  //   • box.tree / box.dmat==='trunk' → a forest tree → resolveHit on its trunk part; if the
+  //     trunk dies, forest.fellTree() topples it AWAY from the shot (debris on a non-fatal chip).
+  // Host-authoritative (the resolve mutates the shared, seeded part model → Phase 10 syncs the event).
+  _destructHit(wHit, dir, d, mult) {
+    const box = wHit.box; if (!box || !box.downer) return;
+    const hostSim = !this.game.mp.active || this.game.mp.isHost;
+    if (!hostSim) return;                                   // destruction is host-authoritative
+    const w = { pen: PEN_BY_CLASS[d.class] ?? 0, dmg: (d.dmg || 0) * mult };
+    if (box.building && typeof box.downer.applyHit === 'function') {
+      box.downer.applyHit(wHit.point, wHit.normal, dir, w);
+      this.game.hud.hitmarker(false);
+    } else if ((box.tree || box.dmat === 'trunk') && box.downer.part) {
+      const tree = box.downer, part = tree.part;
+      if (!part || part.dead) return;
+      const r = resolveHit(part, w);
+      if (r.killed && tree.standing && this.game.forest) {
+        this.game.forest.fellTree(tree, [dir.x, dir.z], (tree.id * 2654435761) >>> 0);
+      } else if (r.effect === 'damage' && this.game.forest && this.game.forest.debris) {
+        this.game.forest.debris.burst('splints', [wHit.point.x, wHit.point.y, wHit.point.z], (tree.id ^ 0x55) >>> 0);
+      }
+      this.game.hud.hitmarker(false);
+    }
+  }
+
+  // APFSDS long-rod: a tracer along the aim ray, then OBLITERATE every standing tree the rod
+  // passes through (fragile trunk, tier 2), and through the building leave through-holes in
+  // brick (wall stays) + a spall cone that shatters glass behind. Damages the first enemy hit.
+  _fireAPFSDS(origin, dir, d) {
+    this.game.effects.tracer(origin, origin.clone().addScaledVector(dir, d.range), d.accent);
+    const eHit = this.game.enemies.rayHit(origin, dir, d.range);
+    if (eHit) { const k = this.game.enemies.damage(eHit.enemy, d.dmg, 'gun', eHit.point); this.game.hud.hitmarker(k); }
+    const hostSim = !this.game.mp.active || this.game.mp.isHost;
+    if (!hostSim) return;                                   // host-authoritative destruction
+    const w = CALIBERS.apfsds;
+    const b = this.game.world.demoBuilding;
+    if (b && typeof b.applyPenetration === 'function') b.applyPenetration(origin, dir, w);
+    if (this.game.forest && typeof this.game.forest.penetrate === 'function') this.game.forest.penetrate(origin, dir, d.range, w);
+  }
+
+  // HE blast from a detonating rocket/grenade routed into the demo destructibles: remove brick
+  // wall segments (a WALKABLE breach) + shatter glass via the building, fell trees within the
+  // blast, and seed a fire at the impact (a rocket into the woods lights the stand). Host-auth.
+  _demoBlast(pos, radius, isRocket) {
+    const hostSim = !this.game.mp.active || this.game.mp.isHost;
+    if (!hostSim) return;
+    const b = this.game.world.demoBuilding;
+    const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
+    if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
+    if (this.game.forest && typeof this.game.forest.blast === 'function') this.game.forest.blast(pos, blast.r1 + 0.6);
+    if (this.game.fire && typeof this.game.fire.igniteAt === 'function') this.game.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
   }
 
   throwGrenade() {
@@ -1507,14 +1594,15 @@ export class WeaponSystem {
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
         g.mesh.position.addScaledVector(g.vel, dt);
         const rp = g.mesh.position;
-        if (rp.y < 0.2) boom = true;
+        if (rp.y < this.game.world.groundY(rp.x, rp.z) + 0.2) boom = true;   // detonate on the terrain surface (groundY≡0 on flat maps)
         if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + 0.7 && rp.y < e.pos.y + e.height + 0.5) { boom = true; break; } }
         if (!boom) { const wh = this.game.world.rayHit(rp, dir, stepLen + 0.5); if (wh) boom = true; }
         this.game.effects.impact(rp, dir, 'spark'); // smoke trail
       } else { // tossed grenade: gravity + bounce
         g.vel.y -= 22 * dt; g.mesh.position.addScaledVector(g.vel, dt);
         g.mesh.rotation.x += dt * 6; g.mesh.rotation.y += dt * 4;
-        if (g.mesh.position.y < 0.11) { g.mesh.position.y = 0.11; g.vel.y *= -0.4; g.vel.x *= 0.6; g.vel.z *= 0.6; }
+        const gy = this.game.world.groundY(g.mesh.position.x, g.mesh.position.z);   // bounce on the terrain surface (groundY≡0 on flat maps)
+        if (g.mesh.position.y < gy + 0.11) { g.mesh.position.y = gy + 0.11; g.vel.y *= -0.4; g.vel.x *= 0.6; g.vel.z *= 0.6; }
       }
       if (boom) {
         if (g.molotov) {
@@ -1524,6 +1612,7 @@ export class WeaponSystem {
         } else {
           this.game.effects.explosion(g.mesh.position.clone(), g.radius);
           this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg, null, g.rocket ? 'rocket' : 'explosion'); // bazooka does near-full dmg to Tolo (0.9×), grenades chip like bullets (0.2×)
+          this._demoBlast(g.mesh.position, g.radius, !!g.rocket); // ?map=demo: HE breach + glass shatter + fell trees + start a fire (host-auth; no-op on flat maps)
           // explosive Full-FF: grenades/rockets damage self + teammates (host-authoritative). No 'fx' broadcast — other players see the boom via their 'proj' ghost detonation.
           const _mp = this.game.mp; const gp = g.mesh.position;
           if (!_mp.active || _mp.isHost) { this.game._explodeHurt(gp.clone(), g.radius, g.dmg); this.game.loot.clearPickupsInRadius(gp.x, gp.z, g.radius); } // host/solo: nuke ground items in the blast (client thrower clears via the host 'splash' path)

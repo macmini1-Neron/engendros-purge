@@ -640,6 +640,12 @@ export class MP {
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
     n.on('molotov', (d) => { if (this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('firepool', (d) => { if (!this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
+    n.on('fireignite', (d) => { if (!this.isHost && this.game.fire && d) this.game.fire.igniteById(d.id, d.owner, d.seed); }); // host-auth fire SPREAD: mirror the exact part+seed the host lit. owner ('b' building / 't' forest) disambiguates the id (forest & building part-ids are separate counters that collide → must dispatch by owner, never a global id search)
+    n.on('bdestroy', (d) => { if (!this.isHost && d) { const b = this.game.world.demoBuilding; if (b && typeof b.applyNetDestroy === 'function') b.applyNetDestroy(d.parts, d.holes); } }); // host-auth BUILDING destruction: replay the exact dead parts (brick breach / shattered panes / burnt door) + APFSDS through-holes. Single building per world → 'bdestroy' type routes unambiguously (no owner flag needed)
+    n.on('forestfx', (d) => { if (this.isHost || !d) return; const fr = this.game.forest; if (!fr) return; // host-auth FOREST mutations: fell/char a tree, consume a grass tuft. Tree fall is replayed with the host's exact dir+seed → identical deterministic FallingBody
+      if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed);
+      else if (d.k === 'char') fr.charTreeById(d.id);
+      else if (d.k === 'grass') fr.consumeGrassById(d.id); });
     n.on('kill', (d) => this._clientKill(d));
     n.on('burn', () => { this.game.player.burnT = PLAYER_BURN_DUR; });
     n.on('bleed', (d) => { if (d && typeof d.t === 'number') this._bleedT = d.t; }); // host re-syncs the downed player's bleed-out bar to the authoritative downT
@@ -707,7 +713,7 @@ export class MP {
       this._snapT -= dt;
       if (this._snapT <= 0) {
         this._snapT = 0.08; const arr = [];
-        for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100), bf: e.burnT > 0 ? 1 : 0 });
+        for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100), bf: e.burnT > 0 ? 1 : 0 }); // y carried so terrain-map ghosts don't float at 0 (esnap-Y fix); host knows true Y incl. knockback/boss
         this.net.send('esnap', arr); this._tickDowns(); this._tickBurn();
         // pick a SINGLE highest-priority boss without flicker: a real boss/tank outranks an elite mini-boss
         let boss = null; for (const e of g.enemies.active) { if (!e.alive) continue; if (e.def.boss) { boss = e; break; } if (e.isElite && !boss) boss = e; }
@@ -727,8 +733,8 @@ export class MP {
     } else {
       for (const [, e] of this.ghosts) {
         if (!e.alive) continue;
-        e.pos.x = damp(e.pos.x, e._tx, 14, dt); e.pos.z = damp(e.pos.z, e._tz, 14, dt); e.bob += dt * 7;
-        e.mesh.position.set(e.pos.x, Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
+        e.pos.x = damp(e.pos.x, e._tx, 14, dt); e.pos.z = damp(e.pos.z, e._tz, 14, dt); e.pos.y = damp(e.pos.y, (e._ty || 0), 14, dt); e.bob += dt * 7;
+        e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z); // ground Y from host (esnap-Y) + cosmetic bob on top; flat maps → host y=0 → identical to before
         e.mesh.rotation.y = damp(e.mesh.rotation.y, e._try, 12, dt);
         if (e.burnT > 0) { e.burnT -= dt; e._burnFxT = (e._burnFxT || 0) - dt; if (e._burnFxT <= 0) { e._burnFxT = 0.08; g.effects.firePool(e.pos, 0.45, 0.4); } } // mirror the host's on-fire enemy flame
       }
@@ -803,9 +809,9 @@ export class MP {
     const e = this.game.enemies.spawnGhost(d.id, d.type, d.gk, d.cb, d.vr, d.nm, d.sc);
     if (Number.isFinite(d.x)) { e.pos.set(d.x, d.y || 0, d.z); e.mesh.position.set(d.x, 0, d.z); } // spawn at the host's real position (no (0,0,0) flash)
     if (Number.isFinite(d.hpf)) e.hp = (d.hpf / 100) * e.maxHp;                                   // late-join: start at the host's current HP, not full
-    e._tx = e.pos.x; e._tz = e.pos.z; e._try = 0; this.ghosts.set(d.id, e);
+    e._tx = e.pos.x; e._ty = e.pos.y; e._tz = e.pos.z; e._try = 0; this.ghosts.set(d.id, e);
   }
-  _clientSnap(arr) { for (const s of arr) { const e = this.ghosts.get(s.id); if (!e) continue; e._tx = s.x; e._tz = s.z; e._try = s.ry; e.hp = (s.hp / 100) * e.maxHp; e.burnT = s.bf ? ENEMY_BURN_DUR : 0; } }
+  _clientSnap(arr) { for (const s of arr) { const e = this.ghosts.get(s.id); if (!e) continue; e._tx = s.x; e._tz = s.z; if (s.y != null) e._ty = s.y; e._try = s.ry; e.hp = (s.hp / 100) * e.maxHp; e.burnT = s.bf ? ENEMY_BURN_DUR : 0; } }
   _clientEnemyDie(d) {
     const e = this.ghosts.get(d.id); if (!e) return;
     const top = Number.isFinite(d.x) ? new THREE.Vector3(d.x, d.y, d.z) : new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
@@ -1016,6 +1022,11 @@ export class MP {
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
     for (const [id, s] of this.pstate) this.net.sendTo(pid, 'pstate', this._pStatePayload(id, s)); // late-join: current down/dead/waiting states
     this.sendWorldTime(pid); // late-join: current day/night + blood-moon state
+    // ── demo (?map=demo) host-auth destruction/fire — replay everything the joiner missed ──
+    const b = this.game.world.demoBuilding;
+    if (b && typeof b.netSnapshot === 'function') { const snap = b.netSnapshot(); if (snap.parts.length || snap.holes.length) this.net.sendTo(pid, 'bdestroy', snap); } // existing breaches / shattered panes / APFSDS holes
+    if (this.game.forest && typeof this.game.forest.netSnapshot === 'function') for (const fx of this.game.forest.netSnapshot()) this.net.sendTo(pid, 'forestfx', fx); // felled / charred trees + consumed grass
+    if (this.game.fire && typeof this.game.fire.netSnapshot === 'function') for (const ig of this.game.fire.netSnapshot()) this.net.sendTo(pid, 'fireignite', ig); // currently-burning parts
   }
   worldTimeState() {
     const g = this.game;

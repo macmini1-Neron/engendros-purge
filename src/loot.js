@@ -598,7 +598,9 @@ export class LootManager {
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const pu = this.pickups[i];
       pu.t += dt * 2; pu.life -= dt;
-      pu.mesh.position.y = 0.55 + Math.sin(pu.t) * 0.12; pu.mesh.rotation.y += dt * 2;
+      // on terrain maps settle pickups to ground height; flat maps keep y=0.55 (unchanged)
+      const _gy = this.game.world.hasTerrain ? this.game.world.terrain.terrainHeightAt(pu.mesh.position.x, pu.mesh.position.z) : 0;
+      pu.mesh.position.y = _gy + 0.55 + Math.sin(pu.t) * 0.12; pu.mesh.rotation.y += dt * 2;
       if (pu.life <= 0) { this.scene.remove(pu.mesh); pu.mesh.geometry.dispose(); pu.mesh.material.dispose(); this.pickups.splice(i, 1); continue; }
       const d = Math.hypot(pu.mesh.position.x - pp.x, pu.mesh.position.z - pp.z);
       if (d < npd && Math.abs(pu.mesh.position.y - (pp.y + 1)) < 2.2) { npd = d; this.nearPickup = pu; }
@@ -624,7 +626,9 @@ export class LootManager {
       }
       if (d.state === 'falling') {
         d.y -= dt * 3.4; d.sway += dt;
-        if (d.y <= 0.1) { d.y = 0.1; d.state = 'landed'; d.grp.position.set(d.pos.x, 0.1, d.pos.z); d.chute.visible = false; d.lines.visible = false; this.game.hud.toast('📦 Drop landed — go grab it!', 0xff8a3a); this.game.audio.buy(); }
+        // settle on terrain height (flat maps: 0)
+        const _landY = (this.game.world.hasTerrain ? this.game.world.terrain.terrainHeightAt(d.pos.x, d.pos.z) : 0) + 0.1;
+        if (d.y <= _landY) { d.y = _landY; d.state = 'landed'; d.grp.position.set(d.pos.x, _landY, d.pos.z); d.chute.visible = false; d.lines.visible = false; this.game.hud.toast('📦 Drop landed — go grab it!', 0xff8a3a); this.game.audio.buy(); }
         else d.grp.position.set(d.pos.x + Math.sin(d.sway) * 1.0, d.y, d.pos.z + Math.cos(d.sway * 0.8) * 1.0);
       } else {
         d.crate.material.emissiveIntensity = 0.6 + Math.sin(d.t * 4) * 0.25;

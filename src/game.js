@@ -7,11 +7,14 @@ import { TAU, randRange } from './util.js';
 import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER } from './tuning.js';
 import { KILL_CASH } from './economy.js';
 import { buildFlare, buildFlopo } from './props.js';
-import { MountedGun, WeaponSystem } from './weapons.js';
+import { MountedGun, WeaponSystem, WEAPONS } from './weapons.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
+import { Forest } from './forest.js';
+import { installDemoBuilding } from './demobuilding.js';
+import { FireManager } from './fire.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
@@ -24,6 +27,9 @@ import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
+import { DevConsole } from './console.js';
+import { makeClock } from './simclock.js';
+import { EFFECT_TPS, stepEffects } from './effects-status.js';
 
 // Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
 // Specs are authored in METRES — never compensate a wrong-sized spec with a
@@ -43,7 +49,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-10 18:15';
+const GAME_BUILD = '2026-06-12 02:01';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -58,18 +64,31 @@ class Game {
     // Priority: ?map= URL override (dev) -> the menu's saved pick (localStorage) -> 'arena' default.
     this.mapId = (() => { try {
       const p = new URLSearchParams(location.search).get('map');
-      if (p === 'steppe' || p === 'arena') return p;
-      return localStorage.getItem('engendros_map') === 'steppe' ? 'steppe' : 'arena';
+      if (p === 'steppe' || p === 'arena' || p === 'demo') return p; // 'demo' = Phase-4+ walkable-terrain slice (?map=demo)
+      const saved = localStorage.getItem('engendros_map');
+      return (saved === 'steppe' || saved === 'demo') ? saved : 'arena';
     } catch (e) { return 'arena'; } })();
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
     this.freecam = false;
+    this.flyMode = false; // console /fly — same free movement as freecam, but the sim keeps running (mobs/waves stay alive)
     this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })();
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
+    this.rules = { god: false };       // «ПОЛИГОН» gamerules
+    this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
+    this.devconsole = new DevConsole(this);
+    this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
+    this._nextTagId = 1; // per-run id stamped onto each spawned enemy's e.tag (reset in reset())
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
+    this.forest = new Forest(this); // ?map=demo forest kit: destructible/flammable trees + groundcover (no-op on flat maps)
+    // Phase 7: destructible building (the ПРОХОДНАЯ made destroyable-ready). Constructs AFTER
+    // forest so it can clearArea() the trees on its footprint. Sets game.world.demoBuilding;
+    // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
+    this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
     const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
     const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
@@ -99,6 +118,18 @@ class Game {
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
     this._last = 0; this._bound = this._frame.bind(this);
 
+    // --- status effects (src/effects-status.js) ---
+    this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
+    this._stepFx = () => this._stepEffectsOnce();                       // stable callback for clock.advance
+    this._fxCtx = {                                                     // injected side-effect ops (keeps effects-status.js pure)
+      isEnemy: (t) => t !== this.player,                               // player-kind handler for the local player; enemy-kind for everything else
+      hurtPlayer: (p, dmg) => p._takeSurvivalDamage(dmg, 1),           // bypassArmor=1 in solo; in MP routes claimPlayerHit→hostHurt, which applies armor (bypass NOT forwarded)
+      healEnemy: (e, n) => this.enemies.heal(e, n),
+      fireFx: (e) => this.effects.firePool(e.pos, 0.45, 0.4),
+      drip: (e) => this.effects.stuffing(e.pos, e.col ? e.col.body : 0xeeeeee, 3, 2),  // «пух» puff
+      setLimp: (entity, on) => { if (entity === this.player) { this.player.legBroken = on; this.hud.setSurvival(this.player); } },
+    };
+
     this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin();
     this.player.update(0.0001); this.engine.render();
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
@@ -110,6 +141,7 @@ class Game {
     const NOTES = {
       arena: 'de_dust2 arena — the classic wave-defence map.',
       steppe: 'Soviet steppe — airfield, kombinát, проходная, field base + POIs.',
+      demo: 'ПОЛИГОН — destruction demo: walkable hills, forest, destructible building & spreading fire. Bazooka/molotov/APFSDS in hand. (single-player slice)',
     };
     const tabs = Array.from(document.querySelectorAll('#map-pick .tab'));
     const note = document.getElementById('map-note');
@@ -186,6 +218,7 @@ class Game {
     }));
     click('pauseSettingsBtn', () => this.settings.open('pause'));
     this.canvas.addEventListener('click', () => {
+      if (this.devconsole && this.devconsole.open) return; // chat open: keep the cursor free for clicking in the input — never re-grab pointer-lock
       if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin' || this.state === 'music' || this.state === 'crate') return;
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
@@ -218,8 +251,12 @@ class Game {
   }
 
   _wireInput() {
-    this.input.on('key', (code) => {
+    this.input.on('key', (code, ev) => {
       if (this.state !== 'playing') return;
+      if (this.devconsole && this.devconsole.open) return; // console eats input while open
+      if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
+      if (code === 'F3') { this.f3 = !this.f3; return; }
+      if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
       // dev fly-cam toggle (solo only): N, or Ctrl+F
       if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
       if (this.mpMenuOpen) {
@@ -334,9 +371,11 @@ class Game {
   }
 
   reset() {
+    if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
+    this._nextTagId = 1; // new run → enemy tag ids restart at 1
     this.resetMountedGuns();
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
@@ -345,6 +384,7 @@ class Game {
     this.waves.reset();
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
+    if (this.fire) this.fire.clear();
     this.dayNight.reset(this.mode === 'longnight'); // bright noon for PURGE, dawn-into-night for LONG NIGHT
     this._surviveTime = 0;
     this.score = 0; this.kills = 0;
@@ -399,7 +439,8 @@ class Game {
       if (!f.grounded) {
         f.vel.y -= 20 * dt; f.mesh.position.addScaledVector(f.vel, dt);
         f.mesh.rotation.x += f.spin.x * dt; f.mesh.rotation.y += f.spin.y * dt; f.mesh.rotation.z += f.spin.z * dt;
-        if (f.mesh.position.y <= 0.06) { f.mesh.position.y = 0.06; f.grounded = true; f.vel.set(0, 0, 0); f.mesh.rotation.set(Math.PI / 2, f.mesh.rotation.y, 0); } // settle lying down
+        const fgy = this.world.groundY(f.mesh.position.x, f.mesh.position.z);   // settle on the terrain surface (groundY≡0 on flat maps)
+        if (f.mesh.position.y <= fgy + 0.06) { f.mesh.position.y = fgy + 0.06; f.grounded = true; f.vel.set(0, 0, 0); f.mesh.rotation.set(Math.PI / 2, f.mesh.rotation.y, 0); } // settle lying down
       }
       if (f.out) continue;                               // spent: just a dark stick on the ground
       f.life -= dt;
@@ -422,6 +463,16 @@ class Game {
     const start = from.clone().addScaledVector(dir, OCCLUSION_INSET);
     return this.world.rayHit(start, dir, dist - OCCLUSION_INSET * 2) !== null;
   }
+  // Console hook (?map=demo): fire an APFSDS long-rod straight out of the camera. Lets a
+  // tester demonstrate penetration through-holes + spall without scrolling to the cannon slot.
+  // Usage: GAME.demoFireAPFSDS()
+  demoFireAPFSDS() {
+    const cam = this.engine.camera; cam.updateMatrixWorld();
+    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    this.weapons._fireAPFSDS(origin, dir, WEAPONS.apfsds);
+    return 'APFSDS fired';
+  }
   _spawnMolotovPool(pos, fromNet = false) {
     if (this.mp.active && !this.mp.isHost && !fromNet) { this.mp.net.send('molotov', { x: pos.x, y: pos.y, z: pos.z }); return; }
     if (!this.molotovPools) this.molotovPools = [];
@@ -430,7 +481,11 @@ class Game {
     const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200);
     const py = gh ? gh.point.y + 0.02 : 0.05;
     const light = new THREE.PointLight(0xff5a26, 7, 14, 1.4); light.position.set(pos.x, py + 0.45, pos.z); this.engine.scene.add(light);
-    this.molotovPools.push({ pos: new THREE.Vector3(pos.x, py, pos.z), light, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 });
+    const pool = { pos: new THREE.Vector3(pos.x, py, pos.z), light, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 };
+    this.molotovPools.push(pool);
+    // Register the burning puddle as a generic fire SOURCE — FireManager re-ignites flammables near
+    // it without any molotov-specific knowledge (the only coupling; removed again on dispose).
+    if (this.fire) pool._emitter = this.fire.addEmitter({ pos: pool.pos, radius: pool.radius, alive: () => pool.life > 0 });
     if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
   }
   _fxBeam(from, dir) { // transient red boss-laser beam for clients (visual only — damage is host-authoritative)
@@ -440,7 +495,7 @@ class Game {
     this.engine.scene.add(beam);
     setTimeout(() => { this.engine.scene.remove(beam); beam.geometry.dispose(); beam.material.dispose(); }, 180);
   }
-  _disposeMolotovPool(p) { if (p && p.light) this.engine.scene.remove(p.light); }
+  _disposeMolotovPool(p) { if (p && p.light) this.engine.scene.remove(p.light); if (this.fire && p && p._emitter) this.fire.removeEmitter(p._emitter); }
   _clearMolotovPools() { if (this.molotovPools) { for (const p of this.molotovPools) this._disposeMolotovPool(p); this.molotovPools.length = 0; } }
   _updateMolotovPools(dt) {
     if (!this.molotovPools || !this.molotovPools.length) return;
@@ -619,6 +674,7 @@ class Game {
     this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
+    if (this.fire) this.fire.clear();
     this.dayNight.reset(this.mode === 'longnight');
     if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false); // lobby plays the shuffled song jukebox
     this.hud.setBleed(-1); this.hud.hideBoss(); this.hud.clearWaveTag();
@@ -653,6 +709,7 @@ class Game {
   }
   onPlayerDead() {
     if (this.mp && this.mp.active) return; // co-op death is pstate-driven; _mpGameOver handles the squad wipe
+    if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
@@ -747,16 +804,29 @@ class Game {
   _frame(t) {
     requestAnimationFrame(this._bound);
     let dt = (t - this._last) / 1000; this._last = t;
-    if (!(dt > 0)) dt = 0.0001; dt = Math.min(dt, 0.05);
+    if (!(dt > 0)) dt = 0.0001;
+    const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
+    dt = Math.min(dt, 0.05);
     if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
     if (this.state === 'playing') this._updatePlaying(dt);
     this.engine.update(dt); this.engine.render();
+    if (this.devconsole) { const dbg = this.f3 && this.state === 'playing'; this.devconsole.updateF3(dbg); this.devconsole.updateEntityLabels(dbg); }
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
     if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
     if (this.state === 'crate' && this.crate) this.crate.render(dt);
     else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
     this.input.endFrame();
+  }
+
+  // One fixed effect tick: advance the player + every alive enemy by one step.
+  // The player is skipped while MP-frozen (downed/dead/waiting — DoT suspended during bleed-out);
+  // enemies have no such guard and always tick when alive.
+  _stepEffectsOnce() {
+    const ctx = this._fxCtx, p = this.player;
+    if (p.alive && !(this.mp.active && this.mp.frozen)) stepEffects(p, ctx);
+    const list = this.enemies.active;
+    for (let i = 0; i < list.length; i++) { const e = list[i]; if (e.alive) stepEffects(e, ctx); }
   }
 
   _updatePlaying(dt) {
@@ -777,7 +847,7 @@ class Game {
         const reviving = this.mp.active && this.mp.blocksWeaponUse && this.mp.blocksWeaponUse();
         if (edge && !reviving && !this.freecam) this.inventory.handleLMB(edge); // LMB use, dispatched by held item class (gun/melee/consumable/material/callable/throwable)
       }
-      if (!this.mp.frozen && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory
+      if (!this.mp.frozen && !(this.devconsole && this.devconsole.open) && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory — disabled while chat is open
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
       this.gramophone.updateTarget(); // gramophone prop look-target + ←/→ song change (BEFORE player.update reads strafe)
       if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)
@@ -792,10 +862,13 @@ class Game {
     if (this.world.updateDoors) this.world.updateDoors(dt); // steppe: ease bunker гермодвери open/closed + track leaf colliders
     if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
+    if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
+    if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);
     this.loot.update(dt);
+    if (sim) this._fxClock.advance(dt, this._stepFx); // status effects tick at a fixed 10 Hz; host/solo only (sim = hostSim && !freecam → also paused in freecam). Co-op clients tick via host broadcast (P3).
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);
@@ -803,6 +876,7 @@ class Game {
     if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
     this._updateFlares(dt);       // flare is a deployable gadget in EVERY mode → tick gravity/burn/smoke unconditionally (mirrors _updateMolotovPools), else a flare thrown in purge hangs in mid-air
     this._updateMolotovPools(dt);
+    if (this.fire) this.fire.update(dt); // Phase 8: ember-chain spread + burn-through (own fixed clock; reads molotovPools as sources)
     if (hostSim) this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount); // clients get the authoritative count via 'clock'
     this.effects.update(dt);
     this.hud.update(dt);

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './util.js';
 import { FALL_ARMOR_BYPASS, FALL_DMG_BONUS_AT_LETHAL, FALL_DMG_PER_VY, FALL_LETHAL, FALL_SAFE, HUNGER_DRAIN_PER_SEC, HUNGER_LOW, HUNGER_LOW_SPEED_MULT, HUNGER_MAX, LEG_BREAK_VY, LIMP_SPEED_MULT, PLAYER_BURN_DPS, PLAYER_BURN_TICK, SPLINT_APPLY_TIME, STARVE_TICK_DMG, STARVE_TICK_TIME } from './tuning.js';
+import { applyEffect, removeEffect, clearEffects } from './effects-status.js';
 
 const CLIMB_SPEED = 3.7; // m/s on a ladder/скоб-трап (escape shaft + bunker tower)
 
@@ -15,8 +16,9 @@ export class Player {
     this.pos = new THREE.Vector3(0, 0, 30); this.vel = new THREE.Vector3();
     this.yaw = Math.PI; this.pitch = 0;
     this.radius = 0.35; this.height = 1.7; this.eye = 1.62;
-    this.onGround = true; this.sens = 0.0022;
+    this.onGround = true; this.sens = 0.0022; this.nick = 'Player'; // identity for console selectors (set live from Settings)
     this._footT = 0; this._fallVel = 0; this._regenT = 0; this._camY = this.eye;
+    this.effects = new Map();   // status effects (src/effects-status.js): key → { ticksLeft, stacks }
     this.resetStats();
   }
   resetStats() {
@@ -33,12 +35,21 @@ export class Player {
   reset() {
     this.pos.set(0, 0, 30); this.vel.set(0, 0, 0); this.yaw = Math.PI; this.pitch = 0;
     if (this.game && this.game.mapId === 'steppe') { this.pos.set(-330, 0, -282); this.yaw = Math.PI; } // spawn in the field strongpoint (home base, far SW), facing in
-    this.onGround = true; this._regenT = 0; this.resetStats();
+    else if (this.game && this.game.mapId === 'demo') { // ?map=demo: spawn ON the terrain, near + facing the big hill (60,-40) so it's a short walk up
+      const t = this.game.world && this.game.world.terrain;
+      const sx = 35, sz = -8;
+      this.pos.set(sx, t ? t.terrainHeightAt(sx, sz) : 0, sz);
+      this.yaw = Math.atan2(-(60 - sx), -(-40 - sz)); // fwd = (-sin yaw, 0, -cos yaw) aimed at the hill
+    }
+    this.onGround = true; this._regenT = 0;
+    if (this.effects) clearEffects(this, this.game._fxCtx); // fire each onClear (e.g. broken_leg → restore mobility) before wiping
+    this.resetStats();
   }
 
   hurt(dmg, bypassArmor = 0) {
     if (this.game.freecam) return;            // observation/fly-cam: invulnerable
     if (!this.alive) return;
+    if (this.game.rules && this.game.rules.god) return;
     const mp = this.game.mp;
     if (mp && mp.active) { mp.claimPlayerHit(mp.myId, dmg); return; } // co-op: player damage is host-authoritative (pstate owns hp/armor/down/3-down death)
     // bypassArmor 0..1 = fraction of dmg armor cannot soak (blunt trauma). 0 = bullets, 1 = ignores armor.
@@ -50,10 +61,9 @@ export class Player {
   }
   breakLeg() {
     if (this.legBroken) return;
-    this.legBroken = true;
+    applyEffect(this, 'broken_leg', Infinity, this.game._fxCtx); // onApply → setLimp(true): sets legBroken + HUD
     this.game.audio.playerHurt(); this.game.hud.damageFlash();
     this.game.hud.toast('🦵 LEG BROKEN — find a splint (use it from your inventory)!', 0xd23a2a);
-    this.game.hud.setSurvival(this);
   }
   applySplint() {
     if (this._splintT > 0) return;
@@ -80,7 +90,11 @@ export class Player {
     if (frozen) return;
     if (this._splintT > 0) {
       this._splintT -= dt;
-      if (this._splintT <= 0) { this._splintT = 0; this.legBroken = false; this.game.hud.toast('🦵 Leg splinted — mobility restored', 0x7fd06a); this.game.hud.setSurvival(this); }
+      if (this._splintT <= 0) {
+        this._splintT = 0;
+        removeEffect(this, 'broken_leg', this.game._fxCtx); // fires onClear → setLimp(false): restores mobility + HUD
+        this.game.hud.toast('🦵 Leg splinted — mobility restored', 0x7fd06a);
+      }
     }
     if (this.alive) {
       const h0 = this.hunger;
@@ -96,9 +110,11 @@ export class Player {
       if (!mp.active && this._burnTickT >= PLAYER_BURN_TICK) { this._burnTickT = 0; this.hurt(PLAYER_BURN_DPS * PLAYER_BURN_TICK, 1); }
     } else this._burnTickT = 0;
     this.game.hud.setBurn(this.burnT);
+    this.game.hud.setSurvival(this);   // active-effects strip (icons + countdown) refreshed each frame
   }
   // Fall/starvation damage — host-authoritative in MP (the armor-bypass nuance only applies in single-player).
   _takeSurvivalDamage(dmg, bypassArmor = 0) {
+    if (this.game.rules && this.game.rules.god) return;
     const mp = this.game.mp;
     if (mp.active) this.game.mp.claimPlayerHit(mp.myId, dmg);
     else this.hurt(dmg, bypassArmor);
@@ -147,7 +163,7 @@ export class Player {
 
   update(dt) {
     const input = this.game.input;
-    if (this.game.freecam) return this._freecamUpdate(dt, input); // dev noclip fly-cam (solo only)
+    if (this.game.freecam || this.game.flyMode) return this._freecamUpdate(dt, input); // dev noclip freecam, or console /fly (sim keeps running)
     const mp = this.game.mp;
     const frozen = mp && mp.active && mp.frozen;
     const controlsPaused = mp && mp.active && this.game.mpMenuOpen;
