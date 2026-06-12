@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>electronika-clock — integration test (model + live VFD)</title>
+<style>html,body{margin:0;height:100%;background:#0a0b0d;overflow:hidden}#info{position:fixed;left:8px;top:6px;color:#6a6;font:12px monospace}</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="info">loading…</div>
+<script type="module">
+import * as THREE from 'three';
+import { registerModel, placeProp } from '../../src/props/registry.js';
+import { makeDigitalClockFace } from '../../src/clockface.js';
+import { formatHHMM, parseHHMM } from '../../src/worldclock.js';
+
+const q = new URLSearchParams(location.search);
+const tStr = q.get('t') || '08:00';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0a0b0d, 1);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(34, window.innerWidth / window.innerHeight, 0.01, 50);
+cam.position.set(0.14, 0.105, 0.30);
+cam.lookAt(0, 0.045, 0);
+
+// dim interior light so the voxel red reads but the VFD glow dominates
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const dl = new THREE.DirectionalLight(0xfff2e0, 0.9); dl.position.set(0.4, 0.8, 0.6); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0x88aaff, 0.25); dl2.position.set(-0.5, 0.2, 0.3); scene.add(dl2);
+
+(async () => {
+  // EXACTLY the game path: register spec → placeProp → mount the live VFD → drive from worldclock.
+  const spec = await (await fetch('../../models/electronika-clock/spec.json')).json();
+  registerModel('electronika-clock', spec);
+  const obj = placeProp(scene, 'electronika-clock', 0, 0, 0, { y: 0 });
+  const face = makeDigitalClockFace({ widthM: 0.150, heightM: 0.044 });
+  face.mesh.position.set(0, 0.047, 0.0595);
+  obj.add(face.mesh);
+
+  // prove the world-clock → display pipeline: minute-of-day → formatHHMM → 7-seg
+  const minute = parseHHMM(tStr);
+  const shown = formatHHMM(minute);
+  document.getElementById('info').textContent = `parseHHMM(${tStr})=${minute} → formatHHMM=${shown}`;
+  let frame = 0;
+  function loop() {
+    frame++;
+    face.setTime(shown, { blink: (Math.floor(frame / 30) % 2) === 0 || q.get('blink') === '0' });
+    renderer.render(scene, cam);
+    requestAnimationFrame(loop);
+  }
+  loop();
+  window.__READY__ = true;
+})().catch(e => { document.getElementById('info').textContent = 'ERR: ' + e; window.__ERR__ = String(e && e.stack || e); });
+</script>
+</body>
+</html>
