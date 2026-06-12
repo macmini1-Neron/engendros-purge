@@ -17,6 +17,28 @@ medium tone and let lighter top faces + darker undersides + near-black recesses 
 A reference image is for **shape** (proportions + signature features), not for quality. Known WW2 guns
 can be modelled from memory; a reference just sharpens details and stops wrong guesses.
 
+## The quality bar — NOT boxes-only, NOT fake text (ЛПР-1 retro, owner mandate)
+
+The project's PROVEN standard includes complex curved meshes and readable textures — the
+binoculars + ЛПР-1 viewmodel cases (lathe/extrude), the gatehouse console CRT, the gramophone
+record labels and the «ЧАСОЗБОР» dial all already ship it. "Voxel" names the art direction,
+**not a primitives-only constraint.** Concretely:
+
+- **Classify the reference's shape class BEFORE building.** Boxy → MeshBuilder boxes. Curved /
+  cast / turned (binocular bodies, drums, eyecups, capsule housings) → real THREE profiles via
+  `b.geo()`: `LatheGeometry` for revolved parts, `ExtrudeGeometry` (rounded Shape + bevel) for
+  cast shells. The binoculars and lpr1 cases in `weapons.js` are the copy-from templates.
+  *"Close enough with boxes" is the banned rationalization that shipped the ЛПР-1 brick —
+  every dimension correct to the millimetre and the owner still rejected it.*
+- **Readable markings.** Any text the player can read up close (label plates, dials, engraved
+  ВКЛ/ВЫКЛ housing labels) = real legible Cyrillic via CanvasTexture —
+  `makeTextPlateTexture(lines, {plate})` from `src/props/operators/round.js`, attached as
+  textured planes through the `_post` hook (see the lpr1 case). 1-px cream bars are ONLY for
+  sub-10 mm / distant markings. The азбука must actually read.
+- **Silhouette gate**: before detailing, put your render NEXT TO the reference photo and ask
+  "would the owner recognize it at a glance?" — and offer the owner one early shape screenshot.
+  Feedback after the full build is maximum-sunk-cost feedback.
+
 ## Layered-shading palette (the core recipe)
 
 For every material, define **5 shades** and place them by surface role:

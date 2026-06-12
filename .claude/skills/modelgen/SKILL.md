@@ -31,6 +31,31 @@ where machines can't: picking the right features, proportions, and reading the r
    the part rigidly about its `at` — this is how stencils/panels get onto side faces.
 5. **A scale fudge in game code = a units bug in the spec.** If `placeProp`/pickup code needs
    `scale ≠ 1`, stop and fix the spec. (Documented inline in `loot.js` — keep it true.)
+6. **The SILHOUETTE law (judgment-enforced — the validator cannot see shape).** *Real incident:
+   the ЛПР-1 shipped with every dimension correct to the millimetre and the owner still rejected
+   it — the rounded cast capsule had been built as a brick. Numbers passed, the SHAPE failed.*
+   - In Phase 2, classify the reference's shape class FIRST: boxy / cylindrical / **sculpted-cast
+     (rounded shells, capsules, organic castings)**. If sculpted-cast and no operator can express
+     it → write the operator (e.g. `loaf`) or build custom THREE geometry BEFORE authoring parts.
+     "Close enough for voxel style" is a **banned rationalization** — it is how the brick shipped.
+   - In Phase 3, run `VIEWER.overlay('/models/<id>/ref/<photo>', 0.5)` against ≥1 reference photo
+     and Read the result — the overlay exists precisely for this and skipping it is how layout
+     gets verified while silhouette goes unexamined. Ask of every render: "would the owner
+     recognize the real thing at a glance?" — not just "are my parts where my spec put them?"
+   - **Early shape checkpoint:** after round 1, show the owner ONE q34 render next to the
+     reference photo and get a tvar sign-off BEFORE detailing — feedback after the full build
+     is maximum-sunk-cost feedback.
+   - The owner's reference fidelity sets the bar: photoscan/PBR references = hero-item sculpt
+     expected, not a parts-count checklist. Passing "6–20 parts, 3+ materials" is a floor, not
+     quality.
+7. **The READABLE MARKINGS law (same retro).** Any text the player can read up close — label
+   plates, dials, signage on held/interactable props — is REAL legible Cyrillic rendered as a
+   CanvasTexture: `decal` with `lines: ["ЛПР-1", "ДАЛЬНОМЕР", …]` (`plate: true` = bordered
+   dark plate; `plate: false` = transparent engraved housing label), `texturedDisc` for dials.
+   The codebase has proven this bar repeatedly (gatehouse console, gramophone labels,
+   «ЧАСОЗБОР» dial, «Электроника» VFD). `stencil`'s paint bars are ONLY for sub-10 mm or
+   distant markings — shipping bars where a plate should read is the texture version of the
+   brick. Rounded cast bodies have the `loaf` operator (stadium profile + beveled rim).
 
 Gate everything with the pre-flight linter — run it before the viewer and before calling done:
 ```bash
