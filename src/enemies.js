@@ -4,6 +4,7 @@ import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxe
 import { ENEMY_BURN_SLOW } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { buildNavGrid, findPath } from './pathing.js';
+import { movementSlow, contactWeaken } from './effects-status.js';
 
 
 // ---------------------------------------------------------------------------
@@ -202,7 +203,7 @@ class Enemy {
     this.hp = this.maxHp = hp; this.speed = speed;
     this.scale = def.scale; this.radius = 0.55 * def.scale; this.height = 2.2 * def.scale;
     this.headY = 1.18 * def.scale;
-    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0;
+    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map(); // effects map: clear on pool reuse / init on first spawn
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
@@ -243,6 +244,8 @@ export class EnemyManager {
   }
   spawn(typeKey, pos, hp, speed) {
     const def = ENEMY_TYPES[typeKey];
+    if (hp == null) hp = def.hp;       // direct spawn / console /summon (no wave-scaled stats) → fall back to the type's base hp/speed
+    if (speed == null) speed = def.speed;
     let col, variant = def.variant, geoKey, name;
     if (typeKey === 'boss') { col = { body: 0xede7df, name: 'Tolo' }; geoKey = 'boss'; name = 'BOSS TOLO'; }
     else if (typeKey === 'minitolo') { col = { body: 0xede7df, name: 'mini Tolo' }; geoKey = 'tolomini'; name = 'mini Tolo'; }
@@ -253,6 +256,7 @@ export class EnemyManager {
     e.spawn(typeKey, def, col, name, pos, hp, speed);
     if (typeKey === 'boss' && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once Tolo arrives
     e.id = ++this._idc;
+    e.tagId = this.game._nextTagId++; e.tag = `${typeKey}#${e.tagId}`; // per-run debug tag — F3 labels + @e[type]/byName targeting
     this.active.push(e);
     this.game.audio.enemyGrowl();
     if (this.game.mp) this.game.mp.onEnemySpawn(e);
@@ -265,6 +269,7 @@ export class EnemyManager {
     const e = this._get(geoKey, col, variant);
     e.spawn(typeKey, def, col, name, new THREE.Vector3(0, 0, 0), def.hp, def.speed);
     e.id = id; e._ghost = true;
+    e.tagId = this.game._nextTagId++; e.tag = `${typeKey}#${e.tagId}`; // local debug tag (host tag sync = Phase 2)
     this.active.push(e);
     return e;
   }
@@ -326,14 +331,18 @@ export class EnemyManager {
       const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
       const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
-      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
+      // TODO P3: when burn migrates to effects-status, drop the `e.burnT ? ENEMY_BURN_SLOW : 1` term — else a burning enemy double-slows (ENEMY_BURN_SLOW × BURN_SLOW = 0.45 × 0.45 = 0.20).
+      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1) * movementSlow(e)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
       if (_wz) {
         _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down
         e._wireT = (e._wireT || 0) + dt;
         if (e._wireT >= 0.4) { e._wireT = 0; if (this.damage(e, STRUCT_DEFS.wire.dot * 0.4, 'wire')) continue; }
       }
       e.vel.x = (wx / wl) * spd; e.vel.z = (wz / wl) * spd;
-      e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt; e.pos.y = 0;
+      e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
+      // terrain grounding: sample height every frame so enemies follow hills;
+      // flat maps (hasTerrain = false) keep y=0 — byte-identical to before.
+      e.pos.y = this.world.hasTerrain ? this.world.terrain.terrainHeightAt(e.pos.x, e.pos.z) : 0;
       const lim = this.world.HALF - e.radius;
       e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
       e._blockStruct = null;
@@ -369,7 +378,7 @@ export class EnemyManager {
       e.attackCD -= dt;
       if (dist < e.radius + this.game.player.radius + 0.6 && e.attackCD <= 0) {
         if (e.def.charger) { this.damage(e, e.hp + 1, 'contact'); continue; } // kamikaze: detonate on contact
-        e.attackCD = 1.0; e.squash = 0.18; this.game._hurtTarget(e._tgtId || 'host', e.def.dmg);
+        e.attackCD = 1.0; e.squash = 0.18; this.game._hurtTarget(e._tgtId || 'host', e.def.dmg * contactWeaken(e));
       } else if (e._blockStruct && e.attackCD <= 0) { // can't reach a player: smash the wall in the way
         e.attackCD = 0.8; e.squash = 0.18; this.game.build.attackStructure(e._blockStruct, e.def.dmg, e);
       }
@@ -381,7 +390,7 @@ export class EnemyManager {
       if (e.squash > 0) e.squash -= dt;
       if (e.burnT > 0) { e.burnT -= dt; if (Math.random() < 0.16) this.game.effects.firePool(e.pos, 0.45, 0.4); }
       const sq = e.squash > 0 ? 1 - e.squash * 1.6 : 1;
-      e.mesh.position.set(e.pos.x, Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
+      e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
       e.mesh.rotation.y = Math.atan2(dx, dz);
       e.mesh.rotation.z = Math.sin(e.bob) * 0.08;
       e.mesh.scale.set(e.scale, e.scale * sq, e.scale);
@@ -763,6 +772,13 @@ export class EnemyManager {
     }
     if (!hitE) return null;
     return { enemy: hitE, dist: best, point: hp, head: hp.y >= hitE.pos.y + hitE.headY };
+  }
+
+  // Heal an enemy (used by the radiation effect — radiation HEALS Engendros). Clamps to maxHp.
+  heal(e, amount) {
+    if (!e.alive || amount <= 0) return;
+    e.hp = Math.min(e.maxHp, e.hp + amount);
+    if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);   // refresh the boss/elite bar
   }
 
   damage(e, amount, source = 'gun', hitPoint = null, attacker = 'host') {

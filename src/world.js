@@ -12,6 +12,27 @@ import { buildKolkhoz } from './kolkhoz.js';
 import { buildSecretBunker } from './bunker.js';
 import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
+import { makeTerrain } from './terrain.js';
+import { buildGroundMesh } from './terrain-mesh.js';
+
+// ─── T2 WALKABLE-TERRAIN feel knobs (Phase 4) — owner-tunable ──────────────────
+// These ONLY apply when `world.hasTerrain` is true (the ?map=demo slice). On flat
+// maps (arena/steppe) the terrain path is bypassed entirely → byte-identical to before.
+//
+//   TERRAIN_GROUND_FOLLOW_STEP — max metres the smooth ground may pull the player DOWN
+//     in one frame while grounded (downhill walking). Bigger = snappier descents but the
+//     player can clip down small man-made ledges; smaller = the player briefly goes
+//     airborne off rises (mini "hops"). 0.6 m feels stable on the demo's gentle hills.
+//   TERRAIN_UPHILL_EPS — tiny ground-rise (m) over one horizontal step that counts as
+//     "uphill" for the slope-limit test. Kept small (just above FP noise) because the
+//     per-frame step is short (~0.09 m) so its rise is small; the slope ANGLE is the real
+//     gate. On genuinely flat ground slope≈0 < limit, so this never false-blocks there.
+//   Slope limit itself = `terrain.slopeLimit` (default 35°, set in terrain.js). Uphill
+//     terrain steeper than this acts as a wall — the player can't climb cliffs but can
+//     still walk along/down them. Visual ground-snap smoothing is handled in player.js
+//     by the existing `_camY` damp (lambda 18), so no extra snap-lambda is needed here.
+const TERRAIN_GROUND_FOLLOW_STEP = 0.6;
+const TERRAIN_UPHILL_EPS = 1e-4;
 
 
 // ---------------------------------------------------------------------------
@@ -27,9 +48,15 @@ export class World {
     this.grid = new SpatialGrid();   // spatial index over `boxes` (built after the map, addBox on runtime adds)
     this.spawns = [];
     this.lootSpots = [];
-    this.mapId = (game.mapId === 'steppe') ? 'steppe' : 'arena';
+    this.mapId = (game.mapId === 'steppe') ? 'steppe' : (game.mapId === 'demo' ? 'demo' : 'arena');
+    // T2 walkable terrain — OFF by default (arena/steppe = flat, y=0 hard floor, unchanged).
+    // Only the ?map=demo slice opts in; everything terrain-gated below checks `hasTerrain`.
+    this.hasTerrain = false;
+    this.terrain = null;
     if (this.mapId === 'steppe') {
       this._buildSteppe();
+    } else if (this.mapId === 'demo') {
+      this._buildDemo();
     } else {
       this.scene.fog.near = 95; this.scene.fog.far = 640; // wider haze for the larger compound
       this._build();
@@ -255,7 +282,32 @@ export class World {
     return m;
   }
 
+  // ─── ?map=demo TEMP STUB (Phase 4) ──────────────────────────────────────────
+  // Minimal hook-up so the player can actually stand on / walk the demo hills.
+  // Phase 9 will flesh this into the full demo (forest + destructible building +
+  // enemy spawns). Here we ONLY build terrain + its ground mesh + spawn points so
+  // T2 walkable slopes can be verified. NOT a finished map.
+  _buildDemo() {
+    this.scene.fog.near = 70; this.scene.fog.far = 460;
+    this.HALF = 158;                                   // keep the player inside the 160 m ground mesh
+    this.hasTerrain = true;
+    this.terrain = makeTerrain({ profile: 'demo', seed: 1337 }); // deterministic, seeded (co-op safe)
+    const ground = buildGroundMesh(this.terrain, { extent: 160, resolution: 160 });
+    this.scene.add(ground);
+    // a flat reference plane far below catches the eye for orientation only (no collision)
+    // spawn ring + a couple of loot spots, all sampled onto the terrain surface.
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU, x = Math.cos(a) * 28, z = Math.sin(a) * 28;
+      this.spawns.push(new THREE.Vector3(x, this.terrain.terrainHeightAt(x, z), z));
+    }
+    this.lootSpots.push(
+      new THREE.Vector3(0, this.terrain.terrainHeightAt(0, 0), 0),
+      new THREE.Vector3(60, this.terrain.terrainHeightAt(60, -40), -40), // atop the big hill
+    );
+  }
+
   collide(pos, vel, r, h, dt) {
+    if (this.hasTerrain) return this._collideTerrain(pos, vel, r, h, dt);
     let onGround = false;
     // vertical
     pos.y += vel.y * dt;
@@ -275,6 +327,61 @@ export class World {
     const lim = this.HALF - r;
     pos.x = clamp(pos.x, -lim, lim); pos.z = clamp(pos.z, -lim, lim);
     return onGround;
+  }
+
+  // Terrain-aware collide (only when hasTerrain). Walkable ground height under the
+  // player = terrainHeightAt(px,pz) instead of the hard 0. Man-made AABB boxes keep
+  // the existing step-up; the smooth ground is resolved separately. Steep uphill
+  // terrain (slope > terrain.slopeLimit) blocks horizontal movement INTO the face.
+  _collideTerrain(pos, vel, r, h, dt) {
+    let onGround = false;
+    const terr = this.terrain;
+    const slopeLimit = (terr.slopeLimit != null) ? terr.slopeLimit : (Math.PI * 35) / 180;
+
+    // VERTICAL — gravity, terrain floor under the player, then man-made box tops/bottoms.
+    pos.y += vel.y * dt;
+    let gy = terr.terrainHeightAt(pos.x, pos.z);
+    if (pos.y <= gy) { pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true; }
+    for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
+      if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
+      if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
+      const feet = pos.y, head = pos.y + h;
+      if (head <= b.min.y || feet >= b.max.y) continue;
+      const penTop = b.max.y - feet, penBot = head - b.min.y;
+      if (penTop < penBot && vel.y <= 0.01) { pos.y = b.max.y; vel.y = 0; onGround = true; }
+      else if (vel.y > 0) { pos.y = b.min.y - h; vel.y = 0; }
+    }
+
+    // HORIZONTAL — per axis: existing box collision/step-up, then a slope-limit gate
+    // that reverts a step taken INTO an uphill face steeper than the limit (cliffs act
+    // as walls; gentle slopes walk; walking along/down a steep face stays allowed).
+    this._moveAxisTerrain(pos, vel, r, h, 'x', vel.x * dt, slopeLimit);
+    this._moveAxisTerrain(pos, vel, r, h, 'z', vel.z * dt, slopeLimit);
+    const lim = this.HALF - r;
+    pos.x = clamp(pos.x, -lim, lim); pos.z = clamp(pos.z, -lim, lim);
+
+    // GROUND-FOLLOW — after moving, re-seat the feet on the (now possibly different)
+    // terrain height so ascents/descents are smooth and never fall-through.
+    gy = terr.terrainHeightAt(pos.x, pos.z);
+    if (pos.y < gy) {                                     // walked into rising ground → push up
+      pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+    } else if (onGround && pos.y - gy <= TERRAIN_GROUND_FOLLOW_STEP) { // descend smoothly within a step
+      pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+    }
+    return onGround;
+  }
+
+  // Box collision + step-up for one axis (delegates to _moveAxis), then enforce the
+  // terrain slope-limit: if the move climbed into terrain steeper than the limit,
+  // revert just this axis so the player slides off the cliff instead of scaling it.
+  _moveAxisTerrain(pos, vel, r, h, ax, delta, slopeLimit) {
+    const before = pos[ax];
+    const gBefore = this.terrain.terrainHeightAt(pos.x, pos.z);
+    this._moveAxis(pos, vel, r, h, ax, delta);
+    const gAfter = this.terrain.terrainHeightAt(pos.x, pos.z);
+    if (gAfter > gBefore + TERRAIN_UPHILL_EPS && this.terrain.terrainSlopeAt(pos.x, pos.z) > slopeLimit) {
+      pos[ax] = before; vel[ax] = 0;
+    }
   }
 
   // Is the player's body column free of boxes if its feet were at feetY here?
@@ -308,15 +415,26 @@ export class World {
     }
   }
 
+  // Ground height under (x,z): the terrain surface on the heightfield demo slice, else the
+  // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
+  // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
+  groundY(x, z) { return (this.hasTerrain && this.terrain) ? this.terrain.terrainHeightAt(x, z) : 0; }
+
   rayHit(origin, dir, maxDist, ignore = null) {
     const ignored = Array.isArray(ignore) ? ignore : null;
     const filter = (ignore != null) ? (b => !(b === ignore || (ignored && ignored.includes(b)))) : null;
     const gh = this.grid.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, filter);
     let best = gh ? gh.t : maxDist, hitBox = gh ? gh.box : null;
-    if (dir.y < -1e-6) { const tg = -origin.y / dir.y; if (tg > 0 && tg < best) { best = tg; hitBox = 'ground'; } }
+    if (this.hasTerrain) {
+      const tg = this._rayTerrain(origin, dir, best); // march vs the heightfield (feet placement / decals / aim-down)
+      if (tg != null && tg > 0 && tg < best) { best = tg; hitBox = 'ground'; }
+    } else if (dir.y < -1e-6) { const tg = -origin.y / dir.y; if (tg > 0 && tg < best) { best = tg; hitBox = 'ground'; } }
     if (best >= maxDist) return null;
     const point = new THREE.Vector3(origin.x + dir.x * best, origin.y + dir.y * best, origin.z + dir.z * best);
     const normal = new THREE.Vector3(0, 1, 0);
+    if (hitBox === 'ground' && this.hasTerrain) {       // real terrain surface normal at the hit
+      const n = this.terrain.terrainNormalAt(point.x, point.z); normal.set(n.x, n.y, n.z);
+    }
     if (hitBox && hitBox !== 'ground') {
       const ex = Math.min(Math.abs(point.x - hitBox.min.x), Math.abs(point.x - hitBox.max.x));
       const ey = Math.min(Math.abs(point.y - hitBox.min.y), Math.abs(point.y - hitBox.max.y));
@@ -326,6 +444,30 @@ export class World {
       else normal.set(0, 0, point.z < (hitBox.min.z + hitBox.max.z) / 2 ? -1 : 1);
     }
     return { dist: best, point, normal, box: (hitBox && hitBox !== 'ground') ? hitBox : null };
+  }
+
+  // Ray vs heightfield (terrain maps only). Marches in fixed steps until the ray dips
+  // below the terrain, then bisects for a tight hit `t`. Approximate but stable — used
+  // for foot placement / decals / aim-down, not authoritative damage. Returns t or null.
+  _rayTerrain(o, d, maxT) {
+    const terr = this.terrain;
+    if ((o.y - terr.terrainHeightAt(o.x, o.z)) < 0) return 0; // origin already underground
+    const lim = Math.min(maxT, 300), step = 0.5;
+    let tPrev = 0;
+    for (let t = step; t <= lim; t += step) {
+      const above = (o.y + d.y * t) - terr.terrainHeightAt(o.x + d.x * t, o.z + d.z * t);
+      if (above <= 0) {
+        let lo = tPrev, hi = t;
+        for (let i = 0; i < 8; i++) {
+          const m = (lo + hi) / 2;
+          const am = (o.y + d.y * m) - terr.terrainHeightAt(o.x + d.x * m, o.z + d.z * m);
+          if (am <= 0) hi = m; else lo = m;
+        }
+        return hi;
+      }
+      tPrev = t;
+    }
+    return null;
   }
 
   addWreckObstacle(pos, yaw) {
@@ -657,6 +799,17 @@ export class DayNight {
   toggleFlashlight() { if (this.game.weapons.owns('flashlight')) { this.flashOn = !this.flashOn; this.game.audio.uiClick(); this.game.hud.setNightGear(this.game); this.game.hud.setWeapon(this.game.weapons); } else this.game.hud.bigMessage('NO FLASHLIGHT', 'buy one in the SHOP and put it in your inventory'); }
 
   info() { const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE; const night = c >= DAY_FRAC; return { night, n: this.nightCount, blood: this.bloodMoon && night }; }
+  // Dev console /time — jump the cycle to a named phase and render it immediately. In PURGE it stays frozen
+  // there (the loop only ticks the cycle in LONG NIGHT); in LONG NIGHT it then continues from this point.
+  setTime(which) {
+    const FR = { dawn: 0.0, day: DAY_FRAC * 0.45, noon: DAY_FRAC * 0.45, dusk: DAY_FRAC, night: DAY_FRAC + (1 - DAY_FRAC) * 0.5, midnight: DAY_FRAC + (1 - DAY_FRAC) * 0.5 };
+    const c = FR[which]; if (c == null) return false;
+    this.active = true; this.cel.visible = true;
+    this.t = c * NIGHT_CYCLE;
+    this._wasNight = c >= DAY_FRAC;
+    this._render();
+    return true;
+  }
 
   update(dt) {
     if (!this.active) return;

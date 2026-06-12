@@ -27,7 +27,7 @@ export class Input {
       if (e.repeat) return;
       this.down.add(e.code);
       this.pressed.add(e.code);
-      this._emit('key', e.code);
+      this._emit('key', e.code, e); // pass the event so a handler can preventDefault (e.g. the key that opens the console must not also type into it)
       // Prevent page scroll for game keys.
       if ([ 'Space', 'ArrowUp', 'ArrowDown', 'Tab' ].includes(e.code)) e.preventDefault();
     });
