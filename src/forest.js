@@ -36,7 +36,7 @@ import * as THREE from 'three';
 import { makeRNG, voxelMaterial, clamp, TAU } from './util.js';
 import { makeTree, SPECIES } from './props/generators/tree.js';
 import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, rayAABB, resolveHit } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, rayAABB, resolveHit, FRAGILE_MAX_TIER } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
 import { hasModel, getSpec } from './props/registry.js';
 import { buildSpec } from './props/voxel-interp.js';
@@ -101,6 +101,8 @@ export class Forest {
     this._propObjs = [];       // placed prop Object3Ds (for cleanup parity with _instMeshes)
     this._props = [];          // destructible prop records { id, dmat, obj, box, part, pos, dead }
     this._propsBuilt = false;  // one-shot guard for the lazy prop build
+    this._pendingDead = new Set(); // co-op: 'propdie' ids that arrived before _ensureProps built them
+                                   // (props build lazily — see destroyPropById / late-join snapshot)
     this.treeMat = voxelMaterial();   // one shared vertex-color material for all instances
 
     // Only the demo (heightfield) map grows a forest. Flat maps (arena/steppe) untouched.
@@ -315,6 +317,9 @@ export class Forest {
       this.parts.push(part);        // ⇒ flammableParts() now includes wood/grass props
       this._props.push(rec);
       this.world.boxes.push(box); this.world.grid.addBox(box);
+      // co-op: a host 'propdie' (live mirror or late-join snapshot) may have arrived before this
+      // prop existed — apply the deferred death now that the record (mesh+collider) is live.
+      if (this._pendingDead.size && this._pendingDead.delete(id)) this.destroyProp(rec);
     }
   }
 
@@ -473,8 +478,11 @@ export class Forest {
   consumeProp(rec) { this.destroyProp(rec); }
 
   // Client mirror of a host 'propdie' (idempotent; destroyProp guards on rec.dead; the host guard
-  // in _emitForest stops a client echo).
-  destroyPropById(id) { const rec = this._props.find(r => r.id === id); if (rec) this.destroyProp(rec); }
+  // in _emitForest stops a client echo). Props build LAZILY (_ensureProps waits on async specs), so
+  // a propdie can land before its record exists — defer it to _pendingDead, drained at build time.
+  // Without this, late-join snapshots (mp.js floods propdie while the joiner is still loading) would
+  // be silently dropped and the destroyed prop would resurrect as a live, collidable ghost.
+  destroyPropById(id) { const rec = this._props.find(r => r.id === id); if (rec) this.destroyProp(rec); else this._pendingDead.add(id); }
 
   // Burn a grass tuft out (visual + part death). Host path also broadcasts so clients match;
   // the fire system (host) calls this from _burnout, the net handler calls consumeGrassById.
@@ -534,11 +542,11 @@ export class Forest {
       if (this.debris) this.debris.burst('splints', [h.tree.pos.x, h.tree.pos.y + h.tree.breakPoint, h.tree.pos.z], (h.tree.id * 2654435761) >>> 0, h.tree.pos.y);
       this.fellTree(h.tree, [dir.x, dir.z], (h.tree.id * 2654435761) >>> 0);
     }
-    // APFSDS obliterates fragile props (tier ≤ 2: wood/grass) it pierces; stone (tier 4) is a
-    // structural through-hole — left in place (cosmetic), consistent with resolvePenetration.
+    // APFSDS obliterates fragile props (wood/grass) it pierces; stone (tier 4) is a structural
+    // through-hole — left in place (cosmetic), consistent with resolvePenetration's FRAGILE_MAX_TIER.
     for (const rec of this._props) {
       if (rec.dead || !rec.part) continue;
-      if (MATERIALS[rec.dmat].tier > 2) continue;
+      if (MATERIALS[rec.dmat].tier > FRAGILE_MAX_TIER) continue;
       const t = rayAABB(o, dd, rec.part.min, rec.part.max);
       if (t !== null && t <= range) this.destroyProp(rec, [rec.pos.x, rec.pos.y + 0.3, rec.pos.z]);
     }

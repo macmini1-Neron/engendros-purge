@@ -89,6 +89,8 @@ export class FireManager {
 
     this.fires = [];          // active fire records (see ignite())
     this.emitters = [];       // persistent ignition SOURCES (source-agnostic — see addEmitter)
+    this._pendingIgnite = []; // co-op client: host 'fireignite' for a forest prop not yet lazily
+                              //   built — { id, owner, seed, tries }, retried in update() until live
     this._objN = 0;           // burning object count (trees + wood) — capped at OBJ_CAP
     this._grassN = 0;         // burning grass-cell count — capped at GRASS_CAP
     this._warned = 0;         // throttle the "fire cap reached" log
@@ -175,6 +177,18 @@ export class FireManager {
   // Dispatch on owner → search ONLY that source's flammable parts, never a global id match.
   igniteById(id, owner, seed) {
     if (!this.active) return null;
+    const r = this._igniteFound(id, owner, seed);
+    if (r) return r;
+    // Forest props build lazily (forest._ensureProps waits on async specs) — a 'fireignite' (live
+    // mirror or late-join snapshot) can arrive before the part exists. Defer + retry in update()
+    // so the fire isn't silently lost (buildings build synchronously, so a 'b' miss is a real miss).
+    if (owner !== 'b' && !this._pendingIgnite.some(p => p.id === id)) this._pendingIgnite.push({ id, owner, seed, tries: 0 });
+    return null;
+  }
+
+  // Attempt-only ignition by part id — resolves the id against the owner's flammable parts and
+  // ignites if found, WITHOUT deferring on a miss (igniteById adds the defer; the retry drain does not).
+  _igniteFound(id, owner, seed) {
     const src = owner === 'b'
       ? (this.world.demoBuilding && this.world.demoBuilding.flammableParts ? this.world.demoBuilding.flammableParts() : [])
       : (this.game.forest && this.game.forest.flammableParts ? this.game.forest.flammableParts() : []);
@@ -196,7 +210,7 @@ export class FireManager {
   clear() {
     if (!this.active) return;
     for (const f of this.fires) { if (f.part) f.part._fire = null; this.flames.release(f.slotA); this.flames.release(f.slotB); }
-    this.fires.length = 0; this.emitters.length = 0; this._objN = 0; this._grassN = 0;
+    this.fires.length = 0; this.emitters.length = 0; this._pendingIgnite.length = 0; this._objN = 0; this._grassN = 0;
     this.light.intensity = 0; this.light.position.set(0, -999, 0);
     this.flames.flush();
     this._clock.reset();
@@ -205,6 +219,12 @@ export class FireManager {
   // ── per-frame entry (variable dt in; fixed-step sim inside) ─────────────────────────
   update(dt) {
     if (!this.active) return;
+    // Retry deferred prop ignitions (client mirror landed before forest._ensureProps built the part).
+    // Drop on success, or expire after ~10 s (600 frames) so a genuinely-bad id can't pin a slot.
+    for (let i = this._pendingIgnite.length - 1; i >= 0; i--) {
+      const pi = this._pendingIgnite[i];
+      if (this._igniteFound(pi.id, pi.owner, pi.seed) || ++pi.tries > 600) this._pendingIgnite.splice(i, 1);
+    }
     const hostSim = !this.game.mp.active || this.game.mp.isHost;  // only the host drives spread/burn
     if (hostSim) this._clock.advance(dt, () => this._tick());
     else this._clientAge(dt);                                      // clients: fade+retire flame visuals only
@@ -251,7 +271,7 @@ export class FireManager {
 
       if (f.kind === 'tree' && !f.charDone && f.age >= CHAR_TIME) {
         f.charDone = true;
-        try { this.game.forest && this.game.forest.charTree(f.owner); } catch (e) {}
+        try { this.game.forest && this.game.forest.charTree(f.owner); } catch (e) { console.warn('[fire] charTree failed', e); }
       }
 
       // ember chain — roll to ignite the nearest untouched flammable in range, LOS-gated.
@@ -295,7 +315,12 @@ export class FireManager {
         if (b && typeof b.netKillPart === 'function') b.netKillPart(f.part.dpart);
         else { f.part.dead = true; if (b && typeof b._refresh === 'function') b._refresh(); }
       }
-    } catch (e) { /* non-fatal */ }
+    } catch (e) {
+      // Non-fatal to the fire sim (the flame is already retired), but a throw here leaves the
+      // prop/tree/door alive forever with part._fire null → it can never re-ignite or re-burnout.
+      // Surface it rather than corrupt state silently.
+      console.warn('[fire] burnout consume failed', e);
+    }
   }
 
   // ── flame + aggregate-light rendering (every frame; not part of the deterministic sim) ─

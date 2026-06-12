@@ -1,17 +1,20 @@
-// destruct.js — DESTRUCTION CORE (pure logic). Graduated from tools/destructlab/.
+// destruct.js — DESTRUCTION CORE (pure logic). Originally prototyped in a since-removed
+// `tools/destructlab/` scratch area; consolidated here for the game.
 //
 // PURE & node-testable: NO `import 'three'`, NO DOM. Every export here can run under
-// `node --test`. The browser-only InstancedMesh debris pool lives in a SEPARATE file,
-// src/destruct-debris.js (it needs THREE) — keeping this module THREE-free is what lets
-// the node tests import it directly.
+// `node --test` (live suite: `node --test tests/destruct/*.test.mjs`). The browser-only
+// InstancedMesh debris pool lives in a SEPARATE file, src/destruct-debris.js (it needs THREE)
+// — keeping this module THREE-free is what lets the node tests import it directly.
 //
-// Sources consolidated here (all reviewed, 26/26 lab tests):
-//   tools/destructlab/geom.js     → AABB/ray helpers
-//   tools/destructlab/matrix.js   → MATERIALS, makePart, resolveHit/Blast/Penetration
-//   tools/destructlab/fallphys.js → FallingBody mini-physics (hinge/tumble)
-// PLUS the refined APFSDS model (obliterate fragile / through-hole structural + spall),
-// the `fuel` + `sound` fields on MATERIALS, the part-metadata contract, and the runtime
-// apply* pipeline (designed to be wired into gameplay in a later phase — NOT wired yet).
+// Consolidated here: AABB/ray helpers, the MATERIALS damage matrix + makePart + the part-metadata
+// contract, resolveHit/Blast/Penetration (incl. the refined APFSDS model: obliterate fragile /
+// through-hole structural + spall), FallingBody mini-physics (hinge/tumble), the `fuel` + `sound`
+// fields on MATERIALS, and the runtime apply* pipeline (DestructRuntime).
+//
+// WIRED: DestructRuntime drives the demo BUILDING destructibles — instantiated in demobuilding.js,
+// installed via game.js, and called from weapons.js combat (applyHit/applyBlast/applyPenetration).
+// Forest props deliberately call the lower-level resolve*/makePart directly (mirroring the tree
+// path) rather than going through DestructRuntime. Only applyCrush (below) remains an inert stub.
 
 // ───────────────────────────────────────────────────────────────────────────
 // 1. Geometry helpers (pure AABB/ray on plain [x,y,z] arrays). From geom.js.
@@ -84,6 +87,11 @@ export const MATERIALS = {
   stone:      { tier: 4, hp: 600,  debris: 'rubble',  sound: 'masonry', fuel: 0  },
 };
 
+// APFSDS classifies parts by tier: tier ≤ FRAGILE_MAX_TIER ⇒ FRAGILE (obliterated / spall target);
+// tier > it ⇒ STRUCTURAL (through-hole, stays standing). Single source so the long-rod rule can't
+// drift between resolvePenetration here and the forest prop path (forest.penetrate).
+export const FRAGILE_MAX_TIER = 2;
+
 // Reference caliber/pen table (spec §5). Gameplay weaponDefs map onto this shape
 // ({ pen, dmg } + optional blast / through / spall). Kept as a graduated copy of the
 // lab's LAB_WEAPONS so the ported tests and the apply* pipeline share one source.
@@ -141,10 +149,10 @@ export function resolveBlast(parts, pos, blast) {
 }
 
 // REFINED APFSDS long-rod (spec §5 + owner refinement). NO explosion. Along the ray:
-//   • FRAGILE parts (material tier ≤ 2 — glass/wood/sheetmetal/trunk/grass/props) are
+//   • FRAGILE parts (material tier ≤ FRAGILE_MAX_TIER — glass/wood/sheetmetal/trunk/grass) are
 //     OBLITERATED (dead:true) and returned for debris. They do NOT consume a wall slot
 //     and do NOT stop the rod.
-//   • STRUCTURAL parts (tier ≥ 3 — brick/concrete/steel) get a THROUGH-HOLE only: the part
+//   • STRUCTURAL parts (tier > FRAGILE_MAX_TIER — brick/stone/concrete/steel) get a THROUGH-HOLE only: the part
 //     STAYS (dead:false), damage decays by `falloff` per wall, and a SPALL CONE opens behind
 //     each penetrated wall. Each cone carries `targets` = fragile parts whose centre lies in
 //     the cone, so the caller can apply real spall damage (kill props / hurt enemies+players).
@@ -170,7 +178,7 @@ export function resolvePenetration(parts, origin, dir, weapon) {
     const entry = [origin[0] + dir[0] * tIn, origin[1] + dir[1] * tIn, origin[2] + dir[2] * tIn];
     const exit  = [origin[0] + dir[0] * tOut, origin[1] + dir[1] * tOut, origin[2] + dir[2] * tOut];
     const tier = MATERIALS[part.dmat].tier;
-    if (tier <= 2) {                                   // FRAGILE — obliterated, free pass
+    if (tier <= FRAGILE_MAX_TIER) {                    // FRAGILE — obliterated, free pass
       part.dhp = 0; part.dead = true;
       hits.push({ id: part.dpart, tIn, entry, exit, dmg, killed: true, kind: 'obliterate' });
       continue;
@@ -182,7 +190,7 @@ export function resolvePenetration(parts, origin, dir, weapon) {
     // Spall targets: fragile, still-alive parts whose centre falls in the cone (beyond this
     // wall) — scanned over ALL parts, not just ray-candidates, since spall fans off-axis.
     for (const c of parts) {
-      if (c === part || c.dead || MATERIALS[c.dmat].tier > 2) continue;
+      if (c === part || c.dead || MATERIALS[c.dmat].tier > FRAGILE_MAX_TIER) continue;
       if (coneContains(cone, aabbCenter(c.min, c.max))) cone.targets.push(c.dpart);
     }
     cones.push(cone);
@@ -303,12 +311,12 @@ function subTumble(b) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// 4. Runtime apply* pipeline (NOT yet wired into gameplay).
+// 4. Runtime apply* pipeline — WIRED for the demo building (see demobuilding.js / weapons.js).
 //    DestructRuntime holds a parts collection + an `emit` event sink + an optional debris
-//    pool, and exposes the four pipeline entry points with the exact signatures the gameplay
-//    integration phase will call. Each queries the parts collection and calls the resolve*
-//    rules above. Effects/MP-sync are surfaced as events via `emit({type, ...})` so the
-//    wiring phase decides how to render + broadcast (host-auth, event+seed) them.
+//    pool, and exposes the four pipeline entry points the building combat path calls. Each
+//    queries the parts collection and calls the resolve* rules above. Effects/MP-sync are
+//    surfaced as events via `emit({type, ...})` so the owner decides how to render + broadcast
+//    (host-auth, event+seed). (Forest props bypass this and call resolve* directly.)
 // ───────────────────────────────────────────────────────────────────────────
 
 // Normalize a gameplay weaponDef onto the { pen, dmg, blast, through, spall } shape the
