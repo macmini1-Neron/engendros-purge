@@ -41,6 +41,8 @@ const roundExtents = {
     if (ax === 'x') return { min: [-th, -hw, -hh], max: [th, hw, hh] };
     return { min: [-hw, -hh, -th], max: [hw, hh, th] };
   },
+  // rounded stadium loaf shell — honest w×h×d box (the profile is pre-shrunk by the bevel)
+  loaf: (a) => ({ min: [-a.w / 2, -a.h / 2, -a.d / 2], max: [a.w / 2, a.h / 2, a.d / 2] }),
 };
 
 export const EXTENTS = {

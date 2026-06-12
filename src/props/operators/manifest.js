@@ -32,6 +32,7 @@ export const MANIFEST = {
   tube:        { args: ['pts', 'tube'],           dims: ['tube'],              anchor: 'center' },
   texturedDisc: { args: ['r'],                     dims: ['r'],                anchor: 'center' },
   decal:       { args: ['w', 'h'],                dims: ['w', 'h'],            anchor: 'center' },
+  loaf:        { args: ['w', 'h', 'd'],           dims: ['w', 'h', 'd'],       anchor: 'center' },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);

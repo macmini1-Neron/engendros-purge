@@ -1,0 +1,710 @@
+{
+  "id": "lpr1",
+  "category": "instrument",
+  "target": "voxel",
+  "footprint": {
+    "w": 0.226,
+    "h": 0.116,
+    "d": 0.221
+  },
+  "parts": [
+    {
+      "op": "bevelBox",
+      "id": "mountBracket",
+      "args": {
+        "w": 0.046,
+        "h": 0.008,
+        "d": 0.13
+      },
+      "at": [
+        0,
+        0.004,
+        0.015
+      ],
+      "mat": "steel",
+      "src": "dossier#bottom_face"
+    },
+    {
+      "op": "loaf",
+      "id": "bodyMain",
+      "args": {
+        "w": 0.226,
+        "h": 0.108,
+        "d": 0.175,
+        "r": 0.028,
+        "bevel": 0.016
+      },
+      "at": [
+        0,
+        0.062,
+        0.023
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#body_dims"
+    },
+    {
+      "op": "loaf",
+      "id": "rearPanel",
+      "args": {
+        "w": 0.208,
+        "h": 0.1,
+        "d": 0.026,
+        "r": 0.024,
+        "bevel": 0.007
+      },
+      "at": [
+        0,
+        0.062,
+        -0.0745
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#body_dims"
+    },
+    {
+      "op": "bevelBox",
+      "id": "ribTop1",
+      "args": {
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
+      },
+      "at": [
+        -0.084,
+        0.1155,
+        0.023
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "ribTop2",
+      "args": {
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
+      },
+      "at": [
+        -0.042,
+        0.1155,
+        0.023
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "ribTop3",
+      "args": {
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
+      },
+      "at": [
+        0,
+        0.1155,
+        0.023
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "ribTop4",
+      "args": {
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
+      },
+      "at": [
+        0.042,
+        0.1155,
+        0.023
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "ribTop5",
+      "args": {
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
+      },
+      "at": [
+        0.084,
+        0.1155,
+        0.023
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "objBezel",
+      "args": {
+        "r": 0.0305,
+        "h": 0.014
+      },
+      "at": [
+        0.005,
+        0.06,
+        0.11
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#visor_objective_aperture_mm"
+    },
+    {
+      "op": "cylinder",
+      "id": "objGlass",
+      "args": {
+        "r": 0.0224,
+        "h": 0.006,
+        "tone": "hi"
+      },
+      "at": [
+        0.005,
+        0.06,
+        0.1145
+      ],
+      "mat": "lensGlass",
+      "src": "dossier#visor_objective_aperture_mm"
+    },
+    {
+      "op": "cylinder",
+      "id": "txBezel",
+      "args": {
+        "r": 0.019,
+        "h": 0.012
+      },
+      "at": [
+        -0.068,
+        0.06,
+        0.109
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#front_aperture_ratios"
+    },
+    {
+      "op": "cylinder",
+      "id": "txGlass",
+      "args": {
+        "r": 0.0135,
+        "h": 0.005
+      },
+      "at": [
+        -0.068,
+        0.06,
+        0.114
+      ],
+      "mat": "lensLaser",
+      "src": "dossier#front_aperture_ratios"
+    },
+    {
+      "op": "cylinder",
+      "id": "dryerCart",
+      "args": {
+        "r": 0.021,
+        "h": 0.01
+      },
+      "at": [
+        0.085,
+        0.06,
+        0.108
+      ],
+      "mat": "granitol",
+      "src": "dossier#front_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "eyecupInd",
+      "args": {
+        "r": 0.024,
+        "h": 0.024
+      },
+      "at": [
+        0.026,
+        0.062,
+        -0.0985
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "eyecupVis",
+      "args": {
+        "r": 0.02,
+        "h": 0.024
+      },
+      "at": [
+        -0.046,
+        0.062,
+        -0.0985
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "visGlass",
+      "args": {
+        "r": 0.009,
+        "h": 0.004,
+        "tone": "hi"
+      },
+      "at": [
+        -0.046,
+        0.062,
+        -0.1125
+      ],
+      "mat": "lensGlass",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "batBase",
+      "args": {
+        "r": 0.025,
+        "h": 0.008
+      },
+      "at": [
+        0.078,
+        0.056,
+        -0.0895
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "batCap",
+      "args": {
+        "r": 0.018,
+        "h": 0.01
+      },
+      "at": [
+        0.078,
+        0.056,
+        -0.0985
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "batHandle",
+      "args": {
+        "w": 0.006,
+        "h": 0.022,
+        "d": 0.005
+      },
+      "at": [
+        0.078,
+        0.056,
+        -0.105
+      ],
+      "rot": [
+        0,
+        0,
+        20
+      ],
+      "mat": "steel",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "pwrKnob",
+      "args": {
+        "r": 0.009,
+        "h": 0.011
+      },
+      "at": [
+        0.054,
+        0.094,
+        -0.0905
+      ],
+      "mat": "bakelite",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "pwrLever",
+      "args": {
+        "w": 0.005,
+        "h": 0.018,
+        "d": 0.006
+      },
+      "at": [
+        0.054,
+        0.094,
+        -0.099
+      ],
+      "rot": [
+        0,
+        0,
+        35
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "texturedCylinder",
+      "id": "strobeDrum",
+      "args": {
+        "r": 0.0165,
+        "h": 0.016
+      },
+      "at": [
+        -0.008,
+        0.094,
+        -0.0945
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "torus",
+      "id": "strobeScale",
+      "args": {
+        "r": 0.012,
+        "tube": 0.0018,
+        "tone": "bright"
+      },
+      "at": [
+        -0.008,
+        0.094,
+        -0.1035
+      ],
+      "mat": "cream",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "podsKnob",
+      "args": {
+        "r": 0.008,
+        "h": 0.01
+      },
+      "at": [
+        -0.07,
+        0.034,
+        -0.0905
+      ],
+      "mat": "bakelite",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "podsLever",
+      "args": {
+        "w": 0.005,
+        "h": 0.015,
+        "d": 0.006
+      },
+      "at": [
+        -0.07,
+        0.034,
+        -0.0975
+      ],
+      "rot": [
+        0,
+        0,
+        -35
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "connector",
+      "args": {
+        "r": 0.0105,
+        "h": 0.012
+      },
+      "at": [
+        -0.002,
+        0.024,
+        -0.0915
+      ],
+      "mat": "brass",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "panel",
+      "id": "namePlateBack",
+      "args": {
+        "w": 0.026,
+        "h": 0.018,
+        "th": 0.002
+      },
+      "at": [
+        -0.01,
+        0.04,
+        -0.0875
+      ],
+      "rot": [
+        0,
+        180,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "decal",
+      "id": "namePlateText",
+      "args": {
+        "w": 0.024,
+        "h": 0.016,
+        "lines": [
+          "ЛПР-1",
+          "ДАЛЬНОМЕР",
+          "N 790346"
+        ]
+      },
+      "at": [
+        -0.01,
+        0.04,
+        -0.089
+      ],
+      "rot": [
+        0,
+        180,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "panel",
+      "id": "warnPlateBack",
+      "args": {
+        "w": 0.036,
+        "h": 0.022,
+        "th": 0.002
+      },
+      "at": [
+        -0.086,
+        0.066,
+        -0.0875
+      ],
+      "rot": [
+        0,
+        180,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "decal",
+      "id": "warnPlateText",
+      "args": {
+        "w": 0.034,
+        "h": 0.02,
+        "lines": [
+          "ПОСЛЕ ОКОНЧАНИЯ",
+          "РАБОТЫ ВЫКЛЮЧИ",
+          "ПИТАНИЕ И ПОДСВЕТКУ"
+        ]
+      },
+      "at": [
+        -0.086,
+        0.066,
+        -0.089
+      ],
+      "rot": [
+        0,
+        180,
+        0
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "screwTL",
+      "args": {
+        "r": 0.0045,
+        "h": 0.005
+      },
+      "at": [
+        -0.097,
+        0.106,
+        -0.0875
+      ],
+      "mat": "steel",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "screwTR",
+      "args": {
+        "r": 0.0045,
+        "h": 0.005
+      },
+      "at": [
+        0.097,
+        0.106,
+        -0.0875
+      ],
+      "mat": "steel",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "screwBL",
+      "args": {
+        "r": 0.0045,
+        "h": 0.005
+      },
+      "at": [
+        -0.097,
+        0.02,
+        -0.0875
+      ],
+      "mat": "steel",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "screwBR",
+      "args": {
+        "r": 0.0045,
+        "h": 0.005
+      },
+      "at": [
+        0.097,
+        0.02,
+        -0.0875
+      ],
+      "mat": "steel",
+      "src": "dossier#rear_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "btnMeasure1",
+      "args": {
+        "r": 0.0085,
+        "h": 0.01,
+        "axis": "y"
+      },
+      "at": [
+        -0.066,
+        0.118,
+        -0.045
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "cylinder",
+      "id": "btnMeasure2",
+      "args": {
+        "r": 0.0085,
+        "h": 0.01,
+        "axis": "y"
+      },
+      "at": [
+        -0.042,
+        0.118,
+        -0.045
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "btnFin1",
+      "args": {
+        "w": 0.006,
+        "h": 0.015,
+        "d": 0.022
+      },
+      "at": [
+        -0.078,
+        0.119,
+        -0.045
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "btnFin2",
+      "args": {
+        "w": 0.006,
+        "h": 0.015,
+        "d": 0.022
+      },
+      "at": [
+        -0.054,
+        0.119,
+        -0.045
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "bevelBox",
+      "id": "btnFin3",
+      "args": {
+        "w": 0.006,
+        "h": 0.015,
+        "d": 0.022
+      },
+      "at": [
+        -0.03,
+        0.119,
+        -0.045
+      ],
+      "mat": "paintOchre",
+      "src": "dossier#top_face"
+    },
+    {
+      "op": "handleU",
+      "id": "carryHandle",
+      "args": {
+        "w": 0.085,
+        "h": 0.024,
+        "th": 0.012
+      },
+      "at": [
+        0,
+        0.116,
+        -0.015
+      ],
+      "rot": [
+        -90,
+        0,
+        0
+      ],
+      "mat": "leather",
+      "src": "dossier#strap_and_lanyards"
+    },
+    {
+      "op": "strapBand",
+      "id": "neckStrap",
+      "args": {
+        "w": 0.02,
+        "h": 0.108,
+        "d": 0.226,
+        "th": 0.0045
+      },
+      "at": [
+        0,
+        0.062,
+        0.052
+      ],
+      "rot": [
+        0,
+        90,
+        0
+      ],
+      "mat": "oliveDrab",
+      "src": "dossier#strap_and_lanyards"
+    }
+  ]
+}

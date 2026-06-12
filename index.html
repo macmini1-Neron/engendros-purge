@@ -142,6 +142,28 @@
                 mask-composite: intersect; }      /* declared LAST so it wins: cut-out = UNION of the two lenses */
     #binoview.show { opacity: 1; }
 
+    /* ЛПР-1 «Каралон-М» rangefinder overlay — right-eye vizír circle with the угломерная сетка
+       (training-deck slide-9, models/lpr1/ref/) + left-eye indicator inset 1:1 per Рис. 5.4:
+       5-digit red range display, red АКБ lamp (dark — no battery sim), green готовность lamp. */
+    #lprview { position: fixed; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .12s;
+               background: radial-gradient(circle at center, transparent 0 32vmin, rgba(3,5,8,.97) 36vmin); }
+    #lprview.show { opacity: 1; }
+    #lprreticle { position: absolute; left: 50%; top: 50%; width: 72vmin; height: 72vmin; transform: translate(-50%,-50%); }
+    #lprindicator { position: absolute; left: calc(50% - 41vmin); top: calc(50% + 8vmin); width: 20vmin; height: 20vmin; border-radius: 50%;
+                    background: radial-gradient(circle at 50% 42%, #14110c 0 58%, #060504 100%);
+                    box-shadow: 0 0 0 .9vmin #0a0908, 0 0 4vmin rgba(0,0,0,.9); }
+    #lprdigits { position: absolute; left: 0; right: 0; top: 26%; text-align: center; font: 700 3.1vmin/1 'Courier New', monospace;
+                 letter-spacing: .55vmin; color: #ff2b1f; text-shadow: 0 0 1.2vmin rgba(255,43,31,.75); min-height: 3.1vmin; }
+    #lprlamps { position: absolute; left: 0; right: 0; top: 58%; display: flex; justify-content: center; gap: 3.2vmin; }
+    #lprlamps span { width: 2.4vmin; height: 2.4vmin; border-radius: 50%; }
+    #lprbat { background: #2a0905; box-shadow: inset 0 0 .5vmin #000; }
+    #lprready { background: #0a2208; box-shadow: inset 0 0 .5vmin #000; transition: background .15s; }
+    #lprready.on { background: #2ee04a; box-shadow: 0 0 1.4vmin rgba(46,224,74,.9); }
+    #lprhint { position: absolute; left: 50%; bottom: 7vh; transform: translateX(-50%); font: 600 1.7vmin/1 monospace;
+               color: rgba(214,180,120,.5); letter-spacing: .3vmin; }
+    /* ПОДСВ — night illumination of the сетка (lamp + fibre bundle): the reticle glows warm red after dark */
+    #lprview.night #lprreticle { stroke: #ff4f2e; opacity: 1; filter: drop-shadow(0 0 .5vmin rgba(255,79,46,.85)); }
+
     /* ННП-23 «Резчик» (1ПН54) observation-post overlay — single eyepiece circle, ПСО-style
        reticle (owner reference image; true drawing in dossier needs[]), phosphor noise + green
        readout. The green LOOK comes from #game.nvgreen (canvas filter) + a scene-light boost in
@@ -1033,6 +1055,21 @@
 
   <div id="scope"></div>
   <div id="binoview"></div>
+  <div id="lprview">
+    <!-- угломерная сетка визира — slide-9 1:1: open-centre cross, 4-tick columns above/below, 5-tick rows each side (outer tick longer) -->
+    <svg id="lprreticle" viewBox="-250 -250 500 500" fill="none" stroke="#0a0a0a" stroke-width="3" opacity=".88">
+      <path d="M0,-26 V-92 M0,26 V92 M-26,0 H-92 M26,0 H92"/>
+      <path d="M-12,-122 H12 M-12,-150 H12 M-12,-178 H12 M-12,-206 H12"/>
+      <path d="M-12,122 H12 M-12,150 H12 M-12,178 H12 M-12,206 H12"/>
+      <path d="M-120,-12 V12 M-148,-12 V12 M-176,-12 V12 M-204,-12 V12 M-232,-20 V20"/>
+      <path d="M120,-12 V12 M148,-12 V12 M176,-12 V12 M204,-12 V12 M232,-20 V20"/>
+    </svg>
+    <div id="lprindicator">
+      <div id="lprdigits"></div>
+      <div id="lprlamps"><span id="lprbat"></span><span id="lprready"></span></div>
+    </div>
+    <div id="lprhint">T — ИЗМЕРЕНИЕ</div>
+  </div>
   <!-- буссоль ПАБ-2А: монокулярный визир — rotating угломер bezel under a fixed lubber index,
        digital угломер + grid coords. Rose is rotated live by ui.js setCompass(); rest is static. -->
   <div id="compassview">
@@ -1535,6 +1572,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=263"></script>
+  <script type="module" src="./src/game.js?v=264"></script>
 </body>
 </html>

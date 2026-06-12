@@ -162,12 +162,39 @@ export function texturedDisc(b, a, t, o) {
   return mesh;
 }
 
-// decal — a flat rectangular plane carrying a named CanvasTexture: the lid maker's diamond logo
-// and the small engraved control plates. `kind` picks the generator. Returns its own Mesh.
+// makeTextPlateTexture — REAL, READABLE text (the project bar: the азбука must be legible up
+// close — gatehouse console, gramophone labels, «ЧАСОЗБОР» dial all set this precedent; cream
+// stencil bars are only for sub-10 mm / distant markings). lines = array of strings.
+// plate:true → filled dark plate with a hairline border (ЛПР-1 ДАЛЬНОМЕР style);
+// plate:false → transparent background, ink text only (engraved ВЫКЛ/ВКЛ housing labels).
+export function makeTextPlateTexture(lines, { plate = true, bg = '#0e0d0b', ink = '#e9e4d4', aspect = 2 } = {}) {
+  const W = 512, H = Math.max(64, Math.round(W / aspect));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  if (plate) {
+    c.fillStyle = bg; c.fillRect(0, 0, W, H);
+    c.strokeStyle = 'rgba(233,228,212,0.55)'; c.lineWidth = 3; c.strokeRect(7, 7, W - 14, H - 14);
+  } else c.clearRect(0, 0, W, H);
+  c.fillStyle = ink; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const pad = plate ? 0.16 : 0.04, rowH = (H * (1 - 2 * pad)) / lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    let size = Math.round(rowH * 0.78);
+    c.font = `bold ${size}px "PT Sans Narrow","Arial Narrow",Arial,sans-serif`;
+    while (c.measureText(lines[i]).width > W * (1 - 2 * pad) && size > 10) { size -= 2; c.font = `bold ${size}px "PT Sans Narrow","Arial Narrow",Arial,sans-serif`; }
+    c.fillText(lines[i], W / 2, H * pad + rowH * (i + 0.5));
+  }
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  return tex;
+}
+
+// decal — a flat rectangular plane carrying a named CanvasTexture: the lid maker's diamond logo,
+// the small engraved control plates, or (lines:[...]) a READABLE text plate/label. Returns its own Mesh.
 export function decal(b, a, t, o) {
   const g = new THREE.PlaneGeometry(a.w, a.h);
-  const transparent = a.kind === 'lidLogo';
-  const map = _decalTexture(a.kind, t[a.tone || 'mid']);
+  const transparent = a.kind === 'lidLogo' || (Array.isArray(a.lines) && a.plate === false);
+  const map = Array.isArray(a.lines)
+    ? makeTextPlateTexture(a.lines, { plate: a.plate !== false, aspect: a.w / a.h })
+    : _decalTexture(a.kind, t[a.tone || 'mid']);
   const mat = new THREE.MeshLambertMaterial({ map, transparent, depthWrite: !transparent });
   if (a.kind === 'lidLogo') { mat.emissive = new THREE.Color(0xffffff); mat.emissiveMap = map; mat.emissiveIntensity = 0.35; }  // the printed mark self-lights so it reads on the shadowed lid lining
   const mesh = new THREE.Mesh(g, mat);
@@ -175,6 +202,30 @@ export function decal(b, a, t, o) {
   mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
   mesh.position.set(o.x, o.y, o.z);
   return mesh;
+}
+
+// loaf — a rounded "stadium loaf" shell: a rounded-rectangle SIDE profile (depth d ×
+// height h, corner radius r) extruded across the width w with a beveled rim, so the
+// silhouette reads as the cast rounded clamshell of Soviet field instruments (ЛПР-1
+// rangefinder, field phones) instead of a box. The profile is shrunk by the bevel so
+// the finished bounds honestly match w×h×d. Center-anchored. THREE-bound.
+export function loaf(b, a, t, o) {
+  const { w, h, d } = a;
+  const bev = Math.min(a.bevel ?? Math.min(w, h, d) * 0.12, w / 2 - 0.001);
+  const bs = bev * 0.9;
+  const pw = d - 2 * bs, ph = h - 2 * bs;                  // profile pre-shrunk; bevel grows it back to d×h
+  const r = Math.max(0.001, Math.min(a.r ?? Math.min(ph, pw) * 0.35, ph / 2 - 0.0005, pw / 2 - 0.0005));
+  const sh = new THREE.Shape(); const x0 = -pw / 2, y0 = -ph / 2;
+  sh.moveTo(x0 + r, y0);
+  sh.lineTo(x0 + pw - r, y0); sh.quadraticCurveTo(x0 + pw, y0, x0 + pw, y0 + r);
+  sh.lineTo(x0 + pw, y0 + ph - r); sh.quadraticCurveTo(x0 + pw, y0 + ph, x0 + pw - r, y0 + ph);
+  sh.lineTo(x0 + r, y0 + ph); sh.quadraticCurveTo(x0, y0 + ph, x0, y0 + ph - r);
+  sh.lineTo(x0, y0 + r); sh.quadraticCurveTo(x0, y0, x0 + r, y0);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: w - 2 * bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bs, bevelSegments: 4, curveSegments: 12 });
+  g.translate(0, 0, -(w - 2 * bev) / 2);                   // center the extrusion before re-orienting
+  g.rotateY(Math.PI / 2);                                   // extrusion axis → X; profile plane → (z, y)
+  b.geo(g, o.x, o.y, o.z, a.tone ? t[a.tone] : t.mid, { tint: 0.02 });
+  g.dispose();
 }
 
 // ---- canvas generators (exported where the live gramophone re-uses them) ----

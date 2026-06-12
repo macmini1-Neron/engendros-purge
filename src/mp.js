@@ -872,8 +872,8 @@ export class MP {
     cam.rotation.x += (clamp(rp.pitch, -1.2, 1.2) - cam.rotation.x) * k;
     cam.rotation.z += (0 - cam.rotation.z) * k;
   }
-  rayHitPlayers(origin, dir, maxDist) {
-    if (!this.friendlyFire) return null;   // co-op: gunfire passes through teammates (no accidental teamkills)
+  rayHitPlayers(origin, dir, maxDist, force = false) {
+    if (!this.friendlyFire && !force) return null;   // co-op: gunfire passes through teammates (no accidental teamkills); force=true for non-damaging probes (ЛПР-1 ranging)
     let best = maxDist, hit = null, hp = null;
     for (const [id, rp] of this.remotes) {
       if (rp.dead || rp.down || rp.waiting) continue;
