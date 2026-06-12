@@ -908,6 +908,44 @@ class Game {
     else hurt(this.player.pos.x, this.player.pos.z, 'host');
     if (this.world.igniteFABsNear) this.world.igniteFABsNear(pos, radius); // any blast sets off nearby kolkhoz FAB-500s (chain)
   }
+  // ── Centralized explosion ──────────────────────────────────────────────────────────
+  // ONE place that does "what an explosion does": visual+audio, enemy AoE, player splash
+  // (+FAB chain), ground-item clearing, and destruction (trees/props/building/fire). Per
+  // call site you only tune the params/flags. Authority + co-op are handled here: the
+  // visual runs locally for everyone, the authoritative bits run only on the host, and a
+  // client routes the whole thing to the host via one 'boom' packet (which the host
+  // replays with visual:false, since it already saw the detonation via the 'proj' ghost).
+  explode(pos, opts = {}) {
+    const { radius = 5, dmg = 0, enemyDmg = dmg, source = 'explosion', except = null,
+            harmEnemies = true, harmPlayers = true, clearLoot = true, destroy = true,
+            isRocket = false, visual = true, shake = 0, net = true } = opts;
+    if (visual) this.effects.explosion(pos, radius);          // explosion() also plays audio.explosion()
+    if (shake && this.engine.shake) this.engine.shake(shake);
+    const hostSim = !this.mp.active || this.mp.isHost;
+    if (hostSim) {
+      if (harmEnemies) this.enemies.damageInRadius(pos, radius, enemyDmg, except, source);
+      if (harmPlayers) this._explodeHurt(pos, radius, dmg); // includes the FAB-500 chain
+      if (clearLoot) this.loot.clearPickupsInRadius(pos.x, pos.z, radius);
+      if (destroy) this._demoBlast(pos, radius, isRocket);  // trees/props/building/fire (no-op without a forest/demo building)
+    } else if (net && this.mp.active) {
+      // client → host: one packet carries everything the host needs to authoritatively apply.
+      this.mp.net.send('boom', { p: [+pos.x.toFixed(2), +pos.y.toFixed(2), +pos.z.toFixed(2)], r: radius, d: dmg, ed: enemyDmg, s: source,
+        he: harmEnemies ? 1 : 0, hp: harmPlayers ? 1 : 0, cl: clearLoot ? 1 : 0, ds: destroy ? 1 : 0, rk: isRocket ? 1 : 0 });
+    }
+  }
+  // HE blast routed into the demo destructibles: remove brick wall segments (a WALKABLE breach)
+  // + shatter glass via the building, fell trees + destroy props within the blast, and seed a
+  // fire at the impact (a rocket into the woods lights the stand). Host-auth; moved here from
+  // WeaponSystem so all blast helpers live together on Game.
+  _demoBlast(pos, radius, isRocket) {
+    const hostSim = !this.mp.active || this.mp.isHost;
+    if (!hostSim) return;
+    const b = this.world.demoBuilding;
+    const blast = isRocket ? { r1: 2.6, r2: 6.0, tier: 3 } : { r1: radius * 0.35, r2: radius, tier: 2 };
+    if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
+    if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, blast.r1 + 0.6, blast.tier);
+    if (this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
+  }
   onWaveCleared(n) {
     this.audio.waveClear(); if (this.audio.music) this.audio.music.sting('victory', 'small'); this.player.addMoney(150 + n * 25);
     if (this.mp.active && this.mp.isHost) this.mp.net.send('waveclear', { n: this.waves.wave });

@@ -387,17 +387,15 @@ export function buildKolkhoz(world, KX, KZ) {
     bomb.alive = false;
     const p = new THREE.Vector3(bomb.x, bomb.y + 0.4, bomb.z);
     const g = this.game;
-    g.effects.explosion(p.clone(), bomb.blastR);                       // FX + audio.explosion()
     g.effects.firePool(new THREE.Vector3(bomb.x, 0.1, bomb.z), bomb.blastR * 0.5, 1.4);
-    const hostSim = !g.mp || !g.mp.active || g.mp.isHost;
-    if (hostSim) { g.enemies.damageInRadius(p, bomb.blastR, bomb.dmg, null); g._explodeHurt(p, bomb.blastR, bomb.dmg); }
+    g.explode(p.clone(), { radius: bomb.blastR, dmg: bomb.dmg, isRocket: true }); // visual+AoE+player FF+HE destruction; FAB chain via _explodeHurt
     if (bomb.mesh) bomb.mesh.visible = false;
     this.boxes = this.boxes.filter((x) => x !== bomb.box);            // remove its collider
     if (this.grid) this.grid.removeBox(bomb.box);                     // …and drop it from the spatial index
     // small scorch where it sat
     const scorch = new THREE.Mesh(new THREE.BoxGeometry(bomb.blastR, 0.06, bomb.blastR), new THREE.MeshLambertMaterial({ color: SCORCH }));
     scorch.position.set(bomb.x, 0.04, bomb.z); this.scene.add(scorch);
-    this.igniteFABsNear(p, bomb.blastR * 0.85);                       // chain-detonate neighbours
+    // (FAB chain handled inside explode() → _explodeHurt → igniteFABsNear)
   };
   world.igniteFABsNear = function (pos, radius) {
     if (!this.fabBombs) return;

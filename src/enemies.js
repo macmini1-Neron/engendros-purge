@@ -1055,11 +1055,10 @@ export class EnemyManager {
       this.game.effects.stuffing(top, e.col.body, e.def.boss ? 44 : (e.isElite ? 30 : 16), e.def.boss ? 9 : (e.isElite ? 8 : 6));
       this.game.audio.enemyDie();
       if (e.def.explode) {
-        this.game.effects.explosion(top, e.def.explodeRadius);
-        this.damageInRadius(e.pos, e.def.explodeRadius, e.def.explodeDmg * 1.2, e);
-        this.game.loot.clearPickupsInRadius(e.pos.x, e.pos.z, e.def.explodeRadius); // blast destroys ground items (runs before this kill's onEnemyKilled loot drop below)
-        // Only the triggering kill harms the player; chained (explosion-killed) exploders don't double-dip.
-        if (source !== 'explosion') this.game._explodeHurt(e.pos, e.def.explodeRadius, e.def.explodeDmg);
+        // enemies take 1.2× the blast, players take 1.0× (enemyDmg vs dmg). harmPlayers gated on the
+        // chain guard: only the triggering kill harms the player; chained exploders don't double-dip.
+        this.game.explode(top, { radius: e.def.explodeRadius, dmg: e.def.explodeDmg, enemyDmg: e.def.explodeDmg * 1.2,
+          except: e, source: 'explosion', harmPlayers: source !== 'explosion' });
       }
       if (e.def.boss || e.isElite) this.game.hud.hideBoss();
       if (e.def.boss && e._beam) e._beam.visible = false;
