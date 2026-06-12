@@ -77,10 +77,10 @@ test('applyEffect: magnitude effects grow stacks to cap', () => {
 });
 
 test('applyEffect: refresh-stack effects never exceed 1 stack', () => {
-  const e = ent();
-  applyEffect(e, 'broken_leg', Infinity, noCtx);
-  applyEffect(e, 'broken_leg', Infinity, noCtx);
-  assert.equal(e.effects.get('broken_leg').stacks, 1);
+  const e = ent();                       // burn = a 'refresh' effect with no onApply, safe with noCtx
+  applyEffect(e, 'burn', 3, noCtx);
+  applyEffect(e, 'burn', 3, noCtx);
+  assert.equal(e.effects.get('burn').stacks, 1);
 });
 
 test('applyEffect: unknown key → false, no mutation', () => {
