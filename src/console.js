@@ -5,6 +5,7 @@ import { createRegistry, suggest, highlight } from './console-core.js';
 import { ENEMY_TYPES } from './enemies.js';
 import { WEAPONS, WEAPON_ORDER } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
+import { EFFECTS, applyEffect, clearEffects } from './effects-status.js';
 
 const ENEMY_KEYS = Object.keys(ENEMY_TYPES);
 const _projV = new THREE.Vector3(); // scratch for projecting enemy world positions to screen (F3 labels)
@@ -103,16 +104,34 @@ export class DevConsole {
       run: (a) => { if (!(g.dayNight && g.dayNight.setTime)) return 'Day/night not available'; g.dayNight.setTime(a.phase); return `Time set to ${a.phase}`; },
     });
 
+    // P1-P2 wired effects only (burn stays on its legacy/co-op path until P3) + heal/hurt/clear.
+    const FX_KEYS = ['radiation', 'bleed', 'broken_leg'];
     this.reg.register('effect', {
-      args: [{ name: 'target', type: 'target' }, { name: 'kind', type: 'enum', choices: ['heal', 'hurt'] }, { name: 'amount', type: 'int', optional: true, default: 20 }],
+      args: [
+        { name: 'target', type: 'target' },
+        { name: 'kind', type: 'enum', choices: ['heal', 'hurt', 'clear', ...FX_KEYS] },
+        { name: 'amount', type: 'int', optional: true },   // heal/hurt = HP; an effect = seconds
+      ],
       run: (a) => {
-        const amt = a.amount; let n = 0;
+        let n = 0;
         for (const t of (a.target || [])) {
-          if (a.kind === 'heal') { if (t === g.player) { t.hp = Math.min(t.maxHp, t.hp + amt); g.hud.setHealth(t.hp, t.maxHp); n++; } }
-          else if (t === g.player) { t.hurt(amt); n++; }
-          else if (isEnemy(t)) { g.enemies.damage(t, amt, 'console'); n++; }
+          if (a.kind === 'heal') {
+            const amt = a.amount ?? 20;
+            if (t === g.player) { t.hp = Math.min(t.maxHp, t.hp + amt); g.hud.setHealth(t.hp, t.maxHp); n++; }
+            else if (isEnemy(t)) { g.enemies.heal(t, amt); n++; }
+          } else if (a.kind === 'hurt') {
+            const amt = a.amount ?? 20;
+            if (t === g.player) { t.hurt(amt); n++; }
+            else if (isEnemy(t)) { g.enemies.damage(t, amt, 'console'); n++; }
+          } else if (a.kind === 'clear') {
+            clearEffects(t, g._fxCtx); n++;
+          } else {                                          // an effect key from FX_KEYS
+            applyEffect(t, a.kind, a.amount ?? EFFECTS[a.kind].secs, g._fxCtx); n++;
+          }
         }
-        return `${a.kind} ${amt} → ${n} target(s)`;
+        if (a.kind === 'clear') return `cleared effects → ${n} target(s)`;
+        if (a.kind === 'heal' || a.kind === 'hurt') return `${a.kind} ${a.amount ?? 20} → ${n} target(s)`;
+        return `${a.kind} ${a.amount ?? EFFECTS[a.kind].secs}s → ${n} target(s)`;
       },
     });
 
