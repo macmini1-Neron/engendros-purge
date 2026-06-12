@@ -772,6 +772,13 @@ export class EnemyManager {
     return { enemy: hitE, dist: best, point: hp, head: hp.y >= hitE.pos.y + hitE.headY };
   }
 
+  // Heal an enemy (used by the radiation effect — radiation HEALS Engendros). Clamps to maxHp.
+  heal(e, amount) {
+    if (!e.alive || amount <= 0) return;
+    e.hp = Math.min(e.maxHp, e.hp + amount);
+    if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);   // refresh the boss/elite bar
+  }
+
   damage(e, amount, source = 'gun', hitPoint = null, attacker = 'host') {
     if (!e.alive) return false;
     const _mp = this.game.mp;
