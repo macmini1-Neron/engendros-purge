@@ -16,7 +16,7 @@
 </style>
 </head>
 <body>
-<div id="info">Luka · rekvizity útoků — pytel · mince (stříbro/zlato/měď) · money gun · cylindr · dýmovnice<br>tažení myší = otočit · kolečko = zoom · (model se bere přímo z .js souborů)</div>
+<div id="info">Luka · rekvizity útoků — pytel $stříbro(f3)/$zlato(f4) · mince (stříbro/zlato/měď-5Kč) · money gun · cylindr · dýmovnice<br>tažení myší = otočit · kolečko = zoom · (model se bere přímo z .js souborů)</div>
 
 <!-- Náhled používá STARŠÍ UMD build Three.js (global THREE), aby šly přímo načíst
      reálné model .js soubory (psané pro r160, ale tyhle geometrie jsou kompatibilní).
@@ -77,7 +77,7 @@ scene.background = new THREE.Color(0x0a0a0c);
 scene.fog = new THREE.Fog(0x0a0a0c, 18, 44);
 
 const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.01, 100);
-camera.position.set(0, 0.9, 7.8);
+camera.position.set(0, 0.9, 10.6);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.05, 0);
@@ -100,6 +100,7 @@ function makeLabel(text) {
 }
 
 const turntables = []; window.GROUPS = turntables;
+window.__view = { camera, controls, scene }; // debug hook pro render-verify (closeupy)
 function addProp(px, label, buildFn, lblY) {
   const b = new MeshBuilder(); buildFn(b);
   const group = new THREE.Group(); group.position.x = px; group.add(b.build());
@@ -110,7 +111,9 @@ function addProp(px, label, buildFn, lblY) {
 }
 
 const S = 2.0, COL = 2.0;
-addProp(-2.5*COL, 'PYTEL (f2/f3)',       b => buildMoneyBag(b, 0, 0, 0, S*0.9), 0.55);
+const AU = 0xF3C72E, AG = 0xDCE2EA; // $ na pytlíku: zlato (f4) / stříbro (f3) – ladí s mincemi
+addProp(-3.5*COL, 'PYTEL $ stříbro (f3)', b => buildMoneyBag(b, 0, 0, 0, S*0.9, { dollar: AG }), 0.55);
+addProp(-2.5*COL, 'PYTEL $ zlato (f4)',   b => buildMoneyBag(b, 0, 0, 0, S*0.9, { dollar: AU }), 0.55);
 addProp(-1.5*COL, 'MINCE stříbro (f1)',  b => buildCoin(b, 0, 0, 0, S, 'silver'), 0.6);
 addProp(-0.5*COL, 'MINCE zlato (f3)',    b => buildCoin(b, 0, 0, 0, S, 'gold'), 0.6);
 addProp( 0.5*COL, 'MUNICE měď (gun)',    b => buildCoin(b, 0, 0, 0, S*0.5, 'copper'), 0.5);

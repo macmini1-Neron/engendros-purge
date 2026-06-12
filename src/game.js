@@ -85,7 +85,7 @@ class Game {
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
 
     const DEBUG = true; // TODO remove in final task
-    if (DEBUG) { window.__dbg = () => this; window.__dbgTank = () => this.waves._forceTankWave(); }
+    if (DEBUG) { window.__dbg = () => this; window.__dbgTank = () => this.waves._forceTankWave(); window.__dbgLuka = () => this.waves._forceLukaWave(); }
   }
 
   // Main-menu map picker (Arena/Steppe). The world is built once at boot from this.mapId,

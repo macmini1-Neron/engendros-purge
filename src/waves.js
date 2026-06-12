@@ -33,7 +33,7 @@ export class WaveManager {
     this.game.hud.setWave(n);
     // banner + persistent tag
     const title = this.isBossWave ? `WAVE ${n}` : `${t.label} ${n}`;
-    let sub = this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : t.sub;
+    let sub = this.isBossWave ? this._bossSub() : t.sub;
     this.game.hud.bigMessage(title, sub);
     const tags = [];
     if (this.isBossWave) tags.push({ t: '☠ BOSS' });
@@ -60,7 +60,7 @@ export class WaveManager {
     this.weights = this._longNightWeights(n);
     if (this.game.player.armorOnWave > 0) { this.game.player.armor = Math.max(this.game.player.armor, Math.min(this.game.player.armorMax, this.game.player.armorOnWave)); this.game.hud.setArmor(this.game.player.armor, this.game.player.armorMax); }
     this.game.hud.setWave(n);
-    this.game.hud.bigMessage(`WAVE ${n}`, this.isBossWave ? (this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : 'BOSS TOLO APPROACHES') : 'more keep coming…');
+    this.game.hud.bigMessage(`WAVE ${n}`, this.isBossWave ? this._bossSub() : 'more keep coming…');
     const tags = []; if (this.isBossWave) tags.push({ t: '☠ BOSS' }); if (blood) tags.push({ t: '🔴 Blood Moon', mod: true });
     this.game.hud.setWaveTag(tags);
     if (this.game.mp.active && this.game.mp.isHost) this.game.mp.net.send('wavetag', { tags }); // host: persistent special-wave tags → clients
@@ -162,11 +162,17 @@ export class WaveManager {
           if (this.game && this.game.hud) this.game.hud.bigMessage('⚠ T-90M «MITRI»', 'Bullets won\'t dent armor — use EXPLOSIVES on the rear/tracks, or shoot the COMMANDER when he pops out to STEAL the tank!');
         }, 2400);
       }
+    } else if (which === 'luka') {
+      this.game.enemies.spawn('luka', pos, Math.round(ENEMY_TYPES.luka.hp * hpScale), ENEMY_TYPES.luka.speed);
+      this.game.hud.bigMessage('BOSS LUKA', 'kapitalista — umlátí tě penězi');
+      this.game.audio.tone(150, 0.5, 'sawtooth', 0.35);
     } else {
       this.game.enemies.spawn('boss', pos, Math.round(ENEMY_TYPES.boss.hp * hpScale), ENEMY_TYPES.boss.speed);
     }
   }
+  _bossSub() { return this.bossPick === 'tank' ? 'T-90M «MITRI» ROLLS IN' : this.bossPick === 'luka' ? 'BOSS LUKA APPROACHES' : 'BOSS TOLO APPROACHES'; }
   _forceTankWave() { this._forceBoss = 'tank'; this.startWave(this.wave + 1); } // DEBUG: forces next wave to be a tank boss
+  _forceLukaWave() { this._forceBoss = 'luka'; this.startWave(this.wave + 1); } // DEBUG: forces next wave to be the Luka money boss
   // A named elite that hijacks the boss bar (no laser/phase-2) and pays out big.
   _spawnMiniboss(pos, n) {
     const baseType = chc(0.5) ? 'titan' : 'brute', def = ENEMY_TYPES[baseType];

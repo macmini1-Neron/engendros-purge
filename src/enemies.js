@@ -4,6 +4,7 @@ import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxe
 import { ENEMY_BURN_SLOW } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { _tankWrecks, animateTank, buildTank, buildTankWreck, tankGroundFX, updateTankLights } from './bosstank.js';
+import { buildLuka, buildLukaCoin, buildMoneyBag, buildTopHat, buildMoneyGun, buildSmokeBomb, lukaAnchor, lukaAnchorA, LUKA_DOLLAR, LUKA_DUST, LUKA_PROP, COIN_PAL } from './lukaboss.js';
 import { CapturedTank } from './vehicles.js';
 import { buildNavGrid, findPath } from './pathing.js';
 
@@ -182,7 +183,8 @@ export const ENEMY_TYPES = {
   brute:    { hp: 300, speed: 1.35, dmg: 20, reward: 130, scale: 1.6,  variant: 'normal' },
   titan:    { hp: 640, speed: 1.1,  dmg: 30, reward: 260, scale: 2.05, variant: 'normal' },
   minitolo: { hp: 45,  speed: 3.9,  dmg: 14, reward: 25,  scale: 0.6,  variant: 'normal' },
-  boss:     { hp: 3200, speed: 1.0, dmg: 32, reward: 1200, scale: 2.85, variant: 'boss', boss: true, laser: true },
+  boss:     { hp: 3200, speed: 1.0, dmg: 32, reward: 1200, scale: 2.5, variant: 'boss', boss: true, laser: true },
+  luka:     { hp: 3200, speed: 2.4, dmg: 18, reward: 1400, scale: 2.5, variant: 'luka', boss: true, money: true }, // mobile money boss — 4 phases, no laser
   tank:     { hp: 3600, armorHP: 3600, mitriHP: 750, speed: 1.2, dmg: 40, reward: 1500, scale: 1, // scale 1 = placeholder; real model later
               variant: 'tank', boss: true, tank: true, armored: true, explosiveMult: 2.0 },
 };
@@ -218,7 +220,18 @@ class Enemy {
     this.baseSpeed = speed;   // phase speed scaling multiplies this (p1 ×1.0, p2 ×1.12, p3 ×1.20)
     this.shotsLeft = 0; this.shotCD = 0; this._chargeDur = 0.85; // phase-1 blaster burst
     this.sweepT = 0; this.sweepActive = false; this.sweepBase = 0; this.sweepPass = 0; // phase-2/3 sweep (later step)
-    this._path = null; this._pathIdx = 0; this._pathT = 0; // boss grid-A* nav state (Tolo)
+    this._path = null; this._pathIdx = 0; this._pathT = 0; // boss grid-A* nav state (Tolo/Luka)
+    // boss state (Luka) — mobile 4-phase money boss
+    this.lukaCD = 1.6; this.lukaWind = 0; this.lukaShake = 0; this.lukaCampT = 0; this._lukaRoot = false;
+    this.lukaF2 = null; this._lukaF2state = 0; this._lukaGunCd = 0; this._dollarEvolveIn = 0; this._dollarFlash = 0; this._bombState = null; this._bombT = 0; this._smokeT = 0; this._itemT = -1; this._lukaRingT = -1;
+    if (this._lukaDollar) { this._lukaDollar.visible = false; this._lukaDollar.material.color.setHex(LUKA_DOLLAR[1]); this._lukaDollar.scale.setScalar(1); } // reset belly $ to phase-1 + hidden until setup
+    if (this._lukaBag) this._lukaBag.visible = false;
+    if (this._lukaHat) this._lukaHat.visible = false;
+    if (this._lukaGun) this._lukaGun.visible = false;
+    if (this._lukaClump) this._lukaClump.visible = false;
+    if (this._lukaRing) this._lukaRing.material.opacity = 0;
+    if (this._lukaBomb) this._lukaBomb.visible = false;
+    if (this._lukaEmber) this._lukaEmber.visible = false;
     if (this.mesh.material && this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
     this.mesh.visible = true; this.mesh.scale.setScalar(def.scale); this.mesh.position.copy(pos);
     if (def.tank) {
@@ -243,13 +256,24 @@ export class EnemyManager {
     this._min = new THREE.Vector3(); this._max = new THREE.Vector3();
     this.bossBolts = []; // BOSS TOLO phase-1 blaster bolts (traveling projectiles)
     this.bossFires = []; // BOSS TOLO phase-3 lingering fire zones (area denial)
+    this.lukaCoins = []; // BOSS LUKA flying coins (f1 fountain / f2 throw / f4 gun) — dmg while airborne
+    this.lukaBags = [];  // BOSS LUKA lobbed money bags (f3/f4) — splash + cosmetic coin scatter on impact
+    this._lukaCoinGeo = {}; // shared coin geometry per variant
+    this._lukaCoinMat = {}; // shared coin material per variant
     this._ghostBolts = []; // CLIENT visual-only boss bolts (relayed from host via 'bossfx')
     this._ghostBeam = null; // CLIENT visual-only sweep beam
     this._ghostFires = []; // CLIENT visual-only fire-zone flicker markers
     this._ghostAimRing = null; // CLIENT visual-only tank cannon aim ring
     this._navGrid = null; // boss A* occupancy grid (built once, lazily, on first boss spawn)
   }
-  _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
+  _geo(key, col, variant) {
+    if (this.geos[key]) return this.geos[key];
+    if (variant === 'luka') { const r = buildLuka(); this.geos.lukaDollar = r.dollar; this._lukaBake = r.bake; return (this.geos[key] = r.geo); }
+    return (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant)));
+  }
+  // shared coin geometry/material per variant (silver|gold|copper), built lazily for Luka's projectiles
+  _coinGeo(variant) { return this._lukaCoinGeo[variant] || (this._lukaCoinGeo[variant] = buildLukaCoin(variant)); }
+  _coinMat(variant) { return this._lukaCoinMat[variant] || (this._lukaCoinMat[variant] = voxelMaterial()); }
   _get(geoKey, col, variant) {
     const list = (this.pool[geoKey] ||= []);
     let e = list.find((x) => !x.alive);
@@ -260,6 +284,7 @@ export class EnemyManager {
     const def = ENEMY_TYPES[typeKey];
     let col, variant = def.variant, geoKey, name;
     if (typeKey === 'boss') { col = { body: 0xede7df, name: 'Tolo' }; geoKey = 'boss'; name = 'BOSS TOLO'; }
+    else if (typeKey === 'luka') { col = { body: 0x3DA63A, name: 'Luka' }; geoKey = 'luka'; name = 'BOSS LUKA'; }
     else if (typeKey === 'minitolo') { col = { body: 0xede7df, name: 'mini Tolo' }; geoKey = 'tolomini'; name = 'mini Tolo'; }
     else if (typeKey === 'exploder') { col = ENGENDRO_COLORS[5]; geoKey = 'exploder'; name = 'Mitri'; }
     else if (typeKey === 'charger') { col = { body: 0x8a2b2b, name: 'Boomer' }; geoKey = 'charger'; name = 'Boomer'; }
@@ -274,7 +299,8 @@ export class EnemyManager {
       e.mesh = e.tankGroup; e.isTank = true;
     }
     e.spawn(typeKey, def, col, name, pos, hp, speed);
-    if (typeKey === 'boss' && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once Tolo arrives
+    if (typeKey === 'luka') this._lukaSetup(e);
+    if ((typeKey === 'boss' || typeKey === 'luka') && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once a walking boss arrives
     e.id = ++this._idc;
     this.active.push(e);
     this.game.audio.enemyGrowl();
@@ -349,7 +375,7 @@ export class EnemyManager {
       const _sepW = e.def.boss ? 0 : 0.6; // Tolo is a giant — small mobs can't shove him off; he beelines for the nearest player
       const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
-      const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
+      const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0 || e._lukaRoot); // boss stands still while attacking / transitioning
       const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
       if (_wz) {
         _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down
@@ -412,10 +438,11 @@ export class EnemyManager {
 
       // mini-boss elites borrow the boss bar (no laser / no phase-2)
       if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);
-      if (e.def.boss) this._bossTolo(e, dt);
+      if (e.def.boss) { if (e.type === 'luka') this._bossLuka(e, dt); else this._bossTolo(e, dt); }
     }
     this._updateBossBolts(dt);
     this._updateBossFires(dt);
+    this._updateLukaProj(dt);
     if (this._aimRing && this._aimRingT > 0) { this._aimRingT -= dt; this._aimRing.material.opacity = Math.max(0, this._aimRingT) * 1.05; }
     if (this.shells) for (let i = this.shells.length - 1; i >= 0; i--) {
       const s = this.shells[i]; s.fuse -= dt; s.vel.y -= s.grav * dt;
@@ -776,6 +803,302 @@ export class EnemyManager {
     } else { tickPlayer('host', this.game.player.pos.x, this.game.player.pos.z); }
   }
 
+  // ===========================================================================
+  // BOSS LUKA — mobile 4-phase money boss (host-authoritative, like Tolo).
+  //   f1 (>75%)  "Oslíčku, otřes se!" — shudders, showers COPPER coins ($ black)
+  //   f2 (50-75) "hrst drobáků" — flings a handful of coins forward ($ copper)
+  //   f3 (25-50) "pytel" — lobs a money bag (+ anti-camp drop) ($ silver); bullets now bite
+  //   f4 (<25)   "crazy" — top hat + money gun: copper-coin bursts alternating with bag ($ gold)
+  // Vulnerability/▼dmg table lives in damage(); projectiles in lukaCoins/lukaBags.
+  // ===========================================================================
+  _propGeo(key, fn) { return this.geos[key] || (this.geos[key] = fn()); }
+  _lukaSetup(e) {
+    const bake = this._lukaBake;
+    if (!e._lukaDollar) { e._lukaDollar = new THREE.Mesh(this.geos.lukaDollar, voxelMaterial()); e.mesh.add(e._lukaDollar); }
+    e._lukaDollar.visible = true; e._lukaDollar.material.color.setHex(LUKA_DOLLAR[1]);
+    // prop anchors + scales 1:1 z LUKA_PROP (kanonický náhled): scale = s × bake.S, kotvy v model-space
+    const attach = (key, geo, anchorArr, s) => {
+      if (!e[key]) { const m = new THREE.Mesh(geo, voxelMaterial()); m.rotation.y = Math.PI; e.mesh.add(m); e[key] = m; }
+      e[key].scale.setScalar(s * bake.S); e[key].position.copy(lukaAnchorA(anchorArr, bake)); e[key].visible = false;
+    };
+    attach('_lukaBag', this._propGeo('luka_bag', buildMoneyBag), LUKA_PROP.anchor.handL, LUKA_PROP.bagS[3]);
+    attach('_lukaHat', this._propGeo('luka_hat', buildTopHat), LUKA_PROP.anchor.headT, LUKA_PROP.hatS);
+    attach('_lukaGun', this._propGeo('luka_gun', buildMoneyGun), LUKA_PROP.anchor.gun, LUKA_PROP.gunS);
+  }
+  _lukaG(e) { return this._lukaBake.S * e.scale; } // model→world faktor (bake × def.scale), pro velikosti projektilů
+
+  _bossLuka(e, dt) {
+    const pp = this._tgt(e);
+    this.game.hud.setBoss(e.hp / e.maxHp, e.name);
+    this._dollarTick(e, dt); this._lukaRingTick(e, dt);          // $ evoluce-pop + rozpínavý prstenec přechodu
+    // f2: drží HRST v pravé ruce (mimo okno hodu); v ostatních fázích skrytá
+    if (e._lukaClump) { if (e.phase === 2 && e.lukaF2 == null && e.invuln <= 0) { e._lukaClump.visible = true; e._lukaClump.position.copy(this._lukaClumpHand(e)); e._lukaClump.rotation.set(0, 0, 0); } else if (e.phase !== 2) e._lukaClump.visible = false; }
+
+    // ── phase gates 75/50/25 → 4 phases ──
+    const want = e.hp > e.maxHp * 0.75 ? 1 : (e.hp > e.maxHp * 0.50 ? 2 : (e.hp > e.maxHp * 0.25 ? 3 : 4));
+    if (want > e.phase) this._lukaPhase(e, want);
+
+    // ── phase-change i-frames: stand still, shudder; f3→f4 = DÝMOVNICE (vytáhne → knot dohoří → hodí → BUM) ──
+    if (e.invuln > 0) {
+      e.invuln -= dt; e._lukaRoot = true; e.mesh.rotation.z = Math.sin(e.bob * 9) * 0.10;
+      if (e.phase === 4 && e._bombState != null) this._lukaBombSeq(e, dt);
+      else if (Math.random() < 0.22) this.game.effects.stuffing(new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z), 0x3DA63A, 3, 4);
+      if (e.invuln <= 0) { e._lukaRoot = false; if (e.phase === 4) e._bombState = null; } // klobouk/gun se odhalí už při BUM (ve kouři), tady jen úklid
+      return;
+    }
+
+    // ── anti-camp tracking (f3/f4): how long has the solo target stood still? ──
+    if ((e.phase === 3 || e.phase === 4) && e._tgtId === 'host') {
+      e.lukaCampT = (Math.hypot(this.game.player.vel.x, this.game.player.vel.z) > 1.2) ? 0 : e.lukaCampT + dt;
+    } else e.lukaCampT = 0;
+
+    // ── an attack is mid-flight ──
+    if (e.lukaShake > 0) { this._lukaShakeTick(e, dt); return; }
+    if (e.lukaF2 != null) { this._lukaF2Tick(e, dt, pp); return; }   // f2: hrst → hod pod sebe → rozkutálení
+    if (e.lukaWind > 0)  { this._lukaWindup(e, dt, pp); return; }
+
+    // ── f4: money gun pálí copper munici PLYNULE (~0.32 s), nezávisle na lobu pytle ──
+    if (e.phase === 4) { e._lukaGunCd -= dt; if (e._lukaGunCd <= 0) { e._lukaGunCd = 0.32; this._lukaGunShot(e, pp); } }
+
+    // ── anti-camp punish: a bag straight onto the camper ──
+    if (e.lukaCampT > 2.5) { e.lukaCampT = 0; e._lukaRoot = true; this._lukaBagLob(e, pp, 40); e.lukaCD = 2.6; e._lukaRoot = false; return; }
+
+    // ── idle: tick down, then open an attack ──
+    e._lukaRoot = false;
+    e.lukaCD -= dt;
+    if (e.lukaCD <= 0) {
+      e._lukaRoot = true;
+      if (e.phase === 1) { e.lukaShake = 1.15; e._lukaShakeEmit = 0; }
+      else if (e.phase === 2) { e.lukaF2 = 0; e._lukaF2state = 0; this._lukaShowClump(e, true); } // hrst v pravé ruce
+      else { e.lukaWind = 0.5; e._lukaWindDur = 0.5; } // f3/f4: nápřah pytle
+    }
+  }
+
+  _lukaPhase(e, want) {
+    e.phase = want; e.invuln = 3.0; e._lukaRoot = true;
+    e.lukaCD = 1.4; e.lukaWind = 0; e.lukaShake = 0; e.lukaCampT = 0; e._lukaGunCd = 0; e.lukaF2 = null;
+    e.speed = e.baseSpeed * (want === 4 ? 1.15 : want === 3 ? 1.10 : 1.05);
+    // $ EVOLUCE 1:1 (náhled fxTransition): nejdřív PŘEDCHOZÍ barva $ → po 0.35 s pop na aktuální
+    if (e._lukaDollar) { e._lukaDollar.material.color.setHex(LUKA_DOLLAR[want - 1] || LUKA_DOLLAR[want]); e._dollarEvolveIn = 0.35; e._dollarTo = LUKA_DOLLAR[want]; e._dollarFlash = 0; }
+    this._lukaTransition(e);
+    if (want === 2) this._lukaShowClump(e);                                   // f2: připrav hrst do ruky
+    if (want >= 3 && e._lukaBag) e._lukaBag.visible = true;                    // bag appears from f3
+    if (want === 4) { if (e._lukaBag) e._lukaBag.scale.setScalar(LUKA_PROP.bagS[4] * this._lukaBake.S); e._bombState = 0; e._bombT = 0; } // dýmovnice běží během invuln → pak odhalí klobouk+gun
+    const msg = want === 2 ? ['LUKA SÁHL DO KAPSY', 'fáze 2 — hází hrst'] : want === 3 ? ['LUKA TASÍ PYTEL', 'fáze 3 — kulky teď zabírají!'] : ['LUKA HODIL DÝMOVNICI', 'fáze 4 — cylindr + money gun'];
+    this.game.hud.bigMessage(msg[0], msg[1]);
+    this.game.audio.tone(180, 0.5, 'sawtooth', 0.4);
+    this.game._bossFx('banner', { title: msg[0], sub: msg[1] });
+  }
+
+  // $ evoluce-pop (prev → záblesk → cílová barva + scale pop) — 1:1 náhled fxDollar/_evolveIn
+  _dollarTick(e, dt) {
+    const d = e._lukaDollar; if (!d) return;
+    if (e._dollarEvolveIn > 0) { e._dollarEvolveIn -= dt; if (e._dollarEvolveIn <= 0) { e._dollarFlash = 0.4; d.material.color.setRGB(1, 0.96, 0.78); } }
+    if (e._dollarFlash > 0) { e._dollarFlash -= dt; const k = Math.max(0, e._dollarFlash / 0.4);
+      (e._dollarToCol || (e._dollarToCol = new THREE.Color())).setHex(e._dollarTo);
+      d.material.color.lerp(e._dollarToCol, 0.3); d.scale.setScalar(1 + 0.22 * k);
+    } else d.scale.setScalar(1);
+  }
+  // přechod fáze: rozpínavý zlatý prstenec na bříšku + záblesk + prstenec prachu od nohou
+  _lukaTransition(e) {
+    if (!e._lukaRing) { e._lukaRing = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.05, 8, 30), new THREE.MeshBasicMaterial({ color: 0xffe7a0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); e._lukaRing.renderOrder = 999; e.mesh.add(e._lukaRing); }
+    e._lukaRing.position.copy(lukaAnchor(0, -0.08, -0.235, this._lukaBake)); e._lukaRingT = 0;
+    this.game.effects.stuffing(new THREE.Vector3(e.pos.x, 1.0 * e.scale, e.pos.z), 0xffe7a0, 6, 3);
+    for (let i = 0; i < 13; i++) { const a = i / 13 * TAU; this.game.effects.stuffing(new THREE.Vector3(e.pos.x + Math.cos(a) * 0.6, 0.12, e.pos.z + Math.sin(a) * 0.6), 0xb7b0a0, 1, 2); }
+  }
+  _lukaRingTick(e, dt) {
+    if (!e._lukaRing || e._lukaRingT == null || e._lukaRingT < 0) return;
+    e._lukaRingT += dt; const u = e._lukaRingT / 0.6;
+    e._lukaRing.scale.setScalar(0.4 + u * 2.4); e._lukaRing.material.opacity = Math.max(0, 0.85 * (1 - u));
+    if (u >= 1) { e._lukaRingT = -1; e._lukaRing.material.opacity = 0; }
+  }
+  // DÝMOVNICE (f3→f4, běží během 3 s invuln): vytáhne bombu v pravé ruce → knot dohoří → hodí na zem → BUM (oranžový výbuch + hustý šedý oblak co Luku zakryje + prstenec prachu)
+  _lukaBombSeq(e, dt) {
+    const G = this._lukaG(e); e._bombT += dt; const t = e._bombT, HOLD = 1.3, BOOM = 2.0; // knot o 20 % delší
+    if (!e._lukaBomb) { e._lukaBomb = new THREE.Mesh(this._propGeo('luka_bomb', buildSmokeBomb), voxelMaterial()); e._lukaBomb.scale.setScalar(LUKA_PROP.bombS * G); this.game.engine.scene.add(e._lukaBomb);
+      e._lukaEmber = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffae3a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); this.game.engine.scene.add(e._lukaEmber); }
+    const hand = e.mesh.localToWorld(lukaAnchorA(LUKA_PROP.anchor.bomb, this._lukaBake).clone());
+    const gnd = new THREE.Vector3(e.pos.x + (this._lukaFwd(e).x) * 1.6, 0.2, e.pos.z + (this._lukaFwd(e).z) * 1.6);
+    const bombR = LUKA_PROP.bombS * G * 0.13; // world poloměr bomby
+    if (t < BOOM) {
+      e._lukaBomb.visible = true; e._lukaEmber.visible = true;
+      let p;
+      if (t < HOLD) { p = hand.clone(); p.y += Math.sin(performance.now() * 0.004) * bombR * 0.15; e._lukaBomb.rotation.set(0, 0, Math.sin(performance.now() * 0.005) * 0.12); } // DRŽÍ klidně (NEtočí se)
+      else { const u = (t - HOLD) / (BOOM - HOLD); p = hand.clone().lerp(gnd, u); p.y += Math.sin(u * Math.PI) * 1.3 * G * 0.3; e._lukaBomb.rotation.x += dt * 9; e._lukaBomb.rotation.z += dt * 5; } // HOD = tumble
+      e._lukaBomb.position.copy(p);
+      e._lukaEmber.position.copy(p).add(new THREE.Vector3(bombR * 0.9, bombR * 2.2, 0)); e._lukaEmber.scale.setScalar(bombR * 0.9 * (0.8 + Math.random() * 0.5)); // na špičce knotu
+      if (Math.random() < 0.5) this.game.effects.stuffing(e._lukaEmber.position, 0xffd24a, 1, 1);
+    } else if (e._bombState === 0) { // BUM → v kouři se (se zpožděním) spawnou klobouk+gun (Luka skrytá)
+      e._bombState = 1; e._lukaBomb.visible = false; e._lukaEmber.visible = false; e._itemT = 0.5;
+      this.game.effects.explosion(gnd, 2.9); this.game.audio.tone(60, 0.3, 'square', 0.4); // větší výbuch
+      e._smokeT = 1.2; // hustý oblak ještě chvíli sype kolem těla
+    }
+    if (e._itemT > 0) { e._itemT -= dt; if (e._itemT <= 0) { if (e._lukaHat) e._lukaHat.visible = true; if (e._lukaGun) e._lukaGun.visible = true; } } // klobouk/gun 0,5 s po BUM (skryté v kouři)
+    if (e._smokeT > 0) { e._smokeT -= dt; for (let i = 0; i < 6; i++) this.game.effects.stuffing(new THREE.Vector3(e.pos.x + rr(-1.7, 1.7), 0.25 + Math.random() * 2.6 * e.scale, e.pos.z + rr(-1.7, 1.7)), Math.random() < 0.5 ? 0x9aa0a8 : 0x6b6f76, 4, 5); } // větší oblak (Luku celou zahalí)
+  }
+  // f2: HRST 6 mincí (1 stříbro + 5 měď) — world-space, Luka ji DRŽÍ v pravé ruce (a pak celá letí)
+  _lukaShowClump(e) {
+    if (!e._lukaClump) { const g = new THREE.Group(), s = LUKA_PROP.coinS * this._lukaG(e), rad = 0.17 * s; // STEJNÁ velikost jako házené; HRST = prstenec+střed se svislým posunem (NEzfightuje)
+      for (let i = 0; i < 7; i++) { const v = i % 3 === 0 ? 'silver' : 'copper'; const m = new THREE.Mesh(this._coinGeo(v), this._coinMat(v)); m.scale.setScalar(s); const a = i / 7 * TAU, r = i === 0 ? 0 : rad * 1.05; m.position.set(Math.cos(a) * r, (i - 3) * rad * 0.24, Math.sin(a) * r); m.rotation.set(rr(0, 3), rr(0, 3), rr(0, 3)); g.add(m); }
+      this.game.engine.scene.add(g); e._lukaClump = g; }
+    e._lukaClump.visible = true;
+  }
+  _lukaClumpHand(e) { return e.mesh.localToWorld(lukaAnchorA(LUKA_PROP.anchor.clump, this._lukaBake).clone()); } // world pos pravé ruky (hrst)
+  // f2 tick: drží+napřáhne hrst → HODÍ ji jako CELEK obloukem skoro pod sebe → na dopadu rozKUTÁLENÍ 12 mincí
+  _lukaF2Tick(e, dt, pp) {
+    e.lukaF2 += dt; const t = e.lukaF2, G = this._lukaG(e); const hand = this._lukaClumpHand(e);
+    if (t < 0.35) { // drží + napřáhne (TELEGRAF) — hrst v ruce
+      if (e._lukaClump) { e._lukaClump.visible = true; e._lukaClump.position.copy(hand); e._lukaClump.rotation.set(0, 0, Math.sin(t * 22) * 0.25); }
+      e.mesh.rotation.x = Math.sin(t / 0.35 * Math.PI) * 0.12;
+    } else if (t < 0.62) { // LET hrsti obloukem skoro pod sebe
+      if (e._lukaF2state === 0) { e._lukaF2state = 1; const fwd = this._lukaFwd(e); e._f2tx = e.pos.x + fwd.x * rr(1.6, 3.0); e._f2tz = e.pos.z + fwd.z * rr(1.6, 3.0); e._f2from = hand.clone(); }
+      const u = (t - 0.35) / 0.27, tgt = new THREE.Vector3(e._f2tx, 0.18, e._f2tz);
+      if (e._lukaClump) { e._lukaClump.visible = true; e._lukaClump.position.copy(e._f2from).lerp(tgt, u); e._lukaClump.position.y += Math.sin(u * Math.PI) * 1.2 * G * 0.2; e._lukaClump.rotation.x += dt * 10; }
+      e.mesh.rotation.x = 0;
+    } else { // DOPAD → rozkutálení
+      if (e._lukaF2state === 1) { e._lukaF2state = 2; if (e._lukaClump) e._lukaClump.visible = false;
+        this._lukaEmitRoll(e, e._f2tx, e._f2tz);
+        this.game.effects.stuffing(new THREE.Vector3(e._f2tx, 0.12, e._f2tz), 0xffe0a0, 5, 2.5);
+        this.game.audio.tone(520, 0.12, 'triangle', 0.28);
+      }
+    }
+    if (t >= 0.82) { e.lukaF2 = null; e._lukaF2state = 0; e._lukaRoot = false; e.lukaCD = 2.2; }
+  }
+  // 12 valících mincí z místa dopadu (kutálí rovně → pak náhodně zatočí/zbrzdí → dolehnou naplocho)
+  _lukaEmitRoll(e, ox, oz) {
+    const G = this._lukaG(e), GR = 0.10;
+    for (let k = 0; k < 12; k++) {
+      const variant = k % 4 === 0 ? 'silver' : 'copper';
+      const holder = new THREE.Group(); const coin = new THREE.Mesh(this._coinGeo(variant), this._coinMat(variant)); coin.scale.setScalar(LUKA_PROP.coinS * G); holder.add(coin);
+      const a = k / 12 * TAU + rr(-0.26, 0.26), sp = (1.6 + rr(0, 1.3)) * G;
+      holder.position.set(ox, GR + 0.05, oz); holder.rotation.y = a - Math.PI / 2;
+      this.game.engine.scene.add(holder);
+      this.lukaCoins.push({ mesh: holder, coin, mode: 'roll', vel: new THREE.Vector3(Math.sin(a) * sp, 0, Math.cos(a) * sp), dmg: Math.round(e.def.dmg * 0.6), life: 3.4 + rr(0, 1.0), dmgActive: true, dust: LUKA_DUST[variant], gt: 0, roll: 0, curve: (rr(-1, 1)) * Math.abs(rr(-1, 1)) * 4.2, straightFor: 0.55 + rr(0, 0.4), decel: 0.965 + rr(0, 0.022), grav: 0, spin: 0, landed: false, rest: 0 });
+    }
+  }
+  // f4: money gun jednotlivý výstřel měděné munice (copperAmmo) na cíl
+  _lukaGunShot(e, pp) {
+    const muzzle = (e._lukaGun && e._lukaGun.visible) ? e._lukaGun.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(e.pos.x, 1.1 * e.scale, e.pos.z);
+    const to = new THREE.Vector3(pp.x - muzzle.x, (pp.y + 1.0) - muzzle.y, pp.z - muzzle.z).normalize();
+    to.x += rr(-0.04, 0.04); to.y += rr(-0.03, 0.03); to.z += rr(-0.04, 0.04); to.normalize();
+    this._spawnLukaCoin(e, muzzle, to.multiplyScalar(22), 'copper', 10, true, { grav: 0, mode: 'gun', sFactor: LUKA_PROP.ammoS, life: 1.6 });
+    this.game.effects.muzzleFlash(muzzle, to, 1.4);
+    this.game.audio.tone(1200, 0.06, 'square', 0.25);
+  }
+
+  // f1 „otřes se": klepe se a sype FONTÁNU MĚĎÁKŮ — emit každých 0.05 s po dobu otřesu (1:1 náhled spawnF)
+  _lukaShakeTick(e, dt) {
+    e.lukaShake -= dt;
+    e.mesh.rotation.z = Math.sin(e.bob * 20) * 0.14; e.mesh.rotation.x = Math.sin(e.bob * 14) * 0.06;
+    e.mesh.position.y += Math.abs(Math.sin(e.bob * 18)) * 0.06;
+    e._lukaShakeEmit -= dt;
+    if (e._lukaShakeEmit <= 0) { e._lukaShakeEmit = 0.05; this._lukaFountainCoin(e); if (Math.random() < 0.5) this.game.audio.tone(900 + Math.random() * 300, 0.04, 'square', 0.10); }
+    if (e.lukaShake <= 0) { e._lukaRoot = false; e.lukaCD = 2.4; }
+  }
+
+  // f3/f4: nápřah → lob pytle (f2 má vlastní _lukaF2Tick, f4 gun běží plynule v _bossLuka)
+  _lukaWindup(e, dt, pp) {
+    e.lukaWind -= dt;
+    e.mesh.rotation.x = -0.18 * (1 - e.lukaWind / e._lukaWindDur);
+    if (e.lukaWind <= 0) {
+      e.mesh.rotation.x = 0; this._lukaBagLob(e, pp, 30);
+      e._lukaRoot = false; e.lukaCD = e.phase === 3 ? 3.0 : 3.5;
+    }
+  }
+
+  // world-space forward unit vector (boss faces +Z baked → rotation.y = atan2(dx,dz))
+  _lukaFwd(e) { const ry = e.mesh.rotation.y; return new THREE.Vector3(Math.sin(ry), 0, Math.cos(ry)); }
+
+  // fontána měďáků z těla: ven + nahoru (radiálně), gravitace, dolehnou naplocho (velikosti/rychlosti ×G)
+  _lukaFountainCoin(e) {
+    const G = this._lukaG(e); const o = new THREE.Vector3(e.pos.x + rr(-0.1, 0.1) * G, 0.95 * e.scale, e.pos.z);
+    const a = rr(0, TAU), out = (0.55 + rr(0, 1.0)) * G;
+    this._spawnLukaCoin(e, o, new THREE.Vector3(Math.cos(a) * out, (1.9 + rr(0, 1.3)) * G, Math.sin(a) * out), 'copper', e.def.dmg, true, { grav: 6.2 * G });
+  }
+
+  // lob pytle obloukem na cíl; po dopadu rozsyp mincí (barvy/počty dle fáze v _lukaBagImpact)
+  _lukaBagLob(e, pp, dmg) {
+    const o = (e._lukaBag && e._lukaBag.visible) ? e._lukaBag.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(e.pos.x, 1.0 * e.scale, e.pos.z);
+    const g = 16, T = 1.05;
+    const vel = new THREE.Vector3((pp.x - o.x) / T, (0.25 - o.y) / T + 0.5 * g * T, (pp.z - o.z) / T);
+    const G = this._lukaG(e), bagS = LUKA_PROP.bagS[e.phase] || LUKA_PROP.bagS[3];
+    const geo = this._propGeo('luka_bag', buildMoneyBag), m = new THREE.Mesh(geo, voxelMaterial());
+    m.scale.setScalar(bagS * G); m.position.copy(o); this.game.engine.scene.add(m);
+    if (e._lukaBag) e._lukaBag.visible = false; // DRŽENÝ pytel z ruky odletí
+    this.lukaBags.push({ mesh: m, vel, grav: g, life: 4, dmg, splashR: 3.2, phase: e.phase, scatterScale: LUKA_PROP.coinS * G, owner: e });
+    this.game.audio.tone(160, 0.18, 'sine', 0.3);
+  }
+
+  // mince do světa. opts: { grav, mode('ball'|'gun'), sFactor, life }
+  _spawnLukaCoin(e, origin, vel, variant, dmg, dmgActive, opts = {}) {
+    const m = new THREE.Mesh(this._coinGeo(variant), this._coinMat(variant));
+    m.scale.setScalar((opts.sFactor || LUKA_PROP.coinS) * this._lukaG(e)); m.position.copy(origin);
+    m.rotation.set(rr(0, TAU), rr(0, TAU), rr(0, TAU));
+    this.game.engine.scene.add(m);
+    this.lukaCoins.push({ mesh: m, vel: vel.clone(), dmg, life: opts.life || 5, grav: opts.grav != null ? opts.grav : 9, dmgActive: !!dmgActive, spin: rr(-9, 9), mode: opts.mode || 'ball', dust: LUKA_DUST[variant] || 0xC9A22B, landed: false, rest: 0 });
+  }
+
+  // valící mince: kutálí rovně → po straightFor zatočí (curve) + brzdí → při zpomalení dolehne naplocho (1:1 stepRoll)
+  _stepRoll(c, dt) {
+    const spd = Math.hypot(c.vel.x, c.vel.z), GR = 0.10;
+    if (spd < 1.0 || c.life < 0.7) {
+      c.coin.rotation.x += (Math.PI / 2 - c.coin.rotation.x) * Math.min(1, dt * 6);
+      c.mesh.position.y += (0.06 - c.mesh.position.y) * Math.min(1, dt * 6);
+      c.vel.x *= 0.80; c.vel.z *= 0.80; c.dmgActive = false;
+    } else {
+      c.gt += dt;
+      if (c.gt < c.straightFor) { c.vel.x *= 0.985; c.vel.z *= 0.985; }
+      else { const ang = c.curve * dt, co = Math.cos(ang), si = Math.sin(ang); const nx = c.vel.x * co - c.vel.z * si, nz = c.vel.x * si + c.vel.z * co; c.vel.x = nx * c.decel; c.vel.z = nz * c.decel; }
+      c.mesh.position.x += c.vel.x * dt; c.mesh.position.z += c.vel.z * dt;
+      c.mesh.rotation.y = Math.atan2(c.vel.x, c.vel.z) - Math.PI / 2;
+      c.roll += spd * dt * 5; c.coin.rotation.z = c.roll;
+    }
+  }
+
+  _updateLukaProj(dt) {
+    const GROUND = 0.10;
+    // ── coins (mode: 'ball' = balistická + dolehne naplocho · 'gun' = rovně · 'roll' = valí se) ──
+    for (let i = this.lukaCoins.length - 1; i >= 0; i--) {
+      const c = this.lukaCoins[i]; c.life -= dt; let dead = false;
+      if (c.mode === 'roll') { this._stepRoll(c, dt); }
+      else {
+        c.vel.y -= c.grav * dt;
+        const step = c.vel.clone().multiplyScalar(dt), len = step.length();
+        if (c.dmgActive && len > 1e-4) { const dir = step.clone().normalize(); const wh = this.world.rayHit(c.mesh.position, dir, len); if (wh) { this.game.effects.stuffing(wh.point, c.dust, 3, 2); c.dmgActive = false; c.vel.set(0, 0, 0); c.life = Math.min(c.life, 0.5); } }
+        c.mesh.position.add(step);
+        if (!c.landed) { c.mesh.rotation.z += c.spin * dt; c.mesh.rotation.x += c.spin * 0.5 * dt; }
+        if (c.mode !== 'gun' && !c.landed && c.mesh.position.y <= GROUND && c.vel.y < 0) { c.mesh.position.y = GROUND; c.landed = true; c.vel.y = 0; c.dmgActive = false; this.game.effects.stuffing(c.mesh.position, c.dust, 2, 1.5); c.rest = 2.2 + Math.random() * 1.6; } // leží déle
+        if (c.landed) { c.vel.x *= 0.86; c.vel.z *= 0.86; c.mesh.position.x += c.vel.x * dt; c.mesh.position.z += c.vel.z * dt; c.mesh.rotation.x += (Math.PI / 2 - c.mesh.rotation.x) * Math.min(1, dt * 8); c.mesh.position.y += (0.06 - c.mesh.position.y) * Math.min(1, dt * 6); c.rest -= dt; if (c.rest <= 0) c.life = 0; } // dolehne PŘESNĚ na zem
+      }
+      if (c.dmgActive) { const hid = this._playerHitByPoint(c.mesh.position, 0.85); if (hid) { this.game._hurtTarget(hid, c.dmg); this.game.effects.stuffing(c.mesh.position, c.dust, 3, 2); c.dmgActive = false; c.life = Math.min(c.life, 0.15); } }
+      if (c.life <= 0) dead = true;
+      if (dead) { if (c.mesh.parent) c.mesh.parent.remove(c.mesh); this.lukaCoins.splice(i, 1); }
+    }
+    // ── bags ──
+    for (let i = this.lukaBags.length - 1; i >= 0; i--) {
+      const b = this.lukaBags[i]; b.life -= dt; b.vel.y -= b.grav * dt;
+      const step = b.vel.clone().multiplyScalar(dt), len = step.length(); let hit = false, hp = null;
+      if (len > 1e-4) { const dir = step.clone().normalize(); const wh = this.world.rayHit(b.mesh.position, dir, len); if (wh) { hit = true; hp = wh.point.clone(); } }
+      b.mesh.position.add(step); b.mesh.rotation.x += 4 * dt;
+      if (b.mesh.position.y <= 0.12) { b.mesh.position.y = 0.12; hit = true; hp = b.mesh.position.clone(); }
+      if (hit || b.life <= 0) { this._lukaBagImpact(b, hp || b.mesh.position.clone()); if (b.mesh.parent) b.mesh.parent.remove(b.mesh); this.lukaBags.splice(i, 1); }
+    }
+  }
+
+  _lukaBagImpact(b, point) {
+    if (b.owner && b.owner._lukaBag && b.owner.alive && b.owner.phase >= 3) b.owner._lukaBag.visible = true; // Luka popadne další pytel
+    this.game.effects.explosion(point, 2.2);
+    this.game._explodeHurt(point, b.splashR, b.dmg); // direct/splash with radial falloff (host/solo)
+    this.game.audio.tone(70, 0.2, 'square', 0.35); this.game.audio.tone(880, 0.12, 'triangle', 0.18); // thud + „cha-ching"
+    // rozsyp mincí (kosmetika): f3 = 5 STŘÍBRO + 5 MĚĎ · f4 = 6 ZLATO + 6 STŘÍBRO + 6 MĚĎ (1:1 náhled spillPool)
+    const sets = b.phase === 4 ? [['gold', 6], ['silver', 6], ['copper', 6]] : [['silver', 5], ['copper', 5]];
+    for (const [variant, n] of sets) for (let k = 0; k < n; k++) { const a = rr(0, TAU), out = 2.0 + rr(0, 3.0);
+      const m = new THREE.Mesh(this._coinGeo(variant), this._coinMat(variant)); m.scale.setScalar(b.scatterScale || 1.0);
+      m.position.set(point.x, point.y + 0.2, point.z); m.rotation.set(rr(0, TAU), rr(0, TAU), rr(0, TAU)); this.game.engine.scene.add(m);
+      this.lukaCoins.push({ mesh: m, vel: new THREE.Vector3(Math.cos(a) * out, 3.0 + rr(0, 2.5), Math.sin(a) * out), dmg: 0, life: 1.8, grav: 11, dmgActive: false, spin: rr(-9, 9), mode: 'ball', dust: LUKA_DUST[variant], landed: false, rest: 0 });
+    }
+  }
+
   // ── CLIENT-SIDE boss/tank attack VISUALS (clients never run the host simulation above) ──
   // These are spawned by the 'bossfx' net handler and advanced each frame by updateGhostFx(). Visual-only — NEVER deal damage.
   spawnGhostBolt(belly, dir, col) {
@@ -1113,14 +1436,25 @@ export class EnemyManager {
     // everything else only chips (0.2×). Headshot ×2 is suppressed on the boss in weapons.js.
     if (e.def.boss) {
       if (e.invuln > 0) { this._bossDeflect(e, hitPoint); return false; }      // phase-change i-frames: still immune
-      let onTarget = false;
-      if (e.charging > 0 && hitPoint && e._tolGlow) {
-        const tp = e._tolGlow.getWorldPosition(this._tv || (this._tv = new THREE.Vector3()));
-        onTarget = hitPoint.distanceTo(tp) < 1.4 * e.scale;
+      if (e.type === 'luka') {
+        // BOSS LUKA gates damage by phase + source (no weak spot — the belly $ is cosmetic):
+        //   melee/grenade(explosion)/bazooka(rocket) ALWAYS bite · bullets(gun) only from f3 · fire/other only at f4.
+        //   Survivors are reduced: bazooka ×0.5, everything else ×0.2. (Headshot ×2 suppressed on bosses in weapons.js.)
+        const pass = (source === 'melee' || source === 'explosion' || source === 'rocket') ? true
+                   : source === 'gun' ? e.phase >= 3 : e.phase >= 4;
+        if (!pass) { this._bossDeflect(e, hitPoint); return false; }
+        amount *= source === 'rocket' ? 0.5 : 0.2;
+        this._bossHit(e, hitPoint, true, attacker);                            // a passing hit lands → thunk + crosshair cue
+      } else {
+        let onTarget = false;
+        if (e.charging > 0 && hitPoint && e._tolGlow) {
+          const tp = e._tolGlow.getWorldPosition(this._tv || (this._tv = new THREE.Vector3()));
+          onTarget = hitPoint.distanceTo(tp) < 1.4 * e.scale;
+        }
+        const effective = onTarget || source === 'rocket';
+        amount *= onTarget ? 1 : (source === 'rocket' ? 0.9 : 0.2);           // bullseye=1 · bazooka=0.9 · else=0.2
+        this._bossHit(e, hitPoint, effective, attacker);                      // thunk + yellow crosshair, or weak tink
       }
-      const effective = onTarget || source === 'rocket';
-      amount *= onTarget ? 1 : (source === 'rocket' ? 0.9 : 0.2);             // bullseye=1 · bazooka=0.9 · else=0.2
-      this._bossHit(e, hitPoint, effective, attacker);                        // thunk + yellow crosshair, or weak tink
     }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
     if (e.hp <= 0) {

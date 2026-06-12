@@ -16,7 +16,8 @@ function buildMoneyBag(b, x, y, z, s = 1, opts = {}) {
   // Barvy lze přebít přes opts (col/tie) — kdyby se hodil jinde i v jiné barvě.
   const cBag   = opts.col != null ? opts.col : 0x6B4A2B; // pytlík (hnědá)
   const cTie   = opts.tie != null ? opts.tie : 0x4A3219; // stažený krk / provázek (tmavší hnědá)
-  const cBlack = 0x121212; // znak $
+  // znak $ — přebarvitelný přes opts.dollar (f3 = STŘÍBRO, f4 = ZLATO; default černý)
+  const cBlack = opts.dollar != null ? opts.dollar : 0x121212;
   const R = 0.115 * s;
 
   // měšec (mírně protáhlá koule)
@@ -28,6 +29,9 @@ function buildMoneyBag(b, x, y, z, s = 1, opts = {}) {
   // nabíraná látka nad uzlem (rozšířená nahoru)
   { const g = new THREE.CylinderGeometry(0.055*s, 0.026*s, 0.075*s, 12, 1);
     b.geo(g, x, y + R*1.08 + 0.03*s, z, cBag); g.dispose(); }
+  // tmavé kolečko = tmavý VNITŘEK staženého krčku (efekt svázání, uvnitř tma) – ne moc velké
+  { const g = new THREE.CircleGeometry(0.038*s, 16);
+    b.geo(g, x, y + R*1.08 + 0.068*s, z, 0x241608, { rx: -Math.PI/2 }); g.dispose(); }
 
   // ── UZEL + UTAHOVACÍ ŠŇŮRKY (přímo na pytlíku: z uzlu splývají dva konce po předku) ──
   const neckY = y + R*1.08 - 0.01*s;
@@ -63,6 +67,7 @@ function buildMoneyBag(b, x, y, z, s = 1, opts = {}) {
       return new THREE.Vector3(p.x - n.x*0.003, p.y - n.y*0.003, p.z - n.z*0.003); }); // 0.003 = vsazení dovnitř
     const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(v), v.length*3, tube, 6, false);
     b.geo(g, 0, 0, 0, cBlack); g.dispose();
+    for (const e of [v[0], v[v.length - 1]]) { const cap = new THREE.SphereGeometry(tube, 8, 6); b.geo(cap, e.x, e.y, e.z, cBlack); cap.dispose(); } // zaoblené uzávěry konců (vyplní otevřené díry)
   };
   // dvě svislé čárky
   for (const bx of [-0.012, 0.012]) { const pts = []; for (let i = 0; i <= 8; i++) pts.push([bx*s, (-0.060 + 0.120*(i/8))*s]); gtube(pts, 0.0065*s); }

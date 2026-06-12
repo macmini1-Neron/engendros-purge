@@ -42,9 +42,22 @@ function buildCoin(b, x, y, z, s = 1, variant = 'silver') {
     g.translate(0, 0, -T / 2);
     b.geo(g, x, y, z, metal); g.dispose();   // líce už míří po ±Z (shape je v XY)
   } else {
-    // měděná (munice money gunu) – hladká kulatá
-    const g = new THREE.CylinderGeometry(R, R, T, 40);
-    b.geo(g, x, y, z, metal, { rx: Math.PI / 2 }); g.dispose();
+    // měděná (munice money gunu) – ZAOBLENÁ hrana jako 5 Kč (bevel) + DROBNÉ VÝSTUPKY (drblatý okraj)
+    const bev = T * 0.30;                 // zaoblení hrany (bevel) ~ jako 5 Kč
+    const Rb  = R * 0.97;                 // základ obrysu (mid-plane je nejširší)
+    const N = 48, K = N * 6, pts = [];    // hodně malých nopků
+    for (let i = 0; i < K; i++) {
+      const a = (i / K) * Math.PI * 2;
+      const bump = 1 + 0.030 * Math.pow(Math.max(0, Math.cos(N * a)), 2); // malé výstupky ven (mezi nimi hladko)
+      pts.push(new THREE.Vector2(Math.cos(a) * Rb * bump, Math.sin(a) * Rb * bump));
+    }
+    const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts), {
+      depth: T - 2 * bev, bevelEnabled: true,
+      bevelThickness: bev, bevelSize: bev, bevelSegments: 4,
+    });
+    g.computeBoundingBox();
+    g.translate(0, 0, -(g.boundingBox.min.z + g.boundingBox.max.z) / 2); // vycentrovat v Z
+    b.geo(g, x, y, z, metal); g.dispose();  // líce míří po ±Z (shape je v XY)
   }
 
   // ── ražba $ na obou lících (svislá čára + dvě torus-„C" = S) ──
@@ -55,7 +68,11 @@ function buildCoin(b, x, y, z, s = 1, variant = 'silver') {
       b.geo(t, x, y + 0.042 * s, zc, eng); t.dispose(); }
     { const t = new THREE.TorusGeometry(0.040 * s, 0.013 * s, 6, 18, Math.PI * 1.5);
       b.geo(t, x, y - 0.042 * s, zc, eng, { rz: Math.PI }); t.dispose(); }
+    // zaslepit OTEVŘENÉ konce torus-oblouků (jinak díry na koncích $) – kulové uzávěry
+    const cap = (cx2, cy2) => { const sp = new THREE.SphereGeometry(0.013 * s, 8, 6); b.geo(sp, cx2, cy2, zc, eng); sp.dispose(); };
+    cap(x + 0.040 * s, y + 0.042 * s); cap(x, y + 0.002 * s);
+    cap(x - 0.040 * s, y - 0.042 * s); cap(x, y - 0.002 * s);
   };
-  glyph(z - T * 0.5 - 0.012 * s); // čelní líc (−Z)
-  glyph(z + T * 0.5 + 0.012 * s); // zadní líc (+Z)
+  glyph(z - T * 0.5 - 0.0085 * s); // čelní líc (−Z) — $ vtlačený ~15 % dovnitř (míň proud)
+  glyph(z + T * 0.5 + 0.0085 * s); // zadní líc (+Z) — $ vtlačený ~15 % dovnitř
 }

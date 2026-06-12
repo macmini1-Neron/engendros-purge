@@ -225,6 +225,7 @@ function buildLukaDollar(b, color = 0xffffff) {
       return new THREE.Vector3(p.x - n.x*0.004, p.y - n.y*0.004, p.z - n.z*0.004); });
     const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(v), v.length*3, tube, 6, false);
     b.geo(g, 0, 0, 0, color); g.dispose();
+    for (const e of [v[0], v[v.length - 1]]) { const cap = new THREE.SphereGeometry(tube, 8, 6); b.geo(cap, e.x, e.y, e.z, color); cap.dispose(); } // zaoblené uzávěry konců (vyplní otevřené díry)
   };
   const bar = (bx) => { const pts = []; for (let i = 0; i <= 8; i++) pts.push([bx, -0.105 + 0.21*(i/8)]); glyphTube(pts, 0.011); };
   bar(-0.020); bar(0.020);
