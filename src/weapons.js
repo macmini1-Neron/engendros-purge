@@ -1299,6 +1299,9 @@ export class WeaponSystem {
         this.game.forest.debris.burst('splints', [wHit.point.x, wHit.point.y, wHit.point.z], (tree.id ^ 0x55) >>> 0);
       }
       this.game.hud.hitmarker(false);
+    } else if (box.prop && box.downer) {
+      this.game.forest && this.game.forest.hitProp(box.downer, w, [wHit.point.x, wHit.point.y, wHit.point.z]);
+      this.game.hud.hitmarker(false);
     }
   }
 
@@ -1326,7 +1329,7 @@ export class WeaponSystem {
     const b = this.game.world.demoBuilding;
     const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
     if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
-    if (this.game.forest && typeof this.game.forest.blast === 'function') this.game.forest.blast(pos, blast.r1 + 0.6);
+    if (this.game.forest && typeof this.game.forest.blast === 'function') this.game.forest.blast(pos, blast.r1 + 0.6, blast.tier);
     if (this.game.fire && typeof this.game.fire.igniteAt === 'function') this.game.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
   }
 

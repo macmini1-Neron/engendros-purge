@@ -36,7 +36,7 @@ import * as THREE from 'three';
 import { makeRNG, voxelMaterial, clamp, TAU } from './util.js';
 import { makeTree, SPECIES } from './props/generators/tree.js';
 import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, rayAABB } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, rayAABB, resolveHit, FRAGILE_MAX_TIER } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
 import { hasModel, getSpec } from './props/registry.js';
 import { buildSpec } from './props/voxel-interp.js';
@@ -66,22 +66,22 @@ const COVER_KINDS = [
 
 const ZERO_MAT = new THREE.Matrix4().makeScale(0, 0, 0);  // collapse an instance → hidden
 
-// Deadwood + rock scatter — STATIC decoration props built from the modelgen registry
-// (models/<id>/spec.json, registered async in game.js). Unlike trees these are not
-// (yet) destructible: a follow-up patch can fold them into the destruct core. Only the
-// chunky, knee-high-plus props (solid) get a collision box; low logs/clusters/debris are
-// stepped-over decoration. `n` scales with the demo map; positions are seeded → co-op-identical.
+// Deadwood + rock scatter — props built from the modelgen registry, now DESTRUCTIBLE
+// (material-driven, see docs/.../2026-06-12-prop-destruction-design.md). dmat drives behavior:
+// wood (tier1) burns + shoots apart; grass (tier0) is the flammable tangle; stone (tier4) shrugs
+// off bullets, yields only to HE/AP. Deadwood is 'wood' NOT 'trunk' so fire treats it as kind
+// 'wood' (a 'trunk' part would ignite as kind 'tree' → charTree/fellTree on a non-tree record).
 const PROP_KINDS = [
-  { id: 'rock_boulder_lg',    n: 6,  jit: [0.85, 1.25], sink: 0.10, solid: true  },
-  { id: 'rock_outcrop',       n: 5,  jit: [0.85, 1.25], sink: 0.12, solid: false },
-  { id: 'rock_boulder_mossy', n: 8,  jit: [0.80, 1.35], sink: 0.06, solid: false },
-  { id: 'rock_cluster_sm',    n: 10, jit: [0.80, 1.40], sink: 0.04, solid: false },
-  { id: 'stump_shattered',    n: 6,  jit: [0.85, 1.20], sink: 0.05, solid: true  },
-  { id: 'stump_cut',          n: 7,  jit: [0.85, 1.25], sink: 0.05, solid: false },
-  { id: 'log_fallen',         n: 6,  jit: [0.90, 1.20], sink: 0.04, solid: false },
-  { id: 'log_split',          n: 5,  jit: [0.90, 1.20], sink: 0.03, solid: false },
-  { id: 'log_pile',           n: 3,  jit: [0.90, 1.15], sink: 0.03, solid: false },
-  { id: 'debris_treetangle',  n: 4,  jit: [0.90, 1.20], sink: 0.02, solid: false },
+  { id: 'rock_boulder_lg',    n: 6,  jit: [0.85, 1.25], sink: 0.10, dmat: 'stone', hpScale: 1.0 },
+  { id: 'rock_outcrop',       n: 5,  jit: [0.85, 1.25], sink: 0.12, dmat: 'stone', hpScale: 1.0 },
+  { id: 'rock_boulder_mossy', n: 8,  jit: [0.80, 1.35], sink: 0.06, dmat: 'stone', hpScale: 1.0 },
+  { id: 'rock_cluster_sm',    n: 10, jit: [0.80, 1.40], sink: 0.04, dmat: 'stone', hpScale: 1.0 },
+  { id: 'stump_shattered',    n: 6,  jit: [0.85, 1.20], sink: 0.05, dmat: 'wood',  hpScale: 2.0 },
+  { id: 'stump_cut',          n: 7,  jit: [0.85, 1.25], sink: 0.05, dmat: 'wood',  hpScale: 2.0 },
+  { id: 'log_fallen',         n: 6,  jit: [0.90, 1.20], sink: 0.04, dmat: 'wood',  hpScale: 1.5 },
+  { id: 'log_split',          n: 5,  jit: [0.90, 1.20], sink: 0.03, dmat: 'wood',  hpScale: 1.0 },
+  { id: 'log_pile',           n: 3,  jit: [0.90, 1.15], sink: 0.03, dmat: 'wood',  hpScale: 1.5 },
+  { id: 'debris_treetangle',  n: 4,  jit: [0.90, 1.20], sink: 0.02, dmat: 'grass', hpScale: 1.0 },
 ];
 const PROP_IDS = PROP_KINDS.map((k) => k.id);
 
@@ -99,7 +99,10 @@ export class Forest {
     this._nextId = 1;
     this._propPlan = [];       // deadwood/rock placements (positions only; built lazily once specs register)
     this._propObjs = [];       // placed prop Object3Ds (for cleanup parity with _instMeshes)
+    this._props = [];          // destructible prop records { id, dmat, obj, box, part, pos, dead }
     this._propsBuilt = false;  // one-shot guard for the lazy prop build
+    this._pendingDead = new Set(); // co-op: 'propdie' ids that arrived before _ensureProps built them
+                                   // (props build lazily — see destroyPropById / late-join snapshot)
     this.treeMat = voxelMaterial();   // one shared vertex-color material for all instances
 
     // Only the demo (heightfield) map grows a forest. Flat maps (arena/steppe) untouched.
@@ -274,7 +277,7 @@ export class Forest {
         if (near(x, z)) continue;                                     // min spacing between props
         if (!terr.isPlaceable(x, z, 0.6, 'tree')) continue;           // gentle ground & not reserved
         const scale = kind.jit[0] + rng() * (kind.jit[1] - kind.jit[0]);
-        this._propPlan.push({ id: kind.id, x, y: terr.terrainHeightAt(x, z) - kind.sink, z, yaw: rng() * TAU, scale, solid: kind.solid });
+        this._propPlan.push({ id: kind.id, x, y: terr.terrainHeightAt(x, z) - kind.sink, z, yaw: rng() * TAU, scale, dmat: kind.dmat, hpScale: kind.hpScale });
         mark(x, z); placed++;
       }
     }
@@ -296,15 +299,27 @@ export class Forest {
       const o = tmpl.clone();   // shares geometry + material with the template
       o.position.set(p.x, p.y, p.z); o.rotation.y = p.yaw; o.scale.setScalar(p.scale);
       this.scene.add(o); this._propObjs.push(o);
-      if (p.solid) {            // tight AABB for the chunky props (boulder/shattered stump — ~square footprint)
-        const fp = tmpl.userData.footprint || [0.8, 0.8, 0.8];
-        const hx = fp[0] * 0.5 * p.scale, hz = fp[2] * 0.5 * p.scale;
-        const box = {
-          min: new THREE.Vector3(p.x - hx, p.y, p.z - hz),
-          max: new THREE.Vector3(p.x + hx, p.y + fp[1] * p.scale, p.z + hz),
-        };
-        this.world.boxes.push(box); this.world.grid.addBox(box);
-      }
+
+      // destructible part + hit/collision box (every prop is shootable; the player's step-up
+      // walks over the low ones). Ids come off the shared seeded counter → identical on co-op peers.
+      const id = this._nextId++;
+      const fp = tmpl.userData.footprint || [0.8, 0.8, 0.8];
+      const hx = fp[0] * 0.5 * p.scale, hz = fp[2] * 0.5 * p.scale, top = p.y + fp[1] * p.scale;
+      const min = [p.x - hx, p.y, p.z - hz], max = [p.x + hx, top, p.z + hz];
+      const part = makePart(id, p.dmat, min, max, p.hpScale);
+      const box = {
+        min: new THREE.Vector3(min[0], min[1], min[2]),
+        max: new THREE.Vector3(max[0], max[1], max[2]),
+        dpart: id, dmat: p.dmat, prop: true,   // downer set below
+      };
+      const rec = { id, dmat: p.dmat, obj: o, box, part, pos: { x: p.x, y: p.y, z: p.z }, prop: true, dead: false };
+      part.downer = rec; box.downer = rec;
+      this.parts.push(part);        // ⇒ flammableParts() now includes wood/grass props
+      this._props.push(rec);
+      this.world.boxes.push(box); this.world.grid.addBox(box);
+      // co-op: a host 'propdie' (live mirror or late-join snapshot) may have arrived before this
+      // prop existed — apply the deferred death now that the record (mesh+collider) is live.
+      if (this._pendingDead.size && this._pendingDead.delete(id)) this.destroyProp(rec);
     }
   }
 
@@ -436,6 +451,39 @@ export class Forest {
   charTreeById(id)               { const t = this._treeById(id); if (t) this.charTree(t); }
   consumeGrassById(id)           { const rec = this.cover.find(c => c.id === id); if (rec) this._consumeGrass(rec); }
 
+  // ── PROP destruction (mirrors the tree path; "consume in place", no FallingBody) ──────
+  // A bullet resolved onto a prop part: pen<tier ⇒ cosmetic (caller already drew a chip);
+  // else damage, and on death the prop is removed. `point`=[x,y,z] impact for the debris burst.
+  hitProp(rec, weapon, point) {
+    if (!rec || rec.dead || !rec.part || rec.part.dead) return null;
+    const r = resolveHit(rec.part, weapon);
+    if (r.killed) this.destroyProp(rec, point);
+    else if (r.effect === 'damage' && this.debris) this.debris.burst(MATERIALS[rec.dmat].debris, point, (rec.id ^ 0x55) >>> 0);
+    return r;
+  }
+
+  // Remove a prop: hide its mesh, drop its collider, burst material debris, broadcast to peers.
+  // `at`=[x,y,z] for the debris burst (defaults to the prop centre, e.g. the client mirror path).
+  destroyProp(rec, at = null) {
+    if (!rec || rec.dead) return;
+    rec.dead = true; if (rec.part) rec.part.dead = true;
+    if (rec.obj) rec.obj.visible = false;
+    if (rec.box) { this._removeBox(rec.box); rec.box = null; }
+    const where = at || [rec.pos.x, rec.pos.y + 0.3, rec.pos.z];
+    if (this.debris) this.debris.burst(MATERIALS[rec.dmat].debris, where, (rec.id * 2654435761) >>> 0);
+    this._emitForest('propdie', rec.id);   // host-auth: one bit — "this prop is gone"
+  }
+
+  // Fire burned a wood/grass prop out → same removal (the char/ash flourish is cosmetic).
+  consumeProp(rec) { this.destroyProp(rec); }
+
+  // Client mirror of a host 'propdie' (idempotent; destroyProp guards on rec.dead; the host guard
+  // in _emitForest stops a client echo). Props build LAZILY (_ensureProps waits on async specs), so
+  // a propdie can land before its record exists — defer it to _pendingDead, drained at build time.
+  // Without this, late-join snapshots (mp.js floods propdie while the joiner is still loading) would
+  // be silently dropped and the destroyed prop would resurrect as a live, collidable ghost.
+  destroyPropById(id) { const rec = this._props.find(r => r.id === id); if (rec) this.destroyProp(rec); else this._pendingDead.add(id); }
+
   // Burn a grass tuft out (visual + part death). Host path also broadcasts so clients match;
   // the fire system (host) calls this from _burnout, the net handler calls consumeGrassById.
   consumeGrass(rec) { this._consumeGrass(rec); this._emitForest('grass', rec.id); }
@@ -455,6 +503,7 @@ export class Forest {
       else if (t.charred) out.push({ k: 'char', id: t.id });   // charred-but-standing
     }
     for (const c of this.cover) if (c.dead) out.push({ k: 'grass', id: c.id });
+    for (const r of this._props) if (r.dead) out.push({ k: 'propdie', id: r.id });
     return out;
   }
 
@@ -493,12 +542,20 @@ export class Forest {
       if (this.debris) this.debris.burst('splints', [h.tree.pos.x, h.tree.pos.y + h.tree.breakPoint, h.tree.pos.z], (h.tree.id * 2654435761) >>> 0, h.tree.pos.y);
       this.fellTree(h.tree, [dir.x, dir.z], (h.tree.id * 2654435761) >>> 0);
     }
+    // APFSDS obliterates fragile props (wood/grass) it pierces; stone (tier 4) is a structural
+    // through-hole — left in place (cosmetic), consistent with resolvePenetration's FRAGILE_MAX_TIER.
+    for (const rec of this._props) {
+      if (rec.dead || !rec.part) continue;
+      if (MATERIALS[rec.dmat].tier > FRAGILE_MAX_TIER) continue;
+      const t = rayAABB(o, dd, rec.part.min, rec.part.max);
+      if (t !== null && t <= range) this.destroyProp(rec, [rec.pos.x, rec.pos.y + 0.3, rec.pos.z]);
+    }
     return hits.length;
   }
 
   // ── PUBLIC HOOK: HE blast fells the stand (Phase 9 rocket/grenade) ────────────────
   // Topple every standing tree within `radius` of `pos`, away from the blast.
-  blast(pos, radius) {
+  blast(pos, radius, blastTier = 3) {
     const r2 = radius * radius, felled = [];
     for (const tree of this.trees) {
       if (!tree.standing) continue;
@@ -508,6 +565,13 @@ export class Forest {
         this.fellTree(tree, [dx / n, dz / n], (tree.id * 2654435761) >>> 0);
         felled.push(tree);
       }
+    }
+    // props: remove any whose material tier ≤ the blast tier within radius (stone tier4 survives
+    // the default bazooka tier3 — only a stronger blast or AP takes it).
+    for (const rec of this._props) {
+      if (rec.dead) continue;
+      const dx = rec.pos.x - pos.x, dz = rec.pos.z - pos.z;
+      if (dx * dx + dz * dz <= r2 && MATERIALS[rec.dmat].tier <= blastTier) this.destroyProp(rec, [rec.pos.x, rec.pos.y, rec.pos.z]);
     }
     return felled;
   }

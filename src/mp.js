@@ -647,7 +647,8 @@ export class MP {
     n.on('forestfx', (d) => { if (this.isHost || !d) return; const fr = this.game.forest; if (!fr) return; // host-auth FOREST mutations: fell/char a tree, consume a grass tuft. Tree fall is replayed with the host's exact dir+seed → identical deterministic FallingBody
       if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed);
       else if (d.k === 'char') fr.charTreeById(d.id);
-      else if (d.k === 'grass') fr.consumeGrassById(d.id); });
+      else if (d.k === 'grass') fr.consumeGrassById(d.id);
+      else if (d.k === 'propdie') fr.destroyPropById(d.id); });
     n.on('kill', (d) => this._clientKill(d));
     n.on('burn', () => { this.game.player.burnT = PLAYER_BURN_DUR; });
     n.on('bleed', (d) => { if (d && typeof d.t === 'number') this._bleedT = d.t; }); // host re-syncs the downed player's bleed-out bar to the authoritative downT
