@@ -149,9 +149,12 @@ export function tube(b, a, t, o) {
 // texturedDisc — a flat circular face carrying a CanvasTexture: the 78-rpm record's swappable
 // centre label. Returns its OWN Mesh (buildSpec drops it into the part's rig group, so the live
 // gramophone can find it by rig name and re-skin the label per song). Default axis y (faces up).
+// kind:'clockDial' swaps the generator for the «ЧАСОЗБОР» wall-clock dial face.
 export function texturedDisc(b, a, t, o) {
   const g = new THREE.CircleGeometry(a.r, a.seg ?? 48);
-  const tex = makeRecordLabelTexture({ title: a.title || 'СССР', mode: a.mode || 'black' });
+  const tex = a.kind === 'clockDial'
+    ? makeClockDialTexture({ brand: a.title || 'ЧАСОЗБОР', sub: a.sub ?? 'СДЕЛАНО В СССР' })
+    : makeRecordLabelTexture({ title: a.title || 'СССР', mode: a.mode || 'black' });
   const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex }));
   const or = NORMAL[a.axis ?? 'y'];
   mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
@@ -290,6 +293,53 @@ function _decalTexture(kind, baseHex) {
       c.font = '60px "PT Sans Narrow",sans-serif'; c.fillText('ВКЛ  ·  ВЫКЛ', 256, 300);
     }
   }
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  return tex;
+}
+
+// makeClockDialTexture — the «ЧАСОЗБОР» Soviet wall-clock dial («Стрела» family look):
+// pale enamel face, black plain-grotesque Arabic numerals 1–12, dash minute track with
+// long dashes + outer dots at the hours, factory wordmark under the 12, «СДЕЛАНО В СССР»
+// above the 6. 1024px canvas so the numerals stay crisp when the player walks up close —
+// the whole point of this prop is READING the time. Exported for the admin/asset viewer.
+export function makeClockDialTexture({ brand = 'ЧАСОЗБОР', sub = 'СДЕЛАНО В СССР' } = {}) {
+  const S = 1024, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const c = cv.getContext('2d'), R = S / 2;
+
+  // pale grey-green enamel, faintly darker toward the rim (aged lacquer)
+  const bg = c.createRadialGradient(R, R, S * 0.05, R, R, R);
+  bg.addColorStop(0, '#eceee6'); bg.addColorStop(0.82, '#e4e6dc'); bg.addColorStop(1, '#d6d8cc');
+  c.fillStyle = bg; c.beginPath(); c.arc(R, R, R, 0, 7); c.fill();
+
+  const INK = '#161616';
+  // minute track: 60 marks — short dash per minute, long dash + outer dot at each hour
+  for (let i = 0; i < 60; i++) {
+    const hour = i % 5 === 0;
+    const ang = (i / 60) * Math.PI * 2 - Math.PI / 2;
+    const cos = Math.cos(ang), sin = Math.sin(ang);
+    const ro = R * 0.86, ri = ro - (hour ? R * 0.085 : R * 0.05);
+    c.strokeStyle = INK; c.lineWidth = hour ? S * 0.013 : S * 0.007; c.lineCap = 'butt';
+    c.beginPath(); c.moveTo(R + cos * ri, R + sin * ri); c.lineTo(R + cos * ro, R + sin * ro); c.stroke();
+    if (hour) { c.fillStyle = INK; c.beginPath(); c.arc(R + cos * R * 0.93, R + sin * R * 0.93, S * 0.011, 0, 7); c.fill(); }
+  }
+
+  // numerals 1–12, plain sans (the Стрела dial uses an unadorned grotesque)
+  c.fillStyle = INK; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.font = `bold ${Math.round(S * 0.125)}px "Helvetica Neue",Arial,sans-serif`;
+  for (let h = 1; h <= 12; h++) {
+    const ang = (h / 12) * Math.PI * 2 - Math.PI / 2;
+    c.fillText(String(h), R + Math.cos(ang) * R * 0.665, R + Math.sin(ang) * R * 0.672);
+  }
+
+  // factory wordmark under the 12 + small «СДЕЛАНО В СССР» above the 6
+  c.font = `italic bold ${Math.round(S * 0.042)}px "PT Sans Narrow","Arial Narrow",sans-serif`;
+  c.fillText(brand, R, R * 0.62);
+  c.strokeStyle = INK; c.lineWidth = S * 0.004;                     // Стрела-style speed-lines flanking the wordmark
+  const bw = c.measureText(brand).width;
+  c.beginPath(); c.moveTo(R - bw / 2 - S * 0.06, R * 0.62); c.lineTo(R - bw / 2 - S * 0.015, R * 0.62);
+  c.moveTo(R + bw / 2 + S * 0.015, R * 0.62); c.lineTo(R + bw / 2 + S * 0.06, R * 0.62); c.stroke();
+  if (sub) { c.font = `${Math.round(S * 0.026)}px "PT Sans Narrow","Arial Narrow",sans-serif`; c.fillText(sub, R, R * 1.34); }
+
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   return tex;
 }
