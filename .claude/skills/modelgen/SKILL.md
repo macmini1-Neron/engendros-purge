@@ -48,6 +48,14 @@ where machines can't: picking the right features, proportions, and reading the r
    - The owner's reference fidelity sets the bar: photoscan/PBR references = hero-item sculpt
      expected, not a parts-count checklist. Passing "6–20 parts, 3+ materials" is a floor, not
      quality.
+7. **The READABLE MARKINGS law (same retro).** Any text the player can read up close — label
+   plates, dials, signage on held/interactable props — is REAL legible Cyrillic rendered as a
+   CanvasTexture: `decal` with `lines: ["ЛПР-1", "ДАЛЬНОМЕР", …]` (`plate: true` = bordered
+   dark plate; `plate: false` = transparent engraved housing label), `texturedDisc` for dials.
+   The codebase has proven this bar repeatedly (gatehouse console, gramophone labels,
+   «ЧАСОЗБОР» dial, «Электроника» VFD). `stencil`'s paint bars are ONLY for sub-10 mm or
+   distant markings — shipping bars where a plate should read is the texture version of the
+   brick. Rounded cast bodies have the `loaf` operator (stadium profile + beveled rim).
 
 Gate everything with the pre-flight linter — run it before the viewer and before calling done:
 ```bash

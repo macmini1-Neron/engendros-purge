@@ -453,24 +453,28 @@
       "src": "dossier#rear_face"
     },
     {
-      "op": "stencil",
+      "op": "decal",
       "id": "namePlateText",
       "args": {
-        "w": 0.018,
-        "h": 0.009,
-        "lines": 3
+        "w": 0.024,
+        "h": 0.016,
+        "lines": [
+          "ЛПР-1",
+          "ДАЛЬНОМЕР",
+          "N 790346"
+        ]
       },
       "at": [
         -0.01,
         0.04,
-        -0.0885
+        -0.089
       ],
       "rot": [
         0,
         180,
         0
       ],
-      "mat": "cream",
+      "mat": "paintBlack",
       "src": "dossier#rear_face"
     },
     {
@@ -495,24 +499,28 @@
       "src": "dossier#rear_face"
     },
     {
-      "op": "stencil",
+      "op": "decal",
       "id": "warnPlateText",
       "args": {
-        "w": 0.028,
-        "h": 0.012,
-        "lines": 4
+        "w": 0.034,
+        "h": 0.02,
+        "lines": [
+          "ПОСЛЕ ОКОНЧАНИЯ",
+          "РАБОТЫ ВЫКЛЮЧИ",
+          "ПИТАНИЕ И ПОДСВЕТКУ"
+        ]
       },
       "at": [
         -0.086,
         0.066,
-        -0.0885
+        -0.089
       ],
       "rot": [
         0,
         180,
         0
       ],
-      "mat": "cream",
+      "mat": "paintBlack",
       "src": "dossier#rear_face"
     },
     {

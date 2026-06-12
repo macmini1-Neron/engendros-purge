@@ -162,12 +162,39 @@ export function texturedDisc(b, a, t, o) {
   return mesh;
 }
 
-// decal — a flat rectangular plane carrying a named CanvasTexture: the lid maker's diamond logo
-// and the small engraved control plates. `kind` picks the generator. Returns its own Mesh.
+// makeTextPlateTexture — REAL, READABLE text (the project bar: the азбука must be legible up
+// close — gatehouse console, gramophone labels, «ЧАСОЗБОР» dial all set this precedent; cream
+// stencil bars are only for sub-10 mm / distant markings). lines = array of strings.
+// plate:true → filled dark plate with a hairline border (ЛПР-1 ДАЛЬНОМЕР style);
+// plate:false → transparent background, ink text only (engraved ВЫКЛ/ВКЛ housing labels).
+export function makeTextPlateTexture(lines, { plate = true, bg = '#0e0d0b', ink = '#e9e4d4', aspect = 2 } = {}) {
+  const W = 512, H = Math.max(64, Math.round(W / aspect));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  if (plate) {
+    c.fillStyle = bg; c.fillRect(0, 0, W, H);
+    c.strokeStyle = 'rgba(233,228,212,0.55)'; c.lineWidth = 3; c.strokeRect(7, 7, W - 14, H - 14);
+  } else c.clearRect(0, 0, W, H);
+  c.fillStyle = ink; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const pad = plate ? 0.16 : 0.04, rowH = (H * (1 - 2 * pad)) / lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    let size = Math.round(rowH * 0.78);
+    c.font = `bold ${size}px "PT Sans Narrow","Arial Narrow",Arial,sans-serif`;
+    while (c.measureText(lines[i]).width > W * (1 - 2 * pad) && size > 10) { size -= 2; c.font = `bold ${size}px "PT Sans Narrow","Arial Narrow",Arial,sans-serif`; }
+    c.fillText(lines[i], W / 2, H * pad + rowH * (i + 0.5));
+  }
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  return tex;
+}
+
+// decal — a flat rectangular plane carrying a named CanvasTexture: the lid maker's diamond logo,
+// the small engraved control plates, or (lines:[...]) a READABLE text plate/label. Returns its own Mesh.
 export function decal(b, a, t, o) {
   const g = new THREE.PlaneGeometry(a.w, a.h);
-  const transparent = a.kind === 'lidLogo';
-  const map = _decalTexture(a.kind, t[a.tone || 'mid']);
+  const transparent = a.kind === 'lidLogo' || (Array.isArray(a.lines) && a.plate === false);
+  const map = Array.isArray(a.lines)
+    ? makeTextPlateTexture(a.lines, { plate: a.plate !== false, aspect: a.w / a.h })
+    : _decalTexture(a.kind, t[a.tone || 'mid']);
   const mat = new THREE.MeshLambertMaterial({ map, transparent, depthWrite: !transparent });
   if (a.kind === 'lidLogo') { mat.emissive = new THREE.Color(0xffffff); mat.emissiveMap = map; mat.emissiveIntensity = 0.35; }  // the printed mark self-lights so it reads on the shadowed lid lining
   const mesh = new THREE.Mesh(g, mat);

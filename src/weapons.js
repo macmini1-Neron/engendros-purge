@@ -6,6 +6,7 @@ import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
 import { CALIBERS, resolveHit } from './destruct.js';
 import { isNight } from './worldclock.js';
+import { makeTextPlateTexture } from './props/operators/round.js';
 
 // ── ?map=demo destruction wiring (Phase 9) ─────────────────────────────────────
 // Map a gameplay weapon class → destruction PENETRATION class (spec §5 hardness tiers).
@@ -870,7 +871,6 @@ export function buildViewmodel(def) {
       zcyl(0.017, 0.012, -0.119, 0.070, 0.262, oLo);
       lat([[0.006, 0], [0.013, 0.004], [0.013, 0.018], [0.009, 0.026], [0, 0.028]], -0.119, 0.070, 0.268, bak);
       b.box(0.008, 0.034, 0.009, -0.119, 0.070, 0.288, blk, { rz: 0.6 });
-      b.box(0.024, 0.005, 0.003, -0.152, 0.094, 0.266, crm); b.box(0.020, 0.005, 0.003, -0.088, 0.094, 0.266, crm);
       // СТРОБИРОВАНИЕ drum: knurled black drum + cream scale ring + slotted screw face
       { const kn = [[0.022, 0]]; for (let i = 0; i <= 9; i++) kn.push([i % 2 ? 0.037 : 0.032, 0.004 + i * 0.0042]); kn.push([0.022, 0.047]);
         lat(kn, 0.018, 0.070, 0.262, blk, { seg: 26 }); }
@@ -881,15 +881,30 @@ export function buildViewmodel(def) {
       zcyl(0.014, 0.010, 0.154, -0.062, 0.262, oLo);
       lat([[0.005, 0], [0.011, 0.004], [0.011, 0.015], [0.007, 0.022], [0, 0.024]], 0.154, -0.062, 0.266, bak);
       b.box(0.007, 0.026, 0.008, 0.154, -0.062, 0.283, blk, { rz: -0.6 });
-      b.box(0.026, 0.005, 0.003, 0.120, -0.085, 0.266, crm);
       // remote-buttons разъём: knurled brass cap (bottom centre)
       { const kb = [[0.014, 0]]; for (let i = 0; i <= 5; i++) kb.push([i % 2 ? 0.024 : 0.020, 0.004 + i * 0.0045]); kb.push([0.012, 0.030]);
         lat(kb, -0.004, -0.086, 0.262, brs, { seg: 20 }); }
-      // label plates: ЛПР-1 ДАЛЬНОМЕР N (between eyecups) + ПОСЛЕ ОКОНЧАНИЯ… (screen-right), cream lines on black
+      // label plate BACKINGS (relief); the READABLE text goes on as CanvasTexture planes in _post —
+      // real legible азбука is the project bar (gatehouse console, gramophone labels, «ЧАСОЗБОР»),
+      // cream paint-bars are banned for up-close text.
       b.box(0.057, 0.040, 0.010, 0.022, -0.048, 0.266, blk);
-      for (let i = 0; i < 3; i++) b.box(0.042, 0.0045, 0.004, 0.022, -0.036 - i * 0.012, 0.272, crm);
       b.box(0.079, 0.048, 0.010, 0.189, 0.009, 0.266, blk);
-      for (let i = 0; i < 4; i++) b.box(0.060, 0.004, 0.004, 0.189, 0.025 - i * 0.011, 0.272, crm);
+      _post = (m) => {
+        const addText = (lines, w, h, x, y, z, opts = {}) => {
+          const tex = makeTextPlateTexture(lines, { plate: opts.plate !== false, aspect: w / h });
+          const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: opts.plate === false, depthWrite: opts.plate !== false });
+          const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+          pl.position.set(x, y, z);
+          if (opts.rx) pl.rotation.x = opts.rx;
+          pl.renderOrder = 1001; pl.frustumCulled = false;
+          m.add(pl);
+        };
+        addText(['ЛПР-1', 'ДАЛЬНОМЕР', 'N 790346'], 0.052, 0.036, 0.022, -0.048, 0.2725);
+        addText(['ПОСЛЕ ОКОНЧАНИЯ', 'РАБОТЫ ВЫКЛЮЧИ', 'ПИТАНИЕ И ПОДСВЕТКУ'], 0.074, 0.044, 0.189, 0.009, 0.2725);
+        addText(['ВЫКЛ      ВКЛ'], 0.082, 0.014, -0.119, 0.097, 0.2690, { plate: false });
+        addText(['ПОДСВ.'], 0.040, 0.012, 0.118, -0.085, 0.2690, { plate: false });
+        addText(['ИЗМЕРЕНИЕ'], 0.092, 0.015, 0.119, 0.1205, -0.045, { plate: false, rx: -PI2 });
+      };
       // slotted panel screws (4 corners + top/bottom centre)
       for (const [sx, sy] of [[-0.214, 0.092], [0.214, 0.092], [-0.214, -0.085], [0.214, -0.085], [0, 0.100], [0.07, -0.092]]) {
         zcyl(0.009, 0.012, sx, sy, 0.262, stl, { seg: 12 });
