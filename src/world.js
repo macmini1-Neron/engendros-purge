@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
 import { SpatialGrid } from './grid.js';
 import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
+import { skyPhase, isNight, keywordMinute, MINUTES_PER_DAY } from './worldclock.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
 import { buildIndustrial } from './industrial.js';
@@ -788,74 +789,63 @@ export class DayNight {
   _dir(az, el) { return new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)); }
   _lc(out, a, b, t) { return out.copy(a).lerp(b, t); }
 
-  reset(active) {
-    this.active = active; this.t = 0; this.nightCount = 0; this.bloodMoon = false; this._wasNight = false;
-    this.cel.visible = active;
+  // The world clock (game._worldClock) is the single source of time — it must be seeded BEFORE this runs.
+  reset() {
+    this.active = true; this.nightCount = 0; this.bloodMoon = false;
+    this.cel.visible = true;
     this.flashOn = true; this.flash.intensity = 0; // beam preference on; only emits while the flashlight item is held
-    // hold bright noon for PURGE; start LONG NIGHT at dawn
-    this._apply(active ? 0.0 : 1.0, Math.PI / 2, true);
+    this._wasNight = isNight(this.game._worldClock.minuteOfDay());
+    this.renderFrom(this.game._worldClock); // sky reflects the current time of day immediately
   }
   setFlashlight(on) { this.flashOn = on; this.flash.intensity = on ? 7 : 0; }
   toggleFlashlight() { if (this.game.weapons.owns('flashlight')) { this.flashOn = !this.flashOn; this.game.audio.uiClick(); this.game.hud.setNightGear(this.game); this.game.hud.setWeapon(this.game.weapons); } else this.game.hud.bigMessage('NO FLASHLIGHT', 'buy one in the SHOP and put it in your inventory'); }
 
-  info() { const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE; const night = c >= DAY_FRAC; return { night, n: this.nightCount, blood: this.bloodMoon && night }; }
-  // Dev console /time — jump the cycle to a named phase and render it immediately. In PURGE it stays frozen
-  // there (the loop only ticks the cycle in LONG NIGHT); in LONG NIGHT it then continues from this point.
-  setTime(which) {
-    const FR = { dawn: 0.0, day: DAY_FRAC * 0.45, noon: DAY_FRAC * 0.45, dusk: DAY_FRAC, night: DAY_FRAC + (1 - DAY_FRAC) * 0.5, midnight: DAY_FRAC + (1 - DAY_FRAC) * 0.5 };
-    const c = FR[which]; if (c == null) return false;
-    this.active = true; this.cel.visible = true;
-    this.t = c * NIGHT_CYCLE;
-    this._wasNight = c >= DAY_FRAC;
-    this._render();
-    return true;
+  info() { const m = this.game._worldClock.minuteOfDay(); const night = isNight(m); return { night, n: this.nightCount, blood: this.bloodMoon && night }; }
+  // Jump the clock to an absolute minute-of-day (keeps the current day), re-render the sky, and (host) broadcast.
+  // Used by /time set HH:MM and /time set <keyword>.
+  setMinuteOfDay(min) {
+    const wc = this.game._worldClock;
+    const m = ((min % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    wc.setTotal(wc.day() * MINUTES_PER_DAY + m);
+    this._wasNight = isNight(m);
+    this.renderFrom(wc);
+    if (this.game.mp.active && this.game.mp.isHost) this.game.mp.sendWorldTime();
   }
+  // Legacy keyword path (kept for /time set <keyword>): map a phase name to a minute, then jump.
+  setTime(which) { const min = keywordMinute(which); if (min == null) return false; this.setMinuteOfDay(min); return true; }
 
-  update(dt) {
-    if (!this.active) return;
-    this.t += dt;
-    const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE;
-    const day = c < DAY_FRAC;
-    const isNight = !day;
-    if (isNight && !this._wasNight) {
+  // Fired once per whole in-game minute (host/solo only — see game._stepMinute). Detects the day↔night
+  // edge off the authoritative clock, rolls the night counter / blood-moon, and pushes the transition to clients.
+  onWorldMinute(_total) {
+    const night = isNight(this.game._worldClock.minuteOfDay());
+    if (night && !this._wasNight) {
       this.nightCount++; this.bloodMoon = this.nightCount > 1 && chc(0.25); this.game.onNightStart(this.nightCount, this.bloodMoon);
       if (this.game.mp.active && this.game.mp.isHost) this.game.mp.sendWorldTime(); // host: announce night/blood-moon at this timing
+    } else if (!night && this._wasNight) {
+      this.game.onDayStart();
+      if (this.game.mp.active && this.game.mp.isHost) this.game.mp.sendWorldTime(); // host: announce dawn transition
     }
-    else if (!isNight && this._wasNight) { this.game.onDayStart(); if (this.game.mp.active && this.game.mp.isHost) this.game.mp.sendWorldTime(); } // host: announce dawn transition
-    this._wasNight = isNight;
-    this._render();
+    this._wasNight = night;
   }
 
-  // Host-authoritative state push (clients only): adopt the host's clock + night/blood-moon, then render that sky without advancing time.
+  // Host-authoritative push (clients only): reconcile the local clock to the host's, adopt night/blood-moon, render.
   applyNetState(d) {
     if (!d) return;
-    const mode = d.mode === 'longnight' ? 'longnight' : 'purge';
-    const active = typeof d.active === 'boolean' ? d.active : mode === 'longnight';
-    this.game.mode = mode;
-    if (this.game.hud) this.game.hud.setNightMode(active);
-    if (!active) {
-      this.active = false; this.t = 0; this.nightCount = 0; this.bloodMoon = false; this._wasNight = false;
-      this.cel.visible = false;
-      this._apply(1.0, Math.PI / 2, true);
-      return;
-    }
-    const prevNight = this.nightCount, prevBlood = this.bloodMoon;
+    this.game.mode = d.mode === 'longnight' ? 'longnight' : 'purge';
+    if (this.game.hud) this.game.hud.setNightMode(true);
     this.active = true; this.cel.visible = true;
-    this.t = Number.isFinite(d.t) ? d.t : 0;
-    this.nightCount = Number.isFinite(d.n) ? d.n : 0;
+    const prevNight = this.nightCount, prevBlood = this.bloodMoon;
+    if (Number.isFinite(d.total)) { this.game.mp._lastClockDrift = this.game._worldClock.total - d.total; this.game._worldClock.setTotal(d.total); } // measure prediction error, then snap to host truth
+    this.nightCount = Number.isFinite(d.n) ? d.n : this.nightCount;
     this.bloodMoon = !!d.blood;
-    this._wasNight = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE >= DAY_FRAC;
-    this._render();
+    this._wasNight = isNight(this.game._worldClock.minuteOfDay());
+    this.renderFrom(this.game._worldClock);
     if (this._wasNight && (this.nightCount > prevNight || (this.bloodMoon && !prevBlood))) this.game.onNightStart(this.nightCount, this.bloodMoon); // mirror the host's NIGHT/BLOOD MOON banner
   }
 
-  // Apply the sky for the CURRENT this.t / this.bloodMoon (no time advance) — shared by update() and applyNetState().
-  _render() {
-    const c = (this.t % NIGHT_CYCLE) / NIGHT_CYCLE;
-    const day = c < DAY_FRAC;
-    const dayT = c / DAY_FRAC;
-    const L = day ? clamp(Math.sin(dayT * Math.PI), 0, 1) : 0;
-    const ang = (day ? dayT : (c - DAY_FRAC) / (1 - DAY_FRAC)) * Math.PI;
+  // Drive the sky from the world clock's minute-of-day (+ sub-minute alpha for smoothness). _apply is unchanged.
+  renderFrom(wc) {
+    const { day, L, ang } = skyPhase(wc.minuteOfDay() + wc.alpha);
     this._apply(L, ang, day);
   }
 
