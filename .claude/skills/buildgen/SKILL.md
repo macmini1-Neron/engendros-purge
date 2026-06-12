@@ -130,6 +130,11 @@ noise amplitude — they are *placed*, not random. Verify at **q34 + graze + far
 point at the same brick cluster repeating on a grid, or the roof reads as one pattern, fix the
 generator before approval — more proud geometry is not the cure for a flat texture.
 
+**Readable signage (ЛПР-1 retro, applies everywhere):** any sign/plate the player can walk up
+to and read — «ПРОХОДНАЯ», shop fronts, warning plates — is REAL legible Cyrillic via
+CanvasTexture (the gatehouse console / «ЧАСОЗБОР» dial / modelgen `decal lines:[…]` bar), never
+paint bars pretending to be text. The азбука must actually read up close.
+
 ## Facade grammar — what makes it read as a real building
 
 The modelgen heuristic ("6–20 parts or it reads as a placeholder") scaled up: a believable
