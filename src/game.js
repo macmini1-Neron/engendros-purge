@@ -28,6 +28,8 @@ import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
 import { DevConsole } from './console.js';
+import { makeClock } from './simclock.js';
+import { EFFECT_TPS, stepEffects } from './effects-status.js';
 
 // Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
 // Specs are authored in METRES — never compensate a wrong-sized spec with a
@@ -115,6 +117,18 @@ class Game {
     this.state = 'menu'; this.score = 0; this.kills = 0; this.mpMenuOpen = false;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
     this._last = 0; this._bound = this._frame.bind(this);
+
+    // --- status effects (src/effects-status.js) ---
+    this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
+    this._stepFx = () => this._stepEffectsOnce();                       // stable callback for clock.advance
+    this._fxCtx = {                                                     // injected side-effect ops (keeps effects-status.js pure)
+      isEnemy: (t) => t !== this.player,                               // only the player + enemies are effect-able
+      hurtPlayer: (p, dmg) => p._takeSurvivalDamage(dmg, 1),           // bypass armor; MP-safe (routes claimPlayerHit)
+      healEnemy: (e, n) => this.enemies.heal(e, n),
+      fireFx: (e) => this.effects.firePool(e.pos, 0.45, 0.4),
+      drip: (e) => this.effects.stuffing(e.pos, e.col ? e.col.body : 0xeeeeee, 3, 2),  // «пух» puff
+      setLimp: (entity, on) => { if (entity === this.player) { this.player.legBroken = on; this.hud.setSurvival(this.player); } },
+    };
 
     this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin();
     this.player.update(0.0001); this.engine.render();
@@ -805,6 +819,14 @@ class Game {
     this.input.endFrame();
   }
 
+  // One fixed effect tick: advance the player + every alive enemy by one step.
+  _stepEffectsOnce() {
+    const ctx = this._fxCtx, p = this.player;
+    if (p.alive && !(this.mp.active && this.mp.frozen)) stepEffects(p, ctx);
+    const list = this.enemies.active;
+    for (let i = 0; i < list.length; i++) { const e = list[i]; if (e.alive) stepEffects(e, ctx); }
+  }
+
   _updatePlaying(dt) {
     const hostSim = !this.mp.active || this.mp.isHost; // clients don't simulate enemies/waves
     const sim = hostSim && !this.freecam;              // fly-cam = pure observation: no countdown/spawns/enemies
@@ -844,6 +866,7 @@ class Game {
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);
     this.loot.update(dt);
+    if (sim) this._fxClock.advance(dt, this._stepFx); // status effects tick on a fixed 10 Hz clock (host/solo only)
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);

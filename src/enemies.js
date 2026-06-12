@@ -202,7 +202,7 @@ class Enemy {
     this.hp = this.maxHp = hp; this.speed = speed;
     this.scale = def.scale; this.radius = 0.55 * def.scale; this.height = 2.2 * def.scale;
     this.headY = 1.18 * def.scale;
-    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0;
+    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map();
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset

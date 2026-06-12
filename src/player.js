@@ -17,6 +17,7 @@ export class Player {
     this.radius = 0.35; this.height = 1.7; this.eye = 1.62;
     this.onGround = true; this.sens = 0.0022; this.nick = 'Player'; // identity for console selectors (set live from Settings)
     this._footT = 0; this._fallVel = 0; this._regenT = 0; this._camY = this.eye;
+    this.effects = new Map();   // status effects (src/effects-status.js): key → { ticksLeft, stacks }
     this.resetStats();
   }
   resetStats() {
@@ -39,7 +40,9 @@ export class Player {
       this.pos.set(sx, t ? t.terrainHeightAt(sx, sz) : 0, sz);
       this.yaw = Math.atan2(-(60 - sx), -(-40 - sz)); // fwd = (-sin yaw, 0, -cos yaw) aimed at the hill
     }
-    this.onGround = true; this._regenT = 0; this.resetStats();
+    this.onGround = true; this._regenT = 0;
+    if (this.effects) this.effects.clear();
+    this.resetStats();
   }
 
   hurt(dmg, bypassArmor = 0) {
