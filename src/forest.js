@@ -495,6 +495,7 @@ export class Forest {
       else if (t.charred) out.push({ k: 'char', id: t.id });   // charred-but-standing
     }
     for (const c of this.cover) if (c.dead) out.push({ k: 'grass', id: c.id });
+    for (const r of this._props) if (r.dead) out.push({ k: 'propdie', id: r.id });
     return out;
   }
 
