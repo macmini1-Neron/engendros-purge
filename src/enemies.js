@@ -4,6 +4,7 @@ import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxe
 import { ENEMY_BURN_SLOW } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { buildNavGrid, findPath } from './pathing.js';
+import { movementSlow, contactWeaken } from './effects-status.js';
 
 
 // ---------------------------------------------------------------------------
@@ -330,7 +331,7 @@ export class EnemyManager {
       const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
       const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
-      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
+      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1) * movementSlow(e)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
       if (_wz) {
         _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down
         e._wireT = (e._wireT || 0) + dt;
@@ -376,7 +377,7 @@ export class EnemyManager {
       e.attackCD -= dt;
       if (dist < e.radius + this.game.player.radius + 0.6 && e.attackCD <= 0) {
         if (e.def.charger) { this.damage(e, e.hp + 1, 'contact'); continue; } // kamikaze: detonate on contact
-        e.attackCD = 1.0; e.squash = 0.18; this.game._hurtTarget(e._tgtId || 'host', e.def.dmg);
+        e.attackCD = 1.0; e.squash = 0.18; this.game._hurtTarget(e._tgtId || 'host', e.def.dmg * contactWeaken(e));
       } else if (e._blockStruct && e.attackCD <= 0) { // can't reach a player: smash the wall in the way
         e.attackCD = 0.8; e.squash = 0.18; this.game.build.attackStructure(e._blockStruct, e.def.dmg, e);
       }
