@@ -106,6 +106,7 @@ export class Player {
       if (!mp.active && this._burnTickT >= PLAYER_BURN_TICK) { this._burnTickT = 0; this.hurt(PLAYER_BURN_DPS * PLAYER_BURN_TICK, 1); }
     } else this._burnTickT = 0;
     this.game.hud.setBurn(this.burnT);
+    this.game.hud.setSurvival(this);   // active-effects strip (icons + countdown) refreshed each frame
   }
   // Fall/starvation damage — host-authoritative in MP (the armor-bypass nuance only applies in single-player).
   _takeSurvivalDamage(dmg, bypassArmor = 0) {

@@ -6,6 +6,7 @@ import { WEAPONS, buildMag, buildViewmodel } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { mpEscape } from './mp.js';
 import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
+import { EFFECTS, EFFECT_TPS } from './effects-status.js';
 
 
 // ---------------------------------------------------------------------------
@@ -35,7 +36,22 @@ export class HUD {
   setHealth(hp, max) { const f = clamp(hp / max, 0, 1); this.el.hpfill.style.width = (f * 100) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.el.vignette.style.boxShadow = `inset 0 0 200px 40px rgba(200,30,20,${(1 - f) * 0.5})`; }
   setArmor(a, max) { this.el.armorfill.style.width = clamp(a / max, 0, 1) * 100 + '%'; }
   setHunger(h) { if (!this.el.hungerfill) return; this.el.hungerfill.style.width = clamp(h / HUNGER_MAX, 0, 1) * 100 + '%'; this.el.hungerfill.style.filter = h < HUNGER_LOW ? 'saturate(1.7) brightness(1.2)' : 'none'; }
-  setSurvival(p) { if (!this.el.survival) return; let s = ''; if (p.legBroken) s += `<span class="leg">${icon('leg')} LEG BROKEN — X to splint</span> `; if (p.splints > 0) s += `<span class="spl">${icon('splint')} ×${p.splints}</span>`; this.el.survival.innerHTML = s; }
+  setSurvival(p) {
+    if (!this.el.survival) return;
+    let s = '';
+    if (p.legBroken) s += `<span class="leg">${icon('leg')} LEG BROKEN — X to splint</span> `;
+    if (p.splints > 0) s += `<span class="spl">${icon('splint')} ×${p.splints}</span> `;
+    if (p.effects && p.effects.size) {
+      for (const [key, inst] of p.effects) {
+        if (key === 'broken_leg') continue;            // already shown by the leg line above
+        const def = EFFECTS[key];
+        const secs = inst.ticksLeft === Infinity ? '' : ' ' + Math.ceil(inst.ticksLeft / EFFECT_TPS) + 's';
+        const col = '#' + def.hud.color.toString(16).padStart(6, '0');
+        s += `<span class="fxchip" style="color:${col}">${def.hud.icon}${secs}</span> `;
+      }
+    }
+    this.el.survival.innerHTML = s;
+  }
   setWeapon(w) {
     const key = w.cur, d = WEAPONS[key];
     this.el.wepname.textContent = d.name.toUpperCase();
