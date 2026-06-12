@@ -117,3 +117,13 @@ export function contactWeaken(entity) {
   for (const key of fx.keys()) { const w = EFFECTS[key].enemyWeaken; if (w) m *= w; }
   return m;
 }
+
+/** Remove ALL effects from the entity, firing each onClear. Returns the count removed. */
+export function clearEffects(entity, ctx) {
+  const fx = entity.effects;
+  if (!fx || fx.size === 0) return 0;
+  let n = 0;
+  for (const key of fx.keys()) { const def = EFFECTS[key]; if (def && def.onClear) def.onClear(entity, ctx); n++; }
+  fx.clear();
+  return n;
+}

@@ -138,3 +138,21 @@ test('modifiers: radiation neither slows nor weakens', () => {
   assert.equal(movementSlow(e), 1);
   assert.equal(contactWeaken(e), 1);
 });
+
+import { clearEffects } from '../../src/effects-status.js';
+
+test('clearEffects: empties the map and fires each onClear', () => {
+  let limp = null;
+  const ctx = { setLimp: (e, on) => { limp = on; } };
+  const e = ent();
+  applyEffect(e, 'broken_leg', Infinity, ctx);
+  applyEffect(e, 'radiation', 10, ctx);
+  const n = clearEffects(e, ctx);
+  assert.equal(n, 2);
+  assert.equal(e.effects.size, 0);
+  assert.equal(limp, false);              // broken_leg onClear ran (mobility restored)
+});
+
+test('clearEffects: 0 on an empty entity', () => {
+  assert.equal(clearEffects(ent(), {}), 0);
+});
