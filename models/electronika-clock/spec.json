@@ -1,0 +1,141 @@
+{
+  "id": "electronika-clock",
+  "name": "«Электроника 6.15М» — настольные электронные часы (зелёный ВФД, красный корпус)",
+  "description": "Soviet 6.15М bedside/desk digital alarm clock, red plastic colour variant: glossy red shell, a light clear-acrylic bezel framing a smoked-black front filter, an ИВЛ1-7/5 green VFD reading HH:MM, a top snooze button, the С/Я/К/Б/Ч/М control column on the left wall, and a grey mains lead out the rear. The green readout itself is a live CanvasTexture screen added at integration (reads the game world clock 1:1) — this spec builds the physical body + the smoked front it glows through.",
+  "category": "electronics",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.198, "h": 0.088, "d": 0.116 },
+  "dossier": "models/electronika-clock/ref/dossier.json",
+  "parts": [
+    {
+      "id": "base",
+      "name": "Slim dark base/foot the shell stands on",
+      "op": "bevelBox",
+      "args": { "w": 0.182, "h": 0.010, "d": 0.098 },
+      "at": [0, 0.005, 0],
+      "mat": "paintBlack",
+      "src": "dossier#case_material",
+      "note": "Low moulded base under the front (dossier feature 'stands on a small base/foot'); exact foot dims in needs[]"
+    },
+    {
+      "id": "body",
+      "name": "Red glossy plastic shell (wide-short-deep box)",
+      "op": "bevelBox",
+      "args": { "w": 0.195, "h": 0.072, "d": 0.100 },
+      "at": [0, 0.046, 0],
+      "mat": "paintRed",
+      "src": "dossier#case_dimensions",
+      "note": "195×75×100 mm case (case_dimensions); 75 mm split as 10 base + 72 body ≈ 82 overall"
+    },
+    {
+      "id": "bezel",
+      "name": "Light clear-acrylic front bezel frame (catches light, frames the panel)",
+      "op": "bevelBox",
+      "args": { "w": 0.188, "h": 0.066, "d": 0.012 },
+      "at": [0, 0.047, 0.049],
+      "mat": "galvanized",
+      "src": "dossier#front_filter",
+      "note": "Translucent clear/acrylic front frame read as a light grey rim in voxel (no transparency); front at z≈0.055, embeds into the red body"
+    },
+    {
+      "id": "panel",
+      "name": "Smoked-black front filter (the dark screen the green digits glow through)",
+      "op": "bevelBox",
+      "args": { "w": 0.168, "h": 0.050, "d": 0.012 },
+      "at": [0, 0.047, 0.052],
+      "mat": "shellac",
+      "src": "dossier#front_filter",
+      "note": "Glossy near-black smoked filter, ~3 mm proud of the bezel, smaller so the bezel frames it; the live green VFD screen mounts on its front face (z≈0.058) at integration"
+    },
+    {
+      "id": "top_button",
+      "name": "Top snooze/light button (round, forward of centre)",
+      "op": "cylinder",
+      "args": { "r": 0.013, "h": 0.007 },
+      "at": [0, 0.082, 0.022],
+      "mat": "gunGrey",
+      "src": "dossier#buttons",
+      "note": "Round top control visible in the reference photo; size is a photo-proportion derivation (see needs[]) — embeds ~3.5 mm, stands ~3.5 mm proud"
+    },
+    {
+      "id": "sb1",
+      "name": "Left-wall control button С (signal)",
+      "op": "cylinder",
+      "args": { "r": 0.0035, "h": 0.006 },
+      "at": [-0.0975, 0.024, 0.02],
+      "rot": [0, 0, 90],
+      "mat": "gunGrey",
+      "src": "dossier#buttons"
+    },
+    {
+      "id": "sb2",
+      "name": "Left-wall control button Я (brightness)",
+      "op": "cylinder",
+      "args": { "r": 0.0035, "h": 0.006 },
+      "at": [-0.0975, 0.0328, 0.02],
+      "rot": [0, 0, 90],
+      "mat": "gunGrey",
+      "src": "dossier#buttons"
+    },
+    {
+      "id": "sb3",
+      "name": "Left-wall control button К (correction)",
+      "op": "cylinder",
+      "args": { "r": 0.0035, "h": 0.006 },
+      "at": [-0.0975, 0.0416, 0.02],
+      "rot": [0, 0, 90],
+      "mat": "gunGrey",
+      "src": "dossier#buttons"
+    },
+    {
+      "id": "sb4",
+      "name": "Left-wall control button Б (alarm-set)",
+      "op": "cylinder",
+      "args": { "r": 0.0035, "h": 0.006 },
+      "at": [-0.0975, 0.0504, 0.02],
+      "rot": [0, 0, 90],
+      "mat": "gunGrey",
+      "src": "dossier#buttons"
+    },
+    {
+      "id": "sb5",
+      "name": "Left-wall control button Ч (hours)",
+      "op": "cylinder",
+      "args": { "r": 0.0035, "h": 0.006 },
+      "at": [-0.0975, 0.0592, 0.02],
+      "rot": [0, 0, 90],
+      "mat": "gunGrey",
+      "src": "dossier#buttons"
+    },
+    {
+      "id": "sb6",
+      "name": "Left-wall control button М (minutes)",
+      "op": "cylinder",
+      "args": { "r": 0.0035, "h": 0.006 },
+      "at": [-0.0975, 0.068, 0.02],
+      "rot": [0, 0, 90],
+      "mat": "gunGrey",
+      "src": "dossier#buttons"
+    },
+    {
+      "id": "cable",
+      "name": "Grey twin mains lead exiting the rear-bottom",
+      "op": "cylinder",
+      "args": { "r": 0.004, "h": 0.012 },
+      "at": [0, 0.016, -0.056],
+      "rot": [90, 0, 0],
+      "mat": "gunGrey",
+      "src": "dossier#rear_and_power",
+      "note": "Short exit stub out the bottom-rear; the full drape off the shelf is not modelled (needs[])"
+    }
+  ],
+  "needs": [
+    "Top button: exact size/type (snooze vs light) unsourced — modelled at photo-proportion; confirm against a passport/teardown",
+    "Side-button column placement is per the teardown (left wall) — the RED plastic variant may carry them on the front instead (dossier#buttons / dossier.needs)",
+    "Smoked-filter clear aperture and the green screen's exact size are DERIVED from the ИВЛ1-7/5 digit cluster (dossier#derivation), not measured",
+    "Case wall thickness, corner radius and base/foot dims are approximated (dossier.needs) — overall 195×75×100 is a single marketplace source",
+    "Mains cable drape past the shelf edge not modelled (floor-anchored prop); only the rear exit stub is built",
+    "The live green VFD readout (HH:MM, colon, alarm dot, «электроника» logo) is NOT in this voxel spec — it is a CanvasTexture screen mounted on the panel front at game integration, reading the world clock"
+  ]
+}

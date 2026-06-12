@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>clockface VFD test</title>
+<style>html,body{margin:0;height:100%;background:#0c0c0e;overflow:hidden}#info{position:fixed;left:8px;top:6px;color:#6a6;font:12px monospace}</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="info"></div>
+<script type="module">
+import * as THREE from 'three';
+import { makeDigitalClockFace } from '../../src/clockface.js';
+
+const q = new URLSearchParams(location.search);
+const time  = q.get('t') || '17:05';
+const pixel = q.get('pixel') !== '0';
+const ghost = q.get('ghost') !== '0';
+const onPanel = q.get('panel') === '1'; // show on a smoked-black panel like the real clock front
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0c0c0e, 1);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const W = window.innerWidth, H = window.innerHeight;
+const aspect = W / H;
+const HH = 0.026; // ortho half-height, framed tight to the 0.044 m face
+const cam = new THREE.OrthographicCamera(-HH * aspect, HH * aspect, HH, -HH, 0.01, 10);
+cam.position.set(0, 0, 1);
+cam.lookAt(0, 0, 0);
+
+if (onPanel) {
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.185, 0.062),
+    new THREE.MeshBasicMaterial({ color: 0x0a0a0c, toneMapped: false })
+  );
+  panel.position.z = -0.002; scene.add(panel);
+}
+
+const face = makeDigitalClockFace({ widthM: 0.150, heightM: 0.044, pixel, ghost });
+scene.add(face.mesh);
+
+document.getElementById('info').textContent = `t=${time} pixel=${pixel} ghost=${ghost} panel=${onPanel}`;
+
+let frame = 0;
+function loop() {
+  frame++;
+  const blinkOn = (Math.floor(frame / 30) % 2) === 0; // ~blink each ~0.5s @60fps
+  face.setTime(time, { blink: true /* keep colon solid for a still capture */, alarm: q.get('alarm') === '1' });
+  renderer.render(scene, cam);
+  requestAnimationFrame(loop);
+}
+loop();
+window.__READY__ = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+{
+  "id": "electronika-clock",
+  "title": "«Электроника 6.15М» — Soviet desk/bedside DIGITAL ALARM CLOCK, green ИВЛ1-7/5 VFD, red plastic case (HH:MM, mains-powered, 9V Krona backup)",
+  "era": "USSR, mid-1980s onward. The 6.15 family ran early-1980s→1990s; the 6.15М variant is dated 1985. Maker: завод «Микрокомпонент», г. Учкекен / завод «Время», г. Усть-Джегута, Ставропольский край (а/я 84) — the same Stavropol plant; one museum page mis-attributes a Minsk «Электроника». Built on К176ИЕ18/К176ИЕ13/К176ИД3 logic + ЗП-1 buzzer; mains transformer Т19-220-50.",
+  "identification_note": "POSITIVELY IDENTIFIED as «Электроника 6.15М». The user's reference photo (glossy RED rectangular plastic case, smoked clear front filter, green 7-seg VFD reading HH:MM with a colon, the word «электроника» small white at lower-RIGHT of the dark panel, thin mains cable out the back, nightstand-sized) matches the 6.15М front exactly — see images[]: the downloaded front photo shows the identical smoked panel reading «13:13» in green with «электроника» silk-screened lowercase at the lower-right; the rear photo is embossed «ЭЛЕКТРОНИКА 6.15М» + Soviet Quality Mark + «G» export stamp. The user's unit is the RED plastic colour variant (the family was moulded in white/blue/brown/RED). NOT the 2-07 (that is a clock-RADIO), NOT the big 7-06 institutional wall clock (78/140 mm digits, wood case), NOT the 2-11 (smaller grey plastic export alarm, 83×55 mm front).",
+  "sources": {
+    "ivl_datasheet_pdf": "ИВЛ1-7/5 factory datasheet (scanned, with dimensioned envelope + single-digit drawings): symbol/digit height 21 mm, digit width 13,67 mm, segment width 1,8 mm; glass envelope length 133 mm, glass height 45 mm (active ~47), overall height with leads 55 mm, thickness 12 mm (glass body 7,5 mm); digits 0–9 in positions 1,2,4,5 and TWO dots (colon) in position 3 («точка К» pin2 / «точка Л» pin10); colour зелёный; mass ≤45 g — https://radio-hobby.org/uploads/datasheets/ivl/ivl1%207.5.pdf",
+    "ivl_zapadpribor": "ИВЛ1-7/5 dealer/parametric listing — overall '133×47×12 mm', glow colour green, 'used in Электроника-series clocks' — https://zapadpribor.com/ivl1-7-5/",
+    "ivl_signalizacia": "ИВЛ1-7/5 description — 'индикатор цифровой многоразрядный вакуумный люминесцентный … цифр от 0 до 9 в 1, 2, 4 и 5-м разрядах и двух точек в 3-м разряде'; flat glass body, flexible leads, mass ≤45 g; цвет свечения зелёный; накал 5 В/120±12 мА; анод-сегмент 27 В; яркость 500 кд/м² — https://signalizacia.in.ua/index.files/indikator_vakuumnij_luminescentnij_cifrovoj_mnogorazrjadnij_ivl1_7_5.htm",
+    "wiki_soviet_clocks": "ru.wikipedia «Электронные часы СССР» — model list; 6.15М is a bedside/desk alarm; cross-references the ИВЛ1-7/5 (used by 4.13, 6.15М) and ИВЛ2-7/5 (used by 12-41) green VFD tubes — https://ru.wikipedia.org/wiki/Электронные_часы_СССР",
+    "petrofflab_chasy": "Radiotech modding labs «ЧАСЫ ЭЛЕКТРОНИКА» — 6.15 detail: display ИВЛ1-7/5; logic К176ИЕ18/ИЕ13/ИД3; transformer Т19-220-50; case plastic OR wood-veneer (mahogany/beech); FRONT = green plastic light-filter with horizontal embossed stripes and 'электроника 6' text; gold coating on embossing (mainly wood versions); buttons on FRONT for plastic cases, REAR for wood; colour variants incl. RED and green — https://www.petrofflab.ru/p/chasy-electronika.html",
+    "habr_teardown": "Habr (macloud) «Часы Электроника 6.15М» full teardown — ИВЛ1-7/5 with adjustable brightness; control buttons «Я» (яркость/brightness), «Ч» (часы/hours), «К» (коррекция/correction), «М» (минуты/minutes), «Б» (будильник/alarm-set), toggle «С» (сигнал/sound); power 220 V AC, filament 5 V, anode/grid 27 V; chips К176ИЕ18/ИЕ13/ИД3; downloaded photos show: front smoked panel reading «13:13» green with «электроника» lowercase at lower-right + alarm indicator by the colon; rear embossed «ЭЛЕКТРОНИКА 6.15М» + Знак качества + «G»; a column of 6 round side buttons; round ЗП-1 buzzer grille; grey twin mains lead out the bottom; 9V «Крона» battery bay — https://habr.com/ru/company/macloud/blog/564996/",
+    "sovtech_museum": "Виртуальный музей советской бытовой техники «Часы Электроника 6.15М» — dated 1985, rectangular plastic housing, darker front panel, «ЭЛЕКТРОНИКА» front branding, HH:MM, ИВЛ display — https://www.sovtech.su/2023/03/20/часы-электроника-6-15м/",
+    "technochas_615i": "Техночас.Ру catalog «Электроника 6.15И» — sister variant: 'ВЛИ' green VFD ('приятного изумрудного свечения' = pleasant emerald glow), 220 V mains + backup 'Крона' battery, daily rate ≤5 s/day, wood-finish housing, завод «Время» г. Усть-Джегута — https://technochas.ru/index.php?page=katalog&subpage=nastolnije_chasy&item=Electronika_6_15I",
+    "ebay_red_615a": "eBay «RARE VINTAGE SOVIET USSR VFD … CLOCK ELEKTRONIKA 6.15 RED COLOR» — confirms the RED plastic colour variant (tested/working) — https://www.ebay.com/itm/284917053872",
+    "ebay_red_615b": "eBay «Vintage USSR Desk Clock Elektronika 6.15 Alarm Clock Red electronica» — second independent RED-cased 6.15 listing — https://www.ebay.com/itm/394480970160",
+    "ebay_dims_615": "eBay marketplace listing for an Электроника 6.15 stating case size '19.5 × 7.5 × 10 cm' (= 195 × 75 × 100 mm) — single marketplace measurement, axis order not labelled — surfaced via web search of eBay/Etsy 6.15 listings (see needs[] for a 2nd dimensional source)",
+    "colors_restoration": "Restoration/collector documentation (surfaced via search of the 6.15М teardown ecosystem) — '…корпуса выпускались белого, синего, коричневого и красного цвета' (housings produced in white, blue, brown and RED) — corroborates petrofflab_chasy colour list"
+  },
+  "specifications": {
+    "case_dimensions": {
+      "width_mm": 195,
+      "height_mm": 75,
+      "depth_mm": 100,
+      "note": "Overall case ≈ 195 (W, left-right) × 75 (H, top-bottom of the wide-short front face) × 100 (D, front-to-back). SINGLE marketplace source (ebay_dims_615 '19.5×7.5×10 cm'); the wide-short-deep proportion is confirmed by the front photo (front face aspect ≈ 2.6:1) and by the ИВЛ1-7/5 tube it must house (133 mm wide → case ~195 wide leaves ~31 mm margin each side; tube ~47–55 mm tall → 75 mm face leaves ~10 mm top/bottom). Exact габариты + axis order → needs[].",
+      "src": "ebay_dims_615 (195×75×100 mm); proportion cross-checked against ivl_datasheet_pdf tube width 133 mm and the front photo in images[]"
+    },
+    "vfd_display": {
+      "tube": "ИВЛ1-7/5 (interchangeable designation ИЛЦ4-5/7Л)",
+      "type": "Многоразрядный вакуумно-люминесцентный индикатор (multi-digit vacuum-fluorescent display), flat glass envelope, flexible leads",
+      "glow_colour": "Green (зелёный / 'изумрудное свечение' emerald), 7-segment phosphor, ~500 cd/m² nominal per digit",
+      "digit_positions": "4 numeric digits in positions 1,2,4,5 + a fixed colon (two dots, «точка К» upper / «точка Л» lower) in the central position 3 → reads HH:MM",
+      "tube_envelope_mm": [133, 47, 12],
+      "tube_glass_height_mm": 45,
+      "tube_overall_height_with_leads_mm": 55,
+      "tube_glass_thickness_mm": 7.5,
+      "mass_g_max": 45,
+      "src": "ivl_datasheet_pdf (envelope 133×45/55×12, 7,5 mm glass, 4 digits + colon, green, ≤45 g) + ivl_zapadpribor ('133×47×12 mm', green) + ivl_signalizacia (positions 1,2,4,5 + two dots in 3, green); used-in-6.15М confirmed by habr_teardown + wiki_soviet_clocks"
+    },
+    "digit_geometry": {
+      "digit_height_mm": 21,
+      "digit_width_mm": 13.67,
+      "segment_width_mm": 1.8,
+      "digit_pitch_mm": 18.3,
+      "colon_gap_mm": 16,
+      "note": "Per-symbol geometry straight off the ИВЛ1-7/5 datasheet drawing: digit cell 21 mm tall × 13,67 mm wide, segment bar 1,8 mm, centre-to-centre digit pitch ≈18,3 mm, the central colon gap (Ø4 hole region) ≈16 mm. These ARE the green characters the player reads as HH:MM.",
+      "src": "ivl_datasheet_pdf (single-digit detail 21 × 13,67, segment 1,8; spacing 18,3 / colon 16 off the envelope drawing)"
+    },
+    "front_filter": {
+      "material": "Translucent injection-moulded acrylic/polystyrene light filter — smoked dark grey-to-near-black when unlit (some 6.15 variants use a green-tinted filter); high gloss; reads as a flat black panel that the green digits glow through",
+      "coverage": "Wraps/insets the full front face inside the case rim; the case plastic frames it on top/bottom/sides",
+      "embossing": "Some variants carry horizontal embossed stripes flanking the window and an embossed 'электроника 6' (gold-filled on wood-cased versions); the photographed plastic unit instead has a clean smoked panel",
+      "src": "petrofflab_chasy (green light-filter, horizontal embossed stripes, 'электроника 6', gold embossing on wood) + habr_teardown front photo (smoked panel, digits glow through) — see images[]"
+    },
+    "markings": {
+      "front_logo": "«электроника» — lowercase Cyrillic, small, WHITE silk-screen, at the LOWER-RIGHT of the dark front panel (below and right of the digits)",
+      "alarm_indicator": "A small alarm/'set' indicator (bell-like icon / extra dot) sits adjacent to the colon, centre, just above/left of it — an alarm-on tell (the user's 'tiny separate dot low-center'); distinct from the two colon dots",
+      "rear_embossing": "«ЭЛЕКТРОНИКА 6.15М» embossed on the rear/bottom housing, alongside the Soviet State Quality Mark (Знак качества, pentagon-К) and an export «G» stamp",
+      "src": "habr_teardown photos (front lowercase «электроника» lower-right; rear «ЭЛЕКТРОНИКА 6.15М» + Знак качества + «G») — both downloaded into images[]; alarm indicator visible in the front photo"
+    },
+    "buttons": {
+      "count": 6,
+      "labels_top_to_bottom": ["С", "Я", "К", "Б", "Ч", "М"],
+      "meaning": "С = сигнал/alarm-sound toggle, Я = яркость/brightness, К = коррекция/correction, Б = будильник/alarm-set, Ч = часы/hours, М = минуты/minutes",
+      "type": "Small round push-buttons in a single vertical column",
+      "location": "On the LEFT side wall of the photographed unit (petrofflab notes plastic-case variants can carry them on the FRONT, wood-case variants on the REAR)",
+      "src": "habr_teardown (6 buttons, column, labels С/Я/К/Б/Ч/М visible in the rear photo) + petrofflab_chasy (front-vs-rear placement by case type)"
+    },
+    "rear_and_power": {
+      "mains_cable": "Thin grey two-wire (twin-lead) mains flex exiting the BOTTOM-centre of the rear housing",
+      "power": "220 V AC mains via transformer Т19-220-50 → 5 V filament + 27 V anode/grid; backup 9 V «Крона» battery in a rear bay keeps time on outage",
+      "buzzer": "Round piezo/dynamic alarm buzzer ЗП-1 behind a perforated grille on the rear-left",
+      "src": "habr_teardown (grey twin mains lead bottom-centre, 220/5/27 V, ЗП-1, 9V Крона bay) + petrofflab_chasy (Т19-220-50) + technochas_615i (mains + Крона backup)"
+    },
+    "case_material": {
+      "shell": "Glossy injection-moulded thermoplastic (polystyrene/ABS), opaque RED for the user's unit (family moulded white/blue/brown/red); wide-short-deep rectangular box",
+      "base": "Stands on a small low base/foot moulded under the front (the front photo sits the panel on a short pedestal/feet)",
+      "src": "ebay_red_615a + ebay_red_615b (red plastic 6.15) + colors_restoration + petrofflab_chasy (plastic vs wood, colour list); base/foot from images[] front photo"
+    },
+    "derivation": {
+      "single_digit_height_mm": "21 — taken directly from digit_geometry (datasheet), NOT derived; this is the in-game character height anchor",
+      "display_window_mm": "Clear aperture in the smoked filter ≈ the active 4-digit+colon cluster: width ≈ 4×13,67 + colon 16 + ~2×6 margin ≈ 95–115 mm; height ≈ digit 21 + ~2×5 margin ≈ 30 mm. DERIVED from digit_geometry; exact mask cut-out unsourced → needs[].",
+      "case_wall_mm": "≈2–3 — typical Soviet injection-moulded clock-case wall; assumed, not measured → needs[]",
+      "front_face_mm": "≈195 × 75 = case_dimensions W × H; the smoked filter spans nearly the whole face inside the case rim",
+      "digit_to_case_fit": "case width 195 ⊃ tube 133 (≈31 mm side margins); case face height 75 ⊃ tube glass 45–55 (≈10–15 mm top/bottom margins) — sanity-checks the single-sourced case_dimensions against the well-sourced tube",
+      "src": "geometric derivation from specifications.digit_geometry + specifications.vfd_display.tube_envelope_mm + specifications.case_dimensions"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "Red glossy injection-moulded plastic case, wide-short-deep rectangular box on a small base/foot (≈195×75×100 mm)", "src": "ebay_red_615a; ebay_red_615b; colors_restoration; ebay_dims_615" },
+    { "feature": "Smoked/green translucent acrylic front light-filter wrapping the full front face, reading flat black when unlit; green digits glow through it", "src": "petrofflab_chasy; habr_teardown" },
+    { "feature": "Green ИВЛ1-7/5 vacuum-fluorescent tube — 4 seven-segment digits + a fixed central colon (two dots) → HH:MM; digit cell 21×13,67 mm, segment 1,8 mm; tube envelope 133×47×12 mm", "src": "ivl_datasheet_pdf; ivl_zapadpribor; ivl_signalizacia" },
+    { "feature": "Colon = two dots (точка К upper / точка Л lower) in the central 3rd position between hours and minutes", "src": "ivl_signalizacia; ivl_datasheet_pdf" },
+    { "feature": "Small alarm/'set' indicator (bell icon / extra dot) beside the colon — alarm-on tell, distinct from the colon dots", "src": "habr_teardown front photo" },
+    { "feature": "«электроника» logo — lowercase white silk-screen at the LOWER-RIGHT of the dark front panel", "src": "habr_teardown front photo" },
+    { "feature": "Six round push-buttons in a vertical column, labels С/Я/К/Б/Ч/М (sound/brightness/correction/alarm/hours/minutes), on the side (plastic variants may put them on the front)", "src": "habr_teardown; petrofflab_chasy" },
+    { "feature": "Rear housing embossed «ЭЛЕКТРОНИКА 6.15М» + Soviet Quality Mark (Знак качества) + export «G» stamp", "src": "habr_teardown rear photo" },
+    { "feature": "Thin grey two-wire mains cable exiting the bottom-centre of the rear; 220 V AC (transformer Т19-220-50, 5 V filament / 27 V anode-grid)", "src": "habr_teardown; petrofflab_chasy; technochas_615i" },
+    { "feature": "9 V «Крона» backup battery bay in the rear; round ЗП-1 alarm buzzer behind a perforated grille rear-left", "src": "habr_teardown; technochas_615i" },
+    { "feature": "Internal logic К176ИЕ18 / К176ИЕ13 / К176ИД3 (flavour/era only, not modelled)", "src": "petrofflab_chasy; habr_teardown" }
+  ],
+  "images": [
+    { "view": "front (lit)", "file": "ref/ref-6_15-display.png", "url": "https://habrastorage.org/webt/iv/xb/ka/ivxbkanr5umxrsm1gqw9xrckpmc.png", "shows": "6.15М FRONT — wide smoked-black glossy panel, green VFD reading «13:13» (HH:MM + colon), small alarm indicator left of the colon, «электроника» lowercase white silk-screen at the LOWER-RIGHT, mains cable from top/rear, on a low base. The user's red unit is this exact face in a red case." },
+    { "view": "rear / model embossing + buttons", "file": "ref/ref-6_15-front.jpeg", "url": "https://habrastorage.org/webt/or/uj/yu/orujyu8sq7elaaj4d6xtcj32sa8.jpeg", "shows": "Rear/inside housing — embossed «ЭЛЕКТРОНИКА 6.15М» + Soviet Quality Mark + «G»; a column of 6 round side buttons labelled С/Я/К/Б/Ч/М; round ЗП-1 buzzer grille; 9V Krona battery bay (right, yellow leads); grey twin mains lead out the bottom-centre" },
+    { "view": "bare ИВЛ1-7/5 tube lit", "file": "ref/ref-6_15-c.jpeg", "url": "https://habrastorage.org/webt/cr/fi/-t/crfi-tvqvgoxx9exa-p3pai0le8.jpeg", "shows": "The filter removed — the bare green ИВЛ1-7/5 VFD on its PCB reading «13:13», confirming the 4-digit + colon HH:MM green display and the flat glass envelope" },
+    { "view": "PCB / chipset", "file": "ref/ref-6_15-b.jpeg", "url": "https://habrastorage.org/webt/dp/pl/9n/dppl9nf2b1vcovxudsctcyprqsk.jpeg", "shows": "Main PCB — К176ИД3 / К176ИЕ18 chips, ЗП-1 buzzer, transformer, Krona clip (flavour/era confirmation only)" },
+    { "view": "red colour variant listings", "url": "https://www.ebay.com/itm/284917053872", "shows": "eBay «ELEKTRONIKA 6.15 RED COLOR» — landing page confirming the RED plastic variant (also https://www.ebay.com/itm/394480970160)" }
+  ],
+  "needs": [
+    "Exact case overall dimensions (mm) and axis order from a passport/паспорт or a ruler-measured listing — current 195×75×100 mm is a SINGLE marketplace figure (ebay_dims_615 '19.5×7.5×10 cm'), cross-checked only by tube-fit proportion; want a 2nd independent measurement",
+    "Display-window (smoked-filter clear aperture) exact width×height — DERIVED (~95–115 × ~30 mm) from the tube digit cluster, not measured",
+    "Case wall thickness and external corner radius (mm) — assumed ~2–3 mm, unsourced",
+    "Exact placement of the 6 buttons on the RED plastic variant specifically (side column as photographed vs front-mounted per petrofflab's plastic-case note)",
+    "Whether the RED unit's front filter is smoked-grey/black or green-tinted, and whether it carries the horizontal embossed stripes + 'электроника 6' embossing or a plain panel",
+    "Base/foot exact height and footprint (mm) — only visible in photos, not measured",
+    "Precise nature of the alarm indicator beside the colon (separate LED/segment vs a printed bell icon) and its exact position",
+    "Confirm primary factory/year for the RED 6.15М specifically (Учкекен «Микрокомпонент» vs Усть-Джегута «Время»; museum Minsk attribution looks erroneous)",
+    "A direct photo FILE of a RED-cased 6.15М for overlay — downloaded reference photos are a dark/smoked-cased 6.15М (identical geometry, different shell colour)"
+  ]
+}
