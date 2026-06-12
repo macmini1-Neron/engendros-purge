@@ -8,7 +8,7 @@
   "dossier": "models/gramophone/ref/dossier.json",
   "rig": [
     { "name": "lid",       "pivot": [0, 0.108, -0.145], "axis": "x", "pose": -1.9,  "type": "hinge", "range": [-2.0, 0] },
-    { "name": "turntable", "pivot": [-0.04, 0.118, 0.01], "axis": "y", "pose": 0,   "type": "spin",  "range": [0, 6.2832] },
+    { "name": "turntable", "pivot": [-0.033, 0.124, 0.0], "axis": "y", "pose": 0,   "type": "spin",  "range": [0, 6.2832] },
     { "name": "tonearm",   "pivot": [0.10, 0.13, -0.03], "axis": "y", "pose": -0.5, "type": "spin",  "range": [-0.8, 0.4] },
     { "name": "crank",     "pivot": [0.156, 0.06, 0],    "axis": "x", "pose": 0,    "type": "spin",  "range": [0, 6.2832] }
   ],
@@ -35,11 +35,11 @@
     { "op": "bevelBox", "id": "lidLining", "args": { "w": 0.285, "h": 0.006, "d": 0.265, "tone": "hi" }, "at": [0, 0.106, 0], "mat": "granitol", "rig": "lid", "src": "dossier#lid" },
     { "op": "decal", "id": "lidLogo", "args": { "w": 0.15, "h": 0.19, "axis": "y", "kind": "lidLogo" }, "at": [0, 0.1015, -0.01], "rot": [180, 0, 0], "mat": "cream", "rig": "lid", "src": "dossier#lid" },
 
-    { "op": "cylinder", "id": "platter", "args": { "r": 0.118, "h": 0.018, "axis": "y", "tone": "hi" }, "at": [-0.04, 0.118, 0.01], "mat": "chrome", "rig": "turntable", "src": "dossier#platter" },
-    { "op": "cylinder", "id": "platterFelt", "args": { "r": 0.112, "h": 0.004, "axis": "y" }, "at": [-0.04, 0.1285, 0.01], "mat": "feltTeal", "rig": "turntable", "src": "dossier#platter" },
-    { "op": "disc", "id": "record", "args": { "r": 0.125, "h": 0.003, "axis": "y" }, "at": [-0.04, 0.131, 0.01], "mat": "shellac", "rig": "turntable", "src": "dossier#record" },
-    { "op": "texturedDisc", "id": "recordLabel", "args": { "r": 0.05, "axis": "y", "title": "АМУРСКИЕ ВОЛНЫ", "mode": "black" }, "at": [-0.04, 0.1331, 0.01], "mat": "cream", "rig": "turntable", "src": "dossier#record" },
-    { "op": "cylinder", "id": "spindle", "args": { "r": 0.004, "h": 0.014, "axis": "y", "tone": "bright" }, "at": [-0.04, 0.137, 0.01], "mat": "chrome", "rig": "turntable", "src": "dossier#derivation" },
+    { "op": "cylinder", "id": "platter", "args": { "r": 0.112, "h": 0.018, "axis": "y", "tone": "hi" }, "at": [-0.033, 0.124, 0.0], "mat": "chrome", "rig": "turntable", "src": "dossier#platter" },
+    { "op": "cylinder", "id": "platterFelt", "args": { "r": 0.106, "h": 0.004, "axis": "y" }, "at": [-0.033, 0.1345, 0.0], "mat": "feltTeal", "rig": "turntable", "src": "dossier#platter" },
+    { "op": "disc", "id": "record", "args": { "r": 0.118, "h": 0.003, "axis": "y" }, "at": [-0.033, 0.137, 0.0], "mat": "shellac", "rig": "turntable", "src": "dossier#record" },
+    { "op": "texturedDisc", "id": "recordLabel", "args": { "r": 0.05, "axis": "y", "title": "АМУРСКИЕ ВОЛНЫ", "mode": "black" }, "at": [-0.033, 0.1391, 0.0], "mat": "cream", "rig": "turntable", "src": "dossier#record" },
+    { "op": "cylinder", "id": "spindle", "args": { "r": 0.004, "h": 0.014, "axis": "y", "tone": "bright" }, "at": [-0.033, 0.143, 0.0], "mat": "chrome", "rig": "turntable", "src": "dossier#derivation" },
 
     { "op": "cylinder", "id": "tonearmBase", "args": { "r": 0.016, "h": 0.024, "axis": "y", "tone": "hi" }, "at": [0.10, 0.12, -0.03], "mat": "chrome", "src": "dossier#tonearm" },
     { "op": "cylinder", "id": "armRest", "args": { "r": 0.006, "h": 0.03, "axis": "y", "tone": "hi" }, "at": [0.14, 0.125, 0.07], "mat": "chrome", "src": "dossier#derivation" },

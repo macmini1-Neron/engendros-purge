@@ -18,10 +18,15 @@ const DISPLAY_SPIN = DISPLAY_RPS * Math.PI * 2; // ~2.14 rad/s
 // The needle traces an ARC (offset pivot), so radius is NOT linear in angle — it bottoms out near
 // the centre. These two angles are the monotonic outer→inner branch found from the rig geometry:
 // the needle goes from the outer groove to the LABEL EDGE and never crosses onto the paper label.
-const ARM_OUTER = 0.484;   // start of a track: needle on the outer groove (R≈0.112 m from spindle)
-const ARM_INNER = 0.122;   // end of a track: needle at the label edge (R≈0.060 m; label is r0.05 — stops just outside the paper)
+const ARM_OUTER = 0.436;   // start of a track: needle on the outer groove (R≈0.111 m from spindle, vinyl r0.118)
+const ARM_INNER = 0.059;   // end of a track: needle at the label edge (R≈0.060 m; label is r0.05 — stops just outside the paper)
 const ARM_PARK  = 0.95;    // off to the arm-rest side, clear of the disc — where it waits while a record is changed
 const ARM_LIFT  = -0.30;   // rotation.z that raises the needle clear of the disc (the lift gesture)
+const ARM_DOWN  = 0.793;   // lift fraction while the needle is DOWN: the rig's neutral pose (lift 0) buries the
+                           // reproducer well below the vinyl top, so playing keeps this much of the lift — the
+                           // needle tip just touches the record surface and the soundbox floats clear above it.
+                           // All four angles are scanned from the live rig geometry — re-scan if the spec's
+                           // turntable stack or tonearm move.
 const LIFT_DISC = 0.085;   // how far the record rises off the platter during a swap (m, local)
 // Record-change choreography (like a real patefon, no collisions). Phase boundaries are elapsed seconds:
 const CHG_DUR  = 2.05;     // total length of a record change
@@ -44,9 +49,9 @@ function animateGramophone(g, st, dt, playing, progress) {
       yT = ARM_PARK; liftT = 1;
       discT = Math.sin(((e - CHG_AWAY) / (CHG_SWAP - CHG_AWAY)) * Math.PI) * LIFT_DISC; // lift off → set down
       if (!st.swapped && e >= CHG_MID) { st.swapped = true; setGramophoneLabel(g, st.pendingTitle, st.pendingStyle); }
-    } else { yT = ARM_OUTER; liftT = Math.max(0, 1 - (e - CHG_SWAP) / (CHG_DUR - CHG_SWAP)); } // C — set on the outer edge
+    } else { yT = ARM_OUTER; liftT = 1 - (1 - ARM_DOWN) * Math.min(1, (e - CHG_SWAP) / (CHG_DUR - CHG_SWAP)); } // C — set down on the outer edge
   } else if (!playing) { yT = ARM_PARK; liftT = 1; }                                  // parked when stopped
-  else { yT = ARM_OUTER + (ARM_INNER - ARM_OUTER) * Math.min(1, Math.max(0, progress || 0)); liftT = 0; } // travel edge→centre
+  else { yT = ARM_OUTER + (ARM_INNER - ARM_OUTER) * Math.min(1, Math.max(0, progress || 0)); liftT = ARM_DOWN; } // travel edge→centre, needle resting on the surface
   st.y += (yT - st.y) * Math.min(1, dt * 5);
   st.lift += (liftT - st.lift) * Math.min(1, dt * 6);
   st.discY += (discT - st.discY) * Math.min(1, dt * (changing ? 12 : 6));
