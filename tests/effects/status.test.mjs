@@ -57,3 +57,58 @@ test('applyEffect: onApply fires once (not on refresh); Infinity stays Infinity'
   assert.equal(applied, 1);
   assert.equal(e.effects.get('broken_leg').ticksLeft, Infinity);
 });
+
+import { stepEffects } from '../../src/effects-status.js';
+
+// spy ctx: records every op call so we can assert dispatch without a real game
+function spyCtx(isEnemy) {
+  const calls = [];
+  return {
+    isEnemy: () => isEnemy,
+    hurtPlayer: (p, d) => calls.push(['hurtPlayer', d]),
+    healEnemy: (e, n) => calls.push(['healEnemy', n]),
+    fireFx: () => calls.push(['fireFx']),
+    drip: () => calls.push(['drip']),
+    setLimp: (e, on) => calls.push(['setLimp', on]),
+    calls,
+  };
+}
+
+test('stepEffects: radiation HURTS a player-kind entity', () => {
+  const e = ent(); applyEffect(e, 'radiation', 10, {});
+  const ctx = spyCtx(false);
+  stepEffects(e, ctx);
+  assert.equal(ctx.calls[0][0], 'hurtPlayer');
+});
+
+test('stepEffects: radiation HEALS an enemy-kind entity (the inversion)', () => {
+  const e = ent(); applyEffect(e, 'radiation', 10, {});
+  const ctx = spyCtx(true);
+  stepEffects(e, ctx);
+  assert.equal(ctx.calls[0][0], 'healEnemy');
+});
+
+test('stepEffects: bleed on an enemy drips, never hurts', () => {
+  const e = ent(); applyEffect(e, 'bleed', 8, {});
+  const ctx = spyCtx(true);
+  stepEffects(e, ctx);
+  assert.deepEqual(ctx.calls.map(c => c[0]), ['drip']);
+});
+
+test('stepEffects: decrements ticksLeft and expires, firing onClear', () => {
+  const ctx = spyCtx(false);
+  const e = ent(); applyEffect(e, 'radiation', 0.2, ctx);  // 2 ticks
+  stepEffects(e, ctx); assert.equal(e.effects.get('radiation').ticksLeft, 1);
+  stepEffects(e, ctx); assert.equal(e.effects.has('radiation'), false);
+});
+
+test('stepEffects: broken_leg (Infinity, no tick handler) never auto-expires', () => {
+  const ctx = spyCtx(false);
+  const e = ent(); applyEffect(e, 'broken_leg', Infinity, ctx);
+  stepEffects(e, ctx); stepEffects(e, ctx);
+  assert.equal(e.effects.has('broken_leg'), true);
+});
+
+test('stepEffects: empty map is a no-op', () => {
+  assert.doesNotThrow(() => stepEffects(ent(), spyCtx(false)));
+});

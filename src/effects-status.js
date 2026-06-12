@@ -78,3 +78,24 @@ export function applyEffect(entity, key, seconds, ctx) {
   }
   return true;
 }
+
+/**
+ * stepEffects(entity, ctx) — advance the entity's effects by ONE fixed tick.
+ * Fires each effect's per-kind handler (kind via ctx.isEnemy), decrements ticksLeft,
+ * removes + onClear()s any effect that hits 0. Infinity-duration effects never expire here.
+ */
+export function stepEffects(entity, ctx) {
+  const fx = entity.effects;
+  if (!fx || fx.size === 0) return;
+  const kind = ctx.isEnemy(entity) ? 'enemy' : 'player';
+  for (const [key, inst] of fx) {
+    const def = EFFECTS[key];
+    const handler = def[kind];
+    if (handler) handler(entity, inst, ctx);
+    inst.ticksLeft -= 1;
+    if (inst.ticksLeft <= 0) {
+      if (def.onClear) def.onClear(entity, ctx);
+      fx.delete(key);
+    }
+  }
+}
