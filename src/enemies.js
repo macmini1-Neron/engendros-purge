@@ -203,7 +203,7 @@ class Enemy {
     this.hp = this.maxHp = hp; this.speed = speed;
     this.scale = def.scale; this.radius = 0.55 * def.scale; this.height = 2.2 * def.scale;
     this.headY = 1.18 * def.scale;
-    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map();
+    this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map(); // effects map: clear on pool reuse / init on first spawn
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
@@ -331,6 +331,7 @@ export class EnemyManager {
       const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
       const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
+      // TODO P3: when burn migrates to effects-status, drop the `e.burnT ? ENEMY_BURN_SLOW : 1` term — else a burning enemy double-slows (ENEMY_BURN_SLOW × BURN_SLOW = 0.45 × 0.45 = 0.20).
       const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1) * movementSlow(e)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
       if (_wz) {
         _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down

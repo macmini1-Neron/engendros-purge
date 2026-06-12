@@ -50,6 +50,8 @@ export class HUD {
         s += `<span class="fxchip" style="color:${col}">${def.hud.icon}${secs}</span> `;
       }
     }
+    if (s === this._lastSurvival) return;   // called every frame; the chip string changes ~1 Hz — skip redundant innerHTML
+    this._lastSurvival = s;
     this.el.survival.innerHTML = s;
   }
   setWeapon(w) {

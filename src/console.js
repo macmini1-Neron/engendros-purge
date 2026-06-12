@@ -126,7 +126,9 @@ export class DevConsole {
           } else if (a.kind === 'clear') {
             clearEffects(t, g._fxCtx); n++;
           } else {                                          // an effect key from FX_KEYS
-            applyEffect(t, a.kind, a.amount ?? EFFECTS[a.kind].secs, g._fxCtx); n++;
+            const def = EFFECTS[a.kind];
+            if (def.targets === 'player' && isEnemy(t)) continue;   // player-only effect (e.g. broken_leg) — don't claim a phantom enemy target
+            if (applyEffect(t, a.kind, a.amount ?? def.secs, g._fxCtx)) n++;
           }
         }
         if (a.kind === 'clear') return `cleared effects → ${n} target(s)`;

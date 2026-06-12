@@ -122,8 +122,8 @@ class Game {
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
     this._stepFx = () => this._stepEffectsOnce();                       // stable callback for clock.advance
     this._fxCtx = {                                                     // injected side-effect ops (keeps effects-status.js pure)
-      isEnemy: (t) => t !== this.player,                               // only the player + enemies are effect-able
-      hurtPlayer: (p, dmg) => p._takeSurvivalDamage(dmg, 1),           // bypass armor; MP-safe (routes claimPlayerHit)
+      isEnemy: (t) => t !== this.player,                               // player-kind handler for the local player; enemy-kind for everything else
+      hurtPlayer: (p, dmg) => p._takeSurvivalDamage(dmg, 1),           // bypassArmor=1 in solo; in MP routes claimPlayerHit→hostHurt, which applies armor (bypass NOT forwarded)
       healEnemy: (e, n) => this.enemies.heal(e, n),
       fireFx: (e) => this.effects.firePool(e.pos, 0.45, 0.4),
       drip: (e) => this.effects.stuffing(e.pos, e.col ? e.col.body : 0xeeeeee, 3, 2),  // «пух» puff
@@ -820,6 +820,8 @@ class Game {
   }
 
   // One fixed effect tick: advance the player + every alive enemy by one step.
+  // The player is skipped while MP-frozen (downed/dead/waiting — DoT suspended during bleed-out);
+  // enemies have no such guard and always tick when alive.
   _stepEffectsOnce() {
     const ctx = this._fxCtx, p = this.player;
     if (p.alive && !(this.mp.active && this.mp.frozen)) stepEffects(p, ctx);
@@ -866,7 +868,7 @@ class Game {
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);
     this.loot.update(dt);
-    if (sim) this._fxClock.advance(dt, this._stepFx); // status effects tick on a fixed 10 Hz clock (host/solo only)
+    if (sim) this._fxClock.advance(dt, this._stepFx); // status effects tick at a fixed 10 Hz; host/solo only (sim = hostSim && !freecam → also paused in freecam). Co-op clients tick via host broadcast (P3).
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);

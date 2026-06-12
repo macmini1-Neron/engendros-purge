@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './util.js';
 import { FALL_ARMOR_BYPASS, FALL_DMG_BONUS_AT_LETHAL, FALL_DMG_PER_VY, FALL_LETHAL, FALL_SAFE, HUNGER_DRAIN_PER_SEC, HUNGER_LOW, HUNGER_LOW_SPEED_MULT, HUNGER_MAX, LEG_BREAK_VY, LIMP_SPEED_MULT, PLAYER_BURN_DPS, PLAYER_BURN_TICK, SPLINT_APPLY_TIME, STARVE_TICK_DMG, STARVE_TICK_TIME } from './tuning.js';
-import { applyEffect, EFFECTS } from './effects-status.js';
+import { applyEffect, removeEffect, clearEffects } from './effects-status.js';
 
 const CLIMB_SPEED = 3.7; // m/s on a ladder/скоб-трап (escape shaft + bunker tower)
 
@@ -42,7 +42,7 @@ export class Player {
       this.yaw = Math.atan2(-(60 - sx), -(-40 - sz)); // fwd = (-sin yaw, 0, -cos yaw) aimed at the hill
     }
     this.onGround = true; this._regenT = 0;
-    if (this.effects) this.effects.clear();
+    if (this.effects) clearEffects(this, this.game._fxCtx); // fire each onClear (e.g. broken_leg → restore mobility) before wiping
     this.resetStats();
   }
 
@@ -92,7 +92,7 @@ export class Player {
       this._splintT -= dt;
       if (this._splintT <= 0) {
         this._splintT = 0;
-        this.effects.delete('broken_leg'); EFFECTS.broken_leg.onClear(this, this.game._fxCtx); // → setLimp(false)
+        removeEffect(this, 'broken_leg', this.game._fxCtx); // fires onClear → setLimp(false): restores mobility + HUD
         this.game.hud.toast('🦵 Leg splinted — mobility restored', 0x7fd06a);
       }
     }

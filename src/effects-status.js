@@ -2,7 +2,9 @@
 //
 // PURE: no THREE, no DOM, no game/tuning imports (tuning.js pulls in `three`).
 // Importable directly from node tests, like console-core.js and simclock.js.
-// All effect tuning lives here. Game code injects side-effects via a `ctx` object.
+// All status-effect tuning lives here — EXCEPT burn, which also keeps legacy constants in
+// tuning.js (PLAYER_BURN_DPS/ENEMY_BURN_SLOW/…) to reconcile when P3 wires burn through this
+// system. Game code injects side-effects via a `ctx` object.
 //
 // Headline: an effect means different things per entity KIND. radiation HURTS the
 // player but HEALS an Engendros; bleed drains the player but makes an Engendros
@@ -21,14 +23,15 @@ const BURN_SLOW = 0.45, PUKH_SLOW = 0.6, PUKH_WEAKEN = 0.6;
 // One entry per effect:
 //   secs        default duration when applied without an explicit time
 //   stack       'refresh' = duration only (stacks pinned at 1) | 'magnitude' = grow stacks
-//   cap         max stacks (magnitude effects)
+//   cap         max stacks — only read for 'magnitude' effects ('refresh' always pins at 1)
 //   hud         { icon, color } for the HUD strip
 //   enemySlow   passive movement multiplier read by movementSlow() (optional)
 //   enemyWeaken passive contact-damage multiplier read by contactWeaken() (optional)
+//   targets     optional 'player' — effect is player-only; the console refuses it on enemies
 //   player/enemy  per-kind per-tick handler (entity, inst, ctx); omit to no-op on that kind
 //   onApply/onClear  lifecycle hooks for non-tick state (entity, ctx)
 export const EFFECTS = {
-  burn: {                            // defined + tested now; wired in-game in P3 (co-op-entangled)
+  burn: {                            // defined + tested; NOT wired in-game (legacy burnT path retired in P3)
     secs: 3, stack: 'refresh', cap: 1, hud: { icon: '🔥', color: 0xff6a2a },
     enemySlow: BURN_SLOW,
     player: (p, inst, ctx) => ctx.hurtPlayer(p, BURN_DPS * PER),
@@ -46,7 +49,7 @@ export const EFFECTS = {
     enemy:  (e, inst, ctx) => ctx.healEnemy(e, RAD_HEAL * PER * inst.stacks),  // INVERSION
   },
   broken_leg: {
-    secs: Infinity, stack: 'refresh', cap: 1, hud: { icon: '🦵', color: 0xd23a2a },
+    secs: Infinity, stack: 'refresh', cap: 1, targets: 'player', hud: { icon: '🦵', color: 0xd23a2a },
     onApply: (entity, ctx) => ctx.setLimp(entity, true),
     onClear: (entity, ctx) => ctx.setLimp(entity, false),
   },
@@ -67,7 +70,9 @@ export function applyEffect(entity, key, seconds, ctx) {
   const def = EFFECTS[key];
   if (!def) return false;
   if (!entity.effects) entity.effects = new Map();
-  const ticks = secondsToTicks(seconds == null ? def.secs : seconds);
+  // null / NaN / non-positive seconds → the effect's default (guards console typos like `/effect @s radiation abc`)
+  const sec = (seconds == null || (seconds !== Infinity && !(seconds > 0))) ? def.secs : seconds;
+  const ticks = secondsToTicks(sec);
   const cur = entity.effects.get(key);
   if (cur) {
     cur.ticksLeft = Math.max(cur.ticksLeft, ticks);
@@ -90,6 +95,7 @@ export function stepEffects(entity, ctx) {
   const kind = ctx.isEnemy(entity) ? 'enemy' : 'player';
   for (const [key, inst] of fx) {
     const def = EFFECTS[key];
+    if (!def) { fx.delete(key); continue; }   // orphaned key (never written by applyEffect) — evict, don't crash the frame
     const handler = def[kind];
     if (handler) handler(entity, inst, ctx);
     inst.ticksLeft -= 1;
@@ -105,7 +111,7 @@ export function movementSlow(entity) {
   const fx = entity.effects;
   if (!fx || fx.size === 0) return 1;
   let m = 1;
-  for (const key of fx.keys()) { const s = EFFECTS[key].enemySlow; if (s) m *= s; }
+  for (const key of fx.keys()) { const s = EFFECTS[key]?.enemySlow; if (s) m *= s; }
   return m;
 }
 
@@ -114,7 +120,7 @@ export function contactWeaken(entity) {
   const fx = entity.effects;
   if (!fx || fx.size === 0) return 1;
   let m = 1;
-  for (const key of fx.keys()) { const w = EFFECTS[key].enemyWeaken; if (w) m *= w; }
+  for (const key of fx.keys()) { const w = EFFECTS[key]?.enemyWeaken; if (w) m *= w; }
   return m;
 }
 
@@ -126,4 +132,14 @@ export function clearEffects(entity, ctx) {
   for (const key of fx.keys()) { const def = EFFECTS[key]; if (def && def.onClear) def.onClear(entity, ctx); n++; }
   fx.clear();
   return n;
+}
+
+/** Remove a SINGLE named effect, firing its onClear. Returns true if it was present. */
+export function removeEffect(entity, key, ctx) {
+  const fx = entity.effects;
+  if (!fx || !fx.has(key)) return false;
+  const def = EFFECTS[key];
+  if (def && def.onClear) def.onClear(entity, ctx);
+  fx.delete(key);
+  return true;
 }
