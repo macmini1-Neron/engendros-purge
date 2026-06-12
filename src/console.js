@@ -329,7 +329,7 @@ export class DevConsole {
       `XYZ: ${pos.x.toFixed(3)} / ${pos.y.toFixed(3)} / ${pos.z.toFixed(3)}`,
       `Block: ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}   (ground ${gy})`,
       `Facing: ${dir} (${axis}) (${mcYaw.toFixed(1)} / ${mcPitch.toFixed(1)})`,
-      `Azimuth: ${formatUglomer(yawToMils(p.yaw))}  (угломер 60-00 · grid-N=+Z · CW→+X)`, // authoritative world datum (bearing.js)
+      `Azimuth: ${formatUglomer(yawToMils(p.yaw))}  (угломер 60-00 · grid-N=+Z · CW→+X)`, // authoritative world datum (bearing.js). NB: the Facing line above uses the Minecraft −Z=north frame, so +Z reads "south" there but 00-00 (north) here — intentional.
       '',
       `Map: ${g.mapId}`,
       `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}`,

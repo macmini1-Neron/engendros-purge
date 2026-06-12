@@ -39,7 +39,9 @@ export const bearingMils = (from, to) => dirToMils(to.x - from.x, to.z - from.z)
 export const rangeMeters = (from, to) => Math.hypot(to.x - from.x, to.z - from.z);
 
 // угломер "NN-NN": big divisions (hundreds) - small divisions (units). 3250 → "32-50".
+// Round THEN wrap: a heading a sliver short of north (e.g. 5999.7) must roll to "00-00",
+// not round up to an off-scale "60-00" (угломер tops out at 59-99).
 export function formatUglomer(mils) {
-  const n = Math.round(wrap6000(mils));
+  const n = wrap6000(Math.round(mils));
   return `${String(Math.floor(n / 100)).padStart(2, '0')}-${String(n % 100).padStart(2, '0')}`;
 }

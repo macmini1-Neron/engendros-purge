@@ -65,6 +65,7 @@ export class NightPost {
     pl.pos.set(this.base.x + stand.x, this.base.y, this.base.z + stand.z);
     pl.vel.set(0, 0, 0);
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0';
+    if (this.game.hud.setCompass) this.game.hud.setCompass(null); // entering the ННП-23 stops weapons.update() → tear the буссоль overlay down
     this._hintT = 6;                                            // show the controls hint, then fade
     this._showHint(true);
     // snapshot lights/fog once — lateLight() boosts per-frame, exit() restores (in longnight the

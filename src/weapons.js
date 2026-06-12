@@ -62,7 +62,7 @@ export const WEAPONS = {
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
   flashlight: { name: 'Flashlight', class: 'tool', shape: 'flashlight', color: 0x9aa0a6, accent: 0xc23a2a },
   binoculars: { name: 'Binoculars', class: 'tool', shape: 'binoculars', zoom: true, scope: true, adsFov: 12, color: 0x26282b, accent: 0xb08a3a }, // Soviet Б8×30 field glasses — RMB zooms to a realistic 8× (FOV≈12°)
-  bussole: { name: 'Буссоль ПАБ-2А', class: 'tool', shape: 'bussole', raise: true, color: 0x3a4a3a, accent: 0xb0a050 }, // Soviet artillery aiming circle — RMB raises the угломер compass overlay (no FOV zoom). Datum = bearing.js
+  bussole: { name: 'Буссоль ПАБ-2А', class: 'tool', shape: 'bussole', color: 0x3a4a3a, accent: 0xb0a050 }, // Soviet artillery aiming circle — RMB raises the угломер compass overlay (no FOV zoom; keyed off shape==='bussole'). Datum = bearing.js
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
@@ -2357,6 +2357,7 @@ export class MountedGun {
     this.game.player.pos.set(this.base.x + Math.sin(this.baseYaw) * 0.9, this.base.y, this.base.z + Math.cos(this.baseYaw) * 0.9); // stand BEHIND the gun
     this.yaw = this.baseYaw; this.pitch = 0;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0'; // hide the white crosshair on the .50 — the ring sight is the reticle
+    if (this.game.hud.setCompass) this.game.hud.setCompass(null); // mounting stops weapons.update() → tear the буссоль overlay down here
     this._primeCharge();
 	    this.game.hud.setMountedGun(this.ammo, this.maxAmmo, this.hudName);
 	  }

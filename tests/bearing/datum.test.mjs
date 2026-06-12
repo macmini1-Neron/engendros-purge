@@ -56,6 +56,27 @@ test('bearingMils: due east / due south', () => {
   assert.equal(Math.round(bearingMils({ x: 0, z: 0 }, { x: 0, z: -5 })), 3000);
 });
 
+// every quadrant — the negative-dx folds are the ones most likely to regress if wrap/sign is touched
+test('bearingMils: all four inter-cardinal diagonals', () => {
+  const o = { x: 0, z: 0 };
+  assert.equal(Math.round(bearingMils(o, { x:  1, z:  1 })),  750); // NE = 07-50
+  assert.equal(Math.round(bearingMils(o, { x:  1, z: -1 })), 2250); // SE = 22-50
+  assert.equal(Math.round(bearingMils(o, { x: -1, z: -1 })), 3750); // SW = 37-50
+  assert.equal(Math.round(bearingMils(o, { x: -1, z:  1 })), 5250); // NW = 52-50
+});
+
+// coincident points (spotter on target / self-bearing): atan2(0,0)=0 must not yield NaN
+test('zero-length vector → 00-00 / range 0 (no NaN)', () => {
+  assert.equal(dirToMils(0, 0), 0);
+  assert.equal(bearingMils({ x: 3, z: 3 }, { x: 3, z: 3 }), 0);
+  assert.equal(rangeMeters({ x: 3, z: 3 }, { x: 3, z: 3 }), 0);
+});
+
+// rangeMeters is GROUND (XZ) range — Y is deliberately ignored
+test('rangeMeters ignores Y (ground range)', () => {
+  assert.equal(rangeMeters({ x: 0, z: 0, y: 0 }, { x: 3, z: 4, y: 99 }), 5);
+});
+
 // ─── wrap + format ───────────────────────────────────────────────────────────
 test('wrap6000 normalises into [0,6000)', () => {
   assert.equal(wrap6000(-50), 5950);
@@ -72,7 +93,17 @@ test('formatUglomer: "NN-NN" big-small divisions', () => {
   assert.equal(formatUglomer(-50), '59-50');  // negative wraps before formatting
 });
 
-// ─── determinism: pure function, identical output for identical input ────────
-test('determinism: same yaw → same mils', () => {
-  for (const y of [0, 1, 2.5, -1.3, TAU * 3]) assert.equal(yawToMils(y), yawToMils(y));
+// a heading a sliver short of north must roll to 00-00, never an off-scale "60-00"
+test('formatUglomer: round-up across the seam rolls to 00-00', () => {
+  assert.equal(formatUglomer(5999.6), '00-00');
+  assert.equal(formatUglomer(5999.9), '00-00');
+  assert.equal(formatUglomer(5950.4), '59-50');
+});
+
+// ─── periodicity: an FPS yaw accumulates and is not normalised to [-π,π] ──────
+test('yawToMils is 2π-periodic (unnormalised camera yaw)', () => {
+  for (const y of [0.4, -1.3, 2.5]) {
+    assert.ok(Math.abs(yawToMils(y) - yawToMils(y + TAU)) < 1e-9);
+    assert.ok(Math.abs(yawToMils(y) - yawToMils(y - TAU * 3)) < 1e-9);
+  }
 });
