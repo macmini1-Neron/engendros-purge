@@ -274,7 +274,11 @@ export class FireManager {
     if (f.kind === 'grass') this._grassN--; else this._objN--;
 
     try {
-      if (f.kind === 'tree') {
+      if (f.owner && f.owner.prop) {                          // a forest prop (log/stump/debris)
+        const fr = this.game.forest;
+        if (fr && typeof fr.consumeProp === 'function') fr.consumeProp(f.owner);
+        else if (f.part) f.part.dead = true;
+      } else if (f.kind === 'tree') {
         const fr = this.game.forest;
         if (fr) {
           if (!f.charDone) fr.charTree(f.owner);
