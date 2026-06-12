@@ -14,6 +14,7 @@ import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
+import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
@@ -52,7 +53,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-12 09:15';
+const GAME_BUILD = '2026-06-12 10:36';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -91,6 +92,7 @@ class Game {
     // forest so it can clearArea() the trees on its footprint. Sets game.world.demoBuilding;
     // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
     this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
     const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
@@ -872,6 +874,7 @@ class Game {
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
     if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
+    if (this.arenaClocks) this.arenaClocks.update(dt); // arena: drive both spawn-side clocks from the world clock
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);
