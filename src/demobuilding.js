@@ -42,6 +42,9 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, voxelMaterial } from './util.js';
 import { DestructRuntime, makePart, MATERIALS } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
+import { handAngles } from './worldclock.js';
+import { getSpec } from './props/registry-core.js';
+import { buildSpec } from './props/voxel-interp.js';
 
 // ── palette (layered shading: hi / mid / lo — never a flat blob) ────────────────
 const BR = { hi: 0x9a5a3e, mid: 0x854832, lo: 0x643626 };   // booth brick
@@ -91,6 +94,68 @@ export class DemoBuilding {
     // Array.from(), so the parts must already be registered (else it captures an empty array).
     this.runtime = new DestructRuntime({ parts: this.parts, debris: this.debris });
     this.scene.add(this.group);
+
+    // wall clock «ЧАСОЗБОР» (modelgen spec) — registry loads async, so this usually
+    // no-ops here and the lazy retry in update() hangs it a few frames later.
+    this._clock = null; this._clockHour = null; this._clockMinute = null; this._clockPart = null;
+    this._tryHangClock();
+  }
+
+  // ── wall clock «ЧАСОЗБОР» — live analog display of game._worldClock ────────────
+  // Hangs on the innermost face of the wall OPPOSITE the door, centred on the brick
+  // (non-window) column nearest the wall middle. Hands are the spec's handHour /
+  // handMinute rig nodes, driven every frame from the shared world clock via
+  // handAngles() (docs/superpowers/specs/2026-06-12-worldclock-displays-contract.md).
+  _tryHangClock() {
+    if (this._clock || !this.placed) return;
+    const spec = getSpec('wallclock-chasozbor');
+    if (!spec) return;                                  // modelgen registry not loaded yet — retry next frame
+    const cx = this.cx, cz = this.cz, bY = this.baseY;
+    const xL = cx - FW / 2, xR = cx + FW / 2, zS = cz - FD / 2, zN = cz + FD / 2;
+    // wall opposite the door: axis, fixed line, along-span, wallIndex (mirrors _build's _wall calls)
+    const OPP = {
+      S: { axis: 'x', fixed: zN, c0: xL + P / 2, c1: xR - P / 2, wi: 1, yaw: Math.PI,      inward: [0, -1] },
+      N: { axis: 'x', fixed: zS, c0: xL + P / 2, c1: xR - P / 2, wi: 0, yaw: 0,            inward: [0, 1] },
+      W: { axis: 'z', fixed: xR, c0: zS + P / 2, c1: zN - P / 2, wi: 3, yaw: -Math.PI / 2, inward: [-1, 0] },
+      E: { axis: 'z', fixed: xL, c0: zS + P / 2, c1: zN - P / 2, wi: 2, yaw: Math.PI / 2,  inward: [1, 0] },
+    }[this._doorWall];
+    // same column math as _wall(): pick the BRICK column ((i+wi)%2===0) nearest the middle
+    const span = OPP.c1 - OPP.c0, ncols = Math.max(2, Math.round(span / SEG_TARGET)), cw = span / ncols;
+    let best = OPP.c0 + span / 2, bestD = Infinity;
+    for (let i = 0; i < ncols; i++) {
+      if ((i + OPP.wi) % 2 === 1) continue;             // window column — skip
+      const ac = OPP.c0 + (i + 0.5) * cw, d = Math.abs(ac - (OPP.c0 + span / 2));
+      if (d < bestD) { bestD = d; best = ac; }
+    }
+    // model: floor-anchored, dial centre +0.141, back plane −0.055 → stand 0.056 off the wall face
+    const off = T / 2 + 0.056;
+    const px = OPP.axis === 'x' ? best : OPP.fixed + OPP.inward[0] * off;
+    const pz = OPP.axis === 'x' ? OPP.fixed + OPP.inward[1] * off : best;
+    const obj = buildSpec(spec);
+    obj.position.set(px, bY + 2.0 - 0.141, pz);         // dial centre 2.0 m above the base — over window head height
+    obj.rotation.y = OPP.yaw;
+    this.group.add(obj);
+    this._clock = obj;
+    this._clockHour = obj.getObjectByName('handHour');
+    this._clockMinute = obj.getObjectByName('handMinute');
+    // the brick segment behind the clock — if it's breached, the clock dies with the wall
+    this._clockPart = this.parts.find((p) =>
+      p.dmat === 'brick' &&
+      px >= p.min[0] - 0.3 && px <= p.max[0] + 0.3 &&
+      pz >= p.min[2] - 0.3 && pz <= p.max[2] + 0.3) || null;
+  }
+
+  _updateClock() {
+    if (!this._clock) { this._tryHangClock(); return; }
+    if (this._clockPart && this._clockPart.dead) {       // host wall breached → the clock went with it
+      this._clock.visible = false;
+      return;
+    }
+    const wc = this.game._worldClock;
+    if (!wc || !this._clockHour || !this._clockMinute) return;
+    const a = handAngles(wc.minuteOfDay() + wc.alpha);   // negative z = clockwise on the +Z-facing dial
+    this._clockHour.rotation.z = -a.hourRad;
+    this._clockMinute.rotation.z = -a.minuteRad;
   }
 
   // ── pick a flat, placeable, forest-cleared footprint on the demo terrain ────────
@@ -341,7 +406,7 @@ export class DemoBuilding {
   }
 
   // per-frame tick (Phase 9 — game.js calls this): advance the debris burst physics.
-  update(dt) { if (this.debris) this.debris.update(dt); }
+  update(dt) { if (this.debris) this.debris.update(dt); this._updateClock(); }
 
   // Parts the fire system may ignite (fuel > 0, still alive) — the wood door, here.
   flammableParts() { return this.parts.filter(p => !p.dead && MATERIALS[p.dmat] && MATERIALS[p.dmat].fuel > 0); }

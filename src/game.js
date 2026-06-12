@@ -42,6 +42,7 @@ const _registerModels = async () => {
   };
   await load('dshk-ammo-box');
   await load('supply-lootbox');     // «Посылка» lootbox crate (CrateCeremony falls back to a procedural chest if this fails)
+  await load('wallclock-chasozbor'); // «ЧАСОЗБОР» wall clock (demobuilding hangs it lazily once registered)
 };
 _registerModels();
 
