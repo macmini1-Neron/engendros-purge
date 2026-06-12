@@ -81,6 +81,7 @@ export const MATERIALS = {
   concrete:   { tier: 4, hp: 900,  debris: 'rubble',  sound: 'masonry', fuel: 0  },
   steel:      { tier: 5, hp: 2000, debris: 'sparks',  sound: 'metal',   fuel: 0  },
   grass:      { tier: 0, hp: 1,    debris: 'splints', sound: 'grass',   fuel: 2  },
+  stone:      { tier: 4, hp: 600,  debris: 'rubble',  sound: 'masonry', fuel: 0  },
 };
 
 // Reference caliber/pen table (spec §5). Gameplay weaponDefs map onto this shape
