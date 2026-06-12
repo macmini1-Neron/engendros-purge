@@ -332,13 +332,13 @@ export function makeClockDialTexture({ brand = 'ЧАСОЗБОР', sub = 'СДЕ
   }
 
   // factory wordmark under the 12 + small «СДЕЛАНО В СССР» above the 6
-  c.font = `italic bold ${Math.round(S * 0.042)}px "PT Sans Narrow","Arial Narrow",sans-serif`;
+  c.font = `italic bold ${Math.round(S * 0.052)}px "PT Sans Narrow","Arial Narrow",sans-serif`;
   c.fillText(brand, R, R * 0.62);
-  c.strokeStyle = INK; c.lineWidth = S * 0.004;                     // Стрела-style speed-lines flanking the wordmark
+  c.strokeStyle = INK; c.lineWidth = S * 0.005;                     // Стрела-style speed-lines flanking the wordmark
   const bw = c.measureText(brand).width;
   c.beginPath(); c.moveTo(R - bw / 2 - S * 0.06, R * 0.62); c.lineTo(R - bw / 2 - S * 0.015, R * 0.62);
   c.moveTo(R + bw / 2 + S * 0.015, R * 0.62); c.lineTo(R + bw / 2 + S * 0.06, R * 0.62); c.stroke();
-  if (sub) { c.font = `${Math.round(S * 0.026)}px "PT Sans Narrow","Arial Narrow",sans-serif`; c.fillText(sub, R, R * 1.34); }
+  if (sub) { c.font = `${Math.round(S * 0.030)}px "PT Sans Narrow","Arial Narrow",sans-serif`; c.fillText(sub, R, R * 1.34); }
 
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   return tex;

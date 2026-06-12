@@ -1,0 +1,31 @@
+{
+  "id": "wallclock-chasozbor",
+  "name": "Настенные часы «ЧАСОЗБОР» (ВЧС-1 secondary clock)",
+  "category": "fixture",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.282, "h": 0.282, "d": 0.11 },
+  "rig": [
+    { "name": "handHour", "pivot": [0, 0.141, 0.034], "axis": "z", "pose": -5.3171, "type": "spin", "range": [-6.2832, 6.2832] },
+    { "name": "handMinute", "pivot": [0, 0.141, 0.039], "axis": "z", "pose": -0.9425, "type": "spin", "range": [-6.2832, 6.2832] }
+  ],
+  "parts": [
+    { "op": "cylinder", "id": "caseBody", "args": { "r": 0.138, "h": 0.062, "axis": "z", "seg": 40 }, "at": [0, 0.141, -0.004], "mat": "steel", "src": "dossier#facts.case_outer_diameter_mm" },
+    { "op": "cylinder", "id": "caseBackPlate", "args": { "r": 0.138, "h": 0.008, "axis": "z", "seg": 40, "tone": "lo" }, "at": [0, 0.141, -0.039], "mat": "steel", "src": "dossier#facts.case_depth_mm" },
+    { "op": "cylinder", "id": "mechCap", "args": { "r": 0.055, "h": 0.012, "axis": "z", "seg": 24, "tone": "lo" }, "at": [0, 0.141, -0.049], "mat": "steel", "src": "dossier#facts.movement_type" },
+    { "op": "bevelBox", "id": "wireTerminal", "args": { "w": 0.030, "h": 0.014, "d": 0.010, "tone": "lo" }, "at": [0, 0.085, -0.046], "mat": "bakelite", "src": "dossier#facts.pulse_scheme" },
+
+    { "op": "torus", "id": "rimRib1", "args": { "r": 0.134, "tube": 0.007, "axis": "z", "seg": 40 }, "at": [0, 0.141, 0.020], "mat": "steel", "src": "dossier#facts.case_outer_diameter_mm" },
+    { "op": "torus", "id": "rimRib2", "args": { "r": 0.130, "tube": 0.007, "axis": "z", "seg": 40, "tone": "hi" }, "at": [0, 0.141, 0.030], "mat": "steel", "src": "dossier#facts.case_outer_diameter_mm" },
+    { "op": "torus", "id": "rimLip", "args": { "r": 0.125, "tube": 0.008, "axis": "z", "seg": 40, "tone": "bright" }, "at": [0, 0.141, 0.042], "mat": "steel", "src": "dossier#facts.case_outer_diameter_mm" },
+
+    { "op": "texturedDisc", "id": "dial", "args": { "r": 0.123, "axis": "z", "seg": 48, "kind": "clockDial", "title": "ЧАСОЗБОР", "sub": "СДЕЛАНО В СССР" }, "at": [0, 0.141, 0.030], "mat": "cream", "src": "dossier#derivation.visible_dial_diameter_mm" },
+
+    { "op": "bevelBox", "id": "handHourBar", "args": { "w": 0.013, "h": 0.078, "d": 0.004 }, "at": [0, 0.180, 0.034], "mat": "paintBlack", "rig": "handHour", "src": "dossier#derivation.hour_hand_length_mm" },
+    { "op": "bevelBox", "id": "handHourTail", "args": { "w": 0.013, "h": 0.014, "d": 0.004 }, "at": [0, 0.134, 0.034], "mat": "paintBlack", "rig": "handHour", "src": "dossier#derivation.hour_hand_length_mm" },
+    { "op": "bevelBox", "id": "handMinuteBar", "args": { "w": 0.010, "h": 0.115, "d": 0.004 }, "at": [0, 0.1985, 0.039], "mat": "paintBlack", "rig": "handMinute", "src": "dossier#derivation.minute_hand_length_mm" },
+    { "op": "bevelBox", "id": "handMinuteTail", "args": { "w": 0.010, "h": 0.018, "d": 0.004 }, "at": [0, 0.132, 0.039], "mat": "paintBlack", "rig": "handMinute", "src": "dossier#derivation.minute_hand_length_mm" },
+
+    { "op": "cylinder", "id": "hubCap", "args": { "r": 0.008, "h": 0.010, "axis": "z", "seg": 16, "tone": "hi" }, "at": [0, 0.141, 0.044], "mat": "chrome", "src": "dossier#facts.movement_type" }
+  ]
+}
