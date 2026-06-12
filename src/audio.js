@@ -618,6 +618,30 @@ export class AudioManager {
 
   uiClick() { this.tone(660, 0.04, 'square', 0.25); }
   uiHover() { this.tone(880, 0.02, 'sine', 0.12); }
+  // ЛПР-1 «Каралон-М»: ИЗМЕРЕНИЕ button press — relay click + a quiet capacitor-bank
+  // whine rising through the first second of the 5 s ranging cycle.
+  lprPulse() {
+    if (!this.ctx) return;
+    this.reloadClick();
+    const t = this.t, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(2350, t + 1.05);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.045, t + 0.12); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+    o.connect(g); g.connect(this.sfxGain);
+    o.start(t); o.stop(t + 1.2);
+  }
+  // ЛПР-1: готовность lamp relights — soft rising double beep from the indicator eyepiece.
+  lprReady() {
+    if (!this.ctx) return;
+    const t = this.t;
+    for (const [dt, f] of [[0, 1560], [0.09, 2080]]) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + dt); g.gain.exponentialRampToValueAtTime(0.16, t + dt + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.07);
+      o.connect(g); g.connect(this.sfxGain);
+      o.start(t + dt); o.stop(t + dt + 0.12);
+    }
+  }
   buy() { this.tone(720, 0.06, 'square', 0.3); this.tone(960, 0.06, 'square', 0.25); }
   noMoney() { this.tone(160, 0.12, 'sawtooth', 0.3); }
 

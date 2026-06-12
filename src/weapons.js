@@ -5,6 +5,7 @@ import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R,
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
 import { CALIBERS, resolveHit } from './destruct.js';
+import { isNight } from './worldclock.js';
 
 // ── ?map=demo destruction wiring (Phase 9) ─────────────────────────────────────
 // Map a gameplay weapon class → destruction PENETRATION class (spec §5 hardness tiers).
@@ -1591,14 +1592,14 @@ export class WeaponSystem {
     const dist = Math.min(wHit ? wHit.dist : Infinity, eHit ? eHit.dist : Infinity);
     // 145 m strobe floor / 20 km counter capacity (ТТХ row 1) — outside that the display shows zeros (no echo)
     this.lprValue = (isFinite(dist) && dist >= 145 && dist <= 20000) ? Math.round(dist) : 0;
-    this.game.audio.reloadClick();                    // ИЗМЕРЕНИЕ button click
+    this.game.audio.lprPulse();                       // ИЗМЕРЕНИЕ click + capacitor whine
   }
 
   update(dt) {
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this._boltLock > 0) this._boltLock -= dt;
     if (this.grenadeCD > 0) this.grenadeCD -= dt;
-    if (this.lprCD > 0) this.lprCD -= dt;
+    if (this.lprCD > 0) { this.lprCD -= dt; if (this.lprCD <= 0 && this.cur === 'lpr1') this.game.audio.lprReady(); } // готовность beep on the relight edge
     if (this.molotovCD > 0) this.molotovCD -= dt;
     if (this._swing > 0) this._swing -= dt;
     if (this.reloading > 0) {
@@ -1624,7 +1625,10 @@ export class WeaponSystem {
     this.fov = damp(this.fov, targetFov, 16, dt);
     this.game.engine.setFov(this.fov);
     this.game.hud.setScope(this.ads && d.scope, d.shape);
-    if (this.game.hud.setLpr) this.game.hud.setLpr(this.ads && d.rangefinder ? { ready: this.lprCD <= 0, value: this.lprValue } : null);
+    if (this.game.hud.setLpr) {
+      const night = this.game._worldClock ? isNight(this.game._worldClock.minuteOfDay()) : false; // ПОДСВ: reticle lamp comes on after dark
+      this.game.hud.setLpr(this.ads && d.rangefinder ? { ready: this.lprCD <= 0, value: this.lprValue, night } : null);
+    }
 
     // viewmodel bob/sway/recoil/swing
     const pl = this.game.player;

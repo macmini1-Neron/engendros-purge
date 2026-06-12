@@ -180,11 +180,12 @@ export class HUD {
   setLpr(st) {
     if (!this.el.lprdigits) return;
     if (!st) { this._lprLast = null; return; }      // overlay hidden — nothing to paint
-    const key = st.ready + ':' + st.value;
+    const key = st.ready + ':' + st.value + ':' + st.night;
     if (this._lprLast === key) return;              // imperative DOM — only write on change
     this._lprLast = key;
     this.el.lprdigits.textContent = st.value == null ? '' : String(Math.min(99999, Math.max(0, st.value))).padStart(5, '0');
     this.el.lprready.classList.toggle('on', !!st.ready);
+    if (this.el.lprview) this.el.lprview.classList.toggle('night', !!st.night); // ПОДСВ — сетка lamp after dark
   }
   setBoss(frac, name) { this.el.bossbar.classList.add('show'); this.el.bossfill.style.width = clamp(frac, 0, 1) * 100 + '%'; if (name) this.el.bossname.textContent = name; }
   setBossPip(frac) {
