@@ -8,6 +8,7 @@ import { mpEscape } from './mp.js';
 import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
 import { EFFECTS, EFFECT_TPS } from './effects-status.js';
 import { formatHHMM } from './worldclock.js';
+import { formatUglomer } from './bearing.js';
 
 
 // ---------------------------------------------------------------------------
@@ -23,6 +24,7 @@ export class HUD {
       wave: $('wave'), money: $('money'), radios: $('radios'), score: $('score'),
       msg: $('msg'), vignette: $('vignette'), hitmarker: $('hitmarker'), killfeed: $('killfeed'),
       cross: $('cross'), toast: $('toast'), interact: $('interact'), scope: $('scope'), binoview: $('binoview'),
+      compassview: $('compassview'), compassrose: $('compassrose'), compassmils: $('compassmils'), compasscoords: $('compasscoords'),
       bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), bosspip: $('bosspip'), left: $('left'),
       bleedbar: $('bleedbar'), bleedfill: $('bleedfill'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
@@ -57,10 +59,12 @@ export class HUD {
   }
   setWeapon(w) {
     const key = w.cur, d = WEAPONS[key];
+    this.setCompass(null); // tear the буссоль overlay down on any held-item change (switch / death-reset)
     this.el.wepname.textContent = d.name.toUpperCase();
     this.el.wepname.style.color = 'var(--gold)';
-    if (d.class === 'tool') { // flashlight / binoculars: no ammo
-      if (d.zoom) { this.el.wepclass.textContent = 'optics · RMB to zoom'; this.el.ammonum.innerHTML = `<span style="font-size:20px">${icon('binoculars')} 6×</span>`; }
+    if (d.class === 'tool') { // flashlight / binoculars / буссоль: no ammo
+      if (d.shape === 'bussole') { this.el.wepclass.textContent = 'буссоль · RMB: азимут'; this.el.ammonum.innerHTML = `<span style="font-size:20px">${icon('compass')} 60-00</span>`; }
+      else if (d.zoom) { this.el.wepclass.textContent = 'optics · RMB to zoom'; this.el.ammonum.innerHTML = `<span style="font-size:20px">${icon('binoculars')} 6×</span>`; }
       else { const on = this.game.dayNight && this.game.dayNight.flashOn; this.el.wepclass.textContent = 'tool · E: toggle beam'; this.el.ammonum.innerHTML = `<span style="font-size:20px">${icon('flashlight')} ${on ? 'ON' : 'off'}</span>`; }
       if (this.el.molotov) this.el.molotov.innerHTML = '';
       return;
@@ -171,6 +175,24 @@ export class HUD {
     this.el.scope.classList.toggle('show', !!on && !binocular); // rifle scope: single circle + crosshair
     if (this.el.binoview) this.el.binoview.classList.toggle('show', glass);
     if (this.el.cross) this.el.cross.style.opacity = glass ? '0' : ''; // hide the crosshair while glassing
+  }
+  // буссоль ПАБ-2А readout. state = { mils, x, z } while raised, or null to tear the overlay down.
+  // Writes are gated on change (imperative DOM, like setLpr/nightpost._readout) — the digital
+  // угломер + rose rotation only repaint when the bearing crosses a whole mil. Datum = bearing.js.
+  setCompass(state) {
+    if (!this.el.compassview) return;
+    const on = !!state;
+    this.el.compassview.classList.toggle('show', on);
+    if (this.el.cross) this.el.cross.style.opacity = on ? '0' : '';
+    if (!on) { this._compassMils = -1; return; }
+    const m = Math.round(state.mils);
+    if (m !== this._compassMils) {
+      this._compassMils = m;
+      this.el.compassmils.textContent = formatUglomer(m);
+      // card spins opposite the heading so the live bearing sits under the fixed lubber line
+      this.el.compassrose.style.transform = `rotate(${-m / 6000 * 360}deg)`;
+    }
+    this.el.compasscoords.textContent = `X ${Math.round(state.x)}  Z ${Math.round(state.z)}`;
   }
   setBoss(frac, name) { this.el.bossbar.classList.add('show'); this.el.bossfill.style.width = clamp(frac, 0, 1) * 100 + '%'; if (name) this.el.bossname.textContent = name; }
   setBossPip(frac) {

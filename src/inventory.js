@@ -20,6 +20,7 @@ export const GADGETS = [
   { key: 'molotov',    name: 'Molotov',       price: 350, desc: 'Hold LMB to light, then throw a fire pool. Each loadout slot deploys 1.' },
   { key: 'flashlight', name: 'Flashlight',    price: 600, desc: 'Hold it out — the beam lights the dark while held.' },
   { key: 'binoculars', name: 'Binoculars 8×', price: 450, desc: 'Hold RMB to glass the horizon at 8×.' },
+  { key: 'bussole',    name: 'Буссоль ПАБ-2А', price: 700, desc: 'Hold RMB — азимут (угломер 60-00) + сетка координат для целеуказания.' },
   { key: 'flare',      name: 'Signal Flare',  price: 250, desc: 'Throw a burning marker that lights the dark. Each loadout slot deploys 1.' },
 ];
 
@@ -78,7 +79,7 @@ export class Shop {
     if (WEAPONS[key]) {
       const d = WEAPONS[key];
       if (d.melee) return icon(KEY_ICON[key] || 'knife');
-      if (d.class === 'tool') return icon(d.zoom ? 'binoculars' : 'flashlight');
+      if (d.class === 'tool') return icon(d.shape === 'bussole' ? 'compass' : (d.zoom ? 'binoculars' : 'flashlight'));
       return icon(WEAPON_ICON[d.class] || 'rifle');
     }
     return icon(ITEM_ICON[key] || 'crate');

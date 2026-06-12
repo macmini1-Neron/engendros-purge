@@ -7,6 +7,7 @@ import { ENEMY_TYPES } from './enemies.js';
 import { WEAPONS, WEAPON_ORDER } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { EFFECTS, applyEffect, clearEffects } from './effects-status.js';
+import { yawToMils, formatUglomer } from './bearing.js';
 
 const ENEMY_KEYS = Object.keys(ENEMY_TYPES);
 const _projV = new THREE.Vector3(); // scratch for projecting enemy world positions to screen (F3 labels)
@@ -328,6 +329,7 @@ export class DevConsole {
       `XYZ: ${pos.x.toFixed(3)} / ${pos.y.toFixed(3)} / ${pos.z.toFixed(3)}`,
       `Block: ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}   (ground ${gy})`,
       `Facing: ${dir} (${axis}) (${mcYaw.toFixed(1)} / ${mcPitch.toFixed(1)})`,
+      `Azimuth: ${formatUglomer(yawToMils(p.yaw))}  (угломер 60-00 · grid-N=+Z · CW→+X)`, // authoritative world datum (bearing.js)
       '',
       `Map: ${g.mapId}`,
       `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}`,
