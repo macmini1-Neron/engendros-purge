@@ -28,6 +28,7 @@ import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
+import { NightPost } from './nightpost.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
 import { makeWorldClock, MINUTES_PER_DAY } from './worldclock.js';
@@ -45,6 +46,7 @@ const _registerModels = async () => {
   await load('supply-lootbox');     // «Посылка» lootbox crate (CrateCeremony falls back to a procedural chest if this fails)
   await load('electronika-clock');   // «Электроника 6.15М» digital desk clock (live VFD reads the world clock)
   await load('wallclock-chasozbor'); // «ЧАСОЗБОР» analog wall clock (demobuilding hangs it lazily once registered)
+  await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
 };
 _registerModels();
 
@@ -53,7 +55,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-12 10:36';
+const GAME_BUILD = '2026-06-12 10:57';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -101,6 +103,10 @@ class Game {
     this.dshkMountedGun = new MountedGun(this, dshkPos, dshkYaw, { variant: 'dshk', id: 'dshk' });
     this.mountedGuns = [this.m2MountedGun, this.dshkMountedGun];
     this.mountedGun = this.m2MountedGun; // compatibility alias for older .50-cal code paths; direct interactions use mountedGuns
+    // ННП-23 «Резчик» observation post(s) — steppe: dug in beside the strongpoint НП tower,
+    // objective laid ~N over the open steppe. Built lazily once the nnp23 spec registers.
+    this.nightPosts = [];
+    if (this.mapId === 'steppe') this.nightPosts.push(new NightPost(this, -321.5, -296.5, 0.1));
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
     this.inventory = new Inventory(this); // survival backpack + unified held-item model
@@ -263,6 +269,15 @@ class Game {
     this.input.on('key', (code, ev) => {
       if (this.state !== 'playing') return;
       if (this.devconsole && this.devconsole.open) return; // console eats input while open
+      // at the ННП-23 eyepieces: E leave · T day/night branch · F fullscreen · M mute; swallow the
+      // rest (must run BEFORE console-open so T toggles the branch instead of opening the console)
+      if (this.player.nightPost) {
+        if (code === 'KeyE') this.player.nightPost.exit();
+        else if (code === 'KeyT') this.player.nightPost.toggleBranch();
+        else if (code === 'KeyF') this.toggleFullscreen();
+        else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
+        return;
+      }
       if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
       if (code === 'F3') { this.f3 = !this.f3; return; }
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
@@ -293,6 +308,7 @@ class Game {
         else {
           const gun = this.nearestMountedGun(this.player.pos, (g) => g.canMount(this.player.pos));
           if (gun) gun.mount();
+          else if (this.nearestNightPost()) { this.nearestNightPost().enter(); } // ННП-23: step up to the eyepieces
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
@@ -348,6 +364,7 @@ class Game {
     this.freecam = !this.freecam;
     if (this.freecam) {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
+      if (this.player.nightPost) this.player.nightPost.exit();
       this.weapons.cancelMolotov();
       this.enemies.clearAll(); // clean, empty map to inspect
       this.hud.bigMessage('🚁 FREECAM', 'WASD fly · Space up · Ctrl/C down · Shift boost · N exit');
@@ -364,6 +381,12 @@ class Game {
   mountedGunById(id) {
     const key = id || (this.mountedGun && this.mountedGun.id);
     return this._mountedGunList().find((gun) => gun && gun.id === key) || this.mountedGun || null;
+  }
+  nearestNightPost() {
+    // the ННП-23 the player can step up to (built + close); not while seated anywhere else
+    if (this.player.mountedGun || this.player.nightPost) return null;
+    for (const np of this.nightPosts) if (np.near(this.player.pos)) return np;
+    return null;
   }
   nearestMountedGun(pos, predicate = null) {
     let best = null, bestD = Infinity;
@@ -386,6 +409,7 @@ class Game {
     this.enemies.clearAll(); this.loot.reset();
     this._nextTagId = 1; // new run → enemy tag ids restart at 1
     this.resetMountedGuns();
+    for (const np of this.nightPosts) np.forceReset(); // step away from the ННП-23 (restores lights/FOV/overlay)
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
     this.inventory.reset(); // clear backpack BEFORE resetLoadout (which deploys throwable start-stock into it)
@@ -591,6 +615,7 @@ class Game {
     this.mpMenuOpen = false;
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.resetMountedGuns();
+    for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay when leaving to menu
     this.enemies.clearAll(); if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
   }
@@ -681,6 +706,7 @@ class Game {
     if (this.mp && typeof this.mp.endRunToLobby === 'function') this.mp.endRunToLobby(msg);
     this.state = 'menu'; this.mpMenuOpen = false;
     this.resetMountedGuns();
+    for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay on squad-wipe → lobby
     this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
@@ -724,6 +750,7 @@ class Game {
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
     this.resetMountedGuns();
+    for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay off the death screen
     if (this.audio.music) { this.audio.music.setScene('gameover'); this.audio.music.setIntensity(0.85); this.audio.music.setStress(0); } this.hud.show(false);
     // persistent meta (per mode) + lifetime tallies
     const m = this.meta; m.kills = (m.kills || 0) + this.kills; m.runs = (m.runs || 0) + 1;
@@ -845,12 +872,16 @@ class Game {
     if (sim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
     if (sim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._waveBreak = 0; this.waves.startWave(this.waves.wave + 1); } } // continuous: breather → next wave (no shop, stay 'playing')
 
+    for (const np of this.nightPosts) np.ensureBuilt(); // place the ННП-23 prop once its spec registers (async boot fetch)
     if (this.mp.active && this.mp.frozen) {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
+      if (this.player.nightPost) this.player.nightPost.exit();
       this.weapons.cancelMolotov();
     }
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
+    } else if (this.player.nightPost) {
+      this.player.nightPost.controlUpdate(dt); // handwheel slew + eyepiece camera + branch FOV handled here
     } else {
       if (!this.mp.frozen) {
         const edge = this.input.buttonsPressed[0] ? 'press' : (this.input.buttons[0] ? 'hold' : null);
@@ -891,6 +922,7 @@ class Game {
     if (this.mode === 'longnight' && hostSim) this._surviveTime += dt; // run-duration record for the game-over screen (longnight only)
     this.dayNight.renderFrom(this._worldClock); // sky from minute-of-day + alpha (host + client)
     this.hud.setClock(this.dayNight.info(), this._worldClock);
+    if (this.player.nightPost) this.player.nightPost.lateLight(); // AFTER DayNight applied its frame values: intensifier gain lifts the night scene
     this._updateFlares(dt);       // flare is a deployable gadget in EVERY mode → tick gravity/burn/smoke unconditionally (mirrors _updateMolotovPools), else a flare thrown in purge hangs in mid-air
     this._updateMolotovPools(dt);
     if (this.fire) this.fire.update(dt); // Phase 8: ember-chain spread + burn-through (own fixed clock; reads molotovPools as sources)
@@ -922,6 +954,10 @@ class Game {
     const mgName = activeGun && activeGun.displayName ? activeGun.displayName : 'mounted gun';
     if (this.player.mountedGun) {
       this.hud.setInteract(`Press <b>E</b> to leave the ${mgName}`);
+    } else if (this.player.nightPost) {
+      this.hud.setInteract(''); // at the optic: the controls hint is self-contained in the NV overlay (#nvhint, timed fade)
+    } else if (this.nearestNightPost()) {
+      this.hud.setInteract('Press <b>E</b> to use the ННП-23 «Резчик» night observation post');
     } else if (this.inventory.isHoldingFiftyCan() && _reloadGun) {
       // holding the ammo can at the gun: refill, never mount (switch to a weapon to man it)
       this.hud.setInteract(_reloadGun.ammo >= _reloadGun.maxAmmo

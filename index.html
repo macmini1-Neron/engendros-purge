@@ -142,6 +142,41 @@
                 mask-composite: intersect; }      /* declared LAST so it wins: cut-out = UNION of the two lenses */
     #binoview.show { opacity: 1; }
 
+    /* ННП-23 «Резчик» (1ПН54) observation-post overlay — single eyepiece circle, ПСО-style
+       reticle (owner reference image; true drawing in dossier needs[]), phosphor noise + green
+       readout. The green LOOK comes from #game.nvgreen (canvas filter) + a scene-light boost in
+       nightpost.js — the overlay itself only masks, draws the reticle and flickers the grain. */
+    #nvview { position: fixed; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .15s; }
+    #nvview.show { opacity: 1; }
+    #nvview .nv-mask { position: absolute; inset: 0;
+      background: radial-gradient(circle 38vmin at 50% 50%, transparent 0 88%, rgba(2,8,3,.9) 97%, #010402 100%),
+                  radial-gradient(circle at 50% 50%, transparent 0 36vmin, #010402 39vmin); }
+    #nvview .nv-tube { position: absolute; inset: 0;   /* phosphor base glow: lifts even the black sky inside the tube */
+      background: radial-gradient(circle 37vmin at 50% 50%, rgba(58,150,76,.14) 0 70%, rgba(40,110,56,.08) 86%, transparent 100%); }
+    #nvview.day .nv-tube { background: radial-gradient(circle 37vmin at 50% 50%, transparent 0 62%, rgba(8,8,6,.35) 88%, transparent 100%); }
+    #nvreticle { position: absolute; left: 50%; top: 50%; width: 76vmin; height: 76vmin; transform: translate(-50%,-50%);
+      color: #9dffac; filter: drop-shadow(0 0 2px rgba(120,255,140,.75)); }
+    #nvview.day #nvreticle { color: #15150f; filter: none; transform: translate(-50%,-50%) scale(.8833); } /* FOV 6° vs 5.3° — shrink to keep the д.у. calibration true */
+    #nvnoise { position: absolute; inset: 0; opacity: .085; mix-blend-mode: screen; animation: nvgrain .32s steps(3) infinite;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+      background-size: 220px 220px; }
+    #nvview.day #nvnoise { display: none; }
+    @keyframes nvgrain { 0% { background-position: 0 0; } 33% { background-position: 84px -56px; } 66% { background-position: -62px 38px; } 100% { background-position: 0 0; } }
+    #nvreadout { position: absolute; left: 50%; bottom: 6.5vh; transform: translateX(-50%); white-space: pre;
+      font: 600 15px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .14em;
+      color: #9dffac; text-shadow: 0 0 7px rgba(120,255,140,.65); }
+    #nvview.day #nvreadout { color: #d8dec8; text-shadow: 0 0 4px rgba(0,0,0,.8); }
+    /* controls hint — lives INSIDE the optic overlay (so it paints ABOVE the mask, no #hud
+       stacking-context trap), sits just below the circle, fades out a few seconds after entry. */
+    #nvhint { position: absolute; left: 50%; bottom: 11vh; transform: translateX(-50%); white-space: nowrap;
+      font: 600 13px/1.4 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .04em; color: #cfead0;
+      background: rgba(6,12,7,.82); border: 1px solid rgba(120,255,140,.5); border-radius: 3px; padding: 6px 15px;
+      opacity: 0; transition: opacity .6s; box-shadow: 0 0 10px rgba(0,0,0,.6); }
+    #nvhint.show { opacity: 1; }
+    #nvhint b { color: #eaffe6; font-weight: 700; padding: 0 2px; }
+    /* the phosphor: monochrome green + lifted brightness; АРЯ washout falls out naturally by day */
+    #game.nvgreen { filter: grayscale(1) sepia(1) hue-rotate(58deg) saturate(2.4) brightness(1.42) contrast(1.08); }
+
     /* periscope overlay (driver seat) */
     #periscope { position:fixed; inset:0; pointer-events:none; opacity:0; transition:opacity .2s; z-index:60;
       background: linear-gradient(to bottom, #05060a 0%, #05060a 31%, rgba(5,6,10,0) 35%, rgba(5,6,10,0) 63%, #05060a 67%, #05060a 100%); }
@@ -975,6 +1010,39 @@
 
   <div id="scope"></div>
   <div id="binoview"></div>
+  <!-- ННП-23 «Резчик» (1ПН54) eyepiece view: mask + tube shading + reticle + grain + угломер readout -->
+  <div id="nvview">
+    <div class="nv-mask"></div>
+    <div class="nv-tube"></div>
+    <!-- CALIBRATED graticule (landscape, where 1vmin = 1vh): night branch FOV 5.3° = 88.34 д.у.
+         over 100vh; the SVG spans 76vmin → 1000 units = 67.14 д.у. → 1 д.у. = 14.895 units.
+         Ticks: small = 0-05 (74.5 u), tall = 0-10 (149 u) → Д = В×1000/У works for real.
+         Stadia: 1.5 m target base (Soviet standard man), gap(R) = 21340/R units:
+         200 m→106.7  400→53.3  600→35.6  800→26.7  1000→21.3. Chevron tip = screen centre.
+         The day branch (FOV 6°) shrinks the whole graticule by 5.3/6 in CSS to stay true. -->
+    <svg id="nvreticle" viewBox="0 0 1000 1000" fill="none" stroke="currentColor" stroke-width="2.4">
+      <!-- боковые поправки scale through centre: 0-05 small / 0-10 tall / edge bars -->
+      <path d="M30 500 H 120 M 880 500 H 970" stroke-width="5"/>
+      <path d="M351 484 V 516 M 202 484 V 516 M 53.2 490 V 510 M 649 484 V 516 M 798 484 V 516 M 946.8 490 V 510" stroke-width="3.4"/>
+      <path d="M425.5 492 V 508 M 276.6 492 V 508 M 127.6 494 V 506 M 574.5 492 V 508 M 723.4 492 V 508 M 872.4 494 V 506" stroke-width="2.2"/>
+      <!-- centre chevron aiming mark (tip = optical axis) + vertical post -->
+      <path d="M483 529 L 500 500 L 517 529" stroke-width="3.6"/>
+      <path d="M500 532 V 845" stroke-width="2.8"/>
+      <!-- stadia rangefinder, 1.5 m base: target fills baseline→curve at the range numbers (×100 m).
+           ENTIRELY LEFT of the vertical post (x<500). Calibration is the VERTICAL gap only
+           (gap = 21340/R units, live-verified) — x-positions are free, so the cluster sits left. -->
+      <path d="M140 765 H 445" stroke-width="3"/>
+      <path d="M150 658.3 L 230 711.7 L 300 729.4 L 365 738.3 L 430 743.7" stroke-width="2" stroke-dasharray="16 10"/>
+      <path d="M150 651.8 V 664.8 M 230 705.2 V 718.2 M 300 722.9 V 735.9 M 365 731.8 V 744.8 M 430 737.2 V 750.2" stroke-width="1.6"/>
+      <g font-family="ui-monospace, Menlo, monospace" font-size="34" fill="currentColor" stroke="none">
+        <text x="137" y="645">2</text><text x="217" y="700">4</text><text x="287" y="718">6</text><text x="352" y="727">8</text><text x="408" y="732">10</text>
+        <text x="143" y="802">1,5</text>
+      </g>
+    </svg>
+    <div id="nvnoise"></div>
+    <div id="nvreadout">У: 00-00   В: +0-00   5× НОЧЬ</div>
+    <div id="nvhint"></div>
+  </div>
   <div id="periscope"></div>
 
   <!-- Start menu -->
@@ -1407,6 +1475,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=258"></script>
+  <script type="module" src="./src/game.js?v=259"></script>
 </body>
 </html>
