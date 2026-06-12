@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './util.js';
 import { FALL_ARMOR_BYPASS, FALL_DMG_BONUS_AT_LETHAL, FALL_DMG_PER_VY, FALL_LETHAL, FALL_SAFE, HUNGER_DRAIN_PER_SEC, HUNGER_LOW, HUNGER_LOW_SPEED_MULT, HUNGER_MAX, LEG_BREAK_VY, LIMP_SPEED_MULT, PLAYER_BURN_DPS, PLAYER_BURN_TICK, SPLINT_APPLY_TIME, STARVE_TICK_DMG, STARVE_TICK_TIME } from './tuning.js';
+import { applyEffect, EFFECTS } from './effects-status.js';
 
 const CLIMB_SPEED = 3.7; // m/s on a ladder/скоб-трап (escape shaft + bunker tower)
 
@@ -60,10 +61,9 @@ export class Player {
   }
   breakLeg() {
     if (this.legBroken) return;
-    this.legBroken = true;
+    applyEffect(this, 'broken_leg', Infinity, this.game._fxCtx); // onApply → setLimp(true): sets legBroken + HUD
     this.game.audio.playerHurt(); this.game.hud.damageFlash();
     this.game.hud.toast('🦵 LEG BROKEN — find a splint (use it from your inventory)!', 0xd23a2a);
-    this.game.hud.setSurvival(this);
   }
   applySplint() {
     if (this._splintT > 0) return;
@@ -90,7 +90,11 @@ export class Player {
     if (frozen) return;
     if (this._splintT > 0) {
       this._splintT -= dt;
-      if (this._splintT <= 0) { this._splintT = 0; this.legBroken = false; this.game.hud.toast('🦵 Leg splinted — mobility restored', 0x7fd06a); this.game.hud.setSurvival(this); }
+      if (this._splintT <= 0) {
+        this._splintT = 0;
+        this.effects.delete('broken_leg'); EFFECTS.broken_leg.onClear(this, this.game._fxCtx); // → setLimp(false)
+        this.game.hud.toast('🦵 Leg splinted — mobility restored', 0x7fd06a);
+      }
     }
     if (this.alive) {
       const h0 = this.hunger;
