@@ -40,3 +40,7 @@ assets/ref-t90m-blueprint.png
 
 # stray empty file
 game
+
+# buildgen: per-building verification artefacts stay out of the deploy bundle
+buildings/*/renders
+buildings/*/BUILD.md

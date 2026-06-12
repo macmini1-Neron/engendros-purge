@@ -1,0 +1,82 @@
+{
+  "id": "_red",
+  "name": "Smoke-test cottage (harness fixture — NOT shipped)",
+  "footprint": {
+    "w": 8,
+    "h": 3.2,
+    "d": 6
+  },
+  "intent": {
+    "enterable": true,
+    "glassWindows": true,
+    "furnitureReady": false,
+    "roofAccess": false,
+    "role": "cover",
+    "entrances": [
+      "N"
+    ]
+  },
+  "storeys": [
+    {
+      "y": 0,
+      "h": 3.0
+    }
+  ],
+  "materials": {
+    "wall": "brickRed",
+    "roof": "corrugatedTin",
+    "trim": "concrete",
+    "glass": "glassPane",
+    "floor": "concrete"
+  },
+  "parts": [
+    {
+      "id": "shell",
+      "op": "shellBox",
+      "args": {
+        "wall": 0.3
+      }
+    },
+    {
+      "id": "door",
+      "op": "doorway",
+      "args": {
+        "face": "N",
+        "width": 1.6,
+        "height": 2.2
+      }
+    },
+    {
+      "id": "windows",
+      "op": "windowBays",
+      "args": {
+        "face": "S",
+        "count": 2,
+        "module": {
+          "w": 1.2,
+          "h": 1.4,
+          "sill": 0.9
+        },
+        "glass": true
+      }
+    },
+    {
+      "id": "roof",
+      "op": "flatRoof",
+      "args": {
+        "t": 0.2
+      }
+    },
+    {
+      "id": "sign",
+      "op": "sign",
+      "args": {
+        "face": "N",
+        "w": 2.0,
+        "h": 0.5,
+        "text": "ПРОВЕРКА"
+      }
+    }
+  ],
+  "needs": []
+}
