@@ -5,6 +5,7 @@ import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R,
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
 import { CALIBERS, resolveHit } from './destruct.js';
+import { yawToMils } from './bearing.js';
 
 // ── ?map=demo destruction wiring (Phase 9) ─────────────────────────────────────
 // Map a gameplay weapon class → destruction PENETRATION class (spec §5 hardness tiers).
@@ -61,10 +62,11 @@ export const WEAPONS = {
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
   flashlight: { name: 'Flashlight', class: 'tool', shape: 'flashlight', color: 0x9aa0a6, accent: 0xc23a2a },
   binoculars: { name: 'Binoculars', class: 'tool', shape: 'binoculars', zoom: true, scope: true, adsFov: 12, color: 0x26282b, accent: 0xb08a3a }, // Soviet Б8×30 field glasses — RMB zooms to a realistic 8× (FOV≈12°)
+  bussole: { name: 'Буссоль ПАБ-2А', class: 'tool', shape: 'bussole', color: 0x3a4a3a, accent: 0xb0a050 }, // Soviet artillery aiming circle — RMB raises the угломер compass overlay (no FOV zoom; keyed off shape==='bussole'). Datum = bearing.js
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'bussole'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -837,6 +839,34 @@ export function buildViewmodel(def) {
       b.box(0.42, 0.1, 0.05, 0, 0.07, -0.5, m, { tint: 0.05 }); b.box(0.42, 0.1, 0.05, 0, -0.05, -0.5, h, { tint: 0.05 });
       b.box(0.05, 0.05, 0.05, -0.19, 0.01, -0.46, 0x2a2c30); break;
     }
+    case 'bussole': {   // PLACEHOLDER ПАБ-2А артиллерийская буссоль (aiming circle): graduated brass
+                        // угломер ring on a short pillar + periscope head (objective faces −Z forward)
+                        // + eyepiece you sight through (+Z, toward the player). TODO modelgen: swap this
+                        // whole case for the sourced voxel build (one-case edit) — a shape with no case
+                        // renders INVISIBLE, so this stand-in is mandatory until the real model lands.
+      const olive = c, oliveHi = shade(c, 0.12), oliveLo = shade(c, -0.14),
+            brass = a, brassHi = shade(a, 0.18), steel = 0x5a6068, glass = 0x9fc6d6;
+      const PI2 = Math.PI / 2;
+      const cyl = (r0, r1, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(r1, r0, h, o.seg || 20); b.geo(g, x, y, z, col, o); g.dispose(); };
+      // graduated azimuth ring (brass круг) lying flat — the угломер dial
+      cyl(0.17, 0.17, 0.03, 0, -0.14, -0.34, brass, { seg: 28, tint: 0.02 });
+      cyl(0.175, 0.175, 0.012, 0, -0.123, -0.34, brassHi, { seg: 28 });
+      for (let i = 0; i < 24; i++) { const ang = i / 24 * TAU; b.box(0.006, 0.006, 0.02, Math.cos(ang) * 0.155, -0.118, -0.34 + Math.sin(ang) * 0.155, steel); } // graduation ticks
+      cyl(0.05, 0.05, 0.16, 0, -0.05, -0.34, oliveLo, { seg: 16 });   // short pillar/axle
+      // main body column (vertical olive box, layered shading)
+      b.box(0.14, 0.2, 0.12, 0, 0.06, -0.34, olive, { tint: 0.03 });
+      b.box(0.1, 0.05, 0.12, 0, 0.155, -0.34, oliveHi);              // lit top strip
+      b.box(0.14, 0.04, 0.12, 0, -0.04, -0.34, oliveLo);             // bottom shadow
+      // periscope head at top, looking forward (−Z) — objective window
+      b.box(0.13, 0.1, 0.16, 0, 0.18, -0.4, olive, { tint: 0.03 });
+      b.box(0.09, 0.07, 0.012, 0, 0.18, -0.485, glass);              // objective glass (front face, −Z)
+      // eyepiece tube facing the player (+Z) — what you sight through
+      cyl(0.045, 0.05, 0.12, 0, 0.06, -0.2, steel, { rx: PI2, seg: 18 });
+      cyl(0.05, 0.05, 0.02, 0, 0.06, -0.135, brassHi, { rx: PI2, seg: 18 });   // eyecup bezel
+      cyl(0.034, 0.034, 0.012, 0, 0.06, -0.125, 0x1f2932, { rx: PI2, seg: 16 }); // dark eyepiece glass
+      cyl(0.03, 0.03, 0.05, 0.1, 0.02, -0.34, brass, { rz: PI2, seg: 14 });     // side azimuth knob
+      break;
+    }
     default:        b.box(0.12, 0.16, 0.6, 0, 0, -0.3, c, { tint: 0.04 }); b.box(0.1, 0.26, 0.14, 0, -0.2, 0.04, dark);
   }
   const geom = b.build();
@@ -1540,6 +1570,14 @@ export class WeaponSystem {
     this.fov = damp(this.fov, targetFov, 16, dt);
     this.game.engine.setFov(this.fov);
     this.game.hud.setScope(this.ads && d.scope, d.shape === 'binoculars');
+
+    // буссоль ПАБ-2А: RMB raises the угломер compass overlay (no FOV zoom). Pure LOCAL read of
+    // player.yaw + pos through the shared datum (bearing.js) → identical on every co-op client.
+    if (d.shape === 'bussole') {
+      const plr = this.game.player;
+      this._compassUp = !!this.game.input.buttons[2];
+      this.game.hud.setCompass(this._compassUp ? { mils: yawToMils(plr.yaw), x: plr.pos.x, z: plr.pos.z } : null);
+    } else if (this._compassUp) { this.game.hud.setCompass(null); this._compassUp = false; }
 
     // viewmodel bob/sway/recoil/swing
     const pl = this.game.player;
@@ -2319,6 +2357,7 @@ export class MountedGun {
     this.game.player.pos.set(this.base.x + Math.sin(this.baseYaw) * 0.9, this.base.y, this.base.z + Math.cos(this.baseYaw) * 0.9); // stand BEHIND the gun
     this.yaw = this.baseYaw; this.pitch = 0;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0'; // hide the white crosshair on the .50 — the ring sight is the reticle
+    if (this.game.hud.setCompass) this.game.hud.setCompass(null); // mounting stops weapons.update() → tear the буссоль overlay down here
     this._primeCharge();
 	    this.game.hud.setMountedGun(this.ammo, this.maxAmmo, this.hudName);
 	  }

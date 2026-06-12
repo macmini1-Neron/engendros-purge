@@ -166,6 +166,29 @@
       font: 600 15px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .14em;
       color: #9dffac; text-shadow: 0 0 7px rgba(120,255,140,.65); }
     #nvview.day #nvreadout { color: #d8dec8; text-shadow: 0 0 4px rgba(0,0,0,.8); }
+
+    /* буссоль ПАБ-2А overlay — single monocular eyepiece: dark vignette + a rotating угломер
+       bezel under a FIXED lubber index at top, plus a digital угломер readout and grid coords.
+       The rose (#compassrose) is rotated by ui.js setCompass() so the live bearing sits under
+       the lubber line; everything else is static. Datum = bearing.js (grid-N=+Z, CW→+X). */
+    #compassview { position: fixed; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .12s;
+      background: radial-gradient(circle at center, transparent 0 33vmin, rgba(6,9,6,.97) 37vmin); }
+    #compassview.show { opacity: 1; }
+    #compassview .cv-tube { position: absolute; inset: 0;   /* faint warm brass glow inside the optic */
+      background: radial-gradient(circle 33vmin at 50% 50%, rgba(176,160,80,.07) 0 72%, transparent 100%); }
+    #compassdial { position: absolute; left: 50%; top: 50%; width: 62vmin; height: 62vmin; transform: translate(-50%,-50%); }
+    #compassrose { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 50% 50%;
+      color: #c9b86a; filter: drop-shadow(0 0 2px rgba(200,180,90,.45)); }
+    /* fixed index (lubber line) — a small amber triangle biting the top of the bezel */
+    #compasslubber { position: absolute; left: 50%; top: -1.4vmin; transform: translateX(-50%);
+      width: 0; height: 0; border-left: 1.1vmin solid transparent; border-right: 1.1vmin solid transparent;
+      border-top: 1.8vmin solid #ffcf57; filter: drop-shadow(0 0 3px rgba(255,180,60,.8)); }
+    #compassmils { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); white-space: pre;
+      font: 700 5.4vmin/1 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .1em;
+      color: #ffd874; text-shadow: 0 0 9px rgba(255,190,70,.55); }
+    #compasscoords { position: absolute; left: 50%; bottom: 7vh; transform: translateX(-50%); white-space: pre;
+      font: 600 15px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .12em;
+      color: #cfd6b0; text-shadow: 0 0 6px rgba(0,0,0,.7); }
     /* controls hint — lives INSIDE the optic overlay (so it paints ABOVE the mask, no #hud
        stacking-context trap), sits just below the circle, fades out a few seconds after entry. */
     #nvhint { position: absolute; left: 50%; bottom: 11vh; transform: translateX(-50%); white-space: nowrap;
@@ -1010,6 +1033,43 @@
 
   <div id="scope"></div>
   <div id="binoview"></div>
+  <!-- буссоль ПАБ-2А: монокулярный визир — rotating угломер bezel under a fixed lubber index,
+       digital угломер + grid coords. Rose is rotated live by ui.js setCompass(); rest is static. -->
+  <div id="compassview">
+    <div class="cv-tube"></div>
+    <div id="compassdial">
+      <svg id="compassrose" viewBox="-100 -100 200 200" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="0" cy="0" r="96" stroke-width="1.2" opacity=".5"/>
+        <circle cx="0" cy="0" r="44" stroke-width="1" opacity=".35"/>
+        <!-- 12 major graduations every 5 больших делений (500 mils / 30°), N at top, CW -->
+        <g stroke-width="2.4">
+          <line x1="0" y1="-84" x2="0" y2="-96"/>      <line x1="42" y1="-72.7" x2="48" y2="-83.1"/>
+          <line x1="72.7" y1="-42" x2="83.1" y2="-48"/> <line x1="84" y1="0" x2="96" y2="0"/>
+          <line x1="72.7" y1="42" x2="83.1" y2="48"/>   <line x1="42" y1="72.7" x2="48" y2="83.1"/>
+          <line x1="0" y1="84" x2="0" y2="96"/>         <line x1="-42" y1="72.7" x2="-48" y2="83.1"/>
+          <line x1="-72.7" y1="42" x2="-83.1" y2="48"/> <line x1="-84" y1="0" x2="-96" y2="0"/>
+          <line x1="-72.7" y1="-42" x2="-83.1" y2="-48"/><line x1="-42" y1="-72.7" x2="-48" y2="-83.1"/>
+        </g>
+        <!-- big-division numbers at the 8 inter-cardinal majors (large division count, ×100 mils) -->
+        <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="currentColor" stroke="none"
+           text-anchor="middle" dominant-baseline="central">
+          <text x="36" y="-62.4">05</text>  <text x="62.4" y="-36">10</text>
+          <text x="62.4" y="36">20</text>   <text x="36" y="62.4">25</text>
+          <text x="-36" y="62.4">35</text>  <text x="-62.4" y="36">40</text>
+          <text x="-62.4" y="-36">50</text> <text x="-36" y="-62.4">55</text>
+        </g>
+        <!-- cardinals: С(север)=00-00, В(восток)=15-00, Ю(юг)=30-00, З(запад)=45-00 -->
+        <g font-family="ui-monospace, Menlo, monospace" font-size="15" font-weight="700" fill="#ffd874" stroke="none"
+           text-anchor="middle" dominant-baseline="central">
+          <text x="0" y="-66">С</text> <text x="66" y="0">В</text>
+          <text x="0" y="66">Ю</text>  <text x="-66" y="0">З</text>
+        </g>
+      </svg>
+      <div id="compasslubber"></div>
+    </div>
+    <div id="compassmils">00-00</div>
+    <div id="compasscoords">X 0  Z 0</div>
+  </div>
   <!-- ННП-23 «Резчик» (1ПН54) eyepiece view: mask + tube shading + reticle + grain + угломер readout -->
   <div id="nvview">
     <div class="nv-mask"></div>
@@ -1475,6 +1535,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=262"></script>
+  <script type="module" src="./src/game.js?v=263"></script>
 </body>
 </html>

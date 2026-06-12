@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { clamp, damp, TAU } from './util.js';
 import { placeProp, hasModel } from './props/registry.js';
+import { yawToMils, formatUglomer } from './bearing.js';
 
 const ELEV_MAX = 0.3142;                  // ±3-00 (dossier#angles)
 const FOV_NIGHT = 5.3, FOV_DAY = 6.0;     // device true FOV in degrees (dossier#optics_*)
@@ -64,6 +65,7 @@ export class NightPost {
     pl.pos.set(this.base.x + stand.x, this.base.y, this.base.z + stand.z);
     pl.vel.set(0, 0, 0);
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0';
+    if (this.game.hud.setCompass) this.game.hud.setCompass(null); // entering the ННП-23 stops weapons.update() → tear the буссоль overlay down
     this._hintT = 6;                                            // show the controls hint, then fade
     this._showHint(true);
     // snapshot lights/fog once — lateLight() boosts per-frame, exit() restores (in longnight the
@@ -176,11 +178,12 @@ export class NightPost {
   _readout() {
     const el = document.getElementById('nvreadout');
     if (!el) return;
-    // Soviet угломер: 60-00 circle, clockwise; elevation ±3-00
-    const m = ((Math.round(-(this.baseYaw + this.az) / TAU * 6000) % 6000) + 6000) % 6000;
-    const ev = Math.round(this.el / TAU * 6000);
+    // Soviet угломер via the shared datum (bearing.js): device optical-forward = camera yaw
+    // (baseYaw + az + π, see the cam.rotation.set above) → 60-00 clockwise, grid-N=+Z.
+    const m = yawToMils(this.baseYaw + this.az + Math.PI);
+    const ev = Math.round(this.el / TAU * 6000);   // elevation is a tilt, not an azimuth — kept inline
     const f = (n) => `${String(Math.floor(Math.abs(n) / 100)).padStart(2, '0')}-${String(Math.abs(n) % 100).padStart(2, '0')}`;
-    el.textContent = `У: ${f(m)}   В: ${ev < 0 ? '−' : '+'}${f(ev)}   ${this.branch === 'night' ? '5× НОЧЬ' : '5,5× ДЕНЬ'}`;
+    el.textContent = `У: ${formatUglomer(m)}   В: ${ev < 0 ? '−' : '+'}${f(ev)}   ${this.branch === 'night' ? '5× НОЧЬ' : '5,5× ДЕНЬ'}`;
     const svg = document.getElementById('nvreticle');
     if (svg) svg.style.opacity = String(this.reticleGlow);
   }
