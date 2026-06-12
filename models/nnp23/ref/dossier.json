@@ -1,0 +1,118 @@
+{
+  "id": "nnp23",
+  "title": "ННП-23 «Резчик» (GRAU 1ПН54) — Soviet day/night artillery observation device on tripod",
+  "era": "developed 1981 (ОКР «Резчик», ЦКБ «Точприбор» Novosibirsk); serial production НПЗ (Новосибирский приборостроительный завод)",
+  "sources": {
+    "npz_official": "http://web.archive.org/web/20160829191839/http://www.npzoptics.ru/catalog/ranee_vypuskalis/1pn54/ — archived official manufacturer product page (authoritative TTX table)",
+    "grau_index": "https://500maketov.ru/info/index_grau/ — '1ПН54 - ночной наблюдательный прибор ННП-23 \"Резчик\"'",
+    "design_history": "https://cyberleninka.ru/article/n/istoriya-sozdaniya-priborov-nochnogo-videniya-nablyudeniya-na-primere-izdeliy-tskb-tochpribor — ЦКБ «Точприбор» own history: 1981 ОКР «Резчик» → 1ПН54 (ННП-23)",
+    "academy_slide6": "https://present5.com/presentation/3/123749765_171525108.pdf-img/123749765_171525108.pdf-6.jpg — military-academy deck, full-setup photo + masses + kit list (read verbatim off the slide; local copy ref/nnp23_slide6.jpg)",
+    "academy_slide7": "https://present5.com/presentation/3/123749765_171525108.pdf-img/123749765_171525108.pdf-7.jpg — setup/operating procedure slide (local copy ref/nnp23_slide7.jpg)",
+    "academy_deck2": "https://en.ppt-online.org/427001 — second academy deck (periscopicity 357 mm variant, battery endurance)",
+    "msksnab_mirror": "https://msksnab.ru/p430835405-1pn54-dnevno-nochnoj.html — dealer mirror of the НПЗ TTX table",
+    "stydopedia": "https://stydopedia.com/5xb10.html — 'Прибор ночной наблюдательный с дневной ветвью, индекс 1ПН54' (full name, environment, manual reference)",
+    "eyecup_listing": "https://reibert.info/lots/naglaznik-nnp-23-1pn-54-koshachij-glaz.687987/ — eyecup mount diameter 42 mm (seller Q&A)",
+    "tube_listing": "https://gunszip.org/topic/256/1559518.html — replacement tube 6Э21МГ offered for ННП-23",
+    "k316_battery": "http://web.archive.org/web/20120316104843/http://www.npzoptics.ru/catalog/aksessuary/k-316/ — К-316 battery container (substitute for АКБ 5Д-0,55С), used in 1ПН54",
+    "user_photos": "8 restoration/museum photos supplied by the owner in-chat (rear-3/4, controls closeup, left profile, front-3/4, transport box open/packed, on-tripod with naval flag) — feature/proportion reference only, no absolute dims"
+  },
+  "specifications": {
+    "body_dims": {
+      "length_mm": 607, "height_mm": 544, "width_mm": 245,
+      "src": "npz_official",
+      "quote": "Габаритные размеры, мм 607х544х245",
+      "note": "axis order Д×В×Ш cross-checked against user_photos: body ~2.5× longer than wide, near-square side profile → 607 along optical axis, 544 tall, 245 wide"
+    },
+    "mass_kg": { "instrument": 18.5, "combat_on_tripod": 32, "march_full_kit": 46,
+      "src": "npz_official (18.5); academy_slide6 (32 / 46)",
+      "quote": "Масса, кг 18.5 | Масса прибора в боевом положении 32кг | в походном положении 46кг" },
+    "periscopicity_mm": { "value": 350,
+      "src": "academy_slide6 (350); academy_deck2 says 357 — carrying 350, read directly off the slide",
+      "quote": "Перископичность 350мм",
+      "note": "vertical offset between eyepiece optical axis and objective optical axis" },
+    "optics_day": { "magnification": 5.5, "fov_deg": 6,
+      "src": "npz_official", "quote": "Увеличение, крат — 5,5 / Поле зрения, град — 6" },
+    "optics_night": { "magnification": 5, "fov_deg": 5.3,
+      "src": "npz_official", "quote": "Увеличение, крат — 5 / Поле зрения, град — 5,3" },
+    "range_night_tank_m": { "value": 1500, "src": "npz_official; academy_deck2 'по танку (борт), м, не менее 1500'" },
+    "intensifier": { "generation": 1, "tube": "6Э21МГ (collector-reported)", "passive": true,
+      "src": "npz_official 'Прибор на ЭОПе первого поколения; автоматическая регулировка яркости экрана'; tube_listing" },
+    "angles": {
+      "azimuth_mils": "60-00 (full 6000-mil circle = 360°)",
+      "elevation_mils": "±3-00 (±300 mils ≈ ±18°)",
+      "src": "npz_official",
+      "quote": "Диапазон измерения углов (гор./верт.) 60-00 / ±3-00"
+    },
+    "aiming_mechanics": {
+      "value": "elevation mechanism + elevation scale built into the instrument body; combined horizontal+vertical aiming mechanism with azimuth scale is a separate removable limb (лимб) between instrument and tripod; instrument carries its own compass (буссоль) and circular bubble level for horizontalization",
+      "src": "npz_official",
+      "quote": "Механизм наведения по вертикали и шкала… в корпусе прибора. Механизм наведения в горизонтальной и вертикальной плоскостях со шкалой для измерения азимутальных углов выполнен съемным… Прибор снабжен буссолью и уровнем"
+    },
+    "controls": {
+      "value": "day/night branch switch, neutral density filter (day branch), closable objective shutters (night branch), light shutter (световая шторка ЗАКРЫТО/ОТКР), power switch «В2» ВКЛ/ОТКЛ, image-sharpness focus handwheel (маховичок резкости), eyepiece diopter rings ±5 dpt, reticle brightness knob (ЯРКОСТЬ СЕТКИ, manual)",
+      "src": "npz_official (branch switch, filters, ручную регулировку яркости сетки); academy_slide7 (operating procedure steps, В2, шторка, маховичок резкости); user_photos (ЯРКОСТЬ СЕТКИ knob visible on left face)"
+    },
+    "eyecup_mount_mm": { "value": 42, "src": "eyecup_listing", "note": "rubber eyecup seat diameter; binocular eyepieces" },
+    "power": { "battery": "АКБ 5Д-0,55С (6 V; К-316 container = 3×AA substitute), 10 h endurance",
+      "src": "k316_battery; academy_slide6 'Время непрерывной работы без замены АКБ 10час'" },
+    "kit": { "value": "1. Прибор наблюдения 2. Лимб 3. Тренога 4. Кожух на треногу 5. Ящик с приспособлениями (+BRDM bracket)",
+      "src": "academy_slide6 (verbatim list); gunszip thread (БРДМ крепеж)" },
+    "finish": {
+      "value": "sand-khaki (защитный желто-серый) enamel on instrument body and limb; darker olive tripod legs; black rubber eyecups; black bakelite knobs; small stencilled plates (1ПН 54 № serial, ВНИМАНИЕ warning block on upper body face)",
+      "src": "user_photos; academy_slide6 (photo-derived — exact paint spec in needs[])"
+    },
+    "features_inventory": {
+      "value": "boxy two-tier body: tall rear electronics box + objective drum (large cylinder) top-front; binocular eyepieces with rubber cups protrude low at the rear; ЯРКОСТЬ СЕТКИ knob + light-shutter lever on left face; В2 toggle + connector/battery box right-rear; warning text block on upper body face; 1ПН 54 stencil; removable limb with two fine-aiming handwheels under the body; tripod: crank column + 3 splayed legs with strap; transport = lidded wooden-style box",
+      "src": "user_photos (all features visible); npz_official + academy_slide7 (control functions)"
+    }
+  },
+  "derivation": {
+    "tripod_geometry": {
+      "formula": "photo-scaled from academy_slide6 full setup + user_photos using sourced body height 544 mm: total setup height ≈ 1.70 m, limb top (body bottom) ≈ 1.13 m, tripod head ≈ 0.84 m, leg foot spread radius ≈ 0.50 m → leg length ≈ 0.96 m at ~31° from vertical",
+      "inputs": ["body_dims.height_mm", "academy_slide6 photo", "user_photos"],
+      "note": "tripod height nowhere stated in sources (needs[]); column is crank-adjustable so a fixed working height is a legitimate pose choice"
+    },
+    "optical_axes": {
+      "formula": "eyepiece axis = body bottom + ~100 mm (user_photos: eyecups at lower rear edge); objective axis = eyepiece axis + periscopicity 350 mm → 450 mm above body bottom, near body top (544 mm) — consistent with photos",
+      "inputs": ["periscopicity_mm", "body_dims", "user_photos"]
+    },
+    "objective_drum_mm": {
+      "formula": "objective housing outer Ø ≈ 210 mm — photo-scaled against sourced body width 245 mm (drum slightly narrower than body in front view); clamp band around drum ≈ 30 mm wide, slightly proud (user_photos: drum held by clamp ring with over-centre latch)",
+      "inputs": ["body_dims.width_mm", "user_photos"]
+    },
+    "eyepiece_geometry_mm": {
+      "formula": "eyecup outer Ø ≈ 66 mm (42 mm sourced seat + rubber bell overhang); eyepiece tube Ø ≈ 40 mm; interpupillary spacing ≈ 65 mm (standard binocular IPD); black binocular bridge housing ≈ 115×70×55 spanning both tubes (user_photos: prominent black assembly at lower rear)",
+      "inputs": ["eyecup_mount_mm", "user_photos"]
+    },
+    "limb_handwheel_mm": {
+      "formula": "limb drum Ø ≈ 180 mm, handwheel Ø ≈ 55 mm — photo-scaled against body width 245 mm",
+      "inputs": ["body_dims.width_mm", "user_photos"]
+    },
+    "mass_split_kg": {
+      "formula": "limb+tripod ≈ 32 − 18.5 = 13.5; case/cover ≈ 46 − 32 = 14",
+      "inputs": ["mass_kg"]
+    },
+    "controls_knobs_mm": {
+      "formula": "photo-scaled vs sourced body width 245 mm: ЯРКОСТЬ СЕТКИ knob Ø ≈ 34, light-shutter lever boss Ø ≈ 42, focus handwheel Ø ≈ 52, top filler cap Ø ≈ 44, battery/connector box on right face ≈ 55×130×110, tripod crank arm ≈ 85 long",
+      "inputs": ["body_dims.width_mm", "user_photos"]
+    }
+  },
+  "movement_realism": {
+    "summary": "Full 360° azimuth slew (60-00) with fine handwheel traverse on the removable limb; elevation arc only ±3-00 (±300 mils ≈ ±18°) via handwheel in the body. No zoom — fixed 5×/5.5× magnification, day/night is a BRANCH SWITCH (separate optical paths), not a zoom. Setup ritual: level the limb by bubble, focus by handwheel on a distant object or star, set reticle brightness. Reticle illuminated with manual brightness control. Angles read out in Soviet mils (тысячные, Д-Ц format e.g. 0-10).",
+    "src": "npz_official (angle ranges, branch switch, reticle brightness); academy_slide7 (procedure)"
+  },
+  "reticle": {
+    "summary": "Angle-measuring (угломерная) reticle for target location + range from known target dimensions; family pattern (ННП-21 predecessor) = binocular-style mil cross. Search snippets attribute 'большое деление 0-10 / малое 0-05' to 1ПН54 but unpinned (needs[]). Owner-supplied in-game reference: ПСО-style chevron + stadia rangefinder image — used as GAME reticle art, flagged representative.",
+    "src": "stydopedia (angle measurement + range from known dims); sprotyvg7 Sumy textbook §2.8.6 (ННП-21 family reticle); user_photos (reticle reference image)"
+  },
+  "needs": [
+    "Tripod height min/max + overall setup height — nowhere stated; modeled via derivation.tripod_geometry (photo-scaled, flagged)",
+    "Transport case dimensions — unfound; case NOT modeled in v1",
+    "Reticle drawing + division values (0-10/0-05 claim unverified) — manual «Изделие 1ПН54. ТО и ИЭ» would settle it; game reticle is representative ПСО-style per owner reference image",
+    "Warning-plate exact text (ВНИМАНИЕ…) — visible but unreadable in photos; stencil modeled as abstract text block",
+    "Exact paint spec (защитный желто-серый) — photo-derived only",
+    "6Э21МГ tube internals, photocathode type — only 'ЭОП первого поколения' official",
+    "Buссоль (compass) unit position — visible as small fitting in photos, modeled as needs-gap in v1",
+    "Tripod leg strap + crank handle details — visible in photos, simplified"
+  ]
+}

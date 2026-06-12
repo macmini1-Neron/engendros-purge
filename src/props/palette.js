@@ -31,6 +31,8 @@ export const PALETTE = {
                glb: { rgb: [0.62, 0.53, 0.38], rough: 0.75, metal: 0.0 } },
   oliveDrab: { voxel: { hi: '#7e8c60', mid: '#52603a', lo: '#3e4a2c', slot: '#2d361f', bright: '#94a274' },
                glb: { rgb: [0.32, 0.37, 0.22], rough: 0.8, metal: 0.0 } },
+  paintKhaki: { voxel: { hi: '#b5a26c', mid: '#8c7c50', lo: '#6c5f3c', slot: '#4e442a', bright: '#cbba80' },
+                glb: { rgb: [0.55, 0.49, 0.31], rough: 0.55, metal: 0.0 } },
   missileGrey:{ voxel: { hi: '#c4c8c6', mid: '#9aa09d', lo: '#787e7b', slot: '#5e6360', bright: '#d8dcd9' },
                glb: { rgb: [0.55, 0.57, 0.55], rough: 0.6, metal: 0.1 } },
   gunGrey:   { voxel: { hi: '#4a4e52', mid: '#34383c', lo: '#23262a', slot: '#16181b', bright: '#5e636a' },

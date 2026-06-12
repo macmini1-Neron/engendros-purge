@@ -1,0 +1,58 @@
+{
+  "id": "nnp23",
+  "name": "ННП-23 «Резчик» (1ПН54) day/night observation device on tripod",
+  "category": "military-optics",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.92, "h": 1.70, "d": 0.94 },
+  "dossier": "models/nnp23/ref/dossier.json",
+  "rig": [
+    { "name": "azimuth",   "pivot": [0, 1.00, 0], "axis": "y", "pose": 0, "type": "spin",  "range": [0, 6.2832] },
+    { "name": "elevation", "pivot": [0, 1.33, 0], "axis": "x", "pose": 0, "parent": "azimuth", "type": "hinge", "range": [-0.3142, 0.3142] }
+  ],
+  "parts": [
+    { "op": "bevelBox", "id": "legFront", "args": { "w": 0.045, "h": 0.96, "d": 0.045 }, "at": [0, 0.42, 0.25],      "rot": [-31, 0, 0],     "mat": "paintOD", "src": "dossier#tripod_geometry" },
+    { "op": "bevelBox", "id": "legRearR", "args": { "w": 0.045, "h": 0.96, "d": 0.045 }, "at": [0.217, 0.42, -0.125],  "rot": [15.5, 0, 26.8],  "mat": "paintOD", "src": "dossier#tripod_geometry" },
+    { "op": "bevelBox", "id": "legRearL", "args": { "w": 0.045, "h": 0.96, "d": 0.045 }, "at": [-0.217, 0.42, -0.125], "rot": [15.5, 0, -26.8], "mat": "paintOD", "src": "dossier#tripod_geometry" },
+    { "op": "cylinder", "id": "tripodHead", "args": { "r": 0.07, "h": 0.10, "axis": "y" }, "at": [0, 0.84, 0], "mat": "paintOD", "src": "dossier#tripod_geometry" },
+    { "op": "cylinder", "id": "column",     "args": { "r": 0.042, "h": 0.16, "axis": "y", "tone": "lo" }, "at": [0, 0.93, 0], "mat": "steel", "src": "dossier#tripod_geometry" },
+    { "op": "bevelBox", "id": "crankArm",  "args": { "w": 0.085, "h": 0.016, "d": 0.016 }, "at": [0.07, 0.875, 0], "mat": "steel", "src": "dossier#controls_knobs_mm" },
+    { "op": "cylinder", "id": "crankGrip", "args": { "r": 0.009, "h": 0.045, "axis": "y" }, "at": [0.108, 0.855, 0], "mat": "bakelite", "src": "dossier#controls_knobs_mm" },
+
+    { "op": "cylinder", "id": "limbBase",    "args": { "r": 0.090, "h": 0.07, "axis": "y" },  "at": [0, 1.035, 0], "mat": "paintKhaki", "src": "dossier#limb_handwheel_mm" },
+    { "op": "cylinder", "id": "azimuthRing", "args": { "r": 0.094, "h": 0.024, "axis": "y" }, "at": [0, 1.013, 0], "mat": "paintBlack", "src": "dossier#limb_handwheel_mm" },
+    { "op": "cylinder", "id": "hwTraverse",  "args": { "r": 0.028, "h": 0.04, "axis": "x" },  "at": [0.105, 1.035, 0],  "mat": "bakelite", "src": "dossier#limb_handwheel_mm" },
+    { "op": "cylinder", "id": "hwElevation", "args": { "r": 0.028, "h": 0.04, "axis": "x" },  "at": [-0.105, 1.035, 0], "mat": "bakelite", "src": "dossier#limb_handwheel_mm" },
+    { "op": "bevelBox", "id": "cradle", "args": { "w": 0.14, "h": 0.06, "d": 0.22 }, "at": [0, 1.10, -0.02], "mat": "paintKhaki", "rig": "azimuth", "src": "dossier#tripod_geometry" },
+
+    { "op": "bevelBox", "id": "lowerBody", "args": { "w": 0.245, "h": 0.20, "d": 0.30 }, "at": [0, 1.23, -0.09],  "mat": "paintKhaki", "rig": "elevation", "src": "dossier#body_dims" },
+    { "op": "bevelBox", "id": "midBody",   "args": { "w": 0.245, "h": 0.17, "d": 0.46 }, "at": [0, 1.415, 0.0],   "mat": "paintKhaki", "rig": "elevation", "src": "dossier#body_dims" },
+    { "op": "bevelBox", "id": "upperBody", "args": { "w": 0.245, "h": 0.17, "d": 0.44 }, "at": [0, 1.585, -0.01], "mat": "paintKhaki", "rig": "elevation", "src": "dossier#body_dims" },
+
+    { "op": "cylinder", "id": "objDrum",  "args": { "r": 0.105, "h": 0.24 },  "at": [0, 1.58, 0.21],  "mat": "paintKhaki", "rig": "elevation", "src": "dossier#objective_drum_mm" },
+    { "op": "cylinder", "id": "objBand",  "args": { "r": 0.108, "h": 0.030 }, "at": [0, 1.58, 0.135], "mat": "paintOD",    "rig": "elevation", "src": "dossier#objective_drum_mm" },
+    { "op": "cylinder", "id": "objBezel", "args": { "r": 0.109, "h": 0.035 }, "at": [0, 1.58, 0.345], "mat": "paintOD",    "rig": "elevation", "src": "dossier#objective_drum_mm" },
+    { "op": "cylinder", "id": "lensDisc", "args": { "r": 0.082, "h": 0.014 }, "at": [0, 1.58, 0.366], "mat": "paintBlack", "rig": "elevation", "src": "dossier#objective_drum_mm" },
+
+    { "op": "bevelBox", "id": "eyeBridge", "args": { "w": 0.115, "h": 0.07, "d": 0.055 }, "at": [0, 1.23, -0.262], "mat": "paintBlack", "rig": "elevation", "src": "dossier#eyepiece_geometry_mm" },
+    { "op": "cylinder", "id": "eyeTubeL", "args": { "r": 0.020, "h": 0.10, "tone": "lo" }, "at": [-0.0325, 1.23, -0.30], "mat": "gunGrey", "rig": "elevation", "src": "dossier#eyepiece_geometry_mm" },
+    { "op": "cylinder", "id": "eyeTubeR", "args": { "r": 0.020, "h": 0.10, "tone": "lo" }, "at": [0.0325, 1.23, -0.30],  "mat": "gunGrey", "rig": "elevation", "src": "dossier#eyepiece_geometry_mm" },
+    { "op": "cylinder", "id": "eyecupL",  "args": { "r": 0.033, "h": 0.07 }, "at": [-0.0325, 1.23, -0.375], "mat": "paintBlack", "rig": "elevation", "src": "dossier#eyepiece_geometry_mm" },
+    { "op": "cylinder", "id": "eyecupR",  "args": { "r": 0.033, "h": 0.07 }, "at": [0.0325, 1.23, -0.375],  "mat": "paintBlack", "rig": "elevation", "src": "dossier#eyepiece_geometry_mm" },
+
+    { "op": "cylinder", "id": "knobBrightness", "args": { "r": 0.017, "h": 0.032, "axis": "x" }, "at": [-0.134, 1.29, -0.04], "mat": "bakelite", "rig": "elevation", "src": "dossier#controls_knobs_mm" },
+    { "op": "cylinder", "id": "shutterLever",   "args": { "r": 0.021, "h": 0.034, "axis": "x" }, "at": [-0.135, 1.44, 0.08],  "mat": "bakelite", "rig": "elevation", "src": "dossier#controls_knobs_mm" },
+    { "op": "cylinder", "id": "focusWheel",     "args": { "r": 0.026, "h": 0.036, "axis": "x" }, "at": [0.136, 1.44, -0.10],  "mat": "bakelite", "rig": "elevation", "src": "dossier#controls_knobs_mm" },
+    { "op": "bevelBox", "id": "batteryBox", "args": { "w": 0.055, "h": 0.13, "d": 0.11 }, "at": [0.148, 1.30, -0.16], "mat": "paintKhaki", "rig": "elevation", "src": "dossier#controls_knobs_mm" },
+    { "op": "cylinder", "id": "topCap", "args": { "r": 0.022, "h": 0.025, "axis": "y", "tone": "lo" }, "at": [0, 1.680, -0.10], "mat": "steel", "rig": "elevation", "src": "dossier#controls_knobs_mm" },
+
+    { "op": "stencil", "id": "stencilWarn",  "args": { "w": 0.15, "h": 0.09, "lines": 4 }, "at": [-0.124, 1.585, -0.02], "rot": [0, -90, 0], "mat": "paintBlack", "rig": "elevation", "src": "dossier#finish" },
+    { "op": "stencil", "id": "stencil1pn54", "args": { "w": 0.09, "h": 0.05, "lines": 2 }, "at": [0.124, 1.57, -0.12],   "rot": [0, 90, 0],  "mat": "paintBlack", "rig": "elevation", "src": "dossier#finish" }
+  ],
+  "needs": [
+    "Tripod working height photo-derived (dossier derivation.tripod_geometry) — crank column makes a fixed pose legitimate; eyepiece axis lands at 1.23 m (standing observer, slightly crouched, matches academy photo).",
+    "RIGGED for the in-game observation-post mount: azimuth (Y spin, full 60-00) → elevation (X hinge, ±3-00 = ±0.3142 rad) per the sourced НПЗ angle table — the E-mount mechanic drives these nodes.",
+    "Transport case (ящик) and tripod canvas cover NOT modeled in v1; буссоль fitting + leg straps simplified out (dossier needs[]).",
+    "Stencils are abstract line blocks (warning text unreadable in sources); reticle art for the scope view is a separate game asset, representative ПСО-style per owner reference."
+  ]
+}
