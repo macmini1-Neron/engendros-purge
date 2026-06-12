@@ -1,0 +1,97 @@
+{
+  "id": "log_split",
+  "name": "Split Pine Log",
+  "description": "Wind-snapped Scots pine log section lying on the ground: orange-brown bark cylinder with dark soil-contact underside, exposed pale heartwood face at the splintered break end, three upright wood-fibre splinters, a moss patch on the upper surface, and a branch-knot scar.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.28, "h": 0.45, "d": 1.30 },
+  "dossier": "models/log_split/ref/dossier.json",
+  "parts": [
+    {
+      "id": "body",
+      "name": "Main log cylinder — orange-brown pine bark",
+      "op": "cylinder",
+      "args": { "r": 0.14, "h": 1.20, "axis": "z" },
+      "at": [0, 0.14, 0],
+      "mat": "barkPine",
+      "src": "dossier#log_trunk",
+      "note": "r=140 mm (prop_radius_mm), h=1200 mm (prop_section_length_mm). axis='z' → cylinder lies along Z. Floor-anchored: centre-y = r so bottom sits at y=0."
+    },
+    {
+      "id": "bark_shadow",
+      "name": "Dark soil-contact bark underside",
+      "op": "bevelBox",
+      "args": { "w": 0.22, "h": 0.06, "d": 1.12 },
+      "at": [0, 0.03, 0],
+      "mat": "barkDark",
+      "src": "dossier#derivation",
+      "note": "Embedded in lower cylinder (y 0–0.06); adds ground-shadow and dark lower-bark tone. Curved cylinder surface does not produce coplanar z-fight with bevelBox faces."
+    },
+    {
+      "id": "wood_face",
+      "name": "Exposed heartwood cross-section at break end",
+      "op": "bevelBox",
+      "args": { "w": 0.22, "h": 0.22, "d": 0.04 },
+      "at": [0, 0.14, 0.59],
+      "mat": "woodMid",
+      "src": "dossier#derivation",
+      "note": "Centre z=0.59 → spans z=0.57 to z=0.61 (30 mm embedded into log end, 10 mm proud); shows pale exposed heartwood at break face."
+    },
+    {
+      "id": "splinter_top",
+      "name": "Central upward splinter at break (tallest)",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.20, "d": 0.05 },
+      "at": [0, 0.34, 0.63],
+      "mat": "woodMid",
+      "src": "dossier#split_break",
+      "note": "Protrudes from break end: base near y=0.24 (top of log y=0.28); extends to y=0.44 (160 mm above log). z=0.605–0.655, 5 mm gap from cylinder end cap prevents z-fight."
+    },
+    {
+      "id": "splinter_l",
+      "name": "Left flanking splinter at break",
+      "op": "bevelBox",
+      "args": { "w": 0.04, "h": 0.16, "d": 0.05 },
+      "at": [-0.06, 0.30, 0.63],
+      "mat": "woodDark",
+      "src": "dossier#split_break",
+      "note": "Darker weathered-wood tone; slightly shorter than central splinter."
+    },
+    {
+      "id": "splinter_r",
+      "name": "Right flanking splinter at break",
+      "op": "bevelBox",
+      "args": { "w": 0.04, "h": 0.16, "d": 0.05 },
+      "at": [0.06, 0.30, 0.63],
+      "mat": "woodMid",
+      "src": "dossier#split_break"
+    },
+    {
+      "id": "moss_patch",
+      "name": "Pleurozium moss strip on upper log surface (mid-section)",
+      "op": "bevelBox",
+      "args": { "w": 0.16, "h": 0.04, "d": 0.30 },
+      "at": [0, 0.275, -0.15],
+      "mat": "graniteMoss",
+      "src": "dossier#moss_coverage",
+      "note": "Centre y=0.275, h=0.04 → spans y=0.255–0.295; sits mostly inside cylinder top (y=0.28), protrudes 15 mm proud. Pleurozium/зеленомошник moss colonises upper face of fallen bor logs (dossier#moss_coverage)."
+    },
+    {
+      "id": "bark_knot",
+      "name": "Dark branch-knot scar on upper bark (near clean end)",
+      "op": "bevelBox",
+      "args": { "w": 0.07, "h": 0.09, "d": 0.04 },
+      "at": [0, 0.27, -0.35],
+      "mat": "barkDark",
+      "src": "dossier#log_trunk",
+      "note": "Embedded in upper surface of log (y=0.225–0.315, cylinder top at y=0.28); reads as a proud dark bark knot or branch-stub scar."
+    }
+  ],
+  "needs": [
+    "Sub-adult Pinus sylvestris DBH — prop diameter 280 mm is below the sourced mature-stand range (500–1300 mm); no forestry citation for younger-stand diameter (dossier#log_trunk)",
+    "Wind-throw log section length — 1200 mm is a design value, not sourced (dossier#log_trunk)",
+    "Snap-fracture splinter geometry — splinter h=200 mm, count=3 are design estimates; no sourced data on conifer wind-snap fracture morphology (dossier#split_break)",
+    "Moss patch thickness — 30 mm is a design estimate; EUNIS 1283 gives species presence but no measured geometry for this application (dossier#moss_coverage)"
+  ]
+}

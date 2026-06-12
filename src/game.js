@@ -47,6 +47,11 @@ const _registerModels = async () => {
   await load('electronika-clock');   // «Электроника 6.15М» digital desk clock (live VFD reads the world clock)
   await load('wallclock-chasozbor'); // «ЧАСОЗБОР» analog wall clock (demobuilding hangs it lazily once registered)
   await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
+  // Forest deadwood + rock kit — scattered through the ?map=demo wood by forest.js (Forest._ensureProps).
+  for (const id of [
+    'rock_boulder_lg', 'rock_boulder_mossy', 'rock_cluster_sm', 'rock_outcrop',
+    'log_fallen', 'log_pile', 'log_split', 'stump_cut', 'stump_shattered', 'debris_treetangle',
+  ]) await load(id);
 };
 _registerModels();
 
@@ -55,7 +60,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-12 10:57';
+const GAME_BUILD = '2026-06-12 15:14';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 

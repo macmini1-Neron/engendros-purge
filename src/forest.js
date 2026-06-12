@@ -38,6 +38,8 @@ import { makeTree, SPECIES } from './props/generators/tree.js';
 import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from './props/generators/groundcover.js';
 import { makePart, MATERIALS, makeHinge, stepBody, rayAABB } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
+import { hasModel, getSpec } from './props/registry.js';
+import { buildSpec } from './props/voxel-interp.js';
 
 // Live (foliated) species placed in the wood. The damage-state snags ('deadBroken',
 // 'burntCharred') are reached only via the damage override on fell/char, not scattered.
@@ -64,6 +66,25 @@ const COVER_KINDS = [
 
 const ZERO_MAT = new THREE.Matrix4().makeScale(0, 0, 0);  // collapse an instance → hidden
 
+// Deadwood + rock scatter — STATIC decoration props built from the modelgen registry
+// (models/<id>/spec.json, registered async in game.js). Unlike trees these are not
+// (yet) destructible: a follow-up patch can fold them into the destruct core. Only the
+// chunky, knee-high-plus props (solid) get a collision box; low logs/clusters/debris are
+// stepped-over decoration. `n` scales with the demo map; positions are seeded → co-op-identical.
+const PROP_KINDS = [
+  { id: 'rock_boulder_lg',    n: 6,  jit: [0.85, 1.25], sink: 0.10, solid: true  },
+  { id: 'rock_outcrop',       n: 5,  jit: [0.85, 1.25], sink: 0.12, solid: false },
+  { id: 'rock_boulder_mossy', n: 8,  jit: [0.80, 1.35], sink: 0.06, solid: false },
+  { id: 'rock_cluster_sm',    n: 10, jit: [0.80, 1.40], sink: 0.04, solid: false },
+  { id: 'stump_shattered',    n: 6,  jit: [0.85, 1.20], sink: 0.05, solid: true  },
+  { id: 'stump_cut',          n: 7,  jit: [0.85, 1.25], sink: 0.05, solid: false },
+  { id: 'log_fallen',         n: 6,  jit: [0.90, 1.20], sink: 0.04, solid: false },
+  { id: 'log_split',          n: 5,  jit: [0.90, 1.20], sink: 0.03, solid: false },
+  { id: 'log_pile',           n: 3,  jit: [0.90, 1.15], sink: 0.03, solid: false },
+  { id: 'debris_treetangle',  n: 4,  jit: [0.90, 1.20], sink: 0.02, solid: false },
+];
+const PROP_IDS = PROP_KINDS.map((k) => k.id);
+
 export class Forest {
   constructor(game) {
     this.game = game;
@@ -76,6 +97,9 @@ export class Forest {
     this._instMeshes = [];     // InstancedMeshes (trees + cover) for cleanup
     this._falling = [];        // trees with an active FallingBody (ticked in update)
     this._nextId = 1;
+    this._propPlan = [];       // deadwood/rock placements (positions only; built lazily once specs register)
+    this._propObjs = [];       // placed prop Object3Ds (for cleanup parity with _instMeshes)
+    this._propsBuilt = false;  // one-shot guard for the lazy prop build
     this.treeMat = voxelMaterial();   // one shared vertex-color material for all instances
 
     // Only the demo (heightfield) map grows a forest. Flat maps (arena/steppe) untouched.
@@ -216,6 +240,71 @@ export class Forest {
       }
       im.instanceMatrix.needsUpdate = true;
       this.scene.add(im); this._instMeshes.push(im);
+    }
+
+    // 6. Plan deadwood + rock scatter (positions only — the modelgen specs register async,
+    //    so the meshes are built lazily in _ensureProps() once every spec exists). The rng
+    //    draws happen AFTER trees+cover, so the existing tree/cover layout is unchanged.
+    this._planProps(rng, clusters, terr, HALF);
+  }
+
+  // ── plan static deadwood/rock props near the stands (deterministic; no meshes yet) ──
+  _planProps(rng, clusters, terr, HALF) {
+    const occ = new Map(), cell = 1.4, MIN = 1.3, m2 = MIN * MIN;
+    const near = (x, z) => {
+      const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const a = occ.get((cx + dx) + ',' + (cz + dz)); if (!a) continue;
+        for (const p of a) { const ex = p.x - x, ez = p.z - z; if (ex * ex + ez * ez < m2) return true; }
+      }
+      return false;
+    };
+    const mark = (x, z) => { const k = Math.floor(x / cell) + ',' + Math.floor(z / cell); let a = occ.get(k); if (!a) occ.set(k, a = []); a.push({ x, z }); };
+    for (const kind of PROP_KINDS) {
+      let placed = 0;
+      for (let tries = 0; placed < kind.n && tries < kind.n * 40; tries++) {
+        let x, z;
+        if (rng() < 0.75) {   // 75% inside a stand — deadwood & rocks accrue in the wood
+          const cl = clusters[Math.floor(rng() * clusters.length)];
+          const a = rng() * TAU, d = Math.abs(this._gauss(rng)) * cl.r * 0.9;
+          x = cl.x + Math.cos(a) * d; z = cl.z + Math.sin(a) * d;
+        } else { x = (rng() * 2 - 1) * (HALF - 8); z = (rng() * 2 - 1) * (HALF - 8); }
+        if (x * x + z * z < SPAWN_CLEAR * SPAWN_CLEAR) continue;       // keep spawn ring clear
+        if (Math.abs(x) > HALF - 6 || Math.abs(z) > HALF - 6) continue;
+        if (near(x, z)) continue;                                     // min spacing between props
+        if (!terr.isPlaceable(x, z, 0.6, 'tree')) continue;           // gentle ground & not reserved
+        const scale = kind.jit[0] + rng() * (kind.jit[1] - kind.jit[0]);
+        this._propPlan.push({ id: kind.id, x, y: terr.terrainHeightAt(x, z) - kind.sink, z, yaw: rng() * TAU, scale, solid: kind.solid });
+        mark(x, z); placed++;
+      }
+    }
+  }
+
+  // ── lazy one-shot: build + place the planned props once every spec has registered ──
+  // Mirrors NightPost.ensureBuilt(): the modelgen specs fetch async at boot, so we defer
+  // the build to the first frame they all exist. Each prop TYPE is built once (buildSpec)
+  // and cloned per placement (clones share geometry buffers → bounded memory).
+  _ensureProps() {
+    if (this._propsBuilt || !this._propPlan.length) return;
+    for (const id of PROP_IDS) if (!hasModel(id)) return;   // wait until every spec is registered
+    this._propsBuilt = true;
+    const templates = new Map();
+    for (const p of this._propPlan) {
+      let tmpl = templates.get(p.id);
+      if (tmpl === undefined) { try { tmpl = buildSpec(getSpec(p.id)); } catch (e) { tmpl = null; console.warn(`[forest] prop build failed: ${p.id}`, e); } templates.set(p.id, tmpl); }
+      if (!tmpl) continue;
+      const o = tmpl.clone();   // shares geometry + material with the template
+      o.position.set(p.x, p.y, p.z); o.rotation.y = p.yaw; o.scale.setScalar(p.scale);
+      this.scene.add(o); this._propObjs.push(o);
+      if (p.solid) {            // tight AABB for the chunky props (boulder/shattered stump — ~square footprint)
+        const fp = tmpl.userData.footprint || [0.8, 0.8, 0.8];
+        const hx = fp[0] * 0.5 * p.scale, hz = fp[2] * 0.5 * p.scale;
+        const box = {
+          min: new THREE.Vector3(p.x - hx, p.y, p.z - hz),
+          max: new THREE.Vector3(p.x + hx, p.y + fp[1] * p.scale, p.z + hz),
+        };
+        this.world.boxes.push(box); this.world.grid.addBox(box);
+      }
     }
   }
 
@@ -425,6 +514,7 @@ export class Forest {
 
   // ── per-frame: advance active FallingBodies + debris ─────────────────────────────
   update(dt) {
+    if (!this._propsBuilt) this._ensureProps();   // place deadwood/rocks once their specs register
     if (this.debris) this.debris.update(dt);
     if (!this._falling.length) return;
     for (let i = this._falling.length - 1; i >= 0; i--) {

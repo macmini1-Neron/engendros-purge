@@ -1,0 +1,106 @@
+{
+  "id": "log_fallen",
+  "name": "Fallen Scots pine trunk section",
+  "description": "Horizontal fallen pine log: tapered cylinder with two-tone bark (grey-brown lower plates, orange-copper upper), exposed wood end grain, longitudinal bark ridge detail, root-end bulge, a branch-knot scar, and a damp green moss strip on the ground-contact face.",
+  "category": "nature",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.50, "h": 0.52, "d": 2.40 },
+  "dossier": "models/log_fallen/ref/dossier.json",
+  "parts": [
+    {
+      "id": "body",
+      "name": "Main trunk cylinder (tapered full length)",
+      "op": "cylinder",
+      "args": { "r": 0.25, "r2": 0.22, "h": 2.40, "axis": "z" },
+      "at": [0, 0.25, 0],
+      "mat": "barkPine",
+      "src": "dossier#trunk_dims",
+      "note": "butt r=0.25 m, top r=0.22 m; taper dossier#taper. axis='z' → log lies along Z. Floor-anchored: centre-y = r so bottom sits at y=0."
+    },
+    {
+      "id": "shadow_lo",
+      "name": "Bottom shadow band — old dark bark + ground shadow",
+      "op": "bevelBox",
+      "args": { "w": 0.38, "h": 0.12, "d": 2.20 },
+      "at": [0, 0.06, 0],
+      "mat": "barkDark",
+      "src": "dossier#derivation",
+      "note": "Embedded in lower cylinder (y 0–0.12); bevelBox faces are NOT coplanar with the curved cylinder surface — no z-fight"
+    },
+    {
+      "id": "hi_strip",
+      "name": "Top highlight strip — thin sunlit upper bark layer",
+      "op": "bevelBox",
+      "args": { "w": 0.14, "h": 0.06, "d": 2.00 },
+      "at": [0, 0.48, 0],
+      "mat": "woodMid",
+      "src": "dossier#derivation",
+      "note": "Centred at y=0.48 → top face at y=0.51, proud 10 mm above cylinder apex at y=0.50; woodMid reads as pale weathered/sunlit bark. No coplanar cylinder face here (cylinder end-caps face ±Z, not ±Y)."
+    },
+    {
+      "id": "bark_ridge_l",
+      "name": "Left longitudinal bark ridge plate",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.28, "d": 2.10 },
+      "at": [-0.22, 0.25, 0],
+      "mat": "barkDark",
+      "src": "dossier#bark_texture",
+      "note": "Sits at the left flank of the cylinder; its outer x face at x=-0.25 is flush with the cylinder edge — curved vs flat, no coplanar z-fight"
+    },
+    {
+      "id": "bark_ridge_r",
+      "name": "Right longitudinal bark ridge plate",
+      "op": "bevelBox",
+      "args": { "w": 0.06, "h": 0.28, "d": 2.10 },
+      "at": [0.22, 0.25, 0],
+      "mat": "barkDark",
+      "src": "dossier#bark_texture"
+    },
+    {
+      "id": "end_grain",
+      "name": "Bare wood end face — cut/broken end of the log",
+      "op": "cylinder",
+      "args": { "r": 0.19, "h": 0.02, "axis": "z" },
+      "at": [0, 0.25, -1.21],
+      "mat": "woodMid",
+      "src": "dossier#derivation",
+      "note": "Disc spans z -1.22 to -1.20. Back face (z=-1.20) is opposite-normal to the main body end cap at same z — safe (opposite-normal contact). Front face (z=-1.22) is 20 mm proud and visible: pale woodMid circle inside barkPine ring."
+    },
+    {
+      "id": "root_bulge",
+      "name": "Butt/root-end flare at the wider end of the log",
+      "op": "bevelBox",
+      "args": { "w": 0.48, "h": 0.14, "d": 0.20 },
+      "at": [0, 0.07, 1.10],
+      "mat": "barkDark",
+      "src": "dossier#derivation",
+      "note": "Low dark sill at z=[1.00,1.20] reading as root-collar and soil flare. Width 0.48 < cylinder diameter 0.50 — stays within footprint."
+    },
+    {
+      "id": "knot",
+      "name": "Old branch-knot scar on the right flank",
+      "op": "bevelBox",
+      "args": { "w": 0.10, "h": 0.14, "d": 0.08 },
+      "at": [0.18, 0.30, 0.20],
+      "mat": "barkDark",
+      "src": "dossier#bark_texture",
+      "note": "Embedded ~70 mm into the cylinder surface at the right flank; reads as a proud dark recess knot or bark scar"
+    },
+    {
+      "id": "moss",
+      "name": "Pleurozium ground-contact moss strip (underside of log)",
+      "op": "bevelBox",
+      "args": { "w": 0.24, "h": 0.04, "d": 1.50 },
+      "at": [0, 0.02, -0.10],
+      "mat": "foliagePine",
+      "src": "dossier#moss_feature",
+      "note": "Damp зеленомошник-type moss grows on the ground-contact face of fallen logs in pine bor (dossier#moss_feature). Thin strip at y=[0,0.04], embedded in lowest cylinder zone."
+    }
+  ],
+  "needs": [
+    "Pine trunk taper rate (cm/m) from a forestry reference — current r=0.25→0.22 over 2.4 m is a design estimate (dossier#taper)",
+    "Precise Scots pine lower-bark thickness — 'up to ~5 cm' upper bound used; mean not sourced (dossier#bark_texture)",
+    "Sourced log-section prop length — current 2.4 m is a game-design value (dossier#log_length)"
+  ]
+}

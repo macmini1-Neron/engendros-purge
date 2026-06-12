@@ -1,0 +1,138 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>nature preview — showcase + free-cam</title>
+<style>
+  html,body{margin:0;height:100%;background:#243447;overflow:hidden;font:13px system-ui}
+  #c{width:100vw;height:100vh;display:block;cursor:grab}
+  #c.drag{cursor:grabbing}
+  #hud{position:fixed;left:10px;top:8px;color:#cfe;background:#0008;padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre-line}
+</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<script type="module">
+import * as THREE from 'three';
+import { buildSpec } from '../../src/props/voxel-interp.js';
+import { makeTree, SPECIES } from '../../src/props/generators/tree.js';
+import { makeGrassTuft, makeReedClump, makeShrub, makeFlowerPatch, makeBush } from '../../src/props/generators/groundcover.js';
+
+const canvas = document.getElementById('c'), hud = document.getElementById('hud');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x9fc0e0);
+scene.fog = new THREE.Fog(0x9fc0e0, 40, 130);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 4000);
+scene.add(new THREE.HemisphereLight(0xddeeff, 0x4a5a30, 1.05));
+const key = new THREE.DirectionalLight(0xfff2d8, 1.6); key.position.set(18, 30, 14); scene.add(key);
+
+// ground
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400),
+  new THREE.MeshLambertMaterial({ color: 0x55702f }));
+ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; scene.add(ground);
+
+const target = new THREE.Vector3(0, 1.2, 0);
+const cam = { az: 35, el: 16, dist: 34 };
+function resize() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+function applyCam() {
+  const az = THREE.MathUtils.degToRad(cam.az), el = THREE.MathUtils.degToRad(cam.el);
+  camera.position.set(target.x + cam.dist * Math.cos(el) * Math.sin(az), target.y + cam.dist * Math.sin(el), target.z + cam.dist * Math.cos(el) * Math.cos(az));
+  camera.lookAt(target);
+}
+
+// ---- free-cam: drag orbit, wheel zoom, WASD/QE fly ----
+const keys = {};
+let dragging = false, lx = 0, ly = 0;
+canvas.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.classList.add('drag'); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup', e => { dragging = false; canvas.classList.remove('drag'); });
+canvas.addEventListener('pointermove', e => { if (!dragging) return; cam.az -= (e.clientX - lx) * 0.3; cam.el = THREE.MathUtils.clamp(cam.el + (e.clientY - ly) * 0.3, -8, 88); lx = e.clientX; ly = e.clientY; });
+canvas.addEventListener('wheel', e => { e.preventDefault(); cam.dist = THREE.MathUtils.clamp(cam.dist * (1 + e.deltaY * 0.0012), 2, 300); }, { passive: false });
+addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+function fly() {
+  const sp = (keys['shift'] ? 1.2 : 0.45);
+  const az = THREE.MathUtils.degToRad(cam.az);
+  const fx = Math.sin(az), fz = Math.cos(az);     // forward (horizontal)
+  if (keys['w']) { target.x += fx * sp; target.z += fz * sp; }
+  if (keys['s']) { target.x -= fx * sp; target.z -= fz * sp; }
+  if (keys['a']) { target.x -= fz * sp; target.z += fx * sp; }
+  if (keys['d']) { target.x += fz * sp; target.z -= fx * sp; }
+  if (keys['e']) target.y += sp; if (keys['q']) target.y -= sp;
+}
+function frame() { fly(); resize(); applyCam(); renderer.render(scene, camera); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+hud.textContent = 'FREE-CAM  ·  drag = orbit  ·  wheel = zoom  ·  WASD = fly  ·  Q/E = down/up  ·  Shift = fast';
+
+// ---- helpers ----
+function toObj(res) { if (!res) return null; if (res.isObject3D) return res; if (res.geometry) return new THREE.Mesh(res.geometry, res.material || new THREE.MeshStandardMaterial({ color: 0x888 })); return null; }
+function place(parent, res, x, z, yaw) { const o = toObj(res); if (!o) return; o.position.x = x; o.position.z = z; if (yaw != null) o.rotation.y = yaw; parent.add(o); }
+function ghostFig(x, z) { const g = new THREE.Group(); const m = new THREE.MeshStandardMaterial({ color: 0xff5577 }); const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.26, 0.26), m); b.position.y = 0.77; const h = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.24), m); h.position.y = 1.6; g.add(b, h); g.position.set(x, 0, z); return g; }
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+const SPEC_IDS = ['rock_boulder_lg','rock_boulder_mossy','rock_cluster_sm','rock_outcrop','log_fallen','log_split','log_pile','stump_cut','stump_shattered','debris_treetangle'];
+async function fetchSpecs() { const o = {}; for (const id of SPEC_IDS) { try { o[id] = await (await fetch(`/models/${id}/spec.json?cb=${Date.now()}`, { cache: 'no-store' })).json(); } catch (e) { console.warn(id, e); } } return o; }
+const spec = (specs, id) => specs[id] ? buildSpec(specs[id]) : null;
+
+// ---- the showcase diorama ----
+async function showcase() {
+  const g = new THREE.Group();
+  const specs = await fetchSpecs();
+  const tk = Object.keys(SPECIES);
+
+  // living grove (back-left), mixed species + seeds, scattered
+  const grove = [['birch',-16,-10],['birch',-12,-13],['poplar',-20,-12],['oak',-9,-15],['scotsPine',-22,-7],['birch',-7,-9],['oak',-15,-6],['poplar',-25,-9]];
+  grove.forEach(([sp,x,z],i)=> place(g, makeTree({species:sp, seed:i*37+5}), x+rnd(-1,1), z+rnd(-1,1), rnd(0,6.28)));
+  // war-killed cluster (back-right) — dead + burnt + shattered
+  place(g, makeTree({species:'burntCharred', seed:3}), 12, -12, 1); place(g, makeTree({species:'deadBroken', seed:8}), 15, -10, 2.2);
+  place(g, makeTree({species:'burntCharred', seed:11}), 18, -13, 0.6); place(g, makeTree({species:'deadBroken', seed:14}), 10, -15, 4);
+
+  // bushes + shrubs (mid)
+  for (let i=0;i<5;i++) place(g, makeBush(i*13+2), rnd(-12,8), rnd(-4,2), rnd(0,6.28));
+  for (let i=0;i<6;i++) place(g, makeShrub(i*17+1), rnd(-18,16), rnd(-6,4), rnd(0,6.28));
+  // grass everywhere
+  for (let i=0;i<40;i++) place(g, makeGrassTuft(i*7+1), rnd(-26,24), rnd(-16,10), rnd(0,6.28));
+  // flower meadow patch (sunny front-left)
+  for (let i=0;i<10;i++) place(g, makeFlowerPatch(i*23+3), rnd(-14,-4), rnd(2,8), rnd(0,6.28));
+  // reed bed (water edge, front-right corner)
+  for (let i=0;i<9;i++) place(g, makeReedClump(i*29+4), rnd(8,18), rnd(4,9), rnd(0,6.28));
+
+  // rocks scattered
+  place(g, spec(specs,'rock_boulder_lg'), -3, 1, 0.7); place(g, spec(specs,'rock_boulder_mossy'), 4, 3, 2);
+  place(g, spec(specs,'rock_outcrop'), -6, -2, 1.5); place(g, spec(specs,'rock_outcrop'), 14, -3, 4);
+  for (let i=0;i<5;i++) place(g, spec(specs,'rock_cluster_sm'), rnd(-20,18), rnd(-8,8), rnd(0,6.28));
+  // logs + stumps + debris (forest floor / war)
+  place(g, spec(specs,'log_fallen'), -2, -5, 0.4); place(g, spec(specs,'log_split'), 6, -6, 2.4);
+  place(g, spec(specs,'log_pile'), 2, 5, 1.0);
+  place(g, spec(specs,'stump_cut'), -8, 3, 0); place(g, spec(specs,'stump_shattered'), 9, -9, 0.8);
+  place(g, spec(specs,'debris_treetangle'), 13, -7, 1.2);
+
+  // scale figures
+  g.add(ghostFig(0, 4)); g.add(ghostFig(-10, 0));
+  return g;
+}
+
+// also keep the labelled line-ups
+function layout(items, gap, ghost) { const g=new THREE.Group(); let cur=0; for(const it of items){const o=toObj(it); if(!o)continue; g.add(o); const bb=new THREE.Box3().setFromObject(o); const w=Math.max(0.2,bb.max.x-bb.min.x); o.position.x+=cur-bb.min.x; cur+=w+gap;} if(ghost){g.add(ghostFig(cur+0.3,0));} return g; }
+async function specObjs(ids){const s=await fetchSpecs(); return ids.map(id=>spec(s,id));}
+const GROUPS = {
+  showcase,
+  'tree-species': async () => layout(Object.keys(SPECIES).map(s => makeTree({ species: s, seed: 7 })), 1.6, true),
+  'tree-variety': async () => layout([11,23,37,51,67,83].map(seed => makeTree({ species: 'birch', seed })), 1.4, true),
+  'trees-dead': async () => layout([['deadBroken',5],['deadBroken',19],['burntCharred',7],['burntCharred',23]].map(([s,seed]) => makeTree({ species: s, seed })), 1.6, true),
+  ground: async () => layout([makeGrassTuft(3), makeReedClump(5), makeShrub(7), makeFlowerPatch(9), makeBush(11)], 0.8, true),
+  'spec-props-a': async () => layout(await specObjs(SPEC_IDS.slice(0,5)), 1.0, true),
+  'spec-props-b': async () => layout(await specObjs(SPEC_IDS.slice(5)), 1.0, true),
+};
+
+let group = null;
+window.__makeTree = makeTree; window.__SPECIES = SPECIES;
+window.PREVIEW = {
+  groups: () => Object.keys(GROUPS),
+  async show(name) { if (group) scene.remove(group); group = await GROUPS[name](); scene.add(group);
+    const bb = new THREE.Box3().setFromObject(group); const sz = bb.getSize(new THREE.Vector3());
+    return { name, sizeM: [+sz.x.toFixed(1), +sz.y.toFixed(1), +sz.z.toFixed(1)] }; },
+  setCam(az, el, d, tx, ty, tz) { if (az!=null) cam.az=az; if (el!=null) cam.el=el; if (d!=null) cam.dist=d; if (tx!=null) target.set(tx, ty, tz); applyCam(); },
+};
+// autoload from ?show= (default showcase)
+const want = new URLSearchParams(location.search).get('show') || 'showcase';
+window.PREVIEW.show(want).then(() => window.__READY = true);
+</script>
+</body></html>
