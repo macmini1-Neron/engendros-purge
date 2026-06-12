@@ -188,12 +188,39 @@ No other text, no decorative letters.
 [COMPOSITION]
 <composition>; frame: <frame>.
 
-[AVOID]
-cross-stitch / diamond-painting texture, smooth 3D render, photorealistic background, flat
-vector, fingers/hands, glossy cartoon eyes, wings/horns/hat/extra eyes unless the character
-owns them, English text, gibberish or misspelled Cyrillic, watermark, signature, extra limbs.
+[AVOID]  (assembled from the negative-prompt library §8a: ALWAYS groups A,B,D,E,F +
+          this character's NOT-owned accessories from group C)
+e.g. cross-stitch/3D-render/photo/flat-vector, fingers/hands, glossy cartoon eyes, wrong
+eye-count, <unowned accessories>, misspelled/garbled Cyrillic, English text, watermark,
+extra limbs.
 
 [ATTACH] style reference image + character reference image.
+```
+
+## 8a. Negative-prompt library
+
+GPT-image has **no negative-prompt field**, so negatives live inside the prompt's `[AVOID]`
+block as prose. Every prompt always includes groups **A, B, D, E, F**; from **C** it includes
+only the accessories the target character does **NOT** own (per its bible entry).
+
+```
+A · STYLE DRIFT      cross-stitch / embroidery / diamond-painting, 3D render / CGI, photograph,
+                     flat minimal vector, watercolour, anime, airbrush, glossy plastic
+B · OFF-MODEL (all)  fingers / hands with digits, realistic anatomy, glossy cartoon "Pixar"
+                     eyes, two matching bead eyes (must be button + bead), wrong eye-count,
+                     missing the big button-X eye, mirrored eye side, fur, teeth / tongue,
+                     extra limbs, melted / asymmetric body
+C · ACCESSORIES      wings, horns, tail, halo, top hat, cape, flower petals, dollar sign,
+   (forbid unless    third eye — forbid each UNLESS this character's bible entry lists it
+    the char owns)   (keep wings for Upy, petals for Flopo, $/cape for Luka, horns/tail for Tuli)
+D · TEXT             misspelled / garbled Cyrillic, gibberish or decorative floating letters,
+                     Latin / English text, blurry / melted typography, duplicated words, any
+                     text not in the brief
+E · ANACHRONISM      modern logos / brands, smartphones, contemporary clothing, non-Soviet
+                     iconography, 4- or 6-point stars (Soviet star = 5-point), malformed
+                     hammer-and-sickle
+F · ARTEFACTS        watermark, signature, artist mark, frame cropping the headline, low-res
+                     mush, jpeg artefacts, duplicate or conjoined character
 ```
 
 ## 9. Character bible — the 9 OG bosses (LOCKED, 1:1)
