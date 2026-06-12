@@ -112,3 +112,29 @@ test('stepEffects: broken_leg (Infinity, no tick handler) never auto-expires', (
 test('stepEffects: empty map is a no-op', () => {
   assert.doesNotThrow(() => stepEffects(ent(), spyCtx(false)));
 });
+
+import { movementSlow, contactWeaken } from '../../src/effects-status.js';
+
+test('modifiers: 1.0 when no effects', () => {
+  const e = ent();
+  assert.equal(movementSlow(e), 1);
+  assert.equal(contactWeaken(e), 1);
+});
+
+test('modifiers: bleed slows AND weakens', () => {
+  const e = ent(); applyEffect(e, 'bleed', 8, {});
+  assert.ok(movementSlow(e) < 1);
+  assert.ok(contactWeaken(e) < 1);
+});
+
+test('modifiers: burn + bleed slows compose (multiply)', () => {
+  const e = ent(); applyEffect(e, 'burn', 3, {}); applyEffect(e, 'bleed', 8, {});
+  const expected = EFFECTS.burn.enemySlow * EFFECTS.bleed.enemySlow;
+  assert.ok(Math.abs(movementSlow(e) - expected) < 1e-9);
+});
+
+test('modifiers: radiation neither slows nor weakens', () => {
+  const e = ent(); applyEffect(e, 'radiation', 10, {});
+  assert.equal(movementSlow(e), 1);
+  assert.equal(contactWeaken(e), 1);
+});

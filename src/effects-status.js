@@ -99,3 +99,21 @@ export function stepEffects(entity, ctx) {
     }
   }
 }
+
+/** Product of every active effect's enemySlow factor (1 = no slow). Stateless — always correct. */
+export function movementSlow(entity) {
+  const fx = entity.effects;
+  if (!fx || fx.size === 0) return 1;
+  let m = 1;
+  for (const key of fx.keys()) { const s = EFFECTS[key].enemySlow; if (s) m *= s; }
+  return m;
+}
+
+/** Product of every active effect's enemyWeaken factor (1 = full contact damage). Stateless. */
+export function contactWeaken(entity) {
+  const fx = entity.effects;
+  if (!fx || fx.size === 0) return 1;
+  let m = 1;
+  for (const key of fx.keys()) { const w = EFFECTS[key].enemyWeaken; if (w) m *= w; }
+  return m;
+}
