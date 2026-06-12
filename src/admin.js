@@ -116,6 +116,7 @@ export class Admin {
       { name: 'Medkit', sub: 'pickup', make: () => g.loot._pickupMesh('medkit') },
       { name: 'Ammo box', sub: 'pickup', make: () => g.loot._pickupMesh('ammo') },
       { name: 'DShK Ammo Box', sub: 'pickup (modelgen)', make: () => { const s = getSpec('dshk-ammo-box'); return s ? buildSpec(s) : null; } },
+      { name: 'Часы «ЧАСОЗБОР»', sub: 'wall clock (modelgen, live in demo)', make: () => { const s = getSpec('wallclock-chasozbor'); return s ? buildSpec(s) : null; } },
       { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
       { name: 'Field splint', sub: 'pickup', make: () => g.loot._pickupMesh('splint') },
       { name: 'Ration tin', sub: 'pickup', make: () => g.loot._pickupMesh('food') },

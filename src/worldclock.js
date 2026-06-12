@@ -77,6 +77,25 @@ export function skyPhase(minuteFloat) {
   return { day: false, L: 0, ang: nightT * Math.PI };
 }
 
+// ─── analog hand angles (the displays contract — see 2026-06-12-worldclock-displays-contract.md) ──
+
+/**
+ * handAngles(minuteFloat) → { hourRad, minuteRad }
+ * The ONE mapping from world-clock minutes to analog hand rotation — every analog
+ * dial in the game must use this (and every digital display must use formatHHMM),
+ * so two clocks on two walls can never disagree.
+ *   minuteRad — minute hand: one full clockwise turn per hour.
+ *   hourRad   — hour hand: one full clockwise turn per 12 h, advancing continuously.
+ * Angles are clockwise-from-12 in radians. For a dial whose face looks along +Z
+ * (THREE convention: CCW-positive around +Z), apply as `node.rotation.z = -rad`.
+ * Pass `wc.minuteOfDay() + wc.alpha` for smooth motion between integer minutes.
+ */
+export function handAngles(minuteFloat) {
+  const m = wrapDay(minuteFloat);
+  const TAU = Math.PI * 2;
+  return { hourRad: ((m % 720) / 720) * TAU, minuteRad: ((m % 60) / 60) * TAU };
+}
+
 // ─── makeWorldClock ──────────────────────────────────────────────────────────
 
 /**
