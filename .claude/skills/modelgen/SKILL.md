@@ -3,7 +3,11 @@ name: modelgen
 description: Use when building or upgrading ANY small/medium technical model or prop for ENGENDROS PURGE that is NOT a weapon and NOT a whole building — furniture (desks, chairs, beds, shelves, lockers, tables), military containers (ammo boxes, crates, footlockers, fuel cans), Soviet industrial machinery (lathes, generators, switchboards, transformers, pipes, valves, compressors, cranes), electronics/instruments (control consoles, CRTs, radars, gauges, field phones, radios, button panels), or civilian fittings (samovars, stoves, kitchen kit, lamps, clocks). Drives the data-driven `modelgen` harness — research real sourced references, write a provenance-clean JSON spec, then build + self-verify in the browser viewer until it reads right. Trigger this even when the user just says "make a desk / build a lathe / put some furniture in the bunker / model a control panel" — not only when they say "skill" or "modelgen". Furniture/props/machines that fill rooms are THIS skill; first-person guns are voxel-weapon-modeling; whole buildings/POIs/districts are voxel-building-modeling.
 ---
 
-# modelgen — tech-model harness (ENGENDROS PURGE)
+# modelgen — tech-model harness (ENGENDROS PURGE) · **SKILL v3**
+
+> **v3** (2026-06-12): + law 6 SILHOUETTE (shape class before authoring, overlay vs reference,
+> early owner shape checkpoint) + law 7 READABLE MARKINGS (real Cyrillic CanvasTexture plates,
+> `decal lines:[…]`, `loaf` op). v2 (2026-06-10): machine-enforced metres/footprint/dossier.
 
 Build believable, real-referenced **technical models** as data-driven specs, then self-verify
 them in a viewer you drive yourself. Harness: `tools/modelgen/` + `src/props/` in
