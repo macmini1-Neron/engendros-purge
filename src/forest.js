@@ -66,22 +66,22 @@ const COVER_KINDS = [
 
 const ZERO_MAT = new THREE.Matrix4().makeScale(0, 0, 0);  // collapse an instance → hidden
 
-// Deadwood + rock scatter — STATIC decoration props built from the modelgen registry
-// (models/<id>/spec.json, registered async in game.js). Unlike trees these are not
-// (yet) destructible: a follow-up patch can fold them into the destruct core. Only the
-// chunky, knee-high-plus props (solid) get a collision box; low logs/clusters/debris are
-// stepped-over decoration. `n` scales with the demo map; positions are seeded → co-op-identical.
+// Deadwood + rock scatter — props built from the modelgen registry, now DESTRUCTIBLE
+// (material-driven, see docs/.../2026-06-12-prop-destruction-design.md). dmat drives behavior:
+// wood (tier1) burns + shoots apart; grass (tier0) is the flammable tangle; stone (tier4) shrugs
+// off bullets, yields only to HE/AP. Deadwood is 'wood' NOT 'trunk' so fire treats it as kind
+// 'wood' (a 'trunk' part would ignite as kind 'tree' → charTree/fellTree on a non-tree record).
 const PROP_KINDS = [
-  { id: 'rock_boulder_lg',    n: 6,  jit: [0.85, 1.25], sink: 0.10, solid: true  },
-  { id: 'rock_outcrop',       n: 5,  jit: [0.85, 1.25], sink: 0.12, solid: false },
-  { id: 'rock_boulder_mossy', n: 8,  jit: [0.80, 1.35], sink: 0.06, solid: false },
-  { id: 'rock_cluster_sm',    n: 10, jit: [0.80, 1.40], sink: 0.04, solid: false },
-  { id: 'stump_shattered',    n: 6,  jit: [0.85, 1.20], sink: 0.05, solid: true  },
-  { id: 'stump_cut',          n: 7,  jit: [0.85, 1.25], sink: 0.05, solid: false },
-  { id: 'log_fallen',         n: 6,  jit: [0.90, 1.20], sink: 0.04, solid: false },
-  { id: 'log_split',          n: 5,  jit: [0.90, 1.20], sink: 0.03, solid: false },
-  { id: 'log_pile',           n: 3,  jit: [0.90, 1.15], sink: 0.03, solid: false },
-  { id: 'debris_treetangle',  n: 4,  jit: [0.90, 1.20], sink: 0.02, solid: false },
+  { id: 'rock_boulder_lg',    n: 6,  jit: [0.85, 1.25], sink: 0.10, dmat: 'stone', hpScale: 1.0 },
+  { id: 'rock_outcrop',       n: 5,  jit: [0.85, 1.25], sink: 0.12, dmat: 'stone', hpScale: 1.0 },
+  { id: 'rock_boulder_mossy', n: 8,  jit: [0.80, 1.35], sink: 0.06, dmat: 'stone', hpScale: 1.0 },
+  { id: 'rock_cluster_sm',    n: 10, jit: [0.80, 1.40], sink: 0.04, dmat: 'stone', hpScale: 1.0 },
+  { id: 'stump_shattered',    n: 6,  jit: [0.85, 1.20], sink: 0.05, dmat: 'wood',  hpScale: 2.0 },
+  { id: 'stump_cut',          n: 7,  jit: [0.85, 1.25], sink: 0.05, dmat: 'wood',  hpScale: 2.0 },
+  { id: 'log_fallen',         n: 6,  jit: [0.90, 1.20], sink: 0.04, dmat: 'wood',  hpScale: 1.5 },
+  { id: 'log_split',          n: 5,  jit: [0.90, 1.20], sink: 0.03, dmat: 'wood',  hpScale: 1.0 },
+  { id: 'log_pile',           n: 3,  jit: [0.90, 1.15], sink: 0.03, dmat: 'wood',  hpScale: 1.5 },
+  { id: 'debris_treetangle',  n: 4,  jit: [0.90, 1.20], sink: 0.02, dmat: 'grass', hpScale: 1.0 },
 ];
 const PROP_IDS = PROP_KINDS.map((k) => k.id);
 
@@ -99,6 +99,7 @@ export class Forest {
     this._nextId = 1;
     this._propPlan = [];       // deadwood/rock placements (positions only; built lazily once specs register)
     this._propObjs = [];       // placed prop Object3Ds (for cleanup parity with _instMeshes)
+    this._props = [];          // destructible prop records { id, dmat, obj, box, part, pos, dead }
     this._propsBuilt = false;  // one-shot guard for the lazy prop build
     this.treeMat = voxelMaterial();   // one shared vertex-color material for all instances
 
@@ -274,7 +275,7 @@ export class Forest {
         if (near(x, z)) continue;                                     // min spacing between props
         if (!terr.isPlaceable(x, z, 0.6, 'tree')) continue;           // gentle ground & not reserved
         const scale = kind.jit[0] + rng() * (kind.jit[1] - kind.jit[0]);
-        this._propPlan.push({ id: kind.id, x, y: terr.terrainHeightAt(x, z) - kind.sink, z, yaw: rng() * TAU, scale, solid: kind.solid });
+        this._propPlan.push({ id: kind.id, x, y: terr.terrainHeightAt(x, z) - kind.sink, z, yaw: rng() * TAU, scale, dmat: kind.dmat, hpScale: kind.hpScale });
         mark(x, z); placed++;
       }
     }
@@ -296,15 +297,24 @@ export class Forest {
       const o = tmpl.clone();   // shares geometry + material with the template
       o.position.set(p.x, p.y, p.z); o.rotation.y = p.yaw; o.scale.setScalar(p.scale);
       this.scene.add(o); this._propObjs.push(o);
-      if (p.solid) {            // tight AABB for the chunky props (boulder/shattered stump — ~square footprint)
-        const fp = tmpl.userData.footprint || [0.8, 0.8, 0.8];
-        const hx = fp[0] * 0.5 * p.scale, hz = fp[2] * 0.5 * p.scale;
-        const box = {
-          min: new THREE.Vector3(p.x - hx, p.y, p.z - hz),
-          max: new THREE.Vector3(p.x + hx, p.y + fp[1] * p.scale, p.z + hz),
-        };
-        this.world.boxes.push(box); this.world.grid.addBox(box);
-      }
+
+      // destructible part + hit/collision box (every prop is shootable; the player's step-up
+      // walks over the low ones). Ids come off the shared seeded counter → identical on co-op peers.
+      const id = this._nextId++;
+      const fp = tmpl.userData.footprint || [0.8, 0.8, 0.8];
+      const hx = fp[0] * 0.5 * p.scale, hz = fp[2] * 0.5 * p.scale, top = p.y + fp[1] * p.scale;
+      const min = [p.x - hx, p.y, p.z - hz], max = [p.x + hx, top, p.z + hz];
+      const part = makePart(id, p.dmat, min, max, p.hpScale);
+      const box = {
+        min: new THREE.Vector3(min[0], min[1], min[2]),
+        max: new THREE.Vector3(max[0], max[1], max[2]),
+        dpart: id, dmat: p.dmat, prop: true,   // downer set below
+      };
+      const rec = { id, dmat: p.dmat, obj: o, box, part, pos: { x: p.x, y: p.y, z: p.z }, prop: true, dead: false };
+      part.downer = rec; box.downer = rec;
+      this.parts.push(part);        // ⇒ flammableParts() now includes wood/grass props
+      this._props.push(rec);
+      this.world.boxes.push(box); this.world.grid.addBox(box);
     }
   }
 
