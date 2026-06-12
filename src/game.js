@@ -42,6 +42,7 @@ const _registerModels = async () => {
   };
   await load('dshk-ammo-box');
   await load('supply-lootbox');     // «Посылка» lootbox crate (CrateCeremony falls back to a procedural chest if this fails)
+  await load('electronika-clock');  // «Электроника 6.15М» desk clock on the demo-house sill (live VFD reads the world clock)
 };
 _registerModels();
 
@@ -50,7 +51,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-12 04:03';
+const GAME_BUILD = '2026-06-12 08:59';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 

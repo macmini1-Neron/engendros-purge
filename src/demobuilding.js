@@ -42,6 +42,9 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, voxelMaterial } from './util.js';
 import { DestructRuntime, makePart, MATERIALS } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
+import { placeProp, hasModel } from './props/registry.js';
+import { makeDigitalClockFace } from './clockface.js';
+import { formatHHMM } from './worldclock.js';
 
 // ── palette (layered shading: hi / mid / lo — never a flat blob) ────────────────
 const BR = { hi: 0x9a5a3e, mid: 0x854832, lo: 0x643626 };   // booth brick
@@ -172,6 +175,8 @@ export class DemoBuilding {
         this._lineBox(axis, fixed, ac - w / 2, ac + w / 2, bY + WB + (SILL - WB) / 2, SILL - WB, BR.mid, 'sill');
         this._lineBox(axis, fixed, ac - w / 2, ac + w / 2, bY + HEAD + (WT - HEAD) / 2, WT - HEAD, BR.mid, 'whead');
         this._pane(axis, fixed, ac, w * 0.86, bY + SILL, bY + HEAD);
+        // grab the FIRST window sill as the resting spot for the «Электроника» desk clock
+        if (!this._clockXf) this._clockXf = this._sillSpot(axis, fixed, ac);
       } else {
         // BREACH SEGMENT: full-height destructible brick (HE removes → walkable hole)
         this._destruct(axis, fixed, ac, w, bY + WB, bY + WT, 'brick', BR.mid);
@@ -340,8 +345,43 @@ export class DemoBuilding {
     (this._holes || (this._holes = [])).push(m);
   }
 
-  // per-frame tick (Phase 9 — game.js calls this): advance the debris burst physics.
-  update(dt) { if (this.debris) this.debris.update(dt); }
+  // ── «Электроника 6.15М» desk clock on a window sill ─────────────────────────────
+  // Resting transform (world) for a clock on the ledge of the window at (axis,fixed,ac),
+  // sat toward the interior edge and turned to face into the room.
+  _sillSpot(axis, fixed, ac) {
+    const sillTop = this.baseY + SILL;          // ledge surface y (top of the sub-window brick)
+    const inset = T / 2 - 0.075;                // nudge to the interior edge so it sits inside
+    if (axis === 'x') {                         // wall runs along X at z=fixed; interior toward cz
+      const iz = Math.sign(this.cz - fixed) || 1;
+      return { x: ac, y: sillTop, z: fixed + iz * inset, yaw: iz > 0 ? 0 : Math.PI };
+    }                                           // wall runs along Z at x=fixed; interior toward cx
+    const ix = Math.sign(this.cx - fixed) || 1;
+    return { x: fixed + ix * inset, y: sillTop, z: ac, yaw: ix > 0 ? Math.PI / 2 : -Math.PI / 2 };
+  }
+
+  // Place the registered clock prop + mount the live VFD face on its smoked panel. Lazy —
+  // called from update() once the (async-registered) modelgen spec is available.
+  _placeClock() {
+    const xf = this._clockXf;
+    const obj = placeProp(this.scene, 'electronika-clock', xf.x, xf.z, xf.yaw, { y: xf.y });
+    if (!obj) { this._clockXf = null; return; }   // registration must have failed — stop retrying
+    const face = makeDigitalClockFace({ widthM: 0.150, heightM: 0.044 });
+    face.mesh.position.set(0, 0.047, 0.0595);     // local: centred on, just proud of, the panel front
+    obj.add(face.mesh);
+    this._clock = { obj, face };
+  }
+
+  // per-frame tick (Phase 9 — game.js calls this): debris physics + the live desk-clock readout.
+  update(dt) {
+    if (this.debris) this.debris.update(dt);
+    if (!this._clock && this._clockXf && hasModel('electronika-clock')) this._placeClock();
+    if (this._clock) {
+      this._blinkT = (this._blinkT || 0) + dt;
+      const blink = (this._blinkT % 1) < 0.5;     // colon blinks ~1 Hz (sub-minute, local)
+      const wc = this.game._worldClock;
+      this._clock.face.setTime(wc ? formatHHMM(wc.minuteOfDay()) : '--:--', { blink });
+    }
+  }
 
   // Parts the fire system may ignite (fuel > 0, still alive) — the wood door, here.
   flammableParts() { return this.parts.filter(p => !p.dead && MATERIALS[p.dmat] && MATERIALS[p.dmat].fuel > 0); }
