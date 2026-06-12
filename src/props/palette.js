@@ -41,6 +41,8 @@ export const PALETTE = {
                 glb: { rgb: [0.65, 0.45, 0.16], rough: 0.45, metal: 0.0 } },
   lensGlass:  { voxel: { hi: '#4a5fa8', mid: '#2e3c75', lo: '#1f2a52', slot: '#141c3a', bright: '#6b80c4' },
                 glb: { rgb: [0.18, 0.24, 0.46], rough: 0.12, metal: 0.0 } },
+  lensLaser:  { voxel: { hi: '#cdd98a', mid: '#a8b85e', lo: '#7e8c42', slot: '#566030', bright: '#e2ecaa' },
+                glb: { rgb: [0.66, 0.72, 0.37], rough: 0.15, metal: 0.0 } },
   // --- H.K.M. gramophone palette ---
   chrome:    { voxel: { hi: '#e9edf2', mid: '#b9c1c9', lo: '#7b848d', slot: '#4a5158', bright: '#ffffff' },
                glb: { rgb: [0.70, 0.72, 0.75], rough: 0.16, metal: 0.95 } },

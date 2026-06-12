@@ -801,70 +801,113 @@ export function buildViewmodel(def) {
       cyl(0.02, 0.02, 0.16, 0, 0, 0, bodyLo, { seg: 14 });                       // central hinge axle (vertical)
       break;
     }
-    case 'lpr1': {   // ЛПР-1 «Каралон-М» laser rangefinder — ochre cast loaf (dossier 226×116×221 mm ×2.2), front: laser window + big coated objective + осушка disc; rear: 2 eyecups, СТРОБ drum, knobs, plates; top: ИЗМЕРЕНИЕ buttons + ribs + strap handle
+    case 'lpr1': {   // ЛПР-1 «Каралон-М» laser rangefinder — CUSTOM-MESH build (owner pass 2): rounded cast capsule
+      // (extruded stadium profile, dossier 226×116×221 mm ×2.2), lathe eyecups/knobs/battery, subtle top ribs.
+      // Authored Z-FLIPPED vs models/lpr1/spec.json (rear panel at +Z toward the player) → asymmetric X negated.
       const oHi = 0xd99c3e, oMid = 0xb3782a, oLo = 0x8c5c20, oBr = 0xedb654,
-            blk = 0x141414, blkLo = 0x0c0c0c, bak = 0x2c2723, stl = 0x8a9099, brs = 0xa8842f,
-            olv = 0x52603a, lth = 0x3a2c18, glHi = 0x4a5fa8, glMid = 0x2e3c75, glDk = 0x1f2a52,
-            crm = 0xe6dcc2, grn = 0x3f2e22, glint = 0xcfdcff;
+            blk = 0x141414, blkLo = 0x0c0c0c, bak = 0x2c2723, stl = 0x8a9099, gun = 0x3a3f45, brs = 0xa8842f,
+            olv = 0x52603a, lth = 0x3a2c18, glHi = 0x4a5fa8, glMid = 0x2e3c75, lasHi = 0xcdd98a, lasMid = 0xa8b85e,
+            crm = 0xe6dcc2, grn = 0x3f2e22, glint = 0xcfdcff, blue = 0x3a5fc0;
       const PI2 = Math.PI / 2;
-      const zcyl = (r, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(r, r, h, o.seg || 20); b.geo(g, x, y, z, col, { rx: PI2, ...o }); g.dispose(); };
-      const ycyl = (r, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(r, r, h, o.seg || 14); b.geo(g, x, y, z, col, o); g.dispose(); };
-      // body loaf — layered ochre bands (hi top strip / mid / lo bottom shadow)
-      b.box(0.497, 0.045, 0.385, 0, 0.097, 0.02, oHi);
-      b.box(0.497, 0.148, 0.385, 0, 0, 0.02, oMid, { tint: 0.02 });
-      b.box(0.497, 0.05, 0.385, 0, -0.094, 0.02, oLo);
-      // rear control-panel casting (slightly narrower, proud toward the player)
-      b.box(0.458, 0.038, 0.048, 0, 0.091, 0.2365, oHi);
-      b.box(0.458, 0.13, 0.048, 0, 0, 0.2365, oMid, { tint: 0.02 });
-      b.box(0.458, 0.042, 0.048, 0, -0.084, 0.2365, oLo);
-      // 5 longitudinal stiffening ribs on top
-      for (const rx of [-0.185, -0.092, 0, 0.092, 0.185]) b.box(0.015, 0.011, 0.33, rx, 0.125, 0.055, oBr);
-      // The body is authored Z-FLIPPED vs models/lpr1/spec.json (rear panel at +Z toward the player),
-      // so every asymmetric feature's X is NEGATED vs the spec — a z-flip without an x-flip is a mirror.
-      // FRONT (−Z, away from player): осушка · big coated objective · laser exit window
-      zcyl(0.067, 0.031, -0.011, -0.004, -0.187, oHi);                      // objective bezel boss
-      zcyl(0.049, 0.013, -0.011, -0.004, -0.199, glMid);                    // coated glass
-      zcyl(0.030, 0.008, -0.011, -0.004, -0.206, glHi);                     // inner sheen
-      zcyl(0.012, 0.006, 0.005, 0.012, -0.209, glint, { seg: 10 });         // catch-light
-      zcyl(0.042, 0.026, 0.15, -0.004, -0.185, oHi);                        // tx window bezel
-      zcyl(0.030, 0.011, 0.15, -0.004, -0.195, glDk);                       // dark laser glass
-      zcyl(0.046, 0.022, -0.187, -0.004, -0.183, grn);                      // desiccant cartridge disc
-      // REAR (+Z, the player's view — must match slide-18 seen from behind): battery far-left,
-      // ВКЛ top-left, drum top-centre, indicator eyecup (bigger) left, visor (violet glass) right,
-      // warn plate far-right, ПОДСВ bottom-right, brass разъём bottom-centre
-      zcyl(0.053, 0.053, -0.057, 0, 0.272, blk);
-      zcyl(0.032, 0.012, -0.057, 0, 0.299, blkLo);                          // indicator eye — dark
-      zcyl(0.044, 0.053, 0.101, 0, 0.272, blk);
-      zcyl(0.020, 0.010, 0.101, 0, 0.300, glHi, { seg: 14 });               // visor glass sparkle
-      zcyl(0.055, 0.018, -0.172, -0.013, 0.262, oMid);                      // battery cover base
-      zcyl(0.040, 0.022, -0.172, -0.013, 0.280, blk);                       // black cap
-      b.box(0.013, 0.048, 0.011, -0.172, -0.013, 0.294, stl, { rz: 0.35 }); // steel fold handle
-      zcyl(0.020, 0.024, -0.119, 0.070, 0.262, bak);                        // ВКЛ/ВЫКЛ knob
-      b.box(0.011, 0.040, 0.013, -0.119, 0.070, 0.276, blk, { rz: 0.6 });   // its lever
-      // СТРОБИРОВАНИЕ drum (top centre): black knurled drum + cream scale ring (cream disc under smaller black face)
-      zcyl(0.036, 0.035, 0.018, 0.070, 0.266, blk);
-      zcyl(0.030, 0.005, 0.018, 0.070, 0.287, crm);
-      zcyl(0.023, 0.006, 0.018, 0.070, 0.290, blkLo);
-      zcyl(0.018, 0.022, 0.154, -0.062, 0.262, bak);                        // ПОДСВ knob
-      zcyl(0.023, 0.026, 0.004, -0.084, 0.264, brs);                        // brass remote-buttons connector
-      // label plates: ЛПР-1 ДАЛЬНОМЕР N (between eyecups) + ПОСЛЕ ОКОНЧАНИЯ… (far right), cream text on black
-      b.box(0.057, 0.040, 0.008, 0.022, -0.048, 0.262, blk);
-      for (let i = 0; i < 3; i++) b.box(0.044, 0.005, 0.004, 0.022, -0.036 - i * 0.012, 0.267, crm);
-      b.box(0.079, 0.048, 0.008, 0.189, 0.009, 0.262, blk);
-      for (let i = 0; i < 4; i++) b.box(0.063, 0.004, 0.004, 0.189, 0.025 - i * 0.011, 0.267, crm);
-      // slotted panel screws
-      for (const [sx, sy] of [[-0.214, 0.097], [0.214, 0.097], [-0.214, -0.089], [0.214, -0.089]]) zcyl(0.010, 0.011, sx, sy, 0.259, stl, { seg: 10 });
-      // TOP: ИЗМЕРЕНИЕ 1/2 rubber buttons between three half-round guard fins (laser-window side), near the rear edge
-      for (const fx of [0.172, 0.119, 0.066]) b.box(0.013, 0.033, 0.048, fx, 0.128, -0.099, oHi);
-      ycyl(0.019, 0.022, 0.145, 0.128, -0.099, blk);
-      ycyl(0.019, 0.022, 0.092, 0.128, -0.099, blk);
-      // strap handle over the spine (leather arch) + olive webbing wrapped around the body
-      b.box(0.026, 0.05, 0.026, -0.08, 0.144, -0.033, lth); b.box(0.026, 0.05, 0.026, 0.08, 0.144, -0.033, lth);
-      b.box(0.187, 0.026, 0.026, 0, 0.182, -0.033, lth, { tint: 0.03 });
-      b.box(0.50, 0.010, 0.044, 0, 0.124, 0.114, olv);
-      b.box(0.010, 0.26, 0.044, -0.253, -0.005, 0.114, olv); b.box(0.010, 0.26, 0.044, 0.253, -0.005, 0.114, olv);
-      // bottom steel УИУ-mount bracket strip
-      b.box(0.10, 0.018, 0.286, 0, -0.128, 0.033, stl);
+      const zcyl = (r, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(o.r2 ?? r, r, h, o.seg || 24); b.geo(g, x, y, z, col, { rx: PI2, ...o }); g.dispose(); };
+      const lat = (prof, x, y, z, col, o = {}) => { const g = new THREE.LatheGeometry(prof.map((q) => new THREE.Vector2(q[0], q[1])), o.seg || 24); b.geo(g, x, y, z, col, { rx: PI2, ...o }); g.dispose(); };
+      // rounded stadium loaf: side profile (depth D × height H, corner radius rad) extruded across width W with a beveled rim
+      const loafM = (W, H, D, rad, bev, x, y, z, col, tint = 0.03) => {
+        const bs = bev * 0.9, pw = D - 2 * bs, ph = H - 2 * bs;
+        const r = Math.max(0.001, Math.min(rad, ph / 2 - 0.0005, pw / 2 - 0.0005));
+        const sh = new THREE.Shape(); const x0 = -pw / 2, y0 = -ph / 2;
+        sh.moveTo(x0 + r, y0);
+        sh.lineTo(x0 + pw - r, y0); sh.quadraticCurveTo(x0 + pw, y0, x0 + pw, y0 + r);
+        sh.lineTo(x0 + pw, y0 + ph - r); sh.quadraticCurveTo(x0 + pw, y0 + ph, x0 + pw - r, y0 + ph);
+        sh.lineTo(x0 + r, y0 + ph); sh.quadraticCurveTo(x0, y0 + ph, x0, y0 + ph - r);
+        sh.lineTo(x0, y0 + r); sh.quadraticCurveTo(x0, y0, x0 + r, y0);
+        const g = new THREE.ExtrudeGeometry(sh, { depth: W - 2 * bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bs, bevelSegments: 4, curveSegments: 12 });
+        g.translate(0, 0, -(W - 2 * bev) / 2); g.rotateY(PI2);
+        b.geo(g, x, y, z, col, { tint }); g.dispose();
+      };
+      const halfFin = (x, y, z) => {       // half-moon button guard: extruded semicircle, flat faces ±X, round edge up
+        const r = 0.027, th = 0.013;
+        const sh = new THREE.Shape(); sh.moveTo(-r, 0); sh.absarc(0, 0, r, Math.PI, 0, true); sh.lineTo(r, 0); sh.closePath();
+        const g = new THREE.ExtrudeGeometry(sh, { depth: th, bevelEnabled: false, curveSegments: 12 });
+        g.translate(0, 0, -th / 2); g.rotateY(PI2);
+        b.geo(g, x, y, z, oHi); g.dispose();
+      };
+      // ---- the cast capsule body + sculpted rear control-panel casting ----
+      loafM(0.497, 0.238, 0.385, 0.062, 0.035, 0, 0, 0.02, oMid);
+      loafM(0.458, 0.215, 0.062, 0.05, 0.014, 0, 0, 0.236, oMid, 0.045);
+      // subtle longitudinal stiffening ribs (owner: less detail here, the silhouette carries it)
+      for (const rx of [-0.185, -0.092, 0, 0.092, 0.185]) b.box(0.011, 0.007, 0.21, rx, 0.1175, 0.0, oHi);
+      // cast strap lugs on the rear shoulders
+      b.box(0.034, 0.024, 0.05, -0.225, 0.098, 0.19, oMid); b.box(0.034, 0.024, 0.05, 0.225, 0.098, 0.19, oMid);
+      // ---- FRONT (−Z, away from player): осушка · big blue objective · yellow-green laser window ----
+      zcyl(0.070, 0.05, -0.011, -0.004, -0.176, oHi);                        // objective bezel boss
+      zcyl(0.072, 0.012, -0.011, -0.004, -0.198, oBr);                       // bright lip
+      zcyl(0.060, 0.02, -0.011, -0.004, -0.202, blkLo);                      // inner barrel
+      zcyl(0.052, 0.012, -0.011, -0.004, -0.207, glMid);                     // deep blue coated glass
+      zcyl(0.040, 0.010, -0.011, -0.004, -0.212, glHi);                      // inner sheen
+      zcyl(0.012, 0.007, 0.004, 0.013, -0.216, glint, { seg: 12 });          // catch-light
+      zcyl(0.043, 0.04, 0.15, -0.004, -0.173, oHi);                          // laser window bezel
+      zcyl(0.045, 0.01, 0.15, -0.004, -0.189, oBr);
+      zcyl(0.032, 0.011, 0.15, -0.004, -0.193, lasMid);                      // 1.06 µm optics — yellow-green coating
+      zcyl(0.022, 0.009, 0.15, -0.004, -0.198, lasHi);
+      zcyl(0.008, 0.006, 0.142, 0.006, -0.202, glint, { seg: 10 });
+      zcyl(0.048, 0.008, -0.187, -0.004, -0.170, oMid);                      // осушка retaining ring
+      zcyl(0.046, 0.022, -0.187, -0.004, -0.178, grn);                       // desiccant felt disc
+      zcyl(0.009, 0.006, -0.187, -0.004, -0.190, blue, { seg: 10 });         // blue silica-gel window
+      // ---- REAR (+Z, the player's view — slide-18 layout seen from behind) ----
+      // indicator eyepiece (screen-left, bigger/softer) + visor eyepiece (violet glass)
+      for (const [ex, isVis] of [[-0.057, false], [0.101, true]]) {
+        lat([[0.030, 0], [0.041, 0.006], [0.044, 0.014], [0.040, 0.020], [0.044, 0.028], [0.040, 0.034], [0.043, 0.042]], ex, 0, 0.262, gun);
+        lat([[0.040, 0], [0.051, 0.012], [0.054, 0.030], [0.046, 0.044]], ex, 0, 0.298, blk);
+        zcyl(0.033, 0.010, ex, 0, 0.344, 0x101418);
+        if (isVis) { zcyl(0.020, 0.008, ex, 0, 0.348, glHi, { seg: 14 }); zcyl(0.007, 0.005, ex - 0.008, 0.008, 0.352, glint, { seg: 8 }); }
+      }
+      // battery cover (far screen-left): ochre base ring + black rounded cap + steel fold lever
+      zcyl(0.057, 0.014, -0.172, -0.013, 0.264, oMid);
+      lat([[0, 0], [0.030, 0], [0.038, 0.006], [0.040, 0.018], [0.033, 0.027], [0, 0.030]], -0.172, -0.013, 0.272, blk);
+      b.box(0.011, 0.052, 0.009, -0.172, -0.013, 0.300, stl, { rz: 0.35 });
+      // ВКЛ/ВЫКЛ power knob + engraved white labels
+      zcyl(0.017, 0.012, -0.119, 0.070, 0.262, oLo);
+      lat([[0.006, 0], [0.013, 0.004], [0.013, 0.018], [0.009, 0.026], [0, 0.028]], -0.119, 0.070, 0.268, bak);
+      b.box(0.008, 0.034, 0.009, -0.119, 0.070, 0.288, blk, { rz: 0.6 });
+      b.box(0.024, 0.005, 0.003, -0.152, 0.094, 0.266, crm); b.box(0.020, 0.005, 0.003, -0.088, 0.094, 0.266, crm);
+      // СТРОБИРОВАНИЕ drum: knurled black drum + cream scale ring + slotted screw face
+      { const kn = [[0.022, 0]]; for (let i = 0; i <= 9; i++) kn.push([i % 2 ? 0.037 : 0.032, 0.004 + i * 0.0042]); kn.push([0.022, 0.047]);
+        lat(kn, 0.018, 0.070, 0.262, blk, { seg: 26 }); }
+      zcyl(0.030, 0.0045, 0.018, 0.070, 0.310, crm);
+      zcyl(0.024, 0.005, 0.018, 0.070, 0.313, blkLo);
+      b.box(0.018, 0.004, 0.004, 0.018, 0.070, 0.317, stl);
+      // ПОДСВ illumination knob + label
+      zcyl(0.014, 0.010, 0.154, -0.062, 0.262, oLo);
+      lat([[0.005, 0], [0.011, 0.004], [0.011, 0.015], [0.007, 0.022], [0, 0.024]], 0.154, -0.062, 0.266, bak);
+      b.box(0.007, 0.026, 0.008, 0.154, -0.062, 0.283, blk, { rz: -0.6 });
+      b.box(0.026, 0.005, 0.003, 0.120, -0.085, 0.266, crm);
+      // remote-buttons разъём: knurled brass cap (bottom centre)
+      { const kb = [[0.014, 0]]; for (let i = 0; i <= 5; i++) kb.push([i % 2 ? 0.024 : 0.020, 0.004 + i * 0.0045]); kb.push([0.012, 0.030]);
+        lat(kb, -0.004, -0.086, 0.262, brs, { seg: 20 }); }
+      // label plates: ЛПР-1 ДАЛЬНОМЕР N (between eyecups) + ПОСЛЕ ОКОНЧАНИЯ… (screen-right), cream lines on black
+      b.box(0.057, 0.040, 0.010, 0.022, -0.048, 0.266, blk);
+      for (let i = 0; i < 3; i++) b.box(0.042, 0.0045, 0.004, 0.022, -0.036 - i * 0.012, 0.272, crm);
+      b.box(0.079, 0.048, 0.010, 0.189, 0.009, 0.266, blk);
+      for (let i = 0; i < 4; i++) b.box(0.060, 0.004, 0.004, 0.189, 0.025 - i * 0.011, 0.272, crm);
+      // slotted panel screws (4 corners + top/bottom centre)
+      for (const [sx, sy] of [[-0.214, 0.092], [0.214, 0.092], [-0.214, -0.085], [0.214, -0.085], [0, 0.100], [0.07, -0.092]]) {
+        zcyl(0.009, 0.012, sx, sy, 0.262, stl, { seg: 12 });
+        b.box(0.013, 0.003, 0.003, sx, sy, 0.270, gun);
+      }
+      // ---- TOP: ИЗМЕРЕНИЕ 1/2 rubber dome buttons between three half-moon guard fins ----
+      halfFin(0.172, 0.118, -0.075); halfFin(0.119, 0.118, -0.075); halfFin(0.066, 0.118, -0.075);
+      lat([[0.019, 0], [0.019, 0.008], [0.014, 0.012], [0.012, 0.020], [0.006, 0.026], [0, 0.028]], 0.145, 0.118, -0.075, blk, { rx: -PI2 });
+      lat([[0.019, 0], [0.019, 0.008], [0.014, 0.012], [0.012, 0.020], [0.006, 0.026], [0, 0.028]], 0.092, 0.118, -0.075, blk, { rx: -PI2 });
+      // ---- strap over the spine + slim leather handle ----
+      b.box(0.40, 0.008, 0.042, 0, 0.1225, 0.105, olv);
+      b.box(0.008, 0.17, 0.042, -0.246, 0.03, 0.105, olv); b.box(0.008, 0.17, 0.042, 0.246, 0.03, 0.105, olv);
+      b.box(0.022, 0.044, 0.022, -0.075, 0.141, -0.02, lth); b.box(0.022, 0.044, 0.022, 0.075, 0.141, -0.02, lth);
+      b.box(0.172, 0.020, 0.024, 0, 0.171, -0.02, lth, { tint: 0.04 });
+      // ---- bottom: steel УИУ-mount bracket strip + T-slot block ----
+      b.box(0.10, 0.014, 0.26, 0, -0.124, 0.04, stl);
+      b.box(0.05, 0.016, 0.07, 0, -0.130, 0.10, stl);
+      b.box(0.028, 0.018, 0.05, 0, -0.133, 0.02, gun);
       break;
     }
     case 'flashlight': {     // Soviet steel torch: ribbed body, flared reflector head, red push-button (ref Michael Dronov)

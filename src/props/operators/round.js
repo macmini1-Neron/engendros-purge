@@ -177,6 +177,30 @@ export function decal(b, a, t, o) {
   return mesh;
 }
 
+// loaf — a rounded "stadium loaf" shell: a rounded-rectangle SIDE profile (depth d ×
+// height h, corner radius r) extruded across the width w with a beveled rim, so the
+// silhouette reads as the cast rounded clamshell of Soviet field instruments (ЛПР-1
+// rangefinder, field phones) instead of a box. The profile is shrunk by the bevel so
+// the finished bounds honestly match w×h×d. Center-anchored. THREE-bound.
+export function loaf(b, a, t, o) {
+  const { w, h, d } = a;
+  const bev = Math.min(a.bevel ?? Math.min(w, h, d) * 0.12, w / 2 - 0.001);
+  const bs = bev * 0.9;
+  const pw = d - 2 * bs, ph = h - 2 * bs;                  // profile pre-shrunk; bevel grows it back to d×h
+  const r = Math.max(0.001, Math.min(a.r ?? Math.min(ph, pw) * 0.35, ph / 2 - 0.0005, pw / 2 - 0.0005));
+  const sh = new THREE.Shape(); const x0 = -pw / 2, y0 = -ph / 2;
+  sh.moveTo(x0 + r, y0);
+  sh.lineTo(x0 + pw - r, y0); sh.quadraticCurveTo(x0 + pw, y0, x0 + pw, y0 + r);
+  sh.lineTo(x0 + pw, y0 + ph - r); sh.quadraticCurveTo(x0 + pw, y0 + ph, x0 + pw - r, y0 + ph);
+  sh.lineTo(x0 + r, y0 + ph); sh.quadraticCurveTo(x0, y0 + ph, x0, y0 + ph - r);
+  sh.lineTo(x0, y0 + r); sh.quadraticCurveTo(x0, y0, x0 + r, y0);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: w - 2 * bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bs, bevelSegments: 4, curveSegments: 12 });
+  g.translate(0, 0, -(w - 2 * bev) / 2);                   // center the extrusion before re-orienting
+  g.rotateY(Math.PI / 2);                                   // extrusion axis → X; profile plane → (z, y)
+  b.geo(g, o.x, o.y, o.z, a.tone ? t[a.tone] : t.mid, { tint: 0.02 });
+  g.dispose();
+}
+
 // ---- canvas generators (exported where the live gramophone re-uses them) ----
 
 function _star(c, R, color) {                              // 5-point gold star, centred at the cursor

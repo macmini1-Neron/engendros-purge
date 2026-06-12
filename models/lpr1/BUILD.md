@@ -38,6 +38,20 @@ painted (renders/lpr-ingame-*.png) · 0 real console errors (one headless pointe
 Viewmodel fix found here: the vm is authored z-flipped vs the spec (rear at +Z), so all
 asymmetric feature X had to be negated — a z-flip without an x-flip is a mirror.
 
+## R4 — owner pass 2: "zaoblené, ne krabice; custom meshe; jemnější žebra"
+New marketplace photo set (olive unit, all faces) added to ref/ knowledge. Changes:
+- new THREE-bound op **`loaf`** (rounded stadium-profile extrusion) → spec body + rear
+  panel are now true rounded castings; ribs subtler/shorter (0.006×0.004×0.095)
+- laser window re-coloured per the photos: new palette `lensLaser` (yellow-green 1.06 µm
+  coating); objective stays deep blue
+- **viewmodel fully resculpted** as custom meshes (binoculars-grade): extruded capsule
+  body + sculpted panel casting, lathe eyecups/knobs/battery cap, knurled СТРОБ drum +
+  cream ring + slot screw, half-moon button guards (extruded semicircles), dome rubber
+  buttons, strap lugs + slim handle, brass knurled разъём, slotted screws, T-slot bracket
+- objective cover deliberately OFF (owner: "chceme jak to máme — otevřené")
+Verified: lint green, 67/67 tests (loaf covered), headless in-game logic re-run all green,
+front/rear vm screenshots renders/lpr-vm-front.png + lpr-ingame-hip.png.
+
 ## Deliberate omissions (see dossier needs[])
 objective cover (modeled OFF / in-use), bottom data plate, exact aperture diameters
 (ДСП-classified; photo ratios + 44.8 mm derivation used), reticle span numbering.

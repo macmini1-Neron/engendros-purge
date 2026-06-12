@@ -25,12 +25,14 @@
       "src": "dossier#bottom_face"
     },
     {
-      "op": "bevelBox",
+      "op": "loaf",
       "id": "bodyMain",
       "args": {
         "w": 0.226,
         "h": 0.108,
-        "d": 0.175
+        "d": 0.175,
+        "r": 0.028,
+        "bevel": 0.016
       },
       "at": [
         0,
@@ -41,17 +43,19 @@
       "src": "dossier#body_dims"
     },
     {
-      "op": "bevelBox",
+      "op": "loaf",
       "id": "rearPanel",
       "args": {
         "w": 0.208,
         "h": 0.1,
-        "d": 0.022
+        "d": 0.026,
+        "r": 0.024,
+        "bevel": 0.007
       },
       "at": [
         0,
         0.062,
-        -0.0755
+        -0.0745
       ],
       "mat": "paintOchre",
       "src": "dossier#body_dims"
@@ -60,14 +64,14 @@
       "op": "bevelBox",
       "id": "ribTop1",
       "args": {
-        "w": 0.007,
-        "h": 0.005,
-        "d": 0.15
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
       },
       "at": [
         -0.084,
-        0.117,
-        0.025
+        0.1155,
+        0.023
       ],
       "mat": "paintOchre",
       "src": "dossier#top_face"
@@ -76,14 +80,14 @@
       "op": "bevelBox",
       "id": "ribTop2",
       "args": {
-        "w": 0.007,
-        "h": 0.005,
-        "d": 0.15
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
       },
       "at": [
         -0.042,
-        0.117,
-        0.025
+        0.1155,
+        0.023
       ],
       "mat": "paintOchre",
       "src": "dossier#top_face"
@@ -92,14 +96,14 @@
       "op": "bevelBox",
       "id": "ribTop3",
       "args": {
-        "w": 0.007,
-        "h": 0.005,
-        "d": 0.15
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
       },
       "at": [
         0,
-        0.117,
-        0.025
+        0.1155,
+        0.023
       ],
       "mat": "paintOchre",
       "src": "dossier#top_face"
@@ -108,14 +112,14 @@
       "op": "bevelBox",
       "id": "ribTop4",
       "args": {
-        "w": 0.007,
-        "h": 0.005,
-        "d": 0.15
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
       },
       "at": [
         0.042,
-        0.117,
-        0.025
+        0.1155,
+        0.023
       ],
       "mat": "paintOchre",
       "src": "dossier#top_face"
@@ -124,14 +128,14 @@
       "op": "bevelBox",
       "id": "ribTop5",
       "args": {
-        "w": 0.007,
-        "h": 0.005,
-        "d": 0.15
+        "w": 0.006,
+        "h": 0.004,
+        "d": 0.095
       },
       "at": [
         0.084,
-        0.117,
-        0.025
+        0.1155,
+        0.023
       ],
       "mat": "paintOchre",
       "src": "dossier#top_face"
@@ -187,15 +191,14 @@
       "id": "txGlass",
       "args": {
         "r": 0.0135,
-        "h": 0.005,
-        "tone": "lo"
+        "h": 0.005
       },
       "at": [
         -0.068,
         0.06,
         0.114
       ],
-      "mat": "lensGlass",
+      "mat": "lensLaser",
       "src": "dossier#front_aperture_ratios"
     },
     {
