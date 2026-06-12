@@ -23,6 +23,7 @@ export class HUD {
       wave: $('wave'), money: $('money'), radios: $('radios'), score: $('score'),
       msg: $('msg'), vignette: $('vignette'), hitmarker: $('hitmarker'), killfeed: $('killfeed'),
       cross: $('cross'), toast: $('toast'), interact: $('interact'), scope: $('scope'), binoview: $('binoview'),
+      lprview: $('lprview'), lprdigits: $('lprdigits'), lprready: $('lprready'), lprbat: $('lprbat'),
       bossbar: $('bossbar'), bossfill: $('bossfill'), bossname: $('bossname'), bosspip: $('bosspip'), left: $('left'),
       bleedbar: $('bleedbar'), bleedfill: $('bleedfill'),
       heatbar: $('heatbar'), heatfill: $('heatfill'), heatlabel: $('heatlabel'), wavetag: $('wavetag'),
@@ -166,11 +167,24 @@ export class HUD {
   setScore(s) { this.el.score.textContent = s; }
   setWave(n) { this.el.wave.textContent = 'WAVE ' + n; }
   setEnemiesLeft(n) { this.el.left.textContent = n > 0 ? '· ' + n + ' left' : ''; }
-  setScope(on, binocular = false) {
-    const glass = !!on && binocular;            // binoculars: twin-circle mask, no reticle
-    this.el.scope.classList.toggle('show', !!on && !binocular); // rifle scope: single circle + crosshair
-    if (this.el.binoview) this.el.binoview.classList.toggle('show', glass);
-    if (this.el.cross) this.el.cross.style.opacity = glass ? '0' : ''; // hide the crosshair while glassing
+  setScope(on, shape = '') {
+    const bino = !!on && shape === 'binoculars';  // binoculars: twin-circle mask, no reticle
+    const lpr = !!on && shape === 'lpr1';         // ЛПР-1: vizír mil reticle + indicator inset (1:1 per Рис. 5.4 / slide-9)
+    this.el.scope.classList.toggle('show', !!on && !bino && !lpr); // rifle scope: single circle + crosshair
+    if (this.el.binoview) this.el.binoview.classList.toggle('show', bino);
+    if (this.el.lprview) this.el.lprview.classList.toggle('show', lpr);
+    if (this.el.cross) this.el.cross.style.opacity = (bino || lpr) ? '0' : ''; // hide the crosshair while glassing
+  }
+  // ЛПР-1 indicator eyepiece state — st = { ready, value } | null. value: null = display dark (no
+  // measurement yet), 0 = no echo (00000), N = range in metres. Green лампа готовности gates T.
+  setLpr(st) {
+    if (!this.el.lprdigits) return;
+    if (!st) { this._lprLast = null; return; }      // overlay hidden — nothing to paint
+    const key = st.ready + ':' + st.value;
+    if (this._lprLast === key) return;              // imperative DOM — only write on change
+    this._lprLast = key;
+    this.el.lprdigits.textContent = st.value == null ? '' : String(Math.min(99999, Math.max(0, st.value))).padStart(5, '0');
+    this.el.lprready.classList.toggle('on', !!st.ready);
   }
   setBoss(frac, name) { this.el.bossbar.classList.add('show'); this.el.bossfill.style.width = clamp(frac, 0, 1) * 100 + '%'; if (name) this.el.bossname.textContent = name; }
   setBossPip(frac) {
