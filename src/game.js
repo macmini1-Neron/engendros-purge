@@ -61,7 +61,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-12 18:43';
+const GAME_BUILD = '2026-06-13 00:53';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -418,6 +418,7 @@ class Game {
     this._nextTagId = 1; // new run → enemy tag ids restart at 1
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset(); // step away from the ННП-23 (restores lights/FOV/overlay)
+    if (this.hud) this.hud.setCompass(null); // body-level overlay — hud.show(false) won't hide it; clear on run reset
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
     this.inventory.reset(); // clear backpack BEFORE resetLoadout (which deploys throwable start-stock into it)
@@ -624,6 +625,7 @@ class Game {
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay when leaving to menu
+    if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on the way to menu
     this.enemies.clearAll(); if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
   }
@@ -715,6 +717,7 @@ class Game {
     this.state = 'menu'; this.mpMenuOpen = false;
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay on squad-wipe → lobby
+    if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on squad-wipe → lobby
     this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
@@ -759,6 +762,7 @@ class Game {
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay off the death screen
+    if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on death
     if (this.audio.music) { this.audio.music.setScene('gameover'); this.audio.music.setIntensity(0.85); this.audio.music.setStress(0); } this.hud.show(false);
     // persistent meta (per mode) + lifetime tallies
     const m = this.meta; m.kills = (m.kills || 0) + this.kills; m.runs = (m.runs || 0) + 1;
@@ -885,6 +889,7 @@ class Game {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
       if (this.player.nightPost) this.player.nightPost.exit();
       this.weapons.cancelMolotov();
+      this.hud.setCompass(null); // downed/dead in co-op: weapons.update() is skipped → tear the буссоль overlay down
     }
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here

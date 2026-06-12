@@ -27,6 +27,8 @@ const ICONS = {
     + '<path fill-rule="evenodd" d="M7 8a5 5 0 100 10A5 5 0 007 8zm0 3a2 2 0 100 4 2 2 0 100-4z"/>'
     + '<path fill-rule="evenodd" d="M17 8a5 5 0 100 10 5 5 0 100-10zm0 3a2 2 0 100 4 2 2 0 100-4z"/>'
     + '<path d="M10 11h4v3h-4z"/>',
+  compass: '<path fill-rule="evenodd" d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 2a8 8 0 110 16 8 8 0 010-16z"/>'
+    + '<path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1z"/><circle cx="12" cy="12" r="1.1"/>',
   // ---- throwables / gadgets ----
   grenade:  '<path d="M8 6h6v3H8z"/><path d="M14 6h4v2h-2l-2 2z"/><circle cx="11" cy="15" r="6"/>',
   molotov:  '<path d="M9 8h6v3l2 4v6H7v-6l2-4z"/><path d="M11 2l2 5h-4z"/>',

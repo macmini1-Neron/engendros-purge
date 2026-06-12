@@ -154,6 +154,7 @@ test('MATERIALS.fuel: only wood/trunk/grass burn (fuel > 0); inorganics never ig
   assert.equal(MATERIALS.concrete.fuel, 0);
   assert.equal(MATERIALS.steel.fuel, 0);
   assert.equal(MATERIALS.grass.fuel, 2);
+  assert.equal(MATERIALS.stone.fuel, 0);   // rock is inorganic — never ignites
 });
 
 test('MATERIALS.sound buckets match the spec mapping', () => {
@@ -164,4 +165,5 @@ test('MATERIALS.sound buckets match the spec mapping', () => {
   assert.equal(MATERIALS.brick.sound, 'masonry');
   assert.equal(MATERIALS.concrete.sound, 'masonry');
   assert.equal(MATERIALS.steel.sound, 'metal');
+  assert.equal(MATERIALS.stone.sound, 'masonry');
 });
