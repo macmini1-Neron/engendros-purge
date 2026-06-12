@@ -533,12 +533,20 @@ export class Forest {
       if (this.debris) this.debris.burst('splints', [h.tree.pos.x, h.tree.pos.y + h.tree.breakPoint, h.tree.pos.z], (h.tree.id * 2654435761) >>> 0, h.tree.pos.y);
       this.fellTree(h.tree, [dir.x, dir.z], (h.tree.id * 2654435761) >>> 0);
     }
+    // APFSDS obliterates fragile props (tier ≤ 2: wood/grass) it pierces; stone (tier 4) is a
+    // structural through-hole — left in place (cosmetic), consistent with resolvePenetration.
+    for (const rec of this._props) {
+      if (rec.dead || !rec.part) continue;
+      if (MATERIALS[rec.dmat].tier > 2) continue;
+      const t = rayAABB(o, dd, rec.part.min, rec.part.max);
+      if (t !== null && t <= range) this.destroyProp(rec, [rec.pos.x, rec.pos.y + 0.3, rec.pos.z]);
+    }
     return hits.length;
   }
 
   // ── PUBLIC HOOK: HE blast fells the stand (Phase 9 rocket/grenade) ────────────────
   // Topple every standing tree within `radius` of `pos`, away from the blast.
-  blast(pos, radius) {
+  blast(pos, radius, blastTier = 3) {
     const r2 = radius * radius, felled = [];
     for (const tree of this.trees) {
       if (!tree.standing) continue;
@@ -548,6 +556,13 @@ export class Forest {
         this.fellTree(tree, [dx / n, dz / n], (tree.id * 2654435761) >>> 0);
         felled.push(tree);
       }
+    }
+    // props: remove any whose material tier ≤ the blast tier within radius (stone tier4 survives
+    // the default bazooka tier3 — only a stronger blast or AP takes it).
+    for (const rec of this._props) {
+      if (rec.dead) continue;
+      const dx = rec.pos.x - pos.x, dz = rec.pos.z - pos.z;
+      if (dx * dx + dz * dz <= r2 && MATERIALS[rec.dmat].tier <= blastTier) this.destroyProp(rec, [rec.pos.x, rec.pos.y, rec.pos.z]);
     }
     return felled;
   }
