@@ -12,9 +12,6 @@ import { CALIBERS, resolveHit } from './destruct.js';
 // cosmetic chip. glass=0/wood=1/sheetmetal=trunk=2/brick=3/concrete=4/steel=5. So pistols
 // pop glass; rifles/SMGs also break the wood door & fences; nothing under HE breaches brick.
 const PEN_BY_CLASS = { pistol: 0, smg: 1, rifle: 1, sniper: 2, shotgun: 1, hmg: 2, launcher: 4, cannon: 5 };
-// HE blast profile for the bazooka rocket (CALIBERS.heRocket): tier 3 removes brick segments
-// within r1 (a WALKABLE breach), shatters all glass within r2, ignites + fells nearby trees.
-const DEMO_HE_BLAST = { r1: 2.6, r2: 6.0, tier: 3 };
 // Forced demo loadout so a tester needs no shop: an auto rifle (glass+door+enemies), the
 // BAZOOKA (HE breach + fire), two MOLOTOVs (ignite trees), the debug APFSDS cannon, + a knife.
 export const DEMO_LOADOUT = ['stg44', 'bazooka', 'molotov', 'molotov', 'apfsds', 'knife'];
@@ -1320,18 +1317,6 @@ export class WeaponSystem {
     if (this.game.forest && typeof this.game.forest.penetrate === 'function') this.game.forest.penetrate(origin, dir, d.range, w);
   }
 
-  // HE blast from a detonating rocket/grenade routed into the demo destructibles: remove brick
-  // wall segments (a WALKABLE breach) + shatter glass via the building, fell trees within the
-  // blast, and seed a fire at the impact (a rocket into the woods lights the stand). Host-auth.
-  _demoBlast(pos, radius, isRocket) {
-    const hostSim = !this.game.mp.active || this.game.mp.isHost;
-    if (!hostSim) return;
-    const b = this.game.world.demoBuilding;
-    const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
-    if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
-    if (this.game.forest && typeof this.game.forest.blast === 'function') this.game.forest.blast(pos, blast.r1 + 0.6, blast.tier);
-    if (this.game.fire && typeof this.game.fire.igniteAt === 'function') this.game.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
-  }
 
   throwGrenade() {
     // the throw count is the backpack slot the Inventory consumes — this just spawns the projectile
@@ -1613,13 +1598,9 @@ export class WeaponSystem {
           this.game.effects.explosion(mpos.clone(), 1.2); this.game.effects.firePool(mpos, 1.6, 1.4);
           this.game._spawnMolotovPool(mpos);
         } else {
-          this.game.effects.explosion(g.mesh.position.clone(), g.radius);
-          this.game.enemies.damageInRadius(g.mesh.position, g.radius, g.dmg, null, g.rocket ? 'rocket' : 'explosion'); // bazooka does near-full dmg to Tolo (0.9×), grenades chip like bullets (0.2×)
-          this._demoBlast(g.mesh.position, g.radius, !!g.rocket); // ?map=demo: HE breach + glass shatter + fell trees + start a fire (host-auth; no-op on flat maps)
-          // explosive Full-FF: grenades/rockets damage self + teammates (host-authoritative). No 'fx' broadcast — other players see the boom via their 'proj' ghost detonation.
-          const _mp = this.game.mp; const gp = g.mesh.position;
-          if (!_mp.active || _mp.isHost) { this.game._explodeHurt(gp.clone(), g.radius, g.dmg); this.game.loot.clearPickupsInRadius(gp.x, gp.z, g.radius); } // host/solo: nuke ground items in the blast (client thrower clears via the host 'splash' path)
-          else _mp.net.send('splash', { p: [+gp.x.toFixed(2), +gp.y.toFixed(2), +gp.z.toFixed(2)], r: g.radius, dmg: g.dmg });
+          // bazooka = near-full dmg to Tolo (rocket 0.9×), grenades chip like bullets (0.2×). explode()
+          // owns visual+enemy AoE+player splash (FF)+item clearing+demo destruction and the host/client split.
+          this.game.explode(g.mesh.position.clone(), { radius: g.radius, dmg: g.dmg, source: g.rocket ? 'rocket' : 'explosion', isRocket: !!g.rocket });
         }
         this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose();
         if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); }
