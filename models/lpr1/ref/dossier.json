@@ -1,0 +1,155 @@
+{
+  "id": "lpr1",
+  "title": "ЛПР-1 «Каралон-М» (GRAU 1Д13) — Soviet hand-held laser reconnaissance rangefinder, binocular-shaped monocular unit",
+  "era": "developed in the 1980s; issued to artillery and reconnaissance units of Warsaw Pact armies; close copy of the Norwegian Simrad LP7; Western equivalents designated LP-7 (US/UK/Norway)",
+  "sources": {
+    "par_manual": "https://suveren.com.ua/attachments/article/163/PAR.pdf — «Приборы артиллерийской разведки» textbook, ГЛАВА 5 «ЛАЗЕРНЫЙ ПРИБОР РАЗВЕДКИ ЛПР-1 (1Д13)», printed pages 124-136 (local copy ref/PAR.pdf, PDF pages 125-137). Authoritative TTX table 5.1, controls inventory (Рис. 5.3), indicator field-of-view diagram (Рис. 5.4, p.129), kit list (Рис. 5.2), ЗИП list",
+    "ru_wikipedia": "https://ru.wikipedia.org/wiki/ЛПР-1 — unit dimensions 221×226×116 мм; duplicated verbatim at https://metal-archive.ru/stati/23441-lpr-1.html («Габаритные размеры 221×226×116 мм»)",
+    "training_deck": "https://en.ppt-online.org/1606799 — Russian artillery training deck, 24 slides with labeled close-up photos of every face + both eyepiece field-of-view diagrams (local copies ref/slide-*.jpg; key: 8 rear labeled, 9 eyepiece FOVs, 10 front labeled, 11 bottom, 18 rear closeup, 19, 20/22 through-the-visor shots)",
+    "rykovodstvo": "https://rykovodstvo.ru/exspl/1274/index.html?page=7 — lecture notes on изделие 1Д13: «Цена наименьшего деления сетки 0-05»; 00000 display behaviour",
+    "studopedia_lpr": "https://studopediaru.com/22_66365_ustroystvo-dalnomera-lpr-.html — «несколько целей в разрыве угломерной сетки» = multi-target decimal point; reticle sits в фокальной плоскости объектива",
+    "parolab_manual": "https://parolab.ru/lpr-1-instrukciya-po-primeneniyu-vvedenie-na-licevoi-i-verhnei-storonah.html — manual repost: controls per face, reticle illumination = lamp + fiber bundle, battery endurance 600/200",
+    "studfile_lpr1": "https://studfile.net/preview/11465714/page:2/ — military-academy lecture notes on ЛПР-1: TTX cross-check, controls list (Рис. 20), measurement procedure, objective cover «3-крышка» in parts list",
+    "simrad_lp7": "https://navysurplusarmy.com/lpr-1-soviet-copy-of-simrad-lp7-military-rangefinder-star-wars-electrobinoculars.php — LPR-1 as Simrad LP7 copy (proportion cross-reference)",
+    "artstation_gerardivn": "https://www.artstation.com/gerardivn — 'LPR-1 / ЛПР-1' game-asset renders (8 images supplied by the owner in-chat): ochre finish variant, front 3 circles, rear controls panel, top strap+buttons, khaki top-down with both label plates readable. Feature/proportion/colour reference only — no absolute dims",
+    "tripod_photo": "owner-supplied marketplace photo (in-chat, image 9): complete ЛПР-1 in olive finish mounted on УИУ + tripod outdoors — proportion and colour-variant reference"
+  },
+  "specifications": {
+    "body_dims": {
+      "length_mm": 221,
+      "width_mm": 226,
+      "height_mm": 116,
+      "src": "ru_wikipedia",
+      "quote": "Габаритные размеры 221×226×116 мм",
+      "note": "axis order not stated by the source; read from photos (training_deck slides 10/18): ~226 across the binocular body (width, X), ~221 front-to-back incl. eyecups (length, Z), ~116 tall (height, Y). Consistent with unit mass ≤2.5 kg"
+    },
+    "range_m": {
+      "min": 145,
+      "max": 20000,
+      "tank_target_min": 5000,
+      "error_max_m": 10,
+      "src": "par_manual",
+      "quote": "Диапазон измеряемых дальностей (емкость счетчика), м 145 - 20000 | Дальность действия до цели типа танк, м не менее 5000 | Максимальная ошибка измерения, м не более 10 (таблица 5.1, с.125)"
+    },
+    "visor_optics": {
+      "magnification": 7,
+      "fov_deg": 6.7,
+      "exit_pupil_mm": 6.4,
+      "eye_relief_mm": 18,
+      "diopter_adjust": "±4",
+      "src": "par_manual",
+      "quote": "Увеличение визира, крат 7 | Поле зрения визира, град 6,7 | Диаметр выходного зрачка, мм 6,4 | Удаление выходного зрачка, мм 18 (таблица 5.1)"
+    },
+    "laser": {
+      "wavelength_um": 1.06,
+      "divergence_arcmin_max": 2,
+      "measurement_rate_hz": 0.2,
+      "ready_time_s": 3,
+      "src": "par_manual",
+      "quote": "Длина волны излучения, мкм 1,06 | Расходимость излучения, с не более 2 | Частота измерения дальности, Гц 0,2 | Время готовности к измерению в нормальных климатических условиях, с не более 3 (таблица 5.1)"
+    },
+    "power": {
+      "voltage_v": "11-14",
+      "current_a_max": 0.8,
+      "battery": "10Д-0,55С-1 (×2 in ЗИП); external 22-29 V / 12-14,5 V / vehicle net 27±2,7 V via защитное устройство",
+      "measurements_per_charge_20c": 600,
+      "measurements_per_charge_minus40c": 200,
+      "src": "par_manual",
+      "quote": "Напряжение питания, В 11—14 | Ток потребления, А не более 0,8 | Ресурс работы с одной зарядки... 600 измерений / 200 измерений (таблица 5.1); батарея 10Д-0,55С-1 (ЗИП, с.132); corroborated by parolab_manual"
+    },
+    "mass_kg": {
+      "rangefinder_unit": 2.5,
+      "combat_position": 5,
+      "transport_full_kit": 15,
+      "src": "par_manual",
+      "quote": "Масса дальномера, кг не более 2,5 | Масса в боевом положении, кг не более 5 | Масса в походном положении, кг не более 15 (таблица 5.1)"
+    },
+    "transport_case_dims_mm": {
+      "length": 550,
+      "width": 337,
+      "height": 283,
+      "src": "par_manual",
+      "quote": "Габаритные размеры в походном положении, мм 550х337х283 (таблица 5.1) — это укладочный ящик, НЕ сам дальномер"
+    },
+    "indicator_fov": {
+      "layout": "dark circular field; near the top a single row of 5 red seven-segment digits (range in metres, counter capacity 20000); decimal points after digits 1, 3 and 5 act as status flags (Рис. 5.4 positions 6,5,2); below centre two round lamps side by side: LEFT = лампа разряда АКБ (RED), RIGHT = лампа готовности (GREEN)",
+      "semantics_no_echo": "no reflected pulse → all digits show zeros (00000)",
+      "semantics_no_probe": "no probing pulse → zeros + decimal point lit in 3rd digit",
+      "semantics_multi_target": "several targets inside the beam gap → decimal point lit in the LOWEST (rightmost) digit; press ИЗМЕРЕНИЕ 2 to range the second target",
+      "semantics_strobe": "decimal point lit in the HIGHEST (leftmost) digit → rotate СТРОБИРОВАНИЕ drum to lower the minimum gated range until it goes out",
+      "src": "par_manual",
+      "quote": "Рисунок 5.4 - Поле зрения индикатора ЛПР-1: 1 - индикатор дальности; 2,5,6 – децимальные точки; 3 - индикатор готовности (зеленого цвета); 4 - индикатор разряда АКБ (красного цвета) (с.129); colour diagram = training_deck slide-9 («Поле зрения окуляров», example reading 15475)"
+    },
+    "visor_reticle": {
+      "layout": "central crosshair of 4 thin line segments with an OPEN CENTRE (разрыв — the laser axis zone); above the centre a vertical column of 4 short horizontal tick marks, mirrored below (4 ticks); left and right of the horizontal arms a row of ~5-6 short vertical tick marks each side (outermost longer); no printed numbers",
+      "smallest_division": "0-05 деления угломера (тысячные)",
+      "illumination": "lamp + fibre-optic bundle, toggled by ПОДСВ tumbler (night use)",
+      "src": "training_deck",
+      "quote": "slide-9 «Поле зрения окуляров» right circle; «Цена наименьшего деления сетки 0-05» (rykovodstvo); «несколько целей в разрыве угломерной сетки» (studopedia_lpr); подсветка via par_manual таблица 5.1 row 'тумблер ВКЛ-ВЫКЛ подсветки сетки визира'"
+    },
+    "front_face": {
+      "layout": "three round features, left→right viewed from the front: SMALL lens «Окно для выхода и приёма отражённого сигнала» (laser window) | LARGE centre lens «Объектив» (deep blue/violet AR coating) | dark textured disc «Патрон осушки» (desiccant cartridge, NOT a lens); the objective rings are proud cast bosses on a gently sloped face",
+      "src": "training_deck",
+      "quote": "slide-10 labeled photo: Окно для выхода и приёма отражённого сигнала / Объектив / Патрон осушки"
+    },
+    "rear_face": {
+      "layout": "sculpted control-panel casting, left→right viewed from the rear: battery compartment cover (round base + black cap with fold-out wire handle, far left, cap retained by cord) | окуляр индикатора (larger soft black rubber eyecup) | tumbler ВЫКЛ-ВКЛ (black lever knob, top left, engraved ВЫКЛ…ВКЛ) | барабан СТРОБИРОВАНИЕ (black knurled drum with white radial scale 0,15-4 + engraved index arrow, top centre) | окуляр визира (narrower black eyecup, violet-coated glass) | plate «ЛПР-1 / ДАЛЬНОМЕР / N …» between/below the eyecups | plate «ПОСЛЕ ОКОНЧАНИЯ / РАБОТЫ ВЫКЛЮЧИ / ПИТАНИЕ И ПОДСВЕТКУ» right of the visor eyecup | tumbler ПОДСВ ВКЛ-ВЫКЛ (bottom right) | разъём выносных кнопок with knurled brass screw cap on cord (bottom centre) | slotted screws around the panel",
+      "src": "training_deck",
+      "quote": "slide-8 (labeled) + slide-18 (closeup, plates legible, serial N 790346); corroborates par_manual Рис. 5.3 list с.127-128"
+    },
+    "top_face": {
+      "layout": "two black rubber-capped buttons ИЗМЕРЕНИЕ 1 / ИЗМЕРЕНИЕ 2 sitting between three raised half-round guard fins, on the top face toward the device-left (laser-window) side; 5 longitudinal stiffening ribs across the body top; cast clamshell joint line with slotted screws",
+      "src": "training_deck",
+      "quote": "slide-10 «Кнопка Измерение 1 / Кнопка Измерение 2» labeled photo; ribs visible in artstation_gerardivn renders + par_manual Рис. 5.3"
+    },
+    "bottom_face": {
+      "layout": "ribbed cast underside (radiating stiffening ribs) with a bare-metal bracket strip carrying the Т-образный паз кронштейна (T-slot for mounting on the УИУ angle device), small dark data plate near the rear edge; патрон осушки cartridge also listed on the bottom inventory",
+      "src": "training_deck",
+      "quote": "slide-11 bottom photo; «кронштейн для установки прибора» (parolab_manual); par_manual list Снизу с.128"
+    },
+    "strap_and_lanyards": {
+      "layout": "dark webbing neck strap attached to lugs at both lower rear corners; on the ArtStation reference unit the webbing is additionally routed OVER the body top through cast lugs, forming a short black carry handle across the spine; khaki cords retain the battery cap and the brass разъём cap; black objective cover (крышка, «3-крышка» in the parts list) closed between work sessions — modeled OFF (in-use look)",
+      "src": "training_deck",
+      "quote": "slide-6 strap visible; over-the-top handle routing per artstation_gerardivn renders (owner-chosen look); cover naming per studfile_lpr1"
+    },
+    "housing": {
+      "construction": "cast light-alloy clamshell: rounded loaf body + sculpted rear control panel joined by slotted screws; stiffening ribs top and bottom",
+      "colour_variants": "olive-khaki on the training-deck unit (slides 8/10/18); ochre/yellow-orange unit in slide-11 + sale listings + the ArtStation reference — the owner's chosen look is the OCHRE variant; black: eyecups, knobs, drum, battery cap, buttons; bare brass: разъём cap, some screws",
+      "src": "training_deck",
+      "quote": "colour comparison across slides 8/10/11/18 + artstation_gerardivn renders; no textual source states the factory standard"
+    },
+    "kit": {
+      "items": "дальномер (monocular unit); углоизмерительное устройство УИУ with магнитная буссоль (горизонт. шкала 0-10 + нониус, верт. 0-05, ±30-00 / ±7-00 guidance); преобразователь координат; треножный штатив; зарядное оборудование; 3 запасные батареи; кабели; дополнительный пульт «Измерение I — Измерение II»; футляры; укладочный ящик",
+      "src": "par_manual",
+      "quote": "Комплект ЛПР-1 (рисунок 5.2), с.126-127; УИУ scales per training_deck slides 12-16 — game models ONLY the hand-held дальномер unit"
+    }
+  },
+  "derivation": {
+    "visor_objective_aperture_mm": {
+      "value": 44.8,
+      "formula": "clear aperture = magnification × exit pupil = 7 × 6.4 mm",
+      "inputs": "visor_optics.magnification (par_manual), visor_optics.exit_pupil_mm (par_manual)",
+      "note": "standard telescope relation; drives the big centre objective glass radius (~22.4 mm)"
+    },
+    "front_aperture_ratios": {
+      "value": "laser window ≈ 0.6-0.7× objective diameter; осушка disc ≈ 0.9× objective diameter",
+      "formula": "photo-measured ratios on training_deck slide-10 (camera near-frontal)",
+      "inputs": "front_face (training_deck)",
+      "note": "published diameters are classified (ДСП); ratios are photo-derived, exact values stay in needs[]"
+    },
+    "body_part_layout_m": {
+      "value": "body loaf X 0.226 × Y 0.116 × Z 0.221 incl. rear eyecups; positions of controls/eyecups/apertures placed by proportional reading of slide-10/slide-18 photos against the 226 mm width",
+      "formula": "feature_x = (pixel offset / body pixel width) × 0.226",
+      "inputs": "body_dims (ru_wikipedia), front_face/rear_face (training_deck)",
+      "note": "honest photo-proportional placement — no invented absolute dims for sub-features"
+    }
+  },
+  "needs": [
+    "exact published diameters of the three front apertures (classified ДСП per guns.ru forum; modeled from derivation.front_aperture_ratios + the 44.8 mm derived visor aperture)",
+    "housing material certificate — cast aluminum vs magnesium alloy unstated in any found source",
+    "factory paint standard — both ochre and olive-khaki photographed in the wild; owner chose ochre per the ArtStation reference",
+    "exact reticle scale span/numbering — only the slide-9 diagram + 0-05 division value found; horizontal span ~±0-30 estimated from tick count, not sourced",
+    "bottom data-plate text — illegible in slide-11; bottom plate omitted from the spec",
+    "objective cover (крышка) geometry — modeled OFF (in-use look); hinge/retainer detail unsourced"
+  ]
+}
