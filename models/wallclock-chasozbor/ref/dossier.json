@@ -1,0 +1,77 @@
+{
+  "id": "wallclock-chasozbor",
+  "title": "Soviet industrial/office analog wall clock — «Стрела» family round metal-rim secondary (slave) clock, ВЧС-type; in-game fictional brand «ЧАСОЗБОР»",
+  "era": "USSR, 1950s–1980s (Strela secondary clocks from the 1950s, 1st Moscow Watch Factory; bakelite/metal factory variants documented through the 1980s)",
+  "sources": [
+    { "id": "pamono-strela-1970s", "url": "https://www.pamono.eu/soviet-industrial-white-bakelite-factory-wall-clock-from-strela-1970s", "note": "Strela factory wall clock, 1970s: 28x28 cm, depth 7 cm, 1.5 kg; 'white bakelite frame, an iron dial and a clear glass cover'; slave clock converted to AA battery." },
+    { "id": "pamono-strela-1980s", "url": "https://www.pamono.com/industrial-white-soviet-bakelite-factory-wall-clock-from-strela-1980s", "note": "Larger Strela factory wall clock, 1980s: diameter 35 cm, depth 8 cm, 1.5 kg. Corroborated by 1stdibs id-f_28167302." },
+    { "id": "ebay-184697768254", "url": "https://www.ebay.com/itm/184697768254", "note": "'Soviet Clock ARROW STRELA. USSR electric wall controllable Watch. Original' — width 282 mm; 'the secondary clock operates from a clock station, which issues pulses'. Bot-gated; captured via search excerpt." },
+    { "id": "ebay-254072102612", "url": "https://www.ebay.com/itm/Vintage-wall-clock-USSR-Soviet-Russian-electric-square-STRELA-/254072102612", "note": "'Strela VChS1 — used in institutions and enterprises of various profiles in the USSR' (ВЧС-1). Search excerpt." },
+    { "id": "litfund-400s2-59", "url": "https://www.litfund.ru/auction/400s2/59/", "note": "«Настенные часы вторичные „Стрела“ для установок единого времени учреждений. СССР, Первый Московский часовой завод, 1950-е гг. Дерево, стекло, металл.»" },
+    { "id": "sfrolov-lj-160854", "url": "https://sfrolov.livejournal.com/160854.html", "note": "Вторичные часы: +24 V DC minute pulses, polarity alternating each minute; 'простой шаговый двигатель и несколько шестеренок'; ubiquitous in Soviet enterprises." },
+    { "id": "habr-996120", "url": "https://habr.com/ru/articles/996120/", "note": "'Управление… минутными импульсами чередующейся полярности по простой двухпроводной линии'." },
+    { "id": "habr-864750", "url": "https://habr.com/ru/articles/864750/", "note": "Corroborates alternating-polarity minute pulses (H-bridge stepper drive)." },
+    { "id": "npk-modul-vchs", "url": "https://npk-modul.ru/view_pribor-temp2.php?id=326", "note": "ВЧС-03/ВЧС-04 successor line: dial diameters 285/320/330 and 350/400 mm; 'Корпус – алюминий…'; 'Стрелки – алюминий и магниилум'; ГОСТ 27576-87." },
+    { "id": "kombitel-vchs03", "url": "https://www.kombitel.ru/catalog/Sistemy-chasofikacii/vtorichnye-strelochnye-chasy/~vtorichnyie-strelochnyie-chasyi--vch-0303-vchs03-/", "note": "ВЧС-03: 'Корпус – алюминий, окрашенный эмалью'; standard version 24 V; ГОСТ 27752-88." },
+    { "id": "yandex-market-vchs285", "url": "https://market.yandex.ru/card/chasy-vtorichnyye-strelochnyye-vchs-0303-285-mm/4428284923", "note": "'ВЧС-03/03 285 мм' — 285 mm as a standard dial size of the ВЧС line." },
+    { "id": "allaudio-strela", "url": "https://all-audio.pro/c36/spravochniki/chasi-strela-nastennie-elektricheskie-sssr-kak-podklyuchit.php", "note": "Hammered enamel («молотковая эмаль») case paint + metal cap over mechanism; convex glass on some models. WEAK: Cloudflare-gated, captured via search excerpts only." }
+  ],
+  "facts": {
+    "case_outer_diameter_mm": { "mm": 282, "src": "ebay-184697768254", "note": "Round metal-cased Strela secondary clock, listed width 282 mm. Family spans ~280 (pamono-strela-1970s) to 350 mm (pamono-strela-1980s)." },
+    "case_depth_mm": { "mm": 70, "src": "pamono-strela-1970s", "note": "Depth of the Ø280 mm Strela sibling (28x28x7 cm). Depth of the 282 mm metal version itself not stated — see needs[]." },
+    "case_diameter_large_variant_mm": { "mm": 350, "src": "pamono-strela-1980s", "note": "Larger factory-hall variant; depth 80 mm." },
+    "weight_kg": { "value": 1.5, "src": "pamono-strela-1970s", "note": "Both Pamono Strela listings state 1.5 kg." },
+    "dial_diameter_standard_mm": { "mm": 285, "src": "npk-modul-vchs", "note": "Smallest standard DIAL diameter of the ВЧС-03 line; the vintage 282 mm figure is the CASE — visible dial opening is smaller (rim width unsourced, see needs[])." },
+    "case_material": { "value": "stamped metal; successor line: aluminium painted with enamel", "src": "kombitel-vchs03", "note": "Litfund lot lists 'металл' among materials." },
+    "finish_hammered_enamel": { "value": "grey hammered enamel («молотковая эмаль») + metal cap over rear mechanism", "src": "allaudio-strela", "note": "WEAK provenance — excerpt-only capture of a gated page." },
+    "dial_material": { "value": "iron/steel sheet dial", "src": "pamono-strela-1970s", "note": "'an iron dial' — both Pamono listings." },
+    "glass_cover": { "value": "clear glass cover over the dial", "src": "pamono-strela-1970s", "note": "Domed/convex glass attested only by the weak allaudio source." },
+    "movement_type": { "value": "secondary (slave) clock: stepping motor + reduction gears behind a rear mechanism cap, no local timekeeping", "src": "sfrolov-lj-160854", "note": "Hands advance one minute per pulse — the in-game metaphor: hands are driven by the central game._worldClock, never by the prop itself." },
+    "pulse_voltage_v": { "value": 24, "src": "sfrolov-lj-160854", "note": "+24 V DC minute pulses from the primary clock station." },
+    "pulse_scheme": { "value": "minute pulses of alternating polarity over a simple two-wire line entering the back of the case", "src": "habr-996120", "note": "Corroborated by sfrolov-lj-160854, habr-864750, npk-modul-vchs." },
+    "no_face_controls": { "value": "no winding or setting elements on the face — drive is entirely external", "src": "sfrolov-lj-160854", "note": "ebay-184697768254: 'operates from a clock station'." },
+    "maker": { "value": "Первый Московский часовой завод, brand «Стрела» (in-game fictionalised as «ЧАСОЗБОР»)", "src": "litfund-400s2-59", "note": "Owner picked the fictional wordmark; dial layout follows the Стрела reference photo." },
+    "model_family": { "value": "ВЧС-1 («Стрела» вторичные часы)", "src": "ebay-254072102612", "note": "Institutional secondary clock." },
+    "deployment": { "value": "unified-time installations: factories, schools, stations, offices", "src": "litfund-400s2-59", "note": "часофикация — practically every Soviet enterprise." },
+    "gost_standard": { "value": "ГОСТ 27752-88 / ГОСТ 27576-87", "src": "kombitel-vchs03", "note": "Standards governing the ВЧС secondary-clock line." }
+  },
+  "derivation": {
+    "visible_dial_diameter_mm": {
+      "formula": "case_outer_diameter_mm − 2 × rim_width_assumed",
+      "inputs": { "case_outer_diameter_mm": "282 (facts.case_outer_diameter_mm)", "rim_width_assumed": "18 mm — ASSUMED from reference photos, unsourced (needs[])" },
+      "result_mm": 246
+    },
+    "minute_hand_length_mm": {
+      "formula": "0.5 × visible_dial_diameter_mm − minute_track_clearance_assumed",
+      "inputs": { "visible_dial_diameter_mm": "246 (derivation.visible_dial_diameter_mm)", "minute_track_clearance_assumed": "8 mm — ASSUMED so the tip kisses the minute track without passing under the rim lip (needs[])" },
+      "result_mm": 115
+    },
+    "hour_hand_length_mm": {
+      "formula": "0.675 × minute_hand_length_mm (midpoint of the 0.65–0.7 hour/minute convention — convention, not a web source)",
+      "inputs": { "minute_hand_length_mm": "115 (derivation.minute_hand_length_mm)" },
+      "result_mm": 78
+    }
+  },
+  "features": [
+    { "name": "round stamped-metal case", "detail": "One-piece round metal rim/case, enamel-painted", "src": "kombitel-vchs03" },
+    { "name": "grey hammered-enamel finish", "detail": "«Молотковая эмаль» + metal cap over the rear mechanism (WEAK: excerpt-only source)", "src": "allaudio-strela" },
+    { "name": "stepped/ribbed rim profile", "detail": "Concentric stepped rings narrowing toward the glass — photo-only detail (needs[])", "src": "allaudio-strela" },
+    { "name": "clear glass cover", "detail": "Clear glass over the dial (domed on some variants — weak source)", "src": "pamono-strela-1970s" },
+    { "name": "iron sheet dial", "detail": "Flat pale dial plate behind the glass", "src": "pamono-strela-1970s" },
+    { "name": "pulse-driven secondary movement", "detail": "Stepper + gears; one minute per 24 V pulse; no crown/keyhole/setting on the face", "src": "sfrolov-lj-160854" },
+    { "name": "rear two-wire terminal", "detail": "Parallel-wired to the clock-station line via a two-wire cable at the back", "src": "habr-996120" },
+    { "name": "«Стрела» branding", "detail": "Wordmark under the 12 with speed-line flourishes (photo); in-game «ЧАСОЗБОР»", "src": "litfund-400s2-59" }
+  ],
+  "needs": [
+    "Dial print details — dash minute track, dots at hour positions, plain sans Arabic numerals 1–12: visible in listing photos but no fetchable textual source; matched to the owner's reference photo at build time.",
+    "«СТРЕЛА» wordmark placement under the 12 — photo-only.",
+    "Ribbed/stepped profile of the metal rim — photo-only; modeled as three concentric tori.",
+    "Keyhole/loop hanger on the back — mounting method unsourced; OMITTED from the model (invisible against a wall).",
+    "Vintage hand colour (black painted) and central hub cap — photo-only.",
+    "Dial base colour (pale ivory/grey enamel) for the metal-cased variant — photo-only.",
+    "rim_width_assumed (18 mm) and minute_track_clearance_assumed (8 mm) used in derivations — assumed from photos, unsourced.",
+    "Case depth of the 282 mm metal variant — 70 mm borrowed from the Ø280 bakelite sibling.",
+    "Domed glass — OMITTED from the model (no transparent material in the voxel palette); flat dial reads fine in-game.",
+    "Vintage ВЧС-1 technical passport (pulse current / coil resistance) — not found online."
+  ]
+}

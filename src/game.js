@@ -4,7 +4,7 @@
 // (guns + melee), a bank-economy survival loop: scavenge pickups, unlock loadout gear in the SHOP, manage a flat 15-slot inventory.
 import * as THREE from 'three';
 import { TAU, randRange } from './util.js';
-import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER } from './tuning.js';
+import { ENEMY_BURN_DUR, FIRE_BURN_TICK, FIRE_DOT_ENEMY, FIRE_POOL_LIFE, FIRE_POOL_MAX, FIRE_POOL_RADIUS, OCCLUSION_INSET, PLAYER_BURN_DUR, WAVE_BREATHER, WORLD_DAY_SEC, WORLD_START_MIN } from './tuning.js';
 import { KILL_CASH } from './economy.js';
 import { buildFlare, buildFlopo } from './props.js';
 import { MountedGun, WeaponSystem, WEAPONS } from './weapons.js';
@@ -14,6 +14,7 @@ import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
+import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
@@ -29,6 +30,7 @@ import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
+import { makeWorldClock, MINUTES_PER_DAY } from './worldclock.js';
 import { EFFECT_TPS, stepEffects } from './effects-status.js';
 
 // Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
@@ -41,6 +43,8 @@ const _registerModels = async () => {
   };
   await load('dshk-ammo-box');
   await load('supply-lootbox');     // «Посылка» lootbox crate (CrateCeremony falls back to a procedural chest if this fails)
+  await load('electronika-clock');   // «Электроника 6.15М» digital desk clock (live VFD reads the world clock)
+  await load('wallclock-chasozbor'); // «ЧАСОЗБОР» analog wall clock (demobuilding hangs it lazily once registered)
 };
 _registerModels();
 
@@ -49,7 +53,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-12 03:28';
+const GAME_BUILD = '2026-06-12 10:36';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -88,6 +92,7 @@ class Game {
     // forest so it can clearArea() the trees on its footprint. Sets game.world.demoBuilding;
     // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
     this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
     const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
@@ -121,6 +126,10 @@ class Game {
     // --- status effects (src/effects-status.js) ---
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
     this._stepFx = () => this._stepEffectsOnce();                       // stable callback for clock.advance
+    // world clock (src/worldclock.js): the always-running day/night time. Host/solo advances the truth + fires
+    // timed day/night transitions; clients predict locally and reconcile to the host's 'night' push.
+    this._worldClock = makeWorldClock({ stepSec: WORLD_DAY_SEC / MINUTES_PER_DAY, startMinute: WORLD_START_MIN });
+    this._stepMinute = (total) => { if (!this.mp.active || this.mp.isHost) this.dayNight.onWorldMinute(total); };
     this._fxCtx = {                                                     // injected side-effect ops (keeps effects-status.js pure)
       isEnemy: (t) => t !== this.player,                               // player-kind handler for the local player; enemy-kind for everything else
       hurtPlayer: (p, dmg) => p._takeSurvivalDamage(dmg, 1),           // bypassArmor=1 in solo; in MP routes claimPlayerHit→hostHurt, which applies armor (bypass NOT forwarded)
@@ -385,7 +394,8 @@ class Game {
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
     if (this.fire) this.fire.clear();
-    this.dayNight.reset(this.mode === 'longnight'); // bright noon for PURGE, dawn-into-night for LONG NIGHT
+    this._worldClock.setTotal(WORLD_START_MIN); // fresh run → world starts at 08:00 (the clock is the source of time)
+    this.dayNight.reset();                       // sky reflects the seeded clock immediately
     this._surviveTime = 0;
     this.score = 0; this.kills = 0;
     this.hud.setHealth(this.player.hp, this.player.maxHp);
@@ -393,7 +403,7 @@ class Game {
     this.hud.setMoney(this.player.money); this.hud.setRadios(this.player.radios);
     this.hud.setHunger(this.player.hunger); this.hud.setSurvival(this.player);
     this.hud.setScore(0); this.hud.setWeapon(this.weapons);
-    this.hud.setNightMode(this.mode === 'longnight'); // shows/hides the clock + gear readout
+    this.hud.setNightMode(true); // the world clock runs in every mode → always show the HH:MM clock + night gear
     this._startCountdown = 0.6; this._waveBreak = 0; this._banked = false; // _banked: per-run guard for bank deposit
   }
   _disposeFlare(f) {
@@ -532,12 +542,12 @@ class Game {
     }
   }
   onNightStart(n, blood) {
-    if (this.mode !== 'longnight') return;
+    // world clock runs in every mode → nightfall is announced everywhere now (was longnight-only)
     if (blood) this.hud.bigMessage('🔴 BLOOD MOON', 'the horde swells — survive it');
     else this.hud.bigMessage(`NIGHT ${n}`, 'darkness falls — watch your back');
     this.audio.waveStart();
   }
-  onDayStart() { if (this.mode === 'longnight') this.hud.bigMessage('DAWN', 'you made it through the night'); }
+  onDayStart() { this.hud.bigMessage('DAWN', 'you made it through the night'); }
   useRadio() {
     if (this.state !== 'playing') return;
     if ((this.player.radios || 0) <= 0) { this.hud.bigMessage('NO RADIO', 'kill a backpack courier to get one'); this.audio.noMoney(); return; }
@@ -675,7 +685,7 @@ class Game {
     this._clearFlares();
     if (this._clearMolotovPools) this._clearMolotovPools();
     if (this.fire) this.fire.clear();
-    this.dayNight.reset(this.mode === 'longnight');
+    this.dayNight.reset();
     if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false); // lobby plays the shuffled song jukebox
     this.hud.setBleed(-1); this.hud.hideBoss(); this.hud.clearWaveTag();
     const lab = document.getElementById('mp-labels'); if (lab) lab.style.display = 'none';
@@ -864,6 +874,7 @@ class Game {
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
     if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
+    if (this.arenaClocks) this.arenaClocks.update(dt); // arena: drive both spawn-side clocks from the world clock
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
     if (sim) this.enemies.update(dt);
@@ -873,7 +884,13 @@ class Game {
     if (sim) this.waves.update(dt);
     this.mp.update(dt);
     this._updateAdaptiveMusic();
-    if (this.mode === 'longnight') { if (hostSim) { this._surviveTime += dt; this.dayNight.update(dt); } this.hud.setClock(this.dayNight.info(), this._surviveTime); } // host advances clock + sky; clients adopt host state via 'night'/'clock'
+    // World clock advances every frame in every mode. Host/solo = authoritative (advances the truth + fires timed
+    // transitions via _stepMinute); clients predict locally for smooth HH:MM and reconcile to the host's 'night' push.
+    if (hostSim) this._worldClock.advance(dt, this._stepMinute);
+    else this._worldClock.advance(dt);
+    if (this.mode === 'longnight' && hostSim) this._surviveTime += dt; // run-duration record for the game-over screen (longnight only)
+    this.dayNight.renderFrom(this._worldClock); // sky from minute-of-day + alpha (host + client)
+    this.hud.setClock(this.dayNight.info(), this._worldClock);
     this._updateFlares(dt);       // flare is a deployable gadget in EVERY mode → tick gravity/burn/smoke unconditionally (mirrors _updateMolotovPools), else a flare thrown in purge hangs in mid-air
     this._updateMolotovPools(dt);
     if (this.fire) this.fire.update(dt); // Phase 8: ember-chain spread + burn-through (own fixed clock; reads molotovPools as sources)

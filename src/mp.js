@@ -142,6 +142,7 @@ export class MP {
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
     this._xfT = 0; this._snapT = 0; this._reviveClicks = 0; this._reviveTargetId = null; this._reviveActive = false; this._incomingRevive = null; this._reviveHostProgress = new Map(); this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
+    this._lastClockDrift = null; // client: last measured world-clock prediction error vs host (minutes), for /time check
     this.frozen = false; this._localDown = false; this._localDead = false; this._localWaiting = false; this._spilledLoot = false;
     this.spectateTarget = null;
     this._bleedT = 0; this._bleedShown = false; // local bleed-out bar state
@@ -633,7 +634,8 @@ export class MP {
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
     n.on('wave', (d) => { g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); }); // continuous: clients just track the wave (no shop)
     n.on('wavetag', (d) => { if (!this.isHost && d) g.hud.setWaveTag(d.tags || []); });                  // host-authoritative special-wave tag (set/clear)
-    n.on('night', (d) => { if (!this.isHost && d) g.dayNight.applyNetState(d); });                       // host-authoritative day/night + blood-moon (clients never roll their own)
+    n.on('night', (d) => { if (!this.isHost && d) g.dayNight.applyNetState(d); });                       // host-authoritative world clock + day/night + blood-moon (clients reconcile, never roll their own)
+    n.on('timereq', (d, from) => { if (this.isHost && d && Number.isFinite(d.min)) g.dayNight.setMinuteOfDay(d.min); }); // client asked host to set time → host applies (setMinuteOfDay re-renders + broadcasts)
     n.on('clock', (d) => { if (!this.isHost && d) { if (typeof d.t === 'number') g._surviveTime = d.t; if (typeof d.left === 'number') g.hud.setEnemiesLeft(d.left); } }); // host-authoritative survive-clock + enemies-left
     n.on('waveclear', (d) => { if (g.state === 'playing') g.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); });
     n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from); });
@@ -729,7 +731,7 @@ export class MP {
       this._clockT -= dt;
       if (this._clockT <= 0) { this._clockT = 0.5; const left = g.waves.active ? g.waves.toSpawn + g.enemies.aliveCount : g.enemies.aliveCount; this.net.send('clock', { t: g._surviveTime, left }); }
       this._nightT -= dt;
-      if (this._nightT <= 0) { this._nightT = 2; this.sendWorldTime(); }
+      if (this._nightT <= 0) { this._nightT = 1; this.sendWorldTime(); } // ~1s world-clock push; clients predict locally between pushes + reconcile
     } else {
       for (const [, e] of this.ghosts) {
         if (!e.alive) continue;
@@ -1030,7 +1032,7 @@ export class MP {
   }
   worldTimeState() {
     const g = this.game;
-    return { mode: g.mode || 'purge', active: !!(g.dayNight && g.dayNight.active), t: g.dayNight.t, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon };
+    return { mode: g.mode || 'purge', active: true, total: g._worldClock.total, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon };
   }
   sendWorldTime(pid = null) {
     if (!this.active || !this.isHost) return;
@@ -1038,6 +1040,8 @@ export class MP {
     if (pid) this.net.sendTo(pid, 'night', d);
     else this.net.send('night', d);
   }
+  // client → host: ask the host (the time authority) to set the clock to a minute-of-day. Host applies + broadcasts.
+  requestSetTime(minuteOfDay) { if (this.active && !this.isHost) this.net.send('timereq', { min: minuteOfDay }); }
   _hostGone() { if (!this.active) return; this.active = false; try { this.game.hud.bigMessage('HOST LEFT', 'returning to menu…'); } catch (e) {} this.leave(); this.game.toMenu(); }
   _checkGameOver() {
     if (!this.isHost || !this.active) return;

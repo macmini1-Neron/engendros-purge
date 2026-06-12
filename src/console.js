@@ -2,6 +2,7 @@
 // Pure parsing lives in console-core.js; this wires commands to live game subsystems.
 import * as THREE from 'three';
 import { createRegistry, suggest, highlight } from './console-core.js';
+import { parseHHMM, formatHHMM, keywordMinute } from './worldclock.js';
 import { ENEMY_TYPES } from './enemies.js';
 import { WEAPONS, WEAPON_ORDER } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
@@ -99,9 +100,38 @@ export class DevConsole {
       },
     });
 
+    // /time → status (+ co-op Δ vs host) · /time set HH:MM|<phase> · /time check
+    const timeStatus = () => {
+      const wc = g._worldClock; const base = `${formatHHMM(wc.minuteOfDay())} · day ${wc.day() + 1}`;
+      if (!g.mp.active) return base;                            // solo: the local clock IS the authority
+      if (g.mp.isHost) return `${base} · host (time authority)`;
+      const drift = g.mp._lastClockDrift;                       // client: last measured prediction error vs host
+      return `${base} · Δ host ${drift == null ? '—' : (drift > 0 ? '+' : '') + drift + 'm'}`;
+    };
+    const timeCheck = () => {
+      if (!g.mp.active) return 'solo — clock is locally authoritative (always in sync)';
+      if (g.mp.isHost) return 'host — you ARE the time authority';
+      const drift = g.mp._lastClockDrift;
+      if (drift == null) return 'client — no host clock received yet';
+      return Math.abs(drift) <= 1 ? `✓ IN SYNC (Δ host ${drift > 0 ? '+' : ''}${drift}m ≤ 1)` : `✗ OUT OF SYNC (Δ host ${drift}m)`;
+    };
     this.reg.register('time', {
-      args: [{ name: 'op', type: 'enum', choices: ['set'] }, { name: 'phase', type: 'enum', choices: ['day', 'night', 'noon', 'dusk', 'dawn', 'midnight'] }],
-      run: (a) => { if (!(g.dayNight && g.dayNight.setTime)) return 'Day/night not available'; g.dayNight.setTime(a.phase); return `Time set to ${a.phase}`; },
+      args: [
+        { name: 'op', type: 'word', optional: true, suggest: ['set', 'check'] },
+        { name: 'val', type: 'word', optional: true, suggest: ['dawn', 'noon', 'dusk', 'midnight'] },
+      ],
+      run: (a) => {
+        if (!g._worldClock || !g.dayNight) return 'World clock not available';
+        if (!a.op) return timeStatus();
+        if (a.op === 'check') return timeCheck();
+        if (a.op !== 'set') return '/time: use  set <HH:MM|phase>  ·  check  ·  (no args = status)';
+        if (a.val == null) return 'usage: /time set <HH:MM | dawn | noon | dusk | midnight>';
+        let min = parseHHMM(a.val); if (min == null) min = keywordMinute(a.val);
+        if (min == null) return `/time set: "${a.val}" is not HH:MM (e.g. 20:18) or a phase (dawn/noon/dusk/midnight)`;
+        if (g.mp.active && !g.mp.isHost) { g.mp.requestSetTime(min); return `→ asked host to set ${formatHHMM(min)} (host-authoritative)`; }
+        g.dayNight.setMinuteOfDay(min);
+        return `Time set to ${formatHHMM(min)}`;
+      },
     });
 
     // P1-P2 wired effects only (burn stays on its legacy/co-op path until P3) + heal/hurt/clear.

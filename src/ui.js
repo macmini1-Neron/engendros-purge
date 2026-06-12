@@ -7,6 +7,7 @@ import { ITEM_DEFS } from './loot.js';
 import { mpEscape } from './mp.js';
 import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
 import { EFFECTS, EFFECT_TPS } from './effects-status.js';
+import { formatHHMM } from './worldclock.js';
 
 
 // ---------------------------------------------------------------------------
@@ -151,12 +152,11 @@ export class HUD {
     if (this.el.nightgear) this.el.nightgear.classList.toggle('show', on);
     if (on) this.setNightGear(this.game);
   }
-  setClock(info, survive) {
+  setClock(info, wc) {
     if (!this.el.clock) return;
-    const s = Math.floor(survive), mm = Math.floor(s / 60), ss = String(s % 60).padStart(2, '0');
     const glyph = info.blood ? icon('blood') : (info.night ? icon('moon') : icon('sun'));
-    const label = info.blood ? 'BLOOD MOON' : (info.night ? 'Night ' + info.n : 'Day');
-    this.el.clock.innerHTML = `${glyph} ${label} <b>·</b> ${mm}:${ss}`;
+    const label = info.blood ? 'BLOOD MOON' : (info.night ? 'NIGHT ' + info.n : 'DAY');
+    this.el.clock.innerHTML = `${glyph} ${formatHHMM(wc.minuteOfDay())} <b>·</b> ${label}`;
   }
   setNightGear(g) {
     if (!this.el.nightgear) return;

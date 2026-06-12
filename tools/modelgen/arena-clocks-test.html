@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>arena clocks stand — both displays</title>
+<style>html,body{margin:0;height:100%;background:#1a1410;overflow:hidden}#info{position:fixed;left:8px;top:6px;color:#6a6;font:12px monospace}</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="info">loading…</div>
+<script type="module">
+import * as THREE from 'three';
+import { registerModel } from '../../src/props/registry.js';
+import { ArenaClocks } from '../../src/arenaclocks.js';
+import { formatHHMM } from '../../src/worldclock.js';
+
+const q = new URLSearchParams(location.search);
+const minute = parseInt(q.get('m') || String(10 * 60 + 10), 10);   // default 10:10
+const night = q.get('night') === '1';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(night ? 0x05060a : 0x6b7a86, 1);  // dim sky vs night
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+// ground hint
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ color: night ? 0x20242a : 0x9a8a6a }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+
+const cam = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.05, 200);
+cam.position.set(0.6, 1.45, 33.6);             // ~3.4 m in front of the stand, eye height
+cam.lookAt(0, 1.18, 37);
+
+scene.add(new THREE.AmbientLight(0xffffff, night ? 0.06 : 0.6));
+const dl = new THREE.DirectionalLight(night ? 0x6f86c0 : 0xfff2e0, night ? 0.10 : 1.0); dl.position.set(6, 12, 24); scene.add(dl);
+
+(async () => {
+  for (const id of ['electronika-clock', 'wallclock-chasozbor']) {
+    const spec = await (await fetch(`../../models/${id}/spec.json`)).json();
+    registerModel(id, spec);
+  }
+  const game = { mapId: 'arena', world: { scene }, _worldClock: { minuteOfDay: () => minute, alpha: 0 } };
+  const clocks = new ArenaClocks(game);
+  document.getElementById('info').textContent = `arena stand · ${formatHHMM(minute)} · night=${night}`;
+  function loop() { clocks.update(1 / 60); renderer.render(scene, cam); requestAnimationFrame(loop); }
+  loop();
+  window.__READY__ = true;
+})().catch(e => { document.getElementById('info').textContent = 'ERR ' + e; window.__ERR__ = String(e && e.stack || e); });
+</script>
+</body>
+</html>

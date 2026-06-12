@@ -62,8 +62,11 @@ export const BOSS_ROSTER = ['boss']; // 'boss' = Tolo (tank boss removed)
 // starfield, a blood-moon variant and the player flashlight. In PURGE mode it
 // is idle (held at bright noon).
 // ---------------------------------------------------------------------------
-export const NIGHT_CYCLE = 200;  // seconds for a full day→night→dawn
-export const DAY_FRAC = 0.45;    // share of the cycle that is daytime
+export const NIGHT_CYCLE = 200;  // [legacy/unused] superseded by the worldclock (src/worldclock.js); kept for SKYC neighbours
+export const DAY_FRAC = 0.45;    // [legacy/unused] day/night split now lives in worldclock.js (DAY_START_MIN..DAY_END_MIN)
+// World clock (src/worldclock.js) — the live day/night timing. Feel knobs:
+export const WORLD_DAY_SEC = 1200;  // real seconds for one full in-game day = 20 min (→ 10 min day / 10 min night, 50:50)
+export const WORLD_START_MIN = 480; // 08:00 — the time of day a fresh run/world starts at
 export const SKYC = {
   dTop: new THREE.Color(0x3f8fd0), dMid: new THREE.Color(0xbfe3f2), dBot: new THREE.Color(0xe9dcc0),
   nTop: new THREE.Color(0x04060f), nMid: new THREE.Color(0x070a18), nBot: new THREE.Color(0x0c0e1c),
