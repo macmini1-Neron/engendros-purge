@@ -36,7 +36,7 @@ import * as THREE from 'three';
 import { makeRNG, voxelMaterial, clamp, TAU } from './util.js';
 import { makeTree, SPECIES } from './props/generators/tree.js';
 import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, rayAABB } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, rayAABB, resolveHit } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
 import { hasModel, getSpec } from './props/registry.js';
 import { buildSpec } from './props/voxel-interp.js';
@@ -445,6 +445,36 @@ export class Forest {
   fellTreeById(id, dx, dz, seed) { const t = this._treeById(id); if (t) this.fellTree(t, (dx || dz) ? [dx, dz] : null, seed); }
   charTreeById(id)               { const t = this._treeById(id); if (t) this.charTree(t); }
   consumeGrassById(id)           { const rec = this.cover.find(c => c.id === id); if (rec) this._consumeGrass(rec); }
+
+  // ── PROP destruction (mirrors the tree path; "consume in place", no FallingBody) ──────
+  // A bullet resolved onto a prop part: pen<tier ⇒ cosmetic (caller already drew a chip);
+  // else damage, and on death the prop is removed. `point`=[x,y,z] impact for the debris burst.
+  hitProp(rec, weapon, point) {
+    if (!rec || rec.dead || !rec.part || rec.part.dead) return null;
+    const r = resolveHit(rec.part, weapon);
+    if (r.killed) this.destroyProp(rec, point);
+    else if (r.effect === 'damage' && this.debris) this.debris.burst(MATERIALS[rec.dmat].debris, point, (rec.id ^ 0x55) >>> 0);
+    return r;
+  }
+
+  // Remove a prop: hide its mesh, drop its collider, burst material debris, broadcast to peers.
+  // `at`=[x,y,z] for the debris burst (defaults to the prop centre, e.g. the client mirror path).
+  destroyProp(rec, at = null) {
+    if (!rec || rec.dead) return;
+    rec.dead = true; if (rec.part) rec.part.dead = true;
+    if (rec.obj) rec.obj.visible = false;
+    if (rec.box) { this._removeBox(rec.box); rec.box = null; }
+    const where = at || [rec.pos.x, rec.pos.y + 0.3, rec.pos.z];
+    if (this.debris) this.debris.burst(MATERIALS[rec.dmat].debris, where, (rec.id * 2654435761) >>> 0);
+    this._emitForest('propdie', rec.id);   // host-auth: one bit — "this prop is gone"
+  }
+
+  // Fire burned a wood/grass prop out → same removal (the char/ash flourish is cosmetic).
+  consumeProp(rec) { this.destroyProp(rec); }
+
+  // Client mirror of a host 'propdie' (idempotent; destroyProp guards on rec.dead; the host guard
+  // in _emitForest stops a client echo).
+  destroyPropById(id) { const rec = this._props.find(r => r.id === id); if (rec) this.destroyProp(rec); }
 
   // Burn a grass tuft out (visual + part death). Host path also broadcasts so clients match;
   // the fire system (host) calls this from _burnout, the net handler calls consumeGrassById.
