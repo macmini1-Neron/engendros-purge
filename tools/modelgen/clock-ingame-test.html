@@ -27,10 +27,13 @@ const cam = new THREE.PerspectiveCamera(34, window.innerWidth / window.innerHeig
 cam.position.set(0.14, 0.105, 0.30);
 cam.lookAt(0, 0.045, 0);
 
-// dim interior light so the voxel red reads but the VFD glow dominates
-scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-const dl = new THREE.DirectionalLight(0xfff2e0, 0.9); dl.position.set(0.4, 0.8, 0.6); scene.add(dl);
-const dl2 = new THREE.DirectionalLight(0x88aaff, 0.25); dl2.position.set(-0.5, 0.2, 0.3); scene.add(dl2);
+// lighting: day = dim interior; night (?night=1) = near-dark, only faint moonlight, so the
+// self-lit VFD (MeshBasic) dominates exactly like a real Электроника on a nightstand.
+const night = q.get('night') === '1';
+if (night) renderer.setClearColor(0x05060a, 1);
+scene.add(new THREE.AmbientLight(0xffffff, night ? 0.05 : 0.55));
+const dl = new THREE.DirectionalLight(night ? 0x6f86c0 : 0xfff2e0, night ? 0.10 : 0.9); dl.position.set(0.4, 0.8, 0.6); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0x88aaff, night ? 0.04 : 0.25); dl2.position.set(-0.5, 0.2, 0.3); scene.add(dl2);
 
 (async () => {
   // EXACTLY the game path: register spec → placeProp → mount the live VFD → drive from worldclock.
