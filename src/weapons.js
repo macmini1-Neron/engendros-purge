@@ -1630,11 +1630,16 @@ export class WeaponSystem {
     const cam = this.game.engine.camera;
     const origin = cam.getWorldPosition(this._tmp);
     const dir = cam.getWorldDirection(this._tmp2);
+    // The beam catches whatever a bullet would, PLUS terrain: world.rayHit marches the heightfield
+    // (_rayTerrain) on terrain maps and falls to the ground plane on flat ones — so hills/slopes range
+    // correctly. Also enemies + co-op teammates (force=true: ranging an ally isn't shooting them).
     const wHit = this.game.world.rayHit(origin, dir, 20000);
     const eHit = this.game.enemies.rayHit(origin, dir, 20000);
-    const dist = Math.min(wHit ? wHit.dist : Infinity, eHit ? eHit.dist : Infinity);
-    // 145 m strobe floor / 20 km counter capacity (ТТХ row 1) — outside that the display shows zeros (no echo)
-    this.lprValue = (isFinite(dist) && dist >= 145 && dist <= 20000) ? Math.round(dist) : 0;
+    const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(origin, dir, 20000, true) : null;
+    const dist = Math.min(wHit ? wHit.dist : Infinity, eHit ? eHit.dist : Infinity, pHit ? pHit.dist : Infinity);
+    // Min 1 m (our maps are sub-km — the real 145 m strobe floor would read 00000 everywhere); 20 km
+    // counter cap kept. Outside that → zeros (no echo), like the real indicator.
+    this.lprValue = (isFinite(dist) && dist >= 1 && dist <= 20000) ? Math.round(dist) : 0;
     this.game.audio.lprPulse();                       // ИЗМЕРЕНИЕ click + capacitor whine
   }
 
