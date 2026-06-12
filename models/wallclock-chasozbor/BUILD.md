@@ -43,3 +43,14 @@ const a = handAngles(wc.minuteOfDay() + wc.alpha);
 hourNode.rotation.z = -a.hourRad;     // nodes found via group.getObjectByName('handHour'/'handMinute')
 minuteNode.rotation.z = -a.minuteRad; // negative z = clockwise on the +Z-facing dial
 ```
+
+## In-game verification (Phase 3, ?map=demo)
+
+- Programmatic 1:1: `/time`-equivalent `setTotal` at 12:00 / 18:00 / 06:00 / 10:09 / 00:00 —
+  hand rotations match `-handAngles()` within ≤ 0.001 rad (residual = live `alpha` drift
+  between set and read, i.e. the smooth interpolation itself). God mode needed: the sim
+  (and thus the clock) correctly FREEZES on player death — first run died mid-assert.
+- Live ticking: unattended hands tracked 08:00 → 08:35.7 exactly (≈30 real s at 0.833 s/min).
+- Visual: `renders/ingame-1009.png` (wall context) + `renders/ingame-close.png` (dial fully
+  readable in-game, hands at 10:09). WebGL canvas needs an explicit `GAME.engine.render()`
+  in the same JS task before `toDataURL` (no preserveDrawingBuffer).
