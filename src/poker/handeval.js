@@ -69,3 +69,26 @@ export function evaluate(cards) {
 }
 
 export const evaluate7 = evaluate;
+
+// Plain-English description of a hand rank for the showdown readout (newbie-friendly),
+// e.g. { cat:6, ranks:[13,14] } -> "Full House, Kings full of Aces".
+const RANK_1 = { 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five', 6: 'Six', 7: 'Seven', 8: 'Eight', 9: 'Nine', 10: 'Ten', 11: 'Jack', 12: 'Queen', 13: 'King', 14: 'Ace' };
+const RANK_N = { 2: 'Twos', 3: 'Threes', 4: 'Fours', 5: 'Fives', 6: 'Sixes', 7: 'Sevens', 8: 'Eights', 9: 'Nines', 10: 'Tens', 11: 'Jacks', 12: 'Queens', 13: 'Kings', 14: 'Aces' };
+
+export function describeHand(rank) {
+  if (!rank) return '';
+  const r = rank.ranks || [];
+  const one = (x) => RANK_1[x] || String(x);
+  const many = (x) => RANK_N[x] || String(x);
+  switch (rank.cat) {
+    case 8: return r[0] === 14 ? 'Royal Flush' : `Straight Flush, ${one(r[0])}-high`;
+    case 7: return `Four of a Kind, ${many(r[0])}`;
+    case 6: return `Full House, ${many(r[0])} full of ${many(r[1])}`;
+    case 5: return `Flush, ${one(r[0])}-high`;
+    case 4: return `Straight, ${one(r[0])}-high`;
+    case 3: return `Three of a Kind, ${many(r[0])}`;
+    case 2: return `Two Pair, ${many(r[0])} and ${many(r[1])}`;
+    case 1: return `Pair of ${many(r[0])}`;
+    default: return `High Card, ${one(r[0])}`;
+  }
+}

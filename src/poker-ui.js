@@ -2,6 +2,7 @@
 // view-model from PokerTable and emits semantic actions; a future PokerSceneRenderer (THREE 3D
 // table/chips/cards) can replace this with the same inputs. Aesthetic: a plain, worn table —
 // NOT casino felt. No THREE here; pure DOM. POLYMER tokens reused for the chrome.
+import { describeHand } from './poker/handeval.js';
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RCH = { 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -283,8 +284,19 @@ export class PokerDomRenderer {
 
   _bannerText(p, winners) {
     if (p.over) return (winners && Object.keys(winners)[0] === p.youId) ? '🏆 YOU WON THE TOURNAMENT' : 'TOURNAMENT OVER';
-    if (p.result) { const ids = winners ? Object.keys(winners) : []; return ids.length ? ('Pot to: ' + ids.map((id) => this._rawName(id, p)).join(' + ')) : ''; }
-    return '';
+    if (!p.result || !winners) return '';
+    const ids = Object.keys(winners).sort((a, b) => winners[b] - winners[a]);
+    if (!ids.length) return '';
+    const reveals = (p.result.reveals || []);
+    if (reveals.length) {                                   // showdown — name the winning hand
+      const rankOf = {};
+      for (const rv of reveals) rankOf[rv.id] = rv.rank;
+      return ids.map((id) => {
+        const d = rankOf[id] ? describeHand(rankOf[id]) : '';
+        return `${this._rawName(id, p)} wins ${winners[id]}${d ? ' · ' + d : ''}`;
+      }).join('     ');
+    }
+    return ids.map((id) => `${this._rawName(id, p)} wins ${winners[id]}`).join(' · '); // uncontested (cards mucked)
   }
 
   _rawName(id, p) { return (p.names && p.names[id]) || (id === p.youId ? 'YOU' : id.toUpperCase()); }
