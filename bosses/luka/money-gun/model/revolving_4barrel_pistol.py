@@ -646,9 +646,9 @@ def build_lock():
 # more UPRIGHT rake (~58deg from horizontal) to match the reference (pommel
 # brought forward); wrist still overlaps the breech rear.
 GRIP_PROFILE = [
-    (-0.122, -0.018), (-0.124, -0.038), (-0.129, -0.058), (-0.140, -0.075), (-0.154, -0.085),
-    (-0.170, -0.086),
-    (-0.186, -0.062), (-0.182, -0.046), (-0.170, -0.026), (-0.153, -0.007), (-0.138, 0.003),
+    (-0.122, -0.018), (-0.122, -0.039), (-0.125, -0.060), (-0.135, -0.077), (-0.150, -0.086),
+    (-0.168, -0.088),
+    (-0.185, -0.063), (-0.181, -0.046), (-0.169, -0.026), (-0.153, -0.007), (-0.138, 0.003),
 ]
 GRIP_HW = 0.0112                      # grip half-thickness (Y) -> ~22mm (much slimmer per owner)
 GRIP_BELLY = GRIP_PROFILE[0:5]        # neck -> toe (front edge)
