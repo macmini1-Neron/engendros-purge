@@ -918,12 +918,12 @@ class Game {
   explode(pos, opts = {}) {
     const { radius = 5, dmg = 0, enemyDmg = dmg, source = 'explosion', except = null,
             harmEnemies = true, harmPlayers = true, clearLoot = true, destroy = true,
-            isRocket = false, visual = true, shake = 0, net = true } = opts;
+            isRocket = false, visual = true, shake = 0, net = true, attacker = 'host' } = opts;
     if (visual) this.effects.explosion(pos, radius);          // explosion() also plays audio.explosion()
     if (shake && this.engine.shake) this.engine.shake(shake);
     const hostSim = !this.mp.active || this.mp.isHost;
     if (hostSim) {
-      if (harmEnemies) this.enemies.damageInRadius(pos, radius, enemyDmg, except, source);
+      if (harmEnemies) this.enemies.damageInRadius(pos, radius, enemyDmg, except, source, attacker);
       if (harmPlayers) this._explodeHurt(pos, radius, dmg); // includes the FAB-500 chain
       if (clearLoot) this.loot.clearPickupsInRadius(pos.x, pos.z, radius);
       if (destroy) this._demoBlast(pos, radius, isRocket);  // trees/props/building/fire (no-op without a forest/demo building)

@@ -1073,11 +1073,11 @@ export class EnemyManager {
     return false;
   }
 
-  damageInRadius(center, radius, dmg, except = null, source = 'explosion') {
+  damageInRadius(center, radius, dmg, except = null, source = 'explosion', attacker = 'host') {
     for (const e of [...this.active]) {
       if (!e.alive || e === except) continue;
       const d = Math.hypot(e.pos.x - center.x, e.pos.z - center.z);
-      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center);
+      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center, attacker); // attacker forwarded so co-op AoE kills credit the real thrower, not the host
     }
   }
   clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; if (this._bossBlob) this._bossBlob.visible = false; }
