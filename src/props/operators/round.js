@@ -99,6 +99,105 @@ function _bodyTexture(baseHex, marks) {
   return tex;
 }
 
+// wheel — a detailed road wheel: a dark rubber tyre over a lighter proud hub drum + centre cap +
+// a ring of lug bolts. `twin:true` → a dual wheel (two tyres side by side, a heavy-trailer bogie),
+// each tyre showing its hub on the OUTBOARD face. Round (THREE-bound, browser-verified). Args:
+// r (tyre outer radius), w (single-tyre width). Opts: axis ('x' default — axle along X, wheel faces
+// ±X), lugs (bolt count, 8), twin, hub (default on), face (+1/−1 outboard for a single wheel), seg.
+export function wheel(b, a, t, o) {
+  const r = a.r, w = a.w, axis = a.axis ?? 'x', seg = a.seg ?? 22;
+  const lugs = a.lugs ?? 8, twin = !!a.twin, hub = a.hub !== false, face = a.face ?? 1;
+  const or = ORIENT[axis];
+  const B = {                                              // axle dir AX + the two in-face axes U,V
+    x: { AX: [1, 0, 0], U: [0, 1, 0], V: [0, 0, 1] },
+    y: { AX: [0, 1, 0], U: [1, 0, 0], V: [0, 0, 1] },
+    z: { AX: [0, 0, 1], U: [1, 0, 0], V: [0, 1, 0] },
+  }[axis];
+  const P = (du, dv, dax) => [
+    o.x + B.U[0] * du + B.V[0] * dv + B.AX[0] * dax,
+    o.y + B.U[1] * du + B.V[1] * dv + B.AX[1] * dax,
+    o.z + B.U[2] * du + B.V[2] * dv + B.AX[2] * dax,
+  ];
+  const cyl = (rad, len, dax, tone) => {
+    const g = new THREE.CylinderGeometry(rad, rad, len, seg);
+    b.geo(g, ...P(0, 0, dax), tone, { ...or, tint: 0.02 });
+    g.dispose();
+  };
+  const dome = (rad, dax, out, tone) => {                  // a rounded hub-cap hemisphere, bulging outboard
+    const g = new THREE.SphereGeometry(rad, seg, Math.max(6, seg >> 1), 0, Math.PI * 2, 0, Math.PI / 2);
+    const rot = axis === 'x' ? { rz: out > 0 ? -Math.PI / 2 : Math.PI / 2 }
+              : axis === 'z' ? { rx: out > 0 ? Math.PI / 2 : -Math.PI / 2 }
+              : (out > 0 ? {} : { rx: Math.PI });           // +Y-pole hemisphere → aim pole along the axle
+    b.geo(g, ...P(0, 0, dax), tone, { ...rot, tint: 0.02 });
+    g.dispose();
+  };
+  const discs = twin ? [-w * 0.52, w * 0.52] : [0];        // tyre-centre offsets along the axle
+  for (const c of discs) {
+    const out = c > 0 ? 1 : c < 0 ? -1 : face;             // outboard face direction for this tyre
+    cyl(r, w, c, t.lo);                                     // rubber tyre (dark; capped flat face)
+    if (hub) {
+      const hubR = r * 0.5;
+      cyl(hubR, w * 0.5, c + out * w * 0.24, t.mid);        // hub drum base (mid)
+      for (let i = 0; i < lugs; i++) {                      // lug bolts ringed around the hub
+        const ang = (i / lugs) * Math.PI * 2, rl = hubR * 0.8;
+        b.box(0.05, 0.05, 0.05, ...P(Math.cos(ang) * rl, Math.sin(ang) * rl, c + out * w * 0.48), t.hi);
+      }
+      dome(hubR * 0.82, c + out * w * 0.4, out, t.bright);  // proud rounded hub-cap dome
+    }
+  }
+}
+
+// pipe — a bent tube / conduit run (a waveguide, cable duct, brake line, handrail): a chain of
+// cylinder segments threaded through `pts` with a ball joint at each interior bend, so it follows any
+// 3-D path smoothly (uses geo()'s `align` to aim each segment). Round (THREE-bound, browser-verified).
+// Args: pts (array of [x,y,z] offsets from `at`), r (tube radius). Opts: seg, tone, joints (default on).
+export function pipe(b, a, t, o) {
+  const r = a.r, seg = a.seg ?? 10, tone = a.tone ? t[a.tone] : t.hi, joints = a.joints !== false;
+  const V = (a.pts || []).map((p) => new THREE.Vector3(o.x + p[0], o.y + p[1], o.z + p[2]));
+  for (let i = 0; i < V.length - 1; i++) {
+    const dir = V[i + 1].clone().sub(V[i]), len = dir.length();
+    if (len < 1e-4) continue;
+    const mid = V[i].clone().add(V[i + 1]).multiplyScalar(0.5);
+    const g = new THREE.CylinderGeometry(r, r, len, seg);
+    b.geo(g, mid.x, mid.y, mid.z, tone, { align: dir, tint: 0.02 });
+    g.dispose();
+  }
+  if (joints) for (let i = 1; i < V.length - 1; i++) {        // ball joints at the bends
+    const g = new THREE.SphereGeometry(r * 1.2, seg, Math.max(5, seg >> 1));
+    b.geo(g, V[i].x, V[i].y, V[i].z, tone, { tint: 0.02 });
+    g.dispose();
+  }
+}
+
+// tubeMast — a tapered tubular lattice tower / derrick of round tubes that converges toward an apex:
+// 4 corner legs from a base rectangle up to a smaller top rectangle (topW/topD→~0 gives a point apex),
+// with a horizontal ring + X cross-braces on each face at every level. Round (THREE-bound). Args:
+// baseW, baseD, h. Opts: topW, topD (top footprint, default 0.2 = near-point apex), r (leg tube radius),
+// levels (brace stations), apexZ (lean the top along Z), tone.
+export function tubeMast(b, a, t, o) {
+  const bw = a.baseW, bd = a.baseD, h = a.h;
+  const tw = a.topW ?? 0.2, td = a.topD ?? 0.2, r = a.r ?? 0.06, levels = a.levels ?? 3;
+  const tone = a.tone ? t[a.tone] : t.hi, apexZ = a.apexZ ?? 0;
+  const corner = (i, f) => {                                  // corner i (0..3) at height fraction f
+    const sx = (i & 1) ? 1 : -1, sz = (i & 2) ? 1 : -1;
+    const w = bw + (tw - bw) * f, d = bd + (td - bd) * f;
+    return new THREE.Vector3(o.x + sx * w / 2, o.y + f * h, o.z + apexZ * f + sz * d / 2);
+  };
+  const seg = (p, q, rad, tn) => {                            // one tube p→q
+    const dir = q.clone().sub(p), len = dir.length(); if (len < 1e-4) return;
+    const mid = p.clone().add(q).multiplyScalar(0.5);
+    const g = new THREE.CylinderGeometry(rad, rad, len, 8);
+    b.geo(g, mid.x, mid.y, mid.z, tn, { align: dir, tint: 0.02 }); g.dispose();
+  };
+  const ring = (f) => [corner(0, f), corner(1, f), corner(3, f), corner(2, f)];  // CCW order
+  for (let i = 0; i < 4; i++) seg(corner(i, 0), corner(i, 1), r, tone);          // 4 corner legs
+  for (let L = 1; L <= levels; L++) {
+    const c = ring(L / levels), p = ring((L - 1) / levels);
+    for (let k = 0; k < 4; k++) seg(c[k], c[(k + 1) % 4], r * 0.8, t.mid);        // horizontal ring
+    for (let k = 0; k < 4; k++) { seg(p[k], c[(k + 1) % 4], r * 0.6, t.lo); seg(p[(k + 1) % 4], c[k], r * 0.6, t.lo); }  // X braces
+  }
+}
+
 // texturedCylinder — like `cylinder`, but returns its OWN Mesh carrying a CanvasTexture (so it
 // can show real stencils/serials — vertex colours can't). buildSpec adds the returned mesh into
 // the part's (rig-aware) group. Args: r, h; opts: r2, axis, seg, tone (base colour), marks[].

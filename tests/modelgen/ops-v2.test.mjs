@@ -14,7 +14,10 @@ const PURE_OPS = {
   drawerStack: FURN.drawerStack, legs: FURN.legs,
   lidBox: CONT.lidBox, strapBand: CONT.strapBand, handleU: CONT.handleU,
 };
-const ROUND_OPS = ['cylinder', 'disc', 'cone', 'deltaFins', 'texturedCylinder', 'torus', 'tube', 'texturedDisc', 'decal', 'loaf'];  // THREE-bound: browser-verified
+// browser-verified, extents-checked only (NOT box-unit-tested): the THREE-bound round ops,
+// plus the box-only composite emblem/mesh ops (star, meshReflector) whose dense overlapping
+// members carry intentional coplanar same-colour faces the box z-fight property test isn't for.
+const ROUND_OPS = ['cylinder', 'disc', 'cone', 'deltaFins', 'texturedCylinder', 'torus', 'tube', 'texturedDisc', 'decal', 'loaf', 'wheel', 'pipe', 'tubeMast', 'star', 'meshReflector'];
 
 function mock() {
   const calls = [];
@@ -51,6 +54,11 @@ const ROUND_SAMPLES = {
   texturedDisc: { r: 0.045, axis: 'y' },
   decal: { w: 0.11, h: 0.14, axis: 'z' },
   loaf: { w: 0.226, h: 0.108, d: 0.175 },
+  wheel: { r: 0.45, w: 0.25, axis: 'x', twin: true },
+  pipe: { pts: [[0, 0, 0], [0, 0.4, 0], [0.3, 0.4, 0]], r: 0.04 },
+  tubeMast: { baseW: 1.2, baseD: 1.2, h: 4.5, topW: 0.3, topD: 0.3 },
+  star: { r: 0.5, points: 5, th: 0.05 },
+  meshReflector: { w: 6.75, h: 3.5, clipTop: 0.18, chord: 0.05 },   // P-37 «Bar Lock» dish (clipped pentagon top)
 };
 
 test('every manifest operator has an impl (pure or round), extents, sample args, and a valid anchor', () => {

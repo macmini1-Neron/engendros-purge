@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bevelBox, panel, plate, finSet, latticeBeam, cabinet } from '../../src/props/operators/structural.js';
+import { bevelBox, panel, plate, finSet, latticeBeam, cabinet, meshReflector, star } from '../../src/props/operators/structural.js';
 import { drawerStack, legs } from '../../src/props/operators/furniture.js';
 
 // mock builder — records every box() call as [w,h,d,x,y,z,color,opts]
@@ -66,4 +66,31 @@ test('finSet emits count*steps rotated plates; outer plate is lit', () => {
   assert.ok(b.calls.every((c) => c[7] && typeof c[7].rz === 'number'));
   // the outermost plate of each fin uses the bright tone
   assert.ok(b.colorsUsed().includes(T.bright));
+});
+
+test('meshReflector emits ribs + rows*seg slats + frame (2 rails + 2 posts); slats are yaw-rotated', () => {
+  const b = mock();
+  meshReflector(b, { w: 6, h: 4, cols: 4, rows: 5, seg: 6 }, T, O);
+  assert.equal(b.calls.length, 4 + 5 * 6 + 2 * 6 + 2);   // ribs + slats + top/bottom rails + side posts = 48
+  assert.ok(b.calls.some((c) => c[7] && typeof c[7].ry === 'number'));  // slats hug the arc via yaw
+  assert.ok(b.colorsUsed().includes(T.bright));  // lit top slat/rail
+  assert.ok(b.colorsUsed().includes(T.hi));      // side posts at the rim
+  assert.ok(b.colorsUsed().includes(T.lo));      // recessed ribs
+});
+
+test('meshReflector border:false drops the frame (ribs + slats only)', () => {
+  const b = mock();
+  meshReflector(b, { w: 6, h: 4, cols: 4, rows: 5, seg: 6, border: false }, T, O);
+  assert.equal(b.calls.length, 4 + 5 * 6);   // 34
+});
+
+test('star emits `points` rotated spokes + a centre hub; spokes carry a rotation', () => {
+  const b = mock();
+  star(b, { r: 1 }, T, O);                       // default 5 points
+  assert.equal(b.calls.length, 5 + 1);           // 5 spokes + hub
+  assert.ok(b.calls.slice(0, 5).every((c) => c[7] && typeof c[7].rz === 'number'));  // z-facing spokes rotate about Z
+  const b2 = mock();
+  star(b2, { r: 1, points: 6, axis: 'x' }, T, O);
+  assert.equal(b2.calls.length, 6 + 1);
+  assert.ok(b2.calls.slice(0, 6).every((c) => c[7] && typeof c[7].rx === 'number'));  // x-facing spokes rotate about X
 });
