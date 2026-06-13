@@ -509,7 +509,8 @@ def build_breech_receiver():
     """Solid gold breech/lock body filling the waist between the barrels and the
     grip; the grip wrist overlaps its rear. Top at barrel level (not a tall block)."""
     parts = []
-    body = extrude_xz("BreechBlock", BREECH_PROFILE, -RECV_HY, 2*RECV_HY)
+    bhy = RECV_HY*0.82                                # slimmer breech body (Y) per owner
+    body = extrude_xz("BreechBlock", BREECH_PROFILE, -bhy, 2*bhy)
     add_bevel(body, width=0.0034, segments=3); add_subsurf(body, vp=1, rnd=2)
     parts.append(body)
     # standing breech cup the 4 barrels plug into (front)
@@ -595,12 +596,12 @@ def build_lock():
 
     cy = LY + LSIDE*0.007           # cock/frizzen proud of the breech side
     # --- COCK: graceful goose-neck swept tube + jaws + flint + spur ---
-    cock_pts = [(-0.120, cy, 0.004), (-0.118, cy, 0.016), (-0.114, cy, 0.027),
-                (-0.106, cy, 0.036), (-0.098, cy, 0.044), (-0.092, cy, 0.050)]
-    cock_taper = [(-1, 1.0), (-0.45, 1.18), (0.2, 0.72), (1, 0.5)]
-    cock = build_curve_tube("Cock", cock_pts, bevel=0.0046, taper=cock_taper)
+    cock_pts = [(-0.122, cy, 0.003), (-0.121, cy, 0.016), (-0.117, cy, 0.030),
+                (-0.109, cy, 0.042), (-0.101, cy, 0.052), (-0.095, cy, 0.060)]
+    cock_taper = [(-1, 1.05), (-0.45, 1.22), (0.2, 0.72), (1, 0.5)]
+    cock = build_curve_tube("Cock", cock_pts, bevel=0.0048, taper=cock_taper)
     cparts = [cock]
-    jx, jz = -0.091, 0.051
+    jx, jz = -0.094, 0.061
     lj = add_cube("cock_jawL", 1.0, loc=(jx, cy, jz-0.003), rot=(0, radians(28), 0)); lj.scale=(0.0055,0.0040,0.0028); cparts.append(lj)
     uj = add_cube("cock_jawU", 1.0, loc=(jx-0.001, cy, jz+0.006), rot=(0, radians(28), 0)); uj.scale=(0.0055,0.0040,0.0028); cparts.append(uj)
     jscrew = add_cylinder("cock_jscrew", r=0.0019, depth=0.011, loc=(jx, cy, jz+0.002), verts=12, rot=(0,0,0)); cparts.append(jscrew)
@@ -642,12 +643,14 @@ def build_lock():
 # stocks have a slender wrist). No thick metal block between barrels and grip.
 # grip wrist OVERLAPS the breech rear (no gap, no overlap with the barrels);
 # slimmer per owner. Banana S-curve, toe forward, pommel hooked back.
+# more UPRIGHT rake (~58deg from horizontal) to match the reference (pommel
+# brought forward); wrist still overlaps the breech rear.
 GRIP_PROFILE = [
-    (-0.122, -0.018), (-0.125, -0.038), (-0.132, -0.058), (-0.147, -0.074), (-0.165, -0.083),
-    (-0.184, -0.084),
-    (-0.199, -0.060), (-0.193, -0.044), (-0.177, -0.024), (-0.157, -0.006), (-0.139, 0.003),
+    (-0.122, -0.018), (-0.124, -0.038), (-0.129, -0.058), (-0.140, -0.075), (-0.154, -0.085),
+    (-0.170, -0.086),
+    (-0.186, -0.062), (-0.182, -0.046), (-0.170, -0.026), (-0.153, -0.007), (-0.138, 0.003),
 ]
-GRIP_HW = 0.0140                      # grip half-thickness (Y) -> ~28mm (slimmer)
+GRIP_HW = 0.0112                      # grip half-thickness (Y) -> ~22mm (much slimmer per owner)
 GRIP_BELLY = GRIP_PROFILE[0:5]        # neck -> toe (front edge)
 GRIP_SPINE = GRIP_PROFILE[6:11][::-1] # neck -> pommel (back edge, top->bottom)
 
@@ -714,26 +717,31 @@ def build_grip_scroll():
         sp.use_endpoint_u = True
         ob = bpy.data.objects.new(nm, cu); bpy.context.collection.objects.link(ob)
         parts.append(to_mesh(ob))
-    # dense S-vines + dots on the side face (mirrored to both sides)
+    # DENSE scrollwork on the broad side FACE (centreline of the grip), proud,
+    # mirrored to both sides — matches the ref's rich engraving
+    sb, ss = GRIP_BELLY, GRIP_SPINE          # both top->bottom, 5 pts each
+    centers = [((sb[i][0]+ss[i][0])/2, (sb[i][1]+ss[i][1])/2) for i in range(5)]
+    yy = GRIP_HW + 0.0006                    # just proud of the broad face
     side = []
-    yy = GRIP_HW*0.80
-    for s, (mx, mz) in enumerate((GRIP_PROFILE[1], GRIP_PROFILE[2], GRIP_PROFILE[3],
-                                  GRIP_SPINE[2], GRIP_SPINE[3])):
-        cu = bpy.data.curves.new(f"grip_vine_{s}", 'CURVE'); cu.dimensions='3D'
-        cu.bevel_depth=0.00042; cu.bevel_resolution=2; cu.resolution_u=8
+    # a column of alternating scroll volutes down the grip face
+    for i, (cx, cz) in enumerate(centers):
+        side.append(build_scroll_volute(f"grip_sc{i}", scale=0.0085+0.0012*i,
+                    loc=(cx, yy, cz), rot=(radians(90), 0, radians(18 if i%2 else -18))))
+    # fine S-vines weaving between them
+    for i in range(4):
+        cx = (centers[i][0]+centers[i+1][0])/2; cz = (centers[i][1]+centers[i+1][1])/2
+        cu = bpy.data.curves.new(f"grip_vine_{i}", 'CURVE'); cu.dimensions='3D'
+        cu.bevel_depth=0.00045; cu.bevel_resolution=2; cu.resolution_u=8
         sp = cu.splines.new('BEZIER'); sp.bezier_points.add(3)
-        pts = [(mx-0.008, yy, mz+0.007),(mx-0.001, yy, mz+0.010),
-               (mx+0.005, yy, mz-0.004),(mx+0.010, yy, mz+0.004)]
+        pts = [(cx-0.009, yy, cz+0.006),(cx-0.002, yy, cz+0.010),
+               (cx+0.004, yy, cz-0.004),(cx+0.011, yy, cz+0.005)]
         for bp,co in zip(sp.bezier_points, pts):
             bp.co=co; bp.handle_left_type=bp.handle_right_type='AUTO'
-        ob = bpy.data.objects.new(f"grip_vine_{s}", cu); bpy.context.collection.objects.link(ob)
+        ob = bpy.data.objects.new(f"grip_vine_{i}", cu); bpy.context.collection.objects.link(ob)
         side.append(to_mesh(ob))
-    # a scroll volute flourish low on the grip + rosette dots up the spine
-    mx, mz = GRIP_PROFILE[3]
-    side.append(build_scroll_volute("grip_flourish", scale=0.010, loc=(mx+0.002, yy, mz),
-                                    rot=(radians(90), 0, radians(20))))
-    for (dx, dz) in (GRIP_SPINE[1], GRIP_SPINE[2], GRIP_SPINE[3], GRIP_BELLY[2]):
-        side.append(add_sphere(f"grip_dot_{dx:.3f}_{dz:.3f}", r=0.0015, loc=(dx+0.001, GRIP_HW*0.76, dz)))
+    # rosette dots scattered along both edges
+    for (dx, dz) in (GRIP_SPINE[1], GRIP_SPINE[3], GRIP_BELLY[1], GRIP_BELLY[3]):
+        side.append(add_sphere(f"grip_dot_{dx:.3f}_{dz:.3f}", r=0.0014, loc=(dx, GRIP_HW*0.55, dz)))
     sg = join_objects("grip_side_orn", side); add_mirror(sg, y=True)
     g = join_objects("DecorativeParts", parts + [sg])
     return g
