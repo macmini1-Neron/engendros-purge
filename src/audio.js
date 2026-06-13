@@ -357,6 +357,27 @@ export class AudioManager {
     o.start(t0); o.stop(t0 + 0.7);
   }
 
+  // ---- 82mm mortar: the round dropping + sliding the bore, then the deep firing WHUMP ----
+  mortarDrop() {                                  // bomb released → slides down → seats on the pin (the pre-BOOM beat)
+    if (!this.ctx) return;
+    this.noise(0.09, 0.30, 'lowpass', 360, 0.8);  // muffled tube slide
+    this.tone(120, 0.07, 'sine', 0.15);           // low clack of the round seating
+    this.noise(0.02, 0.16, 'bandpass', 1500, 3);  // faint primer-seat tick
+  }
+  mortarFire() {                                  // the report: a deep, low-frequency, concussive THUMP — NOT a treble crack
+    if (!this.ctx) return;
+    const t0 = this.t;
+    for (const [f0, f1, type, vol, dec] of [[78, 40, 'sine', 0.95, 0.32], [112, 55, 'triangle', 0.5, 0.26]]) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + dec);
+      o.connect(g); g.connect(this.sfxGain);
+      this._env(g, t0, vol, 0.003, dec);
+      o.start(t0); o.stop(t0 + dec + 0.1);
+    }
+    this.noise(0.34, 0.95, 'lowpass', 520, 0.6);  // pressure blast body (the "felt" part)
+    this.noise(0.45, 0.40, 'lowpass', 200, 0.5);  // low rumble tail / echo
+    if (Math.random() < 0.3) this.noise(0.05, 0.5, 'highpass', 1400, 0.8); // occasional secondary-combustion crack
+  }
   reloadClick() { this.noise(0.04, 0.3, 'bandpass', 2600, 3); }
   reloadIn() { this.tone(180, 0.08, 'square', 0.25); this.noise(0.05, 0.25, 'lowpass', 500, 1); }
   boltCycle() { this.noise(0.05, 0.28, 'bandpass', 1700, 4); setTimeout(() => { this.noise(0.06, 0.32, 'bandpass', 2200, 5); this.tone(150, 0.05, 'square', 0.14); }, 130); } // bolt lift-pull then push-lock

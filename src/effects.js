@@ -354,6 +354,30 @@ export class Effects {
     this.game.audio.explosion();
   }
 
+  // 82mm mortar muzzle blast: flash up the bore + overpressure dust kicked up around the baseplate
+  // + a brief shimmer ring at the muzzle. (Audio + camera shake are driven by the Mortar itself.)
+  mortarBlast(muzzlePos, groundPos, dir) {
+    const up = dir && dir.lengthSq() > 0 ? dir.clone().normalize() : new THREE.Vector3(0, 1, 0);
+    this.muzzleFlash(muzzlePos, up, 1.5);
+    const dust = new THREE.Color(0xb8a87e);
+    for (let i = 0; i < 22; i++) {
+      const a = Math.random() * Math.PI * 2, sp = randRange(2.5, 6);
+      this._spawn({
+        pos: new THREE.Vector3(groundPos.x + Math.cos(a) * 0.3, groundPos.y + 0.05, groundPos.z + Math.sin(a) * 0.3),
+        vel: new THREE.Vector3(Math.cos(a) * sp, randRange(1.5, 3.5), Math.sin(a) * sp),
+        life: randRange(0.5, 1.1), size: randRange(0.25, 0.6),
+        grav: -3, drag: 2.2, color: dust, bounce: 0, floorY: groundPos.y,
+      });
+    }
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.3, 0.45, 20),
+      new THREE.MeshBasicMaterial({ color: 0xffe6b0, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, fog: false })
+    );
+    ring.position.copy(muzzlePos); ring.lookAt(muzzlePos.clone().add(up));
+    this.scene.add(ring);
+    this.rings.push({ mesh: ring, life: 0.3, maxLife: 0.3, radius: 3 });
+  }
+
   update(dt) {
     // particles
     let i = 0;

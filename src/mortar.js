@@ -22,6 +22,9 @@ const ELEV_RATE = 18;       // deg/s the elevation dial moves while W/S held
 const AZ_FINE = 0.35;       // rad/s fine traverse (A/D)
 const AZ_COARSE = 1.4;      // rad/s coarse traverse (Shift+A/D)
 const SHELL_R = 0.041;      // visual bomb radius (m)
+const DROP_DELAY = 0.5;     // s — round slides down the bore before ignition (the "drop … BOOM" beat; ~0.4–0.8 s real)
+const SHAKE_FIRE = 0.42;    // base camera shake on the report (strong but readable; engine clamps at 0.6)
+const CONCUSSION_RANGE = 16; // m — the local player feels the shake + screen-punch within this of the muzzle
 
 export class Mortar {
   constructor(game, pos, yaw = 0, opts = {}) {
@@ -37,6 +40,7 @@ export class Mortar {
     this._aimT = 0;                       // mortaraim broadcast throttle
     this._screwSpin = 0;                  // cosmetic screw rotation accumulator
     this.shells = [];                     // in-flight bombs (tick every frame, even unseated)
+    this._shotsFired = 0;                 // for the "bedding" nod (first rounds jolt harder)
     this._impactMarks = [];               // fading F3 landing rings (golf-tracer "where they land")
     this.root = null; this.azNode = this.elNode = this.elevScrewNode = this.traverseScrewNode = this.muzzleNode = null;
     this._netAz = null; this._netEl = null;  // remote-mirrored lay (non-occupant clients)
@@ -139,6 +143,11 @@ export class Mortar {
     const f3 = !!this.game.f3;
     for (let i = this.shells.length - 1; i >= 0; i--) {
       const s = this.shells[i];
+      if (!s.boomed) {                                          // tube-slide delay → then the report fires
+        s.boomIn -= dt;
+        if (s.boomIn <= 0) { s.boomed = true; this._boom(s); }
+        continue;                                               // don't arc (or detonate) until it has launched
+      }
       s.t += dt;
       const f = clamp(s.t / s.tof, 0, 1);
       s.mesh.position.set(
@@ -219,7 +228,7 @@ export class Mortar {
     if (hostSim) this._hostFire(mp);
     else mp.net.send('mortarfirereq', { m: this.id });      // client gunner asks host (no local damage)
     this.loadT = BAL.RELOAD_S;
-    if (this.game.audio && this.game.audio.explosion) { /* a soft thunk foley could go here */ }
+    // the drop "thunk" + the firing WHUMP are played by spawnShell/_boom so every client gets the same beat
   }
 
   // host/solo authoritative shot: decrement ammo, compute the deterministic impact, fire.
@@ -243,10 +252,34 @@ export class Mortar {
     const range = Math.hypot(p1.x - p0.x, p1.z - p0.z), apex = BAL.apexHeight(range);
     const geo = new THREE.CylinderGeometry(SHELL_R * 0.6, SHELL_R, 0.16, 8);
     const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x23241f }));
+    mesh.visible = false;                                         // hidden during the tube slide; appears at the BOOM
     this.game.engine.scene.add(mesh);
     const { trace, ring } = this._buildTracer(p0, p1, apex);     // golf-style arc + landing ring (F3-gated)
-    this.shells.push({ mesh, t: 0, tof: grant.tof, p0, p1, apex, hostAuth, trace, ring });
+    if (trace) trace.visible = false;                             // no flight arc until it actually launches
+    // boomIn = the drop→ignition slide; the round arcs (and the WHUMP/shake fire) only once it elapses
+    this.shells.push({ mesh, t: 0, tof: grant.tof, p0, p1, apex, hostAuth, trace, ring, boomIn: DROP_DELAY, boomed: false });
+    if (this.game.audio && this.game.audio.mortarDrop) this.game.audio.mortarDrop();  // round drops + slides the bore
     if (Number.isFinite(grant.ammo)) this.setAmmo(grant.ammo);
+  }
+
+  // the report: bomb appears at the muzzle, the deep WHUMP + muzzle blast fire, and (if you're close)
+  // the ground-slam camera shake + overpressure screen-punch hit. Runs on EVERY client (visual + audio);
+  // damage stays host-authoritative in _detonate.
+  _boom(s) {
+    s.mesh.visible = true;
+    this._shotsFired++;
+    const eng = this.game.engine, fx = this.game.effects, au = this.game.audio;
+    const dir = s.p0.clone().sub(this.base);                      // up the bore (muzzle − baseplate)
+    if (au && au.mortarFire) au.mortarFire();
+    if (fx && fx.mortarBlast) fx.mortarBlast(s.p0, this.base, dir);
+    const dist = eng.camera.position.distanceTo(s.p0);           // only jolt the LOCAL player if near THIS tube
+    if (dist < CONCUSSION_RANGE) {
+      const prox = clamp(1 - dist / CONCUSSION_RANGE, 0.3, 1);
+      let amt = SHAKE_FIRE * prox;
+      if (this._shotsFired <= 3) amt *= 1.3;                      // "bedding": the first rounds jolt harder before the plate beds in
+      eng.shake(amt);
+      if (this.game.hud.concussion) this.game.hud.concussion(prox);
+    }
   }
 
   // golf-tracer: a polyline tracing the WHOLE parabolic flight path + a ground ring at the landing

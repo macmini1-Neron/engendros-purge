@@ -244,6 +244,8 @@ export class HUD {
     const c = this.el.cross; if (c) { c.classList.add('boss-hit'); clearTimeout(this._crossT); this._crossT = setTimeout(() => c.classList.remove('boss-hit'), 180); }
   }
   damageFlash() { this.el.vignette.style.transition = 'box-shadow .05s'; this.el.vignette.style.boxShadow = 'inset 0 0 220px 60px rgba(220,30,20,0.55)'; setTimeout(() => { this.el.vignette.style.transition = 'box-shadow .4s'; this.setHealth(this.game.player.hp, this.game.player.maxHp); }, 60); }
+  // overpressure "punch" — a brief dusty-white vignette flash when a heavy blast (e.g. the mortar) goes off near you
+  concussion(s = 1) { if (!this.el.vignette) return; const a = (0.28 * clamp(s, 0, 1)).toFixed(3); this.el.vignette.style.transition = 'box-shadow .04s'; this.el.vignette.style.boxShadow = `inset 0 0 240px 80px rgba(235,225,200,${a})`; setTimeout(() => { this.el.vignette.style.transition = 'box-shadow .35s'; this.setHealth(this.game.player.hp, this.game.player.maxHp); }, 70); }
   setBurn(burnT) {
     if (!this.el.firevig) return;
     if (burnT <= 0) { this.el.firevig.style.boxShadow = 'inset 0 0 220px 80px rgba(255,90,20,0)'; if (this.el.firepov) this.el.firepov.classList.remove('on'); return; }
