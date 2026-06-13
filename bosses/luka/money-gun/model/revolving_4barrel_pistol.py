@@ -261,6 +261,28 @@ def mat_gold():
     _micro_bump(m, b, scale=450, depth=0.15)
     return m
 
+def mat_barrel():
+    """Gold barrels with fine engraved ring/line detail (ref barrels are engraved)."""
+    m = _new_mat("MAT_Barrel"); b = _bsdf(m); nt = m.node_tree
+    _set(b, "Base Color", hex_rgba("#C9962E"))
+    _set(b, "Metallic", 1.0); _set(b, "Roughness", 0.27)
+    _rough_breakup(m, b, base=0.27, amp=0.10, scale=70)
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    wave = nt.nodes.new("ShaderNodeTexWave")
+    wave.wave_type = 'BANDS'
+    try: wave.bands_direction = 'X'
+    except Exception: pass
+    wave.inputs["Scale"].default_value = 90.0
+    wave.inputs["Distortion"].default_value = 1.5
+    wave.inputs["Detail"].default_value = 2.0
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.10
+    bump.inputs["Distance"].default_value = 0.00003
+    nt.links.new(coord.outputs["Object"], wave.inputs["Vector"])
+    nt.links.new(wave.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    return m
+
 def mat_copper():
     # Luka boss coin copper (coin.js variant 'copper'): metal 0xCB5A1E
     m = _new_mat("MAT_Copper"); b = _bsdf(m)
@@ -1002,7 +1024,7 @@ def export_all():
 # =====================================================================
 def main():
     clean_scene()
-    M_GOLD = mat_gold(); M_COP = mat_copper(); M_COPE = mat_copper_eng()
+    M_GOLD = mat_gold(); M_BARREL = mat_barrel(); M_COP = mat_copper(); M_COPE = mat_copper_eng()
     M_IV = mat_ivory(); M_FL = mat_flint(); M_BORE = mat_bore()
 
     root = bpy.data.objects.new("ROOT_Pistol", None); root.empty_display_size=0.05
@@ -1011,7 +1033,7 @@ def main():
     built = []
     # --- barrel cluster (own pivot empty on the bore axis) ---
     cluster, bores = build_barrel_cluster()
-    assign(cluster, M_GOLD); assign(bores, M_BORE)
+    assign(cluster, M_BARREL); assign(bores, M_BORE)
     pivot = bpy.data.objects.new("BARREL_PIVOT", None); pivot.empty_display_size=0.02
     bpy.context.collection.objects.link(pivot)
     pivot.location = (0,0,0)        # bore axis = origin (X axis)
