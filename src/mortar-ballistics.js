@@ -16,10 +16,13 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // ── tube envelope + firing table (sourced floor +45°; rest sits ≈ +52°) ───────
 export const ELEV_MIN_DEG = 45;   // tube cannot depress below +45° (НСД-40 floor)
 export const ELEV_MAX_DEG = 85;   // max elevation
-// Range nerfed hard from the realistic 80–600 m: the game's enemies only spawn/render in a tight
-// ring around the player, so long lobs fell into empty terrain. 24–150 m keeps impacts in the fight.
-export const RANGE_MIN = 24;      // m — at MAX elevation (steepest lob)
-export const RANGE_MAX = 150;     // m — at MIN elevation (flattest)
+// Range tied to the MAP scale + the spotter loop, NOT the solo enemy ring. The emplacement sits in the
+// SW strongpoint (~-335,-308) of the 1000×1000 steppe; enemies render to the ~900 m fog and a forward
+// spotter's enemy bubble (75–120 m around HIM) sits a few hundred metres out. 60–375 m covers the
+// strongpoint approaches + that spotter bubble — still well past eyeball/auto-engage range, so the
+// ЛПР-1 (reads 1–20 km) stays meaningful: a 280 m target you can't eyeball to the right elevation.
+export const RANGE_MIN = 60;      // m — at MAX elevation (steepest lob; a realistic near dead-zone)
+export const RANGE_MAX = 375;     // m — at MIN elevation (flattest); regional support, not whole-map
 export const AMMO_MAX = 12;       // finite rounds per emplacement
 export const RELOAD_S = 3.5;      // drop-load cadence between rounds (s)
 export const HE_RADIUS = 8;       // HE burst radius (m)
@@ -36,7 +39,7 @@ export const RIG_X_AT_ELEV_MAX = -0.58;  // +85°
 // Linear v1; a sin(2θ) firing curve is the realistic refinement (deferred).
 export function elevToRange(elevRad) {
   const t = clamp((elevRad / D2R - ELEV_MIN_DEG) / (ELEV_MAX_DEG - ELEV_MIN_DEG), 0, 1);
-  return lerp(RANGE_MAX, RANGE_MIN, t);   // 45° → 150 m, 85° → 24 m
+  return lerp(RANGE_MAX, RANGE_MIN, t);   // 45° → 375 m, 85° → 60 m
 }
 export function rangeToElev(range) {
   const t = clamp((RANGE_MAX - range) / (RANGE_MAX - RANGE_MIN), 0, 1);
@@ -55,8 +58,8 @@ export function firingDir(phiRad) {
 }
 
 // gameplay arc shaping (NOT real physics — tuned for a readable lob, variable-dt safe).
-export function timeOfFlight(range) { return 3.5 + range / 100; }     // ~4.3 s @80 … 9.5 s @600
-export function apexHeight(range) { return clamp(range * 0.35, 20, 120); }
+export function timeOfFlight(range) { return 2.8 + range / 150; }     // ~3.2 s @60 … ~5.3 s @375 (dramatic but not tedious)
+export function apexHeight(range) { return clamp(range * 0.35, 20, 180); } // taller cap → long lobs arc high
 
 // deterministic radial dispersion (CEP) from a 32-bit seed — uniform over a disc of
 // radius σ (so |offset| ≤ σ, cleanly bounded). σ grows with range. mulberry32 is inlined
@@ -71,7 +74,7 @@ function mulberry32(a) {
 }
 export function dispersion(seed, range) {
   const rng = mulberry32(seed >>> 0);
-  const sigma = clamp(range * 0.02, 1.5, 7);     // ~1.5–7 m CEP
+  const sigma = clamp(range * 0.02, 1.5, 12);    // ~1.5–12 m CEP — long shots spread more, so spotter corrections matter
   const r = sigma * Math.sqrt(rng());            // uniform over the disc → |r| ≤ σ
   const ang = rng() * TAU;
   return { dx: Math.cos(ang) * r, dz: Math.sin(ang) * r, sigma };
