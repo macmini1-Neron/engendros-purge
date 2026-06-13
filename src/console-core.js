@@ -23,6 +23,30 @@ export function parseCoord(tok, base) {
   return parseNum(tok);
 }
 
+// /summon trailing blob "[count] [{NoAI:1}]" (order-tolerant). count = the first standalone integer
+// token, clamped 1..50, default 1 (the digit inside {NoAI:1} is NOT a standalone token, so it's never
+// read as the count). noAI = the Minecraft-style {NoAI:1}/{NoAI:1b} dummy tag (NoAI:0 leaves it off).
+export function parseSummonTail(tail) {
+  const s = String(tail || '').trim();
+  const intTok = s.split(/\s+/).find((t) => /^\d+$/.test(t));
+  const count = intTok ? Math.max(1, Math.min(50, parseInt(intTok, 10))) : 1;
+  const noAI = /\bNoAI\s*:\s*1/i.test(s);
+  return { count, noAI };
+}
+
+// Full /summon tail: an OPTIONAL leading "x y z" coord triple (Minecraft order), then "[count] [{NoAI:1}]".
+// Coords are taken only when the first three whitespace tokens ALL look like coords (~, ~N, or a number) —
+// matching dispatch's "a pos arg eats 3 tokens" rule; otherwise a lone number is a count, not a coord.
+export function parseSummonArgs(tail) {
+  const toks = String(tail || '').trim().split(/\s+/).filter(Boolean);
+  const coordLike = (t) => t === '~' || t[0] === '~' || Number.isFinite(Number(t));
+  let coordToks = null, rest = toks;
+  if (toks.length >= 3 && coordLike(toks[0]) && coordLike(toks[1]) && coordLike(toks[2])) {
+    coordToks = toks.slice(0, 3); rest = toks.slice(3);
+  }
+  return { coordToks, ...parseSummonTail(rest.join(' ')) };
+}
+
 function coerceArg(tok, a, cmd) {
   switch (a.type) {
     case 'int':  return asInt(tok);
@@ -93,7 +117,8 @@ function _optsForArg(a, args, ai) {
     case 'int': case 'num': return [String(a.default ?? 1)];
     case 'pos':    return ['~'];
     case 'word':   return a.suggest ? a.suggest.slice() : []; // a word arg may carry an explicit suggestion list (e.g. /give items)
-    default:       return []; // sel / rest — no enumerable values
+    case 'rest':   return a.suggest ? a.suggest.slice() : []; // a rest tail may suggest values too (e.g. /summon {NoAI:1})
+    default:       return []; // sel — no enumerable values
   }
 }
 // Walk the spec like dispatch (target peeks @, pos eats 3) to find the arg under the token being completed.
