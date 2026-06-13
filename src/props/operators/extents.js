@@ -43,6 +43,21 @@ const roundExtents = {
   },
   // rounded stadium loaf shell — honest w×h×d box (the profile is pre-shrunk by the bevel)
   loaf: (a) => ({ min: [-a.w / 2, -a.h / 2, -a.d / 2], max: [a.w / 2, a.h / 2, a.d / 2] }),
+  // road wheel/tyre: radius r perpendicular to the axle, width w along it; twin tyres
+  // + outboard hub dome push the axial reach past w/2 (conservative).
+  wheel: (a) => axisExtents(a.r, (a.twin ? a.w * 0.52 : 0) + a.w * 0.5 + a.r * 0.45, a.axis ?? 'x'),
+  // pipework run: AABB of the control points, expanded by the (ball-jointed) tube radius
+  pipe: (a) => {
+    const r = (a.r ?? 0.05) * 1.2, mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (const p of (a.pts ?? [])) for (let i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], p[i] - r); mx[i] = Math.max(mx[i], p[i] + r); }
+    return mn[0] === Infinity ? { min: [0, 0, 0], max: [0, 0, 0] } : { min: mn, max: mx };
+  },
+  // tapered lattice mast: floor-anchored, rises from y=0 to y=h; corners taper base→top, apexZ leans the top in z
+  tubeMast: (a) => {
+    const r = a.r ?? 0.06, apexZ = a.apexZ ?? 0;
+    const xh = Math.max(a.baseW, a.topW ?? 0.2) / 2 + r, dh = Math.max(a.baseD, a.topD ?? 0.2) / 2;
+    return { min: [-xh, 0, Math.min(-dh, apexZ - dh) - r], max: [xh, a.h + r, Math.max(dh, apexZ + dh) + r] };
+  },
 };
 
 export const EXTENTS = {
