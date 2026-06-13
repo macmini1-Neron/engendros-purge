@@ -20,7 +20,7 @@ const ACT_SECS = 30;        // per-turn shot clock (host-ticked)
 const BOT_THINK = 0.9;      // bot pause before acting (s) — feels human
 const RESULT_SECS = 3.2;    // showdown reveal dwell before the next hand
 const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar animates clientside
-const BOT_NAMES = ['СЕРЁГА', 'ДОКТОР', 'КАБАН', 'ТЁТЯ ЗИНА', 'ПРАПОР'];
+const BOT_NAMES = ['SHARK', 'DOC', 'LUCKY', 'SLIM', 'ACE'];
 
 export class PokerTable {
   constructor(game) {
@@ -69,7 +69,7 @@ export class PokerTable {
 
   startTournament({ bots = 5, mode = 'practice' } = {}) {
     const players = [{ id: 'you' }];
-    this.names = { you: 'TY' };
+    this.names = { you: 'YOU' };
     for (let i = 0; i < bots; i++) { const id = 'bot' + i; players.push({ id }); this.names[id] = BOT_NAMES[i] || ('BOT ' + (i + 1)); }
     this.role = 'solo'; this.coop = false; this.mode = mode; this.youId = 'you';
     this.rng = mulberry32(((Date.now() >>> 0) ^ (bots * 2654435761)) >>> 0);
@@ -92,8 +92,8 @@ export class PokerTable {
   startCoop(buyIn) {
     const mp = this.game.mp;
     const ids = [...mp.roster.keys()];
-    if (ids.length < 2) { this._toast('Potřebuješ aspoň 2 hráče', 0xd23a2a); return; }
-    if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Nemáš dost na buy-in $' + buyIn, 0xd23a2a); return; }
+    if (ids.length < 2) { this._toast('Need at least 2 players', 0xd23a2a); return; }
+    if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a); return; }
     this.names = {}; for (const [id, r] of mp.roster) this.names[id] = r.name || id;
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
     this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
@@ -113,7 +113,7 @@ export class PokerTable {
     const buyIn = (d && d.buyIn) | 0;
     if (buyIn > 0 && (this.game.meta.bank | 0) < buyIn) { // can't cover the buy-in → decline, do NOT seat (no free roll)
       try { this.game.mp.net.send('pkleave', {}); } catch (e) {}
-      this._toast('Nemáš dost na buy-in $' + buyIn, 0xd23a2a);
+      this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a);
       this.game.closePoker();
       return;
     }
@@ -158,7 +158,7 @@ export class PokerTable {
     this._aborted = true;
     this._refund();
     this.active = false;
-    this._toast('Hostitel ukončil hru — buy-in vrácen', 0xd8b066);
+    this._toast('Host ended the game — buy-in refunded', 0xd8b066);
     this.coop = false; this.role = 'solo';                         // so closePoker→leave() doesn't try to message the gone host
     if (this.game.state === 'poker') this.game.closePoker();
   }

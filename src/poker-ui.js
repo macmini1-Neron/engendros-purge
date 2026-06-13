@@ -121,7 +121,7 @@ export class PokerDomRenderer {
     this.root.innerHTML = `
       <div class="pk-wrap">
         <div class="pk-top">
-          <span class="pk-title">ИГОРНЫЙ ПРИТОН</span>
+          <span class="pk-title">GAMBLING DEN</span>
           <div class="pk-meta">
             <span>LVL <b id="pk-lvl">1</b></span>
             <span>BLINDS <b id="pk-blinds">10/20</b></span>
@@ -169,14 +169,14 @@ export class PokerDomRenderer {
     this.el.felt.style.display = 'none';
     let bots = 5;
     this.el.lobby.innerHTML = `
-      <h2>ПОДПОЛЬНЫЙ ПОКЕР</h2>
-      <div class="pk-sub">Тренировка proti AI — Texas Hold'em, Sit &amp; Go, winner-takes-all.
-        Hra o bankovní peníze proti bráchovi přijde s co-op (zatím trénink na žetony).</div>
-      <div class="pk-optrow"><label>Soupeři (boti):</label>
+      <h2>UNDERGROUND POKER</h2>
+      <div class="pk-sub">Practice vs AI — Texas Hold'em, Sit &amp; Go, winner-takes-all.
+        Playing for real bank money comes with co-op (this is play-chip practice).</div>
+      <div class="pk-optrow"><label>Opponents (bots):</label>
         <span id="pk-botpick"></span></div>
       <div class="pk-actions">
-        <button class="pk-btn go" id="pk-start">SEDNOUT KE STOLU</button>
-        <button class="pk-btn" id="pk-lobbyleave">ZPĚT</button>
+        <button class="pk-btn go" id="pk-start">SIT DOWN</button>
+        <button class="pk-btn" id="pk-lobbyleave">BACK</button>
       </div>`;
     const pick = this.el.lobby.querySelector('#pk-botpick');
     const draw = () => {
@@ -203,14 +203,14 @@ export class PokerDomRenderer {
     let buyIn = tiers.find((t) => t <= bank) || tiers[0];
     const players = (opts && opts.players) || [];
     this.el.lobby.innerHTML = `
-      <h2>ПОДПОЛЬНЫЙ ПОКЕР · CO-OP</h2>
-      <div class="pk-sub">Hra o bankovní peníze — winner-takes-all. Každý hráč zaplatí buy-in ze své banky.
-        Tvoje banka: <b style="color:var(--brass-hi)">$${bank}</b></div>
+      <h2>UNDERGROUND POKER · CO-OP</h2>
+      <div class="pk-sub">Playing for real bank money — winner-takes-all. Every player pays the buy-in from their bank.
+        Your bank: <b style="color:var(--brass-hi)">$${bank}</b></div>
       <div class="pk-optrow"><label>Buy-in:</label> <span id="pk-tierpick"></span></div>
-      <div class="pk-optrow"><label>Hráči:</label> <span style="color:var(--steel)">${players.map(esc).join(' · ') || '—'}</span></div>
+      <div class="pk-optrow"><label>Players:</label> <span style="color:var(--steel)">${players.map(esc).join(' · ') || '—'}</span></div>
       <div class="pk-actions">
-        <button class="pk-btn go" id="pk-deal">ROZDAT · DEAL</button>
-        <button class="pk-btn" id="pk-coopleave">ZPĚT</button>
+        <button class="pk-btn go" id="pk-deal">DEAL</button>
+        <button class="pk-btn" id="pk-coopleave">BACK</button>
       </div>`;
     const pick = this.el.lobby.querySelector('#pk-tierpick');
     const draw = () => {
@@ -247,45 +247,48 @@ export class PokerDomRenderer {
     for (const pl of tour.players) placeOf[pl.id] = pl.place;
     const winners = p.result && p.result.winnings ? p.result.winnings : null;
 
-    // header
+    // header (cheap — every frame)
     this.el.lvl.textContent = tour.level + 1;
     this.el.blinds.textContent = tour.sb + '/' + tour.bb;
     this.el.hand.textContent = tour.handNumber;
     this.el.pool.textContent = tour.prizePool;
 
-    // opponents
-    const opps = v.seats.filter((s) => s.id !== p.youId);
-    this.el.oppts.innerHTML = opps.map((s) => this._seatHTML(s, v, blindIdx, p, placeOf, winners)).join('');
-
-    // board (always 5 slots)
-    const board = v.board.slice();
-    let bh = '';
-    for (let i = 0; i < 5; i++) bh += cardHTML(board[i], false);
-    this.el.board.innerHTML = bh;
-    this.el.potval.textContent = v.pot;
-
-    // banner (result text)
-    if (p.over) {
-      this.el.banner.textContent = (winners && Object.keys(winners)[0] === p.youId) ? '🏆 VYHRÁL JSI TURNAJ' : 'TURNAJ SKONČIL';
-    } else if (p.result) {
-      const ids = winners ? Object.keys(winners) : [];
-      this.el.banner.textContent = ids.length ? ('Bank bere: ' + ids.map((id) => this._nameOf(id, p)).join(' + ')) : '';
-    } else {
-      this.el.banner.textContent = '';
+    // table display — rebuild ONLY when something visible changes. renderTable runs every frame;
+    // rebuilding innerHTML each frame would destroy a button between mousedown/up (no click fires)
+    // and reset the raise slider mid-drag.
+    const tableKey = JSON.stringify({
+      bd: v.board.map((c) => c.r + c.s), pot: v.pot, ta: v.toAct, bt: v.button,
+      se: v.seats.map((s) => [s.id, s.stack, s.roundBet, s.folded ? 1 : 0, s.allIn ? 1 : 0,
+        s.hole ? s.hole.map((c) => c.r + c.s).join('') : '', placeOf[s.id] || 0, (winners && winners[s.id]) || 0]),
+      ov: p.over ? 1 : 0, rs: p.result ? 1 : 0,
+    });
+    if (tableKey !== this._tableKey) {
+      this._tableKey = tableKey;
+      const opps = v.seats.filter((s) => s.id !== p.youId);
+      this.el.oppts.innerHTML = opps.map((s) => this._seatHTML(s, v, blindIdx, p, placeOf, winners)).join('');
+      let bh = '';
+      for (let i = 0; i < 5; i++) bh += cardHTML(v.board[i], false);
+      this.el.board.innerHTML = bh;
+      this.el.potval.textContent = v.pot;
+      this.el.banner.textContent = this._bannerText(p, winners);
+      this._renderYou(v.seats.find((s) => s.id === p.youId), p, winners);
     }
 
-    // you
-    const me = v.seats.find((s) => s.id === p.youId);
-    this._renderYou(me, p, winners);
-
-    // actions
+    // action panel — its own change-guard (interactive: must persist across frames)
     this._renderActions(p);
 
-    // timer
+    // timer (cheap — every frame)
     this.el.timer.style.width = Math.round((p.timerFrac || 0) * 100) + '%';
   }
 
-  _nameOf(id, p) { return esc((p.names && p.names[id]) || (id === p.youId ? 'TY' : id.toUpperCase())); }
+  _bannerText(p, winners) {
+    if (p.over) return (winners && Object.keys(winners)[0] === p.youId) ? '🏆 YOU WON THE TOURNAMENT' : 'TOURNAMENT OVER';
+    if (p.result) { const ids = winners ? Object.keys(winners) : []; return ids.length ? ('Pot to: ' + ids.map((id) => this._rawName(id, p)).join(' + ')) : ''; }
+    return '';
+  }
+
+  _rawName(id, p) { return (p.names && p.names[id]) || (id === p.youId ? 'YOU' : id.toUpperCase()); }
+  _nameOf(id, p) { return esc(this._rawName(id, p)); }
 
   _seatHTML(s, v, blindIdx, p, placeOf, winners) {
     const idx = s.idx;
@@ -316,45 +319,53 @@ export class PokerDomRenderer {
       hole = me.hole.map((c) => cardHTML(c, false)).join('');
     } else hole = cardHTML(null, true) + cardHTML(null, true);
     const won = winners && winners[me.id] ? ` <span style="color:var(--go)">+${winners[me.id]}</span>` : '';
-    const bet = me.allIn ? 'ALL-IN' : (me.roundBet ? 'sázka ' + me.roundBet : '');
+    const bet = me.allIn ? 'ALL-IN' : (me.roundBet ? 'bet ' + me.roundBet : '');
     this.el.you.innerHTML = `
       <div class="pk-myhole">${hole}</div>
       <div>
-        <div class="pk-mystack">TY · ${me.stack}${won}</div>
+        <div class="pk-mystack">YOU · ${me.stack}${won}</div>
         <div class="pk-bet" style="color:var(--go)">${bet}</div>
       </div>`;
   }
 
   _renderActions(p) {
     const a = this.el.actions;
+    // change-guard: only rebuild when the action context changes. Otherwise the buttons keep their
+    // live DOM nodes (so a click registers) and the raise slider stays draggable across frames.
+    const L = p.legal;
+    const key = p.over ? 'over'
+      : (p.yourTurn && L) ? `act:${L.canCheck ? 1 : 0}:${L.canCall ? 1 : 0}:${L.callAmount}:${L.canRaise ? 1 : 0}:${L.minRaiseTo}:${L.maxRaiseTo}`
+      : `wait:${p.phase}:${p.view ? p.view.toAct : ''}`;
+    if (key === this._actionsKey) return;
+    this._actionsKey = key;
+
     if (p.over) {
-      a.innerHTML = `<button class="pk-btn go" id="pk-again">ZPĚT DO LOBBY</button>`;
+      a.innerHTML = `<button class="pk-btn go" id="pk-again">BACK TO LOBBY</button>`;
       a.querySelector('#pk-again').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
       return;
     }
-    if (!p.yourTurn || !p.legal) {
+    if (!p.yourTurn || !L) {
       const who = (p.view && p.view.toAct != null && p.view.seats[p.view.toAct]) ? this._nameOf(p.view.seats[p.view.toAct].id, p) : '';
-      a.innerHTML = `<div class="pk-wait">${p.phase === 'handresult' ? 'Rozdává se další ruka…' : (who ? 'Na tahu: ' + who + '…' : '…')}</div>`;
+      a.innerHTML = `<div class="pk-wait">${p.phase === 'handresult' ? 'Next hand…' : (who ? who + ' to act…' : '…')}</div>`;
       return;
     }
-    const L = p.legal;
     const callLabel = L.canCheck ? 'CHECK' : ('CALL ' + L.callAmount);
-    this._raiseTo = Math.max(L.minRaiseTo, Math.min(L.maxRaiseTo, this._raiseTo || L.minRaiseTo));
+    this._raiseTo = Math.min(L.maxRaiseTo, L.minRaiseTo); // a fresh turn starts the slider at the minimum raise
     a.innerHTML = `
       <button class="pk-btn" id="pk-fold">FOLD</button>
       <button class="pk-btn go" id="pk-callcheck">${callLabel}</button>
       ${L.canRaise ? `<div class="pk-raisebox">
         <input type="range" id="pk-raiserng" min="${L.minRaiseTo}" max="${L.maxRaiseTo}" value="${this._raiseTo}" ${L.maxRaiseTo === L.minRaiseTo ? 'disabled' : ''}>
         <span class="pk-raiseval" id="pk-raiseval">${this._raiseTo}</span>
-        <button class="pk-btn raise" id="pk-raise">RAISE</button>
+        <button class="pk-btn raise" id="pk-raise">RAISE → ${this._raiseTo}</button>
         <button class="pk-btn raise" id="pk-allin">ALL-IN</button>
       </div>` : ''}`;
     a.querySelector('#pk-fold').addEventListener('click', () => this.cb.onAct({ type: 'fold' }));
     a.querySelector('#pk-callcheck').addEventListener('click', () => this.cb.onAct(L.canCheck ? { type: 'check' } : { type: 'call' }));
     if (L.canRaise) {
-      const rng = a.querySelector('#pk-raiserng'), val = a.querySelector('#pk-raiseval');
-      rng.addEventListener('input', () => { this._raiseTo = +rng.value; val.textContent = rng.value; });
-      a.querySelector('#pk-raise').addEventListener('click', () => this.cb.onAct({ type: 'raise', to: this._raiseTo }));
+      const rng = a.querySelector('#pk-raiserng'), val = a.querySelector('#pk-raiseval'), btn = a.querySelector('#pk-raise');
+      rng.addEventListener('input', () => { this._raiseTo = +rng.value; val.textContent = rng.value; btn.textContent = 'RAISE → ' + rng.value; });
+      btn.addEventListener('click', () => this.cb.onAct({ type: 'raise', to: this._raiseTo }));
       a.querySelector('#pk-allin').addEventListener('click', () => this.cb.onAct({ type: 'allin' }));
     }
   }
