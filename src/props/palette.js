@@ -37,6 +37,12 @@ export const PALETTE = {
                glb: { rgb: [0.55, 0.57, 0.55], rough: 0.6, metal: 0.1 } },
   gunGrey:   { voxel: { hi: '#4a4e52', mid: '#34383c', lo: '#23262a', slot: '#16181b', bright: '#5e636a' },
                glb: { rgb: [0.10, 0.11, 0.12], rough: 0.5, metal: 0.3 } },
+  paintOchre: { voxel: { hi: '#d99c3e', mid: '#b3782a', lo: '#8c5c20', slot: '#644014', bright: '#edb654' },
+                glb: { rgb: [0.65, 0.45, 0.16], rough: 0.45, metal: 0.0 } },
+  lensGlass:  { voxel: { hi: '#4a5fa8', mid: '#2e3c75', lo: '#1f2a52', slot: '#141c3a', bright: '#6b80c4' },
+                glb: { rgb: [0.18, 0.24, 0.46], rough: 0.12, metal: 0.0 } },
+  lensLaser:  { voxel: { hi: '#cdd98a', mid: '#a8b85e', lo: '#7e8c42', slot: '#566030', bright: '#e2ecaa' },
+                glb: { rgb: [0.66, 0.72, 0.37], rough: 0.15, metal: 0.0 } },
   // --- H.K.M. gramophone palette ---
   chrome:    { voxel: { hi: '#e9edf2', mid: '#b9c1c9', lo: '#7b848d', slot: '#4a5158', bright: '#ffffff' },
                glb: { rgb: [0.70, 0.72, 0.75], rough: 0.16, metal: 0.95 } },
@@ -81,6 +87,11 @@ export const PALETTE = {
                 glb: { rgb: [0.58, 0.42, 0.22], rough: 0.92, metal: 0.0 } },
   charBlack:  { voxel: { hi: '#2a2624', mid: '#181614', lo: '#0e0c0a', slot: '#060504', bright: '#3a3430' },
                 glb: { rgb: [0.04, 0.04, 0.03], rough: 0.95, metal: 0.0 } },
+  // --- P-37 radar palette ---
+  tyre:      { voxel: { hi: '#3a3d42', mid: '#212327', lo: '#141518', slot: '#0d0e10', bright: '#4c5158' },
+               glb: { rgb: [0.04, 0.04, 0.05], rough: 0.9, metal: 0.05 } },
+  sovietRed: { voxel: { hi: '#c0352a', mid: '#9a2620', lo: '#741b18', slot: '#511211', bright: '#d6483a' },
+               glb: { rgb: [0.55, 0.10, 0.08], rough: 0.5, metal: 0.0 } },
 };
 
 export function resolveMaterial(name, target = 'voxel') {

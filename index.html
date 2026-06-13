@@ -142,6 +142,28 @@
                 mask-composite: intersect; }      /* declared LAST so it wins: cut-out = UNION of the two lenses */
     #binoview.show { opacity: 1; }
 
+    /* ЛПР-1 «Каралон-М» rangefinder overlay — right-eye vizír circle with the угломерная сетка
+       (training-deck slide-9, models/lpr1/ref/) + left-eye indicator inset 1:1 per Рис. 5.4:
+       5-digit red range display, red АКБ lamp (dark — no battery sim), green готовность lamp. */
+    #lprview { position: fixed; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .12s;
+               background: radial-gradient(circle at center, transparent 0 32vmin, rgba(3,5,8,.97) 36vmin); }
+    #lprview.show { opacity: 1; }
+    #lprreticle { position: absolute; left: 50%; top: 50%; width: 72vmin; height: 72vmin; transform: translate(-50%,-50%); }
+    #lprindicator { position: absolute; left: calc(50% - 41vmin); top: calc(50% + 8vmin); width: 20vmin; height: 20vmin; border-radius: 50%;
+                    background: radial-gradient(circle at 50% 42%, #14110c 0 58%, #060504 100%);
+                    box-shadow: 0 0 0 .9vmin #0a0908, 0 0 4vmin rgba(0,0,0,.9); }
+    #lprdigits { position: absolute; left: 0; right: 0; top: 26%; text-align: center; font: 700 3.1vmin/1 'Courier New', monospace;
+                 letter-spacing: .55vmin; color: #ff2b1f; text-shadow: 0 0 1.2vmin rgba(255,43,31,.75); min-height: 3.1vmin; }
+    #lprlamps { position: absolute; left: 0; right: 0; top: 58%; display: flex; justify-content: center; gap: 3.2vmin; }
+    #lprlamps span { width: 2.4vmin; height: 2.4vmin; border-radius: 50%; }
+    #lprbat { background: #2a0905; box-shadow: inset 0 0 .5vmin #000; }
+    #lprready { background: #0a2208; box-shadow: inset 0 0 .5vmin #000; transition: background .15s; }
+    #lprready.on { background: #2ee04a; box-shadow: 0 0 1.4vmin rgba(46,224,74,.9); }
+    #lprhint { position: absolute; left: 50%; bottom: 7vh; transform: translateX(-50%); font: 600 1.7vmin/1 monospace;
+               color: rgba(214,180,120,.5); letter-spacing: .3vmin; }
+    /* ПОДСВ — night illumination of the сетка (lamp + fibre bundle): the reticle glows warm red after dark */
+    #lprview.night #lprreticle { stroke: #ff4f2e; opacity: 1; filter: drop-shadow(0 0 .5vmin rgba(255,79,46,.85)); }
+
     /* ННП-23 «Резчик» (1ПН54) observation-post overlay — single eyepiece circle, ПСО-style
        reticle (owner reference image; true drawing in dossier needs[]), phosphor noise + green
        readout. The green LOOK comes from #game.nvgreen (canvas filter) + a scene-light boost in
@@ -166,6 +188,29 @@
       font: 600 15px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .14em;
       color: #9dffac; text-shadow: 0 0 7px rgba(120,255,140,.65); }
     #nvview.day #nvreadout { color: #d8dec8; text-shadow: 0 0 4px rgba(0,0,0,.8); }
+
+    /* буссоль ПАБ-2А overlay — single monocular eyepiece: dark vignette + a rotating угломер
+       bezel under a FIXED lubber index at top, plus a digital угломер readout and grid coords.
+       The rose (#compassrose) is rotated by ui.js setCompass() so the live bearing sits under
+       the lubber line; everything else is static. Datum = bearing.js (grid-N=+Z, CW→+X). */
+    #compassview { position: fixed; inset: 0; z-index: 11; pointer-events: none; opacity: 0; transition: opacity .12s;
+      background: radial-gradient(circle at center, transparent 0 33vmin, rgba(6,9,6,.97) 37vmin); }
+    #compassview.show { opacity: 1; }
+    #compassview .cv-tube { position: absolute; inset: 0;   /* faint warm brass glow inside the optic */
+      background: radial-gradient(circle 33vmin at 50% 50%, rgba(176,160,80,.07) 0 72%, transparent 100%); }
+    #compassdial { position: absolute; left: 50%; top: 50%; width: 62vmin; height: 62vmin; transform: translate(-50%,-50%); }
+    #compassrose { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 50% 50%;
+      color: #c9b86a; filter: drop-shadow(0 0 2px rgba(200,180,90,.45)); }
+    /* fixed index (lubber line) — a small amber triangle biting the top of the bezel */
+    #compasslubber { position: absolute; left: 50%; top: -1.4vmin; transform: translateX(-50%);
+      width: 0; height: 0; border-left: 1.1vmin solid transparent; border-right: 1.1vmin solid transparent;
+      border-top: 1.8vmin solid #ffcf57; filter: drop-shadow(0 0 3px rgba(255,180,60,.8)); }
+    #compassmils { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); white-space: pre;
+      font: 700 5.4vmin/1 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .1em;
+      color: #ffd874; text-shadow: 0 0 9px rgba(255,190,70,.55); }
+    #compasscoords { position: absolute; left: 50%; bottom: 7vh; transform: translateX(-50%); white-space: pre;
+      font: 600 15px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .12em;
+      color: #cfd6b0; text-shadow: 0 0 6px rgba(0,0,0,.7); }
     /* controls hint — lives INSIDE the optic overlay (so it paints ABOVE the mask, no #hud
        stacking-context trap), sits just below the circle, fades out a few seconds after entry. */
     #nvhint { position: absolute; left: 50%; bottom: 11vh; transform: translateX(-50%); white-space: nowrap;
@@ -621,6 +666,17 @@
     #nightgear .ng.off { opacity: .55; }
     #heatbar { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); width: 240px; text-align: center; opacity: 0; transition: opacity .2s; }
     #heatbar.show { opacity: 1; }
+    /* 82-ПМ-37 indirect-fire dial panel (bottom-RIGHT, above the ammo slot — clears the bottom-left health/vitals) */
+    #mortarpanel { right: 26px; bottom: 150px; min-width: 180px; opacity: 0; transition: opacity .18s; pointer-events: none; }
+    #mortarpanel.show { opacity: 1; }
+    #mortarpanel .mrow { display: flex; justify-content: space-between; gap: 18px; font-size: 12px; line-height: 1.75; }
+    #mortarpanel .mrow span { color: var(--ink-dim); letter-spacing: 1px; }
+    #mortarpanel .mrow b { color: var(--paper); font-variant-numeric: tabular-nums; }
+    #mortarpanel #m-mils { color: var(--gold); }
+    #mortarpanel #m-load { margin-top: 4px; font-size: 11px; color: var(--gold-2); letter-spacing: 2px; opacity: 0; }
+    #mortarpanel.loading #m-load { opacity: 1; }
+    #spotcall { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); padding: 6px 16px; background: var(--glass); border: 1px solid var(--gold-deep); border-radius: var(--r-sm); color: var(--gold); font-size: 14px; letter-spacing: 1px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+    #spotcall.show { opacity: 1; }
     #heatbar .hl { font-size: 11px; letter-spacing: 2px; opacity: .85; margin-bottom: 3px; text-shadow: 0 2px 0 rgba(0,0,0,.55); }
     #heatbar .hb { height: 12px; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.3); border-radius: 6px; overflow: hidden; }
     #heatfill { height: 100%; width: 0%; background: linear-gradient(90deg,#ffd24a,#ff7a2a,#e8533a); transition: width .08s; }
@@ -997,6 +1053,14 @@
     <div id="interact"></div>
     <div id="bleedbar"><div class="bl">BLEEDING OUT</div><div class="bb"><div id="bleedfill"></div></div></div>
     <div id="heatbar"><div class="hl" id="heatlabel">BARREL HEAT</div><div class="hb"><div id="heatfill"></div></div></div>
+    <div id="mortarpanel" class="panel">
+      <div class="mrow"><span>ELEV</span><b id="m-elev">65°</b></div>
+      <div class="mrow"><span>RANGE</span><b id="m-range">240 m</b></div>
+      <div class="mrow"><span>BEARING</span><b id="m-mils">00-00</b></div>
+      <div class="mrow"><span>ROUNDS</span><b id="m-ammo">12</b></div>
+      <div id="m-load">RELOADING…</div>
+    </div>
+    <div id="spotcall"></div>
     <div id="msg"></div>
   </div>
 
@@ -1010,6 +1074,58 @@
 
   <div id="scope"></div>
   <div id="binoview"></div>
+  <div id="lprview">
+    <!-- угломерная сетка визира — slide-9 1:1: open-centre cross, 4-tick columns above/below, 5-tick rows each side (outer tick longer) -->
+    <svg id="lprreticle" viewBox="-250 -250 500 500" fill="none" stroke="#0a0a0a" stroke-width="3" opacity=".88">
+      <path d="M0,-26 V-92 M0,26 V92 M-26,0 H-92 M26,0 H92"/>
+      <path d="M-12,-122 H12 M-12,-150 H12 M-12,-178 H12 M-12,-206 H12"/>
+      <path d="M-12,122 H12 M-12,150 H12 M-12,178 H12 M-12,206 H12"/>
+      <path d="M-120,-12 V12 M-148,-12 V12 M-176,-12 V12 M-204,-12 V12 M-232,-20 V20"/>
+      <path d="M120,-12 V12 M148,-12 V12 M176,-12 V12 M204,-12 V12 M232,-20 V20"/>
+    </svg>
+    <div id="lprindicator">
+      <div id="lprdigits"></div>
+      <div id="lprlamps"><span id="lprbat"></span><span id="lprready"></span></div>
+    </div>
+    <div id="lprhint">T — ИЗМЕРЕНИЕ</div>
+  </div>
+  <!-- буссоль ПАБ-2А: монокулярный визир — rotating угломер bezel under a fixed lubber index,
+       digital угломер + grid coords. Rose is rotated live by ui.js setCompass(); rest is static. -->
+  <div id="compassview">
+    <div class="cv-tube"></div>
+    <div id="compassdial">
+      <svg id="compassrose" viewBox="-100 -100 200 200" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="0" cy="0" r="96" stroke-width="1.2" opacity=".5"/>
+        <circle cx="0" cy="0" r="44" stroke-width="1" opacity=".35"/>
+        <!-- 12 major graduations every 5 больших делений (500 mils / 30°), N at top, CW -->
+        <g stroke-width="2.4">
+          <line x1="0" y1="-84" x2="0" y2="-96"/>      <line x1="42" y1="-72.7" x2="48" y2="-83.1"/>
+          <line x1="72.7" y1="-42" x2="83.1" y2="-48"/> <line x1="84" y1="0" x2="96" y2="0"/>
+          <line x1="72.7" y1="42" x2="83.1" y2="48"/>   <line x1="42" y1="72.7" x2="48" y2="83.1"/>
+          <line x1="0" y1="84" x2="0" y2="96"/>         <line x1="-42" y1="72.7" x2="-48" y2="83.1"/>
+          <line x1="-72.7" y1="42" x2="-83.1" y2="48"/> <line x1="-84" y1="0" x2="-96" y2="0"/>
+          <line x1="-72.7" y1="-42" x2="-83.1" y2="-48"/><line x1="-42" y1="-72.7" x2="-48" y2="-83.1"/>
+        </g>
+        <!-- big-division numbers at the 8 inter-cardinal majors (large division count, ×100 mils) -->
+        <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="currentColor" stroke="none"
+           text-anchor="middle" dominant-baseline="central">
+          <text x="36" y="-62.4">05</text>  <text x="62.4" y="-36">10</text>
+          <text x="62.4" y="36">20</text>   <text x="36" y="62.4">25</text>
+          <text x="-36" y="62.4">35</text>  <text x="-62.4" y="36">40</text>
+          <text x="-62.4" y="-36">50</text> <text x="-36" y="-62.4">55</text>
+        </g>
+        <!-- cardinals: С(север)=00-00, В(восток)=15-00, Ю(юг)=30-00, З(запад)=45-00 -->
+        <g font-family="ui-monospace, Menlo, monospace" font-size="15" font-weight="700" fill="#ffd874" stroke="none"
+           text-anchor="middle" dominant-baseline="central">
+          <text x="0" y="-66">С</text> <text x="66" y="0">В</text>
+          <text x="0" y="66">Ю</text>  <text x="-66" y="0">З</text>
+        </g>
+      </svg>
+      <div id="compasslubber"></div>
+    </div>
+    <div id="compassmils">00-00</div>
+    <div id="compasscoords">X 0  Z 0</div>
+  </div>
   <!-- ННП-23 «Резчик» (1ПН54) eyepiece view: mask + tube shading + reticle + grain + угломер readout -->
   <div id="nvview">
     <div class="nv-mask"></div>
@@ -1475,6 +1591,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=263"></script>
+  <script type="module" src="./src/game.js?v=268"></script>
 </body>
 </html>

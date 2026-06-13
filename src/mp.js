@@ -7,6 +7,7 @@ import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
 import { LanNet, Net, makeRoomCode } from './net.js';
+import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 
 
 // ---------------------------------------------------------------------------
@@ -629,6 +630,14 @@ export class MP {
       else if (d.k === 'overheat') { if (g.audio && typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (g.audio && typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); } });
     n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGunById ? g.mountedGunById(d.g) : g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; if (gun && Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo); }); // slew the barrel + mirror heat/ammo so everyone sees the glow/smoke/empty box
     n.on('fiftyrefill', (d, from) => { if (this.isHost) this._hostFiftyRefill(from, d && d.g); }); // client → host: reload the host-owned fixed MG from a carried can
+    // ── 82-ПМ-37 co-op mortar (host-authoritative seat + ammo + impact; clients render visual-only arcs) ──
+    n.on('mortarclaim', (d, from) => { if (this.isHost && d) this._hostMortarClaim(d.want, from, d.m); });        // client → host: man/leave the mortar
+    n.on('mortarstate', (d) => { if (!this.isHost && d) this._applyMortarState(d); });                            // host → clients: occupant + mines
+    n.on('mortaraim', (d) => { if (!d || d.pid === this.myId) return; const m = this._mortarById(d.m); if (m && m.occupant === d.pid) { m._netAz = d.az; m._netEl = d.el; } }); // mirror the gunner's lay so the tube slews for everyone
+    n.on('mortarfirereq', (d, from) => { if (this.isHost && d) this._hostMortarFire(d.m, from); });                // client gunner → host: request a shot
+    n.on('mortarfire', (d) => { if (this.isHost || !d) return; const m = this._mortarById(d.m); if (m) m.spawnShell(d, false); }); // host → clients: render the identical arc (NO damage)
+    n.on('mortarspot', (d, from) => { if (this.isHost && d) this._hostMortarSpot(d.p, from); });                   // spotter → host: compute the firing solution
+    n.on('mortarmark', (d) => { if (!this.isHost && d) this.game._dropMortarMark(d); });                           // host → clients: shared target marker + call
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('boom', (d, from) => { if (!this.isHost || !d || !Array.isArray(d.p)) return; g.explode(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), { radius: d.r, dmg: d.d, enemyDmg: d.ed, source: d.s, harmEnemies: !!d.he, harmPlayers: !!d.hp, clearLoot: !!d.cl, destroy: !!d.ds, isRocket: !!d.rk, visual: false, net: false }); }); // client thrower's explosion → host authoritatively applies enemy AoE + player FF + item clearing + destruction (visual already shown via the 'proj' ghost)
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
@@ -700,6 +709,35 @@ export class MP {
     if (Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo);
     if (d.occ === this.myId) { if (this.game.player.mountedGun !== gun) gun._doMount(); }
     else if (this.game.player.mountedGun === gun) { gun._doDismount(); }   // someone else took/cleared it
+  }
+  // ---- 82-ПМ-37 mortar host authority (cloned from the fifty* seat pattern) ----
+  _mortarById(id) { return (this.game.mortars || []).find((m) => m.id === id) || null; }
+  _hostMortarClaim(want, from, mid) {
+    if (!this.isHost) return; const m = this._mortarById(mid); if (!m) return;
+    if (want === 'mount') {
+      if (m.ammo <= 0) { this.net.sendTo(from, 'mortarstate', { m: m.id, occ: m.occupant, ammo: m.ammo }); return; }
+      if (m.occupant == null) { m.occupant = from; }
+      else if (m.occupant !== from) { this.net.sendTo(from, 'mortarstate', { m: m.id, occ: m.occupant, ammo: m.ammo }); return; } // occupied: deny
+    } else if (want === 'dismount') { if (m.occupant === from) m.occupant = null; }
+    this._applyMortarState({ m: m.id, occ: m.occupant, ammo: m.ammo }); this.net.send('mortarstate', { m: m.id, occ: m.occupant, ammo: m.ammo });
+  }
+  _applyMortarState(d) {
+    const m = this._mortarById(d && d.m); if (!m) return; m.occupant = d.occ;
+    if (Number.isFinite(d.ammo)) m.setAmmo(d.ammo);
+    if (d.occ === this.myId) { if (this.game.player.mortar !== m) m._doMount(); }
+    else if (this.game.player.mortar === m) { m._doDismount(); }            // someone else took/cleared the seat
+  }
+  _hostMortarFire(mid, from) {
+    if (!this.isHost) return; const m = this._mortarById(mid); if (!m) return;
+    if (m.occupant !== from || m.ammo <= 0 || m.loadT > 0) { this.net.sendTo(from, 'mortarstate', { m: m.id, occ: m.occupant, ammo: m.ammo }); return; } // reject + resync
+    m._hostFire(this);                                                       // decrements ammo, computes the deterministic impact, broadcasts the arc
+  }
+  _hostMortarSpot(p, from) {
+    if (!this.isHost || !p) return; const m = this._mortarById('mortar') || (this.game.mortars && this.game.mortars[0]); if (!m) return;
+    const hit = { x: p[0], z: p[1] }, iy = m._groundY(hit.x, hit.z);
+    const mark = { p: [+hit.x.toFixed(2), +iy.toFixed(2), +hit.z.toFixed(2)], rng: Math.round(rangeMeters(m.base, hit)), mils: formatUglomer(bearingMils(m.base, hit)) };
+    this.game._dropMortarMark(mark);                                         // host sees it locally
+    this.net.send('mortarmark', mark);                                       // → all clients
   }
   // ---- per-frame ----
   update(dt) {
@@ -872,8 +910,8 @@ export class MP {
     cam.rotation.x += (clamp(rp.pitch, -1.2, 1.2) - cam.rotation.x) * k;
     cam.rotation.z += (0 - cam.rotation.z) * k;
   }
-  rayHitPlayers(origin, dir, maxDist) {
-    if (!this.friendlyFire) return null;   // co-op: gunfire passes through teammates (no accidental teamkills)
+  rayHitPlayers(origin, dir, maxDist, force = false) {
+    if (!this.friendlyFire && !force) return null;   // co-op: gunfire passes through teammates (no accidental teamkills); force=true for non-damaging probes (ЛПР-1 ranging)
     let best = maxDist, hit = null, hp = null;
     for (const [id, rp] of this.remotes) {
       if (rp.dead || rp.down || rp.waiting) continue;

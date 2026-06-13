@@ -5,6 +5,9 @@ import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R,
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
 import { CALIBERS, resolveHit } from './destruct.js';
+import { isNight } from './worldclock.js';
+import { makeTextPlateTexture } from './props/operators/round.js';
+import { yawToMils } from './bearing.js';
 
 // ── ?map=demo destruction wiring (Phase 9) ─────────────────────────────────────
 // Map a gameplay weapon class → destruction PENETRATION class (spec §5 hardness tiers).
@@ -58,10 +61,12 @@ export const WEAPONS = {
   // --- held tool: flashlight (no shooting while held; beam syncs in MP) ---
   flashlight: { name: 'Flashlight', class: 'tool', shape: 'flashlight', color: 0x9aa0a6, accent: 0xc23a2a },
   binoculars: { name: 'Binoculars', class: 'tool', shape: 'binoculars', zoom: true, scope: true, adsFov: 12, color: 0x26282b, accent: 0xb08a3a }, // Soviet Б8×30 field glasses — RMB zooms to a realistic 8× (FOV≈12°)
+  lpr1: { name: 'ЛПР-1 Rangefinder', class: 'tool', shape: 'lpr1', zoom: true, scope: true, adsFov: 6.7, rangefinder: true, color: 0xb3782a, accent: 0x26282b }, // ЛПР-1 «Каралон-М» (1Д13) laser rangefinder — RMB raises (7×, real 6.7° FOV), T fires a ranging pulse (TTX per models/lpr1/ref/dossier.json)
+  bussole: { name: 'Буссоль ПАБ-2А', class: 'tool', shape: 'bussole', color: 0x3a4a3a, accent: 0xb0a050 }, // Soviet artillery aiming circle — RMB raises the угломер compass overlay (no FOV zoom; keyed off shape==='bussole'). Datum = bearing.js
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -796,6 +801,129 @@ export function buildViewmodel(def) {
       cyl(0.02, 0.02, 0.16, 0, 0, 0, bodyLo, { seg: 14 });                       // central hinge axle (vertical)
       break;
     }
+    case 'lpr1': {   // ЛПР-1 «Каралон-М» laser rangefinder — CUSTOM-MESH build (owner pass 2): rounded cast capsule
+      // (extruded stadium profile, dossier 226×116×221 mm ×2.2), lathe eyecups/knobs/battery, subtle top ribs.
+      // Authored Z-FLIPPED vs models/lpr1/spec.json (rear panel at +Z toward the player) → asymmetric X negated.
+      const oHi = 0xd99c3e, oMid = 0xb3782a, oLo = 0x8c5c20, oBr = 0xedb654,
+            blk = 0x141414, blkLo = 0x0c0c0c, bak = 0x2c2723, stl = 0x8a9099, gun = 0x3a3f45, brs = 0xa8842f,
+            olv = 0x52603a, lth = 0x3a2c18, glHi = 0x4a5fa8, glMid = 0x2e3c75, lasHi = 0xcdd98a, lasMid = 0xa8b85e,
+            crm = 0xe6dcc2, grn = 0x3f2e22, glint = 0xcfdcff, blue = 0x3a5fc0;
+      const PI2 = Math.PI / 2;
+      const zcyl = (r, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(o.r2 ?? r, r, h, o.seg || 24); b.geo(g, x, y, z, col, { rx: PI2, ...o }); g.dispose(); };
+      const lat = (prof, x, y, z, col, o = {}) => { const g = new THREE.LatheGeometry(prof.map((q) => new THREE.Vector2(q[0], q[1])), o.seg || 24); b.geo(g, x, y, z, col, { rx: PI2, ...o }); g.dispose(); };
+      // rounded stadium loaf: side profile (depth D × height H, corner radius rad) extruded across width W with a beveled rim
+      const loafM = (W, H, D, rad, bev, x, y, z, col, tint = 0.03) => {
+        const bs = bev * 0.9, pw = D - 2 * bs, ph = H - 2 * bs;
+        const r = Math.max(0.001, Math.min(rad, ph / 2 - 0.0005, pw / 2 - 0.0005));
+        const sh = new THREE.Shape(); const x0 = -pw / 2, y0 = -ph / 2;
+        sh.moveTo(x0 + r, y0);
+        sh.lineTo(x0 + pw - r, y0); sh.quadraticCurveTo(x0 + pw, y0, x0 + pw, y0 + r);
+        sh.lineTo(x0 + pw, y0 + ph - r); sh.quadraticCurveTo(x0 + pw, y0 + ph, x0 + pw - r, y0 + ph);
+        sh.lineTo(x0 + r, y0 + ph); sh.quadraticCurveTo(x0, y0 + ph, x0, y0 + ph - r);
+        sh.lineTo(x0, y0 + r); sh.quadraticCurveTo(x0, y0, x0 + r, y0);
+        const g = new THREE.ExtrudeGeometry(sh, { depth: W - 2 * bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bs, bevelSegments: 4, curveSegments: 12 });
+        g.translate(0, 0, -(W - 2 * bev) / 2); g.rotateY(PI2);
+        b.geo(g, x, y, z, col, { tint }); g.dispose();
+      };
+      const halfFin = (x, y, z) => {       // half-moon button guard: extruded semicircle, flat faces ±X, round edge up
+        const r = 0.027, th = 0.013;
+        const sh = new THREE.Shape(); sh.moveTo(-r, 0); sh.absarc(0, 0, r, Math.PI, 0, true); sh.lineTo(r, 0); sh.closePath();
+        const g = new THREE.ExtrudeGeometry(sh, { depth: th, bevelEnabled: false, curveSegments: 12 });
+        g.translate(0, 0, -th / 2); g.rotateY(PI2);
+        b.geo(g, x, y, z, oHi); g.dispose();
+      };
+      // ---- the cast capsule body + sculpted rear control-panel casting ----
+      loafM(0.497, 0.238, 0.385, 0.062, 0.035, 0, 0, 0.02, oMid);
+      loafM(0.458, 0.215, 0.062, 0.05, 0.014, 0, 0, 0.236, oMid, 0.045);
+      // subtle longitudinal stiffening ribs (owner: less detail here, the silhouette carries it)
+      for (const rx of [-0.185, -0.092, 0, 0.092, 0.185]) b.box(0.011, 0.007, 0.21, rx, 0.1175, 0.0, oHi);
+      // cast strap lugs on the rear shoulders
+      b.box(0.034, 0.024, 0.05, -0.225, 0.098, 0.19, oMid); b.box(0.034, 0.024, 0.05, 0.225, 0.098, 0.19, oMid);
+      // ---- FRONT (−Z, away from player): осушка · big blue objective · yellow-green laser window ----
+      zcyl(0.070, 0.05, -0.011, -0.004, -0.176, oHi);                        // objective bezel boss
+      zcyl(0.072, 0.012, -0.011, -0.004, -0.198, oBr);                       // bright lip
+      zcyl(0.060, 0.02, -0.011, -0.004, -0.202, blkLo);                      // inner barrel
+      zcyl(0.052, 0.012, -0.011, -0.004, -0.207, glMid);                     // deep blue coated glass
+      zcyl(0.040, 0.010, -0.011, -0.004, -0.212, glHi);                      // inner sheen
+      zcyl(0.012, 0.007, 0.004, 0.013, -0.216, glint, { seg: 12 });          // catch-light
+      zcyl(0.043, 0.04, 0.15, -0.004, -0.173, oHi);                          // laser window bezel
+      zcyl(0.045, 0.01, 0.15, -0.004, -0.189, oBr);
+      zcyl(0.032, 0.011, 0.15, -0.004, -0.193, lasMid);                      // 1.06 µm optics — yellow-green coating
+      zcyl(0.022, 0.009, 0.15, -0.004, -0.198, lasHi);
+      zcyl(0.008, 0.006, 0.142, 0.006, -0.202, glint, { seg: 10 });
+      zcyl(0.048, 0.008, -0.187, -0.004, -0.170, oMid);                      // осушка retaining ring
+      zcyl(0.046, 0.022, -0.187, -0.004, -0.178, grn);                       // desiccant felt disc
+      zcyl(0.009, 0.006, -0.187, -0.004, -0.190, blue, { seg: 10 });         // blue silica-gel window
+      // ---- REAR (+Z, the player's view — slide-18 layout seen from behind) ----
+      // indicator eyepiece (screen-left, bigger/softer) + visor eyepiece (violet glass)
+      for (const [ex, isVis] of [[-0.057, false], [0.101, true]]) {
+        lat([[0.030, 0], [0.041, 0.006], [0.044, 0.014], [0.040, 0.020], [0.044, 0.028], [0.040, 0.034], [0.043, 0.042]], ex, 0, 0.262, gun);
+        lat([[0.040, 0], [0.051, 0.012], [0.054, 0.030], [0.046, 0.044]], ex, 0, 0.298, blk);
+        zcyl(0.033, 0.010, ex, 0, 0.344, 0x101418);
+        if (isVis) { zcyl(0.020, 0.008, ex, 0, 0.348, glHi, { seg: 14 }); zcyl(0.007, 0.005, ex - 0.008, 0.008, 0.352, glint, { seg: 8 }); }
+      }
+      // battery cover (far screen-left): ochre base ring + black rounded cap + steel fold lever
+      zcyl(0.057, 0.014, -0.172, -0.013, 0.264, oMid);
+      lat([[0, 0], [0.030, 0], [0.038, 0.006], [0.040, 0.018], [0.033, 0.027], [0, 0.030]], -0.172, -0.013, 0.272, blk);
+      b.box(0.011, 0.052, 0.009, -0.172, -0.013, 0.300, stl, { rz: 0.35 });
+      // ВКЛ/ВЫКЛ power knob + engraved white labels
+      zcyl(0.017, 0.012, -0.119, 0.070, 0.262, oLo);
+      lat([[0.006, 0], [0.013, 0.004], [0.013, 0.018], [0.009, 0.026], [0, 0.028]], -0.119, 0.070, 0.268, bak);
+      b.box(0.008, 0.034, 0.009, -0.119, 0.070, 0.288, blk, { rz: 0.6 });
+      // СТРОБИРОВАНИЕ drum: knurled black drum + cream scale ring + slotted screw face
+      { const kn = [[0.022, 0]]; for (let i = 0; i <= 9; i++) kn.push([i % 2 ? 0.037 : 0.032, 0.004 + i * 0.0042]); kn.push([0.022, 0.047]);
+        lat(kn, 0.018, 0.070, 0.262, blk, { seg: 26 }); }
+      zcyl(0.030, 0.0045, 0.018, 0.070, 0.310, crm);
+      zcyl(0.024, 0.005, 0.018, 0.070, 0.313, blkLo);
+      b.box(0.018, 0.004, 0.004, 0.018, 0.070, 0.317, stl);
+      // ПОДСВ illumination knob + label
+      zcyl(0.014, 0.010, 0.154, -0.062, 0.262, oLo);
+      lat([[0.005, 0], [0.011, 0.004], [0.011, 0.015], [0.007, 0.022], [0, 0.024]], 0.154, -0.062, 0.266, bak);
+      b.box(0.007, 0.026, 0.008, 0.154, -0.062, 0.283, blk, { rz: -0.6 });
+      // remote-buttons разъём: knurled brass cap (bottom centre)
+      { const kb = [[0.014, 0]]; for (let i = 0; i <= 5; i++) kb.push([i % 2 ? 0.024 : 0.020, 0.004 + i * 0.0045]); kb.push([0.012, 0.030]);
+        lat(kb, -0.004, -0.086, 0.262, brs, { seg: 20 }); }
+      // label plate BACKINGS (relief); the READABLE text goes on as CanvasTexture planes in _post —
+      // real legible азбука is the project bar (gatehouse console, gramophone labels, «ЧАСОЗБОР»),
+      // cream paint-bars are banned for up-close text.
+      b.box(0.057, 0.040, 0.010, 0.022, -0.048, 0.266, blk);
+      b.box(0.079, 0.048, 0.010, 0.189, 0.009, 0.266, blk);
+      _post = (m) => {
+        const addText = (lines, w, h, x, y, z, opts = {}) => {
+          const tex = makeTextPlateTexture(lines, { plate: opts.plate !== false, aspect: w / h });
+          const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: opts.plate === false, depthWrite: opts.plate !== false });
+          const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+          pl.position.set(x, y, z);
+          if (opts.rx) pl.rotation.x = opts.rx;
+          pl.renderOrder = 1001; pl.frustumCulled = false;
+          m.add(pl);
+        };
+        addText(['ЛПР-1', 'ДАЛЬНОМЕР', 'N 790346'], 0.052, 0.036, 0.022, -0.048, 0.2725);
+        addText(['ПОСЛЕ ОКОНЧАНИЯ', 'РАБОТЫ ВЫКЛЮЧИ', 'ПИТАНИЕ И ПОДСВЕТКУ'], 0.074, 0.044, 0.189, 0.009, 0.2725);
+        addText(['ВЫКЛ      ВКЛ'], 0.082, 0.014, -0.119, 0.097, 0.2690, { plate: false });
+        addText(['ПОДСВ.'], 0.040, 0.012, 0.118, -0.085, 0.2690, { plate: false });
+        addText(['ИЗМЕРЕНИЕ'], 0.092, 0.015, 0.119, 0.1205, -0.045, { plate: false, rx: -PI2 });
+      };
+      // slotted panel screws (4 corners + top/bottom centre)
+      for (const [sx, sy] of [[-0.214, 0.092], [0.214, 0.092], [-0.214, -0.085], [0.214, -0.085], [0, 0.100], [0.07, -0.092]]) {
+        zcyl(0.009, 0.012, sx, sy, 0.262, stl, { seg: 12 });
+        b.box(0.013, 0.003, 0.003, sx, sy, 0.270, gun);
+      }
+      // ---- TOP: ИЗМЕРЕНИЕ 1/2 rubber dome buttons between three half-moon guard fins ----
+      halfFin(0.172, 0.118, -0.075); halfFin(0.119, 0.118, -0.075); halfFin(0.066, 0.118, -0.075);
+      lat([[0.019, 0], [0.019, 0.008], [0.014, 0.012], [0.012, 0.020], [0.006, 0.026], [0, 0.028]], 0.145, 0.118, -0.075, blk, { rx: -PI2 });
+      lat([[0.019, 0], [0.019, 0.008], [0.014, 0.012], [0.012, 0.020], [0.006, 0.026], [0, 0.028]], 0.092, 0.118, -0.075, blk, { rx: -PI2 });
+      // ---- strap over the spine + slim leather handle ----
+      b.box(0.40, 0.008, 0.042, 0, 0.1225, 0.105, olv);
+      b.box(0.008, 0.17, 0.042, -0.246, 0.03, 0.105, olv); b.box(0.008, 0.17, 0.042, 0.246, 0.03, 0.105, olv);
+      b.box(0.022, 0.044, 0.022, -0.075, 0.141, -0.02, lth); b.box(0.022, 0.044, 0.022, 0.075, 0.141, -0.02, lth);
+      b.box(0.172, 0.020, 0.024, 0, 0.171, -0.02, lth, { tint: 0.04 });
+      // ---- bottom: steel УИУ-mount bracket strip + T-slot block ----
+      b.box(0.10, 0.014, 0.26, 0, -0.124, 0.04, stl);
+      b.box(0.05, 0.016, 0.07, 0, -0.130, 0.10, stl);
+      b.box(0.028, 0.018, 0.05, 0, -0.133, 0.02, gun);
+      break;
+    }
     case 'flashlight': {     // Soviet steel torch: ribbed body, flared reflector head, red push-button (ref Michael Dronov)
       const stHi = 0xc0c5cc, stMid = 0x8a9099, stLo = 0x5e636b, stSlot = 0x3a3e44, red = 0xc23a2a, redHi = 0xe0584a, lens = 0xe8eef5;
       let gg = new THREE.CylinderGeometry(0.085, 0.085, 0.62, 16); b.geo(gg, 0, 0, -0.2, stMid, { rx: Math.PI / 2, tint: 0.02 }); gg.dispose(); // body
@@ -834,10 +962,39 @@ export function buildViewmodel(def) {
       b.box(0.42, 0.1, 0.05, 0, 0.07, -0.5, m, { tint: 0.05 }); b.box(0.42, 0.1, 0.05, 0, -0.05, -0.5, h, { tint: 0.05 });
       b.box(0.05, 0.05, 0.05, -0.19, 0.01, -0.46, 0x2a2c30); break;
     }
+    case 'bussole': {   // PLACEHOLDER ПАБ-2А артиллерийская буссоль (aiming circle): graduated brass
+                        // угломер ring on a short pillar + periscope head (objective faces −Z forward)
+                        // + eyepiece you sight through (+Z, toward the player). TODO modelgen: swap this
+                        // whole case for the sourced voxel build (one-case edit) — a shape with no case
+                        // renders INVISIBLE, so this stand-in is mandatory until the real model lands.
+      const olive = c, oliveHi = shade(c, 0.12), oliveLo = shade(c, -0.14),
+            brass = a, brassHi = shade(a, 0.18), steel = 0x5a6068, glass = 0x9fc6d6;
+      const PI2 = Math.PI / 2;
+      const cyl = (r0, r1, h, x, y, z, col, o = {}) => { const g = new THREE.CylinderGeometry(r1, r0, h, o.seg || 20); b.geo(g, x, y, z, col, o); g.dispose(); };
+      // graduated azimuth ring (brass круг) lying flat — the угломер dial
+      cyl(0.17, 0.17, 0.03, 0, -0.14, -0.34, brass, { seg: 28, tint: 0.02 });
+      cyl(0.175, 0.175, 0.012, 0, -0.123, -0.34, brassHi, { seg: 28 });
+      for (let i = 0; i < 24; i++) { const ang = i / 24 * TAU; b.box(0.006, 0.006, 0.02, Math.cos(ang) * 0.155, -0.118, -0.34 + Math.sin(ang) * 0.155, steel); } // graduation ticks
+      cyl(0.05, 0.05, 0.16, 0, -0.05, -0.34, oliveLo, { seg: 16 });   // short pillar/axle
+      // main body column (vertical olive box, layered shading)
+      b.box(0.14, 0.2, 0.12, 0, 0.06, -0.34, olive, { tint: 0.03 });
+      b.box(0.1, 0.05, 0.12, 0, 0.155, -0.34, oliveHi);              // lit top strip
+      b.box(0.14, 0.04, 0.12, 0, -0.04, -0.34, oliveLo);             // bottom shadow
+      // periscope head at top, looking forward (−Z) — objective window
+      b.box(0.13, 0.1, 0.16, 0, 0.18, -0.4, olive, { tint: 0.03 });
+      b.box(0.09, 0.07, 0.012, 0, 0.18, -0.485, glass);              // objective glass (front face, −Z)
+      // eyepiece tube facing the player (+Z) — what you sight through
+      cyl(0.045, 0.05, 0.12, 0, 0.06, -0.2, steel, { rx: PI2, seg: 18 });
+      cyl(0.05, 0.05, 0.02, 0, 0.06, -0.135, brassHi, { rx: PI2, seg: 18 });   // eyecup bezel
+      cyl(0.034, 0.034, 0.012, 0, 0.06, -0.125, 0x1f2932, { rx: PI2, seg: 16 }); // dark eyepiece glass
+      cyl(0.03, 0.03, 0.05, 0.1, 0.02, -0.34, brass, { rz: PI2, seg: 14 });     // side azimuth knob
+      break;
+    }
     default:        b.box(0.12, 0.16, 0.6, 0, 0, -0.3, c, { tint: 0.04 }); b.box(0.1, 0.26, 0.14, 0, -0.2, 0.04, dark);
   }
   const geom = b.build();
   if (def.shape === 'binoculars') geom.rotateY(Math.PI);   // eyepieces face the player in POV (you look INTO them, not the objectives)
+  // lpr1 is NOT flipped — its rear control panel (eyecups/СТРОБ drum/plates) is authored at +Z, which is the side the player sees
   // Binoculars have open revolved tubes (eyecups, focus rings) — render double-sided so the inner
   // walls draw and you never see THROUGH them into the void (depthTest is off, so a culled back face = a hole).
   const m = new THREE.Mesh(geom, voxelMaterial({ side: THREE.DoubleSide })); // depthTest on (2-pass) + DoubleSide => correct self-occlusion, no see-through through open tubes
@@ -893,6 +1050,7 @@ export class WeaponSystem {
     this.cur = 'luger';
     this.cooldown = 0; this.reloading = 0; this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.recoilYawKick = 0; this._recoilStreak = 0; this._boltLock = 0;
     this.grenadeCD = 0; this.ads = false; this.fov = 80;
+    this.lprCD = 0; this.lprValue = null; // ЛПР-1: 5 s measurement cycle (0.2 Hz, ТТХ) + last reading in metres (null = display dark, 0 = no echo → 00000)
     this.molotovCD = 0;
     this.molotovState = null; this.molotovLightT = 0; this.molotovFuseT = 0; // null|'lighting'|'lit'
     this._boltT = 0; this._boltDur = 0.72; this._boltEjected = false; this._boltClickOpen = false; this._boltClickClose = false;
@@ -1496,10 +1654,33 @@ export class WeaponSystem {
     this._applyMosinBolt(mos, pose);
   }
 
+  // --- ЛПР-1 «Каралон-М» laser rangefinder (realistic-lite per ТТХ, models/lpr1/ref/dossier.json) ---
+  get lprRaised() { const d = this.def(); return !!(d && d.rangefinder && this.ads); } // T only fires while glassing through it (same gate idea as the ННП-23 branch toggle)
+  lprMeasure() {
+    if (!this.lprRaised) return;
+    if (this.lprCD > 0) return;                       // green готовность lamp still dark — 0.2 Hz cycle (ТТХ row 16)
+    this.lprCD = 5;
+    const cam = this.game.engine.camera;
+    const origin = cam.getWorldPosition(this._tmp);
+    const dir = cam.getWorldDirection(this._tmp2);
+    // The beam catches whatever a bullet would, PLUS terrain: world.rayHit marches the heightfield
+    // (_rayTerrain) on terrain maps and falls to the ground plane on flat ones — so hills/slopes range
+    // correctly. Also enemies + co-op teammates (force=true: ranging an ally isn't shooting them).
+    const wHit = this.game.world.rayHit(origin, dir, 20000);
+    const eHit = this.game.enemies.rayHit(origin, dir, 20000);
+    const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(origin, dir, 20000, true) : null;
+    const dist = Math.min(wHit ? wHit.dist : Infinity, eHit ? eHit.dist : Infinity, pHit ? pHit.dist : Infinity);
+    // Min 1 m (our maps are sub-km — the real 145 m strobe floor would read 00000 everywhere); 20 km
+    // counter cap kept. Outside that → zeros (no echo), like the real indicator.
+    this.lprValue = (isFinite(dist) && dist >= 1 && dist <= 20000) ? Math.round(dist) : 0;
+    this.game.audio.lprPulse();                       // ИЗМЕРЕНИЕ click + capacitor whine
+  }
+
   update(dt) {
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this._boltLock > 0) this._boltLock -= dt;
     if (this.grenadeCD > 0) this.grenadeCD -= dt;
+    if (this.lprCD > 0) { this.lprCD -= dt; if (this.lprCD <= 0 && this.cur === 'lpr1') this.game.audio.lprReady(); } // готовность beep on the relight edge
     if (this.molotovCD > 0) this.molotovCD -= dt;
     if (this._swing > 0) this._swing -= dt;
     if (this.reloading > 0) {
@@ -1524,7 +1705,19 @@ export class WeaponSystem {
     const targetFov = this.ads ? (d.adsFov || 60) : baseFov;
     this.fov = damp(this.fov, targetFov, 16, dt);
     this.game.engine.setFov(this.fov);
-    this.game.hud.setScope(this.ads && d.scope, d.shape === 'binoculars');
+    this.game.hud.setScope(this.ads && d.scope, d.shape);
+    if (this.game.hud.setLpr) {
+      const night = this.game._worldClock ? isNight(this.game._worldClock.minuteOfDay()) : false; // ПОДСВ: reticle lamp comes on after dark
+      this.game.hud.setLpr(this.ads && d.rangefinder ? { ready: this.lprCD <= 0, value: this.lprValue, night } : null);
+    }
+
+    // буссоль ПАБ-2А: RMB raises the угломер compass overlay (no FOV zoom). Pure LOCAL read of
+    // player.yaw + pos through the shared datum (bearing.js) → identical on every co-op client.
+    if (d.shape === 'bussole') {
+      const plr = this.game.player;
+      this._compassUp = !!this.game.input.buttons[2];
+      this.game.hud.setCompass(this._compassUp ? { mils: yawToMils(plr.yaw), x: plr.pos.x, z: plr.pos.z } : null);
+    } else if (this._compassUp) { this.game.hud.setCompass(null); this._compassUp = false; }
 
     // viewmodel bob/sway/recoil/swing
     const pl = this.game.player;
@@ -2300,6 +2493,7 @@ export class MountedGun {
     this.game.player.pos.set(this.base.x + Math.sin(this.baseYaw) * 0.9, this.base.y, this.base.z + Math.cos(this.baseYaw) * 0.9); // stand BEHIND the gun
     this.yaw = this.baseYaw; this.pitch = 0;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0'; // hide the white crosshair on the .50 — the ring sight is the reticle
+    if (this.game.hud.setCompass) this.game.hud.setCompass(null); // mounting stops weapons.update() → tear the буссоль overlay down here
     this._primeCharge();
 	    this.game.hud.setMountedGun(this.ammo, this.maxAmmo, this.hudName);
 	  }

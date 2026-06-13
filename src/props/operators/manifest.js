@@ -32,6 +32,13 @@ export const MANIFEST = {
   tube:        { args: ['pts', 'tube'],           dims: ['tube'],              anchor: 'center' },
   texturedDisc: { args: ['r'],                     dims: ['r'],                anchor: 'center' },
   decal:       { args: ['w', 'h'],                dims: ['w', 'h'],            anchor: 'center' },
+  loaf:        { args: ['w', 'h', 'd'],           dims: ['w', 'h', 'd'],       anchor: 'center' },
+  // P-37 radar (structural mesh/emblem + round running-gear/pipework/mast)
+  meshReflector:{ args: ['w', 'h'],               dims: ['w', 'h'],            anchor: 'center' },
+  star:        { args: ['r'],                     dims: ['r'],                 anchor: 'center' },
+  wheel:       { args: ['r', 'w'],                dims: ['r', 'w'],            anchor: 'center' },
+  pipe:        { args: ['pts', 'r'],              dims: ['r'],                 anchor: 'center' },
+  tubeMast:    { args: ['baseW', 'baseD', 'h'],   dims: ['baseW', 'baseD', 'h'], anchor: 'floor' },
 };
 
 export const operatorNames = () => Object.keys(MANIFEST);

@@ -1,0 +1,281 @@
+{
+  "id": "mortar-82pm37",
+  "title": "Soviet 82 mm Battalion Mortar M1937 (82-ПМ-37 / БМ-37)",
+  "era": "Soviet, designed at СКБ-4 of Leningrad Plant No.7 «Арсенал» под рук. Б.И. Шавырина; adopted Feb 1939 as «82-мм батальонный миномёт обр. 1937 г.»; main Red Army battalion mortar of WWII. Stokes-Brandt scheme (derived from French Brandt mle 27/31).",
+  "scheme": "Stokes-Brandt: smoothbore muzzle-loaded tube, drop-fired with FIXED firing pin; two-leg bipod (двунога-лафет) with spring shock-absorbers; ROUND dished membrane-type baseplate. Rigid scheme with NO recoil-recuperator (жёсткая схема без противооткатных устройств).",
+  "variant_note": "Subject is the classic ROUND-baseplate БМ-37 (1937 pattern). NOT the rectangular-plate БМ-36, NOT the wheeled БМ-41, NOT the modern 2Б14 «Поднос». The round plate is the chief external identifier vs БМ-36.",
+  "sources": {
+    "ru_wikipedia": "«82-мм миномёты семейства БМ» — https://ru.wikipedia.org/wiki/82-мм_миномёты_семейства_БМ (БМ-37 infobox: tube 1220 mm = 14.8 clb, combat 56 kg, travel 61 kg, v0 211 m/s, max 3040 m, elev +45..+85, traverse +/-3 fine / +/-30 overall, ударник 26->8 mm)",
+    "service_manual": "НСД-40 «Наставление по стрелковому делу. 82-мм батальонный миномёт», Глава II «Устройство 82-мм миномёта…» — read via mirror https://fb2.top/82-mm-batalyonnyy-minomet-449605/read/part-2 (canonical arsenal-info copy https://arsenal-info.ru/b/book/1538781968/2 is Cloudflare-blocked). Also scanned PDF http://militera.lib.ru/manuals/0/pdf/ruk_minomet-82mm.pdf (image-only scan, not OCR-readable).",
+    "museum_or_catalog": "Музей Победы — https://victorymuseum.ru/encyclopedia/technic/artilleriya/82-mm-batalonnyy-minomet-bm-37-obraztsa-1937-goda-sssr/ ; Парк Патриот — https://parkpatriot.ru/o-parke/tekhnika-parka/82-mm-minomet-bm-37/ ; КСК Дивный музей — https://www.kskdivniy.ru/museum/eksponaty/bm-37/",
+    "forum_catalog": "vimpel-v.com — https://vimpel-v.com/guns/min/4138-bm-37-minomet.html ; sayga12.ru — https://sayga12.ru/82-мм-миномет-обр-1937-г-оружие-победы/ ; opoccuu.com charge/range table — https://www.opoccuu.com/82-mm-minomyot.htm",
+    "ttx_table_en": "en.wikipedia 82-BM-37 — https://en.wikipedia.org/wiki/82-BM-37 ; weaponsystems.net — https://weaponsystems.net/system/1143-82mm+BM-37 ; militaryfactory.com — https://www.militaryfactory.com/smallarms/detail.php?smallarms_id=778",
+    "mechanism_corroboration": "2Б14-1 «Поднос» manual, §3.3 Лафет-двунога (same Stokes-Brandt kinematics) — arsenal-info.ru/b/book/1216366455/13 (via search excerpt)",
+    "photos": "Wikimedia Commons Category:82 mm mortar M1937 — https://commons.wikimedia.org/wiki/Category:82_mm_mortar_M1937 (ref1 = File:82-BM-37 Chornomorsk 2021 G1.jpg; ref2 = File:Saratov Military Glory Museum - 82-BM-37.jpg; ref4 = File:Bundeswehrmuseum Dresden 35.jpg, round plate visible upright in background)"
+  },
+  "specifications": {
+    "caliber": {
+      "value_mm": 82,
+      "src": "ru.wikipedia 82-мм миномёты семейства БМ; en.wikipedia 82-BM-37",
+      "note": "smoothbore (гладкостенная труба), muzzle-loaded, drop-fired"
+    },
+    "tube_length": {
+      "value_mm": 1220,
+      "src": "ru.wikipedia (БМ-37: «Длина ствола 1220 мм (14,8 клб)»)",
+      "note": "barrel/ствол length; 14.8 cal * 82 = 1213.6 mm ~= 1220 mm. CONFLICT: parkpatriot/warshistory/victorymuseum cite «длина ствола 134 см» (1340 mm) and «общая длина 168 см» (1680 mm) — the 1340 mm value likely includes the казённик/breech cap, 1680 mm is the assembled overall. Prefer 1220 mm for the bore tube; see needs for which datum each is."
+    },
+    "overall_length_assembled": {
+      "value_mm": 1680,
+      "src": "parkpatriot.ru / warshistory.ru («длина общая 168 см»)",
+      "note": "assembled overall length cited by museum pages; datum (laid-out vs at-elevation) not stated"
+    },
+    "tube_outer_diameter": {
+      "value_mm": null,
+      "src": null,
+      "note": "NOT SOURCED — see needs[]. Bore is 82 mm; OD not published in sources read."
+    },
+    "muzzle_outer_diameter": {
+      "value_mm": null,
+      "src": null,
+      "note": "NOT SOURCED — see needs[]. Tube has два кольцевых выступа (two ring bands) near muzzle per НСД-40, but no Ø given."
+    },
+    "baseplate_diameter": {
+      "value_mm": null,
+      "src": null,
+      "note": "NOT SOURCED as a number — see needs[]. Confirmed ROUND dished membrane plate with a flat side-cut (с боковым срезом); plate assembly weighs 22 kg in pack (parkpatriot/ru.wiki). Photos ref1/ref2/ref4 show the round dished plate."
+    },
+    "baseplate_dish_depth": {
+      "value_mm": null,
+      "src": null,
+      "note": "NOT SOURCED — see needs[]. Plate is dished/concave (membrane type)."
+    },
+    "bipod_leg_length": {
+      "value_mm": null,
+      "src": null,
+      "note": "NOT SOURCED — see needs[]. Two tubular legs, bipod assembly = 20 kg in pack."
+    },
+    "bipod_spread_width": {
+      "value_mm": null,
+      "src": null,
+      "note": "NOT SOURCED as a number — see needs[]. Lower spread limited by a chain (цепь) between the legs per НСД-40."
+    },
+    "height_firing_position": {
+      "value_mm": null,
+      "src": null,
+      "note": "NOT SOURCED — see needs[]. Varies with elevation (45-85 deg)."
+    },
+    "weight_combat_kg": {
+      "value": 56,
+      "src": "ru.wikipedia; en.wikipedia 82-BM-37; victorymuseum; weaponsystems.net",
+      "note": "масса в боевом положении; some museum pages give a range 56-62.7 kg"
+    },
+    "weight_travel_kg": {
+      "value": 61,
+      "src": "ru.wikipedia («Масса в походном положении 61 кг»)",
+      "note": "broken into 3 packs (vyuk)"
+    },
+    "weight_packs_kg": {
+      "tube": 19,
+      "bipod": 20,
+      "baseplate": 22,
+      "src": "parkpatriot.ru; ru.wikipedia; opoccuu.com",
+      "note": "ствол с казёнником 19 kg / двунога-лафет 20 kg / опорная плита 22 kg (vyuk weights)"
+    },
+    "elevation_range_deg": {
+      "min": 45,
+      "max": 85,
+      "src": "ru.wikipedia; victorymuseum; weaponsystems.net; vimpel-v («По вертикали +45 +85»)",
+      "note": "+45 to +85 deg per Russian sources. CONFLICT: en.wikipedia lists +45 to +75 — prefer +85 (Russian primary/museum sources agree)."
+    },
+    "traverse_range_deg": {
+      "fine_screw": "+/-3 deg (0-50 mils each way on the horizontal screw)",
+      "overall": "+3 to +30 deg by repositioning the bipod",
+      "src": "НСД-40 manual («тонкой горизонтальной наводки в пределах 0-50 вправо и 0-50 влево»); vimpel-v/victorymuseum («По горизонтали +3 +30»)",
+      "note": "0-50 mils ~= 3 deg, corroborates the +/-3 deg fine traverse; coarse azimuth by lifting/moving the bipod legs"
+    },
+    "rate_of_fire_rpm": {
+      "value": "25-30",
+      "src": "ru.wikipedia (25-30); victorymuseum (up to 25); sayga12 (15 with re-laying)",
+      "note": "up to 25-30 rpm without re-aiming; ~15 rpm when correcting the lay"
+    },
+    "muzzle_velocity_ms": {
+      "value": 211,
+      "src": "ru.wikipedia; victorymuseum; opoccuu (max charge)",
+      "note": "211 m/s on full charge; opoccuu charge table spans 70-211 m/s"
+    },
+    "crew": {
+      "value": 4,
+      "src": "victorymuseum («Расчёт 4 человека»); sayga12; vimpel-v",
+      "note": "Russian sources say 4; weaponsystems.net says 5 (minority)"
+    },
+    "sight_model": {
+      "value": "МПБ-82 (early, via adapter/переходник) -> МП-82 (later); universal МПМ-44М used postwar",
+      "src": "vimpel-v («механический минометный прицел МПБ-82 … Позднее применялся прицел МП-82»); НСД-40 references МП-82 / МПМ-44М bracket on the вертлюг",
+      "note": "mechanical mortar sight (collimator + угломер/goniometer + elevation). Mounted on a bracket on the вертлюг (trunnion); typically on the LEFT side — side not explicitly stated in text, see needs."
+    },
+    "max_range_m": {
+      "value": 3040,
+      "src": "ru.wikipedia; victorymuseum; opoccuu",
+      "note": "gameplay ref only, not modeled"
+    },
+    "min_range_m": {
+      "value": 100,
+      "src": "victorymuseum («дальность прямого выстрела 100 м»); en sources",
+      "note": "CONFLICT: some sources (ru.wiki/opoccuu charge table) give 85 m as minimum on lowest charge. gameplay ref only."
+    },
+    "mine_weight_kg": {
+      "value": "3.1-3.31",
+      "src": "victorymuseum (3.1); en.wikipedia (3.05); sayga12 (3.31 ОФ); ru-secondary (3.6)",
+      "note": "O-832 fragmentation mine ~3.1-3.31 kg. gameplay ref only, mortar bomb not part of this model."
+    }
+  },
+  "feature_inventory": [
+    {
+      "feature": "tube / ствол",
+      "detail": "Smoothbore steel tube (гладкостенная стальная труба), 82 mm bore, muzzle-loaded. Has «два кольцевых выступа» (two ring bands) and a «белая линия» (white alignment line) for laying. Screws into the казённик at the base. Length ~1220 mm.",
+      "src": "НСД-40 (fb2.top mirror); ru.wikipedia"
+    },
+    {
+      "feature": "breech base cap / казённик + шаровая пята",
+      "detail": "Breech cap closes the tube base; carries a «шаровая пята» (spherical ball heel) that seats into the baseplate's ball socket (ball joint). The firing pin «ударник с бойком» is FIXED, screwed into the bottom of the казённик (ввинчен в дно казённика) — drop-fired, non-selective on the base БМ-37. Striker protrusion height reduced from 26 mm (БМ-36) to 8 mm on БМ-37.",
+      "src": "victorymuseum («ударник, ввинченный в дно казенника»); НСД-40; ru.wikipedia (8 mm vs 26 mm)"
+    },
+    {
+      "feature": "tube clamp / обойма (collar)",
+      "detail": "A collar/clamp (обойма) wraps the tube and links it to the bipod-mount top; the shock-absorbers attach between this collar and the trunnion.",
+      "src": "НСД-40 («обойма для соединения лафета со стволом»); 2Б14 §3.3 corroboration"
+    },
+    {
+      "feature": "elevation mechanism / подъёмный механизм",
+      "detail": "A vertical LEAD SCREW (ходовой винт) inside a box/casing (коробка и кожух), driven by a handle/crank (рукоятка) through a gear train (система шестерён). Turning it raises/lowers the apex of the bipod -> changes tube pitch. This is the large exposed helical screw seen at the front of the bipod in photos ref1/ref4. Handwheel/crank side NOT explicitly stated in text (photos suggest the crank handle is on the left).",
+      "src": "НСД-40 («ходовой винт, помещающийся внутри коробки и кожуха … система шестерён»); ref1/ref4 photos"
+    },
+    {
+      "feature": "traverse mechanism / поворотный механизм",
+      "detail": "A HORIZONTAL SCREW with a handwheel (горизонтальный винт с маховиком) mounted on the вертлюг (trunnion). Turning the handwheel runs the screw through a nut and swings the trunnion+tube laterally for fine lay: 0-50 mils (~3 deg) right and left of centre. Handwheel side not explicitly stated.",
+      "src": "НСД-40 («горизонтальный винт с маховиком … 0-50 вправо и 0-50 влево»); 2Б14 §3.3"
+    },
+    {
+      "feature": "shock absorbers / амортизаторы",
+      "detail": "TWO spring shock-absorber cylinders (два цилиндра), each containing rods with springs («два штока с пружинами, по две в каждом цилиндре»). Mounted between the tube collar (обойма) and the trunnion (вертлюг) to soften firing recoil on the bipod. Visible as the paired sprung cylinders below the tube clamp in photos.",
+      "src": "НСД-40 (fb2.top mirror); confirmed by spring detail in ref1/ref4"
+    },
+    {
+      "feature": "bipod legs / двунога",
+      "detail": "Two tubular legs joined at the apex by forks and a plug («вверху при помощи вилок и пробки»), and near the feet by a CHAIN that limits the spread («внизу цепью для ограничения раздвигания ног»). Spade feet with stops («сошники с ограничителями»). Carries the cross-leveling mechanism (механизм горизонтирования).",
+      "src": "НСД-40 (fb2.top mirror)"
+    },
+    {
+      "feature": "cross-leveling / механизм горизонтирования",
+      "detail": "Mechanism on the bipod to level the trunnion (bring the sight/bubble level) independent of leg footing.",
+      "src": "НСД-40; 2Б14 §3.3 (Лафет-двунога houses подъёмный, поворотный, механизм горизонтирования + sight bracket)"
+    },
+    {
+      "feature": "trunnion / вертлюг",
+      "detail": "The trunnion is the central hub of the bipod-mount: it carries the SIGHT bracket, the shock-absorbers and the traverse (horizontal) screw. The elevation screw raises the whole trunnion assembly.",
+      "src": "2Б14 §3.3 («вертлюг служит для крепления прицела, амортизатора и поворотного механизма»); НСД-40"
+    },
+    {
+      "feature": "baseplate / опорная плита",
+      "detail": "ROUND dished membrane-type plate (круглая мембранного типа) with a flat SIDE-CUT (с боковым срезом). Underside stiffening ribs double as ground spades («рёбра жёсткости внизу, которые одновременно служат сошниками»), giving the radial spoke/star pattern visible on top in photos. A central socket cup («опорная чашка» / шаровое гнездо) receives the tube's ball heel (ball joint). Has at least one carrying handle («рукоятка для переноски опорной плиты») and a lug for the carry strap («проушина для крепления ремня»); photos ref1/ref2 show ~4 rim grab-lugs (exact count NOT textually sourced).",
+      "src": "victorymuseum / vimpel-v («опорная плита мембранного типа круглой формы с боковым срезом»); НСД-40 (ribs as spades, опорная чашка); ref1/ref2 photos"
+    },
+    {
+      "feature": "sight / прицел",
+      "detail": "Mechanical mortar sight (МПБ-82 early via adapter, МП-82 later, МПМ-44М postwar): collimator + goniometer/угломер + elevation drum. Mounts on a bracket on the вертлюг, on the LEFT of the tube (typical Soviet layout; side not explicitly stated in the read sources).",
+      "src": "vimpel-v; НСД-40 (sight bracket on вертлюг)"
+    },
+    {
+      "feature": "double-load safety / предохранитель от двойного заряжания",
+      "detail": "БМ-37 includes a double-loading preventer (listed among components); the later БМ-37М added a lighter plate plus this device.",
+      "src": "victorymuseum (component list); en.wikipedia (M-37M: lighter base plate + double-load preventer)"
+    }
+  ],
+  "mechanism_mapping": {
+    "elevation_axis": "Controlled by the ELEVATION mechanism = a vertical lead screw (ходовой винт) at the FRONT/apex of the bipod, driven by a hand crank through gears. Raising the screw lifts the trunnion -> the tube pitches UP about its ball-seat in the baseplate; lowering it pitches DOWN. Range +45 to +85 deg. To rig: hinge the tube's pitch about the baseplate ball-socket pivot; the visible helical screw extends/retracts as the crank turns (CW = raise, assumed; sense not textually sourced). This is the big exposed coil screw in ref1/ref4.",
+    "traverse_axis": "Controlled by the TRAVERSE mechanism = a horizontal screw with handwheel on the trunnion (вертлюг). Turning it drives a nut that swings the trunnion+tube left/right +/-3 deg (0-50 mils each way) about a near-vertical axis through the trunnion. To rig: a small yaw hinge at the trunnion, +/-3 deg, animated by the horizontal screw/handwheel turning. Coarse azimuth (out to +/-30 deg) is done by physically lifting and re-planting the bipod legs, NOT by the screw.",
+    "tube_seat": "The tube does NOT rotate with the bipod controls about the plate for traverse beyond +/-3 deg; it sits in the baseplate via a BALL JOINT — the казённик's шаровая пята (ball heel) drops into the plate's опорная чашка (socket cup). Elevation and the +/-3 deg traverse both pivot the tube about/near this ball; the bipod merely supports and aims it.",
+    "notes": "Rigid (no-recoil) scheme: on firing, the energy is taken by the baseplate (into the ground) and the two spring shock-absorbers between the tube collar (обойма) and the trunnion — there is no barrel recoil slide to animate, only the shock-absorber springs flex slightly. Handwheel/crank SIDES (which is left, which is right) are not explicitly stated in the read text — infer from the reference photos when modeling; flagged in needs[]."
+  },
+  "derivation": {
+    "tube_length_from_calibers": "ru.wiki states 14.8 clb; 14.8 * 82 mm = 1213.6 mm, rounded to the quoted 1220 mm — confirms 1220 mm is the bore tube length (not the 1340 mm '134 cm' figure, which likely includes the казённик).",
+    "fine_traverse_from_mils": "НСД-40 '0-50 mils each way'; 50 mils * (360/6000) deg = 3.0 deg, matching the +/-3 deg figure from museum TTX pages."
+  },
+  "needs": [
+    "Authoring dims (baseplate O, tube OD, bipod leg length/spread, height, screw sizes) are PHOTO-DERIVED vs the sourced 1220 mm tube (see derived_dimensions), not textually sourced — refine in viewer overlay vs ref1/ref2.",
+    "exact rotation sense (CW/CCW) of each handwheel — cosmetic, not from stills",
+    "exact spring free-length / coil count of the two shock-absorber cylinders (НСД-40: two rods, two springs each, no dims)",
+    "definitive numeric baseplate O + bipod dims from a ГОСТ/manual table (museum/ТТХ pages omit them)"
+  ],
+  "derived_dimensions": {
+    "_method": "Photo-scaled against the SOURCED bore-tube length 1220 mm (specifications.tube_length) using ref1.jpg (3/4) + ref2.jpg (side). Authoring proportions for the voxel model, to be refined in the modelgen viewer overlay. Honest derivation (scaling vs a sourced datum), NOT invention.",
+    "tube_visible_length_mm": {
+      "value": 1340,
+      "method": "bore 1220 + казённик cap; matches museum 134 см. Ball-seat to muzzle."
+    },
+    "tube_outer_diameter_mm": {
+      "value": 100,
+      "method": "82 bore + ~9 wall (typical 82mm mortar); ~0.082x tube len ref1."
+    },
+    "muzzle_ring_diameter_mm": {
+      "value": 120,
+      "method": "two reinforcing ring bands ~10 proud of OD (ref1; НСД-40 два кольцевых выступа)."
+    },
+    "baseplate_diameter_mm": {
+      "value": 520,
+      "method": "plate O ~0.43x tube length ref1/ref2."
+    },
+    "baseplate_dish_depth_mm": {
+      "value": 80,
+      "method": "dished membrane; rim-to-centre ~0.15x plate O ref2."
+    },
+    "baseplate_thickness_mm": {
+      "value": 16,
+      "method": "rim plate thickness ref2."
+    },
+    "baseplate_handles_count": {
+      "value": 4,
+      "method": "rim grab-loops counted in ref1 (~4)."
+    },
+    "bipod_leg_length_mm": {
+      "value": 900,
+      "method": "apex-to-spade-foot ~0.74x tube length ref1."
+    },
+    "bipod_spread_width_mm": {
+      "value": 650,
+      "method": "foot-to-foot at firing ref1; chain-limited."
+    },
+    "bipod_apex_height_mm": {
+      "value": 700,
+      "method": "tube clamp height above ground at ~50deg elev ref1."
+    },
+    "elevation_screw_length_mm": {
+      "value": 320,
+      "method": "exposed lead-screw section ref1."
+    },
+    "elevation_screw_diameter_mm": {
+      "value": 36,
+      "method": "ref1."
+    },
+    "traverse_handwheel_diameter_mm": {
+      "value": 95,
+      "method": "ref1."
+    },
+    "shock_absorber_cylinder_length_mm": {
+      "value": 230,
+      "method": "ref1; 2 cylinders per НСД-40."
+    },
+    "shock_absorber_cylinder_diameter_mm": {
+      "value": 46,
+      "method": "ref1."
+    },
+    "control_cluster_side": {
+      "value": "left",
+      "method": "elevation crank + traverse handwheel + sight bracket on LEFT of tube (gunner view) ref1/ref2; Soviet convention."
+    },
+    "elevation_at_rest_deg": {
+      "value": 52,
+      "method": "display pose; mid of +45..+85; matches museum display ref1/ref2."
+    }
+  }
+}

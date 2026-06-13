@@ -357,6 +357,27 @@ export class AudioManager {
     o.start(t0); o.stop(t0 + 0.7);
   }
 
+  // ---- 82mm mortar: the round dropping + sliding the bore, then the deep firing WHUMP ----
+  mortarDrop() {                                  // bomb released → slides down → seats on the pin (the pre-BOOM beat)
+    if (!this.ctx) return;
+    this.noise(0.09, 0.30, 'lowpass', 360, 0.8);  // muffled tube slide
+    this.tone(120, 0.07, 'sine', 0.15);           // low clack of the round seating
+    this.noise(0.02, 0.16, 'bandpass', 1500, 3);  // faint primer-seat tick
+  }
+  mortarFire() {                                  // the report: a deep, low-frequency, concussive THUMP — NOT a treble crack
+    if (!this.ctx) return;
+    const t0 = this.t;
+    for (const [f0, f1, type, vol, dec] of [[78, 40, 'sine', 0.95, 0.32], [112, 55, 'triangle', 0.5, 0.26]]) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + dec);
+      o.connect(g); g.connect(this.sfxGain);
+      this._env(g, t0, vol, 0.003, dec);
+      o.start(t0); o.stop(t0 + dec + 0.1);
+    }
+    this.noise(0.34, 0.95, 'lowpass', 520, 0.6);  // pressure blast body (the "felt" part)
+    this.noise(0.45, 0.40, 'lowpass', 200, 0.5);  // low rumble tail / echo
+    if (Math.random() < 0.3) this.noise(0.05, 0.5, 'highpass', 1400, 0.8); // occasional secondary-combustion crack
+  }
   reloadClick() { this.noise(0.04, 0.3, 'bandpass', 2600, 3); }
   reloadIn() { this.tone(180, 0.08, 'square', 0.25); this.noise(0.05, 0.25, 'lowpass', 500, 1); }
   boltCycle() { this.noise(0.05, 0.28, 'bandpass', 1700, 4); setTimeout(() => { this.noise(0.06, 0.32, 'bandpass', 2200, 5); this.tone(150, 0.05, 'square', 0.14); }, 130); } // bolt lift-pull then push-lock
@@ -618,6 +639,30 @@ export class AudioManager {
 
   uiClick() { this.tone(660, 0.04, 'square', 0.25); }
   uiHover() { this.tone(880, 0.02, 'sine', 0.12); }
+  // ЛПР-1 «Каралон-М»: ИЗМЕРЕНИЕ button press — relay click + a quiet capacitor-bank
+  // whine rising through the first second of the 5 s ranging cycle.
+  lprPulse() {
+    if (!this.ctx) return;
+    this.reloadClick();
+    const t = this.t, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(2350, t + 1.05);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.045, t + 0.12); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+    o.connect(g); g.connect(this.sfxGain);
+    o.start(t); o.stop(t + 1.2);
+  }
+  // ЛПР-1: готовность lamp relights — soft rising double beep from the indicator eyepiece.
+  lprReady() {
+    if (!this.ctx) return;
+    const t = this.t;
+    for (const [dt, f] of [[0, 1560], [0.09, 2080]]) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + dt); g.gain.exponentialRampToValueAtTime(0.16, t + dt + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.07);
+      o.connect(g); g.connect(this.sfxGain);
+      o.start(t + dt); o.stop(t + dt + 0.12);
+    }
+  }
   buy() { this.tone(720, 0.06, 'square', 0.3); this.tone(960, 0.06, 'square', 0.25); }
   noMoney() { this.tone(160, 0.12, 'sawtooth', 0.3); }
 

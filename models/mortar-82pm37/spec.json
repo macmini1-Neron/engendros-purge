@@ -1,0 +1,868 @@
+{
+  "id": "mortar-82pm37",
+  "name": "82-ПМ-37 (БМ-37) 82 mm Battalion Mortar",
+  "category": "ordnance",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": {
+    "w": 0.62,
+    "h": 1.2,
+    "d": 1.15
+  },
+  "rig": [
+    {
+      "name": "azimuth",
+      "pivot": [
+        0,
+        0.11,
+        -0.285
+      ],
+      "axis": "y",
+      "pose": 0,
+      "type": "spin",
+      "range": [
+        0,
+        6.2832
+      ]
+    },
+    {
+      "name": "elevation",
+      "pivot": [
+        0,
+        0.11,
+        -0.285
+      ],
+      "axis": "x",
+      "pose": 0,
+      "parent": "azimuth",
+      "type": "hinge",
+      "range": [
+        -0.58,
+        0.13
+      ]
+    },
+    {
+      "name": "elevScrew",
+      "pivot": [
+        0,
+        0.44,
+        0.07
+      ],
+      "axis": "y",
+      "pose": 0,
+      "parent": "azimuth",
+      "type": "spin",
+      "range": [
+        0,
+        6.2832
+      ]
+    },
+    {
+      "name": "traverseScrew",
+      "pivot": [
+        -0.1,
+        0.475,
+        0.085
+      ],
+      "axis": "x",
+      "pose": 0,
+      "parent": "elevation",
+      "type": "spin",
+      "range": [
+        0,
+        6.2832
+      ]
+    },
+    {
+      "name": "muzzle",
+      "pivot": [
+        0,
+        1.166,
+        0.54
+      ],
+      "axis": "x",
+      "pose": 0,
+      "parent": "elevation",
+      "type": "marker"
+    }
+  ],
+  "parts": [
+    {
+      "id": "baseplate_body",
+      "op": "cylinder",
+      "args": {
+        "r": 0.26,
+        "h": 0.05,
+        "axis": "y",
+        "tone": "mid"
+      },
+      "at": [
+        0,
+        0.03,
+        -0.285
+      ],
+      "mat": "paintOD",
+      "src": "dossier#derived_dimensions.baseplate_diameter_mm",
+      "rig": "azimuth"
+    },
+    {
+      "id": "baseplate_rim",
+      "op": "torus",
+      "args": {
+        "r": 0.255,
+        "tube": 0.022,
+        "axis": "y",
+        "tone": "lo"
+      },
+      "at": [
+        0,
+        0.05,
+        -0.285
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.baseplate_diameter_mm",
+      "rig": "azimuth"
+    },
+    {
+      "id": "baseplate_ribs",
+      "op": "finSet",
+      "args": {
+        "count": 6,
+        "root": 0.018,
+        "tip": 0.009,
+        "span": 0.095,
+        "thick": 0.011,
+        "r0": 0.055,
+        "steps": 3,
+        "tone": "lo"
+      },
+      "at": [
+        0,
+        0.055,
+        -0.285
+      ],
+      "mat": "paintOD",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth",
+      "rot": [
+        -90,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "socket_cup",
+      "op": "cylinder",
+      "args": {
+        "r": 0.06,
+        "h": 0.08,
+        "axis": "y",
+        "tone": "hi"
+      },
+      "at": [
+        0,
+        0.09,
+        -0.285
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth"
+    },
+    {
+      "id": "handle_e",
+      "op": "torus",
+      "args": {
+        "r": 0.028,
+        "tube": 0.007,
+        "axis": "x",
+        "arc": 3.141592653589793,
+        "tone": "mid"
+      },
+      "at": [
+        0.25,
+        0.065,
+        -0.285
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.baseplate_handles_count",
+      "rig": "azimuth"
+    },
+    {
+      "id": "handle_w",
+      "op": "torus",
+      "args": {
+        "r": 0.028,
+        "tube": 0.007,
+        "axis": "x",
+        "arc": 3.141592653589793,
+        "tone": "mid"
+      },
+      "at": [
+        -0.25,
+        0.065,
+        -0.285
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.baseplate_handles_count",
+      "rig": "azimuth"
+    },
+    {
+      "id": "handle_f",
+      "op": "torus",
+      "args": {
+        "r": 0.028,
+        "tube": 0.007,
+        "axis": "z",
+        "arc": 3.141592653589793,
+        "tone": "mid"
+      },
+      "at": [
+        0,
+        0.065,
+        -0.045
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.baseplate_handles_count",
+      "rig": "azimuth"
+    },
+    {
+      "id": "handle_b",
+      "op": "torus",
+      "args": {
+        "r": 0.028,
+        "tube": 0.007,
+        "axis": "z",
+        "arc": 3.141592653589793,
+        "tone": "mid"
+      },
+      "at": [
+        0,
+        0.065,
+        -0.525
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.baseplate_handles_count",
+      "rig": "azimuth"
+    },
+    {
+      "id": "bipod_apex",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.09,
+        "h": 0.09,
+        "d": 0.11,
+        "tone": "mid"
+      },
+      "at": [
+        0,
+        0.55,
+        0.06
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.bipod_apex_height_mm",
+      "rig": "azimuth"
+    },
+    {
+      "id": "bipod_leg_l",
+      "op": "cylinder",
+      "args": {
+        "r": 0.016,
+        "h": 0.679,
+        "axis": "y",
+        "tone": "mid"
+      },
+      "at": [
+        -0.125,
+        0.284,
+        0.23
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.bipod_leg_length_mm",
+      "rig": "azimuth",
+      "rot": [
+        -32.583,
+        0,
+        -21.602
+      ]
+    },
+    {
+      "id": "bipod_leg_r",
+      "op": "cylinder",
+      "args": {
+        "r": 0.016,
+        "h": 0.679,
+        "axis": "y",
+        "tone": "mid"
+      },
+      "at": [
+        0.125,
+        0.284,
+        0.23
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.bipod_leg_length_mm",
+      "rig": "azimuth",
+      "rot": [
+        -32.583,
+        0,
+        21.602
+      ]
+    },
+    {
+      "id": "foot_l",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.07,
+        "h": 0.03,
+        "d": 0.12,
+        "tone": "lo"
+      },
+      "at": [
+        -0.25,
+        0.018,
+        0.4
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth"
+    },
+    {
+      "id": "foot_r",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.07,
+        "h": 0.03,
+        "d": 0.12,
+        "tone": "lo"
+      },
+      "at": [
+        0.25,
+        0.018,
+        0.4
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth"
+    },
+    {
+      "id": "leg_chain",
+      "op": "cylinder",
+      "args": {
+        "r": 0.006,
+        "h": 0.5,
+        "axis": "x",
+        "tone": "lo"
+      },
+      "at": [
+        0,
+        0.11,
+        0.3
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth"
+    },
+    {
+      "id": "elev_gearbox",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.08,
+        "h": 0.14,
+        "d": 0.09,
+        "tone": "lo"
+      },
+      "at": [
+        0,
+        0.33,
+        0.08
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth"
+    },
+    {
+      "id": "elev_screw",
+      "op": "cylinder",
+      "args": {
+        "r": 0.017,
+        "h": 0.46,
+        "axis": "y",
+        "tone": "bright"
+      },
+      "at": [
+        0,
+        0.53,
+        0.07
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.elevation_screw_length_mm",
+      "rig": "elevScrew",
+      "rot": [
+        14,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "elev_crank_arm",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.1,
+        "h": 0.022,
+        "d": 0.022,
+        "tone": "mid"
+      },
+      "at": [
+        -0.085,
+        0.33,
+        0.075
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevScrew"
+    },
+    {
+      "id": "elev_crank_knob",
+      "op": "cylinder",
+      "args": {
+        "r": 0.016,
+        "h": 0.05,
+        "axis": "z",
+        "tone": "mid"
+      },
+      "at": [
+        -0.135,
+        0.33,
+        0.075
+      ],
+      "mat": "bakelite",
+      "src": "dossier#feature_inventory",
+      "rig": "elevScrew"
+    },
+    {
+      "id": "tube_body",
+      "op": "texturedCylinder",
+      "args": {
+        "r": 0.05,
+        "h": 1.28,
+        "axis": "z",
+        "tone": "mid",
+        "marks": [
+          {
+            "text": "82-ПМ-37",
+            "x": 0.5,
+            "y": 0.205,
+            "size": 42,
+            "color": "#f1ebd9"
+          },
+          {
+            "text": "★",
+            "x": 0.5,
+            "y": 0.275,
+            "size": 40,
+            "color": "#f1ebd9"
+          },
+          {
+            "text": "82 мм",
+            "x": 0.5,
+            "y": 0.68,
+            "size": 34,
+            "color": "#f1ebd9"
+          },
+          {
+            "text": "ОТК",
+            "x": 0,
+            "y": 0.5,
+            "size": 26,
+            "color": "#e2dcc8"
+          }
+        ]
+      },
+      "at": [
+        0,
+        0.638,
+        0.127
+      ],
+      "mat": "paintOD",
+      "src": "dossier#derived_dimensions.tube_visible_length_mm",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "tube_bore",
+      "op": "cylinder",
+      "args": {
+        "r": 0.039,
+        "h": 0.34,
+        "axis": "z",
+        "tone": "lo"
+      },
+      "at": [
+        0,
+        1.018,
+        0.424
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "muzzle_ring1",
+      "op": "torus",
+      "args": {
+        "r": 0.053,
+        "tube": 0.012,
+        "axis": "z",
+        "tone": "bright"
+      },
+      "at": [
+        0,
+        1.113,
+        0.499
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "muzzle_ring2",
+      "op": "torus",
+      "args": {
+        "r": 0.053,
+        "tube": 0.012,
+        "axis": "z",
+        "tone": "bright"
+      },
+      "at": [
+        0,
+        1.039,
+        0.441
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "breech_cap",
+      "op": "cylinder",
+      "args": {
+        "r": 0.058,
+        "h": 0.14,
+        "axis": "z",
+        "tone": "lo"
+      },
+      "at": [
+        0,
+        0.173,
+        -0.236
+      ],
+      "mat": "paintOD",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "breech_band",
+      "op": "torus",
+      "args": {
+        "r": 0.06,
+        "tube": 0.013,
+        "axis": "z",
+        "tone": "hi"
+      },
+      "at": [
+        0,
+        0.253,
+        -0.174
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "tube_clamp",
+      "op": "torus",
+      "args": {
+        "r": 0.062,
+        "tube": 0.018,
+        "axis": "z",
+        "tone": "hi"
+      },
+      "at": [
+        0,
+        0.553,
+        0.061
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "trunnion",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.12,
+        "h": 0.09,
+        "d": 0.1,
+        "tone": "mid"
+      },
+      "at": [
+        0,
+        0.49,
+        0.04
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation"
+    },
+    {
+      "id": "data_plate",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.006,
+        "h": 0.034,
+        "d": 0.05,
+        "tone": "bright"
+      },
+      "at": [
+        0.063,
+        0.5,
+        0.06
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation"
+    },
+    {
+      "id": "shock_l",
+      "op": "cylinder",
+      "args": {
+        "r": 0.018,
+        "h": 0.22,
+        "axis": "z",
+        "tone": "hi"
+      },
+      "at": [
+        -0.05,
+        0.458,
+        -0.013
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.shock_absorber_cylinder_length_mm",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "shock_r",
+      "op": "cylinder",
+      "args": {
+        "r": 0.018,
+        "h": 0.22,
+        "axis": "z",
+        "tone": "hi"
+      },
+      "at": [
+        0.05,
+        0.458,
+        -0.013
+      ],
+      "mat": "steel",
+      "src": "dossier#derived_dimensions.shock_absorber_cylinder_length_mm",
+      "rig": "elevation",
+      "rot": [
+        -52,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "crosslevel_box",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.05,
+        "h": 0.045,
+        "d": 0.06,
+        "tone": "mid"
+      },
+      "at": [
+        0.06,
+        0.5,
+        0.085
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth"
+    },
+    {
+      "id": "crosslevel_knob",
+      "op": "cylinder",
+      "args": {
+        "r": 0.012,
+        "h": 0.04,
+        "axis": "x",
+        "tone": "mid"
+      },
+      "at": [
+        0.1,
+        0.5,
+        0.085
+      ],
+      "mat": "bakelite",
+      "src": "dossier#feature_inventory",
+      "rig": "azimuth"
+    },
+    {
+      "id": "sight_bracket",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.05,
+        "h": 0.05,
+        "d": 0.1,
+        "tone": "lo"
+      },
+      "at": [
+        -0.11,
+        0.55,
+        0
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation"
+    },
+    {
+      "id": "sight_body",
+      "op": "bevelBox",
+      "args": {
+        "w": 0.05,
+        "h": 0.13,
+        "d": 0.06,
+        "tone": "mid"
+      },
+      "at": [
+        -0.16,
+        0.62,
+        -0.02
+      ],
+      "mat": "bakelite",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation"
+    },
+    {
+      "id": "sight_eyepiece",
+      "op": "cylinder",
+      "args": {
+        "r": 0.015,
+        "h": 0.05,
+        "axis": "z",
+        "tone": "bright"
+      },
+      "at": [
+        -0.16,
+        0.665,
+        0.01
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "elevation"
+    },
+    {
+      "id": "trav_screw",
+      "op": "cylinder",
+      "args": {
+        "r": 0.009,
+        "h": 0.15,
+        "axis": "x",
+        "tone": "bright"
+      },
+      "at": [
+        -0.06,
+        0.475,
+        0.085
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "traverseScrew"
+    },
+    {
+      "id": "trav_handwheel",
+      "op": "torus",
+      "args": {
+        "r": 0.042,
+        "tube": 0.01,
+        "axis": "x",
+        "tone": "mid"
+      },
+      "at": [
+        -0.145,
+        0.475,
+        0.085
+      ],
+      "mat": "bakelite",
+      "src": "dossier#derived_dimensions.traverse_handwheel_diameter_mm",
+      "rig": "traverseScrew"
+    },
+    {
+      "id": "trav_hub",
+      "op": "cylinder",
+      "args": {
+        "r": 0.012,
+        "h": 0.03,
+        "axis": "x",
+        "tone": "mid"
+      },
+      "at": [
+        -0.145,
+        0.475,
+        0.085
+      ],
+      "mat": "steel",
+      "src": "dossier#feature_inventory",
+      "rig": "traverseScrew"
+    }
+  ],
+  "needs": [
+    "Authoring dims are PHOTO-DERIVED vs the sourced 1220 mm tube (dossier.derived_dimensions) — refine vs ref1/ref2 in the viewer.",
+    "bipod LEG GEOMETRY (spread/forward/length) is photo-derived — NSD-40 + ru.wiki give NO leg dimensions (the \"900/344 mm\" auto-summary figure was unverifiable → discarded). Feet brought closer for a tighter planted stance.",
+    "ELEVATION COUPLING is a RUNTIME animation, not a static rig prop: in reality the вертлюг (bipod apex) RISES on the lead-screw as the tube pitches +45→+85° about the baseplate ball-joint, so the planted legs stay connected. A bare hinge rig separates the (planted) legs from the (rising) mount at high elevation — the firing mechanic must drive the apex-rise/screw-telescope coupled to elevation. Rest pose (≈52°) is correct.",
+    "baseplate is modelled as a flat dished puck + raised rim + radial ribs (the membrane dish depth is approximated, not a true concave shell).",
+    "control-cluster sides: sight + fine-traverse handwheel modelled LEFT (owner choice). Sourced obr.1937 pattern puts the COARSE leveling screw on the RIGHT leg (НСД-40) — fine-traverse handwheel side itself is not textually sourced.",
+    "tube stencil LAYOUT is representative — designation (82-ПМ-37) + caliber (82мм) are sourced; exact stamp positions/serials/lot marks are unsourced, no invented serial."
+  ]
+}

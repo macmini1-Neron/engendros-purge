@@ -74,7 +74,7 @@ export class WaveManager {
     if (!this.active) return;
     if (this.toSpawn > 0) {
       this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0 && this.game.enemies.aliveCount < this.cap) {
+      if (this.spawnTimer <= 0 && this.game.enemies.aliveCount < this.cap && this.game.rules.doMobSpawning) { // /gamerule doMobSpawning false freezes natural spawns; /summon still works
         this.spawnTimer = Math.max(0.16, 1.2 - this.wave * 0.04);
         this._spawnOne(); this.toSpawn--;
       }
@@ -105,7 +105,7 @@ export class WaveManager {
     if (!this.active) return;
     if (this.toSpawn > 0) {
       this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0 && this.game.enemies.aliveCount < this.cap) {
+      if (this.spawnTimer <= 0 && this.game.enemies.aliveCount < this.cap && this.game.rules.doMobSpawning) { // /gamerule doMobSpawning false freezes natural spawns; /summon still works
         this.spawnTimer = Math.max(0.2, 1.4 - this.wave * 0.05);
         this._spawnOne(); this.toSpawn--;
       }

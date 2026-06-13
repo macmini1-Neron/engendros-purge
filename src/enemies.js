@@ -206,6 +206,7 @@ class Enemy {
     this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map(); // effects map: clear on pool reuse / init on first spawn
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
+    this.noAI = false;    // console /summon {NoAI:1} dummy flag — reset here so a recycled pooled enemy never inherits it
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
     // boss state (Tolo)
     this.phase = 1; this.laserCD = 3.2; this.charging = 0; this.addCD = 0; this.beamLife = 0;
@@ -297,6 +298,14 @@ export class EnemyManager {
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       if (!e.alive) { this.active.splice(i, 1); continue; }
+      if (e.noAI) { // {NoAI:1} dummy: stands still, no steering / contact damage / attacks — but still grounded, drawn, and killable (damage() is independent)
+        e.vel.x = 0; e.vel.z = 0;
+        e.pos.y = this.world.hasTerrain ? this.world.terrain.terrainHeightAt(e.pos.x, e.pos.z) : 0;
+        e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z);
+        e.mesh.scale.set(e.scale, e.scale, e.scale);   // pooled mesh may carry a stale scale/squash
+        e.mesh.rotation.set(0, e.mesh.rotation.y, 0);
+        continue;
+      }
       let tgt = pp, tgtId = 'host'; const _mp = this.game.mp; if (_mp && _mp.active && _mp.isHost) { const _np = _mp.nearestPlayer(e.pos.x, e.pos.z); if (_np) { tgt = _np.pos; tgtId = _np.id; } } e._tgtId = tgtId;
       let dx = tgt.x - e.pos.x, dz = tgt.z - e.pos.z;
       const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;

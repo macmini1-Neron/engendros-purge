@@ -1,12 +1,13 @@
 // console.js — in-game dev console («ПОЛИГОН» creative backbone). Minecraft-style syntax.
 // Pure parsing lives in console-core.js; this wires commands to live game subsystems.
 import * as THREE from 'three';
-import { createRegistry, suggest, highlight } from './console-core.js';
+import { createRegistry, suggest, highlight, parseSummonArgs, parseCoord } from './console-core.js';
 import { parseHHMM, formatHHMM, keywordMinute } from './worldclock.js';
 import { ENEMY_TYPES } from './enemies.js';
 import { WEAPONS, WEAPON_ORDER } from './weapons.js';
 import { ITEM_DEFS } from './loot.js';
 import { EFFECTS, applyEffect, clearEffects } from './effects-status.js';
+import { yawToMils, formatUglomer } from './bearing.js';
 
 const ENEMY_KEYS = Object.keys(ENEMY_TYPES);
 const _projV = new THREE.Vector3(); // scratch for projecting enemy world positions to screen (F3 labels)
@@ -31,7 +32,7 @@ export class DevConsole {
     this.reg.register('help', { args: [], run: () => 'Commands: /' + this.reg.names().join('  /') });
     this.reg.register('pos', { args: [], run: () => { const p = g.player.pos; return `x ${p.x.toFixed(1)}  y ${p.y.toFixed(1)}  z ${p.z.toFixed(1)}`; } });
     this.reg.register('seed', { args: [], run: () => `seed ${g.world.terrain ? g.world.terrain.seed ?? 1337 : 'flat'} (map ${g.mapId})` });
-    this.reg.register('clear', { args: [], run: () => { const n = g.inventory.slots.filter(Boolean).length; g.inventory.reset(); return n ? `Cleared inventory (${n} item${n === 1 ? '' : 's'})` : 'Inventory already empty'; } }); // Minecraft /clear = wipe items; console scrollback is cleared with F3+H
+    this.reg.register('clear', { args: [], run: () => { const n = g.inventory.slots.filter(Boolean).length; g.inventory.reset(); g.inventory._holdNothing(); if (g.hud) g.hud.setWeapon(g.weapons); return n ? `Cleared inventory (${n} item${n === 1 ? '' : 's'})` : 'Inventory already empty'; } }); // Minecraft /clear = wipe items INCLUDING what's in hand (reset only hides item models; _holdNothing also holsters the weapon viewmodel). Console scrollback is cleared with F3+D
 
     this.reg.register('tp', {
       args: [{ name: 'target', type: 'target' }, { name: 'dest', type: 'pos' }],
@@ -47,20 +48,29 @@ export class DevConsole {
       },
     });
 
+    // /summon <type> [x y z] [count] [{NoAI:1}] — entity-first (Minecraft order). count + the {NoAI:1}
+    // dummy tag are our extensions (vanilla /summon has neither); the tail blob is parsed order-tolerantly.
+    // The whole tail after <type> is parsed freeform ("[x y z] [count] [{NoAI:1}]") so the NBT tag never
+    // mis-colours as a bad coordinate and the suggest popup can offer {NoAI:1}; coords stay optional.
     this.reg.register('summon', {
       args: [
         { name: 'type', type: 'enum', choices: ENEMY_KEYS },
-        { name: 'at', type: 'pos', optional: true, default: null },
+        { name: 'tail', type: 'rest', suggest: ['{NoAI:1}'] },
       ],
       run: (a) => {
-        let p;
-        if (a.at) p = new THREE.Vector3(a.at[0], a.at[1], a.at[2]);
-        else {
-          const o = g.player.pos; p = new THREE.Vector3(o.x, o.y, o.z - 6); // 6 m in front (−Z)
+        const { coordToks, count, noAI } = parseSummonArgs(a.tail);
+        const o = g.player.pos;
+        const base = coordToks
+          ? new THREE.Vector3(parseCoord(coordToks[0], o.x), parseCoord(coordToks[1], o.y), parseCoord(coordToks[2], o.z))
+          : new THREE.Vector3(o.x, o.y, o.z - 6); // no coords ⇒ 6 m in front (−Z)
+        for (let k = 0; k < count; k++) {
+          const p = base.clone();
+          if (count > 1) { p.x += (Math.random() - 0.5) * 3; p.z += (Math.random() - 0.5) * 3; } // scatter so they don't stack on one point
+          if (g.world.hasTerrain) p.y = g.world.groundY(p.x, p.z);
+          const e = g.enemies.spawn(a.type, p);
+          if (noAI) e.noAI = true; // dummy: stands still, no contact damage (host-authoritative — enough on the spawner)
         }
-        if (g.world.hasTerrain) p.y = g.world.groundY(p.x, p.z);
-        g.enemies.spawn(a.type, p);
-        return `Summoned ${a.type}`;
+        return `Summoned ${count > 1 ? count + ' × ' : ''}${a.type}${noAI ? ' (dummy)' : ''}`;
       },
     });
 
@@ -93,10 +103,18 @@ export class DevConsole {
           return `Gave ${n} ${what}`;
         }
         if (!WEAPONS[what] && !ITEM_DEFS[what]) return `Unknown item: ${what}`; // weapon/item key or a resource only
-        if (WEAPONS[what] && g.weapons.grant) g.weapons.grant(what);             // own the weapon so it's usable
-        const count = WEAPONS[what] ? 1 : (a.amount ?? 1);                       // weapons don't stack; consumables take a count
-        const ok = g.inventory.addItem(what, count);
-        return ok ? `Gave ${what}${count > 1 ? ' ×' + count : ''}` : 'Backpack full';
+        const qty = Math.max(1, Math.min(50, a.amount ?? 1));                    // amount = NUMBER OF ITEMS (one slot each), not a stack value
+        const def = ITEM_DEFS[what];
+        const val = WEAPONS[what] ? 1 : ((def && (def.heal ?? def.food ?? def.armor)) ?? 1); // each copy carries its natural payload (heal/food/armor) or 1
+        const pl = ps[0];
+        let added = 0, dropped = 0;
+        for (let k = 0; k < qty; k++) {
+          if (WEAPONS[what] && g.weapons.grant) g.weapons.grant(what);           // own the weapon so it's usable
+          if (g.inventory.addItem(what, val)) added++;
+          else { g.loot.spawnNetPickup(what, pl.pos.x, pl.pos.z, val); dropped++; } // backpack full → the rest drops at the player's feet
+        }
+        const head = added > 0 ? `Gave ${what}${added > 1 ? ' ×' + added : ''}` : 'Backpack full';
+        return dropped ? `${head} — ${dropped} dropped at your feet` : head;
       },
     });
 
@@ -167,12 +185,16 @@ export class DevConsole {
       },
     });
 
+    // doMobSpawning = freeze natural/wave spawns (/summon still works); spawn_mobs = the 1.21.11+ MC alias.
+    // sendCommandFeedback = show/hide the console command echo + success lines (Minecraft's chat-feedback rule).
+    const RULE_KEY = { god: 'god', doMobSpawning: 'doMobSpawning', spawn_mobs: 'doMobSpawning', sendCommandFeedback: 'sendCommandFeedback' };
     this.reg.register('gamerule', {
-      args: [{ name: 'rule', type: 'enum', choices: ['god'] }, { name: 'value', type: 'enum', choices: ['on', 'off', 'true', 'false'] }],
+      args: [{ name: 'rule', type: 'enum', choices: ['god', 'doMobSpawning', 'spawn_mobs', 'sendCommandFeedback'] }, { name: 'value', type: 'enum', choices: ['true', 'false'] }], // Minecraft uses true/false (no on/off)
       run: (a) => {
-        const on = a.value === 'on' || a.value === 'true';
-        g.rules.god = on;
-        return `gamerule ${a.rule} = ${on}`;
+        const on = a.value === 'true';
+        const key = RULE_KEY[a.rule];
+        g.rules[key] = on;
+        return `gamerule ${key} = ${on}`;
       },
     });
 
@@ -208,8 +230,9 @@ export class DevConsole {
   _submit(line) {
     if (!line.trim()) return;
     this.history.push(line); this._hi = this.history.length;
+    const feedback = !this.game.rules || this.game.rules.sendCommandFeedback !== false; // /gamerule sendCommandFeedback false hides the echo + success lines (errors still show)
     const shown = line.trim();
-    this._print('› ' + (shown[0] === '/' ? shown : '/' + shown), 'c-echo'); // echo the sent command in gray (like Minecraft chat shows your message)
+    if (feedback) this._print('› ' + (shown[0] === '/' ? shown : '/' + shown), 'c-echo'); // echo the sent command in gray (like Minecraft chat shows your message)
     const g = this.game;
     const sel = {
       self: g.player,
@@ -223,8 +246,8 @@ export class DevConsole {
     };
     const ctx = { origin: [g.player.pos.x, g.player.pos.y, g.player.pos.z], game: g, sel };
     const res = this.reg.dispatch(line, ctx);
-    if (res.ok) this._print(res.message || 'ok', 'c-ok');   // ALWAYS a positive response — never a silent success (empty ⇒ plain "ok")
-    else this._print(res.error || 'failed', 'c-err');       // ALWAYS a negative response on failure
+    if (res.ok) { if (feedback) this._print(res.message || 'ok', 'c-ok'); } // success feedback is suppressed when sendCommandFeedback=false
+    else this._print(res.error || 'failed', 'c-err');                       // errors ALWAYS show (Minecraft shows command errors regardless)
     return res;
   }
 
@@ -263,11 +286,14 @@ export class DevConsole {
     const el = this._suggestEl; if (!el) return;
     if (!this._sugList.length) { el.classList.remove('show'); el.innerHTML = ''; return; }
     el.classList.add('show'); el.innerHTML = '';
+    let sel = null;
     this._sugList.forEach((s, i) => {
       const d = document.createElement('div');
       d.textContent = s; d.className = 'sug' + (i === this._sugIdx ? ' on' : '');
+      if (i === this._sugIdx) sel = d;
       el.appendChild(d);
     });
+    if (sel) sel.scrollIntoView({ block: 'nearest' }); // keep the ↑/↓-highlighted row visible (list is overflow-y:auto)
   }
   _complete() {
     if (!this._sugList.length) return;
@@ -328,9 +354,10 @@ export class DevConsole {
       `XYZ: ${pos.x.toFixed(3)} / ${pos.y.toFixed(3)} / ${pos.z.toFixed(3)}`,
       `Block: ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}   (ground ${gy})`,
       `Facing: ${dir} (${axis}) (${mcYaw.toFixed(1)} / ${mcPitch.toFixed(1)})`,
+      `Azimuth: ${formatUglomer(yawToMils(p.yaw))}  (угломер 60-00 · grid-N=+Z · CW→+X)`, // authoritative world datum (bearing.js). NB: the Facing line above uses the Minecraft −Z=north frame, so +Z reads "south" there but 00-00 (north) here — intentional.
       '',
       `Map: ${g.mapId}`,
-      `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}`,
+      `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}${g.rules && !g.rules.doMobSpawning ? '  ·  NO-SPAWN' : ''}`,
       `Wave ${g.waves.wave}   ·   enemies ${g.enemies.aliveCount}`,
       `Day #${di.n}  ${di.night ? 'NIGHT' : 'DAY'}${di.blood ? '  · BLOOD MOON' : ''}`,
       `HP ${Math.round(p.hp)}/${p.maxHp}   ARM ${Math.round(p.armor)}   food ${Math.round(p.hunger)}`,

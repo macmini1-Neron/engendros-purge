@@ -1,0 +1,105 @@
+{
+  "model": "P-37 «Bar Lock» (П-37 / Сектор / «Меч») — Soviet 2D E/F-band GCI / air-surveillance radar",
+  "era": "Accepted into service 1961; developed at KB 'Lira' (Moscow) on the base of the P-35 radar (P-35 passed state trials 1958). One of the most widely exported Soviet-era GCI/surveillance radars; long service life with progressively modernised variants up to the transistorised '90-version'. Widely used by Warsaw Pact incl. the Czechoslovak army. Srcs: https://en.wikipedia.org/wiki/P-35_radar (P-35 1958, 'succeeded by its successor the P-37'); https://ru.wikipedia.org/wiki/П-37 ('Была разработана в КБ «Лира» (г. Москва) на базе РЛС П-35', 'принята на вооружение в 1961 году'); https://www.radartutorial.eu/19.kartei/11.ancient/karte051.en.html ('entered service in 1961').",
+  "facts": {
+    "antenna_reflector": {
+      "width_m": 9.7,
+      "height_m": 3.0,
+      "shape": "TWO stacked open-frame (mesh / lattice) truncated-parabolic reflectors with clipped corners, mounted one higher than the other on the rotating cabin. Each is a parabolic-cylinder 'trough' whose reflecting surface is an open lattice of horizontal slats/wires (NOT a solid dish). The two troughs tilt in opposite senses (upper trough tilts up, lower tilts down) to point their stacked beams at different elevations. The 9.7 m figure is the horizontal aperture (array length); the 3.0 m figure is the overall vertical extent of the stacked pair; focal length 2.5 m.",
+      "src": "https://ru.wikipedia.org/wiki/П-37 — 'Длина антенны — 9,7 м', 'Ширина антенны — 3 м', 'Фокусное расстояние антенны — 2,5 м', and 'Две антенны – нижняя и верхняя' each = reflector + block of illuminators. https://www.globalsecurity.org/military/world/russia/bar-lock.htm — 'truncated parabolic mesh reflectors with clipped corners measuring 10 x 32 feet' (= 3.05 m x 9.75 m, cross-checks the Russian 3 m x 9.7 m); 'Two stacked reflectors (upper and lower)'. https://en.wikipedia.org/wiki/P-35_radar — 'two open frame truncated parabolic antenna ... arranged on a trailer so one is higher than the other'. https://www.militaryperiscope.com/weapons/sensorselectronics/ground-radars/bar-lock/overview/ — 'two truncated parabolic reflectors with clipped corners ... arranged on a trailer so one is higher than the other'. Visual confirmation of stacked dual open-lattice troughs: ref1.jpg, ref2_hero_3q.jpg, ref3_rear.jpg."
+    },
+    "feed_horns": {
+      "count": 6,
+      "arrangement": "A vertical stack of feed horns mounted on a boom in front of each reflector, forming multiple stacked beams in elevation. Total six feed horns across the two reflectors. Channel split per the Russian source: the LOWER antenna forms 3 channels, the UPPER forms 2 (i.e. the radar runs 5 independent transmit/receive channels). NOTE a sourcing conflict on the per-reflector horn split (see needs[]): the Russian source implies 3 (lower) + 2 (upper) channels; militaryperiscope says 'each reflector has three feeds' (3+3=6); globalsecurity says 'four beams emanated from the lower reflector and two from the upper' (4+2=6). All agree the TOTAL is six feed horns / six stacked beams.",
+      "src": "https://en.wikipedia.org/wiki/P-35_radar — 'both antenna fed by a stacked beam composed of six feed horns'. https://ru.wikipedia.org/wiki/П-37 — 'РЛС работает на пяти независимых приемо-передающих каналах (три формирует нижняя антенна, два – верхняя)' + 'блока облучателей'. https://www.militaryperiscope.com/weapons/sensorselectronics/ground-radars/bar-lock/overview/ — 'Each reflector has three feeds to generate a total of six stacked beams.' https://www.globalsecurity.org/military/world/russia/bar-lock.htm — 'Four beams emanated from the lower reflector and two from the upper.'"
+    },
+    "cabin_base": {
+      "desc": "A ROTATING equipment cabin (вращающаяся кабина 636А) carries both reflectors and the transmit/receive gear; the WHOLE cabin rotates (the antennas sit on the cabin, not on a separate pedestal). The cabin (Machine No.1 / ППК) sits on the special transport platform/semi-trailer 52-У-415М. Supporting equipment is in separate vehicles: Machine No.2 (indicator/control) on a ZIL-131M truck; Machines No.3 and No.4 are MAZ-8925 trailers carrying the main and backup АД-60-Т230-1Р power generators. No metric cabin box dimensions were sourced (see needs[]); photos show a roughly cube/short-box cabin ~2 axles wide.",
+      "src": "https://ru.wikipedia.org/wiki/П-37 — 'Машина №1 (ППК) – платформа 52-У-415М с вращающейся кабиной 636А ... Две антенны – нижняя и верхняя – установлены на кабине'; 'Машина №2 ... на автомобиле ЗИЛ-131М'; 'Машины №3 и 4 – прицепы МАЗ-8925 ... генераторы АД-60-Т230-1Р'. Confirmed by https://xn--h1ajim.xn--p1ai/П-37 (Runiversalis, same text). Visual: ref2_hero_3q.jpg, ref3_rear.jpg show the green cabin on a multi-axle trailer."
+    },
+    "mount": {
+      "type": "trailer",
+      "desc": "Towed / transportable: the rotating cabin + antenna ride on the 52-У-415М wheeled platform (multi-axle road-wheel bogie visible in all walkaround photos). It is a ground/pad-deployed mobile radar — NOT tower-mounted and NOT a fixed concrete installation in its standard configuration. Deploy/stow time ~55 min (museum placard) to ~60 min (radartutorial).",
+      "src": "https://en.wikipedia.org/wiki/P-35_radar — 'semi-mobile radar composed of a trailer mounting the control cabin and antenna equipment, equipment being transported by truck'. https://ru.wikipedia.org/wiki/П-37 — platform 52-У-415М. Deploy time: ref_placard.jpg ('Время развёртывания 55 мин.'); https://www.radartutorial.eu/19.kartei/11.ancient/karte051.en.html (deploy/stow ~60 min). Visual: ref3_rear.jpg, ref2_hero_3q.jpg (multi-axle road wheels)."
+    },
+    "rotation": {
+      "rpm": 6,
+      "rpm_range": "3 to 6 rpm (selectable: 3 or 6)",
+      "src": "https://www.radartutorial.eu/19.kartei/11.ancient/karte051.en.html — 'Antenna rotation: 3 or 6 rpm'. https://ru.wikipedia.org/wiki/П-37 — 'Скорость вращения антенны: 3-6 об/мин'. CONFLICT: Western P-35 sources (https://en.wikipedia.org/wiki/P-35_radar) cite '7 rpm' for the P-35; globalsecurity notes '6' (also '7 rpm' in a comments note). Use 3 or 6 rpm for the P-37."
+    },
+    "overall": {
+      "height_m_note": "NOT directly sourced — see needs[] and derivation.",
+      "weight_kg_note": "NOT sourced — see needs[].",
+      "deploy_time_min": 55,
+      "powerup_time_min": 7,
+      "src": "Deploy/power-up times from museum data placard (Lešany/Czech): ref_placard.jpg — 'Время развёртывания 55 мин.', 'Время включения 7 мин.'. No sourced figure for total deployed antenna height or system weight was found."
+    },
+    "livery": {
+      "desc": "Equipment cabin and trailer painted Soviet/Warsaw-Pact military green (olive/khaki green). The antenna reflectors are bare galvanised / dark grey open-steel lattice (mesh of slats), reading mid-to-dark grey and partly see-through against the sky. The supplied silhouette photo (ref1.jpg) shows the mesh near-black in strong backlight; colour walkaround photos (ref2_hero_3q.jpg, ref3_rear.jpg) show the cabin in flat military green with the grey lattice reflectors.",
+      "src": "Visual only (no text spec): ref2_hero_3q.jpg + ref3_rear.jpg (green cabin, grey steel lattice reflectors); ref1.jpg (lattice silhouette). Colour is observed from museum walkaround photos, not a written source — flagged in needs[]."
+    },
+    "performance_context": {
+      "desc": "Non-physical specs (context only, not modelled): centimetric (cm/S) band, 5 frequencies in 2695–3115 MHz (≈2.7–3.1 GHz, E/F band); peak power 5 × 700 kW; instrumented range 450 km; range resolution 180 m; beamwidth 2°; PRF 375 / 750 pps. Detection (museum placard): 27 km at 100 m altitude, 180 km at 20,000 m altitude; coordinate accuracy 500 m range / 0.5° azimuth; resolution 500 m / 1°; noise figure ≤11.",
+      "src": "https://www.radartutorial.eu/19.kartei/11.ancient/karte051.en.html (5 freqs 2695–3115 MHz, 5×700 kW peak, 450 km, 180 m, 2° beam, 375/750 pps); ref_placard.jpg museum TTX board (detection ranges, accuracy, resolution, noise figure)."
+    }
+  },
+  "derivation": {
+    "reflector_width_m": 9.7,
+    "stacked_pair_vertical_extent_m": 3.0,
+    "per_reflector_trough_height_m_estimate": 1.35,
+    "note_per_reflector_height": "ESTIMATE, not a sourced fact: the sourced 'Ширина 3 m' is the overall vertical extent of the stacked PAIR. Splitting 3.0 m between two troughs plus a feed-boom gap implies each truncated-parabolic trough is roughly ~1.3–1.5 m tall (used ~1.35 m). This is geometric apportioning of a sourced total, NOT an independently sourced per-reflector dimension.",
+    "focal_length_m": 2.5,
+    "note_curvature": "Parabolic-cylinder (trough) reflector; depth/sagitta of the curve for a 9.7 m aperture at f=2.5 m is sag = (aperture/2)^2 / (4*f) = (4.85)^2 / (10.0) ≈ 2.35 m IF the 9.7 m were the focused aperture of a single dish — but for a TROUGH the focusing dimension is the SHORT (vertical, ~1.35 m per trough) axis, giving sag ≈ (0.675)^2/(4*2.5) ≈ 0.046 m, i.e. a very shallow curve across the 9.7 m width and a gentle parabolic bow in the ~1.35 m height. Treat the long 9.7 m axis as the (near-flat) cylindrical sweep and the short axis as the shallow parabolic profile.",
+    "feet_to_metres_crosscheck": "globalsecurity '10 x 32 feet' = 3.048 m x 9.754 m, which matches Russian-Wikipedia 3.0 m x 9.7 m to within ~1% — two independent sources agree on the reflector array footprint.",
+    "src": "geometric derivation from facts.antenna_reflector (9.7 m x 3.0 m, f=2.5 m, two stacked troughs)"
+  },
+  "images": [
+    {
+      "view": "side",
+      "url": "https://www.radartutorial.eu/19.kartei/11.ancient/pic/img9111.jpg",
+      "file": "ref1.jpg",
+      "shows": "Backlit side silhouette of a deployed P-37 (Elmenhorst, Germany, 1997) — clearly shows BOTH stacked open-lattice truncated-parabolic reflectors (upper tilted up, lower tilted down), the cabin between them, and the multi-axle trailer/bogie. Best for the stacked-reflector tilt geometry."
+    },
+    {
+      "view": "three-quarter",
+      "url": "http://data4.primeportal.net/trucks/carrey/p-37_radar/images/p-37_radar_02_of_36.jpg",
+      "file": "ref2_hero_3q.jpg",
+      "shows": "Colour three-quarter front view at Lešany (Czech) museum — HERO reference: green rotating cabin, both grey open-lattice parabolic-trough reflectors with clipped corners, feed booms, large multi-axle road-wheel trailer; a person beside it gives scale."
+    },
+    {
+      "view": "side-rear",
+      "url": "http://data4.primeportal.net/trucks/carrey/p-37_radar/images/p-37_radar_05_of_36.jpg",
+      "file": "ref3_rear.jpg",
+      "shows": "Colour rear/side view — back of the green equipment cabin, the open-lattice reflector backing structure, trailer drawbar and road wheels; good for cabin box proportions and the lattice rib pattern."
+    },
+    {
+      "view": "data",
+      "url": "http://data4.primeportal.net/trucks/carrey/p-37_radar/images/p-37_radar_01_of_36.jpg",
+      "file": "ref_placard.jpg",
+      "shows": "Museum information placard (primary-source TTX table, Russian): 'Радиолокационный дальномер П-37' with detection ranges (27 km @100 m, 180 km @20,000 m), accuracy (500 m / 0.5°), resolution (500 m / 1°), noise figure ≤11, power-up 7 min, deployment 55 min."
+    },
+    {
+      "view": "data",
+      "url": "https://www.globalsecurity.org/military/world/russia/bar-lock.htm",
+      "file": null,
+      "shows": "Text source: '10 x 32 feet' truncated parabolic mesh reflectors with clipped corners; two stacked reflectors; 4+2 beam split; van/trailer mounted."
+    },
+    {
+      "view": "data",
+      "url": "https://www.radartutorial.eu/19.kartei/11.ancient/pic/img11-051-02.jpg",
+      "file": "ref2.jpg",
+      "shows": "P-37 in original field configuration alongside a PRW-9 height-finder and two RL-30 radio-link antennas (context for a deployed Soviet radar site)."
+    }
+  ],
+  "needs": [
+    "Per-reflector (individual upper vs lower) reflector height in metres — only the stacked-pair total vertical extent (3.0 m) is sourced; the ~1.35 m per trough in derivation is an apportioned estimate, not sourced.",
+    "Total deployed antenna+cabin HEIGHT above ground (metres) — no source found; must be eyeballed from scale in ref2_hero_3q.jpg (reflector top appears to reach roughly 2.5x a standing person, i.e. very roughly 6–8 m) — NOT relied upon as fact.",
+    "Total system / cabin WEIGHT (kg or tonnes) — unsourced.",
+    "Rotating cabin 636А box dimensions (L x W x H in metres) — unsourced; only known to sit on the 52-У-415М platform.",
+    "Exact per-reflector feed-horn split — sources conflict: 3(lower)+2(upper) channels (ru.wikipedia) vs 3+3 feeds (militaryperiscope) vs 4(lower)+2(upper) beams (globalsecurity). Total = 6 is agreed; the split is not.",
+    "Number of horizontal lattice slats/ribs per reflector and slat spacing — not in any text source; would have to be counted off ref3_rear.jpg / ref2_hero_3q.jpg if needed for the mesh model.",
+    "Trailer axle count / wheel count and trailer length — visible in photos (multi-axle bogie) but no sourced metric dimensions.",
+    "Reflector clipped-corner geometry (exact corner cut dimensions) — described as 'clipped/truncated corners' in text + visible in photos, but no measured angles/lengths.",
+    "Written confirmation of the green cabin colour (currently observed only from museum walkaround photos, not a text spec)."
+  ]
+}

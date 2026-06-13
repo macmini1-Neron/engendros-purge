@@ -508,6 +508,7 @@ export class LootManager {
     const inv = this.game.inventory; if (inv && inv.slots) n += inv.slots.filter((s) => s && s.kind === 'radio').length;
     return n;
   }
+  _lprInPlay() { return this.pickups ? this.pickups.filter((p) => p.kind === 'lpr1').length : 0; } // ЛПР-1 ground pickups only (it lives in weapons.owns once grabbed, not in inventory slots)
   // Burst a landed crate open: scatter its contents as PHYSICAL ground pickups in a ring around the crate.
   // HOST-authoritative in co-op — the host rolls the GUN and spawns each item via spawnNetPickup so all
   // players see ONE shared pile (with ids). Loot only — supply drops give NO cash. (`opener` is unused now.)
@@ -519,6 +520,7 @@ export class LootManager {
     for (const k of ['sandbag', 'wire', 'wood']) for (let n = 0; n < (g[k] || 0); n++) items.push([k, 1]); // ~2 random fort. mats
     if (this._radiosInPlay() === 0 && chc(0.30)) items.push(['radio', 1]); // 📻 30% chance to drop a Radio — only when none is currently in play
     if (chc(0.40)) items.push(['fiftyammo', 1]); // 🟩 40% chance: a 12.7mm ammo can to resupply the rooftop heavy MG
+    if (this._lprInPlay() === 0 && chc(0.25)) items.push(['lpr1', 1]); // 🔭 25% chance: ЛПР-1 laser rangefinder — only when none lies unclaimed on the ground (owned ones don't block: in co-op every player wants their own)
     items.forEach(([kind, value], i) => {
       const a = (i / items.length) * TAU + rr(-0.25, 0.25), r = rr(1.0, 1.7); // scatter in a ring around the crate
       this.spawnNetPickup(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, value, 75); // 75s life — shared (host) / local (solo)
