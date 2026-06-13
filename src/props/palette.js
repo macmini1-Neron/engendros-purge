@@ -87,6 +87,11 @@ export const PALETTE = {
                 glb: { rgb: [0.58, 0.42, 0.22], rough: 0.92, metal: 0.0 } },
   charBlack:  { voxel: { hi: '#2a2624', mid: '#181614', lo: '#0e0c0a', slot: '#060504', bright: '#3a3430' },
                 glb: { rgb: [0.04, 0.04, 0.03], rough: 0.95, metal: 0.0 } },
+  // --- P-37 radar palette ---
+  tyre:      { voxel: { hi: '#3a3d42', mid: '#212327', lo: '#141518', slot: '#0d0e10', bright: '#4c5158' },
+               glb: { rgb: [0.04, 0.04, 0.05], rough: 0.9, metal: 0.05 } },
+  sovietRed: { voxel: { hi: '#c0352a', mid: '#9a2620', lo: '#741b18', slot: '#511211', bright: '#d6483a' },
+               glb: { rgb: [0.55, 0.10, 0.08], rough: 0.5, metal: 0.0 } },
 };
 
 export function resolveMaterial(name, target = 'voxel') {

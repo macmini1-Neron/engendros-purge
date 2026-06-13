@@ -1,0 +1,10 @@
+# third-party reference photos + source manual — keep out of git
+# (their source URLs live in dossier.json; the .md research notes + dossier.json ARE committed)
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.pdf
+*.txt
+!.gitignore
