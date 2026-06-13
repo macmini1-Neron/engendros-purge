@@ -505,8 +505,9 @@ export class MP {
     const n = this.net, g = this.game;
     n.onDiag = (d) => this._onNetDiag(d);
     n.onDisconnect = (pid) => {
-      if (this.isHost) this._dropPeer(pid);
+      if (this.isHost) { this._dropPeer(pid); if (g.poker && g.poker.coop) g.poker.onPeerDisconnect(pid); } // host: bust the dropped poker seat
       else if (this.active) this._hostGone();
+      else if (g.poker && g.poker.coop) g.poker.onAbort(); // host vanished while we were at the poker table → refund + bail
     };
     n.on('hello', (d, from) => {
       if (!this.isHost) return;
@@ -564,6 +565,12 @@ export class MP {
     n.on('structreq', (d, from) => { if (this.isHost) g.build.hostPlaceFromClient(d, from); }); // client asks host to place
     n.on('structrej', (d) => { if (!this.isHost && d && typeof d.kind === 'string') this.game.inventory.addItem(d.kind, 1); }); // host rejected → restore material
     n.on('structdie', (d) => g.build.applyRemoteDestroy(d.id));                // a structure was destroyed
+    // --- co-op poker (host-authoritative; clients are thin terminals) ---
+    n.on('pkstart', (d) => { if (!this.isHost) g._enterCoopPoker(d); });                          // host dealt → join the table
+    n.on('pksnap', (d) => { if (!this.isHost && g.poker) g.poker.onSnap(d); });                   // host → my personalised view
+    n.on('pkact', (d, from) => { if (this.isHost && g.poker && d) g.poker.hostClientAct(from, d.action); }); // client action → host validates
+    n.on('pkleave', (d, from) => { if (this.isHost && g.poker) g.poker.onPeerDisconnect(from); }); // client left the table → eliminate
+    n.on('pkabort', () => { if (!this.isHost && g.poker) g.poker.onAbort(); }); // host ended the session → onAbort refunds + returns to lobby
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio

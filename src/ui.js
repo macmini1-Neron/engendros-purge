@@ -279,6 +279,7 @@ export class UI {
       settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
       admin: document.getElementById('admin'), music: document.getElementById('music'),
       crate: document.getElementById('crateOverlay'),
+      poker: document.getElementById('poker'),
     };
     this.hint = document.getElementById('hint');
   }
