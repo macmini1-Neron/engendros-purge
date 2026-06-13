@@ -1,7 +1,7 @@
 // tests/console/core.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenize, parseNum, asInt, parseCoord, createRegistry, parseSelector, resolveSelector, suggest, highlight } from '../../src/console-core.js';
+import { tokenize, parseNum, asInt, parseCoord, createRegistry, parseSelector, resolveSelector, suggest, highlight, parseSummonTail, parseSummonArgs } from '../../src/console-core.js';
 
 test('tokenize: strips one leading slash and splits on whitespace', () => {
   assert.deepEqual(tokenize('/summon grunt 1 2 3'), ['summon', 'grunt', '1', '2', '3']);
@@ -332,4 +332,70 @@ test('highlight: explicit @ target is coloured and shifts the value colours', ()
   assert.equal(segs.find((s) => s.text === '@a').cls, 'mc-aqua');
   assert.equal(segs.find((s) => s.text === 'money').cls, 'mc-yellow');
   assert.equal(segs.find((s) => s.text === '5').cls, 'mc-green');
+});
+
+// ---- parseSummonTail: /summon trailing "[count] [{NoAI:1}]" blob (order-tolerant) ----
+test('parseSummonTail: empty tail ⇒ count 1, no dummy', () => {
+  assert.deepEqual(parseSummonTail(''), { count: 1, noAI: false });
+});
+test('parseSummonTail: count only', () => {
+  assert.deepEqual(parseSummonTail('5'), { count: 5, noAI: false });
+});
+test('parseSummonTail: NBT only ⇒ count defaults to 1, dummy on', () => {
+  assert.deepEqual(parseSummonTail('{NoAI:1}'), { count: 1, noAI: true });
+});
+test('parseSummonTail: count + NBT', () => {
+  assert.deepEqual(parseSummonTail('5 {NoAI:1}'), { count: 5, noAI: true });
+});
+test('parseSummonTail: order-swapped (NBT before count)', () => {
+  assert.deepEqual(parseSummonTail('{NoAI:1} 5'), { count: 5, noAI: true });
+});
+test('parseSummonTail: accepts the {NoAI:1b} byte form', () => {
+  assert.deepEqual(parseSummonTail('{NoAI:1b}'), { count: 1, noAI: true });
+});
+test('parseSummonTail: NoAI:0 does NOT enable the dummy', () => {
+  assert.deepEqual(parseSummonTail('3 {NoAI:0}'), { count: 3, noAI: false });
+});
+test('parseSummonTail: case-insensitive NoAI', () => {
+  assert.equal(parseSummonTail('{noai:1}').noAI, true);
+});
+test('parseSummonTail: count clamps to 1..50', () => {
+  assert.equal(parseSummonTail('999').count, 50);
+  assert.equal(parseSummonTail('0').count, 1);
+});
+test('parseSummonTail: the 1 inside {NoAI:1} is never read as the count', () => {
+  assert.deepEqual(parseSummonTail('{NoAI:1}'), { count: 1, noAI: true }); // not count from the NBT digit
+  assert.equal(parseSummonTail('{NoAI:1} 7').count, 7);                    // the standalone 7 is the count
+});
+test('parseSummonTail: whitespace is tolerated', () => {
+  assert.deepEqual(parseSummonTail('   3    {NoAI:1}   '), { count: 3, noAI: true });
+});
+
+// ---- parseSummonArgs: optional leading "x y z" coords, then the count/NBT tail ----
+test('parseSummonArgs: no coords ⇒ coordToks null, count/noAI from the tail', () => {
+  assert.deepEqual(parseSummonArgs('5 {NoAI:1}'), { coordToks: null, count: 5, noAI: true });
+});
+test('parseSummonArgs: three coord-like tokens are captured, the rest is parsed', () => {
+  assert.deepEqual(parseSummonArgs('~ ~ ~ 5 {NoAI:1}'), { coordToks: ['~', '~', '~'], count: 5, noAI: true });
+});
+test('parseSummonArgs: absolute numeric coords', () => {
+  assert.deepEqual(parseSummonArgs('10 0 -5'), { coordToks: ['10', '0', '-5'], count: 1, noAI: false });
+});
+test('parseSummonArgs: a lone count is NOT mistaken for coordinates', () => {
+  assert.deepEqual(parseSummonArgs('5'), { coordToks: null, count: 5, noAI: false });
+});
+test('parseSummonArgs: empty tail ⇒ defaults', () => {
+  assert.deepEqual(parseSummonArgs(''), { coordToks: null, count: 1, noAI: false });
+});
+test('parseSummonArgs: tilde-relative coords (~5) count as coords', () => {
+  assert.deepEqual(parseSummonArgs('~ ~5 ~ 3'), { coordToks: ['~', '~5', '~'], count: 3, noAI: false });
+});
+
+// ---- suggest: a 'rest' arg carrying a suggest list offers (and filters) it ----
+test('suggest: rest arg with a suggest list offers the values (NBT tags)', () => {
+  const r = createRegistry();
+  r.register('summon', { args: [{ name: 'type', type: 'enum', choices: ['grunt', 'boss'] }, { name: 'tail', type: 'rest', suggest: ['{NoAI:1}'] }], run: () => '' });
+  assert.deepEqual(suggest('/summon grunt ', r), ['{NoAI:1}']);   // start of the tail
+  assert.deepEqual(suggest('/summon grunt {', r), ['{NoAI:1}']);  // partially typed, filtered
+  assert.deepEqual(suggest('/summon grunt 5 ', r), ['{NoAI:1}']); // after a count token, still offered
 });
