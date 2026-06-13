@@ -47,25 +47,27 @@ the right call amount; screenshot confirms the plain-table look. Full engine sui
 
 ---
 
-## Plan 3b — Co-op netcode (TODO)
+## Plan 3b — Co-op netcode (DONE; loopback-verified, live 2-tab pending)
 
-Layer host-authoritative multiplayer on the same `PokerTable`, per the spec §12 and the mp.js
-patterns:
-- **Messages** (`src/mp.js`, register in the `n.on(...)` block; `src/net.js` `send`/`broadcast`/
-  `sendTo` already exist): client→host `pkjoin`/`pkleave`/`pkready`/`pkact`; host→all `pksnap`
-  (public view), host→one `pkhole` (private cards), host→all `pkresult`/`pkend`.
-- **Authority:** only the host advances the state machine (`hostSim = !mp.active || mp.isHost`).
-  Host validates every `pkact` against `legalActions`; clients render `pksnap` + their own
-  `pkhole` (the renderer already consumes a view-model and never needs other players' cards).
-- **Seating:** humans fill seats; **no bots in money games** (bots are practice-only). The lobby
-  picks a buy-in (tiers 500/2 000/10 000 + custom) deducted from `meta.bank` on join; winner-
-  takes-all credit on `pkend`.
-- **Disconnect → immediate elimination:** register `this.net.onDisconnect = (peerId) =>
-  this.game.poker.onPeerDisconnect(peerId)` → auto-fold + bust that seat.
-- **Aborted-tournament refunds** per spec §16.
-- **Verify:** 2-tab WebRTC (host + client) heads-up SNG; confirm hole-card privacy (client never
-  sees the host's cards in `pksnap`), action validation, timer, disconnect→elimination, winner
-  bank credit.
+Host-authoritative multiplayer layered on the same `PokerTable` (roles `solo`/`host`/`client`):
+- **Messages** (`src/mp.js` `n.on(...)` block; `src/net.js` `send`/`sendTo` reused): host→all
+  `pkstart` (pull clients in + buy-in/names); host→**each** client `pksnap` (a **personalised**
+  render payload = `privateView` for that seat — others' holes are `null`, so the wire never
+  carries another player's cards); client→host `pkact` (validated against `legalActions`, only
+  the actor on their turn); client→host `pkleave`; host→all `pkabort` (host ended → refund).
+- **Authority:** only the host runs the engine; clients are thin terminals that render the last
+  `pksnap` and forward actions. `forceFold(state, seatId)` (new in `holdem.js`) folds a
+  disconnected seat out of turn and resolves the hand.
+- **Economy:** money mode. Each player deducts its **own** `meta.bank` buy-in locally (host on
+  `startCoop`, client on `pkstart`); winner-takes-all is credited locally on the `over` snapshot
+  (`moneyPayout`). Host-abort / lone-survivor walkover refund/pay per spec §16.
+- **Disconnect → immediate elimination:** `mp.onDisconnect` → `poker.onPeerDisconnect` (force-fold
+  + flag dropped → zeroed out of the next hand; lone survivor triggers a walkover payout).
+- **Entry:** a **ПОКЕР** button in the co-op lobby (host-only) → coop lobby (buy-in tiers) → DEAL.
+- **Verified:** `tests/poker/coop.test.mjs` loopback (no WebRTC/DOM) — buy-in deduction,
+  **snapshot privacy**, wrong-player/out-of-turn rejection, disconnect→walkover→payout, client
+  forwards-not-mutates. Full suite **56/56**. Solo browser-smoke still clean after the refactor.
+  **Pending:** live 2-tab WebRTC playtest by the brothers (repo norm for co-op).
 
 ---
 
