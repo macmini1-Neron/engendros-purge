@@ -96,8 +96,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     r.setClearColor(0x05060a, 1);
     const scene = this._scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x05060a, 2.2, 5.0);
-    this.cam = new THREE.PerspectiveCamera(46, 1.6, 0.05, 60);
-    this.cam.position.set(0, 1.36, 1.98); this.cam.lookAt(0, 0.0, -0.08); // framed for the Ø1.38 table
+    this.cam = new THREE.PerspectiveCamera(53, 1.6, 0.03, 60);
+    this.cam.position.set(0, 1.12, 1.26); this.cam.lookAt(0, 0.0, -0.12); // seated on a chair — raised on Y, steeper angle, closer in
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -196,6 +196,11 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const sx = Math.cos(ang) * RX, sz = Math.sin(ang) * RZ;
       const seat = new THREE.Group(); seat.position.set(sx, 0.006, sz); d.add(seat);
       const inward = new THREE.Vector3(-sx, 0, -sz).normalize(); // toward table centre
+      // place felt items at a FIXED radius from centre along this seat's spoke (table radius ≈0.69) so
+      // chips/cards stay ON the felt for ANY seat count — seats sit outside the table, their gear inside.
+      const seatLen = Math.hypot(sx, sz) || 1;
+      const onFelt = (r) => new THREE.Vector3((sx / seatLen) * r, 0, (sz / seatLen) * r);
+      const tang = new THREE.Vector3(-sz / seatLen, 0, sx / seatLen); // unit sideways along the rim
 
       // nameplate (faces the camera)
       const np = this._label(`${(p.names && p.names[s.id]) || (s.id === p.youId ? 'YOU' : s.id)}  $${s.stack}${winners && winners[s.id] ? '  +' + winners[s.id] : ''}`,
@@ -214,32 +219,27 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             card.scale.setScalar(1.5);
             if (s.hole) setCardFace(card, s.hole[h]); else card.rotateX(Math.PI);
           } else {
-            const base = new THREE.Vector3(sx, 0.01, sz);
-            card.position.set(base.x + (h - 0.5) * 0.03, base.y, base.z);
-            card.lookAt(card.position.x, 10, card.position.z); // lie flat
-            card.rotateY(Math.atan2(inward.x, inward.z));
-            card.scale.setScalar(0.78);
-            if (s.hole) setCardFace(card, s.hole[h]);   // revealed at showdown
-            else card.rotateX(Math.PI);                  // face-down (back up)
-            if (s.folded) card.scale.multiplyScalar(0.6);
+            // opponents'/bots' cards: lie FLAT on the felt near their edge, FACE-DOWN (back up); only the showdown reveals faces
+            const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
+            card.position.set(pos.x, 0.012, pos.z);
+            card.scale.setScalar(0.8);
+            if (s.hole) setCardFace(card, s.hole[h]);   // showdown reveal → face up (default orientation)
+            else card.rotateX(Math.PI);                  // hidden → flip to back-up (face-down on the table)
           }
           d.add(card);
         }
       }
 
-      // their stack (in front of the seat) + current bet (pushed toward centre)
+      // their stack (to one side) + current bet (toward centre) — fixed radii on the GREEN felt
       const stack = makeChipStack(s.stack);
-      stack.position.copy(new THREE.Vector3(sx, 0, sz).addScaledVector(inward, 0.26)); stack.scale.setScalar(1.7); d.add(stack);
+      stack.position.copy(onFelt(0.48)).addScaledVector(tang, 0.16); stack.scale.setScalar(1.5); d.add(stack);
       if (s.roundBet > 0) {
         const bet = makeChipStack(s.roundBet);
-        bet.position.copy(new THREE.Vector3(sx, 0, sz).addScaledVector(inward, 0.44)); bet.scale.setScalar(1.5); d.add(bet);
+        bet.position.copy(onFelt(0.34)); bet.scale.setScalar(1.4); d.add(bet);
       }
-      // dealer / SB / BB markers — chunky labelled pucks (mirror the modelgen dealer-button)
+      // dealer / SB / BB markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat
       const role = j === v.button ? 'D' : (j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null));
-      if (role) {
-        const m = this._marker(role);
-        m.position.copy(new THREE.Vector3(sx, 0, sz).addScaledVector(inward, 0.30)); d.add(m);
-      }
+      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.48)).addScaledVector(tang, -0.16); d.add(m); }
     }
 
     // board (centre, face-up, flat) — scaled up so it reads on the big Ø1.38 table
@@ -255,15 +255,15 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   _marker(role) {
     const cfg = { D: { body: 0xe8e8e8, t: '#141414' }, SB: { body: 0x2a52b0, t: '#ffffff' }, BB: { body: 0xd8b84a, t: '#141414' } }[role];
     const g = new THREE.Group();
-    const puck = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.026, 24), new THREE.MeshLambertMaterial({ color: cfg.body }));
-    puck.position.y = 0.013; g.add(puck);
+    const puck = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.012, 24), new THREE.MeshLambertMaterial({ color: cfg.body })); // chip-sized
+    puck.position.y = 0.006; g.add(puck);
     const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
     const ctx = cv.getContext('2d'); ctx.fillStyle = cfg.t;
-    ctx.font = 'bold ' + (role === 'D' ? 84 : 60) + 'px Oswald, system-ui, sans-serif';
+    ctx.font = 'bold ' + (role === 'D' ? 86 : 62) + 'px Oswald, system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(role, 64, 70);
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-    const lbl = new THREE.Mesh(new THREE.PlaneGeometry(0.078, 0.078), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false }));
-    lbl.rotation.x = -Math.PI / 2; lbl.position.y = 0.0265; g.add(lbl);
+    const lbl = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.05), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false }));
+    lbl.rotation.x = -Math.PI / 2; lbl.position.y = 0.0125; g.add(lbl);
     lbl.userData.tex = tex;
     return g;
   }

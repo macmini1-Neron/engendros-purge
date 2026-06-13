@@ -11,7 +11,7 @@ const CELL_W = 132, CELL_H = 184;            // px per atlas cell (poker 63x88mm
 const SUIT_GLYPH = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RANK_LABEL = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
 const rankLabel = (r) => RANK_LABEL[r] || String(r);
-const CARD_W = 0.063, CARD_H = 0.088, CARD_T = 0.0009; // metres
+const CARD_W = 0.063, CARD_H = 0.088, CARD_T = 0.0026; // metres — real card thickness so it reads as a 3D object, not a flat 2D sprite
 
 // ---------- shared face atlas ----------
 let _atlasTex = null;
