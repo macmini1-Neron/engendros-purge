@@ -30,3 +30,7 @@ test('a gutshot has 4 outs', () => {
 test('a made straight reports 0 draw-outs', () => {
   assert.equal(outs(H('8h 9d'), H('7c Ts Jh')), 0);
 });
+
+test('outs is 0 (and does not throw) pre-flop with no board', () => {
+  assert.equal(outs(H('Ah Kh'), []), 0);      // <5 cards → no draw-outs, must not throw
+});

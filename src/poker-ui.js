@@ -3,6 +3,7 @@
 // table/chips/cards) can replace this with the same inputs. Aesthetic: a plain, worn table —
 // NOT casino felt. No THREE here; pure DOM. POLYMER tokens reused for the chrome.
 import { describeHand } from './poker/handeval.js';
+import { equity, outs } from './poker/odds.js';
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RCH = { 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -76,8 +77,11 @@ const CSS = `
 .pk-raisebox input[type=range] { width:160px; accent-color:var(--go,#5cae8c); }
 .pk-raiseval { font-family:var(--font-mono,monospace); font-size:15px; color:var(--brass-hi,#f3d999); min-width:54px; }
 .pk-wait { font-family:var(--font-display,'Oswald'); font-size:16px; color:var(--steel,#84aab2); min-height:44px; line-height:44px; }
-.pk-timer { width:100%; max-width:520px; height:6px; border-radius:3px; background:rgba(0,0,0,.4); overflow:hidden; }
-.pk-timer > i { display:block; height:100%; background:linear-gradient(90deg,var(--go,#5cae8c),var(--red-2,#f5604c)); transition:width .12s linear; }
+.pk-count { height:44px; min-height:44px; display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-mono,monospace); font-size:30px; font-weight:700; color:var(--brass-hi,#f3d999);
+  text-shadow:0 2px 0 #000; letter-spacing:1px; transition:color .25s; } /* calm numeric countdown — only the last 15s, no bar (no stress) */
+.pk-count.urgent { color:var(--red-2,#f5604c); }
+.pk-odds { font-family:var(--font-mono,monospace); font-size:15px; color:var(--neon,#45e0cf); min-height:18px; letter-spacing:.5px; text-shadow:0 1px 0 #000; } /* TV-style odds helper (toggle in Settings) */
 
 /* card face */
 .pk-card { width:44px; height:62px; border-radius:6px; background:#f4efe2; color:#1a1a1a;
@@ -110,7 +114,7 @@ function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 export class PokerDomRenderer {
   constructor(root, cb) {
     this.root = root; this.cb = cb || {};
-    this._built = false; this._raiseTo = 0;
+    this._built = false; this._raiseTo = 0; this._oddsKey = '';
   }
 
   mount() {
@@ -141,8 +145,9 @@ export class PokerDomRenderer {
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:10px;width:100%">
             <div class="pk-you" id="pk-you"></div>
+            <div class="pk-odds" id="pk-odds"></div>
             <div class="pk-actions" id="pk-actions"></div>
-            <div class="pk-timer"><i id="pk-timerbar" style="width:0%"></i></div>
+            <div class="pk-count" id="pk-count"></div>
           </div>
         </div>
       </div>`;
@@ -155,7 +160,8 @@ export class PokerDomRenderer {
       banner: this.root.querySelector('#pk-banner'),
       you: this.root.querySelector('#pk-you'),
       actions: this.root.querySelector('#pk-actions'),
-      timer: this.root.querySelector('#pk-timerbar'),
+      count: this.root.querySelector('#pk-count'),
+      odds: this.root.querySelector('#pk-odds'),
       lvl: this.root.querySelector('#pk-lvl'),
       blinds: this.root.querySelector('#pk-blinds'),
       hand: this.root.querySelector('#pk-hand'),
@@ -235,7 +241,7 @@ export class PokerDomRenderer {
     this.el.felt.style.display = 'flex';
   }
 
-  // payload: { view, tour, legal, yourTurn, timerFrac, phase, result, over, youId, names }
+  // payload: { view, tour, legal, yourTurn, timeLeft, phase, result, over, youId, names }
   renderTable(p) {
     const v = p.view, tour = p.tour;
     if (!v) return;
@@ -278,8 +284,38 @@ export class PokerDomRenderer {
     // action panel — its own change-guard (interactive: must persist across frames)
     this._renderActions(p);
 
-    // timer (cheap — every frame)
-    this.el.timer.style.width = Math.round((p.timerFrac || 0) * 100) + '%';
+    // countdown (cheap — every frame): hidden until the last 15s, then a calm number (coral ≤5s)
+    const tl = p.timeLeft;
+    if (tl != null && tl <= 15 && p.phase === 'playing') {
+      this.el.count.textContent = String(tl);
+      this.el.count.classList.toggle('urgent', tl <= 5);
+    } else {
+      this.el.count.textContent = '';
+      this.el.count.classList.remove('urgent');
+    }
+
+    this._updateOdds(p);
+  }
+
+  // TV-style odds helper — outs + win% for your own hand. Toggle in Settings (cb.getShowOdds).
+  // Monte-Carlo is recomputed only when your cards / the board / opponent count change (cached).
+  _updateOdds(p) {
+    if (!this.el.odds) return;
+    const on = !!(this.cb.getShowOdds && this.cb.getShowOdds());
+    const v = p.view;
+    const me = v && v.seats.find((s) => s.id === p.youId);
+    const show = on && p.phase === 'playing' && me && me.hole && me.hole.length === 2 && !me.folded;
+    if (!show) { if (this._oddsKey !== '') { this._oddsKey = ''; this.el.odds.textContent = ''; } return; }
+    const board = v.board || [];
+    const nOpp = Math.max(1, v.seats.filter((s) => !s.folded && s.id !== p.youId).length);
+    const key = me.hole.map((c) => c.r + c.s).join('') + '|' + board.map((c) => c.r + c.s).join('') + '|' + nOpp;
+    if (key === this._oddsKey) return; // recompute only on change (Monte-Carlo is not free)
+    this._oddsKey = key;
+    const e = equity(me.hole, board, nOpp, 1500, Math.random);
+    const win = Math.round((e.win + e.tie * 0.5) * 100);
+    let s = `~${win}% to win  ·  vs ${nOpp}`;
+    if (board.length >= 3) { const o = outs(me.hole, board); if (o > 0) s = `${o} out${o === 1 ? '' : 's'}  ·  ` + s; }
+    this.el.odds.textContent = s;
   }
 
   _bannerText(p, winners) {

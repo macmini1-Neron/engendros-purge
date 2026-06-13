@@ -15,8 +15,11 @@ import { legalActions, applyAction, isComplete, privateView, forceFold } from '.
 import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
 import { PokerDomRenderer } from './poker-ui.js';
+// NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
+// orchestrator (game.js). poker-table.js stays THREE/DOM-free so the engine + co-op logic remain
+// node-unit-testable (tests/poker/coop.test.mjs imports this file directly).
 
-const ACT_SECS = 30;        // per-turn shot clock (host-ticked)
+const ACT_SECS = 60;        // per-turn shot clock (host-ticked) — hidden; only the last 15s show a number
 const BOT_THINK = 0.9;      // bot pause before acting (s) — feels human
 const SHOWDOWN_SECS = 6.5;  // dwell on a real showdown — long enough to read who won with what (newbie-friendly)
 const FOLD_SECS = 2.5;      // shorter dwell when everyone folded (no combination to read)
@@ -51,10 +54,13 @@ export class PokerTable {
   _ensureRenderer() {
     if (this.renderer || typeof document === 'undefined') return; // node/headless: stay renderer-less (all calls are guarded)
     const root = document.getElementById('poker');
-    this.renderer = new PokerDomRenderer(root, {
+    // 3D table (RendererClass injected by game.js) by default; pure-2D DOM renderer is the fallback.
+    const Renderer = this.RendererClass || PokerDomRenderer;
+    this.renderer = new Renderer(root, {
       onStart: (cfg) => { if (cfg && cfg.coop) this.startCoop(cfg.buyIn | 0); else this.startTournament(cfg); },
       onAct: (a) => this.humanAct(a),
       onLeave: () => this.game.closePoker(),
+      getShowOdds: () => !!(this.game.settings && this.game.settings.data && this.game.settings.data.pokerOdds), // local player's own preference
     });
     this.renderer.mount();
   }
@@ -250,7 +256,7 @@ export class PokerTable {
       tour: this.tour.tournamentView(),
       legal: yourTurn ? legal : null,
       yourTurn,
-      timerFrac: this.phase === 'playing' ? Math.max(0, this.actTimer / ACT_SECS) : 0,
+      timeLeft: this.phase === 'playing' ? Math.max(0, Math.ceil(this.actTimer)) : null, // seconds; UI shows it only in the last 15s
       phase: this.phase,
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',

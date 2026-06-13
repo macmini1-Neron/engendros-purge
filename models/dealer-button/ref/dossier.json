@@ -1,0 +1,47 @@
+{
+  "id": "dealer-button",
+  "title": "Poker DEALER button — white acrylic casino puck, 'DEALER' on the face; rotates clockwise each hand. (Small/Big-blind markers are the same puck recoloured blue/yellow with SB/BB text.)",
+  "era": "Modern casino/home poker. The dealer button ('the buck') marks who acts last / deals; it moves clockwise one seat each hand.",
+  "scope_note": "Owner asked for Dealer / SB / BB markers, OK without a photo (standard objects). modelgen builds the canonical DEALER puck (readable 'DEALER' text per law 7); the SB/BB markers are the same puck recoloured + relabelled in-scene (blue SMALL BLIND, yellow BIG BLIND).",
+  "sources": {
+    "wiki_button": "Wikipedia «Button (poker)» — the dealer button is 'a marker used to indicate the player who is dealing or … acts last'; modern button is 'typically a white plastic disc with the word \"Dealer\" on each side'; it 'was moved clockwise around the table after each hand'; separate blind lammers/buttons can be 'put in front of the players to show they owe the indicated amounts' — https://en.wikipedia.org/wiki/Button_(poker)",
+    "brybelly_casino": "Brybelly «3-inch Casino Grade Dealer Button» — 3 in (76.2 mm) diameter, 0.875 in (22.2 mm) thick, quality acrylic, double-sided (white face/black engraving, black face/white engraving), black O-ring rubber edge bumpers — https://www.amazon.com/Brybelly-Casino-Grade-Dealer-Button/dp/B001X3U02G",
+    "mrcpoker_jumbo": "MRC Poker «3-inch Jumbo Acrylic Dealer Button» — 3 in (76.2 mm) Ø, 0.75 in (19.05 mm) thick acrylic puck — https://mrcpoker.com/products/3-inch-jumbo-acrylic-dealer-button",
+    "gse_blinds": "GSE «Dealer/Small Blind/Big Blind buttons» — home/tournament 3-marker set: DEALER + SMALL BLIND + BIG BLIND, common colour convention white/blue/yellow — https://www.amazon.com/GSE-Games-Sports-Expert-Buttons/dp/B07WHFGCXL",
+    "pokernews_button": "PokerNews «The Dealer Button» — in casino play the dealer button is the only physical marker; blinds are set by position relative to the button; it advances clockwise each hand — https://www.pokernews.com/strategy/casino-poker-for-beginners-07-the-dealer-button-29299.htm"
+  },
+  "specifications": {
+    "dealer": {
+      "diameter_mm": 76.2,
+      "thickness_mm": 20,
+      "material": "White acrylic / heavy plastic puck",
+      "text": "«DEALER» on the face (Wikipedia: 'a white plastic disc with the word Dealer on each side')",
+      "note": "Casino-standard Ø = 3 in (76.2 mm). Thickness 20 mm is the chunky casino-puck look (sourced range 19–22 mm); flat retail discs run ~6 mm. Bigger than a chip (40 mm) — reads as the dealer button on the table.",
+      "src": "wiki_button (white disc, 'DEALER' both sides) + brybelly_casino (3 in / 22.2 mm, acrylic) + mrcpoker_jumbo (3 in / 19.05 mm)"
+    },
+    "blinds": {
+      "convention": "Same puck recoloured: white = DEALER, blue = SMALL BLIND, yellow = BIG BLIND (common retail convention, not an enforced standard). Some sets abbreviate D / SB / BB.",
+      "note": "Physical SB/BB markers exist mainly in home/tournament sets; in casino play only the dealer button is physical. Built in-scene as recoloured/relabelled pucks.",
+      "src": "wiki_button (blind lammers) + gse_blinds (white/blue/yellow D/SB/BB set) + pokernews_button (casino = dealer button only)"
+    },
+    "derivation": {
+      "radius_m": "0.0381 = diameter 76.2 mm / 2",
+      "text_plate_m": "≈0.052 × 0.016 — 'DEALER' label sized to sit across the puck face (derived from the 76 mm face)",
+      "src": "geometric derivation from specifications.dealer"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "White acrylic puck Ø76.2 × 20 mm (chunky casino button)", "src": "brybelly_casino; mrcpoker_jumbo; wiki_button" },
+    { "feature": "«DEALER» text on the face (readable label)", "src": "wiki_button" },
+    { "feature": "Rotates clockwise one seat each hand (flavour, not modelled)", "src": "wiki_button; pokernews_button" },
+    { "feature": "SB/BB markers = same puck, blue/yellow, SMALL BLIND/BIG BLIND text (built in-scene)", "src": "gse_blinds; wiki_button" }
+  ],
+  "images": [],
+  "needs": [
+    "No reference photo (owner: standard object, OK without). Built from Wikipedia + retailer specs.",
+    "Thickness 20 mm chosen for the chunky-puck look — sourced range is 19–22 mm (casino puck) or ~6 mm (flat disc); no sanctioning-body dimensional standard exists",
+    "'DEALER' text rendered as a dark plate decal with light lettering (real buttons are black-on-white engraving — inverse, still reads); engraving depth/font/height unsourced",
+    "Black O-ring edge bumpers (Brybelly) not modelled in v1",
+    "SB/BB exact wording (full words vs SB/BB) + colours are a retail convention, not a standard"
+  ]
+}
