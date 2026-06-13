@@ -961,8 +961,8 @@ class Game {
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
     if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
     if (this.state === 'crate' && this.crate) this.crate.render(dt);
-    if (this.state === 'poker' && this.poker) { this.poker.update(dt); this.poker.render(dt); }
     else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
+    if (this.state === 'poker' && this.poker) { this.poker.update(dt); this.poker.render(dt); }
     this.input.endFrame();
   }
 

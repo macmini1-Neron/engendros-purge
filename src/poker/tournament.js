@@ -80,7 +80,7 @@ export class Tournament {
       .filter((p) => p.place === null && p.stack === 0)
       .sort((a, b) => (committed[b.id] || 0) - (committed[a.id] || 0));
     const aliveAfter = this.players.filter((p) => p.place === null && p.stack > 0).length;
-    busted.forEach((p, i) => { p.place = aliveAfter + busted.length - i; });
+    busted.forEach((p, i) => { p.place = aliveAfter + 1 + i; }); // most-committed (i=0) finishes highest
 
     const eliminated = busted.map((p) => p.id);
 

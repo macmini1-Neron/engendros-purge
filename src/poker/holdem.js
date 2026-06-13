@@ -132,6 +132,7 @@ export function applyAction(state, action) {
     } else {
       const to = type === 'allin' ? legal.maxRaiseTo : action.to;
       if (!legal.canRaise) throw new Error('illegal raise');
+      if (!Number.isInteger(to)) throw new Error('raise: `to` must be an integer'); // NaN/undefined from a bad client packet would slip past the range test below
       if (to < legal.minRaiseTo || to > legal.maxRaiseTo) throw new Error('raise out of range');
       commit(s, to - s.roundBet);
       const raiseSize = to - state.currentBet;
@@ -165,7 +166,7 @@ export function forceFold(state, seatId) {
   const i = state.seats.findIndex((s) => s.id === seatId);
   if (i < 0) return state;
   const s = state.seats[i];
-  if (s.folded || state.street === 'complete') return state;
+  if (s.folded || s.allIn || state.street === 'complete') return state; // never fold an all-in seat — they keep their right to the showdown
   s.folded = true; s.acted = true;
   if (maybeEndUncontested(state)) return state;
   if (state.toAct === i) {

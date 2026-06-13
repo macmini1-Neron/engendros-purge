@@ -114,6 +114,23 @@ test('a short all-in builds a side pot the short stack cannot win', () => {
   assert.equal(total, 260);                   // 100 + 100 + 60 committed, all awarded
 });
 
+test('a raise with a non-integer amount is rejected (co-op packet safety)', () => {
+  const s = startHand({ players: [P('U', 1000), P('S', 1000), P('B', 1000)], button: 0, sb: 10, bb: 20, rng: seed() });
+  assert.throws(() => applyAction(s, { type: 'raise' }), /integer/);          // missing `to` (undefined)
+  assert.throws(() => applyAction(s, { type: 'raise', to: '80' }), /integer/); // string `to`
+  applyAction(s, { type: 'raise', to: 60 });                                   // a valid integer raise still works
+  assert.equal(s.currentBet, 60);
+});
+
+test('forceFold never folds an all-in seat (keeps showdown rights)', () => {
+  const s = startHand({ players: [P('A', 100), P('B', 1000)], button: 0, sb: 10, bb: 20, rng: seed() });
+  applyAction(s, { type: 'allin' });            // A (button/SB) shoves all-in for 100
+  assert.equal(s.seats[0].allIn, true);
+  forceFold(s, 'A');                            // A "disconnects" while all-in
+  assert.equal(s.seats[0].folded, false);       // must NOT be folded — A still contests the showdown
+  assert.equal(s.seats[0].allIn, true);
+});
+
 test('forceFold removes an out-of-turn seat and ends the hand when one remains', () => {
   const s = startHand({ players: [P('U', 1000), P('S', 1000), P('B', 1000)], button: 0, sb: 10, bb: 20, rng: seed() });
   // U is to act; force-fold the other two out of turn → U wins uncontested

@@ -570,7 +570,7 @@ export class MP {
     n.on('pksnap', (d) => { if (!this.isHost && g.poker) g.poker.onSnap(d); });                   // host → my personalised view
     n.on('pkact', (d, from) => { if (this.isHost && g.poker && d) g.poker.hostClientAct(from, d.action); }); // client action → host validates
     n.on('pkleave', (d, from) => { if (this.isHost && g.poker) g.poker.onPeerDisconnect(from); }); // client left the table → eliminate
-    n.on('pkabort', () => { if (!this.isHost && g.poker) { g.poker.onAbort(); g.closePoker(); } }); // host ended the session → refund + bail
+    n.on('pkabort', () => { if (!this.isHost && g.poker) g.poker.onAbort(); }); // host ended the session → onAbort refunds + returns to lobby
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio

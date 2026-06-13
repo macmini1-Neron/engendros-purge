@@ -340,7 +340,6 @@ export class PokerDomRenderer {
     const L = p.legal;
     const callLabel = L.canCheck ? 'CHECK' : ('CALL ' + L.callAmount);
     this._raiseTo = Math.max(L.minRaiseTo, Math.min(L.maxRaiseTo, this._raiseTo || L.minRaiseTo));
-    const canRaise = L.canRaise && L.maxRaiseTo > L.minRaiseTo - 1;
     a.innerHTML = `
       <button class="pk-btn" id="pk-fold">FOLD</button>
       <button class="pk-btn go" id="pk-callcheck">${callLabel}</button>

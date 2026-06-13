@@ -38,10 +38,14 @@ export class PokerTable {
     this.names = {};
     this.clientSnap = null;   // client role: the latest host snapshot to render
     this.coopBuyIn = 0;
+    this._paid = 0;           // chips actually debited from this player's bank (refund only this)
     this._credited = false;
     this._refunded = false;
+    this._aborted = false;
     this._dropped = new Set();
   }
+
+  _toast(msg, color) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast(msg, color); }
 
   _ensureRenderer() {
     if (this.renderer || typeof document === 'undefined') return; // node/headless: stay renderer-less (all calls are guarded)
@@ -88,14 +92,15 @@ export class PokerTable {
   startCoop(buyIn) {
     const mp = this.game.mp;
     const ids = [...mp.roster.keys()];
-    if (ids.length < 2) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('Potřebuješ aspoň 2 hráče', 0xd23a2a); return; }
+    if (ids.length < 2) { this._toast('Potřebuješ aspoň 2 hráče', 0xd23a2a); return; }
+    if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Nemáš dost na buy-in $' + buyIn, 0xd23a2a); return; }
     this.names = {}; for (const [id, r] of mp.roster) this.names[id] = r.name || id;
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
-    this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._dropped = new Set();
+    this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
     this.rng = mulberry32(((Date.now() >>> 0) ^ (ids.length * 2654435761)) >>> 0);
     this.tour = new Tournament({ players: ids.map((id) => ({ id })), buyIn: this.coopBuyIn, rng: this.rng });
     this.active = true;
-    this._spend(this.coopBuyIn);                                   // host pays own buy-in
+    this._paid = this._spend(this.coopBuyIn);                      // host pays own buy-in (affordability checked above)
     mp.net.send('pkstart', { buyIn: this.coopBuyIn, names: this.names }); // pull clients in
     if (this.renderer) this.renderer.showTable();
     this._beginHand();
@@ -105,12 +110,19 @@ export class PokerTable {
   enterCoopClient(d) { // client side, on 'pkstart'
     this._ensureRenderer();
     this._reset();
+    const buyIn = (d && d.buyIn) | 0;
+    if (buyIn > 0 && (this.game.meta.bank | 0) < buyIn) { // can't cover the buy-in → decline, do NOT seat (no free roll)
+      try { this.game.mp.net.send('pkleave', {}); } catch (e) {}
+      this._toast('Nemáš dost na buy-in $' + buyIn, 0xd23a2a);
+      this.game.closePoker();
+      return;
+    }
     this.role = 'client'; this.coop = true; this.mode = 'money';
     this.youId = this.game.mp.myId;
     this.names = d && d.names ? d.names : {};
-    this.coopBuyIn = (d && d.buyIn) | 0; this._credited = false; this._refunded = false;
+    this.coopBuyIn = buyIn; this._credited = false; this._refunded = false; this._aborted = false;
     this.active = true; this.phase = 'playing'; this.clientSnap = null;
-    this._spend(this.coopBuyIn);                                   // client pays own buy-in
+    this._paid = this._spend(buyIn);                               // client pays own buy-in (affordability checked above)
     if (this.renderer) this.renderer.showTable();
   }
 
@@ -141,9 +153,14 @@ export class PokerTable {
     this._broadcastPoker();
   }
 
-  onAbort() { // client side, on 'pkabort' or host vanished
+  onAbort() { // client side, on 'pkabort' or host vanished — refund, tell the player, return to lobby
+    if (!this.coop || this._aborted) return;
+    this._aborted = true;
     this._refund();
     this.active = false;
+    this._toast('Hostitel ukončil hru — buy-in vrácen', 0xd8b066);
+    this.coop = false; this.role = 'solo';                         // so closePoker→leave() doesn't try to message the gone host
+    if (this.game.state === 'poker') this.game.closePoker();
   }
 
   // ---------- shared flow ----------
@@ -253,9 +270,10 @@ export class PokerTable {
 
   // ---------- bank ----------
 
-  _spend(n) {
-    if (this.mode === 'practice' || !n) return;
-    if ((this.game.meta.bank | 0) >= n) { this.game.meta.bank -= n; this.game._saveMeta(); }
+  _spend(n) { // returns the amount actually debited (0 if practice / unaffordable)
+    if (this.mode === 'practice' || !n) return 0;
+    if ((this.game.meta.bank | 0) >= n) { this.game.meta.bank -= n; this.game._saveMeta(); return n; }
+    return 0;
   }
   _payout() {
     if (this.mode === 'practice' || this._credited) return;
@@ -263,8 +281,8 @@ export class PokerTable {
     if (pay) { this.game.meta.bank = (this.game.meta.bank | 0) + pay; this.game._saveMeta(); this._credited = true; }
   }
   _refund() {
-    if (this.mode === 'practice' || this._refunded || this._credited || !this.coopBuyIn) return;
-    this.game.meta.bank = (this.game.meta.bank | 0) + this.coopBuyIn; this.game._saveMeta(); this._refunded = true;
+    if (this.mode === 'practice' || this._refunded || this._credited || !this._paid) return;
+    this.game.meta.bank = (this.game.meta.bank | 0) + this._paid; this.game._saveMeta(); this._refunded = true; // refund exactly what was paid
   }
 
   // ---------- teardown ----------
@@ -272,7 +290,7 @@ export class PokerTable {
   _reset() {
     this.active = false; this.phase = 'lobby'; this.tour = null; this.hand = null;
     this.clientSnap = null; this._netT = 0; this._dropped = new Set();
-    this._credited = false; this._refunded = false; this.coopBuyIn = 0;
+    this._credited = false; this._refunded = false; this._aborted = false; this.coopBuyIn = 0; this._paid = 0;
   }
 
   leave() { // Game.closePoker — tell the room, refund/abort as needed
