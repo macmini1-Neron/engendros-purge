@@ -796,9 +796,15 @@ def build_buttcap():
     pet = []
     for i in range(8):
         a = 2*pi*i/8
-        pet.append(build_leaf(f"bc_pet_{i}", length=0.0090, width=0.0046,
+        pet.append(build_leaf(f"bc_pet_{i}", length=0.0095, width=0.0048,
                    loc=(0.023*cos(a), 0.023*OVAL*sin(a), 0.013),
                    rot=(radians(132), 0, a + radians(90))))
+    # ornate acanthus scroll volutes between the petals (ref pommel images 4/5)
+    for i in range(8):
+        a = 2*pi*(i+0.5)/8
+        pet.append(build_scroll_volute(f"bc_sc_{i}", scale=0.0055,
+                   loc=(0.021*cos(a), 0.021*OVAL*sin(a), 0.010),
+                   rot=(radians(118), 0, a + radians(90))))
     bc = join_objects("ButtCap", [cap, join_objects("bc_petals", pet)])
     bc.rotation_euler = Vector((0,0,1)).rotation_difference(d).to_euler()
     bc.location = Pc - d*0.004
