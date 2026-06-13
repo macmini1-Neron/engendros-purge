@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vanilla ES modules, Node ≥22 built-in test runner (verified on v25.8.0), `import assert from 'node:assert/strict'`, `import { test } from 'node:test'`. No external dependencies, ever.
 
-**Run tests:** `node --test tests/poker/<name>.test.mjs` (exit 0 = pass). Run all: `node --test tests/poker/`.
+**Run tests:** `node --test tests/poker/<name>.test.mjs` (exit 0 = pass). Run all: `node --test 'tests/poker/*.test.mjs'` (this Node treats a bare directory arg as a module, so use the glob).
 
 **Card conventions (used by every module):**
 - A card is `{ r, s }`: rank `r` ∈ 2..14 (J=11, Q=12, K=13, **A=14**), suit `s` ∈ `'c'|'d'|'h'|'s'`.
@@ -444,27 +444,32 @@ test('award: short all-in wins only the main pot, coverer wins the side', () => 
   assert.ok(!win.C);
 });
 
-test('odd-chip distribution with three-way tie', () => {
+test('odd chip in a split pot goes to the first seat left of the button', () => {
+  // three-way even split: 300 / 3 = 100 each, no remainder
   const pots = buildPots([
     { seat: 'A', committed: 100, folded: false },
     { seat: 'B', committed: 100, folded: false },
     { seat: 'C', committed: 100, folded: false },
   ]);
-  // pot 300, three-way tie -> 100 each, no remainder
-  let win = awardPots(pots, { A: R(4), B: R(4), C: R(4) }, ['A', 'B', 'C']);
-  assert.deepEqual(win, { A: 100, B: 100, C: 100 });
+  assert.deepEqual(awardPots(pots, { A: R(4), B: R(4), C: R(4) }, ['A', 'B', 'C']), { A: 100, B: 100, C: 100 });
 
-  // pot 301 (one extra chip): odd chip to first in orderFromButton among winners
-  const pots2 = buildPots([
+  // odd pot of 101 split between two tied winners -> 50 each + 1 leftover chip
+  const odd = [{ amount: 101, eligible: ['A', 'B'] }];
+  assert.deepEqual(awardPots(odd, { A: R(4), B: R(4) }, ['A', 'B']), { A: 51, B: 50 }); // odd chip to A
+  assert.deepEqual(awardPots(odd, { A: R(4), B: R(4) }, ['B', 'A']), { A: 50, B: 51 }); // odd chip to B (first left of button)
+});
+
+test('an uncalled extra chip is returned to its owner, not shared', () => {
+  // A committed 1 more than anyone called -> that chip is A's own 1-chip side pot
+  const pots = buildPots([
     { seat: 'A', committed: 101, folded: false },
     { seat: 'B', committed: 100, folded: false },
     { seat: 'C', committed: 100, folded: false },
   ]);
-  assert.equal(pots2.reduce((s, p) => s + p.amount, 0), 301);
-  win = awardPots(pots2, { A: R(4), B: R(4), C: R(4) }, ['B', 'C', 'A']); // button left = B
-  assert.equal(win.B, 101); // B gets the odd chip
+  const win = awardPots(pots, { A: R(4), B: R(4), C: R(4) }, ['A', 'B', 'C']);
+  assert.equal(win.A, 101); // 100 (third of the 300 main) + 1 (own uncalled chip back)
+  assert.equal(win.B, 100);
   assert.equal(win.C, 100);
-  assert.equal(win.A, 100);
 });
 
 test('uncontested pot: lone non-folder wins it all', () => {
@@ -685,8 +690,8 @@ git commit -m "feat(poker): Monte-Carlo equity + draw-outs"
 
 - [ ] **Step 1: Run the whole poker suite**
 
-Run: `node --test tests/poker/`
-Expected: PASS — all four files green, 0 failures.
+Run: `node --test 'tests/poker/*.test.mjs'`
+Expected: PASS — all four files green, 0 failures (30 tests).
 
 - [ ] **Step 2: Confirm purity (no THREE leaked in)**
 
