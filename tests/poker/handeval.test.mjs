@@ -1,10 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCard, makeDeck, shuffle, mulberry32 } from '../../src/poker/cards.js';
-import { evaluate, evaluate7, compare, CATS } from '../../src/poker/handeval.js';
+import { evaluate, evaluate7, compare, CATS, describeHand } from '../../src/poker/handeval.js';
 
 const H = (s) => s.split(' ').map(parseCard);
 const ev = (s) => evaluate(H(s));
+
+test('describeHand names the winning combination in plain English', () => {
+  assert.equal(describeHand(ev('As Ks Qs Js Ts')), 'Royal Flush');
+  assert.equal(describeHand(ev('9s 8s 7s 6s 5s')), 'Straight Flush, Nine-high');
+  assert.equal(describeHand(ev('Ah Ad As Ac Kd')), 'Four of a Kind, Aces');
+  assert.equal(describeHand(ev('Kh Kd Ks Ac Ad')), 'Full House, Kings full of Aces');
+  assert.equal(describeHand(ev('Ah 9h 7h 5h 2h')), 'Flush, Ace-high');
+  assert.equal(describeHand(ev('Ah Kd Qs Jc Th')), 'Straight, Ace-high');
+  assert.equal(describeHand(ev('Ah 2d 3s 4c 5h')), 'Straight, Five-high'); // the wheel
+  assert.equal(describeHand(ev('8h 8d 8s Qc Jd')), 'Three of a Kind, Eights');
+  assert.equal(describeHand(ev('Ah Ad Ks Kc Qd')), 'Two Pair, Aces and Kings');
+  assert.equal(describeHand(ev('Ah Ad Ks Qc Jd')), 'Pair of Aces');
+  assert.equal(describeHand(ev('Ah Kd Qs Jc 9h')), 'High Card, Ace');
+  assert.equal(describeHand(null), '');
+});
 
 test('recognises every category', () => {
   assert.equal(ev('As Ks Qs Js Ts').cat, 8); // royal (straight flush)

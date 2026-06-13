@@ -18,7 +18,8 @@ import { PokerDomRenderer } from './poker-ui.js';
 
 const ACT_SECS = 30;        // per-turn shot clock (host-ticked)
 const BOT_THINK = 0.9;      // bot pause before acting (s) — feels human
-const RESULT_SECS = 3.2;    // showdown reveal dwell before the next hand
+const SHOWDOWN_SECS = 6.5;  // dwell on a real showdown — long enough to read who won with what (newbie-friendly)
+const FOLD_SECS = 2.5;      // shorter dwell when everyone folded (no combination to read)
 const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar animates clientside
 const BOT_NAMES = ['SHARK', 'DOC', 'LUCKY', 'SLIM', 'ACE'];
 
@@ -183,7 +184,11 @@ export class PokerTable {
     this.phase = 'over'; this._payout(); this._broadcastPoker();
   }
 
-  _endHand() { this.phase = 'handresult'; this.resultTimer = RESULT_SECS; }
+  _endHand() {
+    this.phase = 'handresult';
+    const showdown = !!(this.hand && this.hand.result && this.hand.result.reveals && this.hand.result.reveals.length);
+    this.resultTimer = showdown ? SHOWDOWN_SECS : FOLD_SECS; // linger on showdowns so the named hand is readable
+  }
 
   humanAct(action) {
     if (this.role === 'client') { // thin terminal: never mutates state, just forwards to the host
