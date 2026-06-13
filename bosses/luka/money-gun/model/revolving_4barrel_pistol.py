@@ -336,6 +336,36 @@ def mat_bore():
     _set(b, "Roughness", 0.7)
     return m
 
+def mat_steel():
+    """Aged bright steel like the reference barrels."""
+    m = _new_mat("MAT_Steel"); b = _bsdf(m)
+    _set(b, "Base Color", hex_rgba("#B7BBC0"))
+    _set(b, "Metallic", 1.0); _set(b, "Roughness", 0.34)
+    _rough_breakup(m, b, base=0.34, amp=0.12, scale=90)
+    _micro_bump(m, b, scale=450, depth=0.18)
+    # faint engraving lines (like mat_barrel)
+    nt = m.node_tree
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    wave = nt.nodes.new("ShaderNodeTexWave"); wave.wave_type='BANDS'
+    try: wave.bands_direction='X'
+    except Exception: pass
+    wave.inputs["Scale"].default_value = 95.0; wave.inputs["Distortion"].default_value = 1.5
+    bump = nt.nodes.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.08
+    bump.inputs["Distance"].default_value = 0.00003
+    nt.links.new(coord.outputs["Object"], wave.inputs["Vector"])
+    nt.links.new(wave.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    return m
+
+def mat_steel_dark():
+    """Dark engraved/blued steel like the reference lock + cock."""
+    m = _new_mat("MAT_SteelDark"); b = _bsdf(m)
+    _set(b, "Base Color", hex_rgba("#34373C"))
+    _set(b, "Metallic", 1.0); _set(b, "Roughness", 0.38)
+    _rough_breakup(m, b, base=0.38, amp=0.10, scale=120)
+    _micro_bump(m, b, scale=500, depth=0.15)
+    return m
+
 def assign(ob, mat):
     if ob is None: return ob
     ob.data.materials.clear(); ob.data.materials.append(mat)
@@ -1024,8 +1054,13 @@ def export_all():
 # =====================================================================
 def main():
     clean_scene()
-    M_GOLD = mat_gold(); M_BARREL = mat_barrel(); M_COP = mat_copper(); M_COPE = mat_copper_eng()
+    FINISH = globals().get("FINISH", "gold")     # "gold" (owner spec) | "photo" (steel+gold+ivory like ref)
+    M_GOLD = mat_gold(); M_COP = mat_copper(); M_COPE = mat_copper_eng()
     M_IV = mat_ivory(); M_FL = mat_flint(); M_BORE = mat_bore()
+    if FINISH == "photo":
+        M_BARREL = mat_steel(); M_LOCK = mat_steel_dark()   # ref look: steel barrels + dark lock
+    else:
+        M_BARREL = mat_barrel(); M_LOCK = M_GOLD            # all gold (owner spec)
 
     root = bpy.data.objects.new("ROOT_Pistol", None); root.empty_display_size=0.05
     bpy.context.collection.objects.link(root)
@@ -1043,7 +1078,7 @@ def main():
 
     recv = build_breech_receiver(); assign(recv, M_GOLD); built.append(recv)
     lock, cock, flint, frizzen, spring = build_lock()
-    for o in (lock, cock, frizzen, spring): assign(o, M_GOLD)
+    for o in (lock, cock, frizzen, spring): assign(o, M_LOCK)
     assign(flint, M_FL)
     built += [lock, cock, flint, frizzen, spring]
 
@@ -1052,7 +1087,7 @@ def main():
     bstrap = build_backstrap(); assign(bstrap, M_GOLD); built.append(bstrap)
     butt, pommel_bottom = build_buttcap(); assign(butt, M_GOLD); built.append(butt)
     guard = build_triggerguard(); assign(guard, M_GOLD); built.append(guard)
-    trig = build_trigger(); assign(trig, M_GOLD); built.append(trig)
+    trig = build_trigger(); assign(trig, M_LOCK); built.append(trig)
 
     ground_z = pommel_bottom - 0.001
     coins_b, coins_g = build_coins(ground_z)
