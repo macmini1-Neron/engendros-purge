@@ -4,7 +4,7 @@
   "category": "industrial",
   "target": "voxel",
   "anchor": "floor",
-  "footprint": { "w": 9.7, "h": 7.8, "d": 6.6 },
+  "footprint": { "w": 9.7, "h": 7.8, "d": 7.6 },
   "dossier": "models/p37_radar/ref/dossier.json",
   "rig": [
     { "name": "azimuth",   "pivot": [0, 1.55, 0],   "axis": "y", "pose": 0,      "type": "spin",  "range": [0, 6.2832] },

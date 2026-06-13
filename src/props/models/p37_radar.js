@@ -7,7 +7,7 @@ export const P37_RADAR_SPEC = {
   "category": "industrial",
   "target": "voxel",
   "anchor": "floor",
-  "footprint": { "w": 9.7, "h": 7.8, "d": 6.6 },
+  "footprint": { "w": 9.7, "h": 7.8, "d": 7.6 },
   "rig": [
     { "name": "azimuth",   "pivot": [0, 1.55, 0],   "axis": "y", "pose": 0,      "type": "spin",  "range": [0, 6.2832] },
     { "name": "frontTilt", "pivot": [0, 4.0, 2.7],   "axis": "x", "pose": 0.20,  "parent": "azimuth", "type": "fixed" },

@@ -73,6 +73,12 @@ export function validateSpec(spec, opts = {}) {
         // up-close markings); the integer form stays for stencil's paint-bar approximation.
         const textArray = p.op === 'decal' && Array.isArray(v) && v.length >= 1 && v.length <= 8 && v.every((s) => typeof s === 'string' && s.length > 0 && s.length <= 40);
         if (!textArray && (!Number.isInteger(v) || v < 1 || v > 30)) { errs.push(`${at}: ${k} must be an integer 1–30, or for decal an array of 1–8 non-empty strings (got ${JSON.stringify(v)})`); structuralOk = false; }
+      } else if (k === 'pts') {
+        // polyline args (pipe/tube): a missing-key is already caught above; here guard the CONTENTS —
+        // an empty / single-point / NaN path silently builds nothing yet would otherwise validate clean.
+        if (!Array.isArray(v) || v.length < 2 || v.some((q) => !Array.isArray(q) || q.length !== 3 || q.some((n) => typeof n !== 'number' || !Number.isFinite(n)))) {
+          errs.push(`${at}: '${k}' must be an array of ≥2 [x,y,z] finite-number points`); structuralOk = false;
+        }
       } else if (typeof v === 'number' && m.dims.includes(k)) {
         if (!(v > 0)) { errs.push(`${at}: ${k} must be > 0`); structuralOk = false; }
         else checkMetres(errs, at, k, v, maxDim);

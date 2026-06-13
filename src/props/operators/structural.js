@@ -142,8 +142,9 @@ export function cabinet(b, a, t, o) {
   }
 }
 
-// star — a flat N-pointed emblem (the Soviet red star): `points` tapered spokes radiating in a plane,
-// each a thin rotated box, plus a small centre hub. Box-only (no THREE; unit-testable). Args: r (outer
+// star — a flat N-pointed emblem (the Soviet red star): `points` overlapping rectangular spokes
+// radiating in a plane (each a thin rotated box of constant width — the tapered-point silhouette is
+// emergent from their union), plus a small centre hub. Box-only (no THREE; unit-testable). Args: r (outer
 // radius). Opts: points (default 5), th (depth out of the face), axis ('z' faces ±Z / 'x' faces ±X),
 // tone (default bright). k=0 points straight up (+Y).
 export function star(b, a, t, o) {
@@ -238,7 +239,7 @@ export const structuralExtents = {
   },
   meshReflector: (a) => {
     const hw = a.w / 2, hh = a.h / 2, ch = a.chord ?? 0.05;
-    const rows = a.rows ?? Math.max(6, Math.round(a.h / 0.3));
+    const rows = Math.max(1, a.rows ?? Math.max(6, Math.round(a.h / 0.3)));   // guard /rows (explicit rows:0 → ∞)
     const curve = a.curve ?? a.w * 0.06, fz = a.flipZ ? -1 : 1, z1 = fz * -curve;   // centre set-back
     const m = ch * 1.5;                          // member half-thickness margin (ribs ch*0.7, rails ch)
     const yo = (a.h / rows) / 2 + 0.006 + m;     // clip-outline rail boxes overhang ±hh by ~half a row

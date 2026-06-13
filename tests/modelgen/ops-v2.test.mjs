@@ -14,9 +14,13 @@ const PURE_OPS = {
   drawerStack: FURN.drawerStack, legs: FURN.legs,
   lidBox: CONT.lidBox, strapBand: CONT.strapBand, handleU: CONT.handleU,
 };
-// browser-verified, extents-checked only (NOT box-unit-tested): the THREE-bound round ops,
-// plus the box-only composite emblem/mesh ops (star, meshReflector) whose dense overlapping
-// members carry intentional coplanar same-colour faces the box z-fight property test isn't for.
+// Ops verified by EXTENTS sanity only here, and excluded from the PURE z-fight / box-within-extents
+// property tests below. Two distinct reasons:
+//  - THREE-bound round ops (cylinder…loaf): impls call THREE and can't run under bare `node --test`.
+//  - star + meshReflector: box-only and ARE behaviourally unit-tested in operators.test.mjs; they're
+//    held out of the z-fight PROPERTY test only because their dense overlapping members carry
+//    intentional coplanar same-colour faces (and star's k=0 spoke has rz:0, which `isRotated` reads
+//    as un-rotated) that the box z-fight check would false-positive on.
 const ROUND_OPS = ['cylinder', 'disc', 'cone', 'deltaFins', 'texturedCylinder', 'torus', 'tube', 'texturedDisc', 'decal', 'loaf', 'wheel', 'pipe', 'tubeMast', 'star', 'meshReflector'];
 
 function mock() {
@@ -56,7 +60,7 @@ const ROUND_SAMPLES = {
   loaf: { w: 0.226, h: 0.108, d: 0.175 },
   wheel: { r: 0.45, w: 0.25, axis: 'x', twin: true },
   pipe: { pts: [[0, 0, 0], [0, 0.4, 0], [0.3, 0.4, 0]], r: 0.04 },
-  tubeMast: { baseW: 1.2, baseD: 1.2, h: 4.5, topW: 0.3, topD: 0.3 },
+  tubeMast: { baseW: 1.2, baseD: 1.2, h: 4.5, topW: 0.3, topD: 0.3, apexZ: -0.7 },   // apexZ leans the top → exercises the z-extents lean math
   star: { r: 0.5, points: 5, th: 0.05 },
   meshReflector: { w: 6.75, h: 3.5, clipTop: 0.18, chord: 0.05 },   // P-37 «Bar Lock» dish (clipped pentagon top)
 };

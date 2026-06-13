@@ -84,6 +84,18 @@ test('meshReflector border:false drops the frame (ribs + slats only)', () => {
   assert.equal(b.calls.length, 4 + 5 * 6);   // 34
 });
 
+test('meshReflector clipTop>0 traces a clipped pentagon outline — narrower at the top than the square bottom', () => {
+  // the signature P-37 dish shape (both real reflectors use clipTop) — exercises the clip branch
+  const b = mock();
+  meshReflector(b, { w: 6, h: 4, cols: 4, rows: 5, seg: 6, clipTop: 0.5 }, T, O);
+  // ribs(4) + slats(rows*seg=30) + rails(2*seg=12) + clipped outline (2 sides × (rows+1)=12); NO straight side posts
+  assert.equal(b.calls.length, 4 + 5 * 6 + 2 * 6 + 2 * (5 + 1));
+  const outline = b.calls.filter((c) => c[6] === T.hi);          // the lit frame trace (non-rotated)
+  const topY = Math.max(...outline.map((c) => c[4])), botY = Math.min(...outline.map((c) => c[4]));
+  const halfWidthAt = (y) => Math.max(...outline.filter((c) => Math.abs(c[4] - y) < 1e-9).map((c) => Math.abs(c[3])));
+  assert.ok(halfWidthAt(topY) < halfWidthAt(botY), `clipped top (${halfWidthAt(topY)}) should be narrower than square bottom (${halfWidthAt(botY)})`);
+});
+
 test('star emits `points` rotated spokes + a centre hub; spokes carry a rotation', () => {
   const b = mock();
   star(b, { r: 1 }, T, O);                       // default 5 points

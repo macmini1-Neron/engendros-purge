@@ -169,7 +169,7 @@ window.VIEWER = {
   // capture() — force a fresh render of the CURRENT camera and return a data-URL. Lets an agent
   // grab a deterministic frame via browser_evaluate (no flaky screenshot tool, no drawing-buffer
   // race — preserveDrawingBuffer is on). Pass jpeg quality 0..1; default jpeg 0.85.
-  capture(q) { resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', q ?? 0.85); },
+  capture(q) { if (!model) return null; resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', q ?? 0.85); },
 };
 window.addEventListener('resize', resize);
 
