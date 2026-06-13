@@ -29,6 +29,8 @@ import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
 import { NightPost } from './nightpost.js';
+import { Mortar } from './mortar.js';
+import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
 import { makeWorldClock, MINUTES_PER_DAY } from './worldclock.js';
@@ -48,6 +50,7 @@ const _registerModels = async () => {
   await load('wallclock-chasozbor'); // «ЧАСОЗБОР» analog wall clock (demobuilding hangs it lazily once registered)
   await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
   await load('lpr1');               // ЛПР-1 «Каралон-М» laser rangefinder (hand tool; admin viewer + world prop)
+  await load('mortar-82pm37');      // 82-ПМ-37 (БМ-37) co-op indirect-fire mortar (placed at the steppe strongpoint)
   // Forest deadwood + rock kit — scattered through the ?map=demo wood by forest.js (Forest._ensureProps).
   for (const id of [
     'rock_boulder_lg', 'rock_boulder_mossy', 'rock_cluster_sm', 'rock_outcrop',
@@ -113,6 +116,11 @@ class Game {
     // objective laid ~N over the open steppe. Built lazily once the nnp23 spec registers.
     this.nightPosts = [];
     if (this.mapId === 'steppe') this.nightPosts.push(new NightPost(this, -321.5, -296.5, 0.1));
+    // 82-ПМ-37 co-op mortar — fixed indirect-fire pit in the strongpoint's SW rear defilade (clear of
+    // colliders + the НП/nightpost cluster). baseYaw 0 lays grid-N over the position into the steppe;
+    // Y resolved from terrain in ensureBuilt.
+    this.mortars = [];
+    if (this.mapId === 'steppe') this.mortars.push(new Mortar(this, new THREE.Vector3(-335, 0, -308), 0));
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
     this.inventory = new Inventory(this); // survival backpack + unified held-item model
@@ -284,6 +292,14 @@ class Game {
         else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
         return;
       }
+      // manning the mortar: E leave · F fullscreen · M mute; swallow the rest (W/S/A/D/Shift held-lay
+      // + LMB fire are read in Mortar.controlUpdate via input.down, so they don't route through here)
+      if (this.player.mortar) {
+        if (code === 'KeyE') this.player.mortar.dismount();
+        else if (code === 'KeyF') this.toggleFullscreen();
+        else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
+        return;
+      }
       // ЛПР-1 raised to the eyes: T fires a ranging pulse — must run BEFORE console-open (same pattern as the ННП-23 branch toggle above)
       if (code === 'KeyT' && this.weapons.lprRaised) { this.weapons.lprMeasure(); return; }
       if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
@@ -317,6 +333,7 @@ class Game {
           const gun = this.nearestMountedGun(this.player.pos, (g) => g.canMount(this.player.pos));
           if (gun) gun.mount();
           else if (this.nearestNightPost()) { this.nearestNightPost().enter(); } // ННП-23: step up to the eyepieces
+          else if (this.nearestMortar()) { this.nearestMortar().mount(); } // 82-ПМ-37: man the indirect-fire station
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
@@ -330,6 +347,7 @@ class Game {
       else if (code === 'KeyB') this.weapons.toggleFireMode();
       else if (code === 'KeyG') { const c = this.inventory.curItem(); if (c) this.inventory.dropSlot(c.slot); }
       else if (code === 'KeyI') this.toggleInventory();
+      else if (code === 'KeyC') this.tryMortarSpot(); // spotter: range+bearing call to the mortar (+ shared marker)
       else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
       else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.inventory.selectSlotN(n); }
     });
@@ -396,6 +414,45 @@ class Game {
     for (const np of this.nightPosts) if (np.near(this.player.pos)) return np;
     return null;
   }
+  nearestMortar() {
+    // the mortar the player can man (built + close + free + has mines); not while seated elsewhere
+    if (this.player.mountedGun || this.player.nightPost || this.player.mortar) return null;
+    for (const m of this.mortars) if (m.canMount(this.player.pos)) return m;
+    return null;
+  }
+  // Spotter (v1 minimal): march the look-ray to the ground → range+bearing FROM THE MORTAR to that
+  // point (the firing solution the gunner must dial), shown to the spotter + a shared marker. ЛПР-1
+  // will later replace the look-ray with a real lased target; the {range,bearing} contract is the same.
+  tryMortarSpot() {
+    if (this.state !== 'playing' || this.player.mortar) return;
+    const m = this.mortars && this.mortars[0];
+    if (!m || !m.root) return;
+    const cam = this.engine.camera;
+    const o = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    let hit = null;
+    for (let t = 2; t < 700; t += 1.5) {
+      const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
+      const g = m._groundY(x, z);
+      if (y <= g) { hit = { x, y: g, z }; break; }
+    }
+    if (!hit) return;
+    const mp = this.mp;
+    if (!mp || !mp.active) {
+      this._dropMortarMark({ p: [hit.x, hit.y, hit.z], rng: Math.round(rangeMeters(m.base, hit)), mils: formatUglomer(bearingMils(m.base, hit)) });
+    } else mp.net.send('mortarspot', { p: [+hit.x.toFixed(2), +hit.z.toFixed(2)] });
+  }
+  // Drop the shared world beacon + show the spotter call. Host broadcasts this to everyone.
+  _dropMortarMark(d) {
+    const [x, y, z] = d.p;
+    if (this._mortarMark) { this.engine.scene.remove(this._mortarMark); this._mortarMark.geometry.dispose(); this._mortarMark.material.dispose(); }
+    const geo = new THREE.CylinderGeometry(0.16, 0.16, 9, 6, 1, true);
+    const beacon = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffcc33, transparent: true, opacity: 0.75, side: THREE.DoubleSide }));
+    beacon.position.set(x, y + 4.5, z);
+    this.engine.scene.add(beacon);
+    this._mortarMark = beacon; this._mortarMarkT = 14;
+    if (this.hud.setSpotCall) this.hud.setSpotCall(`TARGET · RNG ${d.rng}m · ${d.mils}`);
+  }
   nearestMountedGun(pos, predicate = null) {
     let best = null, bestD = Infinity;
     for (const gun of this._mountedGunList()) {
@@ -417,7 +474,8 @@ class Game {
     this.enemies.clearAll(); this.loot.reset();
     this._nextTagId = 1; // new run → enemy tag ids restart at 1
     this.resetMountedGuns();
-    for (const np of this.nightPosts) np.forceReset(); // step away from the ННП-23 (restores lights/FOV/overlay)
+    for (const np of this.nightPosts) np.forceReset();
+    for (const m of this.mortars) m.forceReset(); // step away from the ННП-23 (restores lights/FOV/overlay)
     if (this.hud) this.hud.setCompass(null); // body-level overlay — hud.show(false) won't hide it; clear on run reset
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
@@ -624,7 +682,8 @@ class Game {
     this.mpMenuOpen = false;
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.resetMountedGuns();
-    for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay when leaving to menu
+    for (const np of this.nightPosts) np.forceReset();
+    for (const m of this.mortars) m.forceReset(); // clear the ННП-23 NV filter/overlay when leaving to menu
     if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on the way to menu
     this.enemies.clearAll(); if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
@@ -716,7 +775,8 @@ class Game {
     if (this.mp && typeof this.mp.endRunToLobby === 'function') this.mp.endRunToLobby(msg);
     this.state = 'menu'; this.mpMenuOpen = false;
     this.resetMountedGuns();
-    for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay on squad-wipe → lobby
+    for (const np of this.nightPosts) np.forceReset();
+    for (const m of this.mortars) m.forceReset(); // clear the ННП-23 NV filter/overlay on squad-wipe → lobby
     if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on squad-wipe → lobby
     this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
     this._clearFlares();
@@ -761,7 +821,8 @@ class Game {
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
     this.resetMountedGuns();
-    for (const np of this.nightPosts) np.forceReset(); // clear the ННП-23 NV filter/overlay off the death screen
+    for (const np of this.nightPosts) np.forceReset();
+    for (const m of this.mortars) m.forceReset(); // clear the ННП-23 NV filter/overlay off the death screen
     if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on death
     if (this.audio.music) { this.audio.music.setScene('gameover'); this.audio.music.setIntensity(0.85); this.audio.music.setStress(0); } this.hud.show(false);
     // persistent meta (per mode) + lifetime tallies
@@ -885,14 +946,19 @@ class Game {
     if (sim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._waveBreak = 0; this.waves.startWave(this.waves.wave + 1); } } // continuous: breather → next wave (no shop, stay 'playing')
 
     for (const np of this.nightPosts) np.ensureBuilt(); // place the ННП-23 prop once its spec registers (async boot fetch)
+    for (const m of this.mortars) { m.ensureBuilt(); m.update(dt); } // mortar: lazy place + tick in-flight shells (even unseated)
+    if (this._mortarMark) { this._mortarMarkT -= dt; if (this._mortarMarkT <= 0) { this.engine.scene.remove(this._mortarMark); this._mortarMark.geometry.dispose(); this._mortarMark.material.dispose(); this._mortarMark = null; } } // fade the spotter beacon
     if (this.mp.active && this.mp.frozen) {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
       if (this.player.nightPost) this.player.nightPost.exit();
+      if (this.player.mortar) this.player.mortar.dismount();
       this.weapons.cancelMolotov();
       this.hud.setCompass(null); // downed/dead in co-op: weapons.update() is skipped → tear the буссоль overlay down
     }
     if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
+    } else if (this.player.mortar) {
+      this.player.mortar.controlUpdate(dt); // indirect-fire lay (W/S/A/D) + framing camera + fire handled here
     } else if (this.player.nightPost) {
       this.player.nightPost.controlUpdate(dt); // handwheel slew + eyepiece camera + branch FOV handled here
     } else {
@@ -971,6 +1037,10 @@ class Game {
       this.hud.setInteract(''); // at the optic: the controls hint is self-contained in the NV overlay (#nvhint, timed fade)
     } else if (this.nearestNightPost()) {
       this.hud.setInteract('Press <b>E</b> to use the ННП-23 «Резчик» night observation post');
+    } else if (this.player.mortar) {
+      this.hud.setInteract(''); // at the mortar: the dial HUD is self-contained (#mortarpanel)
+    } else if (this.nearestMortar()) {
+      this.hud.setInteract(`Press <b>E</b> to man the 82-PM-37 mortar — ${this.nearestMortar().ammo} rounds · indirect fire`);
     } else if (this.inventory.isHoldingFiftyCan() && _reloadGun) {
       // holding the ammo can at the gun: refill, never mount (switch to a weapon to man it)
       this.hud.setInteract(_reloadGun.ammo >= _reloadGun.maxAmmo

@@ -666,6 +666,17 @@
     #nightgear .ng.off { opacity: .55; }
     #heatbar { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); width: 240px; text-align: center; opacity: 0; transition: opacity .2s; }
     #heatbar.show { opacity: 1; }
+    /* 82-ПМ-37 indirect-fire dial panel (bottom-RIGHT, above the ammo slot — clears the bottom-left health/vitals) */
+    #mortarpanel { right: 26px; bottom: 150px; min-width: 180px; opacity: 0; transition: opacity .18s; pointer-events: none; }
+    #mortarpanel.show { opacity: 1; }
+    #mortarpanel .mrow { display: flex; justify-content: space-between; gap: 18px; font-size: 12px; line-height: 1.75; }
+    #mortarpanel .mrow span { color: var(--ink-dim); letter-spacing: 1px; }
+    #mortarpanel .mrow b { color: var(--paper); font-variant-numeric: tabular-nums; }
+    #mortarpanel #m-mils { color: var(--gold); }
+    #mortarpanel #m-load { margin-top: 4px; font-size: 11px; color: var(--gold-2); letter-spacing: 2px; opacity: 0; }
+    #mortarpanel.loading #m-load { opacity: 1; }
+    #spotcall { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); padding: 6px 16px; background: var(--glass); border: 1px solid var(--gold-deep); border-radius: var(--r-sm); color: var(--gold); font-size: 14px; letter-spacing: 1px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+    #spotcall.show { opacity: 1; }
     #heatbar .hl { font-size: 11px; letter-spacing: 2px; opacity: .85; margin-bottom: 3px; text-shadow: 0 2px 0 rgba(0,0,0,.55); }
     #heatbar .hb { height: 12px; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.3); border-radius: 6px; overflow: hidden; }
     #heatfill { height: 100%; width: 0%; background: linear-gradient(90deg,#ffd24a,#ff7a2a,#e8533a); transition: width .08s; }
@@ -1042,6 +1053,14 @@
     <div id="interact"></div>
     <div id="bleedbar"><div class="bl">BLEEDING OUT</div><div class="bb"><div id="bleedfill"></div></div></div>
     <div id="heatbar"><div class="hl" id="heatlabel">BARREL HEAT</div><div class="hb"><div id="heatfill"></div></div></div>
+    <div id="mortarpanel" class="panel">
+      <div class="mrow"><span>ELEV</span><b id="m-elev">65°</b></div>
+      <div class="mrow"><span>RANGE</span><b id="m-range">240 m</b></div>
+      <div class="mrow"><span>BEARING</span><b id="m-mils">00-00</b></div>
+      <div class="mrow"><span>ROUNDS</span><b id="m-ammo">12</b></div>
+      <div id="m-load">RELOADING…</div>
+    </div>
+    <div id="spotcall"></div>
     <div id="msg"></div>
   </div>
 
