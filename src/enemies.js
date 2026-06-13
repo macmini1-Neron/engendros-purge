@@ -1057,6 +1057,8 @@ export class EnemyManager {
       if (e.def.explode) {
         // enemies take 1.2× the blast, players take 1.0× (enemyDmg vs dmg). harmPlayers gated on the
         // chain guard: only the triggering kill harms the player; chained exploders don't double-dip.
+        // explode()'s clearLoot runs synchronously here — before this kill's onEnemyKilled loot drop
+        // below — so the blast clears existing ground items but the exploder's own drop survives.
         this.game.explode(top, { radius: e.def.explodeRadius, dmg: e.def.explodeDmg, enemyDmg: e.def.explodeDmg * 1.2,
           except: e, source: 'explosion', harmPlayers: source !== 'explosion' });
       }

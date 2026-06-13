@@ -75,6 +75,10 @@ const GAME_BUILD = '2026-06-19 02:35';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
+// HE blast profile for tier-3 rockets/HE (bazooka rocket, mortar shell): tier 3 removes brick wall
+// segments within r1 (a WALKABLE breach), shatters all glass within r2, ignites + fells nearby trees.
+const DEMO_HE_BLAST = { r1: 2.6, r2: 6.0, tier: 3 };
+
 class Game {
   constructor() {
     this.canvas = document.getElementById('game');
@@ -919,6 +923,7 @@ class Game {
     const { radius = 5, dmg = 0, enemyDmg = dmg, source = 'explosion', except = null,
             harmEnemies = true, harmPlayers = true, clearLoot = true, destroy = true,
             isRocket = false, visual = true, shake = 0, net = true, attacker = 'host' } = opts;
+    if (!pos || !Number.isFinite(radius) || radius <= 0) { console.warn('explode: bad pos/radius — skipped', pos, radius); return; } // surface a bad call instead of an audible blast that silently deals no damage
     if (visual) this.effects.explosion(pos, radius);          // explosion() also plays audio.explosion()
     if (shake && this.engine.shake) this.engine.shake(shake);
     const hostSim = !this.mp.active || this.mp.isHost;
@@ -935,13 +940,12 @@ class Game {
   }
   // HE blast routed into the demo destructibles: remove brick wall segments (a WALKABLE breach)
   // + shatter glass via the building, fell trees + destroy props within the blast, and seed a
-  // fire at the impact (a rocket into the woods lights the stand). Host-auth; moved here from
-  // WeaponSystem so all blast helpers live together on Game.
+  // fire at the impact (a rocket into the woods lights the stand). Host-auth.
   _demoBlast(pos, radius, isRocket) {
     const hostSim = !this.mp.active || this.mp.isHost;
     if (!hostSim) return;
     const b = this.world.demoBuilding;
-    const blast = isRocket ? { r1: 2.6, r2: 6.0, tier: 3 } : { r1: radius * 0.35, r2: radius, tier: 2 };
+    const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
     if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
     if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, blast.r1 + 0.6, blast.tier);
     if (this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
