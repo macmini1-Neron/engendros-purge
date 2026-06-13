@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCard, mulberry32 } from '../../src/poker/cards.js';
-import { startHand, legalActions, applyAction, publicView, privateView, isComplete } from '../../src/poker/holdem.js';
+import { startHand, legalActions, applyAction, publicView, privateView, isComplete, forceFold } from '../../src/poker/holdem.js';
 
 const P = (id, stack) => ({ id, stack });
 const seed = () => mulberry32(42);
@@ -112,6 +112,18 @@ test('a short all-in builds a side pot the short stack cannot win', () => {
   assert.equal(s.result.pots.length, 2);      // main (U,S,B) + side (U,S)
   const total = Object.values(s.result.winnings).reduce((a, b) => a + b, 0);
   assert.equal(total, 260);                   // 100 + 100 + 60 committed, all awarded
+});
+
+test('forceFold removes an out-of-turn seat and ends the hand when one remains', () => {
+  const s = startHand({ players: [P('U', 1000), P('S', 1000), P('B', 1000)], button: 0, sb: 10, bb: 20, rng: seed() });
+  // U is to act; force-fold the other two out of turn → U wins uncontested
+  forceFold(s, 'S');
+  assert.equal(s.seats[1].folded, true);
+  assert.ok(!isComplete(s)); // U and B still live
+  forceFold(s, 'B');
+  assert.ok(isComplete(s));
+  assert.equal(s.result.uncontested, true);
+  assert.ok(s.result.winnings.U); // U scoops the blinds
 });
 
 test('hole cards are private until showdown', () => {

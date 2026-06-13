@@ -226,6 +226,7 @@ class Game {
     click('armoryBtn', () => this.shop.open('menu'));
     click('lobbyArmoryBtn', () => this.shop.open('lobby'));
     click('pokerBtn', () => this.openPoker('menu'));
+    click('lobbyPokerBtn', () => this.openCoopPoker());
     click('armoryBackBtn', () => { if (this.shop.returnTo === 'lobby') this.toLobby(); else this.toMenu(); });
     click('mpHostBtn', () => this.mp.startHost((document.getElementById('mp-name') || {}).value || 'Host'));
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
@@ -726,6 +727,24 @@ class Game {
   closePoker() {
     if (this.poker) this.poker.leave();
     if (this._pokerFrom === 'lobby') this.toLobby(); else { this.state = 'menu'; this.ui.show('menu'); }
+  }
+  // Co-op PvP poker — host opens the den for the room; clients are pulled in by the 'pkstart' message.
+  openCoopPoker() {
+    if (!this.mp || !this.mp.isHost) return; // host-only entry
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    this.ui.show('poker');
+    if (this.poker) this.poker.openCoop();
+  }
+  _enterCoopPoker(d) { // client side — host has dealt; join the table
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    this.ui.show('poker');
+    if (this.poker) this.poker.enterCoopClient(d);
   }
   // «Посылка» lootbox — open one owned crate. The roll is COMMITTED + saved BEFORE any
   // animation so an Esc/refresh/crash mid-ceremony can never re-roll or lose the reward.

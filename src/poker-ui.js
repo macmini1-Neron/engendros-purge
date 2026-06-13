@@ -194,6 +194,41 @@ export class PokerDomRenderer {
     this.el.lobby.querySelector('#pk-lobbyleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
   }
 
+  // Host-only co-op lobby: pick a buy-in (deducted from each player's bank), then DEAL.
+  showCoopLobby(opts) {
+    this.el.lobby.style.display = 'flex';
+    this.el.felt.style.display = 'none';
+    const tiers = (opts && opts.tiers) || [500, 2000, 10000];
+    const bank = (opts && opts.bank) | 0;
+    let buyIn = tiers.find((t) => t <= bank) || tiers[0];
+    const players = (opts && opts.players) || [];
+    this.el.lobby.innerHTML = `
+      <h2>ПОДПОЛЬНЫЙ ПОКЕР · CO-OP</h2>
+      <div class="pk-sub">Hra o bankovní peníze — winner-takes-all. Každý hráč zaplatí buy-in ze své banky.
+        Tvoje banka: <b style="color:var(--brass-hi)">$${bank}</b></div>
+      <div class="pk-optrow"><label>Buy-in:</label> <span id="pk-tierpick"></span></div>
+      <div class="pk-optrow"><label>Hráči:</label> <span style="color:var(--steel)">${players.map(esc).join(' · ') || '—'}</span></div>
+      <div class="pk-actions">
+        <button class="pk-btn go" id="pk-deal">ROZDAT · DEAL</button>
+        <button class="pk-btn" id="pk-coopleave">ZPĚT</button>
+      </div>`;
+    const pick = this.el.lobby.querySelector('#pk-tierpick');
+    const draw = () => {
+      pick.innerHTML = '';
+      for (const t of tiers) {
+        const b = document.createElement('button');
+        b.className = 'pk-optbtn' + (t === buyIn ? ' sel' : '');
+        b.style.width = 'auto'; b.style.padding = '0 12px'; b.textContent = '$' + t;
+        if (t > bank) { b.disabled = true; b.style.opacity = '.35'; }
+        else b.addEventListener('click', () => { buyIn = t; draw(); });
+        pick.appendChild(b);
+      }
+    };
+    draw();
+    this.el.lobby.querySelector('#pk-deal').addEventListener('click', () => this.cb.onStart && this.cb.onStart({ coop: true, buyIn }));
+    this.el.lobby.querySelector('#pk-coopleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
+  }
+
   showTable() {
     this.el.lobby.style.display = 'none';
     this.el.felt.style.display = 'flex';

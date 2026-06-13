@@ -159,6 +159,22 @@ export function applyAction(state, action) {
   return state;
 }
 
+// Fold a specific seat out of turn (e.g. a disconnect/leave). Resolves the hand if this leaves
+// one player, or advances the action if it was that seat's turn. Returns state.
+export function forceFold(state, seatId) {
+  const i = state.seats.findIndex((s) => s.id === seatId);
+  if (i < 0) return state;
+  const s = state.seats[i];
+  if (s.folded || state.street === 'complete') return state;
+  s.folded = true; s.acted = true;
+  if (maybeEndUncontested(state)) return state;
+  if (state.toAct === i) {
+    const next = nextActable(state, i);
+    if (next !== null) state.toAct = next; else advanceStreet(state);
+  }
+  return state;
+}
+
 // ---- internal progression ----
 
 function maybeEndUncontested(state) {
