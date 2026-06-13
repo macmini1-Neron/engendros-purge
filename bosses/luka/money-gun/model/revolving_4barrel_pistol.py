@@ -839,17 +839,17 @@ def build_buttcap():
 def build_triggerguard():
     """Elegant continuous guard bow: front finial fixed under the receiver,
     sweeps round the trigger, rear finial onto the grip belly. Round profile."""
-    g_pts = [(-0.078, 0.0, -0.018),   # front finial (under receiver)
-             (-0.080, 0.0, -0.031),
-             (-0.088, 0.0, -0.046),
-             (-0.099, 0.0, -0.050),   # bow bottom
-             (-0.110, 0.0, -0.045),
-             (-0.120, 0.0, -0.034),
-             (-0.126, 0.0, -0.024)]   # rear finial (onto grip neck/belly)
-    g_taper = [(-1, 0.85), (-0.5, 1.05), (0.5, 1.05), (1, 0.9)]
-    guard = build_curve_tube("TriggerGuard", g_pts, bevel=0.0022, taper=g_taper)
-    f1 = add_sphere("tg_fin1", r=0.0031, loc=(-0.078, 0, -0.016)); f1.scale=(1,1,0.8)
-    f2 = add_sphere("tg_fin2", r=0.0033, loc=(-0.127, 0, -0.023)); f2.scale=(1,1,0.85)
+    g_pts = [(-0.076, 0.0, -0.016),   # front finial (under receiver)
+             (-0.079, 0.0, -0.032),
+             (-0.087, 0.0, -0.050),
+             (-0.099, 0.0, -0.056),   # bow bottom (deeper, more open)
+             (-0.112, 0.0, -0.051),
+             (-0.124, 0.0, -0.038),
+             (-0.130, 0.0, -0.026)]   # rear finial (onto grip belly)
+    g_taper = [(-1, 0.9), (-0.5, 1.15), (0.5, 1.15), (1, 0.95)]
+    guard = build_curve_tube("TriggerGuard", g_pts, bevel=0.0024, taper=g_taper)
+    f1 = add_sphere("tg_fin1", r=0.0034, loc=(-0.075, 0, -0.014)); f1.scale=(1,1,0.8)
+    f2 = add_sphere("tg_fin2", r=0.0036, loc=(-0.131, 0, -0.025)); f2.scale=(1,1,0.85)
     guard = join_objects("TriggerGuard", [guard, f1, f2]); add_bevel(guard, width=0.0005, segments=1)
     return guard
 
