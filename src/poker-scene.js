@@ -7,7 +7,8 @@
 import * as THREE from 'three';
 import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
-import { makeChipStack, setChipStack } from './poker-chips.js';
+import { makeChipStack, makeChipTray } from './poker-chips.js';
+import { sigOf } from './poker/chipbank.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
 import { RADIO_STATIONS, GHOST_STATION, stationByIndex, stationLabel } from './radio.js';
@@ -96,8 +97,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     r.setClearColor(0x05060a, 1);
     const scene = this._scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x05060a, 2.2, 5.0);
-    this.cam = new THREE.PerspectiveCamera(53, 1.6, 0.03, 60);
-    this.cam.position.set(0, 1.12, 1.26); this.cam.lookAt(0, 0.0, -0.12); // seated on a chair — raised on Y, steeper angle, closer in
+    this.cam = new THREE.PerspectiveCamera(60, 1.6, 0.03, 60);
+    this.cam.position.set(0.08, 0.28, 0.91); this.cam.lookAt(-0.03, -0.02, -0.11); // SEATED at the table — low + close + wide for max immersion (angle dialled in via the free-cam dev tool); near edge runs off-frame
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -171,11 +172,15 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const n = v.seats.length;
     const me = Math.max(0, v.seats.findIndex((s) => s.id === p.youId));
     const winners = p.result && p.result.winnings ? p.result.winnings : null;
+    const ch = p.chips;
     const key = JSON.stringify({
       n, me, bt: v.button, ta: v.toAct, pot: v.pot,
       bd: v.board.map((c) => c.r + c.s),
       se: v.seats.map((s) => [s.id, s.stack, s.roundBet, s.folded ? 1 : 0, s.allIn ? 1 : 0,
         s.hole ? s.hole.map((c) => c.r + c.s).join('') : (s.hasCards ? 'X' : ''), (winners && winners[s.id]) || 0]),
+      // conserved-chip composition: two stacks can share a value yet hold different chips, so the
+      // tray must rebuild on composition change, not just value change.
+      cs: ch ? sigOf(ch.pot) + '|' + v.seats.map((s) => sigOf(ch.stacks[s.id] || {}) + '/' + sigOf(ch.bets[s.id] || {})).join(',') : '',
     });
     if (key === this._sceneKey) return;
     this._sceneKey = key;
@@ -205,7 +210,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // nameplate (faces the camera)
       const np = this._label(`${(p.names && p.names[s.id]) || (s.id === p.youId ? 'YOU' : s.id)}  $${s.stack}${winners && winners[s.id] ? '  +' + winners[s.id] : ''}`,
         s.folded ? 0x6a6a6a : (j === v.toAct ? 0x45e0cf : 0xf3d999));
-      np.position.set(sx * 1.04, 0.13, sz * 1.04); np.lookAt(this.cam.position); d.add(np);
+      np.position.set(sx * 1.0, 0.16, sz * 1.0); np.lookAt(this.cam.position); d.add(np);
 
       // hole cards — folded players muck (no cards shown, real poker; hides bluffs)
       const mine = s.id === p.youId;
@@ -213,11 +218,11 @@ export class PokerSceneRenderer extends PokerDomRenderer {
         for (let h = 0; h < 2; h++) {
           const card = makeCardMesh();
           if (mine) {
-            // your hole cards: large, flat & face-up on the felt in front of you (same default orientation
-            // as the board — which reads correctly — so NO lookAt, which would tip them onto their edge/back)
-            card.position.set((h - 0.5) * 0.088, 0.016, 0.46);
-            card.scale.setScalar(1.5);
-            if (s.hole) setCardFace(card, s.hole[h]); else card.rotateX(Math.PI);
+            // your hole cards: large & TILTED UP toward the seated camera (held-in-hand read) so they stay
+            // legible at the low angle and clear the bottom action bar — pivot at the felt, top edge lifts toward you
+            card.scale.setScalar(1.3);
+            card.position.set((h - 0.5) * 0.082, 0.17, 0.50);
+            if (s.hole) { setCardFace(card, s.hole[h]); card.rotation.x = 0.92; } else card.rotation.x = Math.PI;
           } else {
             // opponents'/bots' cards: lie FLAT on the felt near their edge, FACE-DOWN (back up); only the showdown reveals faces
             const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
@@ -230,25 +235,32 @@ export class PokerSceneRenderer extends PokerDomRenderer {
         }
       }
 
-      // their stack (to one side) + current bet (toward centre) — fixed radii on the GREEN felt
-      const stack = makeChipStack(s.stack);
-      stack.position.copy(onFelt(0.48)).addScaledVector(tang, 0.16); stack.scale.setScalar(1.5); d.add(stack);
-      if (s.roundBet > 0) {
-        const bet = makeChipStack(s.roundBet);
-        bet.position.copy(onFelt(0.34)); bet.scale.setScalar(1.4); d.add(bet);
-      }
+      // their stack tray (to one side) + current-street bet (toward centre) — drawn from the REAL
+      // conserved chip multiset when present, else a value-derived fallback. Tray sits a touch wider
+      // out so its denomination columns clear the felt edge.
+      const chips = p.chips;
+      const stackSet = chips ? chips.stacks[s.id] : null;
+      const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
+      stack.position.copy(onFelt(0.52)).addScaledVector(tang, 0.18); stack.scale.setScalar(1.5); d.add(stack);
+      const betSet = chips ? chips.bets[s.id] : null;
+      const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
+      if (betGroup) { betGroup.position.copy(onFelt(0.34)); betGroup.scale.setScalar(1.4); d.add(betGroup); }
       // dealer / SB / BB markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat
       const role = j === v.button ? 'D' : (j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null));
       if (role) { const m = this._marker(role); m.position.copy(onFelt(0.48)).addScaledVector(tang, -0.16); d.add(m); }
     }
 
     // board (centre, face-up, flat) — scaled up so it reads on the big Ø1.38 table
+    // NOTE: at the low seated camera the flat board reads edge-on; standing/curving it is part of the
+    // upcoming full 3D-card redo (all 52 as models), so it's left flat here on purpose for now.
     for (let i = 0; i < v.board.length; i++) {
       const card = makeCardMesh(); setCardFace(card, v.board[i]);
       card.position.set((i - 2) * 0.105, 0.014, -0.05); card.scale.setScalar(1.45); d.add(card);
     }
-    // pot pile (between the board and you)
-    if (v.pot > 0) { const pot = makeChipStack(v.pot); pot.position.set(0, 0, 0.2); pot.scale.setScalar(2.0); d.add(pot); }
+    // pot pile (between the board and you) — real pot chips when present
+    const potSet = p.chips ? p.chips.pot : null;
+    const potGroup = potSet ? (sigOf(potSet) ? makeChipTray(potSet) : null) : (v.pot > 0 ? makeChipStack(v.pot) : null);
+    if (potGroup) { potGroup.position.set(0, 0, 0.2); potGroup.scale.setScalar(2.0); d.add(potGroup); }
   }
 
   // D / SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role)
