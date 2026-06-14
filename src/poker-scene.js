@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
 import { makeChipStack, makeChipTray, setChipTray } from './poker-chips.js';
-import { sigOf, exactSubset, subSet, largestFormableLE } from './poker/chipbank.js';
+import { sigOf, exactSubset, subSet, addSet, largestFormableLE } from './poker/chipbank.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
 import { RADIO_STATIONS, GHOST_STATION, stationByIndex, stationLabel } from './radio.js';
@@ -164,26 +164,30 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   // Real-time bet preview: while it's YOUR turn to raise, the chips you're about to commit grow/shrink
   // in your bet zone as you drag the slider (this._raiseTo updates live in poker-ui.setRaise). Cosmetic
   // value→breakdown stack (the conserved chips land when you actually bet). Rebuilt only on amount change.
+  // ONE live heap for the local player's street commitment, in the bet zone in front of the stack. It
+  // always shows what you've ALREADY pushed this street (the SB/BB blind, a call, a prior raise), and
+  // while it's your turn it GROWS in real time to the raise-slider target — the extra chips visibly
+  // leave your stack columns 1:1 (same real denominations you hold). Pull back the slider → it shrinks.
   _updateBetPreview(p) {
     if (!this._betPreview) return;
-    const L = p.legal;
-    const active = !!(p && p.yourTurn && L && L.canRaise && this._myBetPos && this._myStackTray && this._myStackSet && !p.over);
-    if (!active) {
-      if (this._betPreviewAmt !== -1) {                         // leaving preview → restore the full stack + hide the heap
-        this._betPreview.visible = false; this._betPreviewAmt = -1;
-        if (this._myStackTray && this._myStackSet) setChipTray(this._myStackTray, this._myStackSet);
-      }
+    if (!this._myBetPos || !this._myStackTray || !this._myStackSet) {  // no chip-backed local seat yet → nothing to heap
+      if (this._betPreviewAmt !== -1) { this._betPreview.visible = false; this._betPreviewAmt = -1; }
       return;
     }
+    const L = p.legal;
     const me = p.view && p.view.seats.find((s) => s.id === p.youId);
-    const addAmt = Math.max(0, (this._raiseTo | 0) - (me ? (me.roundBet | 0) : 0)); // value to push to reach raise-to
-    if (addAmt !== this._betPreviewAmt) {
-      this._betPreviewAmt = addAmt;
-      // take the bet from YOUR REAL chips (1:1, matching your actual inventory — largest-first, like a real bet)
-      const take = (exactSubset(this._myStackSet, addAmt) || largestFormableLE(this._myStackSet, addAmt)) || {};
-      setChipTray(this._betPreview, take, { pile: true, seed: 7 });   // heap = those real chips, tossed into a compact mound
-      setChipTray(this._myStackTray, subSet(this._myStackSet, take)); // and they LEAVE your stack columns (conserved, 1:1)
-      this._betPreview.visible = Object.keys(take).length > 0;
+    const committed = me ? (me.roundBet | 0) : 0;                       // already in front of you this street (blind/call/raise)
+    const previewing = !!(p && p.yourTurn && L && L.canRaise && !p.over && (this._raiseTo | 0) > committed);
+    const amount = previewing ? (this._raiseTo | 0) : committed;        // heap value: live raise target, else your standing commit
+    if (amount !== this._betPreviewAmt) {
+      this._betPreviewAmt = amount;
+      const betSet = this._myBetSet || {};                             // the REAL chips the engine already moved to your bet
+      const addAmt = Math.max(0, amount - committed);                  // extra to pull from the stack for a raise preview
+      const take = addAmt > 0 ? ((exactSubset(this._myStackSet, addAmt) || largestFormableLE(this._myStackSet, addAmt)) || {}) : {};
+      const heap = addSet(betSet, take);                              // committed chips + previewed extra → the mound
+      setChipTray(this._betPreview, heap, { pile: true, seed: 7 });   // tossed into a compact, scattered pile
+      setChipTray(this._myStackTray, subSet(this._myStackSet, take)); // and the previewed extra LEAVES the stack columns (1:1)
+      this._betPreview.visible = Object.keys(heap).length > 0;
     }
     this._betPreview.position.copy(this._myBetPos);
     this._betPreview.rotation.y = this._myBetTilt || 0;
@@ -251,7 +255,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._buildStatic();
     this.dyn = new THREE.Group(); scene.add(this.dyn); // dealt cards / chips / markers, rebuilt on key change
     this._betPreview = makeChipTray({}); this._betPreview.visible = false; scene.add(this._betPreview); // live raise-amount preview chips
-    this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null;
+    this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null;
     this._setSize();
   }
 
@@ -406,7 +410,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             // your hole cards lie FLAT on the felt to your right, next to your chips — FACE-DOWN by default;
             // click them to peek (a local side-turn flip, the same animation as the board; only YOU see it).
             if (h === 0) { const sig = s.hole ? s.hole.map((c) => c.r + c.s).join('') : (s.hasCards ? 'X' : ''); if (sig !== this._myHoleSig) { this._myHoleSig = sig; this._holePeeked = false; } } // new hand → cards go back face-down
-            const pos = onFelt(0.55).addScaledVector(tang, 0.12 + h * 0.078); // to your right, beside the stack (tune to taste)
+            // to YOUR RIGHT (screen-right = +X = -tang) — the empty side: stack sits left, the bet heap dead-centre,
+            // so the cards get their own clear zone, well-spaced (no overlap). Sign here flips left/right; magnitude tunes spread.
+            const pos = onFelt(0.50).addScaledVector(tang, -(0.24 + h * 0.13));
             card.position.set(pos.x, 0.013, pos.z);
             card.scale.setScalar(1.05);
             if (s.hole) setCardFace(card, s.hole[h]);
@@ -432,13 +438,18 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // Radii kept well inside the green baize (≈r0.69 incl. the wood rim) so trays + their grid
       // overflow never spill onto the raised wood edge — everything sits flat on the green at y=0.
       const tilt = Math.atan2(-sx, -sz);                  // so a tray's columns run along the rim (90° to the spoke)
-      if (s.id === p.youId) { this._myBetPos = onFelt(0.30).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet-preview anchor: in front of your stack, toward the pot
+      if (s.id === p.youId) { this._myBetPos = onFelt(0.35).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet/heap anchor: in front of your stack, clear of the pot pile (pileLayout caps its radius, so even an all-in heap stays compact, not sprawling)
       const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
-      if (s.id === p.youId) { this._myStackTray = stack; this._myStackSet = stackSet ? { ...stackSet } : null; } // bet preview pulls chips FROM this real stack
+      if (s.id === p.youId) { this._myStackTray = stack; this._myStackSet = stackSet ? { ...stackSet } : null; this._myBetSet = (chips && chips.bets[s.id]) ? { ...chips.bets[s.id] } : {}; } // bet heap pulls chips FROM this real stack
       const betSet = chips ? chips.bets[s.id] : null;
-      const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
-      if (betGroup) { betGroup.position.copy(onFelt(0.36)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
+      // YOUR own street bet (blind/call/raise) is drawn as the live grows-with-the-slider heap (_betPreview),
+      // not a static column tray — so skip it here for the local seat whenever we have real chips to heap.
+      const skipLocalBet = (s.id === p.youId) && !!chips;
+      if (!skipLocalBet) {
+        const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
+        if (betGroup) { betGroup.position.copy(onFelt(0.36)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
+      }
       // SB / BB blind markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat.
       // (The dealer "D" button was removed — visually useless for a casual player; button position is
       // still tracked in the engine for blind/action order, just not drawn.)
@@ -461,6 +472,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const potSet = p.chips ? p.chips.pot : null;
     const potGroup = potSet ? (sigOf(potSet) ? makeChipTray(potSet) : null) : (v.pot > 0 ? makeChipStack(v.pot) : null);
     if (potGroup) { potGroup.position.set(0, FELT_Y, 0.16); potGroup.scale.setScalar(1.7); d.add(potGroup); }
+    this._betPreviewAmt = -2; // the stack tray is freshly full → force _updateBetPreview to re-carve the heap out of it
   }
 
   // D / SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role)
