@@ -168,8 +168,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     });
   }
   // Real-time bet preview: while it's YOUR turn to raise, the chips you're about to commit grow/shrink
-  // in your bet zone as you drag the slider (this._raiseTo updates live in poker-ui.setRaise). Cosmetic
-  // value→breakdown stack (the conserved chips land when you actually bet). Rebuilt only on amount change.
+  // in your bet zone as you drag the slider (this._raiseTo updates live in poker-ui.setRaise). These are
+  // your REAL chips, pulled 1:1 from your stack columns (exactSubset/largestFormableLE) which shrink to
+  // match — conserved, NOT a cosmetic value→breakdown. Rebuilt only on amount change.
   // ONE live heap for the local player's street commitment, in the bet zone in front of the stack. It
   // always shows what you've ALREADY pushed this street (the SB/BB blind, a call, a prior raise), and
   // while it's your turn it GROWS in real time to the raise-slider target — the extra chips visibly
@@ -479,7 +480,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
         for (let h = 0; h < 2; h++) {
           const card = makeCardMesh();
           if (mine) {
-            // your hole cards lie FLAT on the felt to your right, next to your chips — FACE-DOWN by default;
+            // your hole cards lie FLAT on the felt directly in FRONT of you (a hair right of centre, clear of the HUD) — FACE-DOWN by default;
             // click them to peek (a local side-turn flip, the same animation as the board; only YOU see it).
             if (h === 0) { const sig = s.hole ? s.hole.map((c) => c.r + c.s).join('') : (s.hasCards ? 'X' : ''); if (sig !== this._myHoleSig) { this._myHoleSig = sig; this._holePeeked = false; } } // new hand → cards go back face-down
             // directly in front of YOU, near your rail — your OWN zone, clear of BOTH neighbours (they sit 60–90°
@@ -558,7 +559,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._betPreviewAmt = -2; // the stack tray is freshly full → force _updateBetPreview to re-carve the heap out of it
   }
 
-  // D / SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role)
+  // SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role). The
+  // dealer "D" was removed — only 'SB'/'BB' are ever passed (cfg has no 'D'; passing 'D' would throw).
   _marker(role) {
     const cfg = { SB: { body: 0x2a52b0, t: '#ffffff' }, BB: { body: 0xd8b84a, t: '#141414' } }[role];
     const g = new THREE.Group();

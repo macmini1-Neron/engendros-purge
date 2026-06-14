@@ -57,6 +57,11 @@ export function pileLayout(chipSet, opts = {}) {
   const items = [];
   for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n-- > 0) items.push(denom); }
   for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = items[i]; items[i] = items[j]; items[j] = t; } // seeded shuffle → tossed, mixed colours
+  // cap the splash: the placement pass below is O(N²), and a pathological all-in (thousands of $5 chips) would be
+  // millions of overlap checks per rebuild. A pile is visually saturated long before this, and the renderer caps
+  // each denom at 256 regardless — so truncate the (already-shuffled, unbiased) chip list to a sane ceiling.
+  const PILE_CAP = 240;
+  if (items.length > PILE_CAP) { console.warn('[poker] pileLayout: ' + items.length + ' chips → capped to ' + PILE_CAP + ' for the splash'); items.length = PILE_CAP; }
   const N = items.length;
   const R = Math.min(CHIP_R * 4.5, CHIP_R * (0.9 + 0.42 * Math.sqrt(Math.max(0, N - 1)))); // spreads with the count, capped
   const ON = (CHIP_R * 1.5) ** 2;                      // a chip landing this close to another rests ON it

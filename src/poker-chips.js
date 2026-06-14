@@ -4,7 +4,7 @@
 // number approximated. "I added N" is real.
 //
 // Each denomination is drawn as ONE InstancedMesh (src/poker-chip-mesh.js): a single
-// low-poly cylinder with the dice ring + spots baked into its texture. A full tray is a
+// low-poly cylinder with the chosen skin's top-face design (ring+spots / star / portrait) baked in. A full tray is a
 // handful of draw calls instead of hundreds of meshes, so the real conserved count from
 // chipbank.js renders cheaply. setChipTray keeps the old public API.
 import * as THREE from 'three';
