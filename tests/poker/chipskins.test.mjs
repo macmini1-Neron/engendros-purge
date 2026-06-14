@@ -4,7 +4,7 @@ import {
   DICE, denomColor, CHIP_SKINS, CHIP_SKIN_LIST,
   setChipSkin, getChipSkin, chipSkinRev, drawChip,
   CHIP_SKINS_FREE, CHIP_SKINS_LOCKED, chipSkinAvailable,
-  COSMETIC_DROP, COSMETIC_CHANCE, rollCrateCosmetic,
+  COSMETIC_DROP,
 } from '../../src/poker/chipskins.js';
 
 // A recording 2D-context stub — proves the painters are pure (no THREE / no real canvas) and
@@ -105,14 +105,4 @@ test('COSMETIC_DROP pool covers exactly the locked skins with tier+value+weight+
     assert.ok(e.value > 0 && e.w > 0 && typeof e.name === 'string', `${e.skin} has value/weight/name`);
     assert.ok(CHIP_SKINS_LOCKED.includes(e.skin), `${e.skin} is a locked skin`);
   }
-  assert.ok(COSMETIC_CHANCE > 0 && COSMETIC_CHANCE < 1, 'chance is a probability');
-});
-
-test('rollCrateCosmetic: gated by chance, then weighted pick (rand injectable)', () => {
-  assert.equal(rollCrateCosmetic(() => 0.99), null, 'rand >= chance → no cosmetic');
-  let seq, i; const rng = () => seq[i++];
-  seq = [0.0, 0.0]; i = 0; assert.equal(rollCrateCosmetic(rng).skin, 'lenin', 'low pick → first pool entry');
-  seq = [0.0, 0.999]; i = 0; assert.equal(rollCrateCosmetic(rng).skin, 'marx', 'high pick → last pool entry');
-  // returns the pool entry regardless of owned — caller decides unlock vs cash (dupes possible)
-  seq = [0.05, 0.0]; i = 0; assert.equal(typeof rollCrateCosmetic(rng).value, 'number', 'entry carries its cash value');
 });

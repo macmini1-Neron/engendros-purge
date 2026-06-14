@@ -6,6 +6,7 @@ import { describeHand } from './poker/handeval.js';
 import { equity, outs } from './poker/odds.js';
 import { clampRaise, presetRaiseTo, presetRaiseToBB } from './poker/betsizing.js';
 import { CHIP_SKIN_LIST, CHIP_SKINS, drawChip } from './poker/chipskins.js'; // pure (no THREE) — safe for the node-tested DOM renderer
+import { CARD_BACK_LIST, CARD_BACKS, drawCardBack } from './poker/cardbacks.js'; // pure — card-back swatch picker
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RCH = { 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -132,6 +133,7 @@ const CSS = `
 .pk-skinbtn.locked { opacity:.42; filter:grayscale(.65); cursor:not-allowed; }
 .pk-skinbtn.locked:hover { opacity:.6; }
 .pk-skinhint { min-height:15px; font-size:12px; color:var(--steel,#84aab2); font-family:var(--font-display,'Oswald'); }
+.pk-skinbtn.back canvas { width:38px; height:53px; border-radius:4px; }
 `;
 
 // escape any peer-supplied text before it enters innerHTML (names will come from untrusted
@@ -212,6 +214,8 @@ export class PokerDomRenderer {
         <span id="pk-botpick"></span></div>
       <div class="pk-optrow"><label>Chip set:</label> <span id="pk-skinpick" class="pk-skinrow"></span></div>
       <div class="pk-skinhint" id="pk-skinhint"></div>
+      <div class="pk-optrow"><label>Card back:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" id="pk-backhint"></div>
       <div class="pk-actions">
         <button class="pk-btn go" id="pk-start">SIT DOWN</button>
         <button class="pk-btn" id="pk-lobbyleave">BACK</button>
@@ -229,6 +233,7 @@ export class PokerDomRenderer {
     };
     draw();
     this._chipSkinPicker(this.el.lobby.querySelector('#pk-skinpick'), opts && opts.chipSkin, opts && opts.skinAvail, this.el.lobby.querySelector('#pk-skinhint'));
+    this._cardBackPicker(this.el.lobby.querySelector('#pk-backpick'), opts && opts.cardBack, opts && opts.backAvail, this.el.lobby.querySelector('#pk-backhint'));
     this.el.lobby.querySelector('#pk-start').addEventListener('click', () => this.cb.onStart && this.cb.onStart({ bots, mode: 'practice', buyIn: 0 }));
     this.el.lobby.querySelector('#pk-lobbyleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
   }
@@ -249,6 +254,8 @@ export class PokerDomRenderer {
       <div class="pk-optrow"><label>Players:</label> <span style="color:var(--steel)">${players.map(esc).join(' · ') || '—'}</span></div>
       <div class="pk-optrow"><label>Chip set:</label> <span id="pk-skinpick" class="pk-skinrow"></span></div>
       <div class="pk-skinhint" id="pk-skinhint"></div>
+      <div class="pk-optrow"><label>Card back:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" id="pk-backhint"></div>
       <div class="pk-actions">
         <button class="pk-btn go" id="pk-deal">DEAL</button>
         <button class="pk-btn" id="pk-coopleave">BACK</button>
@@ -267,6 +274,7 @@ export class PokerDomRenderer {
     };
     draw();
     this._chipSkinPicker(this.el.lobby.querySelector('#pk-skinpick'), opts && opts.chipSkin, opts && opts.skinAvail, this.el.lobby.querySelector('#pk-skinhint'));
+    this._cardBackPicker(this.el.lobby.querySelector('#pk-backpick'), opts && opts.cardBack, opts && opts.backAvail, this.el.lobby.querySelector('#pk-backhint'));
     this.el.lobby.querySelector('#pk-deal').addEventListener('click', () => this.cb.onStart && this.cb.onStart({ coop: true, buyIn }));
     this.el.lobby.querySelector('#pk-coopleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
   }
@@ -293,6 +301,33 @@ export class PokerDomRenderer {
           btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CHIP_SKINS[id].label}” is locked — unlock it from the Supply Crate.`; });
         } else {
           btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onChipSkin && this.cb.onChipSkin(id); });
+        }
+        container.appendChild(btn);
+      }
+    };
+    draw();
+  }
+
+  // Card-back picker — same machinery as the chip-skin picker, drawn at card aspect via drawCardBack.
+  _cardBackPicker(container, current, available, hintEl) {
+    if (!container) return;
+    const avail = Array.isArray(available) ? available : CARD_BACK_LIST;
+    let sel = (CARD_BACKS[current] && avail.includes(current)) ? current : 'default';
+    const draw = () => {
+      container.innerHTML = '';
+      for (const id of CARD_BACK_LIST) {
+        const locked = !avail.includes(id);
+        const btn = document.createElement('button');
+        btn.className = 'pk-skinbtn back' + (id === sel ? ' sel' : '') + (locked ? ' locked' : '');
+        btn.title = locked ? 'Locked — unlock from the Supply Crate' : CARD_BACKS[id].label;
+        const cv = document.createElement('canvas'); cv.width = 76; cv.height = 106;   // 2× card aspect, CSS-scaled
+        drawCardBack(cv.getContext('2d'), 76, 106, id);
+        const lab = document.createElement('span'); lab.textContent = (locked ? '🔒 ' : '') + CARD_BACKS[id].label;
+        btn.appendChild(cv); btn.appendChild(lab);
+        if (locked) {
+          btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CARD_BACKS[id].label}” is locked — unlock it from the Supply Crate.`; });
+        } else {
+          btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onCardBack && this.cb.onCardBack(id); });
         }
         container.appendChild(btn);
       }

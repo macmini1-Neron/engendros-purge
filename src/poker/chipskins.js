@@ -138,22 +138,13 @@ export function chipSkinAvailable(id, owned) {
   return CHIP_SKINS_FREE.includes(id) || (Array.isArray(owned) && owned.includes(id));
 }
 
-// ---- dedicated cosmetic crate pool (independent of the weapon tier roll) ----
-// `tier` is CEREMONY PRESENTATION only (glow colour/pacing); `value` backs the duplicate→cash payout.
+// ---- chip-skin entries for the crate cosmetic pool (drained by poker/cosmetics.js, which merges these
+// with the card backs under one drop chance). `tier` is CEREMONY PRESENTATION only (glow/pacing);
+// `value` backs the duplicate→cash payout. ----
 export const COSMETIC_DROP = [
   { skin: 'lenin', name: 'Lenin Chips', tier: 'epic',      value: 400, w: 2 },
   { skin: 'marx',  name: 'Marx Chips',  tier: 'legendary', value: 700, w: 1 },
 ];
-export const COSMETIC_CHANCE = 0.12; // P(a crate open yields a cosmetic instead of the normal reward)
-// PURE roll (rand() ∈ [0,1), injectable for tests): returns a pool entry or null. Owned handling is the
-// caller's job (owned → cash, fresh → unlock) so duplicates are possible — matches the crate's dupe→cash.
-export function rollCrateCosmetic(rand) {
-  if (rand() >= COSMETIC_CHANCE) return null;
-  const total = COSMETIC_DROP.reduce((s, e) => s + e.w, 0);
-  let r = rand() * total;
-  for (const e of COSMETIC_DROP) { if ((r -= e.w) < 0) return e; }
-  return COSMETIC_DROP[COSMETIC_DROP.length - 1];
-}
 
 let _skin = 'dice', _rev = 0;
 // validates against the registry and bumps a revision on a real change (mirrors setCardBackSkin's guard;

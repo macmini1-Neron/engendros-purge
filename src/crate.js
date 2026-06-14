@@ -17,15 +17,16 @@ import { buildSu24, buildChuteRig, buildFlare } from './props.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { MeshBuilder, voxelMaterial, weightedPick, rr, clamp, shade } from './util.js';
-import { rollCrateCosmetic, COSMETIC_DROP } from './poker/chipskins.js';
+import { rollCrateCosmetic, cosmeticPool } from './poker/cosmetics.js';
 import { buildShowcaseChip } from './poker-chip-mesh.js';
+import { buildShowcaseCardBack } from './poker-cards.js';
 
 // ---------------------------------------------------------------------------
 // Data & economy (§3). Private hobby game, in-game cash only.
 // ---------------------------------------------------------------------------
 export const CRATE_DEF = {
   key: 'crate_supply', name: 'Supply Crate', price: 800,
-  desc: 'A sealed army crate — a Su-24 drops it in personally. Inside: a weapon, gear, a poker chip set or cash. Duplicates convert to cash.',
+  desc: 'A sealed army crate — a Su-24 drops it in personally. Inside: a weapon, gear, a poker chip set or card back, or cash. Duplicates convert to cash.',
 };
 
 // per-mille tier odds. Σ = 1000.
@@ -82,11 +83,16 @@ export function rollCrateReward(game) {
   m.crates = (m.crates | 0) - 1;
   m.crateOpens = (m.crateOpens | 0) + 1;
   m.pityEpic = (m.pityEpic | 0) + 1; m.pityLegend = (m.pityLegend | 0) + 1;
-  // Dedicated COSMETIC pool — independent of the weapon tier roll below; it does NOT reset weapon pity
-  // (a chip-skin drop is a bonus, weapon pity keeps climbing). QA hook: GAME.crate._forceCosmetic='marx'.
-  const fc = game.crate && game.crate._forceCosmetic;
-  const cos = fc ? COSMETIC_DROP.find((e) => e.skin === fc) : rollCrateCosmetic(Math.random);
-  if (cos) {
+  // Dedicated COSMETIC pool (chip skins + card backs) — independent of the weapon tier roll below; it
+  // does NOT reset weapon pity (a cosmetic drop is a bonus, weapon pity keeps climbing). QA hooks:
+  // GAME.crate._forceCosmetic='marx' (chip skin) / GAME.crate._forceCardBack='redstar' (card back).
+  const fcChip = game.crate && game.crate._forceCosmetic;
+  const fcBack = game.crate && game.crate._forceCardBack;
+  let cos = null;
+  if (fcChip) cos = cosmeticPool().find((e) => e.kind === 'chipskin' && e.skin === fcChip);
+  else if (fcBack) cos = cosmeticPool().find((e) => e.kind === 'cardback' && e.back === fcBack);
+  else cos = rollCrateCosmetic(Math.random);
+  if (cos && cos.kind === 'chipskin') {
     if (!Array.isArray(m.chipSkinsUnlocked)) m.chipSkinsUnlocked = [];
     if (m.chipSkinsUnlocked.includes(cos.skin)) {                  // already owned → liquidate to cash
       const cash = Math.round(cos.value * DUP_RATE); m.bank += cash;
@@ -94,6 +100,15 @@ export function rollCrateReward(game) {
     }
     m.chipSkinsUnlocked.push(cos.skin);                            // fresh chip-skin unlock
     return { tier: cos.tier, kind: 'chipskin', skin: cos.skin, name: cos.name };
+  }
+  if (cos && cos.kind === 'cardback') {
+    if (!Array.isArray(m.cardBacksUnlocked)) m.cardBacksUnlocked = [];
+    if (m.cardBacksUnlocked.includes(cos.back)) {                  // already owned → liquidate to cash
+      const cash = Math.round(cos.value * DUP_RATE); m.bank += cash;
+      return { tier: cos.tier, kind: 'dupe', back: cos.back, name: cos.name, cash, price: cos.value };
+    }
+    m.cardBacksUnlocked.push(cos.back);                            // fresh card-back unlock
+    return { tier: cos.tier, kind: 'cardback', back: cos.back, name: cos.name };
   }
   let tier = game.crate && game.crate._forceTier;                 // QA hook (GAME.crate._forceTier='epic')
   if (tier && !LOOT_TABLE[tier]) tier = null;                     // ignore a typo'd force value → fall through to a normal roll (never throws mid-mutation)
@@ -548,6 +563,7 @@ export class CrateCeremony {
   }
   _rewardMesh(r) {
     if (r.kind === 'chipskin') return buildShowcaseChip(20, r.skin);   // a $20-red chip wearing the won portrait
+    if (r.kind === 'cardback') return buildShowcaseCardBack(r.back);    // a card showing the won back design
     if (r.kind === 'cash' || r.kind === 'dupe') return this._coinStack();
     if (r.kind === 'weapon' || WEAPONS[r.key]) {                  // weapons + flashlight/binoculars (tools live in WEAPONS)
       const g = new THREE.Group(); const m = buildViewmodel(WEAPONS[r.key]); g.add(m);
@@ -592,8 +608,9 @@ export class CrateCeremony {
     if (r.kind === 'weapon') sub = (WEAPONS[r.key] && WEAPONS[r.key].class === 'tool') ? 'NEW GEAR UNLOCKED' : 'NEW WEAPON UNLOCKED'; // flashlight/binoculars are tools, not weapons
     else if (r.kind === 'gadget') sub = 'NEW GEAR UNLOCKED';
     else if (r.kind === 'chipskin') sub = 'NEW CHIP SET UNLOCKED';
+    else if (r.kind === 'cardback') sub = 'NEW CARD BACK UNLOCKED';
     else if (r.kind === 'cash') sub = '';
-    else if (r.kind === 'dupe') sub = 'DUPLICATE · ' + (r.skin ? r.name : _nameOf(r.key));
+    else if (r.kind === 'dupe') sub = 'DUPLICATE · ' + ((r.skin || r.back) ? r.name : _nameOf(r.key));
     if (this.elSub) this.elSub.textContent = sub;
     // dupe/cash: rising counter (peak-end "loss disguised as a win"). instant → no animation.
     this._counterMax = (r.kind === 'cash' || r.kind === 'dupe') ? r.cash : 0;
