@@ -189,6 +189,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
 
   _rebuildDyn(p, v, n, me, winners) {
     const d = this.dyn;
+    // chips/markers sit ON TOP of the green baize, not on the slab beneath it. The baize is 13 mm
+    // proud (spec: baize at y0.7365 h0.013, model dropped −0.730 → its TOP is world y=0.013); resting
+    // chips at y=0 buried them in the cloth. FELT_Y is the green "floor" everything stands on.
+    const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
 
     // seat anchors — your seat at front (+Z), others fan around the far arc
@@ -244,13 +248,13 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // overflow never spill onto the raised wood edge — everything sits flat on the green at y=0.
       const tilt = Math.atan2(-sx, -sz);                  // so a tray's columns run along the rim (90° to the spoke)
       const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
-      stack.position.copy(onFelt(0.42)).addScaledVector(tang, 0.14); stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
+      stack.position.copy(onFelt(0.42)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       const betSet = chips ? chips.bets[s.id] : null;
       const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
-      if (betGroup) { betGroup.position.copy(onFelt(0.30)); betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
+      if (betGroup) { betGroup.position.copy(onFelt(0.30)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
       // dealer / SB / BB markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat
       const role = j === v.button ? 'D' : (j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null));
-      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.42)).addScaledVector(tang, -0.14); d.add(m); }
+      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.42)).addScaledVector(tang, -0.14); m.position.y = FELT_Y; d.add(m); }
     }
 
     // board (centre, face-up, flat) — scaled up so it reads on the big Ø1.38 table
@@ -263,7 +267,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;
     const potGroup = potSet ? (sigOf(potSet) ? makeChipTray(potSet) : null) : (v.pot > 0 ? makeChipStack(v.pot) : null);
-    if (potGroup) { potGroup.position.set(0, 0, 0.16); potGroup.scale.setScalar(1.7); d.add(potGroup); }
+    if (potGroup) { potGroup.position.set(0, FELT_Y, 0.16); potGroup.scale.setScalar(1.7); d.add(potGroup); }
   }
 
   // D / SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role)
