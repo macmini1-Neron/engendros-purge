@@ -28,7 +28,7 @@ test('chipbank tracks engine stacks across a full solo SNG, counts conserved', (
       // compare against the live hand's per-seat stacks (the next hand's blinds are already posted
       // into bets, so tour.players' pre-blind totals would mismatch by the blinds — not a drift).
       for (const seat of pk.hand.seats) {
-        assert.equal(pk.chipbank.value(seat.id), seat.stack, `chip value == engine seat stack for ${seat.id} after settle ${settles}`);
+        assert.equal(pk.chipbank.stackValue(seat.id), seat.stack, `chip value == engine seat stack for ${seat.id} after settle ${settles}`);
       }
       pk.chipbank.verify();
     } else {
@@ -53,5 +53,5 @@ test('chips ride in the per-player payload for the renderer/co-op', () => {
   // value of your physical stack + dust equals the engine stack the view reports
   const youSeat = payload.view.seats.find((s) => s.id === 'you');
   const cb = pk.chipbank;
-  assert.equal(cb.value('you'), youSeat.stack, 'payload chip value matches the engine stack');
+  assert.equal(cb.stackValue('you'), youSeat.stack, 'payload chip value matches the engine stack');
 });

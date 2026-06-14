@@ -154,7 +154,9 @@ export class ChipBank {
     return t;
   }
 
-  value(id) { return value(this.stacks[id] || {}) + (this.dust[id] || 0); }
+  // a player's total chip value (physical stack + the sub-5 dust ledger). Named stackValue to avoid
+  // colliding with the module-level value(set) helper.
+  stackValue(id) { return value(this.stacks[id] || {}) + (this.dust[id] || 0); }
 
   // Move exactly `amount` value from a player's stack into their bet zone, breaking against the
   // float as needed. A float-exhaustion shortfall is left for reconcile() (chips never invented).
@@ -234,7 +236,13 @@ export class ChipBank {
       this.dust[id] = t % 5;
       const cur = value(this.stacks[id]);
       if (cur > phys) {
-        const give = exactSubset(this.stacks[id], cur - phys) || largestFormableLE(this.stacks[id], cur - phys);
+        const need = cur - phys;
+        let give = exactSubset(this.stacks[id], need);
+        if (!give) {                                          // can't shed `need` exactly → break a chip against the float first
+          const mc = makeChange(this.stacks[id], this.float, need);
+          this.stacks[id] = mc.set; this.float = mc.float;
+          give = exactSubset(this.stacks[id], need) || largestFormableLE(this.stacks[id], need);
+        }
         this.stacks[id] = subSet(this.stacks[id], give);
         this.float = addSet(this.float, give);
       }

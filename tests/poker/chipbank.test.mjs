@@ -189,6 +189,30 @@ test('split pot: physical shares + dust reconstruct each engine share; counts co
   bank.verify();
 });
 
+test('awardToWinners splits asymmetric side-pot winnings — conserves chips + matches each share', () => {
+  const bank = new ChipBank();
+  bank.dealStart(['a', 'b'], {}, { 100: 5, 50: 5, 20: 5, 10: 5, 5: 10 });   // empty stacks, rich float
+  bank.pot = { 100: 4, 50: 1, 10: 1 };                                      // a 460 pot...
+  bank.float = subSet(bank.float, { 100: 4, 50: 1, 10: 1 });                // ...moved out of the float (conserved)
+  const before = totalCounts(bank);
+  bank.awardToWinners({ a: 340, b: 120 }, ['a', 'b']);                      // asymmetric main+side, sums to 460
+  assert.equal(bank.stackValue('a'), 340, 'a gets exactly its side+main share');
+  assert.equal(bank.stackValue('b'), 120, 'b gets exactly its share');
+  assert.equal(value(bank.pot), 0, 'pot emptied');
+  assert.deepEqual(totalCounts(bank), before, 'chips conserved across the asymmetric split');
+  bank.verify();
+});
+
+test('a short postBet (starved float) underpays but never invents or loses a chip', () => {
+  const bank = new ChipBank();
+  bank.dealStart(['a'], { 500: 1 }, {});      // one yellow, EMPTY float → a 500 can never be broken
+  const before = totalCounts(bank);
+  bank.postBet('a', 5);                        // wants to bet 5, change impossible → short
+  assert.ok(value(bank.bets['a'] || {}) < 5, 'bet zone underpaid because change was impossible');
+  assert.deepEqual(totalCounts(bank), before, 'no chip invented or lost on the short path');
+  bank.verify();
+});
+
 // ---- reconcile ------------------------------------------------------------
 
 test('reconcile forces value+dust to equal the engine stack and conserves counts', () => {
@@ -200,6 +224,16 @@ test('reconcile forces value+dust to equal the engine stack and conserves counts
   assert.equal(value(bank.stacks.b2) + bank.dust.b2, 1663);
   assert.ok(bank.dust.you >= 0 && bank.dust.you <= 4, 'dust stays in 0..4');
   assert.deepEqual(totalCounts(bank), before, 'reconcile is value-neutral on counts');
+  bank.verify();
+});
+
+test('reconcile breaks a too-coarse overshoot chip against the float (no residual drift)', () => {
+  const bank = new ChipBank();
+  bank.dealStart(['a'], { 100: 1 }, { 50: 4, 20: 5, 10: 5, 5: 10 });   // player holds one black (100)
+  const before = totalCounts(bank);
+  bank.reconcile({ a: 50 });   // engine says a==50 → must shed 50, impossible from {100:1} alone
+  assert.equal(bank.stackValue('a'), 50, 'reconcile hit the exact target by breaking the 100 against the float');
+  assert.deepEqual(totalCounts(bank), before, 'counts conserved');
   bank.verify();
 });
 
