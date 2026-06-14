@@ -21,12 +21,12 @@
     {
       "id": "baize",
       "name": "Green woollen-baize playing surface (fills the top to the edge)",
-      "op": "cylinder",
-      "args": { "r": 0.672, "h": 0.013, "axis": "y" },
+      "op": "texturedCylinder",
+      "args": { "r": 0.672, "h": 0.013, "axis": "y", "seg": 80, "kind": "baize", "tone": "mid" },
       "at": [0, 0.7365, 0],
       "mat": "baize",
       "src": "dossier#baize_surface",
-      "note": "Owner: bigger playing surface, NO raised lip — the green reaches right to the edge. Baize Ø≈1344 fills almost the whole Ø1380 top, leaving only a thin ~18 mm wood edge; rests on the slab top (bottom 0.730), ~13 mm proud."
+      "note": "Owner: bigger playing surface, NO raised lip — the green reaches right to the edge. Baize Ø≈1344 fills almost the whole Ø1380 top, leaving only a thin ~18 mm wood edge; rests on the slab top (bottom 0.730), ~13 mm proud. kind:'baize' on texturedCylinder maps a high-res woven-cloth CanvasTexture (warp/weft weave + brushed-nap mottle + lamp-pool vignette + faint dealer rings) onto the top cap, so the felt reads as real napped wool up close instead of a flat green disc; seg 80 keeps the rim round."
     },
     {
       "id": "apron",
