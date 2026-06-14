@@ -8,10 +8,12 @@
 // a number, so "win two greens, hold two greens" is literal. The per-colour count over
 // stacks+bets+pot+float is an invariant minted once at dealStart and never changed.
 //
-// The engine can legitimately split odd chips at 1-unit granularity (pot.js awardPots: 100 three
-// ways → 34/33/33). Those aren't drawable from 5-denomination chips, so each player also carries a
-// tiny `dust` integer 0..4: value(stacks[id]) + dust[id] == engineStack[id] exactly, while physical
-// counts stay conserved. reconcile(engineStacks) is the backstop run at each hand settle.
+// All bets are snapped to the 5-chip atom (the human UI via betsizing.clampRaise AND the bots via
+// bots.raiseTo), blinds are multiples of 5, and pot.js splits pots in whole 5-chips — so in normal
+// play every stack stays a multiple of 5 and NO sub-5 remainder ever arises. The per-player `dust`
+// integer 0..4 is kept only as a defensive backstop (value(stacks[id]) + dust[id] == engineStack[id]
+// exactly, physical counts conserved); it stays 0 unless a synthetic non-multiple-of-5 amount is
+// injected. reconcile(engineStacks) is the conservation backstop run at each hand settle.
 
 export const DENOMS = [500, 100, 50, 20, 10, 5];       // descending (matches poker/chips.js)
 const ASC = [5, 10, 20, 50, 100, 500];                 // ascending — smallest breakable first

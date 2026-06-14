@@ -3,6 +3,7 @@
 // against pot odds and position, with a little bounded bluffing. Bots have no special engine
 // path: their action goes through holdem.applyAction exactly like a human's.
 import { equity } from './odds.js';
+import { clampRaise } from './betsizing.js';
 
 const ITERS = 60; // Monte-Carlo samples per decision — cheap; bots don't need precision
 
@@ -28,7 +29,9 @@ function strengthOf(view, hole, rng) {
 
 function raiseTo(legal, pot, frac, rng) {
   const want = legal.minRaiseTo + Math.round(frac * (pot + legal.minRaiseTo));
-  const to = Math.max(legal.minRaiseTo, Math.min(legal.maxRaiseTo, want));
+  // snap to the 5-chip atom + clamp into the legal range — the SAME rule the human UI uses
+  // (betsizing.clampRaise), so every bet stays a multiple of 5 → pots stay multiples of 5 → no dust.
+  const to = clampRaise(want, legal, 5);
   return { type: 'raise', to };
 }
 

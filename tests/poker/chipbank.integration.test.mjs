@@ -29,6 +29,10 @@ test('chipbank tracks engine stacks across a full solo SNG, counts conserved', (
       // into bets, so tour.players' pre-blind totals would mismatch by the blinds — not a drift).
       for (const seat of pk.hand.seats) {
         assert.equal(pk.chipbank.stackValue(seat.id), seat.stack, `chip value == engine seat stack for ${seat.id} after settle ${settles}`);
+        // every bet (human + bot) is snapped to the 5-chip atom, so stacks stay multiples of 5 and the
+        // chipbank never needs sub-5 dust — assert it stays 0 the whole game (no non-multiple-of-5 totals).
+        assert.equal(pk.chipbank.dust[seat.id] || 0, 0, `dust must stay 0 for ${seat.id} after settle ${settles} (stack ${seat.stack})`);
+        assert.equal(seat.stack % 5, 0, `engine stack for ${seat.id} must stay a multiple of 5 (got ${seat.stack})`);
       }
       pk.chipbank.verify();
     } else {
