@@ -252,8 +252,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const betSet = chips ? chips.bets[s.id] : null;
       const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
       if (betGroup) { betGroup.position.copy(onFelt(0.36)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
-      // dealer / SB / BB markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat
-      const role = j === v.button ? 'D' : (j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null));
+      // SB / BB blind markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat.
+      // (The dealer "D" button was removed — visually useless for a casual player; button position is
+      // still tracked in the engine for blind/action order, just not drawn.)
+      const role = j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null);
       if (role) { const m = this._marker(role); m.position.copy(onFelt(0.50)).addScaledVector(tang, -0.14); m.position.y = FELT_Y; d.add(m); }
     }
 
@@ -272,7 +274,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
 
   // D / SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role)
   _marker(role) {
-    const cfg = { D: { body: 0xe8e8e8, t: '#141414' }, SB: { body: 0x2a52b0, t: '#ffffff' }, BB: { body: 0xd8b84a, t: '#141414' } }[role];
+    const cfg = { SB: { body: 0x2a52b0, t: '#ffffff' }, BB: { body: 0xd8b84a, t: '#141414' } }[role];
     const g = new THREE.Group();
     const puck = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.012, 24), new THREE.MeshLambertMaterial({ color: cfg.body })); // chip-sized
     puck.position.y = 0.006; g.add(puck);
