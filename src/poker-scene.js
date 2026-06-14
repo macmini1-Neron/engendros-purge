@@ -259,6 +259,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this.dyn = new THREE.Group(); scene.add(this.dyn); // dealt cards / chips / markers, rebuilt on key change
     this._betPreview = makeChipTray({}); this._betPreview.visible = false; scene.add(this._betPreview); // live raise-amount preview chips
     this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null;
+    this._potFx = new THREE.Group(); scene.add(this._potFx); // transient flying chips (bet→pot rake) — PERSISTS across dyn rebuilds
+    this._betAnchors = {};                                   // per-seat bet-zone world position, refreshed each rebuild (slide origin)
     this._setSize();
   }
 
@@ -309,7 +311,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; } // fresh table → no stale SFX deltas / dangling anims / bet preview / peek
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {};
+    if (this._potFx) { for (let i = this._potFx.children.length - 1; i >= 0; i--) { const c = this._potFx.children[i]; this._potFx.remove(c); this._disposeTree(c); } } } // fresh table → no stale SFX deltas / dangling anims / bet preview / peek / flying chips
   showLobby(o) { this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
 
@@ -344,8 +347,39 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const events = derivePokerEvents(this._prevView, v, this._prevChips, p.chips, p.result);
     const newBoard = new Set(events.filter((e) => e.t === 'boardCard').map((e) => e.index)); // community cards to flip in
     this._rebuildDyn(p, v, n, me, winners, newBoard);
+    this._slideBetsToPot(this._prevChips, p.chips); // street ended → rake each player's bet into the pot (uses prev bets + fresh anchors)
     this._onPokerEvents(events, p);
     this._prevView = v; this._prevChips = this._snapChips(p.chips);
+  }
+
+  // When a betting round closes, every player's street bet is collected into the pot. Visually rake it in:
+  // a transient chip pile flies from each seat's bet zone to the central pot, staggered, with a low sweep arc.
+  // Cosmetic only — the real chips already moved in the chipbank; this just animates the snapshot transition.
+  _slideBetsToPot(prevChips, chips) {
+    if (!prevChips || !this._potFx) return;
+    const ids = Object.keys(prevChips.bets || {});
+    const prevHad = ids.some((id) => sigOf(prevChips.bets[id] || {}));
+    const newHas = ids.some((id) => sigOf((chips && chips.bets && chips.bets[id]) || {}));
+    if (!prevHad || newHas) return;                         // fire ONLY when ALL street bets clear at once → collected to the pot
+    const FELT_Y = 0.013, pot = new THREE.Vector3(0, FELT_Y, 0.16);
+    let k = 0;
+    for (const id of ids) {
+      const betSet = prevChips.bets[id];
+      const from = this._betAnchors[id];
+      if (!sigOf(betSet || {}) || !from) continue;
+      const tray = makeChipTray(betSet, { pile: true, seed: 5 + k }); // loose pile = chips being swept in (varied per seat)
+      tray.position.copy(from); tray.scale.setScalar(1.3);
+      this._potFx.add(tray);
+      const start = from.clone(), tw = new Tween(0.42, (k++) * 0.05);
+      this._anims.push((dt) => {
+        const e = easeOutCubic(tw.step(dt));
+        tray.position.lerpVectors(start, pot, e);
+        tray.position.y = FELT_Y + 0.03 * Math.sin(e * Math.PI); // a low sweep arc across the felt
+        tray.scale.setScalar(1.3 - 0.45 * e);                    // shrink as it merges into the pot pile
+        if (tw.done) { this._potFx.remove(tray); this._disposeTree(tray); return true; }
+        return false;
+      });
+    }
   }
   _snapChips(c) { // deep-ish copy of the bet/pot denom maps — the host's p.chips are LIVE refs that mutate
     if (!c) return null;
@@ -378,7 +412,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // chips at y=0 buried them in the cloth. FELT_Y is the green "floor" everything stands on.
     const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
-    this._boardCards = []; this._holeCards = []; this._myHoleCards = []; // refreshed each rebuild — click/peek targets
+    this._boardCards = []; this._holeCards = []; this._myHoleCards = []; this._betAnchors = {}; // refreshed each rebuild — click/peek targets + bet→pot slide origins
 
     // seat anchors — your seat at front (+Z), others fan around the far arc
     const RX = 0.92, RZ = 0.86; // seats just outside the Ø1.38 (r0.69) table edge
@@ -442,6 +476,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // Radii kept well inside the green baize (≈r0.69 incl. the wood rim) so trays + their grid
       // overflow never spill onto the raised wood edge — everything sits flat on the green at y=0.
       const tilt = Math.atan2(-sx, -sz);                  // so a tray's columns run along the rim (90° to the spoke)
+      this._betAnchors[s.id] = onFelt(0.36).setY(FELT_Y);  // where this seat's street bet sits → the bet→pot slide flies FROM here
       if (s.id === p.youId) { this._myBetPos = onFelt(0.35).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet/heap anchor: in front of your stack, clear of the pot pile (pileLayout caps its radius, so even an all-in heap stays compact, not sprawling)
       const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
