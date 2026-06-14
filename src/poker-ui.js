@@ -33,6 +33,9 @@ const CSS = `
 .pk-top .pk-meta { margin-left:auto; display:flex; gap:22px; font-family:var(--font-mono,monospace);
   font-size:14px; color:var(--steel,#84aab2); }
 .pk-top .pk-meta b { color:var(--brass-hi,#f3d999); }
+.pk-top .pk-meta .pk-mybank-meta { padding:2px 12px; border-radius:7px; background:rgba(20,40,30,.7);
+  border:1px solid var(--go,#5cae8c); color:#bfe8d4; font-weight:bold; letter-spacing:.5px; }
+.pk-top .pk-meta .pk-mybank-meta b { color:var(--go,#7fe6b0); font-size:16px; }
 .pk-leave { margin-left:14px; }
 
 .pk-felt { flex:1; position:relative; display:flex; flex-direction:column; align-items:center;
@@ -144,6 +147,7 @@ export class PokerDomRenderer {
             <span>BLINDS <b id="pk-blinds">10/20</b></span>
             <span>HAND <b id="pk-hand">0</b></span>
             <span>POOL <b id="pk-pool">0</b></span>
+            <span class="pk-mybank-meta">YOU <b id="pk-mybank">$0</b></span>
           </div>
           <button class="pk-btn pk-leave" id="pk-leave">LEAVE</button>
         </div>
@@ -178,6 +182,7 @@ export class PokerDomRenderer {
       blinds: this.root.querySelector('#pk-blinds'),
       hand: this.root.querySelector('#pk-hand'),
       pool: this.root.querySelector('#pk-pool'),
+      mybank: this.root.querySelector('#pk-mybank'),
     };
     this.root.querySelector('#pk-leave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
     this._built = true;
@@ -271,6 +276,10 @@ export class PokerDomRenderer {
     this.el.blinds.textContent = tour.sb + '/' + tour.bb;
     this.el.hand.textContent = tour.handNumber;
     this.el.pool.textContent = tour.prizePool;
+    // the player's own chip stack — always visible in the HUD (the 3D nameplate for your own front
+    // seat sits low/off-frame, so the header is where you read your money)
+    const meSeat = v.seats.find((s) => s.id === p.youId);
+    this.el.mybank.textContent = '$' + (meSeat ? meSeat.stack : 0);
 
     // table display — rebuild ONLY when something visible changes. renderTable runs every frame;
     // rebuilding innerHTML each frame would destroy a button between mousedown/up (no click fires)
