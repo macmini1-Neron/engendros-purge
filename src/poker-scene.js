@@ -107,6 +107,29 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     else if (this._camPose !== 'seated') this._setCamPose('seated'); // click the felt → back to the seated view
   }
 
+  // ---- table animations (each anim is a closure(dt)->done; orphaned when its card is rebuilt away) ----
+  _stepAnims(dt) {
+    for (let i = this._anims.length - 1; i >= 0; i--) {
+      let done = true;
+      try { done = this._anims[i](dt); } catch (e) { done = true; }
+      if (done) this._anims.splice(i, 1);
+    }
+  }
+  // flip a freshly-dealt card in: it starts lifted + turned over (back up) and settles down face-up at
+  // its rest pose. `rest` = {x,y,z,rotX}. `delay` staggers a flop (deal cards left→right). research B3.
+  _flipInCard(card, rest, delay = 0) {
+    const tw = new Tween(0.42, delay), liftY = 0.06;
+    card.position.set(rest.x, rest.y + liftY, rest.z);
+    card.rotation.x = rest.rotX + Math.PI;                 // start: lifted + flipped over (back showing)
+    this._anims.push((dt) => {
+      if (!card.parent) return true;                       // card rebuilt away → drop the anim
+      const e = easeOutCubic(tw.step(dt));
+      card.position.y = rest.y + liftY * (1 - e);          // comes down to the felt
+      card.rotation.x = rest.rotX + Math.PI * (1 - e);     // turns face-up
+      return tw.done;
+    });
+  }
+
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —
   // a small DOM tuner (on/off + ◀/▶). Self-contained playback (no BuildManager / no MP / no distance).
   _buildRadioControl() {
@@ -157,6 +180,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._camPose = 'seated'; this._camTw = null; this._camFrom = null; this._camLive = _clonePose(seat); // click-to-view tween state
     this._raycaster = new THREE.Raycaster(); this._boardCards = []; this._holeCards = [];
     this._prevView = null; this._prevChips = null; // for the event-driven SFX (deal/clink/slide/win)
+    this._anims = []; // active per-frame animation closures (card flips, chip throws, …) — stepped in renderTable
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -214,7 +238,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; } // fresh table → no stale SFX deltas
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; } // fresh table → no stale SFX deltas / dangling anims
   showLobby(o) { this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
 
@@ -222,6 +246,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     super.renderTable(p);     // header + banner + action bar + timer (felt DOM hidden by CSS)
     this._updateScene(p);
     this._stepCamera(dt || 0.016); // advance any click-to-view camera tween (PokerTable.render passes dt)
+    this._stepAnims(dt || 0.016);  // advance card-flip / chip-throw animations
     this._draw();             // PokerTable.render() calls renderTable every frame — draw the felt here
   }
 
@@ -243,9 +268,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     });
     if (key === this._sceneKey) return;
     this._sceneKey = key;
-    this._rebuildDyn(p, v, n, me, winners);
-    // event-driven SFX: diff the previous snapshot → fire deal/clink/slide/win timed to the change
+    // diff the previous snapshot → events drive both the flip-in animations and the SFX
     const events = derivePokerEvents(this._prevView, v, this._prevChips, p.chips, p.result);
+    const newBoard = new Set(events.filter((e) => e.t === 'boardCard').map((e) => e.index)); // community cards to flip in
+    this._rebuildDyn(p, v, n, me, winners, newBoard);
     this._onPokerEvents(events, p);
     this._prevView = v; this._prevChips = this._snapChips(p.chips);
   }
@@ -273,7 +299,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     if (win && a.pokerWin) a.pokerWin(win);
   }
 
-  _rebuildDyn(p, v, n, me, winners) {
+  _rebuildDyn(p, v, n, me, winners, newBoard) {
     const d = this.dyn;
     // chips/markers sit ON TOP of the green baize, not on the slab beneath it. The baize is 13 mm
     // proud (spec: baize at y0.7365 h0.013, model dropped −0.730 → its TOP is world y=0.013); resting
@@ -353,10 +379,13 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // board (centre, face-up, flat) — scaled up so it reads on the big Ø1.38 table
     // NOTE: at the low seated camera the flat board reads edge-on; standing/curving it is part of the
     // upcoming full 3D-card redo (all 52 as models), so it's left flat here on purpose for now.
+    let flipN = 0;
     for (let i = 0; i < v.board.length; i++) {
       const card = makeCardMesh(); setCardFace(card, v.board[i]);
-      card.position.set((i - 2) * 0.105, 0.014, -0.05); card.scale.setScalar(1.45); d.add(card);
+      const rest = { x: (i - 2) * 0.105, y: 0.014, z: -0.05, rotX: 0 };
+      card.position.set(rest.x, rest.y, rest.z); card.scale.setScalar(1.45); d.add(card);
       this._boardCards.push(card); // community cards → click for the TV close-up
+      if (newBoard && newBoard.has(i)) this._flipInCard(card, rest, (flipN++) * 0.13); // NEW card → flip it in (flop staggers left→right)
     }
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;
@@ -413,5 +442,5 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._setSize();
     this.renderer3d.render(this._scene, this.cam);
   }
-  render(dt) { this._stepCamera(dt || 0.016); this._draw(); } // tolerate a direct render hook too
+  render(dt) { this._stepCamera(dt || 0.016); this._stepAnims(dt || 0.016); this._draw(); } // tolerate a direct render hook too
 }
