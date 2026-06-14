@@ -44,12 +44,13 @@ export function layoutChips(chipSet, opts = {}) {
   return out;
 }
 
-// BET PILE: a real TOSSED HEAP — chips thrown into a small mound, landing ON each other (not laid flat in a
-// tidy row where their faces z-fight). Each chip drops at a random spot in a tight, capped disc; if it lands
-// on chips already there it RESTS on the highest of them (genuine stacking → height, no texture overlap).
-// Denominations are shuffled through the pile (seeded) so the colours mix and it reads hand-tossed, not
-// machine-sorted; a bigger bet mounds TALLER inside the same small footprint (juice, never sprawls into the
-// pot/neighbours). Seeded → deterministic (no per-frame shimmer). Returns { denom, x, y, z, rot, tiltX, tiltZ }.
+// BET PILE: a real tossed SPLASH, physically plausible. Settled poker chips lie nearly FLAT — they're spun to
+// random facings (so the pile looks hand-thrown, not machine-stacked) but they do NOT stand on edge or float at
+// steep angles. Each chip drops at a ~uniform-random spot in a disc and RESTS a clean whole-thickness on top of
+// any chip it overlaps (real stacking, no interpenetration). The disc SPREADS with the count — a big bet splashes
+// across more felt and only piles a few chips high, like real chips do — capped so it never blankets the table or
+// reaches the pot/neighbours. Denominations seed-shuffled so colours mix. Seeded → deterministic.
+// Returns { denom, x, y, z, rot, tiltX, tiltZ } per chip.
 export function pileLayout(chipSet, opts = {}) {
   const { seed = 1 } = opts;
   const rnd = mulberry32(seed);
@@ -57,21 +58,21 @@ export function pileLayout(chipSet, opts = {}) {
   for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n-- > 0) items.push(denom); }
   for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = items[i]; items[i] = items[j]; items[j] = t; } // seeded shuffle → tossed, mixed colours
   const N = items.length;
-  const R = Math.min(CHIP_R * 2.2, CHIP_R * (0.7 + 0.5 * Math.sqrt(Math.max(0, N - 1)))); // small, capped footprint
-  const ON = (CHIP_R * 1.55) ** 2;                     // a chip this close to another lands ON it
+  const R = Math.min(CHIP_R * 4.5, CHIP_R * (0.9 + 0.42 * Math.sqrt(Math.max(0, N - 1)))); // spreads with the count, capped
+  const ON = (CHIP_R * 1.5) ** 2;                      // a chip landing this close to another rests ON it
   const RISE = CHIP_T + CHIP_GAP;
   const placed = [], out = [];
   for (let i = 0; i < N; i++) {
-    const rad = R * Math.pow(rnd(), 0.65);             // centre-biased → it mounds toward the middle
+    const rad = R * Math.sqrt(rnd());                  // ~uniform over the disc → spreads + settles flat (not a tight tower)
     const ang = rnd() * Math.PI * 2;
     const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
-    let y = 0;                                          // rest on the HIGHEST chip we overlap → stacked, not interpenetrating
+    let y = 0;                                          // rest on the HIGHEST chip we overlap → stacked, never interpenetrating
     for (const p of placed) { if ((p.x - x) ** 2 + (p.z - z) ** 2 < ON && p.y + RISE > y) y = p.y + RISE; }
     placed.push({ x, z, y });
     out.push({
       denom: items[i], x, z, y,
-      rot: rnd() * Math.PI * 2,
-      tiltX: (rnd() - 0.5) * 0.16, tiltZ: (rnd() - 0.5) * 0.16, // more lean → tossed, not a neat stack
+      rot: rnd() * Math.PI * 2,                         // spun to a random facing — chips ARE turned differently
+      tiltX: (rnd() - 0.5) * 0.05, tiltZ: (rnd() - 0.5) * 0.05, // settled NEARLY FLAT (~1.5°) — never on edge / floating
     });
   }
   return out;
