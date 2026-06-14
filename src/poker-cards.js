@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { RANKS, SUITS } from './poker/cards.js';
 import { ATLAS_COLS, ATLAS_ROWS, cardAtlasIndex, atlasUVRect } from './poker/cardatlas.js';
+import { drawCardBack, getCardBackSkin } from './poker/cardbacks.js'; // pure registry (no THREE) — same as chip skins
 
 const CELL_W = 132, CELL_H = 184;            // px per atlas cell (poker 63x88mm ≈ 0.716 ratio)
 const SUIT_GLYPH = { c: '♣', d: '♦', h: '♥', s: '♠' };
@@ -66,26 +67,15 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 function cardAtlasTexture() { if (!_atlasTex) _atlasTex = buildAtlas(); return _atlasTex; }
 
-// ---------- back skin registry ----------
-export const CARD_BACKS = {
-  default(ctx, w, h) {
-    ctx.fillStyle = '#5a1e16'; ctx.fillRect(0, 0, w, h);
-    roundRect(ctx, 6, 6, w - 12, h - 12, 12); ctx.fillStyle = '#7a2a20'; ctx.fill();
-    ctx.strokeStyle = '#d8b066'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.strokeStyle = 'rgba(216,176,102,.55)'; ctx.lineWidth = 2;
-    for (let i = -h; i < w; i += 14) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + h, h); ctx.stroke(); }
-    ctx.fillStyle = '#d8b066'; ctx.beginPath(); ctx.arc(w / 2, h / 2, 16, 0, Math.PI * 2); ctx.fill();
-  },
-};
-let _backSkin = 'default';
-const _backCache = {};
-export function setCardBackSkin(name) { if (CARD_BACKS[name]) _backSkin = name; }
+// ---------- back skin (the registry now lives in pure poker/cardbacks.js, like chip skins) ----------
+const _backCache = {};   // keyed by back-skin id so switching backs is instant
 function cardBackTexture() {
-  if (_backCache[_backSkin]) return _backCache[_backSkin];
+  const skin = getCardBackSkin();
+  if (_backCache[skin]) return _backCache[skin];
   const cv = document.createElement('canvas'); cv.width = CELL_W; cv.height = CELL_H;
-  CARD_BACKS[_backSkin](cv.getContext('2d'), CELL_W, CELL_H);
+  drawCardBack(cv.getContext('2d'), CELL_W, CELL_H, skin);
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-  _backCache[_backSkin] = tex; return tex;
+  _backCache[skin] = tex; return tex;
 }
 
 // ---------- card mesh ----------
@@ -119,3 +109,16 @@ export function setCardFace(cardGroup, card) {
 }
 
 export const CARD_SIZE = { w: CARD_W, h: CARD_H, t: CARD_T };
+
+// A single card showing a GIVEN back design, for the crate showcase. Draws the back off its own canvas
+// (never touches the shared back-skin state). Returns a Group whose card faces +Z, so the ceremony's
+// Y-spin flips it like a dealt card revealing its back.
+export function buildShowcaseCardBack(backId) {
+  const cv = document.createElement('canvas'); cv.width = CELL_W; cv.height = CELL_H;
+  drawCardBack(cv.getContext('2d'), CELL_W, CELL_H, backId);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const card = new THREE.Mesh(new THREE.PlaneGeometry(CARD_W, CARD_H),
+    new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, toneMapped: false }));
+  const g = new THREE.Group(); g.add(card);
+  return g;
+}

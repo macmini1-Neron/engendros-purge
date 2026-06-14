@@ -920,6 +920,10 @@ class Game {
     let m; try { m = JSON.parse(localStorage.getItem('engendros_meta') || '{}'); } catch (e) { m = {}; }
     // roguelite economy (backward-compatible: missing keys default for existing players)
     if (typeof m.bank !== 'number') m.bank = 0;                                   // persistent money "account"
+    if (typeof m.chipSkin !== 'string') m.chipSkin = 'dice';                      // poker chip-skin cosmetic (CHIP_SKINS id)
+    if (!Array.isArray(m.chipSkinsUnlocked)) m.chipSkinsUnlocked = [];            // crate-unlocked chip skins (marx/lenin); free skins aren't listed
+    if (typeof m.cardBack !== 'string') m.cardBack = 'default';                   // poker card-back cosmetic (CARD_BACKS id)
+    if (!Array.isArray(m.cardBacksUnlocked)) m.cardBacksUnlocked = [];            // crate-unlocked card backs (redstar/emblem)
     if (!Array.isArray(m.unlocked)) m.unlocked = ['knife'];                       // permanently owned gear keys
     if (!m.unlocked.includes('knife')) m.unlocked.push('knife');                  // knife is always owned (cold start)
     // Loadout is now a flat array of LOADOUT_SLOTS equal slots (any gear in any slot, duplicates OK).

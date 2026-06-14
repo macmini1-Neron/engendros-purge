@@ -16,6 +16,8 @@ import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
 import { ChipBank, value as chipValue } from './poker/chipbank.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
+import { setChipSkin, chipSkinAvailable, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure (no THREE) — sets the shared skin state the 3D chips read
+import { setCardBackSkin, cardBackAvailable, CARD_BACKS_FREE } from './poker/cardbacks.js'; // pure — card-back skin state
 import { PokerDomRenderer } from './poker-ui.js';
 // NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
 // orchestrator (game.js). poker-table.js stays THREE/DOM-free so the engine + co-op logic remain
@@ -58,6 +60,19 @@ export class PokerTable {
 
   _toast(msg, color) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast(msg, color); }
 
+  // chip-skin cosmetics: free skins + the player's crate-unlocked ones (meta.chipSkinsUnlocked).
+  _chipSkinAvail() { return [...CHIP_SKINS_FREE, ...((this.game.meta && this.game.meta.chipSkinsUnlocked) || [])]; }
+  _cardBackAvail() { return [...CARD_BACKS_FREE, ...((this.game.meta && this.game.meta.cardBacksUnlocked) || [])]; }
+  // apply the saved cosmetics before anything is built, falling back to the default if not owned/available.
+  _applyChipSkin() {
+    const want = this.game.meta && this.game.meta.chipSkin;
+    setChipSkin(chipSkinAvailable(want, this.game.meta && this.game.meta.chipSkinsUnlocked) ? want : 'dice');
+  }
+  _applyCardBack() {
+    const want = this.game.meta && this.game.meta.cardBack;
+    setCardBackSkin(cardBackAvailable(want, this.game.meta && this.game.meta.cardBacksUnlocked) ? want : 'default');
+  }
+
   _ensureRenderer() {
     if (this.renderer || typeof document === 'undefined') return; // node/headless: stay renderer-less (all calls are guarded)
     const root = document.getElementById('poker');
@@ -67,6 +82,8 @@ export class PokerTable {
       onStart: (cfg) => { if (cfg && cfg.coop) this.startCoop(cfg.buyIn | 0); else this.startTournament(cfg); },
       onAct: (a) => this.humanAct(a),
       onLeave: () => this.game.closePoker(),
+      onChipSkin: (id) => { setChipSkin(id); if (this.game.meta) this.game.meta.chipSkin = id; if (this.game._saveMeta) this.game._saveMeta(); }, // local cosmetic: apply + persist
+      onCardBack: (id) => { setCardBackSkin(id); if (this.game.meta) this.game.meta.cardBack = id; if (this.game._saveMeta) this.game._saveMeta(); },
       getShowOdds: () => !!(this.game.settings && this.game.settings.data && this.game.settings.data.pokerOdds), // local player's own preference
     });
     this.renderer.mount();
@@ -78,7 +95,7 @@ export class PokerTable {
     this._ensureRenderer();
     this._reset();
     this.role = 'solo'; this.coop = false;
-    if (this.renderer) this.renderer.showLobby({ bank: this.game.meta.bank | 0 });
+    if (this.renderer) this.renderer.showLobby({ bank: this.game.meta.bank | 0, chipSkin: this.game.meta.chipSkin || 'dice', skinAvail: this._chipSkinAvail(), cardBack: this.game.meta.cardBack || 'default', backAvail: this._cardBackAvail() });
   }
 
   startTournament({ bots = 5, mode = 'practice' } = {}) {
@@ -103,7 +120,7 @@ export class PokerTable {
     this.role = 'host'; this.coop = true;
     if (skipLobby) return;
     const players = [...this.game.mp.roster.values()].map((r) => r.name || 'Flopo');
-    if (this.renderer) this.renderer.showCoopLobby({ players, bank: this.game.meta.bank | 0, tiers: POKER_BUYIN_TIERS });
+    if (this.renderer) this.renderer.showCoopLobby({ players, bank: this.game.meta.bank | 0, tiers: POKER_BUYIN_TIERS, chipSkin: this.game.meta.chipSkin || 'dice', skinAvail: this._chipSkinAvail(), cardBack: this.game.meta.cardBack || 'default', backAvail: this._cardBackAvail() });
   }
 
   // Seat EXACTLY the players in `seatIds` (the lobby's anted/accepted set). Falls back to the whole
@@ -132,6 +149,7 @@ export class PokerTable {
   enterCoopClient(d) { // client side, on 'pkstart' — by now the client already ACCEPTED (anted) in the lobby
     this._ensureRenderer();
     this._reset();
+    this._applyChipSkin(); this._applyCardBack(); // client renders its own chips + card backs with its own saved cosmetics
     const buyIn = (d && d.buyIn) | 0;
     // Affordability was enforced at accept time (mp.toggleReady ante gate); this guard only catches the
     // unreachable race where the bank changed between accepting and the deal — bail safely, never seat broke.
@@ -238,6 +256,7 @@ export class PokerTable {
   // ---------- physical chip layer (host/solo only; clients render the host's snapshot) ----------
 
   _dealChips() {
+    this._applyChipSkin(); this._applyCardBack(); // honour the saved cosmetics (fall back if locked) before anything is built
     this.chipbank = new ChipBank();
     const ids = this.tour.players.map((p) => p.id);
     if (chipValue(STARTING_CHIPS) !== this.tour.startStack) {            // STARTING_CHIPS must total the engine start stack
