@@ -86,7 +86,7 @@ export function exactSubset(set, amount) {
 }
 
 // largest exact value ≤ amount formable from `set` alone (fallback when an exact draw is impossible)
-function largestFormableLE(set, amount) {
+export function largestFormableLE(set, amount) {
   for (let v = amount - (amount % 5); v >= 0; v -= 5) {
     const ss = exactSubset(set, v);
     if (ss) return ss;

@@ -54,15 +54,18 @@ export function pileLayout(chipSet, opts = {}) {
   const items = [];
   for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n-- > 0) items.push(denom); }
   const N = items.length;
-  const R = CHIP_R * (1.1 + 0.12 * N);                 // cluster radius grows with the bet → bigger pile = more chips
+  // COMPACT MOUND: footprint is small + CAPPED (never sprawls into neighbouring models); the heap grows
+  // UPWARD (taller) with the chip count instead of wider — centre chips pile higher than the rim.
+  const R = Math.min(CHIP_R * 3.0, CHIP_R * (0.8 + 0.18 * Math.sqrt(N)));
   const out = [];
   for (let i = 0; i < N; i++) {
-    const ang = rnd() * Math.PI * 2, rad = R * Math.sqrt(rnd()); // uniform scatter within the disc
+    const rad = R * Math.pow(rnd(), 0.7);              // biased toward the centre → a mound, not a flat ring
+    const ang = rnd() * Math.PI * 2;
     out.push({
       denom: items[i], x: Math.cos(ang) * rad, z: Math.sin(ang) * rad,
-      y: rnd() * CHIP_T * 2,                            // low overlapping heap, not a single layer
-      rot: rnd() * Math.PI * 2,                         // random facing
-      tiltX: (rnd() - 0.5) * 0.16, tiltZ: (rnd() - 0.5) * 0.16, // a few degrees of tilt → tossed look
+      y: (1 - rad / R) * CHIP_T * Math.min(N, 22) * 0.5 * (0.7 + 0.3 * rnd()), // centre piles higher → mound builds UP with the bet
+      rot: rnd() * Math.PI * 2,
+      tiltX: (rnd() - 0.5) * 0.14, tiltZ: (rnd() - 0.5) * 0.14, // a few degrees of tilt → tossed look
     });
   }
   return out;
