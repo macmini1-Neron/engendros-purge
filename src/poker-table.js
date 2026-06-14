@@ -336,10 +336,10 @@ export class PokerTable {
     }
   }
 
-  render() {
+  render(dt) {
     if (!this.renderer || this.phase === 'lobby') return;
-    if (this.role === 'client') { if (this.clientSnap) this.renderer.renderTable(this.clientSnap); return; }
-    this.renderer.renderTable(this._payloadFor(this.youId));
+    if (this.role === 'client') { if (this.clientSnap) this.renderer.renderTable(this.clientSnap, dt); return; }
+    this.renderer.renderTable(this._payloadFor(this.youId), dt);
   }
 
   // ---------- bank ----------

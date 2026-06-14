@@ -12,6 +12,7 @@ import { sigOf } from './poker/chipbank.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
 import { RADIO_STATIONS, GHOST_STATION, stationByIndex, stationLabel } from './radio.js';
+import { Tween, easeOutCubic } from './poker/anim.js';
 
 const SCENE_CSS = `
 #poker .pk-canvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; display:none; }
@@ -34,6 +35,18 @@ const SCENE_CSS = `
 
 const SUITS_LABEL = ['c', 'd', 'h', 's'];
 
+// ---- camera poses (FIRST DRAFT — owner tunes these) ----------------------------------------------
+// Each pose is { pos:[x,y,z], look:[x,y,z], fov }. 'seated' is the default 3/4 view; the others are
+// the click-to-view targets. Dial new numbers in poker-freecam-dev.html (?cam=x,y,z,lx,ly,lz,fov)
+// and paste them here — the click handler tweens between whichever poses you define.
+const CAM_POSES = {
+  seated: { pos: [0.0, 0.37, 0.99], look: [0, -0.05, -0.22], fov: 56 }, // matches _initThree default
+  board:  { pos: [0.0, 0.34, 0.34], look: [0, 0.02, -0.05], fov: 34 },  // TV close-up of the community cards (table centre)
+  hole:   { pos: [0.0, 0.30, 0.66], look: [0, 0.14, 0.52], fov: 40 },   // close-up of your own two cards
+};
+const _mix = (a, b, t) => a + (b - a) * t;
+const _clonePose = (q) => ({ pos: q.pos.slice(), look: q.look.slice(), fov: q.fov });
+
 export class PokerSceneRenderer extends PokerDomRenderer {
   constructor(root, cb) {
     super(root, cb);
@@ -51,6 +64,46 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this.root.insertBefore(this.canvas, this.root.firstChild); // behind .pk-wrap (z-index:2)
     this._initThree();
     this._buildRadioControl();
+    this.root.addEventListener('pointerdown', (e) => this._onPokerClick(e)); // click the cards → TV close-up, click again / felt → back
+  }
+
+  // ---- click-to-view camera (first draft; poses in CAM_POSES) ----
+  _setCamPose(name) {
+    if (!CAM_POSES[name] || (this._camPose === name && !this._camTw)) return;
+    this._camFrom = _clonePose(this._camLive); // tween FROM the live interpolated pose → smooth even mid-fly
+    this._camPose = name;
+    this._camTw = new Tween(0.55);
+  }
+  _stepCamera(dt) {
+    if (!this._camTw && this._camPose === 'seated') return; // at rest in the default seat → leave the camera untouched
+    if (this._camTw) {
+      const p = easeOutCubic(this._camTw.step(dt));
+      const f = this._camFrom, t = CAM_POSES[this._camPose];
+      this._camLive = {
+        pos: [_mix(f.pos[0], t.pos[0], p), _mix(f.pos[1], t.pos[1], p), _mix(f.pos[2], t.pos[2], p)],
+        look: [_mix(f.look[0], t.look[0], p), _mix(f.look[1], t.look[1], p), _mix(f.look[2], t.look[2], p)],
+        fov: _mix(f.fov, t.fov, p),
+      };
+      if (this._camTw.done) { this._camTw = null; this._camLive = _clonePose(t); }
+    } else {
+      this._camLive = _clonePose(CAM_POSES[this._camPose]); // holding a non-seated pose
+    }
+    const c = this._camLive;
+    this.cam.position.set(c.pos[0], c.pos[1], c.pos[2]);
+    this.cam.lookAt(c.look[0], c.look[1], c.look[2]);
+    if (Math.abs(this.cam.fov - c.fov) > 1e-3) { this.cam.fov = c.fov; this.cam.updateProjectionMatrix(); }
+  }
+  _onPokerClick(e) {
+    if (!this._scene || !this.root.classList.contains('pk3d') || this._camLock) return; // _camLock = dev cam tuner owns the camera
+    if (e.target && e.target.closest && e.target.closest('.pk-actions, .pk-timer, .pk-banner, .pk-radio, button, input')) return; // let the HUD handle its own clicks
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    this._raycaster.setFromCamera(ndc, this.cam);
+    const hitBoard = this._boardCards.length && this._raycaster.intersectObjects(this._boardCards, true).length;
+    const hitHole = this._holeCards.length && this._raycaster.intersectObjects(this._holeCards, true).length;
+    if (hitBoard) this._setCamPose(this._camPose === 'board' ? 'seated' : 'board');
+    else if (hitHole) this._setCamPose(this._camPose === 'hole' ? 'seated' : 'hole');
+    else if (this._camPose !== 'seated') this._setCamPose('seated'); // click the felt → back to the seated view
   }
 
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —
@@ -97,8 +150,11 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     r.setClearColor(0x05060a, 1);
     const scene = this._scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x05060a, 2.2, 5.0);
-    this.cam = new THREE.PerspectiveCamera(56, 1.6, 0.03, 60);
-    this.cam.position.set(0.0, 0.37, 0.99); this.cam.lookAt(0, -0.05, -0.22); // SEATED at the table — raised + pulled back a touch so more felt + opponents read and the near edge stops clipping; tune via poker-freecam-dev.html
+    const seat = CAM_POSES.seated;
+    this.cam = new THREE.PerspectiveCamera(seat.fov, 1.6, 0.03, 60);
+    this.cam.position.set(seat.pos[0], seat.pos[1], seat.pos[2]); this.cam.lookAt(seat.look[0], seat.look[1], seat.look[2]); // SEATED 3/4 view (tune via poker-freecam-dev.html)
+    this._camPose = 'seated'; this._camTw = null; this._camFrom = null; this._camLive = _clonePose(seat); // click-to-view tween state
+    this._raycaster = new THREE.Raycaster(); this._boardCards = []; this._holeCards = [];
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -160,9 +216,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   showLobby(o) { this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
 
-  renderTable(p) {
+  renderTable(p, dt) {
     super.renderTable(p);     // header + banner + action bar + timer (felt DOM hidden by CSS)
     this._updateScene(p);
+    this._stepCamera(dt || 0.016); // advance any click-to-view camera tween (PokerTable.render passes dt)
     this._draw();             // PokerTable.render() calls renderTable every frame — draw the felt here
   }
 
@@ -194,6 +251,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // chips at y=0 buried them in the cloth. FELT_Y is the green "floor" everything stands on.
     const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
+    this._boardCards = []; this._holeCards = []; // refreshed each rebuild — click targets for the camera views
 
     // seat anchors — your seat at front (+Z), others fan around the far arc
     const RX = 0.92, RZ = 0.86; // seats just outside the Ø1.38 (r0.69) table edge
@@ -230,6 +288,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             card.scale.setScalar(1.25);
             card.position.set((h - 0.5) * 0.080, 0.145, 0.545);
             if (s.hole) { setCardFace(card, s.hole[h]); card.rotation.x = 1.02; } else card.rotation.x = Math.PI;
+            this._holeCards.push(card); // your own cards → click for the 'hole' close-up
           } else {
             // opponents'/bots' cards: lie FLAT on the felt near their edge, FACE-DOWN (back up); only the showdown reveals faces
             const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
@@ -268,6 +327,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     for (let i = 0; i < v.board.length; i++) {
       const card = makeCardMesh(); setCardFace(card, v.board[i]);
       card.position.set((i - 2) * 0.105, 0.014, -0.05); card.scale.setScalar(1.45); d.add(card);
+      this._boardCards.push(card); // community cards → click for the TV close-up
     }
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;
@@ -324,5 +384,5 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._setSize();
     this.renderer3d.render(this._scene, this.cam);
   }
-  render(dt) { this._draw(); } // tolerate a direct render hook too
+  render(dt) { this._stepCamera(dt || 0.016); this._draw(); } // tolerate a direct render hook too
 }
