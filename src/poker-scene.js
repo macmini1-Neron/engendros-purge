@@ -248,13 +248,13 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // overflow never spill onto the raised wood edge — everything sits flat on the green at y=0.
       const tilt = Math.atan2(-sx, -sz);                  // so a tray's columns run along the rim (90° to the spoke)
       const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
-      stack.position.copy(onFelt(0.42)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
+      stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       const betSet = chips ? chips.bets[s.id] : null;
       const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
-      if (betGroup) { betGroup.position.copy(onFelt(0.30)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
+      if (betGroup) { betGroup.position.copy(onFelt(0.36)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
       // dealer / SB / BB markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat
       const role = j === v.button ? 'D' : (j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null));
-      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.42)).addScaledVector(tang, -0.14); m.position.y = FELT_Y; d.add(m); }
+      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.50)).addScaledVector(tang, -0.14); m.position.y = FELT_Y; d.add(m); }
     }
 
     // board (centre, face-up, flat) — scaled up so it reads on the big Ø1.38 table
