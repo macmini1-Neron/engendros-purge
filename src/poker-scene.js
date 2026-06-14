@@ -13,6 +13,7 @@ import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
 import { RADIO_STATIONS, GHOST_STATION, stationByIndex, stationLabel } from './radio.js';
 import { Tween, easeOutCubic } from './poker/anim.js';
+import { derivePokerEvents } from './poker/pokerevents.js';
 
 const SCENE_CSS = `
 #poker .pk-canvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; display:none; }
@@ -155,6 +156,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this.cam.position.set(seat.pos[0], seat.pos[1], seat.pos[2]); this.cam.lookAt(seat.look[0], seat.look[1], seat.look[2]); // SEATED 3/4 view (tune via poker-freecam-dev.html)
     this._camPose = 'seated'; this._camTw = null; this._camFrom = null; this._camLive = _clonePose(seat); // click-to-view tween state
     this._raycaster = new THREE.Raycaster(); this._boardCards = []; this._holeCards = [];
+    this._prevView = null; this._prevChips = null; // for the event-driven SFX (deal/clink/slide/win)
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -212,7 +214,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); }
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; } // fresh table → no stale SFX deltas
   showLobby(o) { this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
 
@@ -242,6 +244,33 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     if (key === this._sceneKey) return;
     this._sceneKey = key;
     this._rebuildDyn(p, v, n, me, winners);
+    // event-driven SFX: diff the previous snapshot → fire deal/clink/slide/win timed to the change
+    const events = derivePokerEvents(this._prevView, v, this._prevChips, p.chips, p.result);
+    this._onPokerEvents(events, p);
+    this._prevView = v; this._prevChips = this._snapChips(p.chips);
+  }
+  _snapChips(c) { // deep-ish copy of the bet/pot denom maps — the host's p.chips are LIVE refs that mutate
+    if (!c) return null;
+    const cp = (m) => { const r = {}; for (const k in (m || {})) r[k] = m[k]; return r; };
+    const bets = {}; for (const id in (c.bets || {})) bets[id] = cp(c.bets[id]);
+    return { bets, pot: cp(c.pot) };
+  }
+  _onPokerEvents(events, p) {
+    const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
+    if (!a || !events || !events.length) return;
+    let deals = 0, chipUnits = 0, win = 0;
+    for (const e of events) {
+      if (e.t === 'boardCard' || e.t === 'holeReveal') deals++;
+      else if (e.t === 'chipMove') chipUnits += Object.values(e.moves).reduce((x, y) => x + y, 0);
+      else if (e.t === 'potAward' && e.id === p.youId && e.net) win = Math.max(win, Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, e.amount))))); // YOUR net win only
+    }
+    if (deals && a.pokerDeal) for (let i = 0; i < Math.min(deals, 3); i++) setTimeout(() => a.pokerDeal(), i * 90); // a flop riffles as ~3 cards
+    if (chipUnits && a.pokerChip) {
+      if (a.pokerPotSlide) a.pokerPotSlide();
+      const n = Math.min(chipUnits, 6);
+      for (let i = 0; i < n; i++) setTimeout(() => a.pokerChip(0.92 + i * 0.05), i * 55); // staggered, pitch steps by index (deterministic, not random)
+    }
+    if (win && a.pokerWin) a.pokerWin(win);
   }
 
   _rebuildDyn(p, v, n, me, winners) {
