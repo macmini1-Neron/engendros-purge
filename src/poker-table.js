@@ -14,6 +14,7 @@ import { Tournament } from './poker/tournament.js';
 import { legalActions, applyAction, isComplete, privateView, forceFold } from './poker/holdem.js';
 import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
+import { ChipBank } from './poker/chipbank.js';
 import { PokerDomRenderer } from './poker-ui.js';
 // NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
 // orchestrator (game.js). poker-table.js stays THREE/DOM-free so the engine + co-op logic remain
@@ -25,12 +26,17 @@ const SHOWDOWN_SECS = 6.5;  // dwell on a real showdown — long enough to read 
 const FOLD_SECS = 2.5;      // shorter dwell when everyone folded (no combination to read)
 const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar animates clientside
 const BOT_NAMES = ['SHARK', 'DOC', 'LUCKY', 'SLIM', 'ACE'];
+// Physical starting chip set (value 1500 == DEFAULT_START_STACK) + the dealer rack/float that backs
+// change-making. The float is heavy on small denominations and scales its 5s with the entrant count.
+const STARTING_CHIPS = { 500: 1, 100: 6, 50: 4, 20: 5, 10: 5, 5: 10 };
+const floatFor = (n) => ({ 100: 10, 50: 10, 20: 20, 10: 30, 5: 12 * n });
 
 export class PokerTable {
   constructor(game) {
     this.game = game;
     this.renderer = null;
     this.tour = null; this.hand = null; this.rng = null;
+    this.chipbank = null; this._lastCommitted = {};   // physical conserved chips (layer over the engine)
     this.role = 'solo'; this.coop = false; this.mode = 'practice';
     this.youId = 'you';
     this.active = false;
@@ -81,6 +87,7 @@ export class PokerTable {
     this.role = 'solo'; this.coop = false; this.mode = mode; this.youId = 'you';
     this.rng = mulberry32(((Date.now() >>> 0) ^ (bots * 2654435761)) >>> 0);
     this.tour = new Tournament({ players, buyIn: 0, rng: this.rng });
+    this._dealChips();
     this.active = true;
     if (this.renderer) this.renderer.showTable();
     this._beginHand();
@@ -106,6 +113,7 @@ export class PokerTable {
     this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
     this.rng = mulberry32(((Date.now() >>> 0) ^ (ids.length * 2654435761)) >>> 0);
     this.tour = new Tournament({ players: ids.map((id) => ({ id })), buyIn: this.coopBuyIn, rng: this.rng });
+    this._dealChips();
     this.active = true;
     this._paid = this._spend(this.coopBuyIn);                      // host pays own buy-in (affordability checked above)
     mp.net.send('pkstart', { buyIn: this.coopBuyIn, names: this.names }); // pull clients in
@@ -155,6 +163,7 @@ export class PokerTable {
     this._dropped.add(id);
     if (this.hand && this.phase === 'playing') {
       forceFold(this.hand, id);
+      this._syncChips();
       if (isComplete(this.hand)) this._endHand();
     }
     this._broadcastPoker();
@@ -178,6 +187,8 @@ export class PokerTable {
       if (this.tour.alivePlayers().length < 2) { this._walkover(); return; }
     }
     this.hand = this.tour.startNextHand();
+    this._lastCommitted = {};
+    this._syncChips();                          // post the blinds the engine just committed in startHand
     this.phase = 'playing';
     this.actTimer = ACT_SECS; this.botDelay = 0;
     if (isComplete(this.hand)) this._endHand();
@@ -209,9 +220,42 @@ export class PokerTable {
 
   _applyAndAdvance(action) {
     try { applyAction(this.hand, action); } catch (e) { return; } // ignore illegal
+    this._syncChips();
     this.actTimer = ACT_SECS;
     if (isComplete(this.hand)) this._endHand();
     this._broadcastPoker();
+  }
+
+  // ---------- physical chip layer (host/solo only; clients render the host's snapshot) ----------
+
+  _dealChips() {
+    this.chipbank = new ChipBank();
+    const ids = this.tour.players.map((p) => p.id);
+    this.chipbank.dealStart(ids, STARTING_CHIPS, floatFor(ids.length));
+    this._lastCommitted = {};
+  }
+
+  // Reconstruct the physical chip flow from the engine's durable per-seat `committed` totals: post
+  // each seat's new contribution into its bet zone, fold bets into the pot when a street/hand closes,
+  // and physically pay the pot out on completion. Order-correct no matter how many streets resolve
+  // inside one applyAction (it diffs committed, not the transient roundBet).
+  _syncChips() {
+    if (!this.chipbank || !this.hand) return;
+    for (const s of this.hand.seats) {
+      const d = s.committed - (this._lastCommitted[s.id] || 0);
+      if (d > 0) this.chipbank.postBet(s.id, d);
+      this._lastCommitted[s.id] = s.committed;
+    }
+    const complete = isComplete(this.hand);
+    if (complete || this.hand.seats.every((s) => s.roundBet === 0)) this.chipbank.collectBetsToPot();
+    if (complete && this.hand.result) this.chipbank.awardToWinners(this.hand.result.winnings, this._orderFromButton());
+  }
+
+  _orderFromButton() {
+    const s = this.hand; if (!s) return [];
+    const n = s.seats.length, order = [];
+    for (let k = 0; k < n; k++) order.push(s.seats[(s.button + 1 + k) % n].id);  // mirror holdem doShowdown order
+    return order;
   }
 
   update(dt) {
@@ -238,6 +282,7 @@ export class PokerTable {
       this.resultTimer -= dt;
       if (this.resultTimer <= 0) {
         this.tour.settleHand();
+        if (this.chipbank) this.chipbank.reconcile(this.tour.players);   // backstop: chips == engine stacks
         if (this.tour.over) { this.phase = 'over'; this._payout(); } else this._beginHand();
         this._broadcastPoker();
       }
@@ -261,6 +306,7 @@ export class PokerTable {
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',
       youId: id, names: this.names, moneyPayout,
+      chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot } : null,
     };
   }
 
@@ -300,6 +346,7 @@ export class PokerTable {
 
   _reset() {
     this.active = false; this.phase = 'lobby'; this.tour = null; this.hand = null;
+    this.chipbank = null; this._lastCommitted = {};
     this.clientSnap = null; this._netT = 0; this._dropped = new Set();
     this._credited = false; this._refunded = false; this._aborted = false; this.coopBuyIn = 0; this._paid = 0;
   }

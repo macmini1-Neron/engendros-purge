@@ -11,6 +11,7 @@
 // adds another builder and `setChipSkin('name')` swaps it everywhere.
 import * as THREE from 'three';
 import { breakdown } from './poker/chips.js';
+import { DENOMS, sigOf } from './poker/chipbank.js';
 
 const R = 0.020, T = 0.0033, GAP = 0.0006;                          // metres
 const RING_R = 0.0122, RING_T = 0.0006, TAB_W = 0.0085, TAB_H = 0.0037, TAB_D = 0.007, TAB_R = 0.0165;
@@ -56,24 +57,51 @@ function disposeTree(o) {
   o.traverse?.((c) => { c.geometry?.dispose?.(); const m = c.material; if (Array.isArray(m)) m.forEach((x) => x?.dispose?.()); else m?.dispose?.(); });
 }
 
+const COL_GAP = 2 * R + 0.0012;          // centre-to-centre spacing of denomination columns (≈ chip Ø)
+
+// Build a physical chip tray from a real ChipSet ({denom:count}) — one column PER DENOMINATION,
+// largest nearest the player's left, ordered like a real rack. This is the conserved path: it draws
+// the actual chips the chipbank holds, never a breakdown() of a number, so "two greens stay two
+// greens". Columns are centred about the group origin so the tray reads symmetrically wherever it
+// is placed.
+export function makeChipTray(chipSet) {
+  const g = new THREE.Group();
+  setChipTray(g, chipSet);
+  return g;
+}
+
+export function setChipTray(group, chipSet) {
+  chipSet = chipSet || {};
+  const sig = sigOf(chipSet);
+  if (group.userData.sig === sig && group.userData.skin === _skin) return group;
+  for (let i = group.children.length - 1; i >= 0; i--) { const c = group.children[i]; group.remove(c); disposeTree(c); }
+  group.userData.sig = sig; group.userData.skin = _skin; group.userData.amount = undefined;
+  const denoms = DENOMS.filter((d) => (chipSet[d] || 0) > 0);   // descending, largest-first
+  const x0 = -((denoms.length - 1) * COL_GAP) / 2;
+  denoms.forEach((denom, col) => {
+    const x = x0 + col * COL_GAP;
+    for (let i = 0; i < chipSet[denom]; i++) {
+      const chip = CHIP_SKINS[_skin](denom);
+      chip.position.set(x, i * (T + GAP), 0);
+      group.add(chip);
+    }
+  });
+  return group;
+}
+
+// Back-compat / fallback: derive a ChipSet from an integer (greedy breakdown) and draw it as a tray.
+// Used by the 2D path and as a defensive fallback when no chipbank multiset is available — the 3D
+// table feeds setChipTray real multisets instead.
 export function makeChipStack(amount) {
   const g = new THREE.Group();
   setChipStack(g, amount);
   return g;
 }
 
-// Build (or rebuild) a chip stack for `amount`: one column per denomination, exact chip counts.
 export function setChipStack(group, amount) {
-  if (group.userData.amount === (amount | 0) && group.userData.skin === _skin) return group;
-  for (let i = group.children.length - 1; i >= 0; i--) { const c = group.children[i]; group.remove(c); disposeTree(c); }
-  group.userData.amount = amount | 0; group.userData.skin = _skin;
-  // ONE narrow column (largest denomination at the bottom) → never wider than a single chip, so a stack
-  // can't spill past the green felt no matter how big it gets; still exact (every chip is real).
-  let k = 0;
-  for (const { denom, count } of breakdown(amount)) {
-    for (let i = 0; i < count; i++) { const chip = CHIP_SKINS[_skin](denom); chip.position.set(0, k * (T + GAP), 0); group.add(chip); k++; }
-  }
-  return group;
+  const set = {};
+  for (const { denom, count } of breakdown(amount)) set[denom] = count;
+  return setChipTray(group, set);
 }
 
 export const CHIP_SIZE = { r: R, t: T };
