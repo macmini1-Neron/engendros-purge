@@ -97,8 +97,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     r.setClearColor(0x05060a, 1);
     const scene = this._scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x05060a, 2.2, 5.0);
-    this.cam = new THREE.PerspectiveCamera(60, 1.6, 0.03, 60);
-    this.cam.position.set(0.08, 0.28, 0.91); this.cam.lookAt(-0.03, -0.02, -0.11); // SEATED at the table — low + close + wide for max immersion (angle dialled in via the free-cam dev tool); near edge runs off-frame
+    this.cam = new THREE.PerspectiveCamera(56, 1.6, 0.03, 60);
+    this.cam.position.set(0.0, 0.37, 0.99); this.cam.lookAt(0, -0.05, -0.22); // SEATED at the table — raised + pulled back a touch so more felt + opponents read and the near edge stops clipping; tune via poker-freecam-dev.html
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -211,10 +211,13 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const onFelt = (r) => new THREE.Vector3((sx / seatLen) * r, 0, (sz / seatLen) * r);
       const tang = new THREE.Vector3(-sz / seatLen, 0, sx / seatLen); // unit sideways along the rim
 
-      // nameplate (faces the camera)
-      const np = this._label(`${(p.names && p.names[s.id]) || (s.id === p.youId ? 'YOU' : s.id)}  $${s.stack}${winners && winners[s.id] ? '  +' + winners[s.id] : ''}`,
-        s.folded ? 0x6a6a6a : (j === v.toAct ? 0x45e0cf : 0xf3d999));
-      np.position.set(sx * 1.0, 0.16, sz * 1.0); np.lookAt(this.cam.position); d.add(np);
+      // nameplate (faces the camera) — NOT for your own seat: it sits right at the camera (front seat)
+      // and would poke into your face, and your money is already in the HUD header (YOU $X).
+      if (s.id !== p.youId) {
+        const np = this._label(`${(p.names && p.names[s.id]) || s.id}  $${s.stack}${winners && winners[s.id] ? '  +' + winners[s.id] : ''}`,
+          s.folded ? 0x6a6a6a : (j === v.toAct ? 0x45e0cf : 0xf3d999));
+        np.position.set(sx * 1.0, 0.16, sz * 1.0); np.lookAt(this.cam.position); d.add(np);
+      }
 
       // hole cards — folded players muck (no cards shown, real poker; hides bluffs)
       const mine = s.id === p.youId;
@@ -224,9 +227,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
           if (mine) {
             // your hole cards: large & TILTED UP toward the seated camera (held-in-hand read) so they stay
             // legible at the low angle and clear the bottom action bar — pivot at the felt, top edge lifts toward you
-            card.scale.setScalar(1.3);
-            card.position.set((h - 0.5) * 0.082, 0.17, 0.50);
-            if (s.hole) { setCardFace(card, s.hole[h]); card.rotation.x = 0.92; } else card.rotation.x = Math.PI;
+            card.scale.setScalar(1.25);
+            card.position.set((h - 0.5) * 0.080, 0.145, 0.545);
+            if (s.hole) { setCardFace(card, s.hole[h]); card.rotation.x = 1.02; } else card.rotation.x = Math.PI;
           } else {
             // opponents'/bots' cards: lie FLAT on the felt near their edge, FACE-DOWN (back up); only the showdown reveals faces
             const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
