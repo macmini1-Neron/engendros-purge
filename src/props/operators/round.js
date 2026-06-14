@@ -204,12 +204,75 @@ export function tubeMast(b, a, t, o) {
 export function texturedCylinder(b, a, t, o) {
   const seg = a.seg ?? 24;
   const g = new THREE.CylinderGeometry(a.r2 ?? a.r, a.r, a.h, seg, 1);
-  const mat = new THREE.MeshLambertMaterial({ map: _bodyTexture(t[a.tone || 'mid'], a.marks || []) });
+  // kind:'baize' swaps the missile-body livery for the woven card-table cloth on the top cap.
+  const map = a.kind === 'baize' ? makeBaizeTexture(t, a) : _bodyTexture(t[a.tone || 'mid'], a.marks || []);
+  const mat = new THREE.MeshLambertMaterial({ map });
   const mesh = new THREE.Mesh(g, mat);
   const or = ORIENT[a.axis ?? 'z'];
   mesh.rotation.set(or.rx || 0, or.ry || 0, or.rz || 0);
   mesh.position.set(o.x, o.y, o.z);
   return mesh;
+}
+
+// makeBaizeTexture — the green woollen card-table baize, drawn at high resolution so it reads as
+// real napped cloth right up to the player's nose: a lamp-pooled radial base (brighter under the
+// hanging lamp, vignetted into the wood well), a fine woven warp/weft thread weave, brushed-nap
+// mottle, a worn centre where cards & chips slide, and two faint concentric table rings. Driven by
+// the part's resolved baize tones (hi/mid/lo/slot/bright) so it stays palette-locked. A tiny stable
+// RNG keeps the cloth identical across rebuilds. Exported for the asset viewer.
+export function makeBaizeTexture(tn, a = {}) {
+  const S = 2048, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const c = cv.getContext('2d'); const R = S / 2;
+  let s = (a.seed ?? 0x9e3779b9) >>> 0;                 // stable LCG → same weave every load
+  const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+  // 1) lamp-pooled base: brighter green under the centre spotlight, darkening + vignetting to the rim
+  const bg = c.createRadialGradient(R, R, S * 0.03, R, R, R);
+  bg.addColorStop(0, tn.bright); bg.addColorStop(0.42, tn.hi); bg.addColorStop(0.74, tn.mid);
+  bg.addColorStop(0.92, tn.lo); bg.addColorStop(1, tn.slot);
+  c.fillStyle = bg; c.fillRect(0, 0, S, S);
+
+  // 2) brushed-nap mottle: soft light/dark patches that break up the flat green (wool unevenness)
+  for (let i = 0; i < 620; i++) {
+    const x = rnd() * S, y = rnd() * S, rr = S * (0.012 + rnd() * 0.05), lit = rnd() < 0.5;
+    const gr = c.createRadialGradient(x, y, 0, x, y, rr);
+    gr.addColorStop(0, lit ? 'rgba(190,230,200,0.05)' : 'rgba(0,12,6,0.06)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = gr; c.beginPath(); c.arc(x, y, rr, 0, 7); c.fill();
+  }
+
+  // 3) woven weave: fine warp (vertical) + weft (horizontal) threads, alternating lit/shadow rows,
+  //    with a touch of jitter so it reads as cloth, not a printed grid. The cap UV maps this square
+  //    onto the round top, so the weave runs straight across the felt.
+  const step = 4;                                       // ~0.9 mm thread pitch over the Ø1.34 m top
+  c.lineWidth = 1.4;
+  for (let x = 0; x <= S; x += step) {
+    c.strokeStyle = ((x / step) & 1) ? 'rgba(0,18,8,0.07)' : 'rgba(210,240,215,0.05)';
+    const j = (rnd() - 0.5) * 2.2; c.beginPath(); c.moveTo(x + j, 0); c.lineTo(x - j, S); c.stroke();
+  }
+  for (let y = 0; y <= S; y += step) {
+    c.strokeStyle = ((y / step) & 1) ? 'rgba(0,18,8,0.06)' : 'rgba(210,240,215,0.045)';
+    const j = (rnd() - 0.5) * 2.2; c.beginPath(); c.moveTo(0, y + j); c.lineTo(S, y - j); c.stroke();
+  }
+
+  // 4) worn centre pool: cards & chips have brushed the nap brighter where the action happens
+  const wear = c.createRadialGradient(R, R, 0, R, R, S * 0.30);
+  wear.addColorStop(0, 'rgba(180,224,190,0.07)'); wear.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = wear; c.beginPath(); c.arc(R, R, S * 0.30, 0, 7); c.fill();
+
+  // 5) two faint concentric table rings (dealer's line + an inner inlay echo) — barely there
+  c.strokeStyle = 'rgba(0,20,10,0.16)'; c.lineWidth = S * 0.004;
+  c.beginPath(); c.arc(R, R, R * 0.80, 0, 7); c.stroke();
+  c.strokeStyle = 'rgba(200,232,205,0.06)'; c.lineWidth = S * 0.0025;
+  c.beginPath(); c.arc(R, R, R * 0.55, 0, 7); c.stroke();
+
+  // 6) rim vignette to seat the cloth down into the wood well
+  const vg = c.createRadialGradient(R, R, R * 0.70, R, R, R);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,8,4,0.40)');
+  c.fillStyle = vg; c.fillRect(0, 0, S, S);
+
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  return tex;
 }
 
 // ============================================================================
