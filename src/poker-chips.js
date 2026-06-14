@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { breakdown } from './poker/chips.js';
 import { DENOMS, sigOf } from './poker/chipbank.js';
-import { layoutChips } from './poker/chiplayout.js';
+import { layoutChips, pileLayout } from './poker/chiplayout.js';
 import { chipInstanced, CHIP_GEO_T } from './poker-chip-mesh.js';
 
 const CAP = 256;                 // max instances per denomination per tray (a tall single-colour stack)
@@ -22,14 +22,14 @@ export function makeChipTray(chipSet, opts) { const g = new THREE.Group(); setCh
 
 export function setChipTray(group, chipSet, opts = {}) {
   chipSet = chipSet || {};
-  const sig = sigOf(chipSet) + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0);
+  const sig = sigOf(chipSet) + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0) + (opts.pile ? '|P' : '');
   if (group.userData.sig === sig) return group;
   group.userData.sig = sig;
   if (!group.userData.inst) {                                  // lazily mint one InstancedMesh per denomination
     group.userData.inst = {};
     for (const d of DENOMS) { const im = chipInstanced(d, CAP); group.add(im); group.userData.inst[d] = im; }
   }
-  const places = layoutChips(chipSet, opts);
+  const places = opts.pile ? pileLayout(chipSet, opts) : layoutChips(chipSet, opts); // pile = loose tossed heap; else tidy columns
   const counters = {};
   for (const d of DENOMS) counters[d] = 0;
   for (const p of places) {
@@ -37,7 +37,7 @@ export function setChipTray(group, chipSet, opts = {}) {
     if (n >= CAP) continue;                                    // guard: never overflow the instance buffer
     const im = group.userData.inst[p.denom];
     _dummy.position.set(p.x, p.y + CHIP_GEO_T / 2, p.z);       // +half-thickness so the bottom chip rests ON the felt
-    _dummy.rotation.set(0, p.rot || 0, 0);
+    _dummy.rotation.set(p.tiltX || 0, p.rot || 0, p.tiltZ || 0); // pile chips carry a small tilt (tossed); columns just a Y lean
     _dummy.scale.setScalar(1);
     _dummy.updateMatrix();
     im.setMatrixAt(n, _dummy.matrix);

@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
-import { makeChipStack, makeChipTray } from './poker-chips.js';
+import { makeChipStack, makeChipTray, setChipTray } from './poker-chips.js';
 import { sigOf } from './poker/chipbank.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
@@ -144,6 +144,32 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       return tw.done;
     });
   }
+  // Real-time bet preview: while it's YOUR turn to raise, the chips you're about to commit grow/shrink
+  // in your bet zone as you drag the slider (this._raiseTo updates live in poker-ui.setRaise). Cosmetic
+  // value→breakdown stack (the conserved chips land when you actually bet). Rebuilt only on amount change.
+  _updateBetPreview(p) {
+    if (!this._betPreview) return;
+    const L = p.legal;
+    const active = !!(p && p.yourTurn && L && L.canRaise && this._myBetPos && !p.over);
+    if (!active) { if (this._betPreviewAmt !== -1) { this._betPreview.visible = false; this._betPreviewAmt = -1; } return; }
+    const me = p.view && p.view.seats.find((s) => s.id === p.youId);
+    const addAmt = Math.max(0, (this._raiseTo | 0) - (me ? (me.roundBet | 0) : 0)); // the chips you'd push to reach raise-to
+    if (addAmt !== this._betPreviewAmt) {
+      this._betPreviewAmt = addAmt;
+      setChipTray(this._betPreview, this._previewChipSet(addAmt), { pile: true, seed: 7 }); // a loose tossed heap that grows with the bet
+      this._betPreview.visible = addAmt > 0;
+    }
+    this._betPreview.position.copy(this._myBetPos);
+    this._betPreview.rotation.y = this._myBetTilt || 0;
+    this._betPreview.scale.setScalar(1.2);
+  }
+  // break the preview amount into SMALL denominations so the heap visibly GROWS with the bet (the real
+  // conserved chips, in big denoms, land only when you actually bet — this is just the "how much" cue).
+  _previewChipSet(amount) {
+    const set = {}; let rem = amount | 0;
+    for (const d of [20, 10, 5]) { const n = Math.floor(rem / d); if (n) { set[d] = n; rem -= n * d; } }
+    return set;
+  }
 
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —
   // a small DOM tuner (on/off + ◀/▶). Self-contained playback (no BuildManager / no MP / no distance).
@@ -204,6 +230,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const fill = new THREE.DirectionalLight(0xbcd0ff, 0.18); fill.position.set(0, 0.6, 2.0); scene.add(fill);
     this._buildStatic();
     this.dyn = new THREE.Group(); scene.add(this.dyn); // dealt cards / chips / markers, rebuilt on key change
+    this._betPreview = makeChipTray({}); this._betPreview.visible = false; scene.add(this._betPreview); // live raise-amount preview chips
+    this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0;
     this._setSize();
   }
 
@@ -254,7 +282,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; } // fresh table → no stale SFX deltas / dangling anims
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; } // fresh table → no stale SFX deltas / dangling anims / bet preview
   showLobby(o) { this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
 
@@ -262,7 +290,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     super.renderTable(p);     // header + banner + action bar + timer (felt DOM hidden by CSS)
     this._updateScene(p);
     this._stepCamera(dt || 0.016); // advance any click-to-view camera tween (PokerTable.render passes dt)
-    this._stepAnims(dt || 0.016);  // advance card-flip / chip-throw animations
+    this._stepAnims(dt || 0.016);  // advance card-flip animations
+    this._updateBetPreview(p);     // live raise-amount chips in your bet zone (every frame — tracks the slider)
     this._draw();             // PokerTable.render() calls renderTable every frame — draw the felt here
   }
 
@@ -380,6 +409,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // Radii kept well inside the green baize (≈r0.69 incl. the wood rim) so trays + their grid
       // overflow never spill onto the raised wood edge — everything sits flat on the green at y=0.
       const tilt = Math.atan2(-sx, -sz);                  // so a tray's columns run along the rim (90° to the spoke)
+      if (s.id === p.youId) { this._myBetPos = onFelt(0.30).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet-preview anchor: in front of your stack, toward the pot
       const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       const betSet = chips ? chips.bets[s.id] : null;
