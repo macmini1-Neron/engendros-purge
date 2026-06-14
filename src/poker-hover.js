@@ -131,12 +131,13 @@ export class PokerHover {
       for (const d of DENOMS) { if (inst[d] && inst[d].count > 0) { denom = d; instMesh = inst[d]; break; } }
     }
     if (!denom) { this._hideAll(); return; }
-    const key = 'chips|' + (group.userData.sig || '') + '|' + denom + '|' + getChipSkin();
+    const traySkin = group.userData.skin || getChipSkin();  // this tray's OWN skin (per-player), not the global one
+    const key = 'chips|' + (group.userData.sig || '') + '|' + denom + '|' + traySkin;
     if (key !== this._curKey) {
       this._curKey = key;
       const n = instMesh ? instMesh.count : 0;
       const sub = denom * n;
-      const skin = (CHIP_SKINS[getChipSkin()] || {}).label || '—';
+      const skin = (CHIP_SKINS[traySkin] || {}).label || '—';
       const head = pk.scope === 'pot' ? 'POT'
         : esc(pk.ownerName || 'PLAYER') + (pk.scope === 'bet' ? ' · BET' : ' · STACK');
       this.tip.innerHTML =

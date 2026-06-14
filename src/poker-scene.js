@@ -511,9 +511,14 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // Radii kept well inside the green baize (≈r0.69 incl. the wood rim) so trays + their grid
       // overflow never spill onto the raised wood edge — everything sits flat on the green at y=0.
       const tilt = Math.atan2(-sx, -sz);                  // so a tray's columns run along the rim (90° to the spoke)
+      // per-PLAYER chip skin: the LOCAL seat uses the global skin (YOUR own pick, set by _applyChipSkin); every
+      // OTHER seat wears its owner's skin from the snapshot (bots / not-yet-propagated → default 'dice'). So your
+      // skin no longer bleeds onto the whole table. (Co-op propagation of others' real skins + a multi-skin pot
+      // are Stage 2/3 — see the handoff plan.)
+      const skinOpt = mine ? undefined : { skin: (p.skins && p.skins[s.id]) || 'dice' };
       this._betAnchors[s.id] = onFelt(0.36).setY(FELT_Y);  // where this seat's street bet sits → the bet→pot slide flies FROM here
       if (s.id === p.youId) { this._myBetPos = onFelt(0.35).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet/heap anchor: in front of your stack, clear of the pot pile (pileLayout caps its radius, so even an all-in heap stays compact, not sprawling)
-      const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
+      const stack = stackSet ? makeChipTray(stackSet, skinOpt) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       stack.userData.pk = { kind: 'chips', scope: 'stack', ownerId: s.id, ownerName: (s.id === p.youId ? 'YOU' : ((p.names && p.names[s.id]) || s.id)) }; this._hoverTargets.push(stack);
       if (s.id === p.youId) { this._myStackTray = stack; this._myStackSet = stackSet ? { ...stackSet } : null; this._myBetSet = (chips && chips.bets[s.id]) ? { ...chips.bets[s.id] } : {}; } // bet heap pulls chips FROM this real stack
@@ -522,7 +527,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // not a static column tray — so skip it here for the local seat whenever we have real chips to heap.
       const skipLocalBet = (s.id === p.youId) && !!chips;
       if (!skipLocalBet) {
-        const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
+        const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet, skinOpt) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
         if (betGroup) { betGroup.position.copy(onFelt(0.36)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup);
           betGroup.userData.pk = { kind: 'chips', scope: 'bet', ownerId: s.id, ownerName: (s.id === p.youId ? 'YOU' : ((p.names && p.names[s.id]) || s.id)) }; this._hoverTargets.push(betGroup); }
       }
