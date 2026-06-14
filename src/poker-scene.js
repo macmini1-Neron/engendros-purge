@@ -44,6 +44,7 @@ const CAM_POSES = {
   seated: { pos: [0.0, 0.37, 0.99], look: [0, -0.05, -0.22], fov: 56 }, // matches _initThree default
   board:  { pos: [0.0, 0.34, 0.34], look: [0, 0.02, -0.05], fov: 34 },  // TV close-up of the community cards (table centre)
   hole:   { pos: [0.0, 0.30, 0.66], look: [0, 0.14, 0.52], fov: 40 },   // close-up of your own two cards
+  poster: { pos: [0.53, 0.50, -0.01], look: [1.05, 0.50, -1.0], fov: 42 }, // walk up to the hand-rankings poster (back-right wall) — whole sheet centred
 };
 const _mix = (a, b, t) => a + (b - a) * t;
 const _clonePose = (q) => ({ pos: q.pos.slice(), look: q.look.slice(), fov: q.fov });
@@ -100,6 +101,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     this._raycaster.setFromCamera(ndc, this.cam);
+    if (this._posterMesh && this._raycaster.intersectObject(this._posterMesh, true).length) { // click the rankings poster → walk up to it
+      this._setCamPose(this._camPose === 'poster' ? 'seated' : 'poster'); return;
+    }
     const hitBoard = this._boardCards.length && this._raycaster.intersectObjects(this._boardCards, true).length;
     const hitHole = this._holeCards.length && this._raycaster.intersectObjects(this._holeCards, true).length;
     if (hitBoard) this._setCamPose(this._camPose === 'board' ? 'seated' : 'board');
@@ -252,6 +256,34 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     ph.position.y = -0.03; this.tableSlot.add(ph);                  // placeholder until the model loads
     this._loadTable();
     this._buildShelf();
+    this._buildPoster();
+  }
+
+  // Soviet "ПОКЕРНЫЕ КОМБИНАЦИИ" hand-rankings cheat-sheet, framed on the back-RIGHT wall (mirrors the
+  // radio shelf on the left). The image plane is self-lit (MeshBasic) so the rankings always read; the
+  // wood frame + a small wall panel are lit by a warm accent light so the corner doesn't go pure black.
+  // Click it → the camera walks up to the 'poster' pose to read it (click again / the felt → back).
+  _buildPoster() {
+    const PW = 0.46, PH = 0.69;                                  // poster image (2:3, matches 1024×1536 art)
+    const grp = new THREE.Group();
+    grp.position.set(1.05, 0.50, -1.0); grp.rotation.y = -0.48;  // back-right wall, hung low so it reads from the seated view
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(PW + 0.06, PH + 0.06, 0.03),
+      new THREE.MeshLambertMaterial({ color: 0x2a1f14 }));       // dark wood frame
+    grp.add(frame);
+    const liner = new THREE.Mesh(new THREE.PlaneGeometry(PW + 0.02, PH + 0.02),
+      new THREE.MeshLambertMaterial({ color: 0x9a7636 }));       // thin brass liner around the print
+    liner.position.set(0, 0, 0.0151); grp.add(liner);
+    const img = new THREE.Mesh(new THREE.PlaneGeometry(PW, PH),
+      new THREE.MeshBasicMaterial({ color: 0x6a5030, toneMapped: false })); // self-lit; dark placeholder until the texture loads
+    img.position.set(0, 0, 0.017); grp.add(img);
+    new THREE.TextureLoader().load('./assets/poker/rankings-poster.png', (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+      img.material.map = tex; img.material.color.set(0xffffff); img.material.needsUpdate = true;
+    }, undefined, () => { /* keep the placeholder if the art fails to load */ });
+    const warm = new THREE.PointLight(0xffe6b8, 4, 2.4, 2.0);    // lights the frame/wall out of the table spotlight
+    warm.position.set(0, 0.2, 0.55); grp.add(warm);
+    this._scene.add(grp);
+    this._posterMesh = img;                                      // raycast target for the click-to-view camera
   }
 
   // Back-shelf with the REUSED field radio (props.js buildFieldRadio) — a dim background detail the
