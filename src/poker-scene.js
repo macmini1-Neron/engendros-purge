@@ -115,17 +115,32 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       if (done) this._anims.splice(i, 1);
     }
   }
-  // flip a freshly-dealt card in: it starts lifted + turned over (back up) and settles down face-up at
-  // its rest pose. `rest` = {x,y,z,rotX}. `delay` staggers a flop (deal cards left→right). research B3.
+  // Deal a card in like a real dealer: PHASE 1 it drops onto the felt FACE-DOWN, then PHASE 2 it turns
+  // over "from the side" — rotating about its long (Z) axis so a side edge lifts and the face reveals.
+  // `rest` = {x,y,z,rotX}. `delay` staggers a flop (deal cards left→right). research B3.
   _flipInCard(card, rest, delay = 0) {
-    const tw = new Tween(0.42, delay), liftY = 0.06;
-    card.position.set(rest.x, rest.y + liftY, rest.z);
-    card.rotation.x = rest.rotX + Math.PI;                 // start: lifted + flipped over (back showing)
+    const tw = new Tween(0.6, delay), dropY = 0.045;
+    card.position.set(rest.x, rest.y + dropY, rest.z);
+    card.rotation.set(rest.rotX || 0, 0, Math.PI);         // start: laid FACE-DOWN (turned over on the long axis)
     this._anims.push((dt) => {
       if (!card.parent) return true;                       // card rebuilt away → drop the anim
-      const e = easeOutCubic(tw.step(dt));
-      card.position.y = rest.y + liftY * (1 - e);          // comes down to the felt
-      card.rotation.x = rest.rotX + Math.PI * (1 - e);     // turns face-up
+      const p = tw.step(dt);
+      const dealP = easeOutCubic(Math.min(1, p / 0.4));        // phase 1 (0→0.4): drop onto the felt, face-down
+      const turnP = easeOutCubic(Math.max(0, (p - 0.4) / 0.6)); // phase 2 (0.4→1): turn over from the side
+      card.position.y = rest.y + dropY * (1 - dealP) + 0.018 * Math.sin(turnP * Math.PI); // settle down, lift a touch mid-turn so the edge clears the felt
+      card.rotation.z = Math.PI * (1 - turnP);             // π (face-down) → 0 (face-up): the SIDE-edge turn the dealer does
+      return tw.done;
+    });
+  }
+  // celebratory camera "punch" on a NET win — a decaying deterministic oscillation (NOT random), applied
+  // additively at draw time. Bigger pot → bigger punch. research C1 (the win is the payoff moment).
+  _winShake(level = 1) {
+    const amp = 0.007 + Math.min(level, 5) * 0.0028;
+    const tw = new Tween(0.45);
+    this._anims.push((dt) => {
+      const p = tw.step(dt), decay = 1 - easeOutCubic(p), t = tw.t;
+      this._camShake = { x: decay * amp * Math.sin(t * 46), y: decay * amp * 0.8 * Math.sin(t * 61 + 1.2) };
+      if (tw.done) this._camShake = null;
       return tw.done;
     });
   }
@@ -181,6 +196,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._raycaster = new THREE.Raycaster(); this._boardCards = []; this._holeCards = [];
     this._prevView = null; this._prevChips = null; // for the event-driven SFX (deal/clink/slide/win)
     this._anims = []; // active per-frame animation closures (card flips, chip throws, …) — stepped in renderTable
+    this._camShake = null; // {x,y} positional shake offset applied at draw time (win "punch")
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -296,7 +312,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const n = Math.min(chipUnits, 6);
       for (let i = 0; i < n; i++) setTimeout(() => a.pokerChip(0.92 + i * 0.05), i * 55); // staggered, pitch steps by index (deterministic, not random)
     }
-    if (win && a.pokerWin) a.pokerWin(win);
+    if (win) { if (a.pokerWin) a.pokerWin(win); this._winShake(win); } // YOUR net win → rising fanfare + camera punch
   }
 
   _rebuildDyn(p, v, n, me, winners, newBoard) {
@@ -440,7 +456,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   _draw() {
     if (!this._scene || !this.root.classList.contains('pk3d')) return;
     this._setSize();
+    const s = this._camShake;
+    if (s) { this.cam.position.x += s.x; this.cam.position.y += s.y; }    // win-punch offset, additive for this frame only
     this.renderer3d.render(this._scene, this.cam);
+    if (s) { this.cam.position.x -= s.x; this.cam.position.y -= s.y; }
   }
   render(dt) { this._stepCamera(dt || 0.016); this._stepAnims(dt || 0.016); this._draw(); } // tolerate a direct render hook too
 }
