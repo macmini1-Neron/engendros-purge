@@ -27,7 +27,11 @@ export function setChipTray(group, chipSet, opts = {}) {
   group.userData.sig = sig;
   if (!group.userData.inst) {                                  // lazily mint one InstancedMesh per denomination
     group.userData.inst = {};
-    for (const d of DENOMS) { const im = chipInstanced(d, CAP); group.add(im); group.userData.inst[d] = im; }
+    // frustumCulled OFF: an InstancedMesh keeps the geometry's origin-centred bounding sphere, which does NOT
+    // cover instances spread across the tray — so a tray placed where the frustum is narrow (e.g. the bet heap)
+    // would wrongly cull every chip but the centre one. The trays are tiny (a handful of draw calls), so just
+    // skip culling them.
+    for (const d of DENOMS) { const im = chipInstanced(d, CAP); im.frustumCulled = false; group.add(im); group.userData.inst[d] = im; }
   }
   const places = opts.pile ? pileLayout(chipSet, opts) : layoutChips(chipSet, opts); // pile = loose tossed heap; else tidy columns
   const counters = {};

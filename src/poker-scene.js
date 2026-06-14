@@ -194,7 +194,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     }
     this._betPreview.position.copy(this._myBetPos);
     this._betPreview.rotation.y = this._myBetTilt || 0;
-    this._betPreview.scale.setScalar(1.2);
+    this._betPreview.scale.setScalar(1.5); // a touch bigger than the trays so the bet reads clearly at the seated angle
   }
 
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —

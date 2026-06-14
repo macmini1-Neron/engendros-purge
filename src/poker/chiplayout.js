@@ -44,29 +44,37 @@ export function layoutChips(chipSet, opts = {}) {
   return out;
 }
 
-// SPLASH PILE: chips tossed into a loose heap (NOT tidy columns) — scattered next to each other in a
-// cluster whose radius grows with the chip count, each lying flat with a small random facing + tilt and
-// a touch of overlap height. Seeded → deterministic (no per-frame shimmer) but reads as "thrown in".
-// Returns { denom, x, y, z, rot (Y), tiltX, tiltZ } per chip. Used for the bet-preview / a splashed pot.
+// BET PILE: a tossed bet the player can READ at the LOW seated camera. The trick (learnt from the pot): a
+// MONOCHROME column reads unmistakably even when its thin chips blur together — you see "a green stack, a red
+// stack" at a glance, because colour == denomination. A mixed tower instead smears all colours into one
+// ambiguous lump. So the heap is ONE TIGHT COLUMN PER DENOMINATION, packed close (compact footprint, never
+// sprawls into the pot/neighbours) with per-chip jitter + lean so it reads hand-tossed, not a tidy tray. More
+// of a denomination → its column grows TALLER (juice); a very tall single denom wraps into a second column.
+// Seeded → deterministic (no per-frame shimmer). Returns { denom, x, y, z, rot (Y), tiltX, tiltZ } per chip.
 export function pileLayout(chipSet, opts = {}) {
   const { seed = 1 } = opts;
   const rnd = mulberry32(seed);
-  const items = [];
-  for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n-- > 0) items.push(denom); }
-  const N = items.length;
-  // COMPACT MOUND: footprint is small + CAPPED (never sprawls into neighbouring models); the heap grows
-  // UPWARD (taller) with the chip count instead of wider — centre chips pile higher than the rim.
-  const R = Math.min(CHIP_R * 3.0, CHIP_R * (0.8 + 0.18 * Math.sqrt(N)));
+  const COL_H = 12;                                    // a very tall single denom wraps into extra columns (not a needle)
+  const cols = [];
+  for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n > 0) { const h = Math.min(n, COL_H); cols.push({ denom, h }); n -= h; } }
+  const C = cols.length;
+  const GAP = CHIP_R * 1.5;                            // columns nearly touch → tight, compact heap
   const out = [];
-  for (let i = 0; i < N; i++) {
-    const rad = R * Math.pow(rnd(), 0.7);              // biased toward the centre → a mound, not a flat ring
-    const ang = rnd() * Math.PI * 2;
-    out.push({
-      denom: items[i], x: Math.cos(ang) * rad, z: Math.sin(ang) * rad,
-      y: (1 - rad / R) * CHIP_T * Math.min(N, 22) * 0.5 * (0.7 + 0.3 * rnd()), // centre piles higher → mound builds UP with the bet
-      rot: rnd() * Math.PI * 2,
-      tiltX: (rnd() - 0.5) * 0.14, tiltZ: (rnd() - 0.5) * 0.14, // a few degrees of tilt → tossed look
-    });
-  }
+  cols.forEach((col, ci) => {
+    const cx = (ci - (C - 1) / 2) * GAP;               // a tight, centred row of monochrome columns
+    const jz = (rnd() - 0.5) * 0.006;                  // each column nudged in depth → tossed, not a ruler-straight row
+    const lean = (rnd() - 0.5) * 0.05;                 // the whole column leans a touch
+    for (let i = 0; i < col.h; i++) {
+      out.push({
+        denom: col.denom,
+        x: cx + (rnd() - 0.5) * 0.003,                 // tiny per-chip jitter → messy, hand-stacked
+        z: jz + (rnd() - 0.5) * 0.003,
+        y: i * (CHIP_T + CHIP_GAP),                    // chips stack up the column
+        rot: rnd() * Math.PI * 2,
+        tiltX: lean + (rnd() - 0.5) * 0.03,
+        tiltZ: (rnd() - 0.5) * 0.03,
+      });
+    }
+  });
   return out;
 }
