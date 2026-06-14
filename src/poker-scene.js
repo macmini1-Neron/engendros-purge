@@ -177,7 +177,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const L = p.legal;
     const me = p.view && p.view.seats.find((s) => s.id === p.youId);
     const committed = me ? (me.roundBet | 0) : 0;                       // already in front of you this street (blind/call/raise)
-    const previewing = !!(p && p.yourTurn && L && L.canRaise && !p.over && (this._raiseTo | 0) > committed);
+    const minR = (L && L.minRaiseTo) | 0;                               // the slider's resting default — NOT a real intent
+    // preview ONLY once you actively size a raise ABOVE the minimum (drag the slider up). At rest the heap shows just
+    // what you've truly committed (your blind / a call) — no phantom min-bet appears the instant it becomes your turn.
+    const previewing = !!(p && p.yourTurn && L && L.canRaise && !p.over && (this._raiseTo | 0) > minR);
     const amount = previewing ? (this._raiseTo | 0) : committed;        // heap value: live raise target, else your standing commit
     if (amount !== this._betPreviewAmt) {
       this._betPreviewAmt = amount;
@@ -410,9 +413,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             // your hole cards lie FLAT on the felt to your right, next to your chips — FACE-DOWN by default;
             // click them to peek (a local side-turn flip, the same animation as the board; only YOU see it).
             if (h === 0) { const sig = s.hole ? s.hole.map((c) => c.r + c.s).join('') : (s.hasCards ? 'X' : ''); if (sig !== this._myHoleSig) { this._myHoleSig = sig; this._holePeeked = false; } } // new hand → cards go back face-down
-            // to YOUR RIGHT (screen-right = +X = -tang) — the empty side: stack sits left, the bet heap dead-centre,
-            // so the cards get their own clear zone, well-spaced (no overlap). Sign here flips left/right; magnitude tunes spread.
-            const pos = onFelt(0.50).addScaledVector(tang, -(0.24 + h * 0.13));
+            // directly in front of YOU, near your rail — your OWN zone, clear of BOTH neighbours (they sit 60–90°
+            // around the rim, so anything pushed sideways lands in their pot). The two cards overlap a touch, like
+            // real hole cards. Biased a hair right of centre; the heap sits ahead (toward the pot), the stack to the left.
+            const pos = onFelt(0.55).addScaledVector(tang, -(0.08 + h * 0.05));
             card.position.set(pos.x, 0.013, pos.z);
             card.scale.setScalar(1.05);
             if (s.hole) setCardFace(card, s.hole[h]);
