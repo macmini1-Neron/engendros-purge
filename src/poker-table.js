@@ -15,6 +15,7 @@ import { legalActions, applyAction, isComplete, privateView, forceFold } from '.
 import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
 import { ChipBank, value as chipValue } from './poker/chipbank.js';
+import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
 import { PokerDomRenderer } from './poker-ui.js';
 // NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
 // orchestrator (game.js). poker-table.js stays THREE/DOM-free so the engine + co-op logic remain
@@ -95,20 +96,24 @@ export class PokerTable {
 
   // ---------- CO-OP (PvP over the room) ----------
 
-  openCoop() { // host opens the co-op poker lobby from the room
+  openCoop(skipLobby) { // host opens the co-op poker lobby from the room; skipLobby = deal straight
+                        // from the room mode-select (the buy-in was already chosen in the lobby)
     this._ensureRenderer();
     this._reset();
     this.role = 'host'; this.coop = true;
+    if (skipLobby) return;
     const players = [...this.game.mp.roster.values()].map((r) => r.name || 'Flopo');
-    if (this.renderer) this.renderer.showCoopLobby({ players, bank: this.game.meta.bank | 0, tiers: [500, 2000, 10000] });
+    if (this.renderer) this.renderer.showCoopLobby({ players, bank: this.game.meta.bank | 0, tiers: POKER_BUYIN_TIERS });
   }
 
-  startCoop(buyIn) {
+  // Seat EXACTLY the players in `seatIds` (the lobby's anted/accepted set). Falls back to the whole
+  // roster when called without a list (back-compat for the old buy-in-lobby DEAL path + tests).
+  startCoop(buyIn, seatIds) {
     const mp = this.game.mp;
-    const ids = [...mp.roster.keys()];
+    const ids = (seatIds && seatIds.length) ? seatIds.slice() : [...mp.roster.keys()];
     if (ids.length < 2) { this._toast('Need at least 2 players', 0xd23a2a); return; }
     if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a); return; }
-    this.names = {}; for (const [id, r] of mp.roster) this.names[id] = r.name || id;
+    this.names = {}; for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; }
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
     this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
     this.rng = mulberry32(((Date.now() >>> 0) ^ (ids.length * 2654435761)) >>> 0);
@@ -116,17 +121,21 @@ export class PokerTable {
     this._dealChips();
     this.active = true;
     this._paid = this._spend(this.coopBuyIn);                      // host pays own buy-in (affordability checked above)
-    mp.net.send('pkstart', { buyIn: this.coopBuyIn, names: this.names }); // pull clients in
+    // INVITE ONLY THE SEATED PLAYERS — a targeted pkstart per seat (not a broadcast), so a connected
+    // but un-anted client is never pulled in and never silently lost.
+    for (const id of ids) { if (id === mp.myId) continue; try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names }); } catch (e) {} }
     if (this.renderer) this.renderer.showTable();
     this._beginHand();
     this._broadcastPoker();
   }
 
-  enterCoopClient(d) { // client side, on 'pkstart'
+  enterCoopClient(d) { // client side, on 'pkstart' — by now the client already ACCEPTED (anted) in the lobby
     this._ensureRenderer();
     this._reset();
     const buyIn = (d && d.buyIn) | 0;
-    if (buyIn > 0 && (this.game.meta.bank | 0) < buyIn) { // can't cover the buy-in → decline, do NOT seat (no free roll)
+    // Affordability was enforced at accept time (mp.toggleReady ante gate); this guard only catches the
+    // unreachable race where the bank changed between accepting and the deal — bail safely, never seat broke.
+    if (!canAnte(this.game.meta.bank, buyIn)) {
       try { this.game.mp.net.send('pkleave', {}); } catch (e) {}
       this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a);
       this.game.closePoker();
