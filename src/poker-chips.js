@@ -11,7 +11,8 @@ import * as THREE from 'three';
 import { breakdown } from './poker/chips.js';
 import { DENOMS, sigOf } from './poker/chipbank.js';
 import { layoutChips, pileLayout } from './poker/chiplayout.js';
-import { chipInstanced, CHIP_GEO_T } from './poker-chip-mesh.js';
+import { chipInstanced, chipMaterial, CHIP_GEO_T } from './poker-chip-mesh.js';
+import { chipSkinRev } from './poker/chipskins.js';
 
 const CAP = 256;                 // max instances per denomination per tray (a tall single-colour stack)
 const _dummy = new THREE.Object3D();
@@ -22,12 +23,16 @@ export function makeChipTray(chipSet, opts) { const g = new THREE.Group(); setCh
 
 export function setChipTray(group, chipSet, opts = {}) {
   chipSet = chipSet || {};
-  const sig = sigOf(chipSet) + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0) + (opts.pile ? '|P' : '');
+  const sig = sigOf(chipSet) + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0) + (opts.pile ? '|P' : '') + '|s' + chipSkinRev();
   if (group.userData.sig === sig) return group;
   group.userData.sig = sig;
   if (!group.userData.inst) {                                  // lazily mint one InstancedMesh per denomination
     group.userData.inst = {};
     for (const d of DENOMS) { const im = chipInstanced(d, CAP); group.add(im); group.userData.inst[d] = im; }
+    group.userData.skinRev = chipSkinRev();
+  } else if (group.userData.skinRev !== chipSkinRev()) {       // skin changed → existing meshes adopt the new materials
+    group.userData.skinRev = chipSkinRev();
+    for (const d of DENOMS) group.userData.inst[d].material = chipMaterial(d);
   }
   const places = opts.pile ? pileLayout(chipSet, opts) : layoutChips(chipSet, opts); // pile = loose tossed heap; else tidy columns
   const counters = {};

@@ -69,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-14 21:35';
+const GAME_BUILD = '2026-06-14 22:31';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -920,6 +920,8 @@ class Game {
     let m; try { m = JSON.parse(localStorage.getItem('engendros_meta') || '{}'); } catch (e) { m = {}; }
     // roguelite economy (backward-compatible: missing keys default for existing players)
     if (typeof m.bank !== 'number') m.bank = 0;                                   // persistent money "account"
+    if (typeof m.chipSkin !== 'string') m.chipSkin = 'dice';                      // poker chip-skin cosmetic (CHIP_SKINS id)
+    if (!Array.isArray(m.chipSkinsUnlocked)) m.chipSkinsUnlocked = [];            // crate-unlocked chip skins (marx/lenin); free skins aren't listed
     if (!Array.isArray(m.unlocked)) m.unlocked = ['knife'];                       // permanently owned gear keys
     if (!m.unlocked.includes('knife')) m.unlocked.push('knife');                  // knife is always owned (cold start)
     // Loadout is now a flat array of LOADOUT_SLOTS equal slots (any gear in any slot, duplicates OK).
