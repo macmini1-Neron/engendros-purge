@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
 import { makeChipStack, makeChipTray } from './poker-chips.js';
+import { makeChip } from './poker-chip-mesh.js';
 import { sigOf } from './poker/chipbank.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
@@ -144,6 +145,26 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       return tw.done;
     });
   }
+  // toss the bet chips in: a few real chips arc from the player's stack edge into the bet zone (deterministic
+  // spin + stagger, no RNG), landing ~when the clink SFX plays. The resting tray (dyn) holds the true chips.
+  _throwChips(anchor, moves) {
+    const denoms = [];
+    for (const d in moves) for (let i = 0; i < moves[d] && denoms.length < 6; i++) denoms.push(+d);
+    for (let i = 0; i < denoms.length; i++) {
+      const chip = makeChip(denoms[i]); chip.scale.setScalar(1.4); chip.visible = false; this._fx.add(chip);
+      const tw = new Tween(0.34, i * 0.05), spin = 7 + i, src = anchor.src, dst = anchor.dst;
+      this._anims.push((dt) => {
+        const p = tw.step(dt);
+        if (tw.t < tw.delay) return false;             // wait its turn (staggered toss)
+        chip.visible = true;
+        const e = easeOutCubic(p);
+        chip.position.set(src.x + (dst.x - src.x) * e, src.y + 0.08 * Math.sin(p * Math.PI), src.z + (dst.z - src.z) * e); // arc up + over
+        chip.rotation.x = p * spin;                    // tumble in flight
+        if (tw.done) { this._fx.remove(chip); return true; }
+        return false;
+      });
+    }
+  }
 
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —
   // a small DOM tuner (on/off + ◀/▶). Self-contained playback (no BuildManager / no MP / no distance).
@@ -197,6 +218,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._prevView = null; this._prevChips = null; // for the event-driven SFX (deal/clink/slide/win)
     this._anims = []; // active per-frame animation closures (card flips, chip throws, …) — stepped in renderTable
     this._camShake = null; // {x,y} positional shake offset applied at draw time (win "punch")
+    this._seatAnchors = {}; // per-seat {src,dst} world points for thrown-chip arcs (set in _rebuildDyn)
     scene.add(new THREE.AmbientLight(0x2a3550, 0.32));
     const lamp = new THREE.SpotLight(0xfff0d2, 22, 6, 0.78, 0.45, 1.6);
     lamp.position.set(0, 1.5, -0.05); lamp.target.position.set(0, 0, -0.05);
@@ -204,6 +226,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const fill = new THREE.DirectionalLight(0xbcd0ff, 0.18); fill.position.set(0, 0.6, 2.0); scene.add(fill);
     this._buildStatic();
     this.dyn = new THREE.Group(); scene.add(this.dyn); // dealt cards / chips / markers, rebuilt on key change
+    this._fx = new THREE.Group(); scene.add(this._fx); // transient FX (thrown chips) — NOT rebuilt, so they survive a dyn rebuild mid-flight
     this._setSize();
   }
 
@@ -254,7 +277,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; } // fresh table → no stale SFX deltas / dangling anims
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; if (this._fx) while (this._fx.children.length) this._fx.remove(this._fx.children[0]); } // fresh table → no stale SFX deltas / dangling anims / flying chips
   showLobby(o) { this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
 
@@ -303,7 +326,11 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     let deals = 0, chipUnits = 0, win = 0;
     for (const e of events) {
       if (e.t === 'boardCard' || e.t === 'holeReveal') deals++;
-      else if (e.t === 'chipMove') chipUnits += Object.values(e.moves).reduce((x, y) => x + y, 0);
+      else if (e.t === 'chipMove') {
+        chipUnits += Object.values(e.moves).reduce((x, y) => x + y, 0);
+        const anchor = this._seatAnchors[e.from];
+        if (anchor) this._throwChips(anchor, e.moves);  // toss the chips into the bet zone
+      }
       else if (e.t === 'potAward' && e.id === p.youId && e.net) win = Math.max(win, Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, e.amount))))); // YOUR net win only
     }
     if (deals && a.pokerDeal) for (let i = 0; i < Math.min(deals, 3); i++) setTimeout(() => a.pokerDeal(), i * 90); // a flop riffles as ~3 cards
@@ -322,7 +349,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // chips at y=0 buried them in the cloth. FELT_Y is the green "floor" everything stands on.
     const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
-    this._boardCards = []; this._holeCards = []; // refreshed each rebuild — click targets for the camera views
+    this._boardCards = []; this._holeCards = []; this._seatAnchors = {}; // refreshed each rebuild — camera click targets + thrown-chip arc endpoints
 
     // seat anchors — your seat at front (+Z), others fan around the far arc
     const RX = 0.92, RZ = 0.86; // seats just outside the Ø1.38 (r0.69) table edge
@@ -339,6 +366,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const seatLen = Math.hypot(sx, sz) || 1;
       const onFelt = (r) => new THREE.Vector3((sx / seatLen) * r, 0, (sz / seatLen) * r);
       const tang = new THREE.Vector3(-sz / seatLen, 0, sx / seatLen); // unit sideways along the rim
+      this._seatAnchors[s.id] = { src: onFelt(0.58).setY(FELT_Y), dst: onFelt(0.34).setY(FELT_Y) }; // thrown-chip arc: player's stack edge → into the bet zone
 
       // nameplate (faces the camera) — NOT for your own seat: it sits right at the camera (front seat)
       // and would poke into your face, and your money is already in the HUD header (YOU $X).

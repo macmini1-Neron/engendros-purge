@@ -48,3 +48,9 @@ export function chipInstanced(denom, capacity) {
   m.count = 0;
   return m;
 }
+
+// A single chip Mesh (shared geometry + cached per-denom material) — for transient FX like a thrown
+// chip that arcs to the pot. Caller positions/rotates/removes it; never dispose the shared geo/material.
+export function makeChip(denom) {
+  return new THREE.Mesh(chipGeometry(), chipMaterial(denom));
+}
