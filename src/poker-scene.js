@@ -487,7 +487,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             // around the rim, so anything pushed sideways lands in their pot). The two cards overlap a touch, like
             // real hole cards. Biased a hair right of centre; the heap sits ahead (toward the pot), the stack to the left.
             const pos = onFelt(0.55).addScaledVector(tang, -(0.08 + h * 0.05));
-            card.position.set(pos.x, 0.013, pos.z);
+            card.position.set(pos.x, 0.013 + h * 0.0032, pos.z); // 2nd card rests physically ON the first (offset > card thickness) — overlapping, not interpenetrating/z-fighting
             card.scale.setScalar(1.05);
             if (s.hole) setCardFace(card, s.hole[h]);
             card.rotation.z = this._holePeeked ? 0 : Math.PI; // peeked → face-up, else FACE-DOWN (back up), turned on the long axis
@@ -495,7 +495,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
           } else {
             // opponents'/bots' cards: lie FLAT on the felt near their edge, FACE-DOWN (back up); only the showdown reveals faces
             const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
-            card.position.set(pos.x, 0.012, pos.z);
+            card.position.set(pos.x, 0.012 + h * 0.0026, pos.z); // stack physically ON, not z-fighting INTO each other
             card.scale.setScalar(0.8);
             if (s.hole) setCardFace(card, s.hole[h]);   // showdown reveal → face up (default orientation)
             else card.rotateX(Math.PI);                  // hidden → flip to back-up (face-down on the table)
