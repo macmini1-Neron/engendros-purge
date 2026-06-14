@@ -7,6 +7,7 @@ import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
 import { LanNet, Net, makeRoomCode } from './net.js';
+import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 
 
@@ -140,7 +141,8 @@ export class MP {
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
     this._ghostProjectiles = []; // VISUAL-ONLY thrown/launched projectiles from teammates (never deal damage)
     this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
-    this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it
+    this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it ('purge'|'longnight'|'poker')
+    this.pokerBuyIn = 0;       // poker mode: host-authoritative buy-in (mirrored to clients); 0 = FREE practice
     this._xfT = 0; this._snapT = 0; this._reviveClicks = 0; this._reviveTargetId = null; this._reviveActive = false; this._incomingRevive = null; this._reviveHostProgress = new Map(); this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
     this._lastClockDrift = null; // client: last measured world-clock prediction error vs host (minutes), for /time check
@@ -441,12 +443,20 @@ export class MP {
   }
   _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || []; return Array.isArray(lo) ? lo.filter(Boolean) : []; } // flat equal-slot loadout array (empties dropped for the roster)
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
-  toggleReady() { if (this.isHost) return; this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster(); }
+  toggleReady() {
+    if (this.isHost) return;
+    if (!this.ready && this._lobbyMode === 'poker' && !canAnte(this.game.meta.bank, this.pokerBuyIn)) { // poker: READY = ante the buy-in
+      this._lobbyMsg(`You need $${this.pokerBuyIn} to ante up — your bank is $${this.game.meta.bank | 0}.`); return;
+    }
+    this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster();
+  }
   _renderRoster() {
+    const poker = this._lobbyMode === 'poker';
     const el = document.getElementById('mp-roster');
     if (el) {
       const rows = [...this.roster].map(([id, p]) => {
-        const tag = (id === 'host') ? '<span style="color:#c9a84a">★ HOST</span>' : (p.ready ? '<span style="color:#6fcf4f">✓ READY</span>' : '<span style="color:#e8a23a">…</span>');
+        const okTag = poker ? '✓ ANTED' : '✓ READY';
+        const tag = (id === 'host') ? '<span style="color:#c9a84a">★ HOST</span>' : (p.ready ? `<span style="color:#6fcf4f">${okTag}</span>` : '<span style="color:#e8a23a">…</span>');
         const lo = (p.loadout || []).map((k) => this._loadoutLabel(k)).filter(Boolean).join(' · ') || 'Bayonet Knife';
         const kick = (this.isHost && id !== 'host') ? ` <button class="mp-kick" data-peer="${mpEscape(id)}" title="Kick player" style="margin-left:6px;background:#5a2024;color:#fff;border:1px solid #a3434a;border-radius:4px;cursor:pointer;font-weight:800;padding:0 7px">✕</button>` : '';
         return `<div class="mp-rosteritem">🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
@@ -455,10 +465,27 @@ export class MP {
       if (this.isHost) el.querySelectorAll('.mp-kick').forEach((b) => { b.onclick = () => this.hostKick(b.getAttribute('data-peer')); });
     }
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
+    const antedClients = [...this.roster].filter(([id, p]) => id !== 'host' && p.ready).length;
+    const pokerCanDeal = (antedClients + 1) >= 2; // host + ≥1 anted client (seat exactly the anted set)
     const sb = document.getElementById('mpStartBtn');
-    if (sb) { sb.style.display = (this.isHost && this.net.connected) ? 'block' : 'none'; sb.disabled = !allReady; sb.textContent = allReady ? '▶ START CO-OP' : '▶ WAITING FOR READY…'; }
+    if (sb) {
+      sb.style.display = (this.isHost && this.net.connected) ? 'block' : 'none';
+      if (poker) { sb.disabled = !pokerCanDeal; sb.textContent = pokerCanDeal ? '▶ DEAL POKER' : '▶ WAITING FOR ANTE…'; }
+      else { sb.disabled = !allReady; sb.textContent = allReady ? '▶ START CO-OP' : '▶ WAITING FOR READY…'; }
+    }
     const rb = document.getElementById('mpReadyBtn');
-    if (rb) { rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none'; rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY'; }
+    if (rb) {
+      rb.style.display = (!this.isHost && this.net.connected) ? 'block' : 'none';
+      if (poker) {
+        const afford = canAnte(this.game.meta.bank, this.pokerBuyIn);
+        const tier = this.pokerBuyIn ? ('$' + this.pokerBuyIn) : 'FREE';
+        rb.disabled = !afford && !this.ready;
+        rb.textContent = this.ready ? '✓ ANTED — click to back out' : (afford ? `☐ ANTE UP ${tier} / ACCEPT` : `✗ NEED $${this.pokerBuyIn} TO ANTE`);
+      } else {
+        rb.disabled = false;
+        rb.textContent = this.ready ? '✓ READY — click to unready' : '☐ CLICK WHEN READY';
+      }
+    }
     this._renderModeSel();
     this._renderLanMode();
     this._renderRelayMode();
@@ -468,29 +495,66 @@ export class MP {
   setMode(m) {
     if (this.active) return;                                   // locked once the run starts
     if (!(this.isHost || !this.net.connected)) return;          // a connected client can't override the host
-    const mode = (m === 'longnight') ? 'longnight' : 'purge';
-    this.game.mode = mode; this._lobbyMode = mode;
-    if (this.isHost) this.net.send('mode', { mode });           // tell the squad (no-op with zero peers)
-    this._renderModeSel();
+    const mode = (m === 'longnight') ? 'longnight' : (m === 'poker') ? 'poker' : 'purge';
+    this._lobbyMode = mode;
+    if (mode === 'poker') {
+      // poker is a LOBBY selection ONLY — never write game.mode (it drives the wave/world sim)
+      this._resetReadies();                                     // ante semantics change → everyone re-accepts
+      if (this.isHost) { this.net.send('mode', { mode, buyIn: this.pokerBuyIn }); this.net.send('roster', this._rosterArr()); }
+    } else {
+      this.game.mode = mode;
+      if (this.isHost) this.net.send('mode', { mode });          // tell the squad (no-op with zero peers)
+    }
+    this._renderRoster();                                        // re-render labels + buy-in + start/ready states
     this._renderRoomBrowser();
+  }
+  _resetReadies() { for (const [id, r] of this.roster) { if (id !== 'host') r.ready = false; } this.ready = false; }
+  setPokerBuyIn(v) {                                            // host (or not-yet-connected) sets the table's buy-in
+    if (this.active || !(this.isHost || !this.net.connected) || this._lobbyMode !== 'poker') return;
+    this.pokerBuyIn = v | 0;
+    this._resetReadies();                                       // a $500 acceptance must NOT carry to $2000 — re-ante
+    this.net.send('mode', { mode: 'poker', buyIn: this.pokerBuyIn });
+    this.net.send('roster', this._rosterArr());
+    this._renderRoster();
   }
   _renderModeSel() {
     const wrap = document.getElementById('mp-modes'); if (!wrap) return;
     const canPick = this.isHost || !this.net.connected;         // host (or nobody yet) picks; joined clients just see it
-    const mode = canPick ? (this.game.mode || 'purge') : (this._lobbyMode || 'purge');
+    const mode = this._lobbyMode || 'purge';                    // poker lives in _lobbyMode (never written to game.mode)
     wrap.querySelectorAll('.tab').forEach((b) => {
       const on = b.getAttribute('data-mode') === mode;
       b.classList.toggle('on', on);
       b.disabled = !canPick; b.style.cursor = canPick ? 'pointer' : 'default'; b.style.opacity = (canPick || on) ? '1' : '.4';
     });
     const note = document.getElementById('mp-modenote');
-    if (note) note.textContent = (mode === 'longnight'
-      ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
-      : '⚔ Arcade waves — special waves & mini-bosses.')
-      + (this._lanMode() ? ' LAN mode uses Hamachi/WebSocket.' : (this._forceRelay() ? ' Relay test forces TURN only.' : (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.')));
+    if (note) {
+      const base = mode === 'poker' ? "♠ Underground Hold'em — winner-takes-all; everyone antes the buy-in."
+        : mode === 'longnight' ? '🌙 Endless survival — day/night cycle, pitch-dark nights.'
+        : '⚔ Arcade waves — special waves & mini-bosses.';
+      note.textContent = base + (this._lanMode() ? ' LAN mode uses Hamachi/WebSocket.' : (this._forceRelay() ? ' Relay test forces TURN only.' : (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.')));
+    }
+    this._renderPokerBuyIn(mode, canPick);
+  }
+  _renderPokerBuyIn(mode, canPick) {
+    const box = document.getElementById('mp-poker-buyin'); if (!box) return;
+    if (mode !== 'poker') { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = '';
+    const bank = this.game.meta.bank | 0;
+    if (canPick) {                                              // host: tier picker
+      const btns = POKER_BUYIN_TIERS.map((t) => {
+        const sel = (this.pokerBuyIn | 0) === t, label = t ? ('$' + t) : 'FREE';
+        return `<button class="pk-buyin-tier" data-buyin="${t}" style="margin:0 4px;padding:4px 12px;border-radius:6px;border:1px solid ${sel ? '#d8b066' : '#5a4a2a'};background:${sel ? 'linear-gradient(180deg,#3a2f12,#221a08)' : '#1a160e'};color:${sel ? '#f3d999' : '#c9bfa3'};cursor:pointer;font-weight:700">${label}</button>`;
+      }).join('');
+      box.innerHTML = `<div style="opacity:.7;margin-bottom:5px">Buy-in (winner-takes-all) · your bank $${bank}</div>${btns}`;
+      box.querySelectorAll('.pk-buyin-tier').forEach((b) => { b.onclick = () => this.setPokerBuyIn(+b.getAttribute('data-buyin')); });
+    } else {                                                     // client: read-only buy-in + affordability
+      const tier = this.pokerBuyIn ? ('$' + this.pokerBuyIn) : 'FREE', afford = canAnte(bank, this.pokerBuyIn);
+      box.innerHTML = `<div>Buy-in: <b style="color:#f3d999">${tier}</b> · your bank $${bank}${afford ? '' : ' <span style="color:#e0584f">— not enough to ante</span>'}</div>`;
+    }
   }
   hostStart() {
     if (!this.isHost) return;
+    if (this._lobbyMode === 'poker') { this.game.startCoopPokerFromLobby(); return; } // poker deals its own way (no wave start; mp.active stays false)
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
     if (!allReady) { this._lobbyMsg('Waiting for all players to be READY…'); return; }
     const now = performance.now(); for (const [id] of this.roster) this._lastXf.set(id, now); // fresh heartbeat baseline so nobody is insta-timed-out
@@ -523,7 +587,7 @@ export class MP {
       this.net.send('roster', this._rosterArr()); this._renderRoster();
       this.net.sendTo(from, 'joinok', {});
       this._markDiag({ joinokSent: true }, 'Join OK sent');
-      this.net.sendTo(from, 'mode', { mode: this.game.mode || 'purge' });   // so the joiner's lobby shows the chosen mode
+      this.net.sendTo(from, 'mode', { mode: this._lobbyMode || 'purge', buyIn: this.pokerBuyIn });   // joiner's lobby shows the chosen mode (+ poker buy-in)
       this.net.sendTo(from, 'map', { map: this.game.mapId });               // host-only map: the whole squad plays the HOST's map
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
@@ -546,7 +610,13 @@ export class MP {
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
     n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
-    n.on('mode', (d) => { if (!this.isHost && d) { this._lobbyMode = (d.mode === 'longnight') ? 'longnight' : 'purge'; this.game.mode = this._lobbyMode; this._renderModeSel(); } }); // host announced the squad's mode
+    n.on('mode', (d) => { // host announced the squad's mode (+ poker buy-in)
+      if (this.isHost || !d) return;
+      this._lobbyMode = (d.mode === 'longnight') ? 'longnight' : (d.mode === 'poker') ? 'poker' : 'purge';
+      if (this._lobbyMode !== 'poker') this.game.mode = this._lobbyMode;       // never poison game.mode with 'poker'
+      else { this.pokerBuyIn = d.buyIn | 0; this.ready = false; const me = this.roster.get(this.myId); if (me) me.ready = false; } // buy-in/mode change → must re-accept
+      this._renderRoster();
+    });
     n.on('map', (d) => { // host-only map: joiner adopts the HOST's map; if it differs, reload world and auto-rejoin
       if (this.isHost || !d) return;
       const want = (d.map === 'steppe') ? 'steppe' : 'arena';

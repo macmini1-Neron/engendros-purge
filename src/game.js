@@ -250,6 +250,7 @@ class Game {
     click('mpRelayBtn', () => this.mp.toggleRelayMode());
     click('mp-mode-purge', () => this.mp.setMode('purge'));
     click('mp-mode-night', () => this.mp.setMode('longnight'));
+    click('mp-mode-poker', () => this.mp.setMode('poker'));
     click('mpBackBtn', () => { this.mp.leave(); this.toMenu(); });
     document.querySelectorAll('.mp-skinpick').forEach(b => b.addEventListener('click', () => {
       this.mp.chosenSkin = +b.dataset.skin;
@@ -732,10 +733,33 @@ class Game {
   }
   closePoker() {
     if (this.poker && this.poker.renderer && this.poker.renderer.stopRadio) this.poker.renderer.stopRadio(); // kill the den radio stream
+    const wasPoker = !!(this.mp && this.mp._lobbyMode === 'poker');
     if (this.poker) this.poker.leave();
     // leaving the den restores the lobby/menu jukebox (toLobby already does; menu path restores here)
-    if (this._pokerFrom === 'lobby') this.toLobby();
-    else { this.state = 'menu'; this.ui.show('menu'); if (this.audio.music) this.audio.music.setPlaylist('soviet'); }
+    if (this._pokerFrom === 'lobby') {
+      this.toLobby();
+      if (wasPoker && this.mp) {                       // a fresh ante round is required before the next game
+        this.mp.ready = false;
+        if (this.mp.isHost) { this.mp._resetReadies(); try { this.mp.net.send('roster', this.mp._rosterArr()); } catch (e) {} }
+        if (this.mp._renderRoster) this.mp._renderRoster();
+      }
+    } else { this.state = 'menu'; this.ui.show('menu'); if (this.audio.music) this.audio.music.setPlaylist('soviet'); }
+  }
+  // Host-only: DEAL co-op poker straight from the room lobby — the buy-in was chosen and players anted
+  // (READY) in the lobby, so seat EXACTLY the anted set and deal. Replaces the standalone POKER button.
+  startCoopPokerFromLobby() {
+    if (!this.mp || !this.mp.isHost) return;
+    const buyIn = this.mp.pokerBuyIn | 0;
+    const seatIds = [...this.mp.roster].filter(([id, r]) => id === 'host' || r.ready).map(([id]) => id);
+    if (seatIds.length < 2) { this.mp._lobbyMsg('Need at least 2 anted players.'); return; }
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 });
+    this.ui.show('poker');
+    this.poker.openCoop(true);                          // host role + reset, skip the buy-in lobby
+    this.poker.startCoop(buyIn, seatIds);               // deterministic seat list = exactly the anted players
   }
   // Co-op PvP poker — host opens the den for the room; clients are pulled in by the 'pkstart' message.
   openCoopPoker() {
