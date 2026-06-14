@@ -12,9 +12,12 @@ test('pileLayout: one placement per chip, scattered with tilt, seeded-determinis
   assert.notDeepEqual(pileLayout(set, { seed: 9 }), p);
 });
 
-test('pileLayout: a bigger bet spreads into a wider heap', () => {
+test('pileLayout: a bigger bet builds a TALLER mound with a COMPACT, capped footprint', () => {
+  const maxY = (a) => Math.max(...a.map((c) => c.y));
   const span = (a) => Math.max(...a.map((c) => Math.hypot(c.x, c.z)));
-  assert.ok(span(pileLayout({ 20: 30 }, { seed: 1 })) > span(pileLayout({ 20: 2 }, { seed: 1 })) * 1.5, 'more chips → wider pile');
+  const small = pileLayout({ 20: 3 }, { seed: 1 }), big = pileLayout({ 20: 50 }, { seed: 1 });
+  assert.ok(maxY(big) > maxY(small) * 1.5, 'more chips → taller mound');
+  assert.ok(span(big) < CHIP_T * 30, 'footprint stays compact (radius is capped, never sprawls)'); // CHIP_R*3 ≈ 0.06
 });
 
 test('exact real count: one placement per physical chip', () => {

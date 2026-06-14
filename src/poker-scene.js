@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
 import { makeChipStack, makeChipTray, setChipTray } from './poker-chips.js';
-import { sigOf } from './poker/chipbank.js';
+import { sigOf, exactSubset, subSet, largestFormableLE } from './poker/chipbank.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
 import { RADIO_STATIONS, GHOST_STATION, stationByIndex, stationLabel } from './radio.js';
@@ -150,25 +150,27 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   _updateBetPreview(p) {
     if (!this._betPreview) return;
     const L = p.legal;
-    const active = !!(p && p.yourTurn && L && L.canRaise && this._myBetPos && !p.over);
-    if (!active) { if (this._betPreviewAmt !== -1) { this._betPreview.visible = false; this._betPreviewAmt = -1; } return; }
+    const active = !!(p && p.yourTurn && L && L.canRaise && this._myBetPos && this._myStackTray && this._myStackSet && !p.over);
+    if (!active) {
+      if (this._betPreviewAmt !== -1) {                         // leaving preview → restore the full stack + hide the heap
+        this._betPreview.visible = false; this._betPreviewAmt = -1;
+        if (this._myStackTray && this._myStackSet) setChipTray(this._myStackTray, this._myStackSet);
+      }
+      return;
+    }
     const me = p.view && p.view.seats.find((s) => s.id === p.youId);
-    const addAmt = Math.max(0, (this._raiseTo | 0) - (me ? (me.roundBet | 0) : 0)); // the chips you'd push to reach raise-to
+    const addAmt = Math.max(0, (this._raiseTo | 0) - (me ? (me.roundBet | 0) : 0)); // value to push to reach raise-to
     if (addAmt !== this._betPreviewAmt) {
       this._betPreviewAmt = addAmt;
-      setChipTray(this._betPreview, this._previewChipSet(addAmt), { pile: true, seed: 7 }); // a loose tossed heap that grows with the bet
-      this._betPreview.visible = addAmt > 0;
+      // take the bet from YOUR REAL chips (1:1, matching your actual inventory — largest-first, like a real bet)
+      const take = (exactSubset(this._myStackSet, addAmt) || largestFormableLE(this._myStackSet, addAmt)) || {};
+      setChipTray(this._betPreview, take, { pile: true, seed: 7 });   // heap = those real chips, tossed into a compact mound
+      setChipTray(this._myStackTray, subSet(this._myStackSet, take)); // and they LEAVE your stack columns (conserved, 1:1)
+      this._betPreview.visible = Object.keys(take).length > 0;
     }
     this._betPreview.position.copy(this._myBetPos);
     this._betPreview.rotation.y = this._myBetTilt || 0;
     this._betPreview.scale.setScalar(1.2);
-  }
-  // break the preview amount into SMALL denominations so the heap visibly GROWS with the bet (the real
-  // conserved chips, in big denoms, land only when you actually bet — this is just the "how much" cue).
-  _previewChipSet(amount) {
-    const set = {}; let rem = amount | 0;
-    for (const d of [20, 10, 5]) { const n = Math.floor(rem / d); if (n) { set[d] = n; rem -= n * d; } }
-    return set;
   }
 
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —
@@ -231,7 +233,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._buildStatic();
     this.dyn = new THREE.Group(); scene.add(this.dyn); // dealt cards / chips / markers, rebuilt on key change
     this._betPreview = makeChipTray({}); this._betPreview.visible = false; scene.add(this._betPreview); // live raise-amount preview chips
-    this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0;
+    this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null;
     this._setSize();
   }
 
@@ -412,6 +414,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       if (s.id === p.youId) { this._myBetPos = onFelt(0.30).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet-preview anchor: in front of your stack, toward the pot
       const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
+      if (s.id === p.youId) { this._myStackTray = stack; this._myStackSet = stackSet ? { ...stackSet } : null; } // bet preview pulls chips FROM this real stack
       const betSet = chips ? chips.bets[s.id] : null;
       const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
       if (betGroup) { betGroup.position.copy(onFelt(0.36)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
