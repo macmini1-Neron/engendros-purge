@@ -14,7 +14,7 @@ import { Tournament } from './poker/tournament.js';
 import { legalActions, applyAction, isComplete, privateView, forceFold } from './poker/holdem.js';
 import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
-import { ChipBank } from './poker/chipbank.js';
+import { ChipBank, value as chipValue } from './poker/chipbank.js';
 import { PokerDomRenderer } from './poker-ui.js';
 // NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
 // orchestrator (game.js). poker-table.js stays THREE/DOM-free so the engine + co-op logic remain
@@ -219,7 +219,7 @@ export class PokerTable {
   }
 
   _applyAndAdvance(action) {
-    try { applyAction(this.hand, action); } catch (e) { return; } // ignore illegal
+    try { applyAction(this.hand, action); } catch (e) { console.warn('[poker] action rejected:', JSON.stringify(action), '-', e.message); return; }
     this._syncChips();
     this.actTimer = ACT_SECS;
     if (isComplete(this.hand)) this._endHand();
@@ -231,6 +231,9 @@ export class PokerTable {
   _dealChips() {
     this.chipbank = new ChipBank();
     const ids = this.tour.players.map((p) => p.id);
+    if (chipValue(STARTING_CHIPS) !== this.tour.startStack) {            // STARTING_CHIPS must total the engine start stack
+      console.warn(`[poker] STARTING_CHIPS value ${chipValue(STARTING_CHIPS)} != startStack ${this.tour.startStack} — chip/engine values will drift until reconcile`);
+    }
     this.chipbank.dealStart(ids, STARTING_CHIPS, floatFor(ids.length));
     this._lastCommitted = {};
   }
@@ -282,7 +285,10 @@ export class PokerTable {
       this.resultTimer -= dt;
       if (this.resultTimer <= 0) {
         this.tour.settleHand();
-        if (this.chipbank) this.chipbank.reconcile(this.tour.players);   // backstop: chips == engine stacks
+        if (this.chipbank) {
+          this.chipbank.reconcile(this.tour.players);                    // backstop: chips == engine stacks
+          try { this.chipbank.verify(); } catch (e) { console.warn('[poker] chip verify failed after reconcile:', e.message); }
+        }
         if (this.tour.over) { this.phase = 'over'; this._payout(); } else this._beginHand();
         this._broadcastPoker();
       }
@@ -306,6 +312,8 @@ export class PokerTable {
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',
       youId: id, names: this.names, moneyPayout,
+      // live refs to the bank's chip sets — READ-ONLY contract (clients get a JSON copy via pksnap; the
+      // host renderer must only read these, never mutate them, or it would break conservation).
       chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot } : null,
     };
   }

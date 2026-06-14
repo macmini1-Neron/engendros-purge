@@ -45,6 +45,22 @@ test('exactSubset returns null when the amount is not formable from the set alon
   assert.equal(exactSubset({ 50: 1 }, 75), null);
 });
 
+test('exactSubset rejects a non-multiple-of-5 instantly (every denom is a multiple of 5)', () => {
+  assert.equal(exactSubset({ 500: 1, 100: 6, 50: 4, 20: 5, 10: 5, 5: 10 }, 1498), null);
+  assert.equal(exactSubset({ 5: 100 }, 3), null);
+});
+
+test('makeChange on a non-multiple-of-5 is fast and carries the sub-5 as short (no exhaustive search)', () => {
+  // a big stack + an odd target used to blow up exactSubset into a multi-second hang; must be instant now
+  const big = {}; for (const d of DENOMS) big[d] = 20;       // 13700 value, 120 chips
+  const t0 = process.hrtime.bigint();
+  const r = makeChange(big, { 5: 200, 10: 50 }, 9998);       // 9998 is NOT a multiple of 5
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 100, `makeChange must be fast on a non-multiple-of-5 (was ${ms.toFixed(0)} ms)`);
+  assert.ok(r.short >= 9998 % 5, 'the sub-5 remainder is reported as short');
+  for (const d of DENOMS) assert.equal((r.set[d] || 0) + (r.float[d] || 0), (big[d] || 0) + ({ 5: 200, 10: 50 }[d] || 0), `denom ${d} conserved`);
+});
+
 test('exactSubset backtracks — greedy-large would fail but a solution exists', () => {
   // greedy takes the 50 then is stuck at 10; the real answer is three 20s
   assert.equal(value(exactSubset({ 50: 1, 20: 3 }, 60)), 60);

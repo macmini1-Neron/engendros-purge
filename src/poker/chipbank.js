@@ -64,6 +64,8 @@ const restrictBelow = (set, d) => {
 export function exactSubset(set, amount) {
   if (amount === 0) return {};
   if (amount < 0) return null;
+  if (amount % 5 !== 0) return null;                   // every denom is a multiple of 5 → a non-multiple is never
+                                                       // formable; bail before the backtracker searches it exhaustively
   const denoms = DENOMS.filter((d) => set[d] > 0);     // descending
   const res = {};
   const rec = (i, rem) => {
@@ -96,9 +98,14 @@ function largestFormableLE(set, amount) {
 export function makeChange(set0, float0, amount) {
   let set = cloneSet(set0), float = cloneSet(float0);
   amount = Math.round(amount);
-  if (amount <= 0 || exactSubset(set, amount)) return { set, float, short: 0 };
+  // Chips are all multiples of 5, so a sub-5 remainder can never be formed — split it off as `short`
+  // and work the 5-multiple `target`. (This also keeps exactSubset off an impossible amount, which it
+  // would otherwise search exhaustively → a multi-second hang on big stacks / hostile odd bets.)
+  const sub5 = amount > 0 ? amount % 5 : 0;
+  const target = amount - sub5;
+  if (target <= 0 || exactSubset(set, target)) return { set, float, short: sub5 };
   let guard = 4000;
-  while (guard-- > 0 && !exactSubset(set, amount)) {
+  while (guard-- > 0 && !exactSubset(set, target)) {
     let broke = false;
     for (const d of ASC) {                              // break the smallest breakable chip first
       if (d <= 5 || !(set[d] > 0)) continue;
@@ -114,7 +121,7 @@ export function makeChange(set0, float0, amount) {
     }
     if (!broke) break;                                  // float can't break any of the player's chips
   }
-  const short = exactSubset(set, amount) ? 0 : amount - value(largestFormableLE(set, amount));
+  const short = (exactSubset(set, target) ? 0 : target - value(largestFormableLE(set, target))) + sub5;
   return { set, float, short };
 }
 
@@ -156,6 +163,8 @@ export class ChipBank {
     if (amount <= 0) return;
     const { set, float, short } = makeChange(this.stacks[id] || {}, this.float, amount);
     this.float = float;
+    const depletion = short - (amount % 5);   // sub-5 is benign; anything beyond it = a thin float
+    if (depletion > 0) console.warn(`[poker] chip float too thin: postBet ${id} for ${amount} left ${depletion} unbacked (reconcile will settle)`);
     const pay = amount - short;
     const take = exactSubset(set, pay) || largestFormableLE(set, pay);
     this.stacks[id] = subSet(set, take);
@@ -200,7 +209,8 @@ export class ChipBank {
     return take;
   }
 
-  // keep dust in 0..4 by redeeming each accumulated 5 for a real 5-chip from the float
+  // best-effort: redeem each accumulated 5 for a real 5-chip from the float when it has one. The hard
+  // dust ∈ 0..4 guarantee comes from reconcile() (dust = stack % 5) at each settle, NOT from here.
   _normalizeDust(id) {
     while ((this.dust[id] || 0) >= 5) {
       const five = exactSubset(this.float, 5);
