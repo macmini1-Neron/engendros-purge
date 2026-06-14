@@ -486,7 +486,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             // directly in front of YOU, near your rail — your OWN zone, clear of BOTH neighbours (they sit 60–90°
             // around the rim, so anything pushed sideways lands in their pot). The two cards overlap a touch, like
             // real hole cards. Biased a hair right of centre; the heap sits ahead (toward the pot), the stack to the left.
-            const pos = onFelt(0.55).addScaledVector(tang, -(0.08 + h * 0.05));
+            const pos = onFelt(0.50).addScaledVector(tang, -(0.06 + h * 0.05)); // pulled IN (smaller radius) so the cards lift clear of the action-bar HUD at the rail
             card.position.set(pos.x, 0.013 + h * 0.0032, pos.z); // 2nd card rests physically ON the first (offset > card thickness) — overlapping, not interpenetrating/z-fighting
             card.scale.setScalar(1.05);
             if (s.hole) setCardFace(card, s.hole[h]);
@@ -536,7 +536,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // (The dealer "D" button was removed — visually useless for a casual player; button position is
       // still tracked in the engine for blind/action order, just not drawn.)
       const role = j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null);
-      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.50)).addScaledVector(tang, -0.14); m.position.y = FELT_Y; d.add(m);
+      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.42)).addScaledVector(tang, -0.13); m.position.y = FELT_Y; d.add(m); // ABOVE the hole cards (smaller radius), same side — no longer sitting ON them
         m.userData.pk = { kind: 'blind', role, amount: (role === 'SB' ? (p.tour && p.tour.sb) : (p.tour && p.tour.bb)) }; this._hoverTargets.push(m); }
     }
 
