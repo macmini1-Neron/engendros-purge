@@ -100,11 +100,28 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     this._raycaster.setFromCamera(ndc, this.cam);
+    const hitHole = this._myHoleCards && this._myHoleCards.length && this._raycaster.intersectObjects(this._myHoleCards, true).length;
     const hitBoard = this._boardCards.length && this._raycaster.intersectObjects(this._boardCards, true).length;
-    const hitHole = this._holeCards.length && this._raycaster.intersectObjects(this._holeCards, true).length;
-    if (hitBoard) this._setCamPose(this._camPose === 'board' ? 'seated' : 'board');
-    else if (hitHole) this._setCamPose(this._camPose === 'hole' ? 'seated' : 'hole');
+    if (hitHole) this._peekHole();                                    // click YOUR cards → flip to peek (local only)
+    else if (hitBoard) this._setCamPose(this._camPose === 'board' ? 'seated' : 'board'); // click the board → TV close-up
     else if (this._camPose !== 'seated') this._setCamPose('seated'); // click the felt → back to the seated view
+  }
+  // peek: flip your face-down hole cards up (or back down) with the SAME side-turn as the board. Local only —
+  // it just animates rotation.z on the local meshes; the host never learns you looked, others never see them.
+  _peekHole() {
+    this._holePeeked = !this._holePeeked;
+    const target = this._holePeeked ? 0 : Math.PI;
+    for (const card of (this._myHoleCards || [])) this._turnCard(card, target);
+  }
+  _turnCard(card, targetRotZ) {
+    const fromZ = card.rotation.z, baseY = card.position.y, tw = new Tween(0.4);
+    this._anims.push((dt) => {
+      if (!card.parent) return true;
+      const p = easeOutCubic(tw.step(dt));
+      card.rotation.z = fromZ + (targetRotZ - fromZ) * p;
+      card.position.y = baseY + 0.02 * Math.sin(p * Math.PI);        // a small lift mid-turn (clears the felt)
+      return tw.done;
+    });
   }
 
   // ---- table animations (each anim is a closure(dt)->done; orphaned when its card is rebuilt away) ----
@@ -221,7 +238,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this.cam = new THREE.PerspectiveCamera(seat.fov, 1.6, 0.03, 60);
     this.cam.position.set(seat.pos[0], seat.pos[1], seat.pos[2]); this.cam.lookAt(seat.look[0], seat.look[1], seat.look[2]); // SEATED 3/4 view (tune via poker-freecam-dev.html)
     this._camPose = 'seated'; this._camTw = null; this._camFrom = null; this._camLive = _clonePose(seat); // click-to-view tween state
-    this._raycaster = new THREE.Raycaster(); this._boardCards = []; this._holeCards = [];
+    this._raycaster = new THREE.Raycaster(); this._boardCards = []; this._holeCards = []; this._myHoleCards = [];
+    this._holePeeked = false; this._myHoleSig = null; // your hole cards start face-down each hand; click to peek
     this._prevView = null; this._prevChips = null; // for the event-driven SFX (deal/clink/slide/win)
     this._anims = []; // active per-frame animation closures (card flips, chip throws, …) — stepped in renderTable
     this._camShake = null; // {x,y} positional shake offset applied at draw time (win "punch")
@@ -284,7 +302,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; } // fresh table → no stale SFX deltas / dangling anims / bet preview
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; } // fresh table → no stale SFX deltas / dangling anims / bet preview / peek
   showLobby(o) { this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
 
@@ -353,7 +371,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // chips at y=0 buried them in the cloth. FELT_Y is the green "floor" everything stands on.
     const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
-    this._boardCards = []; this._holeCards = []; // refreshed each rebuild — click targets for the camera views
+    this._boardCards = []; this._holeCards = []; this._myHoleCards = []; // refreshed each rebuild — click/peek targets
 
     // seat anchors — your seat at front (+Z), others fan around the far arc
     const RX = 0.92, RZ = 0.86; // seats just outside the Ø1.38 (r0.69) table edge
@@ -385,12 +403,15 @@ export class PokerSceneRenderer extends PokerDomRenderer {
         for (let h = 0; h < 2; h++) {
           const card = makeCardMesh();
           if (mine) {
-            // your hole cards: large & TILTED UP toward the seated camera (held-in-hand read) so they stay
-            // legible at the low angle and clear the bottom action bar — pivot at the felt, top edge lifts toward you
-            card.scale.setScalar(1.25);
-            card.position.set((h - 0.5) * 0.080, 0.145, 0.545);
-            if (s.hole) { setCardFace(card, s.hole[h]); card.rotation.x = 1.02; } else card.rotation.x = Math.PI;
-            this._holeCards.push(card); // your own cards → click for the 'hole' close-up
+            // your hole cards lie FLAT on the felt to your right, next to your chips — FACE-DOWN by default;
+            // click them to peek (a local side-turn flip, the same animation as the board; only YOU see it).
+            if (h === 0) { const sig = s.hole ? s.hole.map((c) => c.r + c.s).join('') : (s.hasCards ? 'X' : ''); if (sig !== this._myHoleSig) { this._myHoleSig = sig; this._holePeeked = false; } } // new hand → cards go back face-down
+            const pos = onFelt(0.55).addScaledVector(tang, 0.12 + h * 0.078); // to your right, beside the stack (tune to taste)
+            card.position.set(pos.x, 0.013, pos.z);
+            card.scale.setScalar(1.05);
+            if (s.hole) setCardFace(card, s.hole[h]);
+            card.rotation.z = this._holePeeked ? 0 : Math.PI; // peeked → face-up, else FACE-DOWN (back up), turned on the long axis
+            this._holeCards.push(card); this._myHoleCards.push(card); // click to peek
           } else {
             // opponents'/bots' cards: lie FLAT on the felt near their edge, FACE-DOWN (back up); only the showdown reveals faces
             const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
