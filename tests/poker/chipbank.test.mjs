@@ -173,6 +173,19 @@ test('single winner receives the ACTUAL pot chips — two greens stay two greens
   bank.verify();
 });
 
+test('a single winner receives the pot EXACT chips (1 yellow, 10 white, 2 red) — not re-derived', () => {
+  const bank = new ChipBank();
+  bank.dealStart(['a', 'b'], {}, { 500: 2, 100: 5, 50: 5, 20: 5, 10: 5, 5: 20 });
+  const POOL = { 500: 1, 5: 10, 20: 2 };                 // owner's example: value 590
+  bank.pot = { ...POOL };
+  bank.float = subSet(bank.float, POOL);                 // moved out of the float (conserved)
+  bank.awardToWinners({ a: value(POOL) }, ['a', 'b']);   // a wins the whole pot
+  assert.deepEqual(bank.stacks.a, POOL, 'winner holds the literal pool chips, not a 5/10 re-derivation');
+  bank.reconcile({ a: value(POOL), b: 0 });              // a settle pass must not re-shuffle it (value already matches)
+  assert.deepEqual(bank.stacks.a, POOL, 'reconcile preserves the exact composition');
+  bank.verify();
+});
+
 test('split pot: physical shares + dust reconstruct each engine share; counts conserved', () => {
   const bank = new ChipBank();
   bank.dealStart(['a', 'b', 'c'], { 50: 1 }, FLOAT);

@@ -240,14 +240,17 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // out so its denomination columns clear the felt edge.
       const chips = p.chips;
       const stackSet = chips ? chips.stacks[s.id] : null;
+      // Radii kept well inside the green baize (≈r0.69 incl. the wood rim) so trays + their grid
+      // overflow never spill onto the raised wood edge — everything sits flat on the green at y=0.
+      const tilt = Math.atan2(-sx, -sz);                  // so a tray's columns run along the rim (90° to the spoke)
       const stack = stackSet ? makeChipTray(stackSet) : makeChipStack(s.stack);
-      stack.position.copy(onFelt(0.52)).addScaledVector(tang, 0.18); stack.scale.setScalar(1.5); d.add(stack);
+      stack.position.copy(onFelt(0.42)).addScaledVector(tang, 0.14); stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       const betSet = chips ? chips.bets[s.id] : null;
       const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
-      if (betGroup) { betGroup.position.copy(onFelt(0.34)); betGroup.scale.setScalar(1.4); d.add(betGroup); }
+      if (betGroup) { betGroup.position.copy(onFelt(0.30)); betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup); }
       // dealer / SB / BB markers — chip-sized labelled pucks, on the felt to the OTHER side of the seat
       const role = j === v.button ? 'D' : (j === blind.sb ? 'SB' : (j === blind.bb ? 'BB' : null));
-      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.48)).addScaledVector(tang, -0.16); d.add(m); }
+      if (role) { const m = this._marker(role); m.position.copy(onFelt(0.42)).addScaledVector(tang, -0.14); d.add(m); }
     }
 
     // board (centre, face-up, flat) — scaled up so it reads on the big Ø1.38 table
@@ -260,7 +263,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;
     const potGroup = potSet ? (sigOf(potSet) ? makeChipTray(potSet) : null) : (v.pot > 0 ? makeChipStack(v.pot) : null);
-    if (potGroup) { potGroup.position.set(0, 0, 0.2); potGroup.scale.setScalar(2.0); d.add(potGroup); }
+    if (potGroup) { potGroup.position.set(0, 0, 0.16); potGroup.scale.setScalar(1.7); d.add(potGroup); }
   }
 
   // D / SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role)

@@ -57,7 +57,10 @@ function disposeTree(o) {
   o.traverse?.((c) => { c.geometry?.dispose?.(); const m = c.material; if (Array.isArray(m)) m.forEach((x) => x?.dispose?.()); else m?.dispose?.(); });
 }
 
-const COL_GAP = 2 * R + 0.0012;          // centre-to-centre spacing of denomination columns (≈ chip Ø)
+const COL_GAP = 2 * R + 0.0012;          // centre-to-centre spacing of columns (≈ chip Ø)
+const ROW_GAP = 2 * R + 0.0016;          // spacing of rows (depth, when columns wrap)
+const COL_CAP = 18;                      // chips per column before a new column starts (no stack "into space")
+const COLS_PER_ROW = 6;                  // columns per row before wrapping to a row further back
 
 // Build a physical chip tray from a real ChipSet ({denom:count}) — one column PER DENOMINATION,
 // largest nearest the player's left, ordered like a real rack. This is the conserved path: it draws
@@ -76,13 +79,23 @@ export function setChipTray(group, chipSet) {
   if (group.userData.sig === sig && group.userData.skin === _skin) return group;
   for (let i = group.children.length - 1; i >= 0; i--) { const c = group.children[i]; group.remove(c); disposeTree(c); }
   group.userData.sig = sig; group.userData.skin = _skin; group.userData.amount = undefined;
-  const denoms = DENOMS.filter((d) => (chipSet[d] || 0) > 0);   // descending, largest-first
-  const x0 = -((denoms.length - 1) * COL_GAP) / 2;
-  denoms.forEach((denom, col) => {
-    const x = x0 + col * COL_GAP;
-    for (let i = 0; i < chipSet[denom]; i++) {
-      const chip = CHIP_SKINS[_skin](denom);
-      chip.position.set(x, i * (T + GAP), 0);
+  // one column per denomination, but CAP each column's height and overflow a tall denomination into
+  // extra columns — a big win becomes several short stacks in a grid (rows back), never one column
+  // shooting "into space". Columns stay grouped by denomination, largest-first, so colours read.
+  const cols = [];                                              // flat list of { denom, n }
+  for (const denom of DENOMS) {
+    let rem = chipSet[denom] || 0;
+    while (rem > 0) { const n = Math.min(rem, COL_CAP); cols.push({ denom, n }); rem -= n; }
+  }
+  const rows = Math.ceil(cols.length / COLS_PER_ROW) || 1;
+  cols.forEach((c, idx) => {
+    const row = Math.floor(idx / COLS_PER_ROW);
+    const inRow = Math.min(COLS_PER_ROW, cols.length - row * COLS_PER_ROW);
+    const x = (idx % COLS_PER_ROW - (inRow - 1) / 2) * COL_GAP; // centre each row on x
+    const z = (row - (rows - 1) / 2) * ROW_GAP;                 // centre the rows on z (depth)
+    for (let i = 0; i < c.n; i++) {
+      const chip = CHIP_SKINS[_skin](c.denom);
+      chip.position.set(x, i * (T + GAP), z);
       group.add(chip);
     }
   });
