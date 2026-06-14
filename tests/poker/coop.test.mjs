@@ -66,6 +66,9 @@ test('disconnect folds the seat; everyone leaving hands the survivor the whole p
   pk.onPeerDisconnect('c1');         // c1 folds + flagged dropped
   pk.onPeerDisconnect('c2');         // only host remains → current hand ends uncontested
   assert.ok(pk._dropped.has('c1') && pk._dropped.has('c2'));
+  // chip layer: the uncontested fold-win awarded the pot physically without breaking conservation
+  pk.chipbank.verify();
+  for (const seat of pk.hand.seats) assert.equal(pk.chipbank.stackValue(seat.id), seat.stack, `chip value == engine stack for ${seat.id} on the fold-win`);
   pk.update(4);                       // past RESULT_SECS → settle → next hand sees <2 alive → walkover
   assert.equal(pk.phase, 'over');
   assert.equal(pk.tour.result.winner, 'host');

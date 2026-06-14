@@ -44,6 +44,7 @@ export function equityVs(hole, opp, board, iters, rng) {
 
 // Count unseen cards that complete a straight-or-better draw (cat >= 4).
 export function outs(hole, board) {
+  if (hole.length + board.length < 5) return 0; // need 5 cards to evaluate (no draw-outs pre-flop)
   const base = evaluate([...hole, ...board]);
   if (base.cat >= 4) return 0;
   let n = 0;

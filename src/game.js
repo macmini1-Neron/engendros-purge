@@ -23,6 +23,7 @@ import { Admin } from './admin.js';
 import { CrateCeremony, rollCrateReward } from './crate.js';
 import { Fonoteka, GramophoneManager, ensureGramophoneSpec, placeGramophones } from './fonoteka.js';
 import { PokerTable } from './poker-table.js';
+import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
 import { Engine } from './engine.js';
 import { Input } from './input.js';
@@ -52,6 +53,9 @@ const _registerModels = async () => {
   await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
   await load('lpr1');               // ЛПР-1 «Каралон-М» laser rangefinder (hand tool; admin viewer + world prop)
   await load('mortar-82pm37');      // 82-ПМ-37 (БМ-37) co-op indirect-fire mortar (placed at the steppe strongpoint)
+  await load('poker-table');        // round green-baize poker table — the hero prop of the 3D poker scene
+  await load('poker-chip');         // composite "dice" poker chip (canonical model; in-game stacks mirror it per denom)
+  await load('dealer-button');      // DEALER puck (canonical; in-scene D/SB/BB markers mirror it recoloured)
   // Forest deadwood + rock kit — scattered through the ?map=demo wood by forest.js (Forest._ensureProps).
   for (const id of [
     'rock_boulder_lg', 'rock_boulder_mossy', 'rock_cluster_sm', 'rock_outcrop',
@@ -65,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-13 15:43';
+const GAME_BUILD = '2026-06-14 12:36';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -133,7 +137,9 @@ class Game {
     try { this.crate = _cc ? new CrateCeremony(this) : null; } catch (e) { console.warn('[crate] ceremony init failed — crates disabled', e); this.crate = null; } // a WebGL/context failure must not brick boot (openCrate guards null)
     this.fonoteka = new Fonoteka(this); ensureGramophoneSpec(); // ФОНОТЕКА music screen + preload the gramophone model
     this.gramophone = new GramophoneManager(this); placeGramophones(this.gramophone, this.engine.scene, this.mapId); // in-world gramophone props (genre per prop, E + ◀/▶)
-    this.poker = new PokerTable(this); // secret poker den — 2D Texas Hold'em (renderer mounts lazily on first open)
+    this.poker = new PokerTable(this); // secret poker den — Texas Hold'em (renderer mounts lazily on first open)
+    // inject the 3D table renderer (THREE) here so poker-table.js stays node-testable; ?poker2d=1 keeps the 2D fallback
+    if (!/[?&]poker2d=1/.test(location.search)) this.poker.RendererClass = PokerSceneRenderer;
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov
     this.meta = this._loadMeta(); // persistent best-wave / lifetime stats
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
@@ -720,13 +726,16 @@ class Game {
     this.state = 'poker';
     this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.audio.init();
-    if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet');
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // poker room is its own acoustic space — hush the lobby jukebox
     this.ui.show('poker');
     if (this.poker) this.poker.open();
   }
   closePoker() {
+    if (this.poker && this.poker.renderer && this.poker.renderer.stopRadio) this.poker.renderer.stopRadio(); // kill the den radio stream
     if (this.poker) this.poker.leave();
-    if (this._pokerFrom === 'lobby') this.toLobby(); else { this.state = 'menu'; this.ui.show('menu'); }
+    // leaving the den restores the lobby/menu jukebox (toLobby already does; menu path restores here)
+    if (this._pokerFrom === 'lobby') this.toLobby();
+    else { this.state = 'menu'; this.ui.show('menu'); if (this.audio.music) this.audio.music.setPlaylist('soviet'); }
   }
   // Co-op PvP poker — host opens the den for the room; clients are pulled in by the 'pkstart' message.
   openCoopPoker() {
@@ -735,6 +744,7 @@ class Game {
     this.state = 'poker';
     this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // co-op poker room: hush the lobby jukebox too
     this.ui.show('poker');
     if (this.poker) this.poker.openCoop();
   }
@@ -743,6 +753,7 @@ class Game {
     this.state = 'poker';
     this._intentionalUnlock = this.input.locked; this.input.exitLock();
     this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // co-op poker room: hush the lobby jukebox too
     this.ui.show('poker');
     if (this.poker) this.poker.enterCoopClient(d);
   }

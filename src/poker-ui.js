@@ -3,6 +3,8 @@
 // table/chips/cards) can replace this with the same inputs. Aesthetic: a plain, worn table —
 // NOT casino felt. No THREE here; pure DOM. POLYMER tokens reused for the chrome.
 import { describeHand } from './poker/handeval.js';
+import { equity, outs } from './poker/odds.js';
+import { clampRaise, presetRaiseTo, presetRaiseToBB } from './poker/betsizing.js';
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RCH = { 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -72,12 +74,26 @@ const CSS = `
 .pk-btn:disabled { opacity:.32; cursor:default; }
 .pk-btn.go { background:linear-gradient(180deg,var(--red-2,#f5604c),var(--red-deep,#7a1d12)); color:#fff; border-color:var(--brass,#d8b066); }
 .pk-btn.raise { background:linear-gradient(180deg,#1c3a30,#0d2018); }
+.pk-raise { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.pk-presets { display:flex; gap:6px; }
+.pk-preset { cursor:pointer; border:1px solid var(--brass-deep,#58421a); border-radius:5px; padding:5px 11px;
+  background:rgba(11,21,19,.7); color:var(--steel,#84aab2); font-family:var(--font-mono,monospace); font-size:13px; transition:all .12s; }
+.pk-preset:hover { border-color:var(--brass,#d8b066); color:var(--brass-hi,#f3d999); transform:translateY(-1px); }
+.pk-step { cursor:pointer; width:30px; height:30px; border:1px solid var(--brass-lo,#9a7636); border-radius:5px;
+  background:linear-gradient(180deg,#14211d,#0d1613); color:var(--ink,#e8e4d8); font-size:18px; line-height:1; }
+.pk-step:hover { border-color:var(--brass,#d8b066); }
 .pk-raisebox { display:flex; align-items:center; gap:8px; }
-.pk-raisebox input[type=range] { width:160px; accent-color:var(--go,#5cae8c); }
+.pk-raisebox input[type=range] { width:150px; accent-color:var(--go,#5cae8c); }
 .pk-raiseval { font-family:var(--font-mono,monospace); font-size:15px; color:var(--brass-hi,#f3d999); min-width:54px; }
+.pk-raisebox input[type=number].pk-raiseval { width:66px; min-width:66px; text-align:center; padding:5px 6px;
+  background:rgba(0,0,0,.4); border:1px solid var(--brass-deep,#58421a); border-radius:5px; }
+.pk-btn.raise.armed { background:linear-gradient(180deg,var(--red-2,#f5604c),var(--red-deep,#7a1d12)); color:#fff; border-color:var(--brass,#d8b066); }
 .pk-wait { font-family:var(--font-display,'Oswald'); font-size:16px; color:var(--steel,#84aab2); min-height:44px; line-height:44px; }
-.pk-timer { width:100%; max-width:520px; height:6px; border-radius:3px; background:rgba(0,0,0,.4); overflow:hidden; }
-.pk-timer > i { display:block; height:100%; background:linear-gradient(90deg,var(--go,#5cae8c),var(--red-2,#f5604c)); transition:width .12s linear; }
+.pk-count { height:44px; min-height:44px; display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-mono,monospace); font-size:30px; font-weight:700; color:var(--brass-hi,#f3d999);
+  text-shadow:0 2px 0 #000; letter-spacing:1px; transition:color .25s; } /* calm numeric countdown — only the last 15s, no bar (no stress) */
+.pk-count.urgent { color:var(--red-2,#f5604c); }
+.pk-odds { font-family:var(--font-mono,monospace); font-size:15px; color:var(--neon,#45e0cf); min-height:18px; letter-spacing:.5px; text-shadow:0 1px 0 #000; } /* TV-style odds helper (toggle in Settings) */
 
 /* card face */
 .pk-card { width:44px; height:62px; border-radius:6px; background:#f4efe2; color:#1a1a1a;
@@ -110,7 +126,7 @@ function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 export class PokerDomRenderer {
   constructor(root, cb) {
     this.root = root; this.cb = cb || {};
-    this._built = false; this._raiseTo = 0;
+    this._built = false; this._raiseTo = 0; this._oddsKey = '';
   }
 
   mount() {
@@ -141,8 +157,9 @@ export class PokerDomRenderer {
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:10px;width:100%">
             <div class="pk-you" id="pk-you"></div>
+            <div class="pk-odds" id="pk-odds"></div>
             <div class="pk-actions" id="pk-actions"></div>
-            <div class="pk-timer"><i id="pk-timerbar" style="width:0%"></i></div>
+            <div class="pk-count" id="pk-count"></div>
           </div>
         </div>
       </div>`;
@@ -155,7 +172,8 @@ export class PokerDomRenderer {
       banner: this.root.querySelector('#pk-banner'),
       you: this.root.querySelector('#pk-you'),
       actions: this.root.querySelector('#pk-actions'),
-      timer: this.root.querySelector('#pk-timerbar'),
+      count: this.root.querySelector('#pk-count'),
+      odds: this.root.querySelector('#pk-odds'),
       lvl: this.root.querySelector('#pk-lvl'),
       blinds: this.root.querySelector('#pk-blinds'),
       hand: this.root.querySelector('#pk-hand'),
@@ -235,7 +253,7 @@ export class PokerDomRenderer {
     this.el.felt.style.display = 'flex';
   }
 
-  // payload: { view, tour, legal, yourTurn, timerFrac, phase, result, over, youId, names }
+  // payload: { view, tour, legal, yourTurn, timeLeft, phase, result, over, youId, names }
   renderTable(p) {
     const v = p.view, tour = p.tour;
     if (!v) return;
@@ -278,8 +296,38 @@ export class PokerDomRenderer {
     // action panel — its own change-guard (interactive: must persist across frames)
     this._renderActions(p);
 
-    // timer (cheap — every frame)
-    this.el.timer.style.width = Math.round((p.timerFrac || 0) * 100) + '%';
+    // countdown (cheap — every frame): hidden until the last 15s, then a calm number (coral ≤5s)
+    const tl = p.timeLeft;
+    if (tl != null && tl <= 15 && p.phase === 'playing') {
+      this.el.count.textContent = String(tl);
+      this.el.count.classList.toggle('urgent', tl <= 5);
+    } else {
+      this.el.count.textContent = '';
+      this.el.count.classList.remove('urgent');
+    }
+
+    this._updateOdds(p);
+  }
+
+  // TV-style odds helper — outs + win% for your own hand. Toggle in Settings (cb.getShowOdds).
+  // Monte-Carlo is recomputed only when your cards / the board / opponent count change (cached).
+  _updateOdds(p) {
+    if (!this.el.odds) return;
+    const on = !!(this.cb.getShowOdds && this.cb.getShowOdds());
+    const v = p.view;
+    const me = v && v.seats.find((s) => s.id === p.youId);
+    const show = on && p.phase === 'playing' && me && me.hole && me.hole.length === 2 && !me.folded;
+    if (!show) { if (this._oddsKey !== '') { this._oddsKey = ''; this.el.odds.textContent = ''; } return; }
+    const board = v.board || [];
+    const nOpp = Math.max(1, v.seats.filter((s) => !s.folded && s.id !== p.youId).length);
+    const key = me.hole.map((c) => c.r + c.s).join('') + '|' + board.map((c) => c.r + c.s).join('') + '|' + nOpp;
+    if (key === this._oddsKey) return; // recompute only on change (Monte-Carlo is not free)
+    this._oddsKey = key;
+    const e = equity(me.hole, board, nOpp, 1500, Math.random);
+    const win = Math.round((e.win + e.tie * 0.5) * 100);
+    let s = `~${win}% to win  ·  vs ${nOpp}`;
+    if (board.length >= 3) { const o = outs(me.hole, board); if (o > 0) s = `${o} out${o === 1 ? '' : 's'}  ·  ` + s; }
+    this.el.odds.textContent = s;
   }
 
   _bannerText(p, winners) {
@@ -362,23 +410,53 @@ export class PokerDomRenderer {
       return;
     }
     const callLabel = L.canCheck ? 'CHECK' : ('CALL ' + L.callAmount);
-    this._raiseTo = Math.min(L.maxRaiseTo, L.minRaiseTo); // a fresh turn starts the slider at the minimum raise
+    // hybrid raise control (research-backed): preset buttons + slider(snap 5) + numeric + ± steppers + wheel/keys
+    const v = p.view, bb = (v && v.bb) || (p.tour && p.tour.bb) || 20;
+    const ctx = { pot: (v && v.pot) || 0, callAmount: L.callAmount, currentBet: (v && v.currentBet) || 0, minRaiseTo: L.minRaiseTo, maxRaiseTo: L.maxRaiseTo, bb };
+    const presets = (v && v.street === 'preflop')                 // preflop = BB multiples · postflop = pot fractions
+      ? [['2.5×', () => presetRaiseToBB(2.5, ctx)], ['3×', () => presetRaiseToBB(3, ctx)], ['4×', () => presetRaiseToBB(4, ctx)]]
+      : [['½ Pot', () => presetRaiseTo(0.5, ctx)], ['¾ Pot', () => presetRaiseTo(0.75, ctx)], ['Pot', () => presetRaiseTo(1, ctx)]];
+    this._raiseTo = clampRaise(L.minRaiseTo, L);                  // fresh turn starts at the minimum legal raise
     a.innerHTML = `
       <button class="pk-btn" id="pk-fold">FOLD</button>
       <button class="pk-btn go" id="pk-callcheck">${callLabel}</button>
-      ${L.canRaise ? `<div class="pk-raisebox">
-        <input type="range" id="pk-raiserng" min="${L.minRaiseTo}" max="${L.maxRaiseTo}" value="${this._raiseTo}" ${L.maxRaiseTo === L.minRaiseTo ? 'disabled' : ''}>
-        <span class="pk-raiseval" id="pk-raiseval">${this._raiseTo}</span>
-        <button class="pk-btn raise" id="pk-raise">RAISE → ${this._raiseTo}</button>
-        <button class="pk-btn raise" id="pk-allin">ALL-IN</button>
+      ${L.canRaise ? `<div class="pk-raise">
+        <div class="pk-presets">
+          <button class="pk-preset" data-min="1">MIN</button>
+          ${presets.map((q, i) => `<button class="pk-preset" data-p="${i}">${q[0]}</button>`).join('')}
+        </div>
+        <div class="pk-raisebox">
+          <button class="pk-step" id="pk-rminus" title="−1 BB">−</button>
+          <input type="range" id="pk-raiserng" min="${L.minRaiseTo}" max="${L.maxRaiseTo}" step="5" value="${this._raiseTo}" ${L.maxRaiseTo === L.minRaiseTo ? 'disabled' : ''}>
+          <button class="pk-step" id="pk-rplus" title="+1 BB">+</button>
+          <input type="number" id="pk-raisenum" class="pk-raiseval" min="${L.minRaiseTo}" max="${L.maxRaiseTo}" step="5" value="${this._raiseTo}">
+          <button class="pk-btn raise" id="pk-raise">RAISE → ${this._raiseTo}</button>
+          <button class="pk-btn raise" id="pk-allin">ALL-IN</button>
+        </div>
       </div>` : ''}`;
     a.querySelector('#pk-fold').addEventListener('click', () => this.cb.onAct({ type: 'fold' }));
     a.querySelector('#pk-callcheck').addEventListener('click', () => this.cb.onAct(L.canCheck ? { type: 'check' } : { type: 'call' }));
     if (L.canRaise) {
-      const rng = a.querySelector('#pk-raiserng'), val = a.querySelector('#pk-raiseval'), btn = a.querySelector('#pk-raise');
-      rng.addEventListener('input', () => { this._raiseTo = +rng.value; val.textContent = rng.value; btn.textContent = 'RAISE → ' + rng.value; });
+      const rng = a.querySelector('#pk-raiserng'), num = a.querySelector('#pk-raisenum'), btn = a.querySelector('#pk-raise');
+      const setRaise = (val) => {                                 // one shared amount; everything snaps to 5 + clamps to legal
+        this._raiseTo = clampRaise(val, L);
+        if (rng) rng.value = this._raiseTo; num.value = this._raiseTo;
+        btn.textContent = 'RAISE → ' + this._raiseTo;
+      };
+      if (rng) rng.addEventListener('input', () => setRaise(+rng.value));
+      num.addEventListener('change', () => setRaise(+num.value));
+      num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } });
+      a.querySelector('#pk-rminus').addEventListener('click', () => setRaise(this._raiseTo - bb));
+      a.querySelector('#pk-rplus').addEventListener('click', () => setRaise(this._raiseTo + bb));
+      a.querySelectorAll('.pk-preset').forEach((b) => b.addEventListener('click', () => setRaise(b.dataset.min ? L.minRaiseTo : presets[+b.dataset.p][1]())));
+      a.querySelector('.pk-raisebox').addEventListener('wheel', (e) => { e.preventDefault(); setRaise(this._raiseTo + (e.deltaY < 0 ? 5 : -5)); }, { passive: false });
       btn.addEventListener('click', () => this.cb.onAct({ type: 'raise', to: this._raiseTo }));
-      a.querySelector('#pk-allin').addEventListener('click', () => this.cb.onAct({ type: 'allin' }));
+      const allin = a.querySelector('#pk-allin');                 // all-in needs a deliberate confirm (real money): arm → fire
+      allin.addEventListener('click', () => {
+        if (allin.dataset.armed) { this.cb.onAct({ type: 'allin' }); return; }
+        allin.dataset.armed = '1'; allin.textContent = 'ALL-IN?'; allin.classList.add('armed');
+        setTimeout(() => { if (allin.isConnected) { allin.dataset.armed = ''; allin.textContent = 'ALL-IN'; allin.classList.remove('armed'); } }, 2500);
+      });
     }
   }
 }

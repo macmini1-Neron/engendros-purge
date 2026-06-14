@@ -1,0 +1,49 @@
+{
+  "id": "dealer-button",
+  "name": "Poker DEALER button — white acrylic puck with DEALER face label",
+  "description": "The canonical dealer button: a chunky white acrylic puck (Ø76 × 20 mm) with a readable 'DEALER' label on the face and a faint recessed face ring. In-scene the same puck is recoloured blue/yellow + relabelled SB/BB for the blind markers.",
+  "category": "furniture",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.0762, "h": 0.025, "d": 0.0762 },
+  "dossier": "models/dealer-button/ref/dossier.json",
+  "parts": [
+    {
+      "id": "body",
+      "name": "White acrylic puck",
+      "op": "cylinder",
+      "args": { "r": 0.0381, "h": 0.020, "axis": "y" },
+      "at": [0, 0.010, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#dealer",
+      "note": "Ø76.2 × 20 mm chunky casino puck."
+    },
+    {
+      "id": "face_ring",
+      "name": "Faint recessed face ring",
+      "op": "cylinder",
+      "args": { "r": 0.030, "h": 0.0015, "axis": "y" },
+      "at": [0, 0.0203, 0],
+      "mat": "galvanized",
+      "src": "dossier#dealer",
+      "note": "Subtle light-grey inner face disc on top, reads the moulded recess the DEALER text sits in."
+    },
+    {
+      "id": "label",
+      "name": "DEALER face label",
+      "op": "decal",
+      "args": { "w": 0.052, "h": 0.016, "lines": ["DEALER"], "plate": true },
+      "at": [0, 0.0215, 0],
+      "rot": [-90, 0, 0],
+      "mat": "bakelite",
+      "src": "dossier#dealer",
+      "note": "Readable 'DEALER' label on the face (dark plate + light lettering; real buttons engrave black-on-white — inverse, still reads). axis y = faces up."
+    }
+  ],
+  "needs": [
+    "Thickness 20 mm = chunky casino-puck look (sourced 19–22 mm); flat discs are ~6 mm",
+    "DEALER is a dark plate decal (light text) — real buttons are black-on-white engraving; engraving font/depth unsourced",
+    "Black O-ring edge bumpers not modelled; DEALER on the bottom face omitted (player sees the top)",
+    "SB/BB markers are the same puck recoloured (blue/yellow) + relabelled in-scene — not separate modelgen specs"
+  ]
+}

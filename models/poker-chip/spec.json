@@ -1,0 +1,98 @@
+{
+  "id": "poker-chip",
+  "name": "Composite \"dice\" poker chip — Ø40 body, white inlay ring + 6 white edge spots",
+  "description": "Classic 11.5 g composite dice poker chip: a solid colour disc (built red here; the body colour is set per denomination in-game), a thin white dashed-inlay ring bounding the smooth centre, and six white rectangular edge spots (the 'dice' tabs) evenly spaced around the rim. Dice pips omitted (sub-2 mm). Skin v1 — a CHIP_SKINS registry seam is prepared in code for future designs.",
+  "category": "furniture",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 0.040, "h": 0.0038, "d": 0.040 },
+  "dossier": "models/poker-chip/ref/dossier.json",
+  "parts": [
+    {
+      "id": "body",
+      "name": "Chip disc body (colour = denomination in-game)",
+      "op": "cylinder",
+      "args": { "r": 0.020, "h": 0.0033, "axis": "y" },
+      "at": [0, 0.00165, 0],
+      "mat": "paintRed",
+      "src": "dossier#overall",
+      "note": "Ø40 × 3.3 mm composite disc. Built red as a representative colour; in-game the body is recoloured per denomination (white/red/blue/green/black…)."
+    },
+    {
+      "id": "inlay_ring",
+      "name": "Thin white inlay ring bounding the centre",
+      "op": "torus",
+      "args": { "r": 0.0122, "tube": 0.0006 },
+      "at": [0, 0.0033, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#center_inlay",
+      "note": "Dashed-inlay border read — flat ring (torus axis y) on the top face at the centre/rim boundary."
+    },
+    {
+      "id": "spot0",
+      "name": "White edge spot (dice tab) @0°",
+      "op": "bevelBox",
+      "args": { "w": 0.0085, "h": 0.0037, "d": 0.007 },
+      "at": [0.0165, 0.00185, 0],
+      "rot": [0, 90, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#edge_spots"
+    },
+    {
+      "id": "spot1",
+      "name": "White edge spot (dice tab) @60°",
+      "op": "bevelBox",
+      "args": { "w": 0.0085, "h": 0.0037, "d": 0.007 },
+      "at": [0.00825, 0.00185, 0.01429],
+      "rot": [0, 30, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#edge_spots"
+    },
+    {
+      "id": "spot2",
+      "name": "White edge spot (dice tab) @120°",
+      "op": "bevelBox",
+      "args": { "w": 0.0085, "h": 0.0037, "d": 0.007 },
+      "at": [-0.00825, 0.00185, 0.01429],
+      "rot": [0, -30, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#edge_spots"
+    },
+    {
+      "id": "spot3",
+      "name": "White edge spot (dice tab) @180°",
+      "op": "bevelBox",
+      "args": { "w": 0.0085, "h": 0.0037, "d": 0.007 },
+      "at": [-0.0165, 0.00185, 0],
+      "rot": [0, -90, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#edge_spots"
+    },
+    {
+      "id": "spot4",
+      "name": "White edge spot (dice tab) @240°",
+      "op": "bevelBox",
+      "args": { "w": 0.0085, "h": 0.0037, "d": 0.007 },
+      "at": [-0.00825, 0.00185, -0.01429],
+      "rot": [0, -150, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#edge_spots"
+    },
+    {
+      "id": "spot5",
+      "name": "White edge spot (dice tab) @300°",
+      "op": "bevelBox",
+      "args": { "w": 0.0085, "h": 0.0037, "d": 0.007 },
+      "at": [0.00825, 0.00185, -0.01429],
+      "rot": [0, 150, 0],
+      "mat": "plasticWhite",
+      "src": "dossier#edge_spots"
+    }
+  ],
+  "needs": [
+    "Body colour is per-denomination IN-GAME — the model ships red (skin v1 = this dice design; CHIP_SKINS registry prepared)",
+    "Dice pips on the spots (~1–2 mm) omitted — below the readable-marking threshold (could be a CanvasTexture later)",
+    "Centre recess + ridged outer edge not modelled — inlay ring stands in for the centre boundary; rim is plain",
+    "Centre Ø (~25 mm) + edge-spot size (~7×10 mm) are photo-DERIVED (dossier.needs)"
+  ]
+}
