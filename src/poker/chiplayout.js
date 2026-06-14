@@ -44,37 +44,35 @@ export function layoutChips(chipSet, opts = {}) {
   return out;
 }
 
-// BET PILE: a tossed bet the player can READ at the LOW seated camera. The trick (learnt from the pot): a
-// MONOCHROME column reads unmistakably even when its thin chips blur together — you see "a green stack, a red
-// stack" at a glance, because colour == denomination. A mixed tower instead smears all colours into one
-// ambiguous lump. So the heap is ONE TIGHT COLUMN PER DENOMINATION, packed close (compact footprint, never
-// sprawls into the pot/neighbours) with per-chip jitter + lean so it reads hand-tossed, not a tidy tray. More
-// of a denomination → its column grows TALLER (juice); a very tall single denom wraps into a second column.
-// Seeded → deterministic (no per-frame shimmer). Returns { denom, x, y, z, rot (Y), tiltX, tiltZ } per chip.
+// BET PILE: a real TOSSED HEAP — chips thrown into a small mound, landing ON each other (not laid flat in a
+// tidy row where their faces z-fight). Each chip drops at a random spot in a tight, capped disc; if it lands
+// on chips already there it RESTS on the highest of them (genuine stacking → height, no texture overlap).
+// Denominations are shuffled through the pile (seeded) so the colours mix and it reads hand-tossed, not
+// machine-sorted; a bigger bet mounds TALLER inside the same small footprint (juice, never sprawls into the
+// pot/neighbours). Seeded → deterministic (no per-frame shimmer). Returns { denom, x, y, z, rot, tiltX, tiltZ }.
 export function pileLayout(chipSet, opts = {}) {
   const { seed = 1 } = opts;
   const rnd = mulberry32(seed);
-  const COL_H = 12;                                    // a very tall single denom wraps into extra columns (not a needle)
-  const cols = [];
-  for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n > 0) { const h = Math.min(n, COL_H); cols.push({ denom, h }); n -= h; } }
-  const C = cols.length;
-  const GAP = CHIP_R * 1.5;                            // columns nearly touch → tight, compact heap
-  const out = [];
-  cols.forEach((col, ci) => {
-    const cx = (ci - (C - 1) / 2) * GAP;               // a tight, centred row of monochrome columns
-    const jz = (rnd() - 0.5) * 0.006;                  // each column nudged in depth → tossed, not a ruler-straight row
-    const lean = (rnd() - 0.5) * 0.05;                 // the whole column leans a touch
-    for (let i = 0; i < col.h; i++) {
-      out.push({
-        denom: col.denom,
-        x: cx + (rnd() - 0.5) * 0.003,                 // tiny per-chip jitter → messy, hand-stacked
-        z: jz + (rnd() - 0.5) * 0.003,
-        y: i * (CHIP_T + CHIP_GAP),                    // chips stack up the column
-        rot: rnd() * Math.PI * 2,
-        tiltX: lean + (rnd() - 0.5) * 0.03,
-        tiltZ: (rnd() - 0.5) * 0.03,
-      });
-    }
-  });
+  const items = [];
+  for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n-- > 0) items.push(denom); }
+  for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = items[i]; items[i] = items[j]; items[j] = t; } // seeded shuffle → tossed, mixed colours
+  const N = items.length;
+  const R = Math.min(CHIP_R * 2.2, CHIP_R * (0.7 + 0.5 * Math.sqrt(Math.max(0, N - 1)))); // small, capped footprint
+  const ON = (CHIP_R * 1.55) ** 2;                     // a chip this close to another lands ON it
+  const RISE = CHIP_T + CHIP_GAP;
+  const placed = [], out = [];
+  for (let i = 0; i < N; i++) {
+    const rad = R * Math.pow(rnd(), 0.65);             // centre-biased → it mounds toward the middle
+    const ang = rnd() * Math.PI * 2;
+    const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
+    let y = 0;                                          // rest on the HIGHEST chip we overlap → stacked, not interpenetrating
+    for (const p of placed) { if ((p.x - x) ** 2 + (p.z - z) ** 2 < ON && p.y + RISE > y) y = p.y + RISE; }
+    placed.push({ x, z, y });
+    out.push({
+      denom: items[i], x, z, y,
+      rot: rnd() * Math.PI * 2,
+      tiltX: (rnd() - 0.5) * 0.16, tiltZ: (rnd() - 0.5) * 0.16, // more lean → tossed, not a neat stack
+    });
+  }
   return out;
 }
