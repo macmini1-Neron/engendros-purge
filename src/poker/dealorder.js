@@ -1,6 +1,7 @@
 // Pure dealing-order math (no THREE/DOM) for the hole-card deal-in animation.
 // Mirrors a real dealer's pitch: TWO passes, clockwise from the seat left of the
-// button (the small blind), with the button receiving the last card of each pass.
+// button (the small blind in 3+-handed play; the big blind heads-up), with the
+// button receiving the last card of each pass.
 // Seats that were not dealt in (folded/empty/busted → no cards) are skipped.
 // Deterministic from (button, n, hasCards) → every co-op client derives the same
 // sequence from its host snapshot, so no extra network traffic is needed.

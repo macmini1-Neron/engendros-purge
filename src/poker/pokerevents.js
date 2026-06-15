@@ -35,9 +35,11 @@ export function derivePokerEvents(prevView, nextView, prevChips, nextChips, resu
     if (s.hole && s.hole.map(cardKey).join('') !== before) s.hole.forEach((_, i) => ev.push({ t: 'holeReveal', id: s.id, index: i }));
   }
 
-  // seats that just folded → muck animation (their cards flick away)
+  // seats that just folded → muck animation (their cards flick away). Require the seat to have EXISTED
+  // and been live in the previous snapshot, so a late-joiner / full resync doesn't muck seats that
+  // folded before this client connected (a seat absent from prevView would otherwise spuriously emit).
   const pfold = new Map((pv.seats || []).map((s) => [s.id, !!s.folded]));
-  for (const s of nv.seats || []) if (s.folded && !pfold.get(s.id)) ev.push({ t: 'fold', id: s.id });
+  for (const s of nv.seats || []) if (s.folded && pfold.has(s.id) && !pfold.get(s.id)) ev.push({ t: 'fold', id: s.id });
 
   // physical chip relocations: any seat whose bet grew (stack shrank) → chips to its bet/pot
   if (prevChips && nextChips) {

@@ -43,6 +43,22 @@ test('pitch index is the array index (stagger order) and is stable', () => {
   assert.deepEqual(o.map((c) => c._i), [0, 1, 2, 3]); // monotonic pitch order
 });
 
-test('a button index outside [0,n) is normalised', () => {
-  assert.deepEqual(dealOrder(3, 3, [true, true, true]), dealOrder(0, 3, [true, true, true]));
+test('a button index outside [0,n) is normalised — incl. negatives (exercises the +n correction)', () => {
+  const all = [true, true, true];
+  assert.deepEqual(dealOrder(3, 3, all), dealOrder(0, 3, all));   // exact multiple: 3 % 3 = 0
+  assert.deepEqual(dealOrder(4, 3, all), dealOrder(1, 3, all));   // non-multiple wrap → 1
+  assert.deepEqual(dealOrder(-1, 3, all), dealOrder(2, 3, all));  // NEGATIVE → 2 (only passes with the `+ n` term)
+  assert.equal(dealOrder(-1, 3, all)[0].seat, 0);                 // button normalises to 2 → first card to seat 0 (its left)
+});
+
+test('omitting hasCards deals to EVERY seat (the fresh-hand path before anyone folds)', () => {
+  const o = dealOrder(0, 3);
+  assert.equal(o.length, 6);                                      // 3 seats × 2 cards
+  assert.deepEqual([...new Set(o.map((c) => c.seat))].sort(), [0, 1, 2]);
+  assert.deepEqual(dealOrder(0, 3, null), o);                     // null behaves like omitted
+});
+
+test('no live seats → no cards dealt (empty order)', () => {
+  assert.deepEqual(dealOrder(0, 3, [false, false, false]), []);   // everyone sat out / folded
+  assert.deepEqual(dealOrder(0, 0, []), []);                      // n guard
 });

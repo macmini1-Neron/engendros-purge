@@ -57,7 +57,7 @@ export class PokerTable {
     this.botDelay = 0;
     this.resultTimer = 0;
     this._netT = 0;
-    this._hold = 0;       // s left to hold action while the renderer pitches the cards in (set in _beginHand)
+    this._hold = 0;       // s left to FREEZE all action while the renderer choreographs (deal-in / street collect+reveal / fold muck); set in _beginHand + _applyAndAdvance
     this.names = {};
     this.clientSnap = null;   // client role: the latest host snapshot to render
     this.coopBuyIn = 0;

@@ -31,6 +31,14 @@ test('a seat that newly folds emits a fold event (once, not while already folded
   assert.equal(ev2.filter((e) => e.t === 'fold').length, 0);
 });
 
+test('a seat folded but ABSENT from the previous snapshot does NOT emit a fold (late-join / full resync)', () => {
+  // prev has only B; next reveals an already-folded A that is new to this client — no spurious muck
+  const ev = derivePokerEvents(
+    view({ seats: [{ id: 'B', folded: false }] }),
+    view({ seats: [{ id: 'A', folded: true }, { id: 'B', folded: false }] }));
+  assert.equal(ev.filter((e) => e.t === 'fold').length, 0);
+});
+
 test('a NET win emits potAward with net=true; a refund/split below stake does not', () => {
   const winBig = derivePokerEvents(
     view({ seats: [{ id: 'A', stack: 100 }] }),

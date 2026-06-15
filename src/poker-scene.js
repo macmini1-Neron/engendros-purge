@@ -152,7 +152,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   _stepAnims(dt) {
     for (let i = this._anims.length - 1; i >= 0; i--) {
       let done = true;
-      try { done = this._anims[i](dt); } catch (e) { done = true; }
+      try { done = this._anims[i](dt); } catch (e) { done = true; console.warn('[poker] anim step failed (dropped):', e); }
       if (done) this._anims.splice(i, 1);
     }
   }
@@ -177,9 +177,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     });
   }
   // Pitch a hole card in from the centre deck (face-down) to its resting spot, like a real dealer. It stays
-  // HIDDEN until its `delay` slot, so cards appear ONE AT A TIME in dealing order, never all at once. Only the
-  // position is animated — the card keeps whatever rest rotation the rebuild gave it (your own / opponents'
-  // backs stay face-down; click-to-peek is unchanged). A frame-synced `pokerDeal` click fires as it lands.
+  // HIDDEN until its `delay` slot, so cards appear ONE AT A TIME in dealing order, never all at once. Position
+  // + a flat yaw SPIN are animated; the card never turns face-up (rotX/rotZ keep their rest values, so your
+  // own / opponents' backs stay face-down and click-to-peek is unchanged) and the yaw unwinds back to the rest
+  // value on landing. A frame-synced `pokerDeal` click fires as it lands.
   _dealInCard(card, rest, delay = 0) {
     const FELT_Y = 0.013;
     const sx = 0, sy = FELT_Y + 0.06, sz = -0.02;          // the deck at the table centre (dealer's deck — independent of the board/pot)
