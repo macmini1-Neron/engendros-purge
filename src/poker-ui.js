@@ -254,7 +254,8 @@ export class PokerDomRenderer {
       <div class="pk-optrow"><label>Players:</label> <span style="color:var(--steel)">${players.map(esc).join(' · ') || '—'}</span></div>
       <div class="pk-optrow"><label>Chip set:</label> <span id="pk-skinpick" class="pk-skinrow"></span></div>
       <div class="pk-skinhint" id="pk-skinhint"></div>
-      <div class="pk-optrow"><label>Card back:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-optrow"><label>Table deck:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" style="opacity:.85">Everyone at the table plays with your deck.</div>
       <div class="pk-skinhint" id="pk-backhint"></div>
       <div class="pk-actions">
         <button class="pk-btn go" id="pk-deal">DEAL</button>
