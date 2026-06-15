@@ -99,7 +99,7 @@ class Game {
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
-    this._drawDist = 0; this._showFps = false; this._fpsEl = null;
+    this._drawDist = 0; this._showFps = false; this._fpsEl = null; this._culling = false;
     this._nextTagId = 1; // per-run id stamped onto each spawned enemy's e.tag (reset in reset())
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
@@ -997,7 +997,8 @@ class Game {
     if (this.state === 'playing') this._updatePlaying(dt);
     if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera);
     this.engine.updateAdaptive(this._frameMs);
-    if (this._drawDist > 0) this._cullByDistance(this._drawDist);
+    if (this._drawDist > 0) { this._cullByDistance(this._drawDist); this._culling = true; }
+    else if (this._culling) { this._restoreVisibility(); this._culling = false; }
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
     this.engine.update(dt); this.engine.render();
     if (this.devconsole) { const dbg = this.f3 && this.state === 'playing'; this.devconsole.updateF3(dbg); this.devconsole.updateEntityLabels(dbg); }
@@ -1157,6 +1158,13 @@ class Game {
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = !far(pu.mesh.position); }
     if (this.world && this.world.chunks) this.world.chunks.drawDistance = d;
     if (this.engine.scene && this.engine.scene.fog) this.engine.scene.fog.far = Math.min(this.engine.scene.fog.far, d);
+  }
+
+  // Re-show every dynamic mesh the cull may have hidden. Called once when `_drawDist` drops back to 0 so the
+  // feature is safe to toggle (DayNight re-expands fog.far on its own each frame; chunk drawDistance is left).
+  _restoreVisibility() {
+    if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh) e.mesh.visible = true; }
+    if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = true; }
   }
 }
 
