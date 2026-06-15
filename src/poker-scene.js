@@ -45,9 +45,15 @@ const SUITS_LABEL = ['c', 'd', 'h', 's'];
 // Each pose is { pos:[x,y,z], look:[x,y,z], fov }. 'seated' is the default 3/4 view; the others are
 // the click-to-view targets. Dial new numbers in poker-freecam-dev.html (?cam=x,y,z,lx,ly,lz,fov)
 // and paste them here — the click handler tweens between whichever poses you define.
+// Centre-line layout (front = toward you, +Z). The community board sits FORWARD so it reads big and
+// clear; the pot sits BACK behind it. SHARED so the pot pile, the bet→pot rake target and the board
+// close-up camera all stay locked together — change them here, never inline.
+const BOARD_Z = 0.16;   // community cards — forward/centre, the readable focal point
+const POT_Z = -0.05;    // pot pile — tucked behind the board (the bet→pot rake MUST fly to this same Z)
+
 const CAM_POSES = {
   seated: { pos: [0.0, 0.37, 0.99], look: [0, -0.05, -0.22], fov: 56 }, // matches _initThree default
-  board:  { pos: [0.0, 0.34, 0.34], look: [0, 0.02, -0.05], fov: 34 },  // TV close-up of the community cards (table centre)
+  board:  { pos: [0.0, 0.34, BOARD_Z + 0.39], look: [0, 0.02, BOARD_Z], fov: 34 },  // TV close-up of the community cards (tracks BOARD_Z)
   hole:   { pos: [0.0, 0.30, 0.66], look: [0, 0.14, 0.52], fov: 40 },   // close-up of your own two cards
   poster: { pos: [0.53, 0.50, -0.01], look: [1.05, 0.50, -1.0], fov: 42 }, // walk up to the hand-rankings poster (back-right wall) — whole sheet centred
 };
@@ -165,7 +171,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   // backs stay face-down; click-to-peek is unchanged). A frame-synced `pokerDeal` click fires as it lands.
   _dealInCard(card, rest, delay = 0) {
     const FELT_Y = 0.013;
-    const sx = 0, sy = FELT_Y + 0.06, sz = -0.02;          // the deck at the table centre (where the board sits)
+    const sx = 0, sy = FELT_Y + 0.06, sz = -0.02;          // the deck at the table centre (dealer's deck — independent of the board/pot)
     const tw = new Tween(DEAL_FLIGHT, delay);
     const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
     const restRotY = card.rotation.y;
@@ -435,7 +441,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const prevHad = ids.some((id) => sigOf(prevChips.bets[id] || {}));
     const newHas = ids.some((id) => sigOf((chips && chips.bets && chips.bets[id]) || {}));
     if (!prevHad || newHas) return;                         // fire ONLY when ALL street bets clear at once → collected to the pot
-    const FELT_Y = 0.013, pot = new THREE.Vector3(0, FELT_Y, 0.16);
+    const FELT_Y = 0.013, pot = new THREE.Vector3(0, FELT_Y, POT_Z); // rake target == the pot pile position (POT_Z)
     let k = 0;
     for (const id of ids) {
       const betSet = prevChips.bets[id];
@@ -597,7 +603,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     let flipN = 0;
     for (let i = 0; i < v.board.length; i++) {
       const card = makeCardMesh(); setCardFace(card, v.board[i]);
-      const rest = { x: (i - 2) * 0.105, y: 0.014, z: -0.05, rotX: 0 };
+      const rest = { x: (i - 2) * 0.105, y: 0.014, z: BOARD_Z, rotX: 0 };
       card.position.set(rest.x, rest.y, rest.z); card.scale.setScalar(1.45); d.add(card);
       this._boardCards.push(card); card.userData.pk = { kind: 'card' }; this._hoverTargets.push(card); // community cards → click for the TV close-up + hover glow
       if (newBoard && newBoard.has(i)) this._flipInCard(card, rest, (flipN++) * 0.13); // NEW card → flip it in (flop staggers left→right)
@@ -605,7 +611,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;
     const potGroup = potSet ? (sigOf(potSet) ? makeChipTray(potSet) : null) : (v.pot > 0 ? makeChipStack(v.pot) : null);
-    if (potGroup) { potGroup.position.set(0, FELT_Y, 0.16); potGroup.scale.setScalar(1.7); d.add(potGroup);
+    if (potGroup) { potGroup.position.set(0, FELT_Y, POT_Z); potGroup.scale.setScalar(1.7); d.add(potGroup);
       potGroup.userData.pk = { kind: 'chips', scope: 'pot', ownerName: 'POT' }; this._hoverTargets.push(potGroup); }
     this._betPreviewAmt = -2; // the stack tray is freshly full → force _updateBetPreview to re-carve the heap out of it
   }
