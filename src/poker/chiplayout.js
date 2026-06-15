@@ -44,28 +44,40 @@ export function layoutChips(chipSet, opts = {}) {
   return out;
 }
 
-// SPLASH PILE: chips tossed into a loose heap (NOT tidy columns) — scattered next to each other in a
-// cluster whose radius grows with the chip count, each lying flat with a small random facing + tilt and
-// a touch of overlap height. Seeded → deterministic (no per-frame shimmer) but reads as "thrown in".
-// Returns { denom, x, y, z, rot (Y), tiltX, tiltZ } per chip. Used for the bet-preview / a splashed pot.
+// BET PILE: a real tossed SPLASH, physically plausible. Settled poker chips lie nearly FLAT — they're spun to
+// random facings (so the pile looks hand-thrown, not machine-stacked) but they do NOT stand on edge or float at
+// steep angles. Each chip drops at a ~uniform-random spot in a disc and RESTS a clean whole-thickness on top of
+// any chip it overlaps (real stacking, no interpenetration). The disc SPREADS with the count — a big bet splashes
+// across more felt and only piles a few chips high, like real chips do — capped so it never blankets the table or
+// reaches the pot/neighbours. Denominations seed-shuffled so colours mix. Seeded → deterministic.
+// Returns { denom, x, y, z, rot, tiltX, tiltZ } per chip.
 export function pileLayout(chipSet, opts = {}) {
   const { seed = 1 } = opts;
   const rnd = mulberry32(seed);
   const items = [];
   for (const denom of DENOMS) { let n = (chipSet && chipSet[denom]) || 0; while (n-- > 0) items.push(denom); }
+  for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = items[i]; items[i] = items[j]; items[j] = t; } // seeded shuffle → tossed, mixed colours
+  // cap the splash: the placement pass below is O(N²), and a pathological all-in (thousands of $5 chips) would be
+  // millions of overlap checks per rebuild. A pile is visually saturated long before this, and the renderer caps
+  // each denom at 256 regardless — so truncate the (already-shuffled, unbiased) chip list to a sane ceiling.
+  const PILE_CAP = 240;
+  if (items.length > PILE_CAP) { console.warn('[poker] pileLayout: ' + items.length + ' chips → capped to ' + PILE_CAP + ' for the splash'); items.length = PILE_CAP; }
   const N = items.length;
-  // COMPACT MOUND: footprint is small + CAPPED (never sprawls into neighbouring models); the heap grows
-  // UPWARD (taller) with the chip count instead of wider — centre chips pile higher than the rim.
-  const R = Math.min(CHIP_R * 3.0, CHIP_R * (0.8 + 0.18 * Math.sqrt(N)));
-  const out = [];
+  const R = Math.min(CHIP_R * 4.5, CHIP_R * (0.9 + 0.42 * Math.sqrt(Math.max(0, N - 1)))); // spreads with the count, capped
+  const ON = (CHIP_R * 1.5) ** 2;                      // a chip landing this close to another rests ON it
+  const RISE = CHIP_T + CHIP_GAP;
+  const placed = [], out = [];
   for (let i = 0; i < N; i++) {
-    const rad = R * Math.pow(rnd(), 0.7);              // biased toward the centre → a mound, not a flat ring
+    const rad = R * Math.sqrt(rnd());                  // ~uniform over the disc → spreads + settles flat (not a tight tower)
     const ang = rnd() * Math.PI * 2;
+    const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
+    let y = 0;                                          // rest on the HIGHEST chip we overlap → stacked, never interpenetrating
+    for (const p of placed) { if ((p.x - x) ** 2 + (p.z - z) ** 2 < ON && p.y + RISE > y) y = p.y + RISE; }
+    placed.push({ x, z, y });
     out.push({
-      denom: items[i], x: Math.cos(ang) * rad, z: Math.sin(ang) * rad,
-      y: (1 - rad / R) * CHIP_T * Math.min(N, 22) * 0.5 * (0.7 + 0.3 * rnd()), // centre piles higher → mound builds UP with the bet
-      rot: rnd() * Math.PI * 2,
-      tiltX: (rnd() - 0.5) * 0.14, tiltZ: (rnd() - 0.5) * 0.14, // a few degrees of tilt → tossed look
+      denom: items[i], x, z, y,
+      rot: rnd() * Math.PI * 2,                         // spun to a random facing — chips ARE turned differently
+      tiltX: (rnd() - 0.5) * 0.05, tiltZ: (rnd() - 0.5) * 0.05, // settled NEARLY FLAT (~1.5°) — never on edge / floating
     });
   }
   return out;

@@ -47,6 +47,8 @@ test('fold-to-one: last player standing wins the blinds uncontested', () => {
   assert.deepEqual(s.result.winnings, { B: 30 });        // sb 10 + bb 20
   assert.equal(s.seats[2].stack, 1010);                  // BB net +10
   assert.equal(s.result.reveals.length, 0);              // mucked, no reveal
+  assert.equal(s.result.contributed.B, 20);              // result carries each seat's per-hand stake (the NET-win gate)
+  assert.ok(s.result.winnings.B > s.result.contributed.B, 'BB won MORE than it staked → a genuine NET win (fanfare ok)');
 });
 
 test('big-blind option: when everyone limps the BB may still raise', () => {
@@ -86,6 +88,8 @@ test('full hand checked down splits a board-playing royal flush (chop + odd-chip
   assert.deepEqual(s.board.map((c) => c.r + c.s).join(' '), '14s 13s 12s 11s 10s'); // royal on board
   assert.equal(s.result.winnings.A, 20);   // pot 40 chopped
   assert.equal(s.result.winnings.B, 20);
+  assert.equal(s.result.contributed.A, 20);                            // each staked the BB
+  assert.equal(s.result.winnings.A, s.result.contributed.A, 'a chop returns exactly the stake → NOT a net win (no fanfare)');
   assert.equal(s.seats[0].stack, 1000);    // net zero on a chop
   assert.equal(s.seats[1].stack, 1000);
 });

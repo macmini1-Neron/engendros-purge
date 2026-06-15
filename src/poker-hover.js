@@ -61,6 +61,11 @@ export class PokerHover {
     ocard.visible = false; ocard.renderOrder = 998; ocard.matrixAutoUpdate = false;
     this.r._scene.add(ocard);
     this._Scard = new THREE.Matrix4().makeScale(1.14, 3.0, 1.14); // grow sideways for the rim, taller so it's visible
+    // SB / BB puck outline — an inverted-hull cylinder over the hovered blind puck (puck = r0.034 × h0.012).
+    const oblind = this._outBlind = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.012, 24), mat);
+    oblind.visible = false; oblind.renderOrder = 998; oblind.matrixAutoUpdate = false;
+    this.r._scene.add(oblind);
+    this._Sblind = new THREE.Matrix4().makeScale(1.22, 2.4, 1.22); // grow radially for a rim + taller so it reads at the grazing camera
 
     this._ptr = { x: 0, y: 0 };
     this._dirty = false; this._inside = false; this._curKey = null; this._held = null;
@@ -131,12 +136,13 @@ export class PokerHover {
       for (const d of DENOMS) { if (inst[d] && inst[d].count > 0) { denom = d; instMesh = inst[d]; break; } }
     }
     if (!denom) { this._hideAll(); return; }
-    const key = 'chips|' + (group.userData.sig || '') + '|' + denom + '|' + getChipSkin();
+    const traySkin = group.userData.skin || getChipSkin();  // this tray's OWN skin (per-player), not the global one
+    const key = 'chips|' + (group.userData.sig || '') + '|' + denom + '|' + traySkin;
     if (key !== this._curKey) {
       this._curKey = key;
       const n = instMesh ? instMesh.count : 0;
       const sub = denom * n;
-      const skin = (CHIP_SKINS[getChipSkin()] || {}).label || '—';
+      const skin = (CHIP_SKINS[traySkin] || {}).label || '—';
       const head = pk.scope === 'pot' ? 'POT'
         : esc(pk.ownerName || 'PLAYER') + (pk.scope === 'bet' ? ' · BET' : ' · STACK');
       this.tip.innerHTML =
@@ -147,13 +153,13 @@ export class PokerHover {
       this.tip.style.display = 'block';
     }
     this._outlineChips(instMesh);
-    this._outCard.visible = false;
+    this._outCard.visible = false; this._outBlind.visible = false;
     this._place();
   }
 
   _showCard(card) {
     this.tip.style.display = 'none'; this._curKey = null; // board cards just glow, no tooltip
-    this._outChips.visible = false;
+    this._outChips.visible = false; this._outBlind.visible = false;
     card.updateWorldMatrix(true, false);
     const o = this._outCard;
     o.matrix.copy(card.matrixWorld).multiply(this._Scard); // inverted hull: card's world xf, grown about its centre
@@ -162,7 +168,10 @@ export class PokerHover {
   }
 
   _showBlind(group, pk) {
-    this._outChips.visible = false; this._outCard.visible = false; // tooltip is the whole point here
+    this._outChips.visible = false; this._outCard.visible = false;
+    group.updateWorldMatrix(true, false);                         // glow the puck, grown about its centre
+    const o = this._outBlind;
+    o.matrix.copy(group.matrixWorld).multiply(this._Sblind); o.matrixWorldNeedsUpdate = true; o.visible = true;
     const key = 'blind|' + pk.role + '|' + pk.amount;
     if (key !== this._curKey) {
       this._curKey = key;
@@ -200,7 +209,7 @@ export class PokerHover {
   }
 
   _hideAll() {
-    this._outChips.visible = false; this._outCard.visible = false;
+    this._outChips.visible = false; this._outCard.visible = false; this._outBlind.visible = false;
     this.tip.style.display = 'none'; this._curKey = null; this._held = null;
   }
 }
