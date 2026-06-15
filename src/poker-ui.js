@@ -524,15 +524,18 @@ export class PokerDomRenderer {
           <button class="pk-btn raise" id="pk-raise">RAISE → ${this._raiseTo}</button>
           <button class="pk-btn raise" id="pk-allin">ALL-IN</button>
         </div>
+        <div class="pk-raiseleft" id="pk-raiseleft" style="font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;text-align:center;margin-top:3px">leaves $${L.maxRaiseTo - this._raiseTo} in your stack</div>
       </div>` : ''}`;
     a.querySelector('#pk-fold').addEventListener('click', () => this.cb.onAct({ type: 'fold' }));
     a.querySelector('#pk-callcheck').addEventListener('click', () => this.cb.onAct(L.canCheck ? { type: 'check' } : { type: 'call' }));
     if (L.canRaise) {
       const rng = a.querySelector('#pk-raiserng'), num = a.querySelector('#pk-raisenum'), btn = a.querySelector('#pk-raise');
+      const left = a.querySelector('#pk-raiseleft');
       const setRaise = (val) => {                                 // one shared amount; everything snaps to 5 + clamps to legal
         this._raiseTo = clampRaise(val, L);
         if (rng) rng.value = this._raiseTo; num.value = this._raiseTo;
         btn.textContent = 'RAISE → ' + this._raiseTo;
+        if (left) left.textContent = 'leaves $' + (L.maxRaiseTo - this._raiseTo) + ' in your stack'; // real-time: what stays in your stack after this bet
       };
       if (rng) rng.addEventListener('input', () => setRaise(+rng.value));
       num.addEventListener('change', () => setRaise(+num.value));
