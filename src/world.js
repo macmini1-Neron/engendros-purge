@@ -15,6 +15,7 @@ import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 import { makeTerrain } from './terrain.js';
 import { buildGroundMesh } from './terrain-mesh.js';
+import { TerrainChunks } from './terrain-chunks.js';
 
 // ─── T2 WALKABLE-TERRAIN feel knobs (Phase 4) — owner-tunable ──────────────────
 // These ONLY apply when `world.hasTerrain` is true (the ?map=demo slice). On flat
@@ -54,6 +55,7 @@ export class World {
     // Only the ?map=demo slice opts in; everything terrain-gated below checks `hasTerrain`.
     this.hasTerrain = false;
     this.terrain = null;
+    this.chunks = null;
     if (this.mapId === 'steppe') {
       this._buildSteppe();
     } else if (this.mapId === 'demo') {
@@ -293,8 +295,9 @@ export class World {
     this.HALF = 158;                                   // keep the player inside the 160 m ground mesh
     this.hasTerrain = true;
     this.terrain = makeTerrain({ profile: 'demo', seed: 1337 }); // deterministic, seeded (co-op safe)
-    const ground = buildGroundMesh(this.terrain, { extent: 160, resolution: 160 });
-    this.scene.add(ground);
+    this.chunks = new TerrainChunks(this.terrain, {
+      extent: this.HALF, chunkSize: 64, resolution: 16, scene: this.scene,
+    });
     // a flat reference plane far below catches the eye for orientation only (no collision)
     // spawn ring + a couple of loot spots, all sampled onto the terrain surface.
     for (let i = 0; i < 16; i++) {
