@@ -14,12 +14,13 @@ import { buildSecretBunker } from './bunker.js';
 import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 import { makeTerrain } from './terrain.js';
-import { buildGroundMesh } from './terrain-mesh.js';
 import { TerrainChunks } from './terrain-chunks.js';
 
 // ─── T2 WALKABLE-TERRAIN feel knobs (Phase 4) — owner-tunable ──────────────────
-// These ONLY apply when `world.hasTerrain` is true (the ?map=demo slice). On flat
-// maps (arena/steppe) the terrain path is bypassed entirely → byte-identical to before.
+// These ONLY apply when `world.hasTerrain` is true (non-flat profiles). On flat
+// maps (`'flat'` profile) `terrainHeightAt`→0 and `terrainSlopeAt`→0, and the
+// ground-follow re-seat is gated off via `hasTerrain`, so the unified path stays
+// byte-identical to the old y=0 floor.
 //
 //   TERRAIN_GROUND_FOLLOW_STEP — max metres the smooth ground may pull the player DOWN
 //     in one frame while grounded (downhill walking). Bigger = snappier descents but the
@@ -54,7 +55,7 @@ export class World {
     // Every map has a terrain. Flat maps use the 'flat' profile (height 0 everywhere) so the unified
     // collision path degenerates to the old y=0 floor. `hasTerrain` now means "non-flat elevation".
     this.terrain = makeTerrain({ profile: this.mapId === 'demo' ? 'demo' : 'flat', seed: 1337 });
-    this.hasTerrain = this.terrain.profile === 'demo';
+    this.hasTerrain = this.terrain.profile !== 'flat';
     this.chunks = null;
     if (this.mapId === 'steppe') {
       this._buildSteppe();
@@ -292,7 +293,7 @@ export class World {
   // T2 walkable slopes can be verified. NOT a finished map.
   _buildDemo() {
     this.scene.fog.near = 70; this.scene.fog.far = 460;
-    this.HALF = 158;                                   // keep the player inside the 160 m ground mesh
+    this.HALF = 158;                                   // keep the player inside the 158 m chunk terrain
     this.chunks = new TerrainChunks(this.terrain, {
       extent: this.HALF, chunkSize: 64, resolution: 16, scene: this.scene,
     });
