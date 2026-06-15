@@ -51,10 +51,10 @@ export class World {
     this.spawns = [];
     this.lootSpots = [];
     this.mapId = (game.mapId === 'steppe') ? 'steppe' : (game.mapId === 'demo' ? 'demo' : 'arena');
-    // T2 walkable terrain — OFF by default (arena/steppe = flat, y=0 hard floor, unchanged).
-    // Only the ?map=demo slice opts in; everything terrain-gated below checks `hasTerrain`.
-    this.hasTerrain = false;
-    this.terrain = null;
+    // Every map has a terrain. Flat maps use the 'flat' profile (height 0 everywhere) so the unified
+    // collision path degenerates to the old y=0 floor. `hasTerrain` now means "non-flat elevation".
+    this.terrain = makeTerrain({ profile: this.mapId === 'demo' ? 'demo' : 'flat', seed: 1337 });
+    this.hasTerrain = this.terrain.profile === 'demo';
     this.chunks = null;
     if (this.mapId === 'steppe') {
       this._buildSteppe();
@@ -293,8 +293,6 @@ export class World {
   _buildDemo() {
     this.scene.fog.near = 70; this.scene.fog.far = 460;
     this.HALF = 158;                                   // keep the player inside the 160 m ground mesh
-    this.hasTerrain = true;
-    this.terrain = makeTerrain({ profile: 'demo', seed: 1337 }); // deterministic, seeded (co-op safe)
     this.chunks = new TerrainChunks(this.terrain, {
       extent: this.HALF, chunkSize: 64, resolution: 16, scene: this.scene,
     });
@@ -311,26 +309,10 @@ export class World {
   }
 
   collide(pos, vel, r, h, dt) {
-    if (this.hasTerrain) return this._collideTerrain(pos, vel, r, h, dt);
-    let onGround = false;
-    // vertical
-    pos.y += vel.y * dt;
-    if (pos.y <= 0) { pos.y = 0; if (vel.y < 0) vel.y = 0; onGround = true; }
-    for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
-      if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
-      if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
-      const feet = pos.y, head = pos.y + h;
-      if (head <= b.min.y || feet >= b.max.y) continue;
-      const penTop = b.max.y - feet, penBot = head - b.min.y;
-      if (penTop < penBot && vel.y <= 0.01) { pos.y = b.max.y; vel.y = 0; onGround = true; }
-      else if (vel.y > 0) { pos.y = b.min.y - h; vel.y = 0; }
-    }
-    // horizontal (with step-up: stairs / ledges up to ~0.6m are climbable)
-    this._moveAxis(pos, vel, r, h, 'x', vel.x * dt);
-    this._moveAxis(pos, vel, r, h, 'z', vel.z * dt);
-    const lim = this.HALF - r;
-    pos.x = clamp(pos.x, -lim, lim); pos.z = clamp(pos.z, -lim, lim);
-    return onGround;
+    // Single collision path. Flat maps carry a 'flat' terrain (height 0); _collideTerrain's only
+    // terrain-specific extra — the ground-follow re-seat — is gated on hasTerrain (Edit 4), so on
+    // flat maps this is byte-identical to the old y=0 floor.
+    return this._collideTerrain(pos, vel, r, h, dt);
   }
 
   // Terrain-aware collide (only when hasTerrain). Walkable ground height under the
@@ -367,10 +349,14 @@ export class World {
     // GROUND-FOLLOW — after moving, re-seat the feet on the (now possibly different)
     // terrain height so ascents/descents are smooth and never fall-through.
     gy = terr.terrainHeightAt(pos.x, pos.z);
-    if (pos.y < gy) {                                     // walked into rising ground → push up
-      pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
-    } else if (onGround && pos.y - gy <= TERRAIN_GROUND_FOLLOW_STEP) { // descend smoothly within a step
-      pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+    // Gated on hasTerrain: on FLAT maps this down-snap would clip the player off man-made ledges
+    // ≤ TERRAIN_GROUND_FOLLOW_STEP (0.6 m), so flat maps keep the old "stay on the box top" behavior.
+    if (this.hasTerrain) {
+      if (pos.y < gy) {                                     // walked into rising ground → push up
+        pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+      } else if (onGround && pos.y - gy <= TERRAIN_GROUND_FOLLOW_STEP) { // descend smoothly within a step
+        pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+      }
     }
     return onGround;
   }
@@ -422,7 +408,7 @@ export class World {
   // Ground height under (x,z): the terrain surface on the heightfield demo slice, else the
   // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
   // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
-  groundY(x, z) { return (this.hasTerrain && this.terrain) ? this.terrain.terrainHeightAt(x, z) : 0; }
+  groundY(x, z) { return this.terrain.terrainHeightAt(x, z); }
 
   rayHit(origin, dir, maxDist, ignore = null) {
     const ignored = Array.isArray(ignore) ? ignore : null;
