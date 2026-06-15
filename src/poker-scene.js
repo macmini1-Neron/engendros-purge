@@ -17,8 +17,8 @@ import { derivePokerEvents } from './poker/pokerevents.js';
 import { dealOrder } from './poker/dealorder.js';
 import { PokerHover } from './poker-hover.js';
 
-const DEAL_FLIGHT = 0.20;   // s — a single hole card's pitch from the centre deck to its seat
-const DEAL_STAGGER = 0.07;  // s — gap between consecutive pitches (one card at a time, real dealer cadence)
+const DEAL_FLIGHT = 0.34;   // s — a single hole card's pitch from the centre deck to its seat (deliberate, readable)
+const DEAL_STAGGER = 0.15;  // s — gap between consecutive pitches (one card at a time, unhurried dealer cadence ≈ 2s for a 6-handed deal)
 
 const SCENE_CSS = `
 #poker .pk-canvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; display:none; }
@@ -165,9 +165,11 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   // backs stay face-down; click-to-peek is unchanged). A frame-synced `pokerDeal` click fires as it lands.
   _dealInCard(card, rest, delay = 0) {
     const FELT_Y = 0.013;
-    const sx = 0, sy = FELT_Y + 0.05, sz = -0.02;          // the deck at the table centre (where the board sits)
+    const sx = 0, sy = FELT_Y + 0.06, sz = -0.02;          // the deck at the table centre (where the board sits)
     const tw = new Tween(DEAL_FLIGHT, delay);
     const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
+    const restRotY = card.rotation.y;
+    const spin = (rest.x >= 0 ? 1 : -1) * 0.7;             // a believable flat spin off the deck, squaring up on landing (alternates by side)
     let clicked = false;
     card.visible = false;
     this._anims.push((dt) => {
@@ -178,9 +180,11 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const e = easeOutCubic(tw.p);
       card.position.x = sx + (rest.x - sx) * e;
       card.position.z = sz + (rest.z - sz) * e;
-      card.position.y = sy + (rest.y - sy) * e + 0.045 * Math.sin(e * Math.PI); // a low pitch arc across the felt
-      if (!clicked && tw.p >= 0.6) { clicked = true; if (a && a.pokerDeal) a.pokerDeal(); } // click as it lands
-      if (tw.done) { card.position.set(rest.x, rest.y, rest.z); return true; }
+      // a higher pitch arc + a gentle drop, the card decelerating onto the felt (believable toss, not a slide)
+      card.position.y = sy + (rest.y - sy) * e + 0.085 * Math.sin(e * Math.PI);
+      card.rotation.y = restRotY + spin * (1 - e);         // spins flat as it flies, unwinds to square by the time it lands
+      if (!clicked && tw.p >= 0.7) { clicked = true; if (a && a.pokerDeal) a.pokerDeal(); } // soft click as it settles
+      if (tw.done) { card.position.set(rest.x, rest.y, rest.z); card.rotation.y = restRotY; return true; }
       return false;
     });
   }
