@@ -436,6 +436,18 @@ export class AudioManager {
     this.noise(0.14, 0.17, 'bandpass', 1300, 1.0);
     this.tone(420, 0.05, 'sine', 0.05);
   }
+  // a card TURNED FACE-UP (board flop/turn/river + showdown): a crisp paper snap + a pitched ring that RISES
+  // with `step` along a C-major run (C-D-E-F-G…). The C2 audio-frame "juice" lever — fired EXACTLY on the
+  // flip frame (not the anim start) so the rising notes build anticipation as each card turns. Kept subtle
+  // (it fires per card). `step` is clamped to the run; wins still own the louder rising fanfare (pokerWin).
+  pokerFlip(step = 0) {
+    if (!this.ctx) return;
+    this.noise(0.04, 0.16, 'bandpass', 2700, 2.4);                 // crisp flick as the card turns over
+    const semis = [0, 2, 4, 5, 7, 9, 11, 12];                      // C D E F G A B C (matches pokerWin)
+    const f = 523.25 * Math.pow(2, semis[Math.max(0, Math.min(step | 0, semis.length - 1))] / 12); // from C5
+    this.tone(f, 0.06, 'triangle', 0.085);
+    this.tone(f * 2, 0.04, 'sine', 0.03);                          // a faint upper octave for sparkle
+  }
 
   // ---- Mosin 91/30: recorded rifle shot + bolt/reload foley, with procedural fallback ----
   mosinShot() {

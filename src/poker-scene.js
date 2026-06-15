@@ -159,8 +159,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   // Deal a card in like a real dealer: PHASE 1 it drops onto the felt FACE-DOWN, then PHASE 2 it turns
   // over "from the side" — rotating about its long (Z) axis so a side edge lifts and the face reveals.
   // `rest` = {x,y,z,rotX}. `delay` staggers a flop (deal cards left→right). research B3.
-  _flipInCard(card, rest, delay = 0) {
+  _flipInCard(card, rest, delay = 0, note = null) {
     const tw = new Tween(0.6, delay), dropY = 0.045;
+    const a = (note != null && typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null; // sound only when a rising-note step is given (board / showdown reveals)
+    let snapped = false;
     card.position.set(rest.x, rest.y + dropY, rest.z);
     card.rotation.set(rest.rotX || 0, 0, Math.PI);         // start: laid FACE-DOWN (turned over on the long axis)
     card.visible = false;                                  // unseen until its turn — a delayed card must not sit face-down on the felt early
@@ -173,6 +175,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const turnP = easeOutCubic(Math.max(0, (p - 0.4) / 0.6)); // phase 2 (0.4→1): turn over from the side
       card.position.y = rest.y + dropY * (1 - dealP) + 0.018 * Math.sin(turnP * Math.PI); // settle down, lift a touch mid-turn so the edge clears the felt
       card.rotation.z = Math.PI * (1 - turnP);             // π (face-down) → 0 (face-up): the SIDE-edge turn the dealer does
+      if (!snapped && p >= 0.62 && a && a.pokerFlip) { snapped = true; a.pokerFlip(note); } // frame-synced rising-note snap, fired AS the card turns face-up (not at anim start)
       return tw.done;
     });
   }
@@ -568,15 +571,14 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       else if (p.lastAct.type === 'fold' && a.pokerFold) a.pokerFold();    // cards skimmed into the muck
     }
     if (!events || !events.length) return;
-    let deals = 0, chipUnits = 0, win = 0;
+    let chipUnits = 0, win = 0;
     for (const e of events) {
-      if (e.t === 'boardCard' || e.t === 'holeReveal') deals++;
-      else if (e.t === 'chipMove') chipUnits += Object.values(e.moves).reduce((x, y) => x + y, 0);
+      if (e.t === 'chipMove') chipUnits += Object.values(e.moves).reduce((x, y) => x + y, 0);
       else if (e.t === 'potAward' && e.id === p.youId && e.net) win = Math.max(win, Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, e.amount))))); // YOUR net win only
     }
-    // On a pre-flop deal-in, the per-card pitch clicks are fired by _dealInCard (frame-synced to each landing),
-    // so skip the generic burst here to avoid doubling up.
-    if (deals && a.pokerDeal && !dealIn) for (let i = 0; i < Math.min(deals, 3); i++) setTimeout(() => a.pokerDeal(), i * 90); // a flop riffles as ~3 cards
+    // NOTE: card-reveal sounds are NOT fired here. The pre-flop deal-in fires frame-synced pokerDeal per card
+    // in _dealInCard; the board (flop/turn/river) + showdown reveals fire frame-synced rising-note pokerFlip
+    // per card in _flipInCard (timed to each card's actual turn). A generic burst here would double them up.
     if (chipUnits && a.pokerChip) {
       if (a.pokerPotSlide) a.pokerPotSlide();
       const n = Math.min(chipUnits, 6);
@@ -654,7 +656,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             if (s.hole) {
               setCardFace(card, s.hole[h]);                          // showdown reveal → face up
               const rd = revealDelay[s.id];
-              if (rd != null) this._flipInCard(card, { x: card.position.x, y: card.position.y, z: card.position.z, rotX: 0 }, rd + h * 0.06); // newly revealed → flip up, staggered per player (one hand at a time)
+              if (rd != null) { const ord = Math.round(rd / SHOWDOWN_STAGGER); this._flipInCard(card, { x: card.position.x, y: card.position.y, z: card.position.z, rotX: 0 }, rd + h * 0.06, ord * 2 + h); } // newly revealed → flip up, staggered per player; note rises across the reveal order (Balatro celebration run)
             } else card.rotateX(Math.PI);                            // hidden → back-up (face-down on the table)
           }
           d.add(card);
@@ -710,7 +712,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const rest = { x: (i - 2) * 0.105, y: 0.014, z: BOARD_Z, rotX: 0 };
       card.position.set(rest.x, rest.y, rest.z); card.scale.setScalar(1.45); d.add(card);
       this._boardCards.push(card); card.userData.pk = { kind: 'card' }; this._hoverTargets.push(card); // community cards → click for the TV close-up + hover glow
-      if (newBoard && newBoard.has(i)) this._flipInCard(card, rest, boardDelay + (flipN++) * BOARD_STAGGER); // NEW card → reveal AFTER the bets finish sliding into the pot, then one at a time (left→right)
+      if (newBoard && newBoard.has(i)) this._flipInCard(card, rest, boardDelay + (flipN++) * BOARD_STAGGER, i); // NEW card → reveal AFTER the bets finish sliding into the pot, then one at a time (left→right); note=board index → rising C-D-E (flop)·F (turn)·G (river)
     }
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;
