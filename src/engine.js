@@ -151,10 +151,18 @@ export class Engine {
     if (next !== this._renderScale) { this._renderScale = next; this._applyPixelRatio(); }
   }
   setShadowQuality(px) {
-    if (!px) { this.renderer.shadowMap.enabled = false; this.sun.castShadow = false; return; }
+    const want = px | 0;
+    if (!want) { // shadows off
+      if (this.renderer.shadowMap.enabled) {
+        this.renderer.shadowMap.enabled = false; this.sun.castShadow = false;
+        if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; } // free the GPU texture
+      }
+      return;
+    }
+    if (this.renderer.shadowMap.enabled && this.sun.shadow.mapSize.x === want) return; // already at this size → no rebuild
     this.renderer.shadowMap.enabled = true; this.sun.castShadow = true;
-    if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; } // force rebuild at new size
-    this.sun.shadow.mapSize.set(px, px);
+    if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; } // resize → force rebuild
+    this.sun.shadow.mapSize.set(want, want);
   }
 
   update(dt) {

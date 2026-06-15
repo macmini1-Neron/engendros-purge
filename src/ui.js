@@ -291,7 +291,7 @@ export class UI {
 // ---------------------------------------------------------------------------
 // Settings — persisted (localStorage) options, applied live.
 // ---------------------------------------------------------------------------
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 1, shadowQ: 2048, drawDist: 0, aa: 0, showFps: 0 };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 1, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0 };
 
 export class Settings {
   constructor(game) {
@@ -310,7 +310,7 @@ export class Settings {
     const e = this.game.engine;
     if (e.setShadowQuality) e.setShadowQuality(this.data.shadowQ);
     if (e.setAdaptive) e.setAdaptive(!!this.data.adaptiveRes);
-    if (e.setRenderScale && !this.data.adaptiveRes) e.setRenderScale(1); // manual mode = full res unless adaptive
+    if (e.setRenderScale && !this.data.adaptiveRes) e.setRenderScale(this.data.renderScale); // manual: honor preset scale
     this.game._drawDist = this.data.drawDist | 0;
     this.game._showFps = !!this.data.showFps;
     if (!this.data.showFps) { const f = document.getElementById('fps'); if (f) f.style.display = 'none'; }
@@ -340,7 +340,7 @@ export class Settings {
     const presets = ['Low', 'Medium', 'High'];
     const gp = document.getElementById('s-gfx'); if (gp) gp.addEventListener('click', () => {
       const i = (presets.indexOf(this.data.gfxPreset) + 1) % presets.length; this.data.gfxPreset = presets[i];
-      const c = presetConfig(this.data.gfxPreset); this.data.shadowQ = c.shadowQ; this.data.drawDist = c.drawDist;
+      const c = presetConfig(this.data.gfxPreset); this.data.shadowQ = c.shadowQ; this.data.drawDist = c.drawDist; this.data.renderScale = c.renderScale; this.data.aa = c.aa;
       this.apply(); this.save(); this._refresh();
     });
     const ar = document.getElementById('s-adapt'); if (ar) ar.addEventListener('click', () => { this.data.adaptiveRes = this.data.adaptiveRes ? 0 : 1; this.apply(); this.save(); this._refresh(); });

@@ -1154,7 +1154,7 @@ class Game {
   _cullByDistance(d) {
     const cam = this.engine.camera.position, d2 = d * d;
     const far = (p) => { const dx = p.x - cam.x, dz = p.z - cam.z; return dx * dx + dz * dz > d2; };
-    if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh && e.pos) e.mesh.visible = !far(e.pos); }
+    if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh && e.pos) e.mesh.visible = !!e.alive && !far(e.pos); }
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = !far(pu.mesh.position); }
     if (this.world && this.world.chunks) this.world.chunks.drawDistance = d;
     if (this.engine.scene && this.engine.scene.fog) this.engine.scene.fog.far = Math.min(this.engine.scene.fog.far, d);
@@ -1163,7 +1163,7 @@ class Game {
   // Re-show every dynamic mesh the cull may have hidden. Called once when `_drawDist` drops back to 0 so the
   // feature is safe to toggle (DayNight re-expands fog.far on its own each frame; chunk drawDistance is left).
   _restoreVisibility() {
-    if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh) e.mesh.visible = true; }
+    if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh) e.mesh.visible = !!e.alive; }
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = true; }
   }
 }
