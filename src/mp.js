@@ -894,17 +894,19 @@ export class MP {
       if (gp.kind === 'molotov') { // MOLO_GRAV arc + fire trail (mirrors the real molotov integration)
         gp.vel.y -= MOLO_GRAV * dt;
         gp.mesh.position.addScaledVector(gp.vel, dt);
-        if (gp.mesh.position.y <= 0.05) { gp.mesh.position.y = 0.05; boom = true; }
+        const gy = g.world.groundY(gp.mesh.position.x, gp.mesh.position.z);
+        if (gp.mesh.position.y <= gy + 0.05) { gp.mesh.position.y = gy + 0.05; boom = true; }
         if (!boom) { gp.trailT -= dt; if (gp.trailT <= 0) { gp.trailT = 0.04; g.effects.firePool(gp.mesh.position, 0.3, 0.6); } }
       } else if (gp.kind === 'rocket') { // straight line + smoke/spark trail (mirrors the real rocket integration)
         const dir = tmp.copy(gp.vel).normalize();
         gp.mesh.position.addScaledVector(gp.vel, dt);
-        if (gp.mesh.position.y < 0.2) boom = true;
+        if (gp.mesh.position.y < g.world.groundY(gp.mesh.position.x, gp.mesh.position.z) + 0.2) boom = true;
         g.effects.impact(gp.mesh.position, dir, 'spark');
       } else { // grenade: gravity + floor bounce (mirrors the real grenade integration)
         gp.vel.y -= 22 * dt; gp.mesh.position.addScaledVector(gp.vel, dt);
         gp.mesh.rotation.x += dt * 6; gp.mesh.rotation.y += dt * 4;
-        if (gp.mesh.position.y < 0.11) { gp.mesh.position.y = 0.11; gp.vel.y *= -0.4; gp.vel.x *= 0.6; gp.vel.z *= 0.6; }
+        const gy = g.world.groundY(gp.mesh.position.x, gp.mesh.position.z);
+        if (gp.mesh.position.y < gy + 0.11) { gp.mesh.position.y = gy + 0.11; gp.vel.y *= -0.4; gp.vel.x *= 0.6; gp.vel.z *= 0.6; }
       }
       if (boom) {
         const pos = gp.mesh.position.clone();
