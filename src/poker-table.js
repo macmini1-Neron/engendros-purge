@@ -28,6 +28,7 @@ const BOT_THINK = 0.9;      // bot pause before acting (s) — feels human
 const SHOWDOWN_SECS = 6.5;  // dwell on a real showdown — long enough to read who won with what (newbie-friendly)
 const FOLD_SECS = 2.5;      // shorter dwell when everyone folded (no combination to read)
 const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar animates clientside
+const ANTE_GATHER_SECS = 8; // co-op: ante-ack window — host waits this long for every invited client to confirm it paid before building the pool
 const BOT_NAMES = ['SHARK', 'DOC', 'LUCKY', 'SLIM', 'ACE'];
 // Physical starting chip set (value 1500 == DEFAULT_START_STACK) + the dealer rack/float that backs
 // change-making. The float is heavy on small denominations and scales its 5s with the entrant count.
@@ -49,9 +50,11 @@ export class PokerTable {
     this.resultTimer = 0;
     this._netT = 0;
     this.names = {};
+    this.skins = {};          // seatId → chip-skin id (co-op: per-player cosmetic; solo: empty → renderer defaults)
     this.clientSnap = null;   // client role: the latest host snapshot to render
     this.coopBuyIn = 0;
     this._paid = 0;           // chips actually debited from this player's bank (refund only this)
+    this._gathering = false; this._invited = new Set(); this._confirmed = new Set(); this._anteDeadline = 0; // co-op ante-ack gathering (C1)
     this._credited = false;
     this._refunded = false;
     this._aborted = false;
@@ -82,7 +85,7 @@ export class PokerTable {
       onStart: (cfg) => { if (cfg && cfg.coop) this.startCoop(cfg.buyIn | 0); else this.startTournament(cfg); },
       onAct: (a) => this.humanAct(a),
       onLeave: () => this.game.closePoker(),
-      onChipSkin: (id) => { setChipSkin(id); if (this.game.meta) this.game.meta.chipSkin = id; if (this.game._saveMeta) this.game._saveMeta(); }, // local cosmetic: apply + persist
+      onChipSkin: (id) => { setChipSkin(id); if (this.game.meta) this.game.meta.chipSkin = id; if (this.game._saveMeta) this.game._saveMeta(); if (this.game.mp && this.game.mp.notifyChipSkinChanged) this.game.mp.notifyChipSkinChanged(); }, // local cosmetic: apply + persist + (co-op) refresh host roster so opponents see it
       onCardBack: (id) => { setCardBackSkin(id); if (this.game.meta) this.game.meta.cardBack = id; if (this.game._saveMeta) this.game._saveMeta(); },
       getShowOdds: () => !!(this.game.settings && this.game.settings.data && this.game.settings.data.pokerOdds), // local player's own preference
     });
@@ -101,6 +104,7 @@ export class PokerTable {
   startTournament({ bots = 5, mode = 'practice' } = {}) {
     const players = [{ id: 'you' }];
     this.names = { you: 'YOU' };
+    this.skins = {}; // bots default to 'dice' in the renderer; the local 'you' seat uses the global skin
     for (let i = 0; i < bots; i++) { const id = 'bot' + i; players.push({ id }); this.names[id] = BOT_NAMES[i] || ('BOT ' + (i + 1)); }
     this.role = 'solo'; this.coop = false; this.mode = mode; this.youId = 'you';
     this.rng = mulberry32(((Date.now() >>> 0) ^ (bots * 2654435761)) >>> 0);
@@ -130,7 +134,7 @@ export class PokerTable {
     const ids = (seatIds && seatIds.length) ? seatIds.slice() : [...mp.roster.keys()];
     if (ids.length < 2) { this._toast('Need at least 2 players', 0xd23a2a); return; }
     if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a); return; }
-    this.names = {}; for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; }
+    this.names = {}; this.skins = {}; for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; this.skins[id] = (r && r.chipSkin) || 'dice'; }
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
     this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
     // INVITE the seated clients FIRST and seat ONLY the ones the invite actually reaches. The prize pool is
@@ -142,15 +146,52 @@ export class PokerTable {
     const seated = [mp.myId];
     for (const id of ids) {
       if (id === mp.myId) continue;
-      try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names }); seated.push(id); }
+      try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins }); seated.push(id); }
       catch (e) { console.warn('[poker] pkstart send failed for ' + id + ' — dropping it from the table (not counted in the pool)', e); }
     }
     if (seated.length < 2) { this._toast('Could not reach enough players', 0xd23a2a); return; } // nobody charged yet → safe bail
+    // ANTE-ACK GATHERING (C1): do NOT build the pool or charge anyone yet. The host is auto-confirmed;
+    // each invited client replies 'pkante' from enterCoopClient AFTER it debits its own bank. _finalizeDeal
+    // (on all-confirmed, or at the deadline) seats ONLY the confirmed set, so the prize pool == buy-ins
+    // actually collected — a client that gets pkstart but declines/drops before paying is never counted.
+    this._gathering = true;
+    this._invited = new Set(seated.filter((id) => id !== mp.myId));
+    this._confirmed = new Set([mp.myId]);                          // host counts itself (it pays in _finalizeDeal)
+    this._anteDeadline = ANTE_GATHER_SECS;
+    this.active = true;                                            // so update() ticks the deadline
+    this.phase = 'lobby';                                          // render() skips 'lobby' → no table drawn until we deal (tour is still null)
+    this._toast('Waiting for players to ante up…', 0xd8b066);
+  }
+
+  // Host: a client confirmed (via 'pkante') that it actually paid its buy-in → count it toward the pool.
+  onAnte(from) {
+    if (!this.coop || this.role !== 'host' || !this._gathering) return;
+    if (!this._invited.has(from)) return;                         // only seats we actually invited count
+    this._confirmed.add(from);
+    if ([...this._invited].every((id) => this._confirmed.has(id))) this._finalizeDeal(); // everyone in → deal now
+  }
+
+  // Host: the ante window closed (all confirmed, or the deadline hit). Seat ONLY the confirmed players,
+  // tell any invited-but-unconfirmed client to bail (it refunds itself), then build the pool + deal.
+  _finalizeDeal() {
+    if (this.role !== 'host' || !this._gathering) return;
+    this._gathering = false;
+    const mp = this.game.mp;
+    for (const id of this._invited) {                             // unconfirmed → may have paid → abort it so it refunds
+      if (!this._confirmed.has(id)) { try { mp.net.sendTo(id, 'pkabort', {}); } catch (e) {} }
+    }
+    const seated = [...this._confirmed];                          // includes the host (mp.myId)
+    if (seated.length < 2) {                                      // nobody else anted in time → cancel; nobody (incl. host) was charged
+      this.active = false;
+      this._toast('Not enough players anted — game cancelled', 0xd23a2a);
+      this.coop = false; this.role = 'solo';
+      if (this.game.state === 'poker') this.game.closePoker();
+      return;
+    }
     this.rng = mulberry32(((Date.now() >>> 0) ^ (seated.length * 2654435761)) >>> 0);
     this.tour = new Tournament({ players: seated.map((id) => ({ id })), buyIn: this.coopBuyIn, rng: this.rng });
     this._dealChips();
-    this.active = true;
-    this._paid = this._spend(this.coopBuyIn);                      // host pays own buy-in (affordability checked above)
+    this._paid = this._spend(this.coopBuyIn);                     // host pays its buy-in NOW — only once the table is real
     if (this.renderer) this.renderer.showTable();
     this._beginHand();
     this._broadcastPoker();
@@ -172,9 +213,11 @@ export class PokerTable {
     this.role = 'client'; this.coop = true; this.mode = 'money';
     this.youId = this.game.mp.myId;
     this.names = d && d.names ? d.names : {};
+    this.skins = (d && d.skins) || {};
     this.coopBuyIn = buyIn; this._credited = false; this._refunded = false; this._aborted = false;
     this.active = true; this.phase = 'playing'; this.clientSnap = null;
     this._paid = this._spend(buyIn);                               // client pays own buy-in (affordability checked above)
+    try { this.game.mp.net.send('pkante', {}); } catch (e) {}      // ACK to the host: I paid → count me in the pool (host deals once everyone confirms)
     if (this.renderer) this.renderer.showTable();
   }
 
@@ -197,6 +240,11 @@ export class PokerTable {
   }
 
   onPeerDisconnect(id) { // host side, on peer drop or 'pkleave' — immediate elimination
+    if (this._gathering && this.role === 'host') { // dropped mid-ante → uncount it; deal if everyone left is confirmed
+      this._invited.delete(id); this._confirmed.delete(id);
+      if ([...this._invited].every((x) => this._confirmed.has(x))) this._finalizeDeal();
+      return;
+    }
     if (!this.coop || this.role !== 'host' || !this.tour) return;
     this._dropped.add(id);
     if (this.hand && this.phase === 'playing') {
@@ -302,6 +350,11 @@ export class PokerTable {
 
   update(dt) {
     if (!this.active || this.role === 'client') return; // host/solo drive; client just renders snaps
+    if (this._gathering) { // host: ante-ack window — deal once everyone confirms, or seat-the-confirmed / cancel at the deadline
+      this._anteDeadline -= dt;
+      if (this._anteDeadline <= 0) this._finalizeDeal();
+      return;
+    }
     if (this.phase === 'playing' && this.hand) {
       const legal = legalActions(this.hand);
       if (!legal) return;
@@ -350,7 +403,7 @@ export class PokerTable {
       phase: this.phase,
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',
-      youId: id, names: this.names, moneyPayout,
+      youId: id, names: this.names, skins: this.skins, moneyPayout,
       // live refs to the bank's chip sets — READ-ONLY contract (clients get a JSON copy via pksnap; the
       // host renderer must only read these, never mutate them, or it would break conservation).
       chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot } : null,
@@ -396,6 +449,7 @@ export class PokerTable {
     this.chipbank = null; this._lastCommitted = {};
     this.clientSnap = null; this._netT = 0; this._dropped = new Set();
     this._credited = false; this._refunded = false; this._aborted = false; this.coopBuyIn = 0; this._paid = 0;
+    this._gathering = false; this._invited = new Set(); this._confirmed = new Set(); this._anteDeadline = 0; // co-op ante-ack window (C1)
   }
 
   leave() { // Game.closePoker — tell the room, refund/abort as needed
