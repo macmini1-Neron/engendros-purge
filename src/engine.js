@@ -2,6 +2,7 @@
 // effect (render at low internal resolution, upscale crisp via CSS).
 import * as THREE from 'three';
 import { clamp } from './util.js';
+import { adaptiveStep } from './graphics.js';
 
 // The held weapon (viewmodel) renders in a SECOND pass on its own layer with a
 // freshly-cleared depth buffer: always drawn on top of the world, yet it still
@@ -15,10 +16,13 @@ export class Engine {
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: false,
+      antialias: (() => { try { return JSON.parse(localStorage.getItem('engendros_settings') || '{}').aa === 1; } catch (e) { return false; } })(),
       powerPreference: 'high-performance',
       stencil: false,
     });
+    this._renderScale = 1;                                   // graphics-quality render scale (×DPR)
+    this._baseDpr = Math.min(window.devicePixelRatio || 1, 2);
+    this._adaptive = false;                                  // adaptive resolution on/off
     this.renderer.setClearColor(0x9fd3e8, 1);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -120,7 +124,8 @@ export class Engine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     // Full native resolution (crisp); cap DPR at 2 so 4K/retina stays performant.
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this._baseDpr = Math.min(window.devicePixelRatio || 1, 2);
+    this._applyPixelRatio();
     this.renderer.setSize(w, h, false);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
@@ -129,6 +134,27 @@ export class Engine {
   setFov(fov) {
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
+  }
+
+  _applyPixelRatio() {
+    this.renderer.setPixelRatio(this._baseDpr * this._renderScale);
+  }
+  setRenderScale(scale) {
+    this._renderScale = Math.max(0.5, Math.min(1, scale));
+    this._applyPixelRatio();
+  }
+  setAdaptive(on) { this._adaptive = !!on; if (!on) { this._renderScale = 1; this._applyPixelRatio(); } }
+  // Called each frame with the smoothed frame time; nudges render scale to hold ~60fps.
+  updateAdaptive(frameMs) {
+    if (!this._adaptive || !(frameMs > 0)) return;
+    const next = adaptiveStep(this._renderScale, frameMs, { targetMs: 16.7 });
+    if (next !== this._renderScale) { this._renderScale = next; this._applyPixelRatio(); }
+  }
+  setShadowQuality(px) {
+    if (!px) { this.renderer.shadowMap.enabled = false; this.sun.castShadow = false; return; }
+    this.renderer.shadowMap.enabled = true; this.sun.castShadow = true;
+    if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; } // force rebuild at new size
+    this.sun.shadow.mapSize.set(px, px);
   }
 
   update(dt) {
