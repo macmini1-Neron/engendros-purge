@@ -396,7 +396,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {}; this._lastHandNo = 0; // fresh table → the first hand animates a deal-in
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {}; this._lastHandNo = 0; this._seenActN = 0; // fresh table → the first hand animates a deal-in + the first check/fold SFX isn't suppressed
     if (this._potFx) { for (let i = this._potFx.children.length - 1; i >= 0; i--) { const c = this._potFx.children[i]; this._potFx.remove(c); this._disposeTree(c); } } } // fresh table → no stale SFX deltas / dangling anims / bet preview / peek / flying chips
   showLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
