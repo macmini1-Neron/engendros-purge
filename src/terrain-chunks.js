@@ -17,6 +17,7 @@ export class TerrainChunks {
     this.group.name = 'terrainChunks';
     this.meshes = [];
     this.visible = 0;
+    this.drawDistance = 0; // 0 = unlimited; set by Game._cullByDistance for draw-distance culling
     // scratch objects reused each frame (no per-frame allocation)
     this._frustum = new THREE.Frustum();
     this._m = new THREE.Matrix4();
@@ -40,10 +41,16 @@ export class TerrainChunks {
     this._m.multiplyMatrices(camera.projectionMatrix, this._inv);
     this._frustum.setFromProjectionMatrix(this._m);
     let vis = 0;
+    const dd = this.drawDistance, dd2 = dd > 0 ? dd * dd : 0;
+    const cx = camera.position;
     for (const mesh of this.meshes) {
       if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
       this._sphere.copy(mesh.geometry.boundingSphere).applyMatrix4(mesh.matrixWorld);
-      const inView = this._frustum.intersectsSphere(this._sphere);
+      let inView = this._frustum.intersectsSphere(this._sphere);
+      if (inView && dd2 > 0) {
+        const dx = this._sphere.center.x - cx.x, dz = this._sphere.center.z - cx.z;
+        if (dx * dx + dz * dz > dd2) inView = false; // beyond draw distance
+      }
       mesh.visible = inView;
       if (inView) vis++;
     }
