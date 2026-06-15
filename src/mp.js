@@ -330,7 +330,7 @@ export class MP {
     this._setLobbyDiag('');
     this._resetLobbyTransport();
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
-    this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
+    this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, chipSkin: (this.game.meta && this.game.meta.chipSkin) || 'dice', ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
     const code = makeRoomCode();
     this._resetDiag('host', code);
     this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — copy it and send it to the squad.`, c); this._setLobbyDiag(this._lanMode() ? 'LAN room is open. Squad joins through the Hamachi IP and this code.' : 'Manual room is open. Share the code; no public-room scanner is running.'); this._renderRoomBrowser(); };
@@ -349,7 +349,7 @@ export class MP {
     this.net.onPeerOpen = () => this._lobbyMsg(this._lanMode() ? ('Connecting to LAN room ' + room + '…') : ('Connecting to ' + room + '… finding WebRTC route (can take up to 45s).'));
     this.net.onConnect = () => {
       this.myId = this.net.selfId; this.net.lastRecv = performance.now();
-      this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
+      this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, chipSkin: (this.game.meta && this.game.meta.chipSkin) || 'dice', loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
       this._markDiag({ helloSent: true }, 'Hello sent');
       this._lobbyMsg('Connected… handshaking with host (waiting up to 25s).');
       this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer after 25s. Ask the host to refresh/re-host.'), 25000);
@@ -582,7 +582,8 @@ export class MP {
       if (dupe) this._dropPeer(dupe[0], { silent: true });
       if (!this.roster.has(from) && this.roster.size >= 4) { this.net.sendTo(from, 'full', {}); return; }   // co-op cap = 4 (host + 3)
       const skin = (d.skin != null) ? d.skin : this.roster.size;
-      this.roster.set(from, { name: nm, skin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [], pid });
+      const chipSkin = (typeof d.chipSkin === 'string') ? d.chipSkin : 'dice';
+      this.roster.set(from, { name: nm, skin, chipSkin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [], pid });
       this._lastXf.set(from, performance.now());
       this.net.send('roster', this._rosterArr()); this._renderRoster();
       this.net.sendTo(from, 'joinok', {});
@@ -608,7 +609,7 @@ export class MP {
     n.on('goodbye', (d, from) => { if (this.isHost) this._dropPeer(from); });                                  // client left cleanly
     n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
-    n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
+    n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, chipSkin: (typeof p.chipSkin === 'string') ? p.chipSkin : 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
     n.on('mode', (d) => { // host announced the squad's mode (+ poker buy-in)
       if (this.isHost || !d) return;
@@ -636,11 +637,13 @@ export class MP {
     n.on('structrej', (d) => { if (!this.isHost && d && typeof d.kind === 'string') this.game.inventory.addItem(d.kind, 1); }); // host rejected → restore material
     n.on('structdie', (d) => g.build.applyRemoteDestroy(d.id));                // a structure was destroyed
     // --- co-op poker (host-authoritative; clients are thin terminals) ---
-    n.on('pkstart', (d) => { if (!this.isHost) g._enterCoopPoker(d); });                          // host dealt → join the table
+    n.on('pkstart', (d) => { if (!this.isHost) g._enterCoopPoker(d); });                          // host invited me → pay + ante-ack, then wait for the deal (pksnap)
     n.on('pksnap', (d) => { if (!this.isHost && g.poker) g.poker.onSnap(d); });                   // host → my personalised view
     n.on('pkact', (d, from) => { if (this.isHost && g.poker && d) g.poker.hostClientAct(from, d.action); }); // client action → host validates
     n.on('pkleave', (d, from) => { if (this.isHost && g.poker) g.poker.onPeerDisconnect(from); }); // client left the table → eliminate
     n.on('pkabort', () => { if (!this.isHost && g.poker) g.poker.onAbort(); }); // host ended the session → onAbort refunds + returns to lobby
+    n.on('pkante', (d, from) => { if (this.isHost && g.poker) g.poker.onAnte(from); }); // client confirmed it paid its buy-in → count it in the pool (C1 ante-ack)
+    n.on('chipskin', (d, from) => { if (!this.isHost || !d) return; const r = this.roster.get(from); if (r && typeof d.chipSkin === 'string') { r.chipSkin = d.chipSkin; this.net.send('roster', this._rosterArr()); this._renderRoster(); } }); // cosmetic: update only the peer's poker chip skin, PRESERVING its anted/ready state
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio
@@ -759,7 +762,22 @@ export class MP {
     n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); g.loot._spillDropLoot(drop.pos, g.loot._rollGive(), from); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative: roll the gun + spawn ONE shared pile (loot only, no cash)
     n.on('dropopened', (d) => { if (d) g.loot.removeDropById(d.id); });                                                   // someone claimed it → clear the visual crate everywhere
   }
-  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null })); }
+  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, chipSkin: p.chipSkin || 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null })); }
+  // Cosmetic-only: the local player picked a new poker chip skin in the co-op lobby. Refresh the roster
+  // so the host ships the right per-seat skin in the next poker snapshot. No-op when not networked.
+  notifyChipSkinChanged() {
+    if (!this.net || !this.myId) return;                                  // solo / not in a session → nothing to sync
+    const skin = (this.game.meta && this.game.meta.chipSkin) || 'dice';
+    if (this.isHost) {
+      const me = this.roster.get('host'); if (me) me.chipSkin = skin;
+      try { this.net.send('roster', this._rosterArr()); } catch (e) {}    // host owns the roster → re-broadcast it
+    } else {
+      // Targeted skin-only update — NOT a re-hello: a full hello re-handshake would reset my roster
+      // entry to ready:false on the host (its hello handler always un-readies), which would wipe my
+      // anted state mid-lobby and disable the host's DEAL button. This only touches chipSkin.
+      try { this.net.send('chipskin', { chipSkin: skin }); } catch (e) {}
+    }
+  }
   _remote(id) {
     if (id === this.myId) return null;
     if (!this.remotes.has(id)) { const info = this.roster.get(id) || { name: 'Flopo', skin: 1 }; this.remotes.set(id, new RemotePlayer(this.game, id, info.name, info.skin)); }

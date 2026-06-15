@@ -1,7 +1,8 @@
 // Loopback test of the co-op (host-authoritative) poker netcode WITHOUT a browser/WebRTC.
 // PokerTable's net-facing logic is renderer-guarded, so with a stub `game` (fake mp/net, no DOM)
 // we can verify: personalised snapshots keep hole cards private, the host rejects out-of-turn /
-// wrong-player actions, and disconnect → elimination → walkover pays the survivor.
+// wrong-player actions, the C1 ante-ack handshake builds the pool from confirmed payers only, and
+// disconnect → elimination → walkover pays the survivor.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legalActions } from '../../src/poker/holdem.js';
@@ -22,20 +23,26 @@ function hostStub(bank = 5000) {
   return { game, sent, meta };
 }
 
-test('startCoop deducts the host buy-in and pulls clients in', () => {
+// Drive the C1 ante-ack: every invited client confirms it paid → on the last one the host finalizes + deals.
+function anteAll(pk) { for (const id of [...pk._invited]) pk.onAnte(id); }
+
+test('startCoop gathers antes, then deducts the host buy-in and deals the pool', () => {
   const { game, sent, meta } = hostStub(5000);
   const pk = new PokerTable(game);
   pk.startCoop(500);
-  assert.equal(meta.bank, 4500);                                   // host paid its buy-in
+  assert.equal(meta.bank, 5000, 'gathering: nobody is charged yet');
+  assert.equal(pk.tour, null, 'no table is built until the invited clients ante');
   const start = sent.find((m) => m.t === 'pkstart');
-  assert.ok(start && start.d.buyIn === 500, 'pkstart broadcast with buy-in');
+  assert.ok(start && start.d.buyIn === 500, 'pkstart invite carries the buy-in');
+  anteAll(pk);                                                    // clients confirm they paid → host deals
+  assert.equal(meta.bank, 4500, 'host paid its buy-in once the table was real');
   assert.equal(pk.tour.prizePool, 1500);                          // 500 × 3 entrants
 });
 
 test('personalised snapshots never leak another player\'s hole cards', () => {
   const { game, sent } = hostStub();
   const pk = new PokerTable(game);
-  pk.startCoop(500);
+  pk.startCoop(500); anteAll(pk);
   const snapC1 = [...sent].reverse().find((m) => m.t === 'pksnap' && m.to === 'c1');
   assert.ok(snapC1, 'a snapshot was sent to c1');
   const seats = snapC1.d.view.seats;
@@ -49,7 +56,7 @@ test('personalised snapshots never leak another player\'s hole cards', () => {
 test('host rejects an action from the wrong player and accepts the actor', () => {
   const { game } = hostStub();
   const pk = new PokerTable(game);
-  pk.startCoop(500);
+  pk.startCoop(500); anteAll(pk);
   const actor = legalActions(pk.hand).seat;
   const wrong = ['host', 'c1', 'c2'].find((id) => id !== actor);
   const potBefore = pk.hand.seats.reduce((a, s) => a + s.committed, 0);
@@ -72,7 +79,7 @@ test('canAnte: free ($0) always ok; otherwise the bank must cover the buy-in', (
 test('startCoop seats ONLY the anted subset and invites exactly them (no broadcast)', () => {
   const { game, sent, meta } = hostStub(5000);
   const pk = new PokerTable(game);
-  pk.startCoop(500, ['host', 'c1']);             // c2 connected but never anted → must be excluded
+  pk.startCoop(500, ['host', 'c1']); anteAll(pk);   // c2 connected but never anted → must be excluded
   assert.deepEqual(pk.tour.players.map((p) => p.id).sort(), ['c1', 'host']);
   assert.equal(pk.tour.prizePool, 1000);         // 500 × 2 anted players
   assert.equal(meta.bank, 4500);                 // host paid its own buy-in once
@@ -85,16 +92,51 @@ test('startCoop seats ONLY the anted subset and invites exactly them (no broadca
 test('$0 FREE practice tier seats everyone with no bank movement', () => {
   const { game, meta } = hostStub(0);            // broke host
   const pk = new PokerTable(game);
-  pk.startCoop(0, ['host', 'c1', 'c2']);
+  pk.startCoop(0, ['host', 'c1', 'c2']); anteAll(pk);
   assert.equal(meta.bank, 0);                    // free table → no debit
   assert.equal(pk.tour.prizePool, 0);
   assert.equal(pk.tour.players.length, 3);       // seated regardless of bank
 });
 
+test('ante-ack: the table deals the moment the last invited client antes (no deadline wait)', () => {
+  const { game } = hostStub(5000);
+  const pk = new PokerTable(game);
+  pk.startCoop(500, ['host', 'c1', 'c2']);
+  pk.onAnte('c1');
+  assert.equal(pk.tour, null, 'still gathering — c2 has not anted');
+  pk.onAnte('c2');                               // last one in → deal NOW, without waiting for the deadline
+  assert.ok(pk.tour && pk.hand, 'dealt as soon as everyone confirmed');
+  assert.equal(pk.phase, 'playing');
+});
+
+test('ante-ack: a client that never antes is excluded from the pool at the deadline (no minting)', () => {
+  const { game, sent, meta } = hostStub(5000);
+  const pk = new PokerTable(game);
+  pk.startCoop(500, ['host', 'c1', 'c2']);
+  pk.onAnte('c1');                               // only c1 confirms in time
+  assert.equal(pk.tour, null, 'still gathering — waiting on c2');
+  pk.update(100);                                // blow past the ante deadline with c2 outstanding
+  assert.deepEqual(pk.tour.players.map((p) => p.id).sort(), ['c1', 'host']);
+  assert.equal(pk.tour.prizePool, 1000, '500 × 2 — c2\'s uncollected buy-in is NEVER minted into the pool');
+  assert.equal(meta.bank, 4500, 'host paid exactly once');
+  assert.ok(sent.some((m) => m.t === 'pkabort' && m.to === 'c2'), 'c2 is told to bail so it refunds itself');
+});
+
+test('ante-ack: nobody antes → the game cancels and the host is never charged', () => {
+  const { game, sent, meta } = hostStub(5000);
+  const pk = new PokerTable(game);
+  pk.startCoop(500, ['host', 'c1', 'c2']);
+  pk.update(100);                                // deadline hits with only the host confirmed
+  assert.equal(pk.tour, null, 'no table is built');
+  assert.equal(pk.active, false, 'the game is cancelled');
+  assert.equal(meta.bank, 5000, 'host is NOT charged when the table never forms');
+  assert.ok(sent.filter((m) => m.t === 'pkabort').length >= 1, 'invited clients are told to bail');
+});
+
 test('disconnect folds the seat; everyone leaving hands the survivor the whole pool', () => {
   const { game, meta } = hostStub(5000);
   const pk = new PokerTable(game);
-  pk.startCoop(500, ['host', 'c1', 'c2']);       // host bank 4500, pool 1500
+  pk.startCoop(500, ['host', 'c1', 'c2']); anteAll(pk);   // host bank 4500, pool 1500
   pk.onPeerDisconnect('c1');         // c1 folds + flagged dropped
   pk.onPeerDisconnect('c2');         // only host remains → current hand ends uncontested
   assert.ok(pk._dropped.has('c1') && pk._dropped.has('c2'));
@@ -107,6 +149,24 @@ test('disconnect folds the seat; everyone leaving hands the survivor the whole p
   assert.equal(meta.bank, 6000);     // 4500 + 1500 prize pool (winner-takes-all)
 });
 
+test('co-op snapshots carry each human\'s real chip skin (missing → dice)', () => {
+  const { game, sent } = hostStub(5000);
+  game.mp.roster.get('host').chipSkin = 'casino'; // host picked the clay skin
+  game.mp.roster.get('c1').chipSkin = 'star';     // a client picked the star skin
+  // c2 deliberately has NO chipSkin field (old peer / never picked) → must default to 'dice'
+  const pk = new PokerTable(game);
+  pk.startCoop(500, ['host', 'c1', 'c2']); anteAll(pk);
+  // the per-seat skins map rides along in the pkstart invite…
+  const start = sent.find((m) => m.t === 'pkstart' && m.to === 'c1');
+  assert.ok(start && start.d.skins, 'pkstart carries a skins map');
+  // …and in every personalised snapshot. Build the OTHER seat's payload (c1) and check it sees everyone's skin.
+  const payload = pk._payloadFor('c1');
+  assert.ok(payload.skins, 'snapshot carries a skins map');
+  assert.equal(payload.skins.host, 'casino', "host's real skin propagates");
+  assert.equal(payload.skins.c1, 'star', "client's real skin propagates");
+  assert.equal(payload.skins.c2, 'dice', 'a seat with no chipSkin defaults to dice');
+});
+
 test('a client role sends actions instead of mutating state, and never runs the engine', () => {
   const sent = [];
   const net = { sent, send(t, d) { sent.push({ t, d }); }, sendTo() {}, broadcast() {} };
@@ -116,6 +176,7 @@ test('a client role sends actions instead of mutating state, and never runs the 
   assert.equal(game.meta.bank, 2500);            // client paid its own buy-in
   assert.equal(pk.role, 'client');
   assert.equal(pk.active, true);                 // seated (no silent decline — affordability was pre-checked at accept)
+  assert.ok(sent.some((m) => m.t === 'pkante'), 'client ACKs the ante to the host so its buy-in is counted');
   assert.ok(!sent.some((m) => m.t === 'pkleave'), 'an affordable accepted client must NOT bounce itself');
   assert.equal(pk.hand, null);                   // client holds no engine state
   // a client snapshot is what it renders from; an action just goes to the host

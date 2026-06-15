@@ -55,12 +55,17 @@ export class PokerHover {
     const oc = this._outChips = new THREE.InstancedMesh(chipGeo, mat, 256);
     oc.matrixAutoUpdate = false; oc.visible = false; oc.renderOrder = 998; oc.count = 0;
     this.r._scene.add(oc);
-    // card outline: an inverted-hull BOX around a board card — a sharp yellow rim with a little height so
+    // card outline: an inverted-hull BOX around a board card — a SNUG yellow rim with a little height so
     // it reads at the low grazing camera angle (a flat plane under the flat card all but vanishes there).
+    // Geometry is the card's BASE size (CARD_W×CARD_T×CARD_H); _showCard multiplies by card.matrixWorld
+    // (which already bakes the card's 1.45 render scale), so _Scard is the rim factor RELATIVE to the
+    // on-felt card — NOT the base geometry.
     const ocard = this._outCard = new THREE.Mesh(new THREE.BoxGeometry(CARD_W, CARD_T, CARD_H), mat);
     ocard.visible = false; ocard.renderOrder = 998; ocard.matrixAutoUpdate = false;
     this.r._scene.add(ocard);
-    this._Scard = new THREE.Matrix4().makeScale(1.14, 3.0, 1.14); // grow sideways for the rim, taller so it's visible
+    // ~10% wider than the rendered card (≈4.6 mm rim) + a touch proud. Board cards sit only ~14 mm apart,
+    // so a wider/taller rim (the old 1.14×3.0) bled across the gap and read as "the whole row lit up".
+    this._Scard = new THREE.Matrix4().makeScale(1.10, 2.0, 1.10);
     // SB / BB puck outline — an inverted-hull cylinder over the hovered blind puck (puck = r0.034 × h0.012).
     const oblind = this._outBlind = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.012, 24), mat);
     oblind.visible = false; oblind.renderOrder = 998; oblind.matrixAutoUpdate = false;
