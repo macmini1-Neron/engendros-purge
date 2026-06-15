@@ -14,7 +14,11 @@ import { buildFieldRadio } from './props.js';
 import { RADIO_STATIONS, GHOST_STATION, stationByIndex, stationLabel } from './radio.js';
 import { Tween, easeOutCubic } from './poker/anim.js';
 import { derivePokerEvents } from './poker/pokerevents.js';
+import { dealOrder } from './poker/dealorder.js';
 import { PokerHover } from './poker-hover.js';
+
+const DEAL_FLIGHT = 0.20;   // s — a single hole card's pitch from the centre deck to its seat
+const DEAL_STAGGER = 0.07;  // s — gap between consecutive pitches (one card at a time, real dealer cadence)
 
 const SCENE_CSS = `
 #poker .pk-canvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; display:none; }
@@ -153,6 +157,31 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       card.position.y = rest.y + dropY * (1 - dealP) + 0.018 * Math.sin(turnP * Math.PI); // settle down, lift a touch mid-turn so the edge clears the felt
       card.rotation.z = Math.PI * (1 - turnP);             // π (face-down) → 0 (face-up): the SIDE-edge turn the dealer does
       return tw.done;
+    });
+  }
+  // Pitch a hole card in from the centre deck (face-down) to its resting spot, like a real dealer. It stays
+  // HIDDEN until its `delay` slot, so cards appear ONE AT A TIME in dealing order, never all at once. Only the
+  // position is animated — the card keeps whatever rest rotation the rebuild gave it (your own / opponents'
+  // backs stay face-down; click-to-peek is unchanged). A frame-synced `pokerDeal` click fires as it lands.
+  _dealInCard(card, rest, delay = 0) {
+    const FELT_Y = 0.013;
+    const sx = 0, sy = FELT_Y + 0.05, sz = -0.02;          // the deck at the table centre (where the board sits)
+    const tw = new Tween(DEAL_FLIGHT, delay);
+    const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
+    let clicked = false;
+    card.visible = false;
+    this._anims.push((dt) => {
+      if (!card.parent) return true;                       // card rebuilt away → drop the anim
+      tw.step(dt);
+      if (tw.t < tw.delay) { card.visible = false; return false; } // still waiting its turn → unseen in the deck
+      card.visible = true;
+      const e = easeOutCubic(tw.p);
+      card.position.x = sx + (rest.x - sx) * e;
+      card.position.z = sz + (rest.z - sz) * e;
+      card.position.y = sy + (rest.y - sy) * e + 0.045 * Math.sin(e * Math.PI); // a low pitch arc across the felt
+      if (!clicked && tw.p >= 0.6) { clicked = true; if (a && a.pokerDeal) a.pokerDeal(); } // click as it lands
+      if (tw.done) { card.position.set(rest.x, rest.y, rest.z); return true; }
+      return false;
     });
   }
   // celebratory camera "punch" on a NET win — a decaying deterministic oscillation (NOT random), applied
@@ -346,7 +375,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {};
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {}; this._lastHandNo = 0; // fresh table → the first hand animates a deal-in
     if (this._potFx) { for (let i = this._potFx.children.length - 1; i >= 0; i--) { const c = this._potFx.children[i]; this._potFx.remove(c); this._disposeTree(c); } } } // fresh table → no stale SFX deltas / dangling anims / bet preview / peek / flying chips
   showLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
@@ -382,9 +411,14 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // diff the previous snapshot → events drive both the flip-in animations and the SFX
     const events = derivePokerEvents(this._prevView, v, this._prevChips, p.chips, p.result);
     const newBoard = new Set(events.filter((e) => e.t === 'boardCard').map((e) => e.index)); // community cards to flip in
-    this._rebuildDyn(p, v, n, me, winners, newBoard);
+    // NEW HAND → pitch the hole cards in (handNumber is host-authoritative, same on every client; an empty
+    // board means a genuine pre-flop deal, not a mid-hand reconnect/late-join, so the deal only animates then).
+    const handNo = (p.tour && p.tour.handNumber) | 0;
+    const dealIn = handNo > (this._lastHandNo | 0) && v.board.length === 0;
+    this._lastHandNo = handNo;
+    this._rebuildDyn(p, v, n, me, winners, newBoard, dealIn);
     this._slideBetsToPot(this._prevChips, p.chips); // street ended → rake each player's bet into the pot (uses prev bets + fresh anchors)
-    this._onPokerEvents(events, p);
+    this._onPokerEvents(events, p, dealIn);
     this._prevView = v; this._prevChips = this._snapChips(p.chips);
   }
 
@@ -423,7 +457,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const bets = {}; for (const id in (c.bets || {})) bets[id] = cp(c.bets[id]);
     return { bets, pot: cp(c.pot) };
   }
-  _onPokerEvents(events, p) {
+  _onPokerEvents(events, p, dealIn) {
     const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
     if (!a || !events || !events.length) return;
     let deals = 0, chipUnits = 0, win = 0;
@@ -432,7 +466,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       else if (e.t === 'chipMove') chipUnits += Object.values(e.moves).reduce((x, y) => x + y, 0);
       else if (e.t === 'potAward' && e.id === p.youId && e.net) win = Math.max(win, Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, e.amount))))); // YOUR net win only
     }
-    if (deals && a.pokerDeal) for (let i = 0; i < Math.min(deals, 3); i++) setTimeout(() => a.pokerDeal(), i * 90); // a flop riffles as ~3 cards
+    // On a pre-flop deal-in, the per-card pitch clicks are fired by _dealInCard (frame-synced to each landing),
+    // so skip the generic burst here to avoid doubling up.
+    if (deals && a.pokerDeal && !dealIn) for (let i = 0; i < Math.min(deals, 3); i++) setTimeout(() => a.pokerDeal(), i * 90); // a flop riffles as ~3 cards
     if (chipUnits && a.pokerChip) {
       if (a.pokerPotSlide) a.pokerPotSlide();
       const n = Math.min(chipUnits, 6);
@@ -441,7 +477,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     if (win) { if (a.pokerWin) a.pokerWin(win); this._winShake(win); } // YOUR net win → rising fanfare + camera punch
   }
 
-  _rebuildDyn(p, v, n, me, winners, newBoard) {
+  _rebuildDyn(p, v, n, me, winners, newBoard, dealIn) {
     const d = this.dyn;
     // chips/markers sit ON TOP of the green baize, not on the slab beneath it. The baize is 13 mm
     // proud (spec: baize at y0.7365 h0.013, model dropped −0.730 → its TOP is world y=0.013); resting
@@ -449,6 +485,15 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
     this._boardCards = []; this._holeCards = []; this._myHoleCards = []; this._betAnchors = {}; this._hoverTargets = []; // refreshed each rebuild — click/peek/hover targets + bet→pot slide origins
+
+    // NEW-HAND deal-in: map each (seat j, card h=pass) → its pitch index in the real two-pass dealing order
+    // (clockwise from left-of-button, button last; active seats only). The index sets the per-card stagger.
+    let dealIdx = null;
+    if (dealIn) {
+      const hasCards = v.seats.map((s) => !!(s.hole || s.hasCards) && !s.folded);
+      dealIdx = {};
+      dealOrder(v.button, n, hasCards).forEach((c, i) => { dealIdx[c.seat + ':' + c.pass] = i; });
+    }
 
     // seat anchors — your seat at front (+Z), others fan around the far arc
     const RX = 0.92, RZ = 0.86; // seats just outside the Ø1.38 (r0.69) table edge
@@ -501,6 +546,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             else card.rotateX(Math.PI);                  // hidden → flip to back-up (face-down on the table)
           }
           d.add(card);
+          // pitch this card in from the centre deck (face-down, keeps its rest rotation) at its dealing-order slot
+          if (dealIdx) { const k = dealIdx[j + ':' + h]; if (k != null) this._dealInCard(card, { x: card.position.x, y: card.position.y, z: card.position.z }, k * DEAL_STAGGER); }
         }
       }
 
