@@ -994,6 +994,7 @@ class Game {
     dt = Math.min(dt, 0.05);
     if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
     if (this.state === 'playing') this._updatePlaying(dt);
+    if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera);
     this.engine.update(dt); this.engine.render();
     if (this.devconsole) { const dbg = this.f3 && this.state === 'playing'; this.devconsole.updateF3(dbg); this.devconsole.updateEntityLabels(dbg); }
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
