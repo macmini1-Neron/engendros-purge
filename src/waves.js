@@ -124,13 +124,13 @@ export class WaveManager {
       let blocked = false;
       for (const b of near) { if (x > b.min.x - 1 && x < b.max.x + 1 && z > b.min.z - 1 && z < b.max.z + 1 && b.max.y > 1) { blocked = true; break; } }
       if (!blocked) {
-        const sy = this.game.world.hasTerrain ? this.game.world.terrain.terrainHeightAt(x, z) : 0;
+        const sy = this.game.world.groundY(x, z);
         return new THREE.Vector3(x, sy, z);
       }
     }
     const a = rr(0, TAU); // fallback: a plain offset from the player
     const spx = clamp(pp.x + Math.sin(a) * 90, -HALF + 6, HALF - 6), spz = clamp(pp.z + Math.cos(a) * 90, -HALF + 6, HALF - 6);
-    const spy = this.game.world.hasTerrain ? this.game.world.terrain.terrainHeightAt(spx, spz) : 0;
+    const spy = this.game.world.groundY(spx, spz);
     return new THREE.Vector3(spx, spy, spz);
   }
   _spawnOne() {
