@@ -15,7 +15,7 @@ import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 import { makeTerrain } from './terrain.js';
 import { TerrainChunks } from './terrain-chunks.js';
-import { placeProp } from './terrain-place.js';
+import { seatProp } from './terrain-place.js';
 
 // ─── T2 WALKABLE-TERRAIN feel knobs (Phase 4) — owner-tunable ──────────────────
 // These ONLY apply when `world.hasTerrain` is true (non-flat profiles). On flat
@@ -309,11 +309,11 @@ export class World {
     );
 
     // Phase 2 — a few test structures seated on the terrain (proves colliders + props sit on hills).
-    placeProp(this, 0, -18, buildSandbags, { w: 2.0, d: 0.8, h: 1.0 });
-    placeProp(this, 18, 10, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: 0.4 });
-    placeProp(this, -16, 12, buildSandbags, { w: 2.0, d: 0.8, h: 1.0, yaw: 1.2 });
-    placeProp(this, 46, -31, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: -0.5 }); // on the big-hill flank (a slope)
-    placeProp(this, -10, -24, () => buildFieldRadio(), { w: 0.8, d: 0.8, h: 1.0 });
+    seatProp(this, 0, -18, buildSandbags, { w: 2.2, d: 0.8, h: 1.0 });
+    seatProp(this, 18, 10, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: 0.4 });
+    seatProp(this, -16, 12, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 1.2 });
+    seatProp(this, 46, -31, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: -0.5 }); // on the big-hill flank (a slope)
+    seatProp(this, -10, -24, () => buildFieldRadio(), { w: 1.2, d: 0.7, h: 1.0 });
   }
 
   collide(pos, vel, r, h, dt) {

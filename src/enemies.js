@@ -352,7 +352,7 @@ export class EnemyManager {
       e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
       // Horde slope-limit: don't let mobs scale cliffs (terrain steeper than slopeLimit). Revert the whole
       // step — they bunch at the cliff base and re-steer. Gated on hasTerrain so flat maps are untouched.
-      if (this.world.hasTerrain) {
+      if (this.world.hasTerrain && !e.def.boss) {   // bosses have their own nav; don't wedge them at cliffs
         const bx = e.pos.x - e.vel.x * dt, bz = e.pos.z - e.vel.z * dt, terr = this.world.terrain;
         if (slopeBlocks(terr.terrainHeightAt(bx, bz), terr.terrainHeightAt(e.pos.x, e.pos.z), terr.terrainSlopeAt(e.pos.x, e.pos.z), terr.slopeLimit)) {
           e.pos.x = bx; e.pos.z = bz; e.vel.x = 0; e.vel.z = 0;
