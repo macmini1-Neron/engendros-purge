@@ -19,6 +19,14 @@ import { PokerHover } from './poker-hover.js';
 
 const DEAL_FLIGHT = 0.34;   // s — a single hole card's pitch from the centre deck to its seat (deliberate, readable)
 const DEAL_STAGGER = 0.15;  // s — gap between consecutive pitches (one card at a time, unhurried dealer cadence ≈ 2s for a 6-handed deal)
+// Street/showdown choreography (kept in step with poker-table.js STREET_HOLD_* / FOLD_HOLD). The sequence
+// at a street transition is: collect bets→pot (visible) → a beat → reveal each new board card in turn.
+const COLLECT_FLIGHT = 0.5;     // s — a seat's bet sliding into the pot
+const BOARD_REVEAL_DELAY = 1.1; // s — wait for the collection to finish before the board starts revealing
+const BOARD_STAGGER = 0.42;     // s — gap between community cards turning up (one at a time, not all at once)
+const POT_PUSH_FLIGHT = 0.7;    // s — the pot sliding FROM the pool TO the winner at showdown (the win, not a collect)
+const SHOWDOWN_STAGGER = 0.45;  // s — gap between opponents' hands flipping up at showdown
+const FOLD_FLICK = 0.5;         // s — a folder's cards flicking away into the muck
 
 const SCENE_CSS = `
 #poker .pk-canvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; display:none; }
@@ -155,9 +163,12 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const tw = new Tween(0.6, delay), dropY = 0.045;
     card.position.set(rest.x, rest.y + dropY, rest.z);
     card.rotation.set(rest.rotX || 0, 0, Math.PI);         // start: laid FACE-DOWN (turned over on the long axis)
+    card.visible = false;                                  // unseen until its turn — a delayed card must not sit face-down on the felt early
     this._anims.push((dt) => {
       if (!card.parent) return true;                       // card rebuilt away → drop the anim
       const p = tw.step(dt);
+      if (tw.t < tw.delay) { card.visible = false; return false; } // still waiting its staggered slot
+      card.visible = true;
       const dealP = easeOutCubic(Math.min(1, p / 0.4));        // phase 1 (0→0.4): drop onto the felt, face-down
       const turnP = easeOutCubic(Math.max(0, (p - 0.4) / 0.6)); // phase 2 (0.4→1): turn over from the side
       card.position.y = rest.y + dropY * (1 - dealP) + 0.018 * Math.sin(turnP * Math.PI); // settle down, lift a touch mid-turn so the edge clears the felt
@@ -426,21 +437,42 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const handNo = (p.tour && p.tour.handNumber) | 0;
     const dealIn = handNo > (this._lastHandNo | 0) && v.board.length === 0;
     this._lastHandNo = handNo;
-    this._rebuildDyn(p, v, n, me, winners, newBoard, dealIn);
-    this._slideBetsToPot(this._prevChips, p.chips); // street ended → rake each player's bet into the pot (uses prev bets + fresh anchors)
+    // Classify the transition so each animation fires at the RIGHT moment (the chip-slide review):
+    const awarding = events.some((e) => e.t === 'potAward');         // hand ended → push the pot TO the winner (never rake "into" it)
+    const collecting = this._betsCleared(this._prevChips, p.chips);  // a betting round closed → rake bets INTO the pot
+    const folds = events.filter((e) => e.t === 'fold').map((e) => e.id);
+    // capture folders' card positions BEFORE the rebuild mucks them, so we can toss them forward
+    const foldFrom = folds.map((id) => ({ id, from: this._holeAnchors && this._holeAnchors[id] })).filter((x) => x.from).map((x) => ({ id: x.id, from: x.from.clone() }));
+    // staggered showdown reveal: each newly-shown opponent hand flips up in turn, not all at once
+    const revealDelay = {}; [...new Set(events.filter((e) => e.t === 'holeReveal').map((e) => e.id))].forEach((id, i) => { revealDelay[id] = i * SHOWDOWN_STAGGER; });
+    // on a mid-hand street collection, the board waits until the chips have finished sliding into the pot
+    const boardDelay = (collecting && !awarding && newBoard.size) ? BOARD_REVEAL_DELAY : 0;
+    this._rebuildDyn(p, v, n, me, winners, newBoard, dealIn, boardDelay, revealDelay);
+    for (const f of foldFrom) this._foldMuck(f.from, this._betAnchors[f.id]); // toss folded cards forward to the bet spot (discard)
+    // hands are SHOWN first, THEN the win is pushed — delay the pot push until the showdown reveals finish
+    const revealCount = Object.keys(revealDelay).length;
+    const pushDelay = revealCount ? (revealCount - 1) * SHOWDOWN_STAGGER + 0.66 + 0.4 : 0.2;
+    if (awarding) this._pushPotToWinner(events, p, pushDelay);       // WIN: pot pile → winner's stack (after the reveal)
+    else if (collecting) this._slideBetsToPot(this._prevChips, p.chips); // mid-hand: bets → pot
     this._onPokerEvents(events, p, dealIn);
     this._prevView = v; this._prevChips = this._snapChips(p.chips);
   }
 
-  // When a betting round closes, every player's street bet is collected into the pot. Visually rake it in:
-  // a transient chip pile flies from each seat's bet zone to the central pot, staggered, with a low sweep arc.
-  // Cosmetic only — the real chips already moved in the chipbank; this just animates the snapshot transition.
-  _slideBetsToPot(prevChips, chips) {
-    if (!prevChips || !this._potFx) return;
+  // True when ALL street bets cleared between two snapshots → a betting round closed (bets collected to pot).
+  _betsCleared(prevChips, chips) {
+    if (!prevChips) return false;
     const ids = Object.keys(prevChips.bets || {});
     const prevHad = ids.some((id) => sigOf(prevChips.bets[id] || {}));
     const newHas = ids.some((id) => sigOf((chips && chips.bets && chips.bets[id]) || {}));
-    if (!prevHad || newHas) return;                         // fire ONLY when ALL street bets clear at once → collected to the pot
+    return prevHad && !newHas;
+  }
+
+  // A betting round closed: rake every player's street bet INTO the pot. A transient chip pile flies from
+  // each seat's bet zone to the central pot, staggered, with a low sweep arc. Cosmetic — the chipbank already
+  // moved the real chips. Called ONLY mid-hand (a hand-end award pushes the pot OUT instead — _pushPotToWinner).
+  _slideBetsToPot(prevChips, chips) {
+    if (!prevChips || !this._potFx || !this._betsCleared(prevChips, chips)) return;
+    const ids = Object.keys(prevChips.bets || {});
     const FELT_Y = 0.013, pot = new THREE.Vector3(0, FELT_Y, POT_Z); // rake target == the pot pile position (POT_Z)
     let k = 0;
     for (const id of ids) {
@@ -450,13 +482,70 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const tray = makeChipTray(betSet, { pile: true, seed: 5 + k }); // loose pile = chips being swept in (varied per seat)
       tray.position.copy(from); tray.scale.setScalar(1.3);
       this._potFx.add(tray);
-      const start = from.clone(), tw = new Tween(0.42, (k++) * 0.05);
+      const start = from.clone(), tw = new Tween(COLLECT_FLIGHT, (k++) * 0.07);
       this._anims.push((dt) => {
         const e = easeOutCubic(tw.step(dt));
         tray.position.lerpVectors(start, pot, e);
         tray.position.y = FELT_Y + 0.03 * Math.sin(e * Math.PI); // a low sweep arc across the felt
         tray.scale.setScalar(1.3 - 0.45 * e);                    // shrink as it merges into the pot pile
         if (tw.done) { this._potFx.remove(tray); this._disposeTree(tray); return true; }
+        return false;
+      });
+    }
+  }
+
+  // HAND END: push the pot pile FROM the pool TO each winner's stack (the win — chips are TAKEN from the pot,
+  // not put into it). The snapshot's pot is already emptied (engine awarded it), so we fly a transient pile
+  // sized to the award from the pot position to the winner's stack anchor. (Fixes the "shows chips going into
+  // the pot when you win" bug — that was the collection slide wrongly firing at hand end.)
+  _pushPotToWinner(events, p, delay = 0) {
+    if (!this._potFx) return;
+    const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
+    const FELT_Y = 0.013, from = new THREE.Vector3(0, FELT_Y, POT_Z);
+    const awards = events.filter((e) => e.t === 'potAward' && e.amount > 0);
+    let k = 0;
+    for (const aw of awards) {
+      const to = this._stackAnchors && this._stackAnchors[aw.id];
+      if (!to) continue;
+      const tray = makeChipStack(aw.amount);                  // a pile sized to the pot share being pushed over
+      tray.position.copy(from); tray.scale.setScalar(1.6);    // it sits in the pool while the hands are shown, THEN slides over
+      this._potFx.add(tray);
+      const start = from.clone(), tw = new Tween(POT_PUSH_FLIGHT, delay + (k++) * 0.12);
+      if (a && a.pokerPotSlide) setTimeout(() => a.pokerPotSlide(), (delay + 0.02) * 1000); // sound when it actually starts sliding (after the reveal)
+      this._anims.push((dt) => {
+        const e = easeOutCubic(tw.step(dt));
+        tray.position.lerpVectors(start, to, e);
+        tray.position.y = FELT_Y + 0.05 * Math.sin(e * Math.PI); // a push arc toward the winner
+        tray.scale.setScalar(1.6 * (1 - 0.5 * e));               // shrink as it merges into the winner's stack
+        if (tw.done) { this._potFx.remove(tray); this._disposeTree(tray); return true; }
+        return false;
+      });
+    }
+  }
+
+  // A player folded: TOSS their two face-down cards FORWARD to their bet spot (where chips go before the pot),
+  // like a real muck discard — a quick flick with a flat spin that fades as it lands. Transient (in _potFx so
+  // it survives the rebuild that removed the seat's cards). `to` falls back to the centre if no bet anchor.
+  _foldMuck(from, to) {
+    if (!this._potFx || !from) return;
+    const FELT_Y = 0.013;
+    const dest = (to ? to.clone() : new THREE.Vector3(0, FELT_Y, -0.02));
+    for (let h = 0; h < 2; h++) {
+      const card = makeCardMesh();
+      card.rotateX(Math.PI);                                   // back up (face-down, like an opponent's hole card)
+      const start = from.clone(); start.x += h * 0.02; start.y = FELT_Y + h * 0.003;
+      const end = dest.clone(); end.x += (h - 0.5) * 0.03; end.y = FELT_Y; // land at the bet spot, the two cards a hair apart
+      card.position.copy(start); card.scale.setScalar(0.92);
+      this._potFx.add(card);
+      const tw = new Tween(FOLD_FLICK, h * 0.05), spin = ((from.x - dest.x) >= 0 ? 1 : -1) * 0.9;
+      this._anims.push((dt) => {
+        const e = easeOutCubic(tw.step(dt));
+        card.position.lerpVectors(start, end, e);
+        card.position.y = FELT_Y + 0.05 * Math.sin(e * Math.PI); // a low toss arc
+        card.rotation.y = spin * e;                              // a slight flat spin, like a tossed card
+        const fade = e < 0.65 ? 1 : 1 - (e - 0.65) / 0.35;       // land, then fade out as it's mucked away
+        card.scale.setScalar(0.92 * fade);
+        if (tw.done) { this._potFx.remove(card); this._disposeTree(card); return true; }
         return false;
       });
     }
@@ -469,7 +558,14 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   }
   _onPokerEvents(events, p, dealIn) {
     const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
-    if (!a || !events || !events.length) return;
+    if (!a) return;
+    // action SFX from the host's last-action type — fire even with no visual events (a pure check has none):
+    if (p && p.lastAct && p.lastAct.n !== this._seenActN) {
+      this._seenActN = p.lastAct.n;
+      if (p.lastAct.type === 'check' && a.pokerCheck) a.pokerCheck();      // double knuckle-rap on the table
+      else if (p.lastAct.type === 'fold' && a.pokerFold) a.pokerFold();    // cards skimmed into the muck
+    }
+    if (!events || !events.length) return;
     let deals = 0, chipUnits = 0, win = 0;
     for (const e of events) {
       if (e.t === 'boardCard' || e.t === 'holeReveal') deals++;
@@ -487,7 +583,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     if (win) { if (a.pokerWin) a.pokerWin(win); this._winShake(win); } // YOUR net win → rising fanfare + camera punch
   }
 
-  _rebuildDyn(p, v, n, me, winners, newBoard, dealIn) {
+  _rebuildDyn(p, v, n, me, winners, newBoard, dealIn, boardDelay = 0, revealDelay = {}) {
     const d = this.dyn;
     // chips/markers sit ON TOP of the green baize, not on the slab beneath it. The baize is 13 mm
     // proud (spec: baize at y0.7365 h0.013, model dropped −0.730 → its TOP is world y=0.013); resting
@@ -495,6 +591,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
     this._boardCards = []; this._holeCards = []; this._myHoleCards = []; this._betAnchors = {}; this._hoverTargets = []; // refreshed each rebuild — click/peek/hover targets + bet→pot slide origins
+    this._holeAnchors = {}; this._stackAnchors = {}; // per-seat hole-card + stack positions → fold-muck origin + pot-push target
 
     // NEW-HAND deal-in: map each (seat j, card h=pass) → its pitch index in the real two-pass dealing order
     // (clockwise from left-of-button, button last; active seats only). The index sets the per-card stagger.
@@ -552,10 +649,14 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
             card.position.set(pos.x, 0.012 + h * 0.0026, pos.z); // stack physically ON, not z-fighting INTO each other
             card.scale.setScalar(0.8);
-            if (s.hole) setCardFace(card, s.hole[h]);   // showdown reveal → face up (default orientation)
-            else card.rotateX(Math.PI);                  // hidden → flip to back-up (face-down on the table)
+            if (s.hole) {
+              setCardFace(card, s.hole[h]);                          // showdown reveal → face up
+              const rd = revealDelay[s.id];
+              if (rd != null) this._flipInCard(card, { x: card.position.x, y: card.position.y, z: card.position.z, rotX: 0 }, rd + h * 0.06); // newly revealed → flip up, staggered per player (one hand at a time)
+            } else card.rotateX(Math.PI);                            // hidden → back-up (face-down on the table)
           }
           d.add(card);
+          if (h === 0) this._holeAnchors[s.id] = new THREE.Vector3(card.position.x, FELT_Y, card.position.z); // fold-muck origin for this seat
           // pitch this card in from the centre deck (face-down, keeps its rest rotation) at its dealing-order slot
           if (dealIdx) { const k = dealIdx[j + ':' + h]; if (k != null) this._dealInCard(card, { x: card.position.x, y: card.position.y, z: card.position.z }, k * DEAL_STAGGER); }
         }
@@ -578,6 +679,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       if (s.id === p.youId) { this._myBetPos = onFelt(0.35).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet/heap anchor: in front of your stack, clear of the pot pile (pileLayout caps its radius, so even an all-in heap stays compact, not sprawling)
       const stack = stackSet ? makeChipTray(stackSet, skinOpt) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
+      this._stackAnchors[s.id] = new THREE.Vector3(stack.position.x, FELT_Y, stack.position.z); // pot-push target (pot → winner's stack)
       stack.userData.pk = { kind: 'chips', scope: 'stack', ownerId: s.id, ownerName: (s.id === p.youId ? 'YOU' : ((p.names && p.names[s.id]) || s.id)) }; this._hoverTargets.push(stack);
       if (s.id === p.youId) { this._myStackTray = stack; this._myStackSet = stackSet ? { ...stackSet } : null; this._myBetSet = (chips && chips.bets[s.id]) ? { ...chips.bets[s.id] } : {}; } // bet heap pulls chips FROM this real stack
       const betSet = chips ? chips.bets[s.id] : null;
@@ -606,7 +708,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const rest = { x: (i - 2) * 0.105, y: 0.014, z: BOARD_Z, rotX: 0 };
       card.position.set(rest.x, rest.y, rest.z); card.scale.setScalar(1.45); d.add(card);
       this._boardCards.push(card); card.userData.pk = { kind: 'card' }; this._hoverTargets.push(card); // community cards → click for the TV close-up + hover glow
-      if (newBoard && newBoard.has(i)) this._flipInCard(card, rest, (flipN++) * 0.13); // NEW card → flip it in (flop staggers left→right)
+      if (newBoard && newBoard.has(i)) this._flipInCard(card, rest, boardDelay + (flipN++) * BOARD_STAGGER); // NEW card → reveal AFTER the bets finish sliding into the pot, then one at a time (left→right)
     }
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;

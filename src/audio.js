@@ -423,6 +423,19 @@ export class AudioManager {
       }, i * gap * 1000);
     }
   }
+  // a CHECK: the classic double knuckle-rap on the table (two short low wood knocks)
+  pokerCheck() {
+    if (!this.ctx) return;
+    const knock = () => { this.noise(0.04, 0.22, 'lowpass', 320, 1.2); this.tone(135, 0.05, 'sine', 0.13); };
+    knock();
+    setTimeout(() => { if (this.ctx) knock(); }, 105);
+  }
+  // a FOLD: cards skimmed across the felt into the muck — a soft paper whoosh
+  pokerFold() {
+    if (!this.ctx) return;
+    this.noise(0.14, 0.17, 'bandpass', 1300, 1.0);
+    this.tone(420, 0.05, 'sine', 0.05);
+  }
 
   // ---- Mosin 91/30: recorded rifle shot + bolt/reload foley, with procedural fallback ----
   mosinShot() {

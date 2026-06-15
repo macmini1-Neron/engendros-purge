@@ -18,6 +18,19 @@ test('a bet emits chipMove from seat→bet with per-denom counts', () => {
     { t: 'chipMove', from: 'A', to: 'pot', moves: { 100: 1 } });
 });
 
+test('a seat that newly folds emits a fold event (once, not while already folded)', () => {
+  const a = { id: 'A' }, b = { id: 'B' };
+  const ev = derivePokerEvents(
+    view({ seats: [{ ...a, folded: false }, { ...b, folded: false }] }),
+    view({ seats: [{ ...a, folded: true }, { ...b, folded: false }] }));
+  assert.deepEqual(ev.filter((e) => e.t === 'fold'), [{ t: 'fold', id: 'A' }]);
+  // already-folded → no repeat event
+  const ev2 = derivePokerEvents(
+    view({ seats: [{ ...a, folded: true }] }),
+    view({ seats: [{ ...a, folded: true }] }));
+  assert.equal(ev2.filter((e) => e.t === 'fold').length, 0);
+});
+
 test('a NET win emits potAward with net=true; a refund/split below stake does not', () => {
   const winBig = derivePokerEvents(
     view({ seats: [{ id: 'A', stack: 100 }] }),

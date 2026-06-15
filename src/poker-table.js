@@ -24,7 +24,7 @@ import { PokerDomRenderer } from './poker-ui.js';
 // node-unit-testable (tests/poker/coop.test.mjs imports this file directly).
 
 const ACT_SECS = 60;        // per-turn shot clock (host-ticked) — hidden; only the last 15s show a number
-const BOT_THINK = 0.9;      // bot pause before acting (s) — feels human
+const BOT_THINK = 1.1;      // bot pause before acting (s) — a readable beat so you SEE each bet land before the next player acts
 const SHOWDOWN_SECS = 6.5;  // dwell on a real showdown — long enough to read who won with what (newbie-friendly)
 const FOLD_SECS = 2.5;      // shorter dwell when everyone folded (no combination to read)
 const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar animates clientside
@@ -32,6 +32,11 @@ const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar anim
 // acts mid-deal). Sized to the renderer's deal-in cadence (poker-scene.js DEAL_STAGGER) × cards + flight.
 const DEAL_ANIM_STAGGER = 0.15; // per-card gap (mirrors poker-scene.js DEAL_STAGGER)
 const DEAL_ANIM_BASE = 0.45;    // last card's flight + a small settle buffer
+// Presentation pacing for street transitions + folds (mirror the poker-scene.js choreography so the host
+// holds action until the renderer has shown: bets→pot collect, THEN the board reveal card-by-card).
+const STREET_HOLD_BASE = 1.3;   // bets→pot collection slide + a gap before the board reveal begins
+const STREET_HOLD_PER_CARD = 0.42; // each freshly-dealt community card's staggered flip
+const FOLD_HOLD = 0.7;          // let the muck (fold) animation play before the next player acts
 const BOT_NAMES = ['SHARK', 'DOC', 'LUCKY', 'SLIM', 'ACE'];
 // Physical starting chip set (value 1500 == DEFAULT_START_STACK) + the dealer rack/float that backs
 // change-making. The float is heavy on small denominations and scales its 5s with the entrant count.
@@ -52,7 +57,7 @@ export class PokerTable {
     this.botDelay = 0;
     this.resultTimer = 0;
     this._netT = 0;
-    this._dealHold = 0;       // s left to hold action while the renderer pitches the cards in (set in _beginHand)
+    this._hold = 0;       // s left to hold action while the renderer pitches the cards in (set in _beginHand)
     this.names = {};
     this.clientSnap = null;   // client role: the latest host snapshot to render
     this.coopBuyIn = 0;
@@ -61,6 +66,7 @@ export class PokerTable {
     this._refunded = false;
     this._aborted = false;
     this._dropped = new Set();
+    this._lastAct = null; this._actSeq = 0; // last action type + a counter → renderer plays check/fold SFX on a new one
   }
 
   _toast(msg, color) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast(msg, color); }
@@ -235,7 +241,7 @@ export class PokerTable {
     this.phase = 'playing';
     this.actTimer = ACT_SECS; this.botDelay = 0;
     // hold action while the renderer pitches the cards in (∝ how many seats were dealt → matches the visual)
-    this._dealHold = DEAL_ANIM_BASE + (this.hand && this.hand.seats ? this.hand.seats.length : 0) * 2 * DEAL_ANIM_STAGGER;
+    this._hold = DEAL_ANIM_BASE + (this.hand && this.hand.seats ? this.hand.seats.length : 0) * 2 * DEAL_ANIM_STAGGER;
     if (isComplete(this.hand)) this._endHand();
   }
 
@@ -264,9 +270,15 @@ export class PokerTable {
   }
 
   _applyAndAdvance(action) {
+    const boardBefore = this.hand ? this.hand.board.length : 0;
     try { applyAction(this.hand, action); } catch (e) { console.warn('[poker] action rejected:', JSON.stringify(action), '-', e.message); return; }
     this._syncChips();
     this.actTimer = ACT_SECS;
+    this._lastAct = { type: action && action.type, n: (this._actSeq = (this._actSeq | 0) + 1) }; // tell the renderer the action TYPE → check/fold SFX (works for bots + co-op)
+    // presentation pacing — hold action so the renderer can choreograph what just happened, in order:
+    const newCards = (this.hand ? this.hand.board.length : 0) - boardBefore;
+    if (newCards > 0) this._hold = Math.max(this._hold, STREET_HOLD_BASE + newCards * STREET_HOLD_PER_CARD); // round closed: bets→pot collect, THEN reveal each new card
+    else if (action && action.type === 'fold') this._hold = Math.max(this._hold, FOLD_HOLD);                 // let the muck animation play
     if (isComplete(this.hand)) this._endHand();
     this._broadcastPoker();
   }
@@ -310,8 +322,8 @@ export class PokerTable {
   update(dt) {
     if (!this.active || this.role === 'client') return; // host/solo drive; client just renders snaps
     if (this.phase === 'playing' && this.hand) {
-      if (this._dealHold > 0) { // cards are still being dealt — hold all action (bots, the shot clock, your turn) until they land
-        this._dealHold -= dt;
+      if (this._hold > 0) { // presentation hold (deal-in / street collect+reveal / fold muck) — freeze all action until the renderer catches up
+        this._hold -= dt;
         if (this.coop) { this._netT -= dt; if (this._netT <= 0) { this._netT = NET_SNAP; this._broadcastPoker(); } }
         return;
       }
@@ -350,7 +362,7 @@ export class PokerTable {
 
   _payloadFor(id) {
     const v = this.hand ? privateView(this.hand, id) : null;
-    const legal = (this.phase === 'playing' && this.hand && !(this._dealHold > 0)) ? legalActions(this.hand) : null; // no controls until the deal-in finishes
+    const legal = (this.phase === 'playing' && this.hand && !(this._hold > 0)) ? legalActions(this.hand) : null; // no controls during a presentation hold (deal/street/fold)
     const yourTurn = !!(legal && legal.seat === id);
     const moneyPayout = (this.phase === 'over' && this.tour.result) ? (this.tour.result.payouts[id] || 0) : 0;
     return {
@@ -362,7 +374,7 @@ export class PokerTable {
       phase: this.phase,
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',
-      youId: id, names: this.names, moneyPayout,
+      youId: id, names: this.names, moneyPayout, lastAct: this._lastAct,
       // live refs to the bank's chip sets — READ-ONLY contract (clients get a JSON copy via pksnap; the
       // host renderer must only read these, never mutate them, or it would break conservation).
       chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot } : null,
@@ -406,7 +418,7 @@ export class PokerTable {
   _reset() {
     this.active = false; this.phase = 'lobby'; this.tour = null; this.hand = null;
     this.chipbank = null; this._lastCommitted = {};
-    this.clientSnap = null; this._netT = 0; this._dropped = new Set(); this._dealHold = 0;
+    this.clientSnap = null; this._netT = 0; this._dropped = new Set(); this._hold = 0; this._lastAct = null; this._actSeq = 0;
     this._credited = false; this._refunded = false; this._aborted = false; this.coopBuyIn = 0; this._paid = 0;
   }
 
