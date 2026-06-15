@@ -8,9 +8,9 @@ import * as THREE from 'three';
 export function seatBox(world, x, z, w, d, h, extra = {}) {
   const y = world.groundY(x, z);
   const box = {
+    ...extra,
     min: new THREE.Vector3(x - w / 2, y, z - d / 2),
     max: new THREE.Vector3(x + w / 2, y + h, z + d / 2),
-    ...extra,
   };
   world.boxes.push(box);
   return box;
@@ -19,7 +19,7 @@ export function seatBox(world, x, z, w, d, h, extra = {}) {
 // Build a prop mesh (buildFn() → THREE.Object3D), plant it on the terrain at (x,z) (optional yaw), add it
 // to the scene, and — when opts.w/d/h are given — seat a matching AABB collider. Returns the mesh.
 // The mesh sits upright on the surface (no slope-normal tilt; that's a later polish).
-export function placeProp(world, x, z, buildFn, opts = {}) {
+export function seatProp(world, x, z, buildFn, opts = {}) {
   const y = world.groundY(x, z);
   const mesh = buildFn();
   mesh.position.set(x, y, z);

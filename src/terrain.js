@@ -104,7 +104,8 @@ function demoHeight(x, z, seed, tune) {
 }
 
 // True when a horizontal move that raised the ground from gBefore→gAfter climbed INTO terrain steeper
-// than slopeLimit (radians). Shared "can't scale cliffs" gate for the player + the horde. Pure (no THREE).
+// than slopeLimit (radians). The horde slope-limit uses this; the player path (world._moveAxisTerrain)
+// inlines the same check. Pure (no THREE).
 export function slopeBlocks(gBefore, gAfter, slopeAtTarget, slopeLimit, eps = 1e-4) {
   return gAfter > gBefore + eps && slopeAtTarget > slopeLimit;
 }
