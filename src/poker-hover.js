@@ -54,6 +54,7 @@ export class PokerHover {
     const chipGeo = new THREE.CylinderGeometry(CHIP_R, CHIP_R, CHIP_GEO_T, 16);
     const oc = this._outChips = new THREE.InstancedMesh(chipGeo, mat, 256);
     oc.matrixAutoUpdate = false; oc.visible = false; oc.renderOrder = 998; oc.count = 0;
+    oc.frustumCulled = false; // its origin-centred bounding sphere doesn't cover instances spread across a tall/wide stack → would cull the whole highlight (tooltip shows, no outline) for big stacks
     this.r._scene.add(oc);
     // card outline: an inverted-hull BOX around a board card — a SNUG yellow rim with a little height so
     // it reads at the low grazing camera angle (a flat plane under the flat card all but vanishes there).
@@ -73,7 +74,7 @@ export class PokerHover {
     this._Sblind = new THREE.Matrix4().makeScale(1.22, 2.4, 1.22); // grow radially for a rim + taller so it reads at the grazing camera
 
     this._ptr = { x: 0, y: 0 };
-    this._dirty = false; this._inside = false; this._curKey = null; this._held = null;
+    this._dirty = false; this._inside = false; this._curKey = null; this._held = null; this._heldSig = null;
     this._S = new THREE.Matrix4().makeScale(1.12, 1.35, 1.12); // per-chip grow (radial 12% reads as a clean rim)
     this._m = new THREE.Matrix4();
 
@@ -98,6 +99,7 @@ export class PokerHover {
     if (!this.r.root.classList.contains('pk3d')) { this._hideAll(); return; }
     if (!this._dirty) {
       if (this._held && this._held.parent === null) this._dirty = true; // target rebuilt away → re-resolve
+      else if (this._held && this._held.userData && this._held.userData.pk && this._held.userData.pk.kind === 'chips' && this._held.userData.sig !== this._heldSig) this._dirty = true; // tray mutated IN PLACE (the live bet heap swelling / your stack draining as you size a raise) → refresh the tooltip + outline even though the cursor hasn't moved
       else return;
     }
     this._dirty = false;
@@ -125,6 +127,7 @@ export class PokerHover {
     }
     if (!group) { this._hideAll(); return; }
     this._held = group;
+    this._heldSig = group.userData.sig; // remember the tray signature so an in-place mutation (live heap / draining stack) re-triggers a resolve next frame
     const pk = group.userData.pk;
     if (pk.kind === 'chips') return this._showChips(group, pk, instMesh);
     if (pk.kind === 'card') return this._showCard(group, pk);
@@ -253,6 +256,6 @@ export class PokerHover {
 
   _hideAll() {
     this._outChips.visible = false; this._outCard.visible = false; this._outBlind.visible = false;
-    this.tip.style.display = 'none'; this._curKey = null; this._held = null;
+    this.tip.style.display = 'none'; this._curKey = null; this._held = null; this._heldSig = null;
   }
 }

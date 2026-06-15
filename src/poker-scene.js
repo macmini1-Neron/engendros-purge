@@ -247,7 +247,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const take = addAmt > 0 ? ((exactSubset(this._myStackSet, addAmt) || largestFormableLE(this._myStackSet, addAmt)) || {}) : {};
       const heap = addSet(betSet, take);                              // committed chips + previewed extra → the mound
       setChipTray(this._betPreview, heap, { pile: true, seed: 7 });   // tossed into a compact, scattered pile
-      setChipTray(this._myStackTray, subSet(this._myStackSet, take)); // and the previewed extra LEAVES the stack columns (1:1)
+      setChipTray(this._myStackTray, subSet(this._myStackSet, take), { layoutRef: this._myStackSet }); // the previewed extra LEAVES the stack columns (1:1) — layoutRef pins column positions to the FULL stack so a draining denom shortens in place instead of re-centering the survivors (no jitter)
       this._betPreview.visible = Object.keys(heap).length > 0;
     }
     this._betPreview.position.copy(this._myBetPos);
@@ -316,6 +316,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._buildStatic();
     this.dyn = new THREE.Group(); scene.add(this.dyn); // dealt cards / chips / markers, rebuilt on key change
     this._betPreview = makeChipTray({}); this._betPreview.visible = false; scene.add(this._betPreview); // live raise-amount preview chips
+    this._betPreview.userData.pk = { kind: 'chips', scope: 'bet', ownerName: 'YOU' }; // hoverable: re-pushed to _hoverTargets each _rebuildDyn (an invisible tray is skipped by the raycaster)
     this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null;
     this._potFx = new THREE.Group(); scene.add(this._potFx); // transient flying chips (bet→pot rake) — PERSISTS across dyn rebuilds
     this._betAnchors = {};                                   // per-seat bet-zone world position, refreshed each rebuild (slide origin)
@@ -717,6 +718,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     if (potGroup) { potGroup.position.set(0, FELT_Y, POT_Z); potGroup.scale.setScalar(1.7); d.add(potGroup);
       potGroup.userData.pk = { kind: 'chips', scope: 'pot', ownerName: 'POT' }; this._hoverTargets.push(potGroup); }
     this._betPreviewAmt = -2; // the stack tray is freshly full → force _updateBetPreview to re-carve the heap out of it
+    if (this._betPreview) this._hoverTargets.push(this._betPreview); // your live bet heap is hoverable too (skipped by the raycaster while invisible)
   }
 
   // SB / BB marker: a chunky labelled puck (mirrors the modelgen dealer-button, recoloured per role). The

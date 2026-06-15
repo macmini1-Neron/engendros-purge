@@ -50,3 +50,20 @@ test('jitter is seeded + deterministic (same seed → same offsets)', () => {
   const c = layoutChips({ 100: 5 }, { jitter: 0.002, seed: 7 });
   assert.notDeepEqual(a, c);
 });
+
+test('layoutRef pins column positions: draining a denom does NOT shift the survivors (kills the jitter)', () => {
+  const full = { 100: 3, 20: 4, 5: 6 };                          // 3 denoms → 3 columns
+  const x100 = (s, opts) => layoutChips(s, opts).filter((c) => c.denom === 100).map((c) => c.x.toFixed(4));
+  const fullX = x100(full, { layoutRef: full });
+  // after the $5 column fully drains, the $100 column stays put when positions are pinned to `full`
+  assert.deepEqual(x100({ 100: 3, 20: 4, 5: 0 }, { layoutRef: full }), fullX, '$100 column does not move when $5 drains');
+  // control: WITHOUT layoutRef the survivor re-centres on the present columns → the old jitter
+  assert.notDeepEqual(x100({ 100: 3, 20: 4 }, {}), fullX, 'naive layout shifts $100 (the bug being fixed)');
+  // never renders MORE chips than chipSet, regardless of the (larger) ref
+  assert.equal(layoutChips({ 100: 1, 20: 4, 5: 0 }, { layoutRef: full }).length, 5); // 1 + 4 + 0
+});
+
+test('layoutRef omitted ⇒ identical to ref===chipSet (backward compatible)', () => {
+  const s = { 100: 3, 20: 4, 5: 6 };
+  assert.deepEqual(layoutChips(s, { layoutRef: s }), layoutChips(s));
+});

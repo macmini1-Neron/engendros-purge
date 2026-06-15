@@ -23,3 +23,15 @@ export function presetRaiseTo(fraction, ctx) {
 export function presetRaiseToBB(mult, ctx) {
   return clampRaise(mult * (ctx.bb || 0), ctx);
 }
+
+// What a raise-TO actually COSTS from the stack and what STAYS behind — anchored to the player's HUD
+// "YOU $" number so the readout reconciles with it. `committed` = chips already pushed this street
+// (roundBet: the blind / a call / a prior raise); `behind` = chips still in the stack (the header value).
+// cost = raiseTo - committed (the chips that leave the stack now); leaves = behind - cost. This is
+// algebraically the same as maxRaiseTo - raiseTo (maxRaiseTo = committed + behind), but expressed
+// against the header instead of the committed-inclusive max, which is the whole point: the old readout
+// used the max baseline and so never matched the header the player was reading. Clamped to [0, behind].
+export function raiseBreakdown(raiseTo, committed = 0, behind = 0) {
+  const cost = Math.max(0, Math.min(behind | 0, (raiseTo | 0) - (committed | 0)));
+  return { cost, leaves: (behind | 0) - cost };
+}
