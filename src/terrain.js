@@ -23,8 +23,9 @@
 // reproducible field — NOT raw Math.random per sample.
 //
 //   profile 'flat'  → height 0 everywhere, slope 0, normal (0,1,0), isPlaceable true.
-//                     (Existing maps stay byte-identical when they opt in — and they
-//                     don't even construct a Terrain unless world.hasTerrain.)
+//                     A Terrain is ALWAYS constructed (every map). On flat maps the
+//                     unified collision path stays byte-identical to the old y=0 floor
+//                     because the ground-follow re-seat is gated off via hasTerrain.
 //   profile 'demo'  → gentle rolling fBm hills (~±4 m) + one larger broad hill
 //                     (~11 m), tuned so most slopes are walkable with a few steep faces.
 
