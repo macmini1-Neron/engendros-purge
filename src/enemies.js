@@ -300,7 +300,7 @@ export class EnemyManager {
       if (!e.alive) { this.active.splice(i, 1); continue; }
       if (e.noAI) { // {NoAI:1} dummy: stands still, no steering / contact damage / attacks — but still grounded, drawn, and killable (damage() is independent)
         e.vel.x = 0; e.vel.z = 0;
-        e.pos.y = this.world.hasTerrain ? this.world.terrain.terrainHeightAt(e.pos.x, e.pos.z) : 0;
+        e.pos.y = this.world.groundY(e.pos.x, e.pos.z);
         e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z);
         e.mesh.scale.set(e.scale, e.scale, e.scale);   // pooled mesh may carry a stale scale/squash
         e.mesh.rotation.set(0, e.mesh.rotation.y, 0);
@@ -351,7 +351,7 @@ export class EnemyManager {
       e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
       // terrain grounding: sample height every frame so enemies follow hills;
       // flat maps (hasTerrain = false) keep y=0 — byte-identical to before.
-      e.pos.y = this.world.hasTerrain ? this.world.terrain.terrainHeightAt(e.pos.x, e.pos.z) : 0;
+      e.pos.y = this.world.groundY(e.pos.x, e.pos.z);
       const lim = this.world.HALF - e.radius;
       e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
       e._blockStruct = null;
