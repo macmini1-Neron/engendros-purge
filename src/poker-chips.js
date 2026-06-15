@@ -26,7 +26,7 @@ export function makeChipTray(chipSet, opts) { const g = new THREE.Group(); setCh
 export function setChipTray(group, chipSet, opts = {}) {
   chipSet = chipSet || {};
   const skin = opts.skin || getChipSkin();                     // explicit per-tray skin (a player's choice) or the global default
-  const sig = sigOf(chipSet) + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0) + (opts.pile ? '|P' : '') + '|s' + skin;
+  const sig = sigOf(chipSet) + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0) + (opts.pile ? '|P' : '') + (opts.layoutRef ? '|r' + sigOf(opts.layoutRef) : '') + '|s' + skin;
   if (group.userData.sig === sig) return group;
   group.userData.sig = sig;
   if (!group.userData.inst) {                                  // lazily mint one InstancedMesh per denomination
@@ -55,7 +55,11 @@ export function setChipTray(group, chipSet, opts = {}) {
     im.setMatrixAt(n, _dummy.matrix);
     counters[p.denom] = n + 1;
   }
-  for (const d of DENOMS) { const im = group.userData.inst[d]; im.count = counters[d]; im.instanceMatrix.needsUpdate = true; }
+  // boundingSphere=null forces three.js to recompute it from the CURRENT instances on the next raycast.
+  // InstancedMesh.raycast caches the sphere once and uses it as a hard early-out; without this a tray that
+  // GROWS after its sphere was first cached (your stack regrowing as you pull the raise slider back down,
+  // the live bet heap swelling) loses its hover hitbox beyond the stale radius — only the base stayed clickable.
+  for (const d of DENOMS) { const im = group.userData.inst[d]; im.count = counters[d]; im.instanceMatrix.needsUpdate = true; im.boundingSphere = null; }
   return group;
 }
 

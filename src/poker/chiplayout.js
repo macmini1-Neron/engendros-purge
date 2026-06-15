@@ -19,14 +19,21 @@ function mulberry32(a) {
   };
 }
 
+// `layoutRef` (optional) fixes the COLUMN SET + positions from a reference ChipSet (e.g. your FULL stack)
+// while `chipSet` only decides how many chips are actually placed per column (≤ ref). So as a denomination
+// drains during a raise preview, its column SHORTENS in place instead of vanishing and re-centering the
+// survivors — kills the per-slider-tick lateral jitter. Omit layoutRef and ref===chipSet → identical output.
 export function layoutChips(chipSet, opts = {}) {
-  const { jitter = 0, seed = 1 } = opts;
+  const { jitter = 0, seed = 1, layoutRef = null } = opts;
   const rnd = mulberry32(seed);
+  const ref = layoutRef || chipSet;
   const cols = [];
   for (const denom of DENOMS) {
-    let rem = (chipSet && chipSet[denom]) || 0;
+    let rem = (ref && ref[denom]) || 0;
     while (rem > 0) { const n = Math.min(rem, COL_CAP); cols.push({ denom, n }); rem -= n; }
   }
+  const toPlace = {};                                            // how many chips of each denom to actually render (capped by chipSet)
+  for (const d of DENOMS) toPlace[d] = (chipSet && chipSet[d]) || 0;
   const rows = Math.ceil(cols.length / COLS_PER_ROW) || 1;
   const out = [];
   cols.forEach((c, idx) => {
@@ -34,7 +41,9 @@ export function layoutChips(chipSet, opts = {}) {
     const inRow = Math.min(COLS_PER_ROW, cols.length - row * COLS_PER_ROW);
     const baseX = (idx % COLS_PER_ROW - (inRow - 1) / 2) * COL_GAP;
     const baseZ = (row - (rows - 1) / 2) * ROW_GAP;
-    for (let i = 0; i < c.n; i++) {
+    const have = Math.max(0, Math.min(c.n, toPlace[c.denom]));   // this column renders up to c.n, but no more than remain
+    toPlace[c.denom] -= have;
+    for (let i = 0; i < have; i++) {
       const jx = jitter ? (rnd() - 0.5) * 2 * jitter : 0;
       const jz = jitter ? (rnd() - 0.5) * 2 * jitter : 0;
       const jr = jitter ? (rnd() - 0.5) * 0.14 : 0; // ±~4° lean
