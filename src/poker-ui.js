@@ -4,7 +4,7 @@
 // NOT casino felt. No THREE here; pure DOM. POLYMER tokens reused for the chrome.
 import { describeHand } from './poker/handeval.js';
 import { equity, outs } from './poker/odds.js';
-import { clampRaise, presetRaiseTo, presetRaiseToBB } from './poker/betsizing.js';
+import { clampRaise, presetRaiseTo, presetRaiseToBB, raiseBreakdown } from './poker/betsizing.js';
 import { CHIP_SKIN_LIST, CHIP_SKINS, drawChip } from './poker/chipskins.js'; // pure (no THREE) — safe for the node-tested DOM renderer
 import { CARD_BACK_LIST, CARD_BACKS, drawCardBack } from './poker/cardbacks.js'; // pure — card-back swatch picker
 
@@ -254,7 +254,8 @@ export class PokerDomRenderer {
       <div class="pk-optrow"><label>Players:</label> <span style="color:var(--steel)">${players.map(esc).join(' · ') || '—'}</span></div>
       <div class="pk-optrow"><label>Chip set:</label> <span id="pk-skinpick" class="pk-skinrow"></span></div>
       <div class="pk-skinhint" id="pk-skinhint"></div>
-      <div class="pk-optrow"><label>Card back:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-optrow"><label>Table deck:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" style="opacity:.85">Everyone at the table plays with your deck.</div>
       <div class="pk-skinhint" id="pk-backhint"></div>
       <div class="pk-actions">
         <button class="pk-btn go" id="pk-deal">DEAL</button>
@@ -361,7 +362,15 @@ export class PokerDomRenderer {
     // the player's own chip stack — always visible in the HUD (the 3D nameplate for your own front
     // seat sits low/off-frame, so the header is where you read your money)
     const meSeat = v.seats.find((s) => s.id === p.youId);
-    this.el.mybank.textContent = '$' + (meSeat ? meSeat.stack : 0);
+    // header live-drains to the would-be REMAINING stack while you're SIZING a raise (the 3D stack columns
+    // drain in lockstep via _updateBetPreview), so the number you watch always reconciles with the table and
+    // with the "leaves $" readout; at rest (slider at the minimum) it shows your full behind-stack.
+    let myStack = meSeat ? meSeat.stack : 0;
+    const Lh = p.legal;
+    if (meSeat && p.yourTurn && Lh && Lh.canRaise && (this._raiseTo | 0) > (Lh.minRaiseTo | 0)) {
+      myStack = raiseBreakdown(this._raiseTo, meSeat.roundBet, meSeat.stack).leaves;
+    }
+    this.el.mybank.textContent = '$' + myStack;
 
     // table display — rebuild ONLY when something visible changes. renderTable runs every frame;
     // rebuilding innerHTML each frame would destroy a button between mousedown/up (no click fires)
@@ -504,6 +513,12 @@ export class PokerDomRenderer {
     // hybrid raise control (research-backed): preset buttons + slider(snap 5) + numeric + ± steppers + wheel/keys
     const v = p.view, bb = (v && v.bb) || (p.tour && p.tour.bb) || 20;
     const ctx = { pot: (v && v.pot) || 0, callAmount: L.callAmount, currentBet: (v && v.currentBet) || 0, minRaiseTo: L.minRaiseTo, maxRaiseTo: L.maxRaiseTo, bb };
+    // the readout is anchored to the HEADER stack: cost = what leaves your stack now, leaves = what stays.
+    // (the old "leaves = maxRaiseTo - raiseTo" used the committed-inclusive max as its baseline, so it never
+    // matched the "YOU $" number — worst in re-raised pots where the committed roundBet is large.)
+    const meS = (v && v.seats) ? v.seats.find((s) => s.id === p.youId) : null;
+    const behind = meS ? (meS.stack | 0) : 0, committed = meS ? (meS.roundBet | 0) : 0;
+    const fmtLeft = (to) => { const b = raiseBreakdown(to, committed, behind); return (to >= L.maxRaiseTo ? 'ALL-IN · ' : '') + 'bet $' + b.cost + ' · leaves $' + b.leaves; };
     const presets = (v && v.street === 'preflop')                 // preflop = BB multiples · postflop = pot fractions
       ? [['2.5×', () => presetRaiseToBB(2.5, ctx)], ['3×', () => presetRaiseToBB(3, ctx)], ['4×', () => presetRaiseToBB(4, ctx)]]
       : [['½ Pot', () => presetRaiseTo(0.5, ctx)], ['¾ Pot', () => presetRaiseTo(0.75, ctx)], ['Pot', () => presetRaiseTo(1, ctx)]];
@@ -524,7 +539,7 @@ export class PokerDomRenderer {
           <button class="pk-btn raise" id="pk-raise">RAISE → ${this._raiseTo}</button>
           <button class="pk-btn raise" id="pk-allin">ALL-IN</button>
         </div>
-        <div class="pk-raiseleft" id="pk-raiseleft" style="font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;text-align:center;margin-top:3px">leaves $${L.maxRaiseTo - this._raiseTo} in your stack</div>
+        <div class="pk-raiseleft" id="pk-raiseleft" style="font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;text-align:center;margin-top:3px">${fmtLeft(this._raiseTo)}</div>
       </div>` : ''}`;
     a.querySelector('#pk-fold').addEventListener('click', () => this.cb.onAct({ type: 'fold' }));
     a.querySelector('#pk-callcheck').addEventListener('click', () => this.cb.onAct(L.canCheck ? { type: 'check' } : { type: 'call' }));
@@ -535,7 +550,7 @@ export class PokerDomRenderer {
         this._raiseTo = clampRaise(val, L);
         if (rng) rng.value = this._raiseTo; num.value = this._raiseTo;
         btn.textContent = 'RAISE → ' + this._raiseTo;
-        if (left) left.textContent = 'leaves $' + (L.maxRaiseTo - this._raiseTo) + ' in your stack'; // real-time: what stays in your stack after this bet
+        if (left) left.textContent = fmtLeft(this._raiseTo); // real-time: cost + what stays, reconciled with the header
       };
       if (rng) rng.addEventListener('input', () => setRaise(+rng.value));
       num.addEventListener('change', () => setRaise(+num.value));

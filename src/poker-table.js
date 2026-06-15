@@ -17,7 +17,7 @@ import { mulberry32 } from './poker/cards.js';
 import { ChipBank, value as chipValue } from './poker/chipbank.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
 import { setChipSkin, chipSkinAvailable, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure (no THREE) — sets the shared skin state the 3D chips read
-import { setCardBackSkin, cardBackAvailable, CARD_BACKS_FREE } from './poker/cardbacks.js'; // pure — card-back skin state
+import { setCardBackSkin, getCardBackSkin, cardBackAvailable, CARD_BACKS, CARD_BACKS_FREE } from './poker/cardbacks.js'; // pure — card-back skin state
 import { PokerDomRenderer } from './poker-ui.js';
 // NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
 // orchestrator (game.js). poker-table.js stays THREE/DOM-free so the engine + co-op logic remain
@@ -133,6 +133,7 @@ export class PokerTable {
     this._ensureRenderer();
     this._reset();
     this.role = 'host'; this.coop = true;
+    this._applyCardBack(); // make the host's saved deck the live global NOW — it's the table-wide deck pkstart/snapshots broadcast, even if the host never opens the picker
     if (skipLobby) return;
     const players = [...this.game.mp.roster.values()].map((r) => r.name || 'Flopo');
     if (this.renderer) this.renderer.showCoopLobby({ players, bank: this.game.meta.bank | 0, tiers: POKER_BUYIN_TIERS, chipSkin: this.game.meta.chipSkin || 'dice', skinAvail: this._chipSkinAvail(), cardBack: this.game.meta.cardBack || 'default', backAvail: this._cardBackAvail() });
@@ -157,7 +158,7 @@ export class PokerTable {
     const seated = [mp.myId];
     for (const id of ids) {
       if (id === mp.myId) continue;
-      try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins }); seated.push(id); }
+      try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins, cardBack: getCardBackSkin() }); seated.push(id); } // cardBack is table-wide = the host's deck (unlike the per-player chip skins)
       catch (e) { console.warn('[poker] pkstart send failed for ' + id + ' — dropping it from the table (not counted in the pool)', e); }
     }
     if (seated.length < 2) { this._toast('Could not reach enough players', 0xd23a2a); return; } // nobody charged yet → safe bail
@@ -211,7 +212,12 @@ export class PokerTable {
   enterCoopClient(d) { // client side, on 'pkstart' — by now the client already ACCEPTED (anted) in the lobby
     this._ensureRenderer();
     this._reset();
-    this._applyChipSkin(); this._applyCardBack(); // client renders its own chips + card backs with its own saved cosmetics
+    this._applyChipSkin();                          // chips stay PER-PLAYER: the client's own seat renders its own chip skin
+    // the card deck is TABLE-WIDE = the host's choice (synced via pkstart). Render the host's deck, not the client's
+    // own saved one, and don't overwrite the client's saved meta.cardBack. Validate against the registry so a junk/
+    // missing value falls back to 'default' deterministically (never leave a stale global from a previous game).
+    const hostBack = d && d.cardBack;
+    setCardBackSkin(CARD_BACKS[hostBack] ? hostBack : 'default');
     const buyIn = (d && d.buyIn) | 0;
     // Affordability was enforced at accept time (mp.toggleReady ante gate); this guard only catches the
     // unreachable race where the bank changed between accepting and the deal — bail safely, never seat broke.
@@ -235,6 +241,7 @@ export class PokerTable {
   onSnap(payload) { // client side, on 'pksnap'
     if (this.role !== 'client') return;
     this.clientSnap = payload;
+    if (payload.cardBack && CARD_BACKS[payload.cardBack] && payload.cardBack !== getCardBackSkin()) setCardBackSkin(payload.cardBack); // keep the table deck synced to the host (late-join / re-sync)
     this.phase = payload.phase;
     const pay = Math.max(0, payload.moneyPayout | 0); // coerce/clamp an off-the-wire field — never let a malformed packet write NaN/negative to the persisted bank
     if (payload.over && pay && !this._credited) {
@@ -427,7 +434,7 @@ export class PokerTable {
       phase: this.phase,
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',
-      youId: id, names: this.names, skins: this.skins, moneyPayout, lastAct: this._lastAct,
+      youId: id, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), moneyPayout, lastAct: this._lastAct,
       // live refs to the bank's chip sets — READ-ONLY contract (clients get a JSON copy via pksnap; the
       // host renderer must only read these, never mutate them, or it would break conservation).
       chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot } : null,

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snapTo, clampRaise, presetRaiseTo, presetRaiseToBB } from '../../src/poker/betsizing.js';
+import { snapTo, clampRaise, presetRaiseTo, presetRaiseToBB, raiseBreakdown } from '../../src/poker/betsizing.js';
 
 // the chip economy's atom is 5 (smallest chip) — all bet inputs snap to it
 test('snapTo rounds to the nearest multiple of the step (default 5)', () => {
@@ -56,4 +56,32 @@ test('when minRaiseTo == maxRaiseTo (raise-is-all-in only), every input returns 
   assert.equal(presetRaiseTo(1, ctx), 80);
   assert.equal(presetRaiseToBB(3, ctx), 80);
   assert.equal(clampRaise(50, ctx), 80);
+});
+
+// raiseBreakdown — the "bet $X · leaves $Y" readout, anchored to the header stack (the reported bug:
+// the old readout used maxRaiseTo as its baseline, so it never matched the "YOU $" number).
+test('raiseBreakdown — the screenshot case: SB posted 10, header $1390, raise to 1160', () => {
+  // committed=10 (your SB), behind=1390 (header). cost = 1160-10 = 1150; leaves = 1390-1150 = 240.
+  const { cost, leaves } = raiseBreakdown(1160, 10, 1390);
+  assert.equal(cost, 1150);
+  assert.equal(leaves, 240);
+  assert.equal(1390 - cost, leaves, 'leaves reconciles with the header: header - cost');
+});
+
+test('raiseBreakdown — leaves always equals the old maxRaiseTo-raiseTo, but reconciles with the header', () => {
+  // maxRaiseTo = committed + behind. In a re-raised pot the committed (roundBet) is large — exactly the
+  // case the player saw as "wrong" (header 1090, you re-raised 300 this street, now raise to 1160).
+  const committed = 300, behind = 1090, raiseTo = 1160;
+  const maxRaiseTo = committed + behind;            // 1390
+  const { cost, leaves } = raiseBreakdown(raiseTo, committed, behind);
+  assert.equal(cost, 860);                          // 1160 - 300
+  assert.equal(leaves, 230);                        // 1090 - 860
+  assert.equal(leaves, maxRaiseTo - raiseTo, 'same value as the old formula');
+  assert.equal(behind - cost, leaves, 'but now header - cost == leaves (the naive 1090-1160 = -70 is gone)');
+});
+
+test('raiseBreakdown — all-in (raise to the max) leaves $0, and is clamped to [0, behind]', () => {
+  assert.deepEqual(raiseBreakdown(1400, 10, 1390), { cost: 1390, leaves: 0 }); // raise to maxRaiseTo
+  assert.deepEqual(raiseBreakdown(99999, 10, 1390), { cost: 1390, leaves: 0 }); // over-max never goes negative
+  assert.deepEqual(raiseBreakdown(0, 0, 1390), { cost: 0, leaves: 1390 });      // degenerate
 });
