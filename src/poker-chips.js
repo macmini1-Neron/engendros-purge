@@ -1,107 +1,65 @@
 // 3D chip-stack view layer. THREE-only (browser). The pure denomination math lives in
-// src/poker/chips.js (unit-tested); this turns an integer amount into a PHYSICAL stack whose chip
-// count is exact — one column per denomination, largest nearest the player. "I added N" is real.
+// src/poker/chips.js + the pure LAYOUT math in src/poker/chiplayout.js (both unit-tested);
+// this turns a real ChipSet into a PHYSICAL stack whose chip count is EXACT — never a
+// number approximated. "I added N" is real.
 //
-// The chip look mirrors the modelgen `models/poker-chip` "dice" spec (solid colour body + white inlay
-// ring + 6 contrasting edge tabs). It is rebuilt procedurally here (not via buildSpec) because chips are
-// mass-instanced, recoloured PER DENOMINATION, and disposed every rebuild — fresh geometry is the safe,
-// cheap form; the modelgen spec stays the canonical/admin model + skin reference.
-//
-// SKINS: CHIP_SKINS is the swap registry the owner asked to prepare — v1 is 'dice'; a future skin just
-// adds another builder and `setChipSkin('name')` swaps it everywhere.
+// Each denomination is drawn as ONE InstancedMesh (src/poker-chip-mesh.js): a single
+// low-poly cylinder with the dice ring + spots baked into its texture. A full tray is a
+// handful of draw calls instead of hundreds of meshes, so the real conserved count from
+// chipbank.js renders cheaply. setChipTray keeps the old public API.
 import * as THREE from 'three';
 import { breakdown } from './poker/chips.js';
 import { DENOMS, sigOf } from './poker/chipbank.js';
+import { layoutChips, pileLayout } from './poker/chiplayout.js';
+import { chipInstanced, chipMaterial, CHIP_GEO_T } from './poker-chip-mesh.js';
+import { chipSkinRev } from './poker/chipskins.js';
 
-const R = 0.020, T = 0.0033, GAP = 0.0006;                          // metres
-const RING_R = 0.0122, RING_T = 0.0006, TAB_W = 0.0085, TAB_H = 0.0037, TAB_D = 0.007, TAB_R = 0.0165;
+const CAP = 256;                 // max instances per denomination per tray (a tall single-colour stack)
+const _dummy = new THREE.Object3D();
 
-// per-denomination dice-chip colours: body + a contrasting spot/ring. White $1 gets navy spots (as the
-// real 5-colour dice set does) so it doesn't vanish; the rest get white spots.
-const DICE = {
-  5:    { body: 0xe8e8e8, spot: 0x24408f }, // white  (navy spots so it doesn't vanish)
-  10:   { body: 0x2a52b0, spot: 0xf0f0f0 }, // blue
-  20:   { body: 0xb02828, spot: 0xf0f0f0 }, // red
-  50:   { body: 0x1f8040, spot: 0xf0f0f0 }, // green
-  100:  { body: 0x1a1a1a, spot: 0xf0f0f0 }, // black
-  500:  { body: 0xd8b84a, spot: 0x141414 }, // yellow (dark spots for contrast)
-};
-const denomColor = (d) => DICE[d] || DICE[100];
+// Build a physical chip tray from a real ChipSet ({denom:count}). opts: { jitter, seed }
+// — seeded position/rotation jitter so stacks read hand-stacked, stable across rebuilds.
+export function makeChipTray(chipSet, opts) { const g = new THREE.Group(); setChipTray(g, chipSet, opts); return g; }
 
-function buildDiceChip({ body, spot }) {
-  const g = new THREE.Group();
-  const bodyMat = new THREE.MeshLambertMaterial({ color: body });
-  const spotMat = new THREE.MeshLambertMaterial({ color: spot });
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(R, R, T, 24), bodyMat);
-  disc.position.y = T / 2; g.add(disc);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(RING_R, RING_T, 8, 32), spotMat);
-  ring.rotation.x = Math.PI / 2; ring.position.y = T; g.add(ring);  // flat inlay ring on the top face
-  for (let i = 0; i < 6; i++) {                                     // 6 edge tabs (the "dice" spots)
-    const th = i * Math.PI / 3;
-    const tab = new THREE.Mesh(new THREE.BoxGeometry(TAB_W, TAB_H, TAB_D), spotMat);
-    tab.position.set(Math.cos(th) * TAB_R, TAB_H / 2, Math.sin(th) * TAB_R);
-    tab.rotation.y = Math.PI / 2 - th;                              // face radially outward
-    g.add(tab);
-  }
-  return g;
-}
-
-// Skin registry — the seam for future chip designs. Each skin(denom) returns a floor-anchored chip Group.
-export const CHIP_SKINS = {
-  dice: (denom) => buildDiceChip(denomColor(denom)),
-};
-let _skin = 'dice';
-export function setChipSkin(name) { if (CHIP_SKINS[name]) _skin = name; }
-
-function disposeTree(o) {
-  o.traverse?.((c) => { c.geometry?.dispose?.(); const m = c.material; if (Array.isArray(m)) m.forEach((x) => x?.dispose?.()); else m?.dispose?.(); });
-}
-
-const COL_GAP = 2 * R + 0.0012;          // centre-to-centre spacing of denomination columns (≈ chip Ø)
-
-// Build a physical chip tray from a real ChipSet ({denom:count}) — one column PER DENOMINATION,
-// largest nearest the player's left, ordered like a real rack. This is the conserved path: it draws
-// the actual chips the chipbank holds, never a breakdown() of a number, so "two greens stay two
-// greens". Columns are centred about the group origin so the tray reads symmetrically wherever it
-// is placed.
-export function makeChipTray(chipSet) {
-  const g = new THREE.Group();
-  setChipTray(g, chipSet);
-  return g;
-}
-
-export function setChipTray(group, chipSet) {
+export function setChipTray(group, chipSet, opts = {}) {
   chipSet = chipSet || {};
-  const sig = sigOf(chipSet);
-  if (group.userData.sig === sig && group.userData.skin === _skin) return group;
-  for (let i = group.children.length - 1; i >= 0; i--) { const c = group.children[i]; group.remove(c); disposeTree(c); }
-  group.userData.sig = sig; group.userData.skin = _skin; group.userData.amount = undefined;
-  const denoms = DENOMS.filter((d) => (chipSet[d] || 0) > 0);   // descending, largest-first
-  const x0 = -((denoms.length - 1) * COL_GAP) / 2;
-  denoms.forEach((denom, col) => {
-    const x = x0 + col * COL_GAP;
-    for (let i = 0; i < chipSet[denom]; i++) {
-      const chip = CHIP_SKINS[_skin](denom);
-      chip.position.set(x, i * (T + GAP), 0);
-      group.add(chip);
-    }
-  });
+  const sig = sigOf(chipSet) + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0) + (opts.pile ? '|P' : '') + '|s' + chipSkinRev();
+  if (group.userData.sig === sig) return group;
+  group.userData.sig = sig;
+  if (!group.userData.inst) {                                  // lazily mint one InstancedMesh per denomination
+    group.userData.inst = {};
+    for (const d of DENOMS) { const im = chipInstanced(d, CAP); group.add(im); group.userData.inst[d] = im; }
+    group.userData.skinRev = chipSkinRev();
+  } else if (group.userData.skinRev !== chipSkinRev()) {       // skin changed → existing meshes adopt the new materials
+    group.userData.skinRev = chipSkinRev();
+    for (const d of DENOMS) group.userData.inst[d].material = chipMaterial(d);
+  }
+  const places = opts.pile ? pileLayout(chipSet, opts) : layoutChips(chipSet, opts); // pile = loose tossed heap; else tidy columns
+  const counters = {};
+  for (const d of DENOMS) counters[d] = 0;
+  for (const p of places) {
+    const n = counters[p.denom];
+    if (n >= CAP) continue;                                    // guard: never overflow the instance buffer
+    const im = group.userData.inst[p.denom];
+    _dummy.position.set(p.x, p.y + CHIP_GEO_T / 2, p.z);       // +half-thickness so the bottom chip rests ON the felt
+    _dummy.rotation.set(p.tiltX || 0, p.rot || 0, p.tiltZ || 0); // pile chips carry a small tilt (tossed); columns just a Y lean
+    _dummy.scale.setScalar(1);
+    _dummy.updateMatrix();
+    im.setMatrixAt(n, _dummy.matrix);
+    counters[p.denom] = n + 1;
+  }
+  for (const d of DENOMS) { const im = group.userData.inst[d]; im.count = counters[d]; im.instanceMatrix.needsUpdate = true; }
   return group;
 }
 
-// Back-compat / fallback: derive a ChipSet from an integer (greedy breakdown) and draw it as a tray.
-// Used by the 2D path and as a defensive fallback when no chipbank multiset is available — the 3D
+// Back-compat / fallback: derive a ChipSet from an integer (greedy breakdown) and draw it.
+// Used by the 2D path and defensively when no chipbank multiset is available — the 3D
 // table feeds setChipTray real multisets instead.
-export function makeChipStack(amount) {
-  const g = new THREE.Group();
-  setChipStack(g, amount);
-  return g;
-}
-
-export function setChipStack(group, amount) {
+export function makeChipStack(amount, opts) { const g = new THREE.Group(); setChipStack(g, amount, opts); return g; }
+export function setChipStack(group, amount, opts) {
   const set = {};
   for (const { denom, count } of breakdown(amount)) set[denom] = count;
-  return setChipTray(group, set);
+  return setChipTray(group, set, opts);
 }
 
-export const CHIP_SIZE = { r: R, t: T };
+export const CHIP_SIZE = { r: 0.020, t: CHIP_GEO_T };

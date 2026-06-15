@@ -15,6 +15,7 @@ function assertLegal(legal, a) {
     case 'raise':
       assert.equal(legal.canRaise, true);
       assert.ok(a.to >= legal.minRaiseTo && a.to <= legal.maxRaiseTo, `raise ${a.to} out of [${legal.minRaiseTo},${legal.maxRaiseTo}]`);
+      assert.equal(a.to % 5, 0, `raise ${a.to} is not a multiple of 5 (chip atom) — bots must size like the human UI`);
       break;
     default: assert.fail('unknown action ' + a.type);
   }
@@ -52,6 +53,16 @@ test('bots drive a full 6-max Sit & Go to completion', () => {
   assert.ok(t.over);
   assert.deepEqual(t.players.map((p) => p.place).sort((a, b) => a - b), [1, 2, 3, 4, 5, 6]);
   assert.equal(t.result.payouts[t.result.winner], 3000); // 500 × 6, winner-takes-all
+});
+
+test('bot raises are snapped to the 5-chip atom (no sub-5 amounts → no dust)', () => {
+  // preflop pocket aces facing a bet → the bot raises; the raise-TO must be a multiple of 5
+  // so the pot stays a multiple of 5 and the chipbank never needs sub-5 dust.
+  const view = { board: [], pot: 137, seats: [{ id: 'me', hole: [{ r: 14, s: 's' }, { r: 14, s: 'h' }], folded: false, hasCards: true }] };
+  const legal = { seat: 'me', canCheck: false, canCall: true, callAmount: 40, canRaise: true, minRaiseTo: 80, maxRaiseTo: 1000 };
+  const a = botAction(view, legal, () => 0.1); // r<0.6 with AA → value raise
+  assert.equal(a.type, 'raise');
+  assert.equal(a.to % 5, 0, `bot raised to ${a.to}, not a multiple of 5`);
 });
 
 test('a strong made hand never folds for free', () => {

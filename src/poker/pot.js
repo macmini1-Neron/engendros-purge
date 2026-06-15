@@ -1,6 +1,8 @@
 // Side-pot construction + payout (ties, odd chips). No THREE, no DOM.
 import { compare } from './handeval.js';
 
+const CHIP_ATOM = 5;   // smallest chip — pots are split in whole chips, never sub-5 shares
+
 // contribs: [{ seat, committed, folded }] -> [{ amount, eligible:[seat,...] }]
 export function buildPots(contribs) {
   const pots = [];
@@ -34,13 +36,19 @@ export function awardPots(pots, rankOf, orderFromButton) {
       else if (compare(r, best) === 0) winners.push(s);
     }
     if (!winners.length) continue;
-    const share = Math.floor(pot.amount / winners.length);
+    // Split in WHOLE CHIPS: each winner gets an equal multiple of the chip atom (5 — the smallest
+    // chip), then the remainder is paid one chip at a time by button order. A real pot is always a
+    // multiple of 5, so every share comes out a multiple of 5 (no sub-5 oddities like 84/83/83); a
+    // sub-atom tail (only from a synthetic non-multiple-of-5 pot) goes whole to the first seat.
+    const share = Math.floor(pot.amount / winners.length / CHIP_ATOM) * CHIP_ATOM;
     for (const s of winners) win[s] = (win[s] || 0) + share;
     let odd = pot.amount - share * winners.length;
     const ordered = orderFromButton.filter((s) => winners.includes(s));
-    for (let i = 0; odd > 0; i++, odd--) {
+    for (let i = 0; odd > 0; i++) {
+      const give = Math.min(CHIP_ATOM, odd);
       const s = ordered[i % ordered.length];
-      win[s] = (win[s] || 0) + 1;
+      win[s] = (win[s] || 0) + give;
+      odd -= give;
     }
   }
   return win;

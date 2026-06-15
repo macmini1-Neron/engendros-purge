@@ -69,6 +69,14 @@ test('odd chip in a split pot goes to the first seat left of the button', () => 
   assert.deepEqual(awardPots(odd, { A: R(4), B: R(4) }, ['B', 'A']), { A: 50, B: 51 }); // odd chip to B (first left of button)
 });
 
+test('a multiway split divides in whole 5-chips — never a sub-5 share like 84/83/83', () => {
+  // 250 three ways: 80 each + a 10 remainder paid out in 5s by button order → 85/85/80
+  const win = awardPots([{ amount: 250, eligible: ['A', 'B', 'C'] }], { A: R(4), B: R(4), C: R(4) }, ['A', 'B', 'C']);
+  assert.deepEqual(win, { A: 85, B: 85, C: 80 });
+  assert.ok(Object.values(win).every((v) => v % 5 === 0), 'every share is a whole 5-chip');
+  assert.equal(Object.values(win).reduce((a, b) => a + b, 0), 250, 'conserves the pot');
+});
+
 test('an uncalled extra chip is returned to its owner, not shared', () => {
   // A committed 1 more than anyone called -> that chip is A's own 1-chip side pot
   const pots = buildPots([

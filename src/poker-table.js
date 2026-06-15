@@ -15,6 +15,9 @@ import { legalActions, applyAction, isComplete, privateView, forceFold } from '.
 import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
 import { ChipBank, value as chipValue } from './poker/chipbank.js';
+import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
+import { setChipSkin, chipSkinAvailable, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure (no THREE) — sets the shared skin state the 3D chips read
+import { setCardBackSkin, cardBackAvailable, CARD_BACKS_FREE } from './poker/cardbacks.js'; // pure — card-back skin state
 import { PokerDomRenderer } from './poker-ui.js';
 // NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
 // orchestrator (game.js). poker-table.js stays THREE/DOM-free so the engine + co-op logic remain
@@ -57,6 +60,19 @@ export class PokerTable {
 
   _toast(msg, color) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast(msg, color); }
 
+  // chip-skin cosmetics: free skins + the player's crate-unlocked ones (meta.chipSkinsUnlocked).
+  _chipSkinAvail() { return [...CHIP_SKINS_FREE, ...((this.game.meta && this.game.meta.chipSkinsUnlocked) || [])]; }
+  _cardBackAvail() { return [...CARD_BACKS_FREE, ...((this.game.meta && this.game.meta.cardBacksUnlocked) || [])]; }
+  // apply the saved cosmetics before anything is built, falling back to the default if not owned/available.
+  _applyChipSkin() {
+    const want = this.game.meta && this.game.meta.chipSkin;
+    setChipSkin(chipSkinAvailable(want, this.game.meta && this.game.meta.chipSkinsUnlocked) ? want : 'dice');
+  }
+  _applyCardBack() {
+    const want = this.game.meta && this.game.meta.cardBack;
+    setCardBackSkin(cardBackAvailable(want, this.game.meta && this.game.meta.cardBacksUnlocked) ? want : 'default');
+  }
+
   _ensureRenderer() {
     if (this.renderer || typeof document === 'undefined') return; // node/headless: stay renderer-less (all calls are guarded)
     const root = document.getElementById('poker');
@@ -66,6 +82,8 @@ export class PokerTable {
       onStart: (cfg) => { if (cfg && cfg.coop) this.startCoop(cfg.buyIn | 0); else this.startTournament(cfg); },
       onAct: (a) => this.humanAct(a),
       onLeave: () => this.game.closePoker(),
+      onChipSkin: (id) => { setChipSkin(id); if (this.game.meta) this.game.meta.chipSkin = id; if (this.game._saveMeta) this.game._saveMeta(); }, // local cosmetic: apply + persist
+      onCardBack: (id) => { setCardBackSkin(id); if (this.game.meta) this.game.meta.cardBack = id; if (this.game._saveMeta) this.game._saveMeta(); },
       getShowOdds: () => !!(this.game.settings && this.game.settings.data && this.game.settings.data.pokerOdds), // local player's own preference
     });
     this.renderer.mount();
@@ -77,7 +95,7 @@ export class PokerTable {
     this._ensureRenderer();
     this._reset();
     this.role = 'solo'; this.coop = false;
-    if (this.renderer) this.renderer.showLobby({ bank: this.game.meta.bank | 0 });
+    if (this.renderer) this.renderer.showLobby({ bank: this.game.meta.bank | 0, chipSkin: this.game.meta.chipSkin || 'dice', skinAvail: this._chipSkinAvail(), cardBack: this.game.meta.cardBack || 'default', backAvail: this._cardBackAvail() });
   }
 
   startTournament({ bots = 5, mode = 'practice' } = {}) {
@@ -95,20 +113,24 @@ export class PokerTable {
 
   // ---------- CO-OP (PvP over the room) ----------
 
-  openCoop() { // host opens the co-op poker lobby from the room
+  openCoop(skipLobby) { // host opens the co-op poker lobby from the room; skipLobby = deal straight
+                        // from the room mode-select (the buy-in was already chosen in the lobby)
     this._ensureRenderer();
     this._reset();
     this.role = 'host'; this.coop = true;
+    if (skipLobby) return;
     const players = [...this.game.mp.roster.values()].map((r) => r.name || 'Flopo');
-    if (this.renderer) this.renderer.showCoopLobby({ players, bank: this.game.meta.bank | 0, tiers: [500, 2000, 10000] });
+    if (this.renderer) this.renderer.showCoopLobby({ players, bank: this.game.meta.bank | 0, tiers: POKER_BUYIN_TIERS, chipSkin: this.game.meta.chipSkin || 'dice', skinAvail: this._chipSkinAvail(), cardBack: this.game.meta.cardBack || 'default', backAvail: this._cardBackAvail() });
   }
 
-  startCoop(buyIn) {
+  // Seat EXACTLY the players in `seatIds` (the lobby's anted/accepted set). Falls back to the whole
+  // roster when called without a list (back-compat for the old buy-in-lobby DEAL path + tests).
+  startCoop(buyIn, seatIds) {
     const mp = this.game.mp;
-    const ids = [...mp.roster.keys()];
+    const ids = (seatIds && seatIds.length) ? seatIds.slice() : [...mp.roster.keys()];
     if (ids.length < 2) { this._toast('Need at least 2 players', 0xd23a2a); return; }
     if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a); return; }
-    this.names = {}; for (const [id, r] of mp.roster) this.names[id] = r.name || id;
+    this.names = {}; for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; }
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
     this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
     this.rng = mulberry32(((Date.now() >>> 0) ^ (ids.length * 2654435761)) >>> 0);
@@ -116,17 +138,22 @@ export class PokerTable {
     this._dealChips();
     this.active = true;
     this._paid = this._spend(this.coopBuyIn);                      // host pays own buy-in (affordability checked above)
-    mp.net.send('pkstart', { buyIn: this.coopBuyIn, names: this.names }); // pull clients in
+    // INVITE ONLY THE SEATED PLAYERS — a targeted pkstart per seat (not a broadcast), so a connected
+    // but un-anted client is never pulled in and never silently lost.
+    for (const id of ids) { if (id === mp.myId) continue; try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names }); } catch (e) {} }
     if (this.renderer) this.renderer.showTable();
     this._beginHand();
     this._broadcastPoker();
   }
 
-  enterCoopClient(d) { // client side, on 'pkstart'
+  enterCoopClient(d) { // client side, on 'pkstart' — by now the client already ACCEPTED (anted) in the lobby
     this._ensureRenderer();
     this._reset();
+    this._applyChipSkin(); this._applyCardBack(); // client renders its own chips + card backs with its own saved cosmetics
     const buyIn = (d && d.buyIn) | 0;
-    if (buyIn > 0 && (this.game.meta.bank | 0) < buyIn) { // can't cover the buy-in → decline, do NOT seat (no free roll)
+    // Affordability was enforced at accept time (mp.toggleReady ante gate); this guard only catches the
+    // unreachable race where the bank changed between accepting and the deal — bail safely, never seat broke.
+    if (!canAnte(this.game.meta.bank, buyIn)) {
       try { this.game.mp.net.send('pkleave', {}); } catch (e) {}
       this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a);
       this.game.closePoker();
@@ -229,6 +256,7 @@ export class PokerTable {
   // ---------- physical chip layer (host/solo only; clients render the host's snapshot) ----------
 
   _dealChips() {
+    this._applyChipSkin(); this._applyCardBack(); // honour the saved cosmetics (fall back if locked) before anything is built
     this.chipbank = new ChipBank();
     const ids = this.tour.players.map((p) => p.id);
     if (chipValue(STARTING_CHIPS) !== this.tour.startStack) {            // STARTING_CHIPS must total the engine start stack
@@ -327,10 +355,10 @@ export class PokerTable {
     }
   }
 
-  render() {
+  render(dt) {
     if (!this.renderer || this.phase === 'lobby') return;
-    if (this.role === 'client') { if (this.clientSnap) this.renderer.renderTable(this.clientSnap); return; }
-    this.renderer.renderTable(this._payloadFor(this.youId));
+    if (this.role === 'client') { if (this.clientSnap) this.renderer.renderTable(this.clientSnap, dt); return; }
+    this.renderer.renderTable(this._payloadFor(this.youId), dt);
   }
 
   // ---------- bank ----------

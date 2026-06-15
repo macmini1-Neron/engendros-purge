@@ -5,6 +5,8 @@
 import { describeHand } from './poker/handeval.js';
 import { equity, outs } from './poker/odds.js';
 import { clampRaise, presetRaiseTo, presetRaiseToBB } from './poker/betsizing.js';
+import { CHIP_SKIN_LIST, CHIP_SKINS, drawChip } from './poker/chipskins.js'; // pure (no THREE) — safe for the node-tested DOM renderer
+import { CARD_BACK_LIST, CARD_BACKS, drawCardBack } from './poker/cardbacks.js'; // pure — card-back swatch picker
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RCH = { 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -33,6 +35,9 @@ const CSS = `
 .pk-top .pk-meta { margin-left:auto; display:flex; gap:22px; font-family:var(--font-mono,monospace);
   font-size:14px; color:var(--steel,#84aab2); }
 .pk-top .pk-meta b { color:var(--brass-hi,#f3d999); }
+.pk-top .pk-meta .pk-mybank-meta { padding:2px 12px; border-radius:7px; background:rgba(20,40,30,.7);
+  border:1px solid var(--go,#5cae8c); color:#bfe8d4; font-weight:bold; letter-spacing:.5px; }
+.pk-top .pk-meta .pk-mybank-meta b { color:var(--go,#7fe6b0); font-size:16px; }
 .pk-leave { margin-left:14px; }
 
 .pk-felt { flex:1; position:relative; display:flex; flex-direction:column; align-items:center;
@@ -117,6 +122,18 @@ const CSS = `
 .pk-optbtn { cursor:pointer; width:42px; height:42px; border-radius:8px; border:1px solid var(--brass-deep);
   background:rgba(11,21,19,.7); color:var(--ink); font-size:18px; font-family:var(--font-mono,monospace); }
 .pk-optbtn.sel { border-color:var(--neon); color:var(--neon); box-shadow:0 0 0 1px var(--neon); }
+/* chip-skin picker (canvas swatches) */
+.pk-skinrow { display:flex; align-items:center; gap:10px; }
+.pk-skinbtn { cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px; padding:7px 9px;
+  border-radius:8px; border:1px solid var(--brass-deep); background:rgba(11,21,19,.7); }
+.pk-skinbtn canvas { width:44px; height:44px; image-rendering:auto; filter:drop-shadow(0 2px 3px rgba(0,0,0,.5)); }
+.pk-skinbtn span { font-size:11px; letter-spacing:1px; color:var(--steel,#84aab2); font-family:var(--font-mono,monospace); }
+.pk-skinbtn.sel { border-color:var(--neon); box-shadow:0 0 0 1px var(--neon); }
+.pk-skinbtn.sel span { color:var(--neon); }
+.pk-skinbtn.locked { opacity:.42; filter:grayscale(.65); cursor:not-allowed; }
+.pk-skinbtn.locked:hover { opacity:.6; }
+.pk-skinhint { min-height:15px; font-size:12px; color:var(--steel,#84aab2); font-family:var(--font-display,'Oswald'); }
+.pk-skinbtn.back canvas { width:38px; height:53px; border-radius:4px; }
 `;
 
 // escape any peer-supplied text before it enters innerHTML (names will come from untrusted
@@ -144,6 +161,7 @@ export class PokerDomRenderer {
             <span>BLINDS <b id="pk-blinds">10/20</b></span>
             <span>HAND <b id="pk-hand">0</b></span>
             <span>POOL <b id="pk-pool">0</b></span>
+            <span class="pk-mybank-meta">YOU <b id="pk-mybank">$0</b></span>
           </div>
           <button class="pk-btn pk-leave" id="pk-leave">LEAVE</button>
         </div>
@@ -178,6 +196,7 @@ export class PokerDomRenderer {
       blinds: this.root.querySelector('#pk-blinds'),
       hand: this.root.querySelector('#pk-hand'),
       pool: this.root.querySelector('#pk-pool'),
+      mybank: this.root.querySelector('#pk-mybank'),
     };
     this.root.querySelector('#pk-leave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
     this._built = true;
@@ -193,6 +212,10 @@ export class PokerDomRenderer {
         Playing for real bank money comes with co-op (this is play-chip practice).</div>
       <div class="pk-optrow"><label>Opponents (bots):</label>
         <span id="pk-botpick"></span></div>
+      <div class="pk-optrow"><label>Chip set:</label> <span id="pk-skinpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" id="pk-skinhint"></div>
+      <div class="pk-optrow"><label>Card back:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" id="pk-backhint"></div>
       <div class="pk-actions">
         <button class="pk-btn go" id="pk-start">SIT DOWN</button>
         <button class="pk-btn" id="pk-lobbyleave">BACK</button>
@@ -209,6 +232,8 @@ export class PokerDomRenderer {
       }
     };
     draw();
+    this._chipSkinPicker(this.el.lobby.querySelector('#pk-skinpick'), opts && opts.chipSkin, opts && opts.skinAvail, this.el.lobby.querySelector('#pk-skinhint'));
+    this._cardBackPicker(this.el.lobby.querySelector('#pk-backpick'), opts && opts.cardBack, opts && opts.backAvail, this.el.lobby.querySelector('#pk-backhint'));
     this.el.lobby.querySelector('#pk-start').addEventListener('click', () => this.cb.onStart && this.cb.onStart({ bots, mode: 'practice', buyIn: 0 }));
     this.el.lobby.querySelector('#pk-lobbyleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
   }
@@ -227,6 +252,10 @@ export class PokerDomRenderer {
         Your bank: <b style="color:var(--brass-hi)">$${bank}</b></div>
       <div class="pk-optrow"><label>Buy-in:</label> <span id="pk-tierpick"></span></div>
       <div class="pk-optrow"><label>Players:</label> <span style="color:var(--steel)">${players.map(esc).join(' · ') || '—'}</span></div>
+      <div class="pk-optrow"><label>Chip set:</label> <span id="pk-skinpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" id="pk-skinhint"></div>
+      <div class="pk-optrow"><label>Card back:</label> <span id="pk-backpick" class="pk-skinrow"></span></div>
+      <div class="pk-skinhint" id="pk-backhint"></div>
       <div class="pk-actions">
         <button class="pk-btn go" id="pk-deal">DEAL</button>
         <button class="pk-btn" id="pk-coopleave">BACK</button>
@@ -244,8 +273,66 @@ export class PokerDomRenderer {
       }
     };
     draw();
+    this._chipSkinPicker(this.el.lobby.querySelector('#pk-skinpick'), opts && opts.chipSkin, opts && opts.skinAvail, this.el.lobby.querySelector('#pk-skinhint'));
+    this._cardBackPicker(this.el.lobby.querySelector('#pk-backpick'), opts && opts.cardBack, opts && opts.backAvail, this.el.lobby.querySelector('#pk-backhint'));
     this.el.lobby.querySelector('#pk-deal').addEventListener('click', () => this.cb.onStart && this.cb.onStart({ coop: true, buyIn }));
     this.el.lobby.querySelector('#pk-coopleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
+  }
+
+  // Chip-skin picker: a row of canvas swatches (drawn via the pure drawChip). Local cosmetic — on click
+  // it highlights + fires onChipSkin(id); poker-table persists it to meta + applies it to the 3D chips.
+  // `available` = ids the player owns (free + unlocked); the rest render locked (🔒, not selectable).
+  _chipSkinPicker(container, current, available, hintEl) {
+    if (!container) return;
+    const avail = Array.isArray(available) ? available : CHIP_SKIN_LIST; // back-compat: all available
+    let sel = (CHIP_SKINS[current] && avail.includes(current)) ? current : 'dice';
+    const draw = () => {
+      container.innerHTML = '';
+      for (const id of CHIP_SKIN_LIST) {
+        const locked = !avail.includes(id);
+        const btn = document.createElement('button');
+        btn.className = 'pk-skinbtn' + (id === sel ? ' sel' : '') + (locked ? ' locked' : '');
+        btn.title = locked ? 'Locked — unlock from the Supply Crate' : CHIP_SKINS[id].label;
+        const cv = document.createElement('canvas'); cv.width = cv.height = 44;
+        drawChip(cv.getContext('2d'), 44, 20, id);              // representative $20 (red) chip
+        const lab = document.createElement('span'); lab.textContent = (locked ? '🔒 ' : '') + CHIP_SKINS[id].label;
+        btn.appendChild(cv); btn.appendChild(lab);
+        if (locked) {
+          btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CHIP_SKINS[id].label}” is locked — unlock it from the Supply Crate.`; });
+        } else {
+          btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onChipSkin && this.cb.onChipSkin(id); });
+        }
+        container.appendChild(btn);
+      }
+    };
+    draw();
+  }
+
+  // Card-back picker — same machinery as the chip-skin picker, drawn at card aspect via drawCardBack.
+  _cardBackPicker(container, current, available, hintEl) {
+    if (!container) return;
+    const avail = Array.isArray(available) ? available : CARD_BACK_LIST;
+    let sel = (CARD_BACKS[current] && avail.includes(current)) ? current : 'default';
+    const draw = () => {
+      container.innerHTML = '';
+      for (const id of CARD_BACK_LIST) {
+        const locked = !avail.includes(id);
+        const btn = document.createElement('button');
+        btn.className = 'pk-skinbtn back' + (id === sel ? ' sel' : '') + (locked ? ' locked' : '');
+        btn.title = locked ? 'Locked — unlock from the Supply Crate' : CARD_BACKS[id].label;
+        const cv = document.createElement('canvas'); cv.width = 76; cv.height = 106;   // 2× card aspect, CSS-scaled
+        drawCardBack(cv.getContext('2d'), 76, 106, id);
+        const lab = document.createElement('span'); lab.textContent = (locked ? '🔒 ' : '') + CARD_BACKS[id].label;
+        btn.appendChild(cv); btn.appendChild(lab);
+        if (locked) {
+          btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CARD_BACKS[id].label}” is locked — unlock it from the Supply Crate.`; });
+        } else {
+          btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onCardBack && this.cb.onCardBack(id); });
+        }
+        container.appendChild(btn);
+      }
+    };
+    draw();
   }
 
   showTable() {
@@ -271,6 +358,10 @@ export class PokerDomRenderer {
     this.el.blinds.textContent = tour.sb + '/' + tour.bb;
     this.el.hand.textContent = tour.handNumber;
     this.el.pool.textContent = tour.prizePool;
+    // the player's own chip stack — always visible in the HUD (the 3D nameplate for your own front
+    // seat sits low/off-frame, so the header is where you read your money)
+    const meSeat = v.seats.find((s) => s.id === p.youId);
+    this.el.mybank.textContent = '$' + (meSeat ? meSeat.stack : 0);
 
     // table display — rebuild ONLY when something visible changes. renderTable runs every frame;
     // rebuilding innerHTML each frame would destroy a button between mousedown/up (no click fires)

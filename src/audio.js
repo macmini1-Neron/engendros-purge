@@ -385,6 +385,45 @@ export class AudioManager {
   shellInsert() { this.noise(0.05, 0.3, 'lowpass', 600, 1); this.tone(210, 0.05, 'square', 0.16); } // a single shell pressed into the tube
   dryFire() { this.noise(0.03, 0.25, 'bandpass', 3200, 4); }
 
+  // ---- poker den SFX (procedural; timed to the table events for the audio-frame "juice") ----
+  // a card dealt / flipped: a soft paper whiff + a faint tick
+  pokerDeal() {
+    if (!this.ctx) return;
+    this.noise(0.06, 0.16, 'bandpass', 1850, 1.4);
+    this.tone(880, 0.03, 'sine', 0.07);
+  }
+  // a chip settling: a short clay/ceramic clack. `pitch` shifts it deterministically (per-index, NOT
+  // random) so a run of chips reads as several distinct clicks rather than one robotic repeat.
+  pokerChip(pitch = 1) {
+    if (!this.ctx) return;
+    this.noise(0.035, 0.20, 'bandpass', 2400 * pitch, 6);
+    this.tone(1700 * pitch, 0.045, 'triangle', 0.12);
+  }
+  // chips pushed to the centre / pot raked: a low broadband shove
+  pokerPotSlide() {
+    if (!this.ctx) return;
+    this.noise(0.2, 0.24, 'lowpass', 420, 0.9);
+    this.tone(150, 0.18, 'sine', 0.10);
+  }
+  // win fanfare: a RISING run of notes (the audio half of the C2 pitch-sweep). Higher `level` (bigger
+  // pot) = more notes, faster, brighter — so a big win audibly escalates. Reserve for NET wins.
+  pokerWin(level = 1) {
+    if (!this.ctx) return;
+    const lvl = Math.max(1, Math.min(5, level | 0));
+    const steps = 3 + lvl;                 // C D E F G (+ more on big wins)
+    const gap = 0.085 - lvl * 0.006;       // brighter wins arpeggiate a touch faster
+    const base = 523.25;                   // C5
+    const semis = [0, 2, 4, 5, 7, 9, 11, 12];
+    for (let i = 0; i < steps; i++) {
+      const f = base * Math.pow(2, (semis[Math.min(i, semis.length - 1)]) / 12);
+      setTimeout(() => {
+        if (!this.ctx) return;
+        this.tone(f, 0.16, 'triangle', 0.16);
+        if (lvl >= 3) this.tone(f * 2, 0.10, 'sine', 0.06); // a bright upper octave on big wins
+      }, i * gap * 1000);
+    }
+  }
+
   // ---- Mosin 91/30: recorded rifle shot + bolt/reload foley, with procedural fallback ----
   mosinShot() {
     if (!this.ctx) return;
