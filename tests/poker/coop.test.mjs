@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { legalActions } from '../../src/poker/holdem.js';
 import { PokerTable } from '../../src/poker-table.js';
 import { canAnte, POKER_BUYIN_TIERS } from '../../src/poker/coop.js';
+import { setCardBackSkin, getCardBackSkin } from '../../src/poker/cardbacks.js';
 
 function hostStub(bank = 5000) {
   const sent = [];
@@ -184,4 +185,36 @@ test('a client role sends actions instead of mutating state, and never runs the 
   pk.humanAct({ type: 'call' });
   const act = sent.find((m) => m.t === 'pkact');
   assert.ok(act && act.d.action.type === 'call', 'client forwarded its action to the host');
+});
+
+// ---- card deck = the HOST's choice, table-wide (unlike per-player chip skins) ----
+
+test('co-op card deck is the HOST\'s: the pkstart invite AND every snapshot carry it', () => {
+  const { game, sent, meta } = hostStub();
+  const pk = new PokerTable(game);
+  meta.cardBack = 'azure'; setCardBackSkin('azure');               // host picked AZURE — the picker sets BOTH meta + the live global (so it survives _dealChips' re-apply)
+  pk.startCoop(500); anteAll(pk);
+  const start = sent.find((m) => m.t === 'pkstart' && m.to === 'c1');
+  assert.equal(start.d.cardBack, 'azure', 'pkstart invite carries the host deck');
+  const payload = pk._payloadFor('c1');
+  assert.equal(payload.cardBack, 'azure', 'every personalised snapshot re-states the host deck (late-join safe)');
+  setCardBackSkin('default');                                      // reset shared module state for other tests
+});
+
+test('a client renders the HOST\'s deck (overriding its own saved one); a junk deck falls back to default', () => {
+  const clientStub = (savedDeck) => {
+    const net = { send() {}, sendTo() {}, broadcast() {} };
+    const game = { mp: { isHost: false, myId: 'c1', roster: new Map(), net }, meta: { bank: 3000, cardBack: savedDeck }, _saveMeta() {}, closePoker() {} };
+    return new PokerTable(game);
+  };
+  setCardBackSkin('default');
+  const pk = clientStub('emblem');                                 // client's own saved deck differs from the host's
+  pk.enterCoopClient({ buyIn: 500, names: { host: 'H', c1: 'Me' }, cardBack: 'azure' });
+  assert.equal(getCardBackSkin(), 'azure', 'client renders the host deck, overriding its own saved cardBack');
+  assert.equal(pk.game.meta.cardBack, 'emblem', "the client's own saved preference is NOT overwritten");
+  setCardBackSkin('azure');                                        // an unknown host deck must NOT leave this stale…
+  const pk2 = clientStub('emblem');
+  pk2.enterCoopClient({ buyIn: 500, names: {}, cardBack: 'totally-not-a-deck' });
+  assert.equal(getCardBackSkin(), 'default', '…it falls back to the default deck deterministically');
+  setCardBackSkin('default');
 });
