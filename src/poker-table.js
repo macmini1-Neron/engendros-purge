@@ -133,14 +133,24 @@ export class PokerTable {
     this.names = {}; for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; }
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
     this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
-    this.rng = mulberry32(((Date.now() >>> 0) ^ (ids.length * 2654435761)) >>> 0);
-    this.tour = new Tournament({ players: ids.map((id) => ({ id })), buyIn: this.coopBuyIn, rng: this.rng });
+    // INVITE the seated clients FIRST and seat ONLY the ones the invite actually reaches. The prize pool is
+    // buyIn × entrants, so a seat that never receives pkstart (a half-open P2P channel → sendTo throws) must
+    // NOT count — otherwise the winner would be paid a buy-in nobody collected. A throw drops that seat
+    // (logged, not silently swallowed) instead of inflating the pool. Targeted sends also keep an un-anted
+    // client out. (Residual: a client that gets pkstart but then declines/drops before paying still over-
+    // states the pool by 1 — closed by the deferred ante-ack handshake; rare + the engine stays money-truth.)
+    const seated = [mp.myId];
+    for (const id of ids) {
+      if (id === mp.myId) continue;
+      try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names }); seated.push(id); }
+      catch (e) { console.warn('[poker] pkstart send failed for ' + id + ' — dropping it from the table (not counted in the pool)', e); }
+    }
+    if (seated.length < 2) { this._toast('Could not reach enough players', 0xd23a2a); return; } // nobody charged yet → safe bail
+    this.rng = mulberry32(((Date.now() >>> 0) ^ (seated.length * 2654435761)) >>> 0);
+    this.tour = new Tournament({ players: seated.map((id) => ({ id })), buyIn: this.coopBuyIn, rng: this.rng });
     this._dealChips();
     this.active = true;
     this._paid = this._spend(this.coopBuyIn);                      // host pays own buy-in (affordability checked above)
-    // INVITE ONLY THE SEATED PLAYERS — a targeted pkstart per seat (not a broadcast), so a connected
-    // but un-anted client is never pulled in and never silently lost.
-    for (const id of ids) { if (id === mp.myId) continue; try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names }); } catch (e) {} }
     if (this.renderer) this.renderer.showTable();
     this._beginHand();
     this._broadcastPoker();
@@ -172,8 +182,9 @@ export class PokerTable {
     if (this.role !== 'client') return;
     this.clientSnap = payload;
     this.phase = payload.phase;
-    if (payload.over && payload.moneyPayout && !this._credited) {
-      this.game.meta.bank = (this.game.meta.bank | 0) + payload.moneyPayout;
+    const pay = Math.max(0, payload.moneyPayout | 0); // coerce/clamp an off-the-wire field — never let a malformed packet write NaN/negative to the persisted bank
+    if (payload.over && pay && !this._credited) {
+      this.game.meta.bank = (this.game.meta.bank | 0) + pay;
       this.game._saveMeta(); this._credited = true;
     }
   }

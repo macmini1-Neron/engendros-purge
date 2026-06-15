@@ -28,6 +28,18 @@ Owner: "bigger playing surface · no lip, green right to the edge · hide the le
 - `legs` span pulled in 0.64 → 0.50 (corner reach ~0.35 ≪ 0.46 top radius) → tucked under the overhang; side view confirms they no longer peek past the top edge.
 - Lint clean: 0.920×0.743×0.920 m, fill 100/100/100 %, 7 parts. Renders reshot (q34/side/top). Reads as a clean round poker table.
 
+## Round 3 (felt texture — owner: "much more resolution/texture, more pixels & detail on the green cloth")
+- The baize was a flat `cylinder` merged into the vertex-coloured base mesh → only 5-tone shading, no cloth texture.
+- Switched `baize` to `texturedCylinder` with **`kind:"baize"`** (`src/props/operators/round.js` → new `makeBaizeTexture`):
+  a 2048² CanvasTexture mapped onto the top cap — lamp-pooled radial base (brighter centre → vignetted rim),
+  a fine woven warp/weft thread weave (~0.9 mm pitch, jittered so it reads as cloth not a grid), brushed-nap
+  mottle, a worn centre pool, and two faint concentric table rings (dealer's line + inlay echo). Palette-locked
+  to the baize tones; a tiny stable LCG keeps the weave identical across rebuilds. `seg:80` keeps the rim round.
+- Verified via a standalone headless-Chrome render harness (SwiftShader WebGL; the shared Playwright MCP browser
+  was busy). Renders `renders/felt-{q34,close,top,graze}.png`: weave reads as woven wool up close, nap + lamp pool
+  + dealer ring read at the seated 3/4 angle, graze shows the green sitting proud over the wood with **no z-fight**.
+- Lint clean (1.380×0.743×1.380 m, fill 100/100/100 %, 7 parts), modelgen tests 75/75.
+
 ## Possible later polish (deferred)
 - Baize green is a touch saturated vs the muted billiard green of the reference — could deepen.
 - Rim could carry a more pronounced stepped moulding (a second lower skirt step) for the close-up detail.

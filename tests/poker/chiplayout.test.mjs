@@ -2,22 +2,26 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { layoutChips, pileLayout, CHIP_T, COL_CAP } from '../../src/poker/chiplayout.js';
 
-test('pileLayout: one placement per chip, scattered with tilt, seeded-deterministic', () => {
+test('pileLayout: one placement per chip, chips land ON each other (a tossed mound) with tilt, seeded-deterministic', () => {
   const set = { 20: 5, 10: 3, 5: 2 };
   const p = pileLayout(set, { seed: 7 });
-  assert.equal(p.length, 10);                                  // exact count
-  assert.ok(new Set(p.map((c) => c.x.toFixed(4))).size >= 8, 'scattered, not a few column lines');
-  assert.ok(p.every((c) => 'tiltX' in c && 'tiltZ' in c), 'pile chips carry a tilt (tossed look)');
+  assert.equal(p.length, 10);                                  // exact count, 1:1 with the real chips
+  assert.ok(p.some((c) => c.y > 0), 'some chips rest ON others → a real stacked heap, not a flat row');
+  assert.ok(new Set(p.map((c) => c.y.toFixed(4))).size >= 2, 'multiple stacking heights (chips piled on chips)');
+  // a stacked chip sits a clean WHOLE chip-thickness up (rests on the one below) — never interpenetrating
+  const RISE = 0.0033 + 0.0006;
+  for (const c of p) assert.ok(Math.abs(c.y / RISE - Math.round(c.y / RISE)) < 1e-3, 'rest height is a whole chip-thickness');
+  assert.ok(p.every((c) => 'tiltX' in c && 'tiltZ' in c), 'pile chips carry a tilt (tossed, not a tidy tray)');
   assert.deepEqual(pileLayout(set, { seed: 7 }), p);           // deterministic for a seed
   assert.notDeepEqual(pileLayout(set, { seed: 9 }), p);
 });
 
-test('pileLayout: a bigger bet builds a TALLER mound with a COMPACT, capped footprint', () => {
+test('pileLayout: a bigger bet mounds TALLER, with a COMPACT, capped footprint', () => {
   const maxY = (a) => Math.max(...a.map((c) => c.y));
   const span = (a) => Math.max(...a.map((c) => Math.hypot(c.x, c.z)));
   const small = pileLayout({ 20: 3 }, { seed: 1 }), big = pileLayout({ 20: 50 }, { seed: 1 });
-  assert.ok(maxY(big) > maxY(small) * 1.5, 'more chips → taller mound');
-  assert.ok(span(big) < CHIP_T * 30, 'footprint stays compact (radius is capped, never sprawls)'); // CHIP_R*3 ≈ 0.06
+  assert.ok(maxY(big) > maxY(small) * 1.5, 'more chips → a taller mound');
+  assert.ok(span(big) < CHIP_T * 30, 'footprint stays compact (radius is capped, never sprawls)'); // ≈0.099 m
 });
 
 test('exact real count: one placement per physical chip', () => {

@@ -188,6 +188,7 @@ function maybeEndUncontested(state) {
   state.toAct = null;
   state.result = {
     winnings: { [w.id]: pot },
+    contributed: Object.fromEntries(state.seats.map((s) => [s.id, s.committed])), // per-hand stake → the NET-win gate (only celebrate winning MORE than you put in)
     board: state.board.slice(),
     reveals: [],
     pots: [{ amount: pot, eligible: [w.id] }],
@@ -228,6 +229,7 @@ function doShowdown(state) {
   state.toAct = null;
   state.result = {
     winnings,
+    contributed: Object.fromEntries(state.seats.map((s) => [s.id, s.committed])), // per-hand stake → NET-win gate (no fanfare on a chop/sub-stake return)
     board: state.board.slice(),
     reveals: live.map((s) => ({ id: s.id, hole: s.hole.slice(), rank: rankOf[s.id] })),
     pots,

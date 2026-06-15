@@ -15,25 +15,27 @@ function chipGeometry() {
   if (!_geo) _geo = new THREE.CylinderGeometry(R, R, T, SEG);   // top/side/bottom in one UV-mapped cylinder
   return _geo;
 }
-function chipTexture(denom) {
+function chipTexture(denom, skin) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 128;
-  drawChip(cv.getContext('2d'), 128, denom, getChipSkin());     // body fills cap + edge band; pattern per skin
+  drawChip(cv.getContext('2d'), 128, denom, skin || getChipSkin());  // body fills cap + edge band; pattern per skin
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
   return tex;
 }
 
-// cache by (denom, skin) so switching skins builds fresh textures/materials but a re-switch is instant.
+// cache by (denom, skin) so per-PLAYER skins (each tray can pass its owner's skin) build fresh textures/
+// materials once, then a re-use is instant. Omit `skin` → the global getChipSkin() (the local player's pick).
 const _matCache = {};
-export function chipMaterial(denom) {
-  const key = denom + '|' + getChipSkin();
-  if (!_matCache[key]) _matCache[key] = new THREE.MeshLambertMaterial({ map: chipTexture(denom) });
+export function chipMaterial(denom, skin) {
+  const s = skin || getChipSkin();
+  const key = denom + '|' + s;
+  if (!_matCache[key]) _matCache[key] = new THREE.MeshLambertMaterial({ map: chipTexture(denom, s) });
   return _matCache[key];
 }
 
 // One InstancedMesh per denomination, pre-allocated for `capacity` chips. The tray sets
 // instance matrices from chiplayout.js placements; unused instances are excluded via count.
-export function chipInstanced(denom, capacity) {
-  const m = new THREE.InstancedMesh(chipGeometry(), chipMaterial(denom), capacity);
+export function chipInstanced(denom, capacity, skin) {
+  const m = new THREE.InstancedMesh(chipGeometry(), chipMaterial(denom, skin), capacity);
   m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   m.count = 0;
   return m;
