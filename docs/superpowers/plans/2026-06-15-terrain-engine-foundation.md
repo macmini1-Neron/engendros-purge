@@ -425,8 +425,17 @@ git commit -m "feat(terrain): chunked demo terrain + per-frame frustum culling"
 
 **Why:** today arena/steppe have `terrain=null` and use the flat `collide()`; demo uses
 `_collideTerrain()`. After this task every map has a terrain (flat or demo) and **all** collision runs
-through the terrain-aware path. On a flat profile `terrainHeightAt`→0 and `terrainSlopeAt`→0, so the
-terrain path degenerates **exactly** to the old `y=0` floor (verified in Step 4/5).
+through ONE method. On a flat profile `terrainHeightAt`→0 and `terrainSlopeAt`→0, so the vertical floor,
+the box loop, and `_moveAxisTerrain` (slope test never fires) are identical to the old flat path.
+
+**⚠ One real divergence — the ground-follow block.** `_collideTerrain` ends with a "ground-follow"
+re-seat that, while grounded, snaps the player DOWN onto the surface when within
+`TERRAIN_GROUND_FOLLOW_STEP` (= **0.6 m**, `world.js:36`). On arena/steppe that would clip the player
+off any man-made ledge/curb ≤ 0.6 m tall — the original author deliberately bypassed terrain on flat
+maps for exactly this reason (`world.js:21-27`, "the player can clip down small man-made ledges").
+So the unification MUST gate the ground-follow block behind `if (this.hasTerrain)` (Step 2b). With that
+gate, flat maps are byte-identical to the old `y=0` floor; demo keeps smooth hill-following. Verified in
+Steps 4/5 (walk onto an arena crate — must still perch, not snap to ground).
 
 - [ ] **Step 1: Construct a terrain in the constructor for every map**
 
@@ -464,19 +473,57 @@ fog, the `TerrainChunks` from Task 4, spawns, loot — intact. Note `HALF=158` i
 
 - [ ] **Step 2: Route `collide()` through the terrain path**
 
-In `src/world.js`, `collide()` (`world.js:310-331`) currently dispatches with
+In `src/world.js`, `collide()` currently dispatches with
 `if (this.hasTerrain) return this._collideTerrain(...)` then runs a separate flat body. Replace the
-**entire** `collide()` method body so it always uses the terrain path:
+**entire** `collide()` method body so it always delegates to the one terrain-aware method:
 
 ```javascript
   collide(pos, vel, r, h, dt) {
-    // Unified path: flat maps carry a 'flat' terrain (height 0), so this degenerates to the old floor.
+    // Single collision path. Flat maps carry a 'flat' terrain (height 0); _collideTerrain's only
+    // terrain-specific extra — the ground-follow re-seat — is gated on hasTerrain (see below), so on
+    // flat maps this is byte-identical to the old y=0 floor.
     return this._collideTerrain(pos, vel, r, h, dt);
   }
 ```
 
-(Keep `_collideTerrain`, `_moveAxisTerrain`, `_moveAxis`, `_headClear` exactly as they are — they are
-already correct and `_moveAxis` is still used by `_moveAxisTerrain`.)
+(Keep `_moveAxisTerrain`, `_moveAxis`, `_headClear` as they are — on flat ground `_moveAxisTerrain`'s
+slope test never fires, so it equals `_moveAxis`.)
+
+- [ ] **Step 2b: Gate the ground-follow block on `hasTerrain` (CRITICAL — prevents the flat-map ledge clip)**
+
+In `src/world.js`, inside `_collideTerrain`, the method ends with this ground-follow block (currently
+`world.js:367-375`):
+
+```javascript
+    // GROUND-FOLLOW — after moving, re-seat the feet on the (now possibly different)
+    // terrain height so ascents/descents are smooth and never fall-through.
+    gy = terr.terrainHeightAt(pos.x, pos.z);
+    if (pos.y < gy) {                                     // walked into rising ground → push up
+      pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+    } else if (onGround && pos.y - gy <= TERRAIN_GROUND_FOLLOW_STEP) { // descend smoothly within a step
+      pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+    }
+    return onGround;
+```
+
+Wrap ONLY the `if/else if` ground-follow in a `this.hasTerrain` guard (leave the `gy = ...` and
+`return` as they are), so flat maps skip the down-snap entirely:
+
+```javascript
+    // GROUND-FOLLOW — after moving, re-seat the feet on the (now possibly different)
+    // terrain height so ascents/descents are smooth and never fall-through.
+    // Gated on hasTerrain: on FLAT maps this snap would clip the player off man-made ledges
+    // ≤ TERRAIN_GROUND_FOLLOW_STEP (0.6 m), so flat maps keep the old "stay on the box top" behavior.
+    gy = terr.terrainHeightAt(pos.x, pos.z);
+    if (this.hasTerrain) {
+      if (pos.y < gy) {                                     // walked into rising ground → push up
+        pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+      } else if (onGround && pos.y - gy <= TERRAIN_GROUND_FOLLOW_STEP) { // descend smoothly within a step
+        pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
+      }
+    }
+    return onGround;
+```
 
 - [ ] **Step 3: Make `groundY()` unconditional**
 
