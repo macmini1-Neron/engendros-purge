@@ -130,6 +130,22 @@ export class PokerHover {
   // map the hovered InstancedMesh back to its denomination, outline just those chips, build the mini-card
   _showChips(group, pk, instMesh) {
     const inst = group.userData.inst || {};
+    if (pk.scope === 'pot') {
+      // the shared pot is ONE unit: whatever chip you hover, light up ALL of it and show the TOTAL value
+      let total = 0; for (const d of DENOMS) total += d * ((inst[d] && inst[d].count) || 0);
+      const key = 'pot|' + (group.userData.sig || '') + '|' + total;
+      if (key !== this._curKey) {
+        this._curKey = key;
+        this.tip.innerHTML = `<div class="pk-tip-head">POT</div>` +
+          `<div class="pk-tip-row">total <b>$${total}</b></div>` +
+          `<div class="pk-tip-skin">the shared pot — what everyone's playing for</div>`;
+        this.tip.style.display = 'block';
+      }
+      this._outlineWholeTray(group);
+      this._outCard.visible = false; this._outBlind.visible = false;
+      this._place();
+      return;
+    }
     let denom = 0;
     for (const d of DENOMS) { if (inst[d] === instMesh) { denom = d; break; } }
     if (!denom) { // raycast grazed the group but not a specific colour mesh → fall back to the tallest present
@@ -196,6 +212,28 @@ export class PokerHover {
     const n = Math.min(im.count, 256);
     for (let i = 0; i < n; i++) { im.getMatrixAt(i, this._m); this._m.multiply(this._S); o.setMatrixAt(i, this._m); }
     o.count = n; o.instanceMatrix.needsUpdate = true; o.visible = true;
+  }
+
+  // outline EVERY chip in a tray at once (used for the pot — one shared group). Packs each chip's full WORLD
+  // matrix (grown about its centre) into _outChips with an identity own-transform, so chips from different
+  // denomination meshes all light up together.
+  _outlineWholeTray(group) {
+    const inst = group.userData.inst || {};
+    const o = this._outChips;
+    o.matrix.identity(); o.matrixWorldNeedsUpdate = true;          // instances are packed in WORLD space
+    let k = 0;
+    for (const d of DENOMS) {
+      const im = inst[d]; if (!im || !im.count) continue;
+      im.updateWorldMatrix(true, false);
+      for (let i = 0; i < im.count && k < 256; i++) {
+        im.getMatrixAt(i, this._m);
+        this._m.premultiply(im.matrixWorld);                        // chip → world
+        this._m.multiply(this._S);                                  // grow about its own centre
+        o.setMatrixAt(k++, this._m);
+      }
+    }
+    if (!k) { o.visible = false; return; }
+    o.count = k; o.instanceMatrix.needsUpdate = true; o.visible = true;
   }
 
   _place() {
