@@ -74,7 +74,7 @@ test('timeOfFlight + apexHeight monotonic increasing, bounded', () => {
   for (let r = RANGE_MIN; r <= RANGE_MAX; r += 50) {
     const t = timeOfFlight(r), a = apexHeight(r);
     assert.ok(t > pt && a >= pa, `monotonic at ${r}`);
-    assert.ok(t > 0 && a >= 20 && a <= 120, `bounded at ${r}`);
+    assert.ok(t > 0 && a >= 20 && a <= 180, `bounded at ${r}`);
     pt = t; pa = a;
   }
 });

@@ -22,6 +22,8 @@ import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
 import { CrateCeremony, rollCrateReward } from './crate.js';
 import { Fonoteka, GramophoneManager, ensureGramophoneSpec, placeGramophones } from './fonoteka.js';
+import { PokerTable } from './poker-table.js';
+import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
 import { Engine } from './engine.js';
 import { Input } from './input.js';
@@ -51,6 +53,9 @@ const _registerModels = async () => {
   await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
   await load('lpr1');               // ЛПР-1 «Каралон-М» laser rangefinder (hand tool; admin viewer + world prop)
   await load('mortar-82pm37');      // 82-ПМ-37 (БМ-37) co-op indirect-fire mortar (placed at the steppe strongpoint)
+  await load('poker-table');        // round green-baize poker table — the hero prop of the 3D poker scene
+  await load('poker-chip');         // composite "dice" poker chip (canonical model; in-game stacks mirror it per denom)
+  await load('dealer-button');      // DEALER puck (canonical; in-scene D/SB/BB markers mirror it recoloured)
   // Forest deadwood + rock kit — scattered through the ?map=demo wood by forest.js (Forest._ensureProps).
   for (const id of [
     'rock_boulder_lg', 'rock_boulder_mossy', 'rock_cluster_sm', 'rock_outcrop',
@@ -64,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-13 12:55';
+const GAME_BUILD = '2026-06-16 02:19';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -136,6 +141,9 @@ class Game {
     try { this.crate = _cc ? new CrateCeremony(this) : null; } catch (e) { console.warn('[crate] ceremony init failed — crates disabled', e); this.crate = null; } // a WebGL/context failure must not brick boot (openCrate guards null)
     this.fonoteka = new Fonoteka(this); ensureGramophoneSpec(); // ФОНОТЕКА music screen + preload the gramophone model
     this.gramophone = new GramophoneManager(this); placeGramophones(this.gramophone, this.engine.scene, this.mapId); // in-world gramophone props (genre per prop, E + ◀/▶)
+    this.poker = new PokerTable(this); // secret poker den — Texas Hold'em (renderer mounts lazily on first open)
+    // inject the 3D table renderer (THREE) here so poker-table.js stays node-testable; ?poker2d=1 keeps the 2D fallback
+    if (!/[?&]poker2d=1/.test(location.search)) this.poker.RendererClass = PokerSceneRenderer;
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov
     this.meta = this._loadMeta(); // persistent best-wave / lifetime stats
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
@@ -227,6 +235,8 @@ class Game {
     click('multiplayerBtn', () => this.toLobby());
     click('armoryBtn', () => this.shop.open('menu'));
     click('lobbyArmoryBtn', () => this.shop.open('lobby'));
+    click('pokerBtn', () => this.openPoker('menu'));
+    click('lobbyPokerBtn', () => this.openCoopPoker());
     click('armoryBackBtn', () => { if (this.shop.returnTo === 'lobby') this.toLobby(); else this.toMenu(); });
     click('mpHostBtn', () => this.mp.startHost((document.getElementById('mp-name') || {}).value || 'Host'));
     click('mpJoinBtn', () => this.mp.startJoin((document.getElementById('mp-code') || {}).value || '', (document.getElementById('mp-name') || {}).value || 'Player'));
@@ -244,6 +254,7 @@ class Game {
     click('mpRelayBtn', () => this.mp.toggleRelayMode());
     click('mp-mode-purge', () => this.mp.setMode('purge'));
     click('mp-mode-night', () => this.mp.setMode('longnight'));
+    click('mp-mode-poker', () => this.mp.setMode('poker'));
     click('mpBackBtn', () => { this.mp.leave(); this.toMenu(); });
     document.querySelectorAll('.mp-skinpick').forEach(b => b.addEventListener('click', () => {
       this.mp.chosenSkin = +b.dataset.skin;
@@ -252,7 +263,7 @@ class Game {
     click('pauseSettingsBtn', () => this.settings.open('pause'));
     this.canvas.addEventListener('click', () => {
       if (this.devconsole && this.devconsole.open) return; // chat open: keep the cursor free for clicking in the input — never re-grab pointer-lock
-      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin' || this.state === 'music' || this.state === 'crate') return;
+      if (this.state === 'menu' || this.state === 'dead' || this.state === 'shop' || this.state === 'admin' || this.state === 'music' || this.state === 'crate' || this.state === 'poker') return;
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
     this.input.on('lock', () => { if (this.mpMenuOpen) this._closeMpMenu(false); else if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
@@ -714,6 +725,66 @@ class Game {
     if (this.fonoteka) this.fonoteka.close();
     if (this._fonoFrom === 'lobby') this.toLobby(); else { this.state = 'menu'; this.ui.show('menu'); }
   }
+  // Secret poker den — 2D Texas Hold'em Sit & Go (solo practice vs bots; co-op PvP later).
+  openPoker(from) {
+    this._pokerFrom = (from === 'lobby') ? 'lobby' : 'menu';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // poker room is its own acoustic space — hush the lobby jukebox
+    this.ui.show('poker');
+    if (this.poker) this.poker.open();
+  }
+  closePoker() {
+    if (this.poker && this.poker.renderer && this.poker.renderer.stopRadio) this.poker.renderer.stopRadio(); // kill the den radio stream
+    const wasPoker = !!(this.mp && this.mp._lobbyMode === 'poker');
+    if (this.poker) this.poker.leave();
+    // leaving the den restores the lobby/menu jukebox (toLobby already does; menu path restores here)
+    if (this._pokerFrom === 'lobby') {
+      this.toLobby();
+      if (wasPoker && this.mp) {                       // a fresh ante round is required before the next game
+        this.mp.ready = false;
+        if (this.mp.isHost) { this.mp._resetReadies(); try { this.mp.net.send('roster', this.mp._rosterArr()); } catch (e) {} }
+        if (this.mp._renderRoster) this.mp._renderRoster();
+      }
+    } else { this.state = 'menu'; this.ui.show('menu'); if (this.audio.music) this.audio.music.setPlaylist('soviet'); }
+  }
+  // Host-only: DEAL co-op poker straight from the room lobby — the buy-in was chosen and players anted
+  // (READY) in the lobby, so seat EXACTLY the anted set and deal. Replaces the standalone POKER button.
+  startCoopPokerFromLobby() {
+    if (!this.mp || !this.mp.isHost) return;
+    const buyIn = this.mp.pokerBuyIn | 0;
+    const seatIds = [...this.mp.roster].filter(([id, r]) => id === 'host' || r.ready).map(([id]) => id);
+    if (seatIds.length < 2) { this.mp._lobbyMsg('Need at least 2 anted players.'); return; }
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 });
+    this.ui.show('poker');
+    this.poker.openCoop(true);                          // host role + reset, skip the buy-in lobby
+    this.poker.startCoop(buyIn, seatIds);               // deterministic seat list = exactly the anted players
+  }
+  // Co-op PvP poker — host opens the den for the room; clients are pulled in by the 'pkstart' message.
+  openCoopPoker() {
+    if (!this.mp || !this.mp.isHost) return; // host-only entry
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // co-op poker room: hush the lobby jukebox too
+    this.ui.show('poker');
+    if (this.poker) this.poker.openCoop();
+  }
+  _enterCoopPoker(d) { // client side — host has dealt; join the table
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // co-op poker room: hush the lobby jukebox too
+    this.ui.show('poker');
+    if (this.poker) this.poker.enterCoopClient(d);
+  }
   // «Посылка» lootbox — open one owned crate. The roll is COMMITTED + saved BEFORE any
   // animation so an Esc/refresh/crash mid-ceremony can never re-roll or lose the reward.
   openCrate() {
@@ -891,6 +962,10 @@ class Game {
     let m; try { m = JSON.parse(localStorage.getItem('engendros_meta') || '{}'); } catch (e) { m = {}; }
     // roguelite economy (backward-compatible: missing keys default for existing players)
     if (typeof m.bank !== 'number') m.bank = 0;                                   // persistent money "account"
+    if (typeof m.chipSkin !== 'string') m.chipSkin = 'dice';                      // poker chip-skin cosmetic (CHIP_SKINS id)
+    if (!Array.isArray(m.chipSkinsUnlocked)) m.chipSkinsUnlocked = [];            // crate-unlocked chip skins (marx/lenin); free skins aren't listed
+    if (typeof m.cardBack !== 'string') m.cardBack = 'default';                   // poker card-back cosmetic (CARD_BACKS id)
+    if (!Array.isArray(m.cardBacksUnlocked)) m.cardBacksUnlocked = [];            // crate-unlocked card backs (redstar/emblem)
     if (!Array.isArray(m.unlocked)) m.unlocked = ['knife'];                       // permanently owned gear keys
     if (!m.unlocked.includes('knife')) m.unlocked.push('knife');                  // knife is always owned (cold start)
     // Loadout is now a flat array of LOADOUT_SLOTS equal slots (any gear in any slot, duplicates OK).
@@ -968,6 +1043,7 @@ class Game {
     if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
     if (this.state === 'crate' && this.crate) this.crate.render(dt);
     else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
+    if (this.state === 'poker' && this.poker) { this.poker.update(dt); this.poker.render(dt); }
     this.input.endFrame();
   }
 

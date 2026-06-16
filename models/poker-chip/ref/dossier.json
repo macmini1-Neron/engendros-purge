@@ -1,0 +1,68 @@
+{
+  "id": "poker-chip",
+  "title": "Standard 11.5 g composite \"dice\" poker chip — solid colour body, recessed colour centre with a thin inlay ring, 6 contrasting white edge spots bearing dice pips, ridged rim",
+  "era": "Modern retail home-poker chip (ABS / clay-composite with a metal weight insert). The classic 5-colour 'dice' / 'striped dice' set: white, red, blue, green, black.",
+  "scope_note": "Owner brief: classic dice chip ('nudná klasika'), and PREPARE THE CODE FOR SKINS (a chip-skin registry like the card backs — this dice design is skin v1). Built as a modelgen voxel prop; in-game the body colour is set per denomination and chips are stacked.",
+  "sources": {
+    "casinosupply_dice": "Casino Supply «11.5 Gram Dice Rim Poker Chips» — 39 mm diameter; 'Six tabs with dice imagery'; injection-moulded in two separate colours; clay composite with a metal insert for weight — https://www.casinosupply.com/products/11-5-gram-dice-rim-poker-chips-25-pkg-1",
+    "cardplayerlifestyle_size": "Card Player Lifestyle «Casino-grade poker chips guide» — casino chip diameter 'right at 39 mm', thickness 'at or around 3.5 mm', weight range 9–15 g with 11.5 g a common benchmark — https://cardplayerlifestyle.com/poker/casino-grade-poker-chips-ultimate-guide/",
+    "amazon_dice_dims": "Amazon «Striped Dice 11.5gm Poker Chips» listing — retail dice chip spec 1.58 in diameter × 0.13 in height (≈ 40.1 mm × 3.3 mm) — https://www.amazon.com/Striped-Dice-11-5gm-Poker-Chips/dp/B003CUW97C",
+    "brpro_39mm": "BR Pro Poker «Standard Casino Chip Size» — 39 mm (1.5 in) standard casino chip diameter — https://brpropoker.com/products/copy-of-custom-39mm-1-5-inch-chips-standard-casino-chip-size",
+    "pokerchiplounge_dice": "Poker Chip Lounge «Striped Dice 11.5 Gram ABS» — 'six embossed dice, striking striped patterns, and a refined dashed inlay border'; ABS composite resin with a metal insert — https://pokerchiplounge.com/products/striped-dice-11-5-gram-abs-poker-chips",
+    "wiki_casino_token": "Wikipedia «Casino token» — chips ~39 mm; authentic casino chips compression-moulded; 'there is no universally standardised colour scheme'; US casinos ~10 g (8–16 g worldwide) — https://en.wikipedia.org/wiki/Casino_token",
+    "poker_org_values": "poker.org «Poker chip values» — common colour→value: white $1, red $5, blue $10, green $25, black $100, purple $500, yellow $1000 — https://www.poker.org/poker-chip-values/"
+  },
+  "specifications": {
+    "overall": {
+      "diameter_mm": 40,
+      "thickness_mm": 3.3,
+      "weight_g": 11.5,
+      "note": "Retail 11.5 g 'dice' chip ≈ 40 mm (1.58 in) Ø × 3.3 mm (0.13 in) — casino-standard is 39 mm; used 40 mm to match the retail dice chips in the reference. Weight is flavour only (metal insert), not modelled.",
+      "src": "amazon_dice_dims (40.1 mm × 3.3 mm) + cardplayerlifestyle_size (~39 mm / ~3.5 mm) + casinosupply_dice (39 mm) + brpro_39mm"
+    },
+    "center_inlay": {
+      "diameter_mm": 25,
+      "ring": "a thin dashed inlay ring bounds the smooth recessed colour centre",
+      "note": "Smooth slightly-recessed colour centre (same colour as the body) inside a thin inlay ring. Centre Ø ~24–26 mm is DERIVED from the photo (no retailer publishes it); ring + slight recess photo-observed.",
+      "src": "pokerchiplounge_dice (refined dashed inlay border); centre diameter DERIVED from ref-dice-chips.png"
+    },
+    "edge_spots": {
+      "count": 6,
+      "spot_mm": [7, 10],
+      "note": "Six contrasting WHITE rectangular edge spots (tabs) evenly spaced around the rim (60° apart), each carrying small dice-pip faces (the 'dice' design); moulded-in, not stickers. Spot size ~7×10 mm is DERIVED from the photo. The pips themselves (~1–2 mm) are below the modelgen marking threshold → omitted (needs[]).",
+      "src": "casinosupply_dice (six tabs with dice imagery) + pokerchiplounge_dice (six embossed dice); spot dimensions DERIVED from ref-dice-chips.png"
+    },
+    "construction": {
+      "material": "ABS / clay-composite resin, two-colour injection moulded, with a metal slug insert for weight; ridged/textured outer edge; edge spots are moulded-in contrasting plastic.",
+      "src": "casinosupply_dice + pokerchiplounge_dice + wiki_casino_token"
+    },
+    "color_denom": {
+      "map": "white=$1, red=$5, blue=$10, green=$25, black=$100 (the 5-colour dice set); purple=$500, yellow/gold=$1000 for higher game denominations",
+      "note": "Common US/home convention — sourced — but NO universal standard (venue-dependent). The body colour is set per denomination IN-GAME; the modelgen model is built in one representative colour.",
+      "src": "poker_org_values + wiki_casino_token (no universal scheme)"
+    },
+    "derivation": {
+      "radius_m": "0.020 = diameter 40 mm / 2",
+      "center_radius_m": "0.0125 = centre Ø 25 mm / 2 (derived)",
+      "spot_ring_radius_m": "0.016 — spots centred ~4 mm in from the 0.020 rim so they span the rim edge",
+      "src": "geometric derivation from specifications.overall + specifications.center_inlay + specifications.edge_spots"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "Solid colour disc body, Ø40 × 3.3 mm (colour = denomination, set in-game)", "src": "amazon_dice_dims; poker_org_values" },
+    { "feature": "Smooth slightly-recessed colour centre inside a thin dashed inlay ring", "src": "pokerchiplounge_dice; ref-dice-chips.png" },
+    { "feature": "Six white rectangular edge spots, 60° apart, spanning the rim (the 'dice' tabs)", "src": "casinosupply_dice; pokerchiplounge_dice" },
+    { "feature": "Dice pips on each edge spot (~1–2 mm) — below modelgen marking threshold, omitted", "src": "casinosupply_dice (needs[])" },
+    { "feature": "Ridged/textured outer edge", "src": "pokerchiplounge_dice; ref-dice-chips.png" }
+  ],
+  "images": [
+    { "view": "5-colour dice chip set (top faces)", "file": "ref/ref-dice-chips.png", "shows": "White/red/blue/green/black 11.5 g dice chips — solid body, smooth recessed colour centre with a thin ring, six white edge spots carrying dice pips around the rim." }
+  ],
+  "needs": [
+    "Recessed centre diameter (~25 mm) + recess depth — DERIVED from the photo, no retailer source",
+    "Edge-spot dimensions (~7×10 mm) + inset depth — DERIVED from the photo",
+    "Dice pips on the spots (~1–2 mm) omitted — below the modelgen readable-marking threshold (could be a CanvasTexture decal later)",
+    "Outer-edge ridge/groove count + profile — photo-observed, no source; modelled as a plain rim for v1",
+    "Body colour is per-denomination IN-GAME; the modelgen model ships one representative colour (skin v1 = this dice design)"
+  ]
+}

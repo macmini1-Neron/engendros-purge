@@ -1,0 +1,8 @@
+// Pixel-art portrait masks for the Marx/Lenin chip skins — 1-bit, row-major, MSB-first, base64-packed.
+// Extracted from the owner-supplied reference chip renders (2026-06-14). chipskins.js paints each set bit
+// in the denomination's SPOT colour over its body colour, so a portrait reads on every chip colour
+// (white-on-red $20, white-on-black $100, navy-on-white $5 …) while value colours stay intact.
+export const PORTRAITS = {
+  marx:  { w: 55, h: 64, bits: 'AAAD/4AAAAAAP//gAAAAAP//8AAAAA////gAAAA/x//8AAAA/AB//AAAAcfx//wAAAI/9//8AAAD/////AAAH//3//wAAH//7//4AAD//5//+AAD//9///AAD//+///wAB//+f//4AB//+f//8AA//+f///AAf//H//3gAf//j//8wAP//z///IAH4f9+f/wABhn+Hv/8AAB+/b///AAYDvn///4APMPx///+APv/4/9//gP7/8f2//wP//+f8P/4P///PsH/+H///PkD//D+//HGB7/gAf/DgB55wHP/h8YR84f7/n+4A+Mf+fn/4A7Mc/nh+YAZGMHzmfgAICCA8D/4AADAAPD/4AADAMDx/4AABgPw9/+AABAH6P//gADAH/j//wgDAH/0//45AAD/+f/8/wAD//f/6f8AB////8P+AB////+H+AA///96H+AAf//+YD4AAP//+YD4AAD//+ID4AAB//8AD4AAA//8AH4AAAP/yAP4AAAB/YAf4AAAAPAAf4AAAADwAP4AAAAAAAf4AAAAAAAP4AAAAAAAH4AAAAAAAH8AAAAAAAD8AAAAAAAD8AAAAA=' },
+  lenin: { w: 50, h: 64, bits: 'AAAD/AAAAAAH/+AAAAAP//4AAAAP///gAAAH///8AAAD////wAAB/////AAA/////wAAf////+AAH/////wAB/////8AA//////gAP/////8AD//////AB////wB4Af///8APAP///4AB4D///+AAOB////wAAweAf/8AAMDh//3AADAY//8YAAwOH//AAAMH4Q/wHgDD/ef+D8Ax////jzgM/////4YCP////82Aj/////PAIAf///zwCCH///98BB////+eAQ/////fAMP/////gDAP////wBgPJ///4AYD4f//cAEA4D//gADAP///4ABgP///8AAYH///+AAMB//P+DgDAf/z8BwAgHvwAB8AYD74AB+AGA/gAA/gBAPAAAPwAQDAAAH8AIAB+AB+ACAAA4A/gAgAAHAPwgIAAA4H8MCAAAHB/HAgAAAY/hgMAAADv44HAAAAf8ODgAAAD/HhwAAAAPh54AAAAB4c4AAAAAPv8AAAAAA/+AAAAAAD+AAAAAAAfAAAAAAABAAAA==' },
+};

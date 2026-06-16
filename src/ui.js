@@ -279,6 +279,7 @@ export class UI {
       settings: document.getElementById('settings'), lobby: document.getElementById('lobby'),
       admin: document.getElementById('admin'), music: document.getElementById('music'),
       crate: document.getElementById('crateOverlay'),
+      poker: document.getElementById('poker'),
     };
     this.hint = document.getElementById('hint');
   }
@@ -289,7 +290,7 @@ export class UI {
 // ---------------------------------------------------------------------------
 // Settings — persisted (localStorage) options, applied live.
 // ---------------------------------------------------------------------------
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player' };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1 };
 
 export class Settings {
   constructor(game) {
@@ -318,11 +319,13 @@ export class Settings {
     val('s-sens', this.data.sens); val('s-sfx', this.data.sfx); val('s-music', this.data.music);
     val('s-fov', this.data.fov);
     val('s-nick', this.data.nick);
+    const po = document.getElementById('s-pokerodds'); if (po) { po.textContent = this.data.pokerOdds ? 'ON' : 'OFF'; po.style.color = this.data.pokerOdds ? 'var(--neon, #45e0cf)' : '#888'; }
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
     bind('s-sens', 'sens'); bind('s-sfx', 'sfx'); bind('s-music', 'music'); bind('s-fov', 'fov');
     const nickEl = document.getElementById('s-nick'); if (nickEl) nickEl.addEventListener('input', () => { this.data.nick = (nickEl.value || 'Player').slice(0, 14); this.apply(); this.save(); }); // text field, not parseFloat
+    const po = document.getElementById('s-pokerodds'); if (po) po.addEventListener('click', () => { this.data.pokerOdds = this.data.pokerOdds ? 0 : 1; this.save(); this._refresh(); }); // poker outs/% helper toggle
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }

@@ -1,0 +1,92 @@
+{
+  "id": "poker-table",
+  "title": "Round antique English games / card (poker) table — green woollen-BAIZE inset top in a turned solid-wood rim, single frieze drawer, 4 cabriole legs with pad feet (Queen-Anne style, oak/walnut)",
+  "era": "English, late-17thC Queen-Anne form continuing through Georgian/Victorian (cabriole leg + pad foot fashionable in England from the late 17th C). The owner's reference is a small round games table: green baize inset, cross-banded wood border, frieze drawer with a drop pull, on slender cabriole legs.",
+  "scope_note": "Owner brief: SHAPE simple (legs may be plain), but the VISIBLE TOP (green baize inset + turned wood rim/lip) must be ULTRA precise — it is what the 3/4 broadcast camera mostly sees. Built as a modelgen voxel prop for the 3D poker scene.",
+  "sources": {
+    "wiki_baize": "Wikipedia «Baize» — 'a coarse woollen (or in cheaper variants cotton) cloth, similar in texture to felt, but more durable'; 'for gaming use, baize is traditionally dyed green, in mimicry of a lawn'; available with/without nap (snooker uses nappy) — https://en.wikipedia.org/wiki/Baize",
+    "tfd_baize": "TheFreeDictionary (American Heritage) «baize» — 'a coarse, feltlike, woolen material that is typically green, used for covering billiard and card tables and for aprons' — https://www.thefreedictionary.com/baize",
+    "baizewool_vs_felt": "Baize & Wool Fabrics «Baize or Felt» — baize is a WOVEN base fabric (warp+weft) so far more durable; felt is matted loose fibres; card-table felt needs replacing in ~6 months, baize lasts ~20 years — https://www.baizewoolfabrics.co.uk/product-insights/baize-or-felt-a-guide-to-buying-wisely/",
+    "baizewool_thickness": "Baize & Wool Fabrics «differences between baizes» — card/writing baize ≈ 0.9–1.2 mm thick (Vivid 0.9, 100% Merino 1.1, Extra-Wide 1.2 mm) — https://www.baizewoolfabrics.co.uk/product-insights/differences-between-baizes/",
+    "simonlucas_baize": "Simon Lucas Bridge Supplies — premium gaming baize is 95% Merino wool / 5% nylon (cheaper grades 80/20) — https://www.simonlucasbridgesupplies.co.uk/product/green-baize-per-metre/",
+    "carters_cardgames": "Carters Price Guide — antique card & games tables: heights cluster ~72 cm; Queen Anne / early Georgian cabriole legs; 19th-C examples veneered in burr walnut — https://www.carters.com.au/index.cfm/index/1172-tables-purpose-or-type-card-and-games/",
+    "onedibs_round_game": "1stDibs «Mahogany Round Game Table» — round games table, diameter 36 in (914 mm), height 29 in (73.66 cm), green inset top — https://www.1stdibs.com/furniture/tables/dining-room-tables/mahogany-round-game-table-green-leather-top/id-f_14638492",
+    "carters_drum": "Carters Price Guide — 19th-C mahogany round drum table, diameter 91.5 cm, height 73 cm — https://www.carters.com.au/index.cfm/index/2578-tables-purpose-or-type-drum/",
+    "insideout_height": "Inside Out Contracts «Table Heights Explained» — standard table height ≈ 710–760 mm (most common 740–760) — https://insideoutcontracts.com/blog/in-the-know-table-heights-explained",
+    "britannica_cabriole": "Britannica «cabriole leg» — a leg shaped in two curves (upper convex, lower concave), based on animal legs; fashionable in England from the late 17th C; the pad/club foot is the predominant Queen-Anne foot — https://www.britannica.com/topic/cabriole-leg",
+    "mw_crossbanding": "Merriam-Webster «crossbanding» — a veneer border with its grain at right angles to the adjacent wood (the contrasting border ring on the top) — https://www.merriam-webster.com/dictionary/crossbanding",
+    "paxton_teardrop": "Paxton Hardware «antique teardrop pulls» — simple tear-drop/drop brass pulls were the hardware of choice on William&Mary→Queen-Anne furniture (1680–1730), solid brass, pivots up/down — https://paxtonhardware.com/collections/antique-teardrop-pulls"
+  },
+  "specifications": {
+    "overall": {
+      "diameter_mm": 920,
+      "height_mm": 730,
+      "note": "Round top. The ANTIQUE reference is small — sourced range diameter 700–950 mm (914 mm 1stDibs round game table; 915 mm Carters drum; 900 mm Victorian card table), height 710–762 mm. BUT the owner needs a 6-player POKER table, so the GAME model enlarges the top ~50% to Ø1380 mm (height kept at 730 mm). That deliberately EXCEEDS the antique sourced diameter — recorded here as an owner-directed gameplay upsize, NOT a measurement (see needs[]). Construction/material/leg facts the parts cite remain the sourced antique ones.",
+      "src": "onedibs_round_game (914 mm dia / 73.66 cm h) + carters_drum (915 mm / 73 cm) + carters_cardgames (~72 cm) + insideout_height (710–760 mm)"
+    },
+    "top_construction": {
+      "slab_thickness_mm": 34,
+      "rim_band_width_mm": 58,
+      "raised_lip_mm": 8,
+      "reveal_gap_mm": 3,
+      "note": "From the close-up: a solid-wood turned rim with stepped concentric mouldings and a RAISED outer lip; a flat wood border band inside the lip; the green baize pad sits PROUD in the well with a thin reveal/shadow line between cloth and wood. Band width 50–70 mm, lip 5–10 mm, reveal 2–4 mm, slab 25–40 mm are PHOTO-DERIVED (no dealer listing states them) — see needs[].",
+      "src": "carters_cardgames (top/rim is solid wood on these tables); band/lip/reveal/slab values PHOTO-DERIVED from ref-top-closeup.png"
+    },
+    "baize_surface": {
+      "material": "Green woollen BAIZE — a coarse WOVEN wool (or wool-nylon, e.g. 95% Merino/5% nylon) cloth, traditionally dyed green 'in mimicry of a lawn', napped, matte (NOT pressed felt, NOT glossy). Dealers loosely say 'felt' but the antique term is baize.",
+      "cloth_thickness_mm": 1,
+      "pad_proud_mm": 12,
+      "colour": "deep billiard/grass green (≈ #1f6b3a family) — conventional, no standard hex (→ needs[]); modelled as palette material 'baize'",
+      "note": "The playing inset. Cloth ≈ 1 mm; here it caps a foam/baize pad that sits ~12 mm proud in the well (photo-derived). This answers the owner's question 'what is the green surface made of': BAIZE (woven wool), not felt.",
+      "src": "wiki_baize + tfd_baize (woollen, green by convention, billiard/card tables) + baizewool_vs_felt (woven vs felt) + baizewool_thickness (0.9–1.2 mm) + simonlucas_baize (95/5 wool-nylon)"
+    },
+    "wood": {
+      "species": "Solid oak (close-up shows strong open grain / quartered ray figure) and/or walnut with a cross-banded border; mahogany also typical for the type. Warm mid-brown, visible grain.",
+      "src": "carters_cardgames (walnut/mahogany typical; burr-walnut veneer) + mw_crossbanding (contrasting-grain border ring); species photo-read from ref-top-closeup.png"
+    },
+    "apron_drawer": {
+      "frieze_depth_mm": 100,
+      "drawer": "single frieze drawer with a drop/teardrop solid-brass pull",
+      "note": "Frieze band under the top holding one shallow drawer (photo-observed; common on the type). Frieze depth 80–120 mm DERIVED (furniture norm; no listing measurement). Drop-pull type sourced.",
+      "src": "carters_cardgames (single-drawer games tables) + paxton_teardrop (drop/teardrop brass pull); frieze depth DERIVED"
+    },
+    "legs": {
+      "count": 4,
+      "style": "cabriole (Queen-Anne) with pad/club feet — owner allows SIMPLE legs, so modelled as 4 plain slender posts in the voxel build",
+      "knee_mm": 45,
+      "pad_foot_dia_mm": 50,
+      "note": "4 legs. Cross-section knee ~40–50 mm sq, pad foot ~45–55 mm dia are DERIVED (no sourced figure). Cabriole curve is not built (owner: simple legs) — straight slender posts stand in.",
+      "src": "britannica_cabriole (cabriole leg + pad foot, 4 legs, Queen-Anne); cross-sections DERIVED"
+    },
+    "derivation": {
+      "top_radius_m": "0.460 = diameter 920 mm / 2 (specifications.overall)",
+      "baize_radius_m": "0.392 = top_radius 0.460 − rim_band 0.058 − reveal 0.003 − lip_tube 0.007 ≈ 0.392 (so a ~58 mm wood border + reveal shows around the green)",
+      "apron_radius_m": "0.400 — apron set in from the 0.460 top edge so the top overhangs ~60 mm (furniture norm)",
+      "leg_span_m": "0.640 — legs placed on a 0.64 m square just inside the top, well within the 0.92 m diameter",
+      "heights_m": "top surface 0.730; slab 0.034 (top centre 0.713); apron 0.100 below the slab; legs 0.696 floor→apron-bottom",
+      "src": "geometric derivation from specifications.overall + specifications.top_construction + specifications.apron_drawer"
+    }
+  },
+  "feature_inventory": [
+    { "feature": "Round green woollen-BAIZE playing inset, matte napped, sitting slightly PROUD in the well", "src": "wiki_baize; tfd_baize; ref-top-closeup.png" },
+    { "feature": "Solid-wood turned rim with a RAISED outer lip (bullnose) standing proud of the cloth", "src": "ref-top-closeup.png; carters_cardgames" },
+    { "feature": "Flat wood border band (~58 mm) between the lip and the baize, with a thin reveal/shadow gap at the cloth edge", "src": "ref-top-closeup.png" },
+    { "feature": "Cross-banded contrasting-grain wood border on the top (full-table photo)", "src": "mw_crossbanding; ref-fulltable.png" },
+    { "feature": "Single frieze drawer with a drop/teardrop solid-brass pull", "src": "ref-fulltable.png; paxton_teardrop; carters_cardgames" },
+    { "feature": "4 cabriole legs (Queen-Anne) with pad/club feet — simplified to plain slender posts per owner brief", "src": "britannica_cabriole; ref-fulltable.png" },
+    { "feature": "Wood = solid oak / walnut, warm mid-brown, visible grain", "src": "carters_cardgames; ref-top-closeup.png" }
+  ],
+  "images": [
+    { "view": "top close-up (MATERIAL + rim detail)", "file": "ref/ref-top-closeup.png", "shows": "Green napped baize sitting proud inside a turned solid-oak rim with stepped concentric mouldings + a raised outer lip; thin reveal gap between cloth and wood; strong oak grain." },
+    { "view": "whole table (SHAPE)", "file": "ref/ref-fulltable.png", "shows": "Small round games table: green baize inset top with a cross-banded wood border, a single frieze drawer with a drop pull, on 4 slender cabriole legs with pad feet (walnut/oak, Queen-Anne)." }
+  ],
+  "needs": [
+    "Exact diameter & height of THIS specific table — used the sourced range with a representative pick (Ø 920, H 730 mm), not a catalogued measurement",
+    "Top slab thickness, wood rim-band width, raised-lip height and reveal-gap (mm) — all PHOTO-DERIVED (~34 / ~58 / ~8 / ~3 mm); no dealer listing states them",
+    "Frieze/apron depth (mm) — DERIVED ~100 mm; no sourced measurement for a round games table",
+    "Cabriole leg cross-section, knee-block and pad-foot diameters (mm) — DERIVED; legs simplified to straight posts per owner brief (cabriole curve not built)",
+    "Exact baize colour value — 'billiard/grass green' is conventional, no standard hex; modelled as palette 'baize'",
+    "Drawer dimensions (w/h/d) — DERIVED from frieze depth and front width",
+    "Whether the top is oak or walnut and whether the border is true cross-banding — photo-read, not provenanced to this piece"
+  ]
+}

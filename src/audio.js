@@ -385,6 +385,70 @@ export class AudioManager {
   shellInsert() { this.noise(0.05, 0.3, 'lowpass', 600, 1); this.tone(210, 0.05, 'square', 0.16); } // a single shell pressed into the tube
   dryFire() { this.noise(0.03, 0.25, 'bandpass', 3200, 4); }
 
+  // ---- poker den SFX (procedural; timed to the table events for the audio-frame "juice") ----
+  // a card dealt / flipped: a soft paper whiff + a faint tick
+  pokerDeal() {
+    if (!this.ctx) return;
+    this.noise(0.06, 0.16, 'bandpass', 1850, 1.4);
+    this.tone(880, 0.03, 'sine', 0.07);
+  }
+  // a chip settling: a short clay/ceramic clack. `pitch` shifts it deterministically (per-index, NOT
+  // random) so a run of chips reads as several distinct clicks rather than one robotic repeat.
+  pokerChip(pitch = 1) {
+    if (!this.ctx) return;
+    this.noise(0.035, 0.20, 'bandpass', 2400 * pitch, 6);
+    this.tone(1700 * pitch, 0.045, 'triangle', 0.12);
+  }
+  // chips pushed to the centre / pot raked: a low broadband shove
+  pokerPotSlide() {
+    if (!this.ctx) return;
+    this.noise(0.2, 0.24, 'lowpass', 420, 0.9);
+    this.tone(150, 0.18, 'sine', 0.10);
+  }
+  // win fanfare: a RISING run of notes (the audio half of the C2 pitch-sweep). Higher `level` (bigger
+  // pot) = more notes, faster, brighter — so a big win audibly escalates. Reserve for NET wins.
+  pokerWin(level = 1) {
+    if (!this.ctx) return;
+    const lvl = Math.max(1, Math.min(5, level | 0));
+    const steps = 3 + lvl;                 // C D E F G (+ more on big wins)
+    const gap = 0.085 - lvl * 0.006;       // brighter wins arpeggiate a touch faster
+    const base = 523.25;                   // C5
+    const semis = [0, 2, 4, 5, 7, 9, 11, 12];
+    for (let i = 0; i < steps; i++) {
+      const f = base * Math.pow(2, (semis[Math.min(i, semis.length - 1)]) / 12);
+      setTimeout(() => {
+        if (!this.ctx) return;
+        this.tone(f, 0.16, 'triangle', 0.16);
+        if (lvl >= 3) this.tone(f * 2, 0.10, 'sine', 0.06); // a bright upper octave on big wins
+      }, i * gap * 1000);
+    }
+  }
+  // a CHECK: the classic double knuckle-rap on the table (two short low wood knocks)
+  pokerCheck() {
+    if (!this.ctx) return;
+    const knock = () => { this.noise(0.04, 0.22, 'lowpass', 320, 1.2); this.tone(135, 0.05, 'sine', 0.13); };
+    knock();
+    setTimeout(() => { if (this.ctx) knock(); }, 105);
+  }
+  // a FOLD: cards skimmed across the felt into the muck — a soft paper whoosh
+  pokerFold() {
+    if (!this.ctx) return;
+    this.noise(0.14, 0.17, 'bandpass', 1300, 1.0);
+    this.tone(420, 0.05, 'sine', 0.05);
+  }
+  // a card TURNED FACE-UP (board flop/turn/river + showdown): a crisp paper snap + a pitched ring that RISES
+  // with `step` along a C-major run (C-D-E-F-G…). The C2 audio-frame "juice" lever — fired EXACTLY on the
+  // flip frame (not the anim start) so the rising notes build anticipation as each card turns. Kept subtle
+  // (it fires per card). `step` is clamped to the run; wins still own the louder rising fanfare (pokerWin).
+  pokerFlip(step = 0) {
+    if (!this.ctx) return;
+    this.noise(0.04, 0.16, 'bandpass', 2700, 2.4);                 // crisp flick as the card turns over
+    const semis = [0, 2, 4, 5, 7, 9, 11, 12];                      // C D E F G A B C (matches pokerWin)
+    const f = 523.25 * Math.pow(2, semis[Math.max(0, Math.min(step | 0, semis.length - 1))] / 12); // from C5
+    this.tone(f, 0.06, 'triangle', 0.085);
+    this.tone(f * 2, 0.04, 'sine', 0.03);                          // a faint upper octave for sparkle
+  }
+
   // ---- Mosin 91/30: recorded rifle shot + bolt/reload foley, with procedural fallback ----
   mosinShot() {
     if (!this.ctx) return;

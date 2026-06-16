@@ -92,6 +92,22 @@ export const PALETTE = {
                glb: { rgb: [0.04, 0.04, 0.05], rough: 0.9, metal: 0.05 } },
   sovietRed: { voxel: { hi: '#c0352a', mid: '#9a2620', lo: '#741b18', slot: '#511211', bright: '#d6483a' },
                glb: { rgb: [0.55, 0.10, 0.08], rough: 0.5, metal: 0.0 } },
+  // green woollen BAIZE — the traditional napped card/games-table cloth ("dyed green in mimicry of a
+  // lawn"); woven wool (not pressed felt), matte, very high roughness. The poker-table playing surface.
+  baize:     { voxel: { hi: '#2f8a52', mid: '#1f6b3a', lo: '#17502c', slot: '#0f3a20', bright: '#3aa365' },
+               glb: { rgb: [0.12, 0.40, 0.21], rough: 0.96, metal: 0.0 } },
+  // clean white injection-moulded plastic — the contrasting edge spots / inlays on poker chips
+  plasticWhite: { voxel: { hi: '#ffffff', mid: '#ececec', lo: '#cfcfcf', slot: '#a6a6a6', bright: '#ffffff' },
+               glb: { rgb: [0.92, 0.92, 0.92], rough: 0.5, metal: 0.0 } },
+  // poker-chip body colours (per denomination). white=plasticWhite, red=paintRed, black=paintBlack already exist.
+  chipBlue:   { voxel: { hi: '#4a7ad8', mid: '#2a52b0', lo: '#1d3c84', slot: '#122a5e', bright: '#6090e8' },
+               glb: { rgb: [0.16, 0.32, 0.70], rough: 0.5, metal: 0.0 } },
+  chipGreen:  { voxel: { hi: '#2faa55', mid: '#1f8040', lo: '#166030', slot: '#0e4420', bright: '#3cc468' },
+               glb: { rgb: [0.12, 0.50, 0.25], rough: 0.5, metal: 0.0 } },
+  chipPurple: { voxel: { hi: '#8a4fc0', mid: '#6a30a0', lo: '#4e2278', slot: '#341652', bright: '#a064d8' },
+               glb: { rgb: [0.42, 0.18, 0.62], rough: 0.5, metal: 0.0 } },
+  chipGold:   { voxel: { hi: '#e0b84a', mid: '#b88f2e', lo: '#8c6a20', slot: '#604814', bright: '#f0cc60' },
+               glb: { rgb: [0.66, 0.50, 0.16], rough: 0.45, metal: 0.1 } },
 };
 
 export function resolveMaterial(name, target = 'voxel') {

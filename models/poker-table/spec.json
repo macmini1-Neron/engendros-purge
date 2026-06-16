@@ -1,0 +1,90 @@
+{
+  "id": "poker-table",
+  "name": "Round games/card (poker) table — green baize inset in a turned wood rim, frieze drawer, cabriole legs",
+  "description": "A small round antique English games table for the 3D poker scene: a solid-wood top with a raised turned lip, a cross-band inlay line, and a green woollen-BAIZE playing inset sitting proud in the well; a frieze apron with a single drawer + drop brass pull; 4 simplified slender legs (cabriole in the reference). Shape is plain, the VISIBLE TOP is the detailed part. Materials: oak/walnut wood + brass + the new 'baize' green cloth.",
+  "category": "furniture",
+  "target": "voxel",
+  "anchor": "floor",
+  "footprint": { "w": 1.38, "h": 0.745, "d": 1.38 },
+  "dossier": "models/poker-table/ref/dossier.json",
+  "parts": [
+    {
+      "id": "top_slab",
+      "name": "Solid-wood round top slab (the wood you see around the cloth)",
+      "op": "cylinder",
+      "args": { "r": 0.69, "h": 0.034, "axis": "y" },
+      "at": [0, 0.713, 0],
+      "mat": "woodMid",
+      "src": "dossier#top_construction",
+      "note": "Top slab; top surface at y=0.730 (height 730 mm), 34 mm thick. Ø1380 = antique Ø920 enlarged ~50% for the 6-max poker scene (owner-directed upsize, dossier#overall + needs[])."
+    },
+    {
+      "id": "baize",
+      "name": "Green woollen-baize playing surface (fills the top to the edge)",
+      "op": "texturedCylinder",
+      "args": { "r": 0.672, "h": 0.013, "axis": "y", "seg": 80, "kind": "baize", "tone": "mid" },
+      "at": [0, 0.7365, 0],
+      "mat": "baize",
+      "src": "dossier#baize_surface",
+      "note": "Owner: bigger playing surface, NO raised lip — the green reaches right to the edge. Baize Ø≈1344 fills almost the whole Ø1380 top, leaving only a thin ~18 mm wood edge; rests on the slab top (bottom 0.730), ~13 mm proud. kind:'baize' on texturedCylinder maps a high-res woven-cloth CanvasTexture (warp/weft weave + brushed-nap mottle + lamp-pool vignette + faint dealer rings) onto the top cap, so the felt reads as real napped wool up close instead of a flat green disc; seg 80 keeps the rim round."
+    },
+    {
+      "id": "apron",
+      "name": "Frieze apron band under the top (holds the drawer)",
+      "op": "cylinder",
+      "args": { "r": 0.60, "h": 0.10, "axis": "y" },
+      "at": [0, 0.646, 0],
+      "mat": "woodMid",
+      "src": "dossier#apron_drawer",
+      "note": "100 mm frieze, set in from the 0.69 top edge so the top overhangs ~90 mm; spans y 0.596–0.696 (meets slab bottom)."
+    },
+    {
+      "id": "drawer_front",
+      "name": "Single frieze drawer front",
+      "op": "bevelBox",
+      "args": { "w": 0.20, "h": 0.062, "d": 0.02 },
+      "at": [0, 0.648, 0.392],
+      "mat": "woodDark",
+      "src": "dossier#apron_drawer",
+      "note": "Shallow drawer front proud of the apron front; darker wood reads the drawer box."
+    },
+    {
+      "id": "pull_plate",
+      "name": "Drop-pull brass backplate",
+      "op": "bevelBox",
+      "args": { "w": 0.034, "h": 0.022, "d": 0.006 },
+      "at": [0, 0.648, 0.404],
+      "mat": "brass",
+      "src": "dossier#apron_drawer",
+      "note": "Small brass backplate for the teardrop pull, proud of the drawer front."
+    },
+    {
+      "id": "pull_knob",
+      "name": "Drop/teardrop brass pull",
+      "op": "cylinder",
+      "args": { "r": 0.0075, "h": 0.012 },
+      "at": [0, 0.642, 0.41],
+      "mat": "brass",
+      "src": "dossier#apron_drawer",
+      "note": "Teardrop drop pull (rendered as a small brass boss) hanging just below the backplate centre."
+    },
+    {
+      "id": "legs",
+      "name": "Four slender legs (cabriole in the reference; simplified to plain posts)",
+      "op": "legs",
+      "args": { "w": 0.78, "d": 0.78, "h": 0.64, "lw": 0.06 },
+      "at": [0, 0, 0],
+      "mat": "woodMid",
+      "src": "dossier#legs",
+      "note": "4 legs spread under the enlarged Ø1380 top — span 0.78 m (corner reach ~0.55 < 0.60 apron radius < 0.69 top radius) so they stay TUCKED under the overhang yet support the big top sensibly. 60 mm posts into the apron; cabriole curve omitted per owner brief."
+    }
+  ],
+  "needs": [
+    "Top enlarged to Ø1380 mm — an owner-directed ~50% upsize for the 6-max poker scene that EXCEEDS the antique sourced range (Ø700–950); height kept at 730 mm (dossier#overall). A gameplay decision, not a measurement.",
+    "Top slab thickness / rim-band width / raised-lip / reveal are PHOTO-DERIVED (dossier#top_construction)",
+    "Cabriole leg curve + pad feet are NOT modelled — plain slender posts stand in per owner brief; knee/foot dims derived",
+    "Drawer is a front + pull only (no opening box); frieze depth derived",
+    "Baize colour is the conventional billiard green (palette 'baize'), no standard hex",
+    "Cross-band inlay is suggested by a thin darker torus line, not a true veneer band"
+  ]
+}

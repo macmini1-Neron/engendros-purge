@@ -1242,6 +1242,7 @@
       <div class="menu-row play-extra">
         <button class="btn" id="armoryBtn"><i data-ic="crate"></i> ARMORY<small>spend your bank · unlock &amp; equip</small></button>
         <button class="btn" id="multiplayerBtn"><i data-ic="users"></i> CO-OP<small>2–4 players · host or join</small></button>
+        <button class="btn" id="pokerBtn"><i data-ic="star"></i> POKER<small>Texas Hold'em · practice vs AI</small></button>
       </div>
     </div>
   </div>
@@ -1357,8 +1358,10 @@
           <div class="shoptabs" id="mp-modes" style="margin:8px 0 4px;">
             <button class="tab on" id="mp-mode-purge" data-mode="purge"><i data-ic="play"></i> PURGE</button>
             <button class="tab" id="mp-mode-night" data-mode="longnight"><i data-ic="moon"></i> THE LONG NIGHT</button>
+            <button class="tab" id="mp-mode-poker" data-mode="poker"><i data-ic="star"></i> POKER</button>
           </div>
           <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
+          <div id="mp-poker-buyin" class="mp-status" style="display:none;margin:0 0 8px;font-size:12px;"></div>
           <div id="mp-status" class="mp-status">Host a room or paste a code.</div>
           <div class="mp-diagbox">
             <div class="mp-diagtitle">CONNECTION CHECK</div>
@@ -1379,6 +1382,7 @@
           <button class="btn sec" id="mpRelayBtn">RELAY: AUTO</button>
           <button class="btn sec" id="lobbyArmoryBtn"><i data-ic="crate"></i> ARMORY</button>
           <button class="btn sec" id="fonoteka-lobby-btn"><i data-ic="disc"></i> ФОНОТЕКА</button>
+          <button class="btn sec" id="lobbyPokerBtn" style="display:none;"><i data-ic="star"></i> POKER</button>
           <button class="btn sec" id="mpBackBtn"><i data-ic="back"></i> BACK</button>
       </div>
     </div>
@@ -1394,6 +1398,7 @@
         <label class="srow"><span>SFX volume</span><input type="range" id="s-sfx" min="0" max="1" step="0.05"><b id="s-sfx-v"></b></label>
         <label class="srow"><span>Music volume</span><input type="range" id="s-music" min="0" max="1" step="0.05"><b id="s-music-v"></b></label>
         <label class="srow"><span>Field of view</span><input type="range" id="s-fov" min="60" max="100" step="1"><b id="s-fov-v"></b></label>
+        <div class="srow"><span>Poker odds helper</span><b id="s-pokerodds" style="cursor:pointer">ON</b></div>
         <label class="srow"><span>Player name</span><input type="text" id="s-nick" maxlength="14" placeholder="Player" style="background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.18); border-radius: 6px; color: #fff; padding: 6px 10px; font: inherit; outline: none;"><b></b></label>
       </div>
       <button class="btn sec" id="s-fullscreen">⛶ TOGGLE FULLSCREEN</button>
@@ -1423,6 +1428,9 @@
 
   <!-- ФОНОТЕКА — full-screen "Soviet Spotify" music screen; Fonoteka (src/fonoteka.js) builds the inner DOM -->
   <div id="music" class="overlay"></div>
+
+  <!-- GAMBLING DEN — secret poker den; PokerDomRenderer (src/poker-ui.js) builds the inner DOM -->
+  <div id="poker" class="overlay"></div>
 
   <div class="hint" id="hint">Click the canvas to lock the mouse · Esc to pause</div>
 
@@ -1591,6 +1599,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=270"></script>
+  <script type="module" src="./src/game.js?v=284"></script>
 </body>
 </html>

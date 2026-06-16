@@ -20,9 +20,15 @@ import { dirToMils, formatUglomer } from './bearing.js';
 import * as BAL from './mortar-ballistics.js';
 
 const MODEL_ID = 'mortar-82pm37';
-const ELEV_RATE = 18;       // deg/s the elevation dial moves while W/S held
-const AZ_FINE = 0.35;       // rad/s fine traverse (A/D)
-const AZ_COARSE = 1.4;      // rad/s coarse traverse (Shift+A/D)
+// Lay controls: a TAP steps by a fixed amount (snapped to the step grid) and a HOLD, after a short
+// auto-repeat delay, sweeps at a STEADY rate — so a click always moves exactly one step and holding is
+// consistent (not the old "amount depends on the first frame's dt"). Shift = coarse. Used for both
+// elevation (W/S) and traverse (A/D).
+const LAY_FINE_STEP = 1;    // ° per tap
+const LAY_COARSE_STEP = 5;  // ° per tap with Shift
+const LAY_FINE_SWEEP = 16;  // °/s continuous while held (fine)
+const LAY_COARSE_SWEEP = 50;// °/s continuous while held (Shift)
+const LAY_HOLD_DELAY = 0.25;// s a key must be held before the continuous sweep starts (keyboard auto-repeat feel)
 const SHELL_R = 0.041;      // visual bomb radius (m)
 const DROP_DELAY = 0.5;     // s — round slides down the bore before ignition (the "drop … BOOM" beat; ~0.4–0.8 s real)
 const SHAKE_FIRE = 0.42;    // base camera shake on the report (strong but readable; engine clamps at 0.6)
@@ -41,6 +47,7 @@ export class Mortar {
     this.loadT = 0;                       // drop-load cadence timer
     this._aimT = 0;                       // mortaraim broadcast throttle
     this._screwSpin = 0;                  // cosmetic screw rotation accumulator
+    this._hold = {};                      // per-key held-duration timers (tap-vs-sweep lay control)
     this.shells = [];                     // in-flight bombs (tick every frame, even unseated)
     this._shotsFired = 0;                 // for the "bedding" nod (first rounds jolt harder)
     this._impactMarks = [];               // fading F3 landing rings (golf-tracer "where they land")
@@ -172,16 +179,38 @@ export class Mortar {
     }
   }
 
+  // One lay axis (degrees). A fresh press = a discrete TAP: snap to the next step-grid line in that
+  // direction (so a click always lands on a clean +1° / +5° boundary). Holding the key past
+  // LAY_HOLD_DELAY = a steady continuous sweep at a fixed °/s (consistent, never dt-of-first-frame
+  // dependent). Shift switches both the tap step and the sweep rate to coarse. Returns {v, moved}.
+  _adjust(valDeg, negCode, posCode, dt) {
+    const I = this.game.input;
+    const coarse = I.isDown('ShiftLeft') || I.isDown('ShiftRight');
+    const step = coarse ? LAY_COARSE_STEP : LAY_FINE_STEP;
+    const sweep = coarse ? LAY_COARSE_SWEEP : LAY_FINE_SWEEP;
+    let v = valDeg, moved = false;
+    for (const [code, sign] of [[negCode, -1], [posCode, 1]]) {
+      if (I.wasPressed(code)) {                          // TAP → snap to the next step-grid line this way
+        this._hold[code] = 0;
+        v = sign > 0 ? (Math.floor(v / step + 1e-6) + 1) * step : (Math.ceil(v / step - 1e-6) - 1) * step;
+        moved = true;
+      } else if (I.isDown(code)) {                       // HOLD → after the delay, steady continuous sweep
+        const h = this._hold[code] = (this._hold[code] || 0) + dt;
+        if (h >= LAY_HOLD_DELAY) { v += sign * sweep * dt; moved = true; }
+      } else this._hold[code] = 0;
+    }
+    return { v, moved };
+  }
+
   // ── seated control: blind indirect lay by the dials, LMB fires ──────────────
   controlUpdate(dt) {
     const I = this.game.input;
-    if (I.isDown('KeyW')) this.elevDeg = clamp(this.elevDeg + ELEV_RATE * dt, BAL.ELEV_MIN_DEG, BAL.ELEV_MAX_DEG);
-    if (I.isDown('KeyS')) this.elevDeg = clamp(this.elevDeg - ELEV_RATE * dt, BAL.ELEV_MIN_DEG, BAL.ELEV_MAX_DEG);
-    const coarse = (I.isDown('ShiftLeft') || I.isDown('ShiftRight')) ? AZ_COARSE : AZ_FINE;
-    const turn = (I.isDown('KeyD') ? 1 : 0) - (I.isDown('KeyA') ? 1 : 0);
-    this.az += turn * coarse * dt;
-    const eleving = I.isDown('KeyW') || I.isDown('KeyS');
-    if (turn || eleving) this._screwSpin += 8 * dt;
+    // W/S elevation, A/D traverse — tap = one snapped step, hold = steady sweep (see _adjust)
+    const elev = this._adjust(this.elevDeg, 'KeyS', 'KeyW', dt);
+    this.elevDeg = clamp(elev.v, BAL.ELEV_MIN_DEG, BAL.ELEV_MAX_DEG);
+    const az = this._adjust(this.az * 180 / Math.PI, 'KeyA', 'KeyD', dt);
+    this.az = az.v * Math.PI / 180;
+    if (elev.moved || az.moved) this._screwSpin += 8 * dt;
     this._applyLay();
     this._frameCamera();
     // pin the body (co-op ghost kneels behind the breech)
