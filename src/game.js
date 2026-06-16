@@ -71,6 +71,9 @@ _registerModels();
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
 const GAME_BUILD = '2026-06-16 17:02';
 
+const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
+const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
+
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
 class Game {
@@ -151,6 +154,7 @@ class Game {
     this.state = 'menu'; this.score = 0; this.kills = 0; this.mpMenuOpen = false;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
     this._last = 0; this._bound = this._frame.bind(this);
+    this._fixedStep = false; this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // M4 fixed-timestep sim (default OFF) + render-time camera interpolation
 
     // --- status effects (src/effects-status.js) ---
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
@@ -992,24 +996,42 @@ class Game {
     let dt = (t - this._last) / 1000; this._last = t;
     if (!(dt > 0)) dt = 0.0001;
     const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
-    dt = Math.min(dt, 0.05);
-    if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
-    if (this.state === 'playing') this._updatePlaying(dt);
-    if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera);
+    const frameDt = Math.min(dt, 0.05);
+    if (this.audio.music) this.audio.music.update(frameDt); // score smoothing runs in every state
+
+    let interp = false, alpha = 0;
+    if (this.state === 'playing' && this._fixedStep) {
+      this._camPrev.copy(this.engine.camera.position);      // last frame's final cam pos (restored after last render)
+      this._acc += Math.min(dt, 0.25);                       // larger cap than the sim clamp; avoids spiral of death
+      let n = 0;
+      while (this._acc >= FIXED_STEP && n < MAX_SUBSTEPS) {
+        this._updatePlaying(FIXED_STEP);
+        if (n === 0) this.input.endFrame();                  // consume edges + mouse delta ONCE (first sub-step only)
+        this._acc -= FIXED_STEP; n++;
+      }
+      if (n > 0) { this._camCur.copy(this.engine.camera.position); alpha = this._acc / FIXED_STEP; interp = true; }
+      // n === 0: no sim this frame → camera unchanged; edges NOT consumed (carry to next frame)
+    } else if (this.state === 'playing') {
+      this._updatePlaying(frameDt);                          // OFF / non-fixed path = unchanged
+    }
+
+    if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera); // uses TRUE sim cam pos
     this.engine.updateAdaptive(this._frameMs);
-    if (this._drawDist > 0) { this._cullByDistance(this._drawDist); this._culling = true; }
+    if (this._drawDist > 0) { this._cullByDistance(this._drawDist); this._culling = true; } // uses TRUE sim cam pos
     else if (this._culling) { this._restoreVisibility(); this._culling = false; }
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
-    this.engine.update(dt); this.engine.render();
+    if (interp) this.engine.camera.position.lerpVectors(this._camPrev, this._camCur, alpha); // smooth between ticks
+    this.engine.update(frameDt); this.engine.render();
+    if (interp) this.engine.camera.position.copy(this._camCur); // restore TRUE pos for F3/devconsole/raycasts/next prev
     { const _ri = this.engine.renderer.info.render; this._draws = _ri.calls; this._tris = _ri.triangles; } // F3 stats — read post-render (Three.js resets info per render)
     if (this.devconsole) { const dbg = this.f3 && this.state === 'playing'; this.devconsole.updateF3(dbg); this.devconsole.updateEntityLabels(dbg); }
-    if (this.state === 'shop' && this.preview) this.preview.render(dt);
-    if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
-    if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
-    if (this.state === 'crate' && this.crate) this.crate.render(dt);
+    if (this.state === 'shop' && this.preview) this.preview.render(frameDt);
+    if (this.state === 'admin' && this.admin) this.admin.viewer.render(frameDt);
+    if (this.state === 'music' && this.fonoteka) this.fonoteka.render(frameDt);
+    if (this.state === 'crate' && this.crate) this.crate.render(frameDt);
     else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
-    if (this.state === 'poker' && this.poker) { this.poker.update(dt); this.poker.render(dt); }
-    this.input.endFrame();
+    if (this.state === 'poker' && this.poker) { this.poker.update(frameDt); this.poker.render(frameDt); }
+    if (!(this._fixedStep && this.state === 'playing')) this.input.endFrame(); // fixed path clears inside the loop (or carries when n===0)
   }
 
   // One fixed effect tick: advance the player + every alive enemy by one step.
