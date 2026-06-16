@@ -515,6 +515,7 @@ export class World {
     const terr = this.terrain;
     if ((o.y - terr.terrainHeightAt(o.x, o.z)) < 0) return 0; // origin already underground
     const lim = Math.min(maxT, 300), step = 0.5;
+    if (!(lim > 0)) return null; // guard: a NaN/≤0 maxT would never satisfy `t >= lim` → the unconditional loop below would hang
     let tPrev = 0;
     // March in `step`-sized samples but ALWAYS sample the endpoint `lim` (clamp each step to it). The old
     // `for (t = step; t <= lim; …)` skipped everything when lim < step — so a short ray (e.g. a thrown
