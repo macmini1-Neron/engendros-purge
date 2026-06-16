@@ -11,28 +11,75 @@
 const CELL = 2.5;          // metres per cell (arena is 140 wide → ~56×56 grid)
 const INFLATE = 1.7;       // obstacle padding ≈ boss radius (0.55×2.85 ≈ 1.57), so paths keep clearance
 
-// Build the occupancy grid once from the STATIC arena geometry.
+// Build an occupancy grid from the STATIC arena geometry.
 //  - skip ground-detail tiles (max.y < 0.6, same threshold as enemy avoidance)
 //  - skip player-built structures (b.struct) — the boss crushes those, so they
 //    must NOT block its path (it would refuse to path through a wall it'll smash)
 //  - tank wrecks and arena walls/buildings DO block
-export function buildNavGrid(world) {
+//
+// opts (all optional, BACKWARD-COMPATIBLE — the boss call `buildNavGrid(world)` keeps
+// the old boss-tuned grid byte-for-byte):
+//   cell       metres per cell                 (default CELL = 2.5)
+//   inflate    obstacle padding ≈ agent radius (default INFLATE = 1.7 ≈ boss radius)
+//   slopeAware ALSO block cells whose terrain is steeper than world.terrain.slopeLimit
+//              (default false). The grid-level analogue of the per-step horde slope
+//              backstop in enemies.js — keeps the horde off cliffs. Sampled at cell centre.
+export function buildNavGrid(world, opts = {}) {
+  const cell = opts.cell != null ? opts.cell : CELL;
+  const inflate = opts.inflate != null ? opts.inflate : INFLATE;
+  const slopeAware = !!opts.slopeAware;
   const half = world.HALF;
   const span = half * 2;
-  const cols = Math.ceil(span / CELL), rows = Math.ceil(span / CELL);
+  const cols = Math.ceil(span / cell), rows = Math.ceil(span / cell);
   const originX = -half, originZ = -half;
   const blocked = new Uint8Array(cols * rows);
   const cClamp = (v) => Math.max(0, Math.min(cols - 1, v));
   const rClamp = (v) => Math.max(0, Math.min(rows - 1, v));
   for (const b of world.boxes) {
     if (b.max.y < 0.6 || b.struct) continue;                 // ground detail / crushable player wall
-    const c0 = cClamp(Math.floor((b.min.x - INFLATE - originX) / CELL));
-    const c1 = cClamp(Math.floor((b.max.x + INFLATE - originX) / CELL));
-    const r0 = rClamp(Math.floor((b.min.z - INFLATE - originZ) / CELL));
-    const r1 = rClamp(Math.floor((b.max.z + INFLATE - originZ) / CELL));
+    const c0 = cClamp(Math.floor((b.min.x - inflate - originX) / cell));
+    const c1 = cClamp(Math.floor((b.max.x + inflate - originX) / cell));
+    const r0 = rClamp(Math.floor((b.min.z - inflate - originZ) / cell));
+    const r1 = rClamp(Math.floor((b.max.z + inflate - originZ) / cell));
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) blocked[r * cols + c] = 1;
   }
-  return { cell: CELL, cols, rows, originX, originZ, blocked };
+  if (slopeAware && world.hasTerrain && world.terrain) {       // block too-steep terrain cells
+    const terr = world.terrain;
+    const lim = terr.slopeLimit != null ? terr.slopeLimit : (Math.PI * 35) / 180;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (blocked[i]) continue;
+      const x = originX + (c + 0.5) * cell, z = originZ + (r + 0.5) * cell;
+      if (terr.terrainSlopeAt(x, z) > lim) blocked[i] = 1;
+    }
+  }
+  return { cell, cols, rows, originX, originZ, blocked };
+}
+
+// Grid DDA (Amanatides–Woo voxel traversal) from world (x0,z0)→(x1,z1): true if any cell
+// the segment crosses is blocked. Used by the horde to gate flow-field use — only override
+// the beeline when the straight line to the target actually hits an obstacle. O(cells crossed).
+export function lineBlocked(g, x0, z0, x1, z1) {
+  const cell = g.cell;
+  let c = Math.floor((x0 - g.originX) / cell);
+  let r = Math.floor((z0 - g.originZ) / cell);
+  const ec = Math.floor((x1 - g.originX) / cell);
+  const er = Math.floor((z1 - g.originZ) / cell);
+  if (isBlocked(g, c, r)) return true;
+  const dx = x1 - x0, dz = z1 - z0;
+  const stepC = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+  const stepR = dz > 0 ? 1 : (dz < 0 ? -1 : 0);
+  const tDeltaC = dx !== 0 ? Math.abs(cell / dx) : Infinity;
+  const tDeltaR = dz !== 0 ? Math.abs(cell / dz) : Infinity;
+  let tMaxC = dx !== 0 ? (g.originX + (c + (stepC > 0 ? 1 : 0)) * cell - x0) / dx : Infinity;
+  let tMaxR = dz !== 0 ? (g.originZ + (r + (stepR > 0 ? 1 : 0)) * cell - z0) / dz : Infinity;
+  let guard = g.cols + g.rows + 4;                             // bound the walk (no infinite loop)
+  while ((c !== ec || r !== er) && guard-- > 0) {
+    if (tMaxC < tMaxR) { c += stepC; tMaxC += tDeltaC; }
+    else { r += stepR; tMaxR += tDeltaR; }
+    if (isBlocked(g, c, r)) return true;
+  }
+  return false;
 }
 
 const cellOf = (g, x, z) => ({
