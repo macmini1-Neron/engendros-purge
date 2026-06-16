@@ -31,6 +31,7 @@ Verified against the live code (worktree `feat/terrain-lod`):
 3. **Mesh/prop LOD + re-instancing** — distance LOD for props/models; instance repeated district props.
 4. **Fixed-timestep simulation** — fixed physics tick + render interpolation (last, most invasive).
 5. **Navigation overhaul** — slope-aware terrain nav **+ enemies that path into buildings** (doorways/interiors), generalized from boss-only to the horde; multi-level as a flagged stretch.
+6. **Tactical AI** *(gameplay layer, not engine plumbing — gets its own spec)* — smart movement *decisions* on top of navigation: flank, use cover, ambush, coordinate. Named + sequenced here as the capstone; **full design deferred to a separate gameplay/AI spec** when we reach it.
 
 **Out (non-goals — YAGNI):**
 - **Streaming / load-unload** — bounded resident maps only (revisit beyond ~1 km).
@@ -100,6 +101,16 @@ Verified against the live code (worktree `feat/terrain-lod`):
 
 **Scope:** AI behavior + perf; must stay deterministic and host-authoritative. **Risk:** medium-high (resolution vs cost trade, horde path cost, co-op authority). **Order:** §5 step 6 — Tier A+B together (with or just after terrain Phase 3b, which creates the slopes/structures that make it matter); Tier C later.
 
+### 3.6 Tactical AI — *smart decisions on top of movement* (gameplay layer — its own spec)
+
+**Plain terms:** navigation (3.5) lets enemies *get* anywhere; tactical AI makes them *choose* well. Instead of every enemy beelining: some **flank** to hit from the side/back, some break line-of-sight behind **cover** and close in bounds, some **lurk / ambush** in buildings and around corners, and the wave **coordinates** (push + flank + cut off retreat) — reacting to player position, line-of-sight, and noise.
+
+**Why it's separate from the engine (the owner's instinct, confirmed):** this is gameplay/design logic, not engine plumbing. It *consumes* the navigation substrate (3.5) and the existing enemy steering; it does **not** change how the world renders or simulates. It lives in `enemies.js` behavior (+ maybe a small `src/ai-tactics.js`), not the engine modules. **It therefore gets its OWN design spec (a gameplay/AI pass) when we reach it** — this entry only names, sequences, and bounds it.
+
+**Constraints to carry forward:** host-authoritative (enemies are host-sim — no double-run on clients, no new envelope data); must serve **horror pacing** (`docs/design-principles.md` + the survival-horror pivot) — "smart" = stalking / surrounding / tension, not merely "harder"; difficulty stays fair-brutal and readable.
+
+**Scope:** gameplay AI on top of nav. **Depends on:** §3.5 navigation (Tier A+B). **Order:** §5 step 7 (last; full design in its own spec).
+
 ## 4. Co-op determinism & authority constraints (hold across all five)
 
 - **Local-cosmetic-only:** stats overlay (3.1), shadows (3.2), prop-LOD (3.3) are **never synced** — pure client-side render choices, like graphics quality.
@@ -114,6 +125,7 @@ Verified against the live code (worktree `feat/terrain-lod`):
 4. **Shadows 2b** — CSM (the proper version).
 5. **Fixed-timestep** (3.4) — most invasive, do when everything else is stable.
 6. **Navigation overhaul** (3.5, Tier A+B) — with/after terrain Phase 3b; Tier C (multi-level) later.
+7. **Tactical AI** (3.6) — gameplay capstone on top of navigation; **full design in its own gameplay/AI spec** before any code.
 
 Each step is a **separate plan + PR**, reviewed and merged before the next starts. The list is re-orderable, but stats stay first and fixed-timestep stays before nav only if nav doesn't block on it (it doesn't).
 
@@ -141,6 +153,7 @@ Each step is a **separate plan + PR**, reviewed and merged before the next start
 - **3.3 LOD/instancing:** new small `src/lod.js` or `engine.js` helper; district builders (`industrial.js`, `airfield.js`, `strongpoint.js`, `openworld.js`, `props.js`).
 - **3.4 fixed-timestep:** `game.js` (`_frame` accumulator + interpolation), light touches across subsystems' `update`, `mp.js` (snapshot decoupling), `engine.js` (render-alpha).
 - **3.5 navigation:** `pathing.js` (generalize: terrain+structure aware, per-map), `enemies.js` (horde nav hybrid / flow-field), `bunker.js` (portal links — Tier C), terrain hooks.
+- **3.6 tactical AI:** gameplay-side — `enemies.js` (behaviors) + possibly a new `src/ai-tactics.js`; **separate gameplay/AI spec, not this engine program.**
 
 ## 9. Open questions
 
