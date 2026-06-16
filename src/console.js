@@ -349,7 +349,7 @@ export class DevConsole {
     const gy = g.world.groundY ? g.world.groundY(pos.x, pos.z).toFixed(1) : '0';
     el.textContent = [
       `ENGENDROS PURGE  ${g.gameVersion || ''}`,
-      `${Math.round(g._fps || 0)} fps  (${(g._frameMs || 0).toFixed(1)} ms)`,
+      `${Math.round(g._fps || 0)} fps  (${(g._frameMs || 0).toFixed(1)} ms)  ·  ${g._draws || 0} draws  ·  ${(g._tris || 0).toLocaleString()} tris  ·  ${g.world && g.world.chunks ? g.world.chunks.visible : 0} chunks`,
       '',
       `XYZ: ${pos.x.toFixed(3)} / ${pos.y.toFixed(3)} / ${pos.z.toFixed(3)}`,
       `Block: ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}   (ground ${gy})`,

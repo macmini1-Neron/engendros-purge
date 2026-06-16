@@ -1028,6 +1028,7 @@ class Game {
     else if (this._culling) { this._restoreVisibility(); this._culling = false; }
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
     this.engine.update(dt); this.engine.render();
+    { const _ri = this.engine.renderer.info.render; this._draws = _ri.calls; this._tris = _ri.triangles; } // F3 stats — read post-render (Three.js resets info per render)
     if (this.devconsole) { const dbg = this.f3 && this.state === 'playing'; this.devconsole.updateF3(dbg); this.devconsole.updateEntityLabels(dbg); }
     if (this.state === 'shop' && this.preview) this.preview.render(dt);
     if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
