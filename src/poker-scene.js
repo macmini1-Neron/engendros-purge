@@ -7,8 +7,12 @@
 import * as THREE from 'three';
 import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
-import { makeChipStack, makeChipTray, setChipTray } from './poker-chips.js';
-import { sigOf, exactSubset, subSet, addSet, largestFormableLE } from './poker/chipbank.js';
+import { makeChipStack, makeChipTray, setChipTray, makeMultiSkinTray } from './poker-chips.js';
+import { sigOf, exactSubset, subSet, addSet, largestFormableLE, value } from './poker/chipbank.js';
+
+// compact signature of a provenance SkinMap ({skin:{denom:count}}) for the scene-key — two pots can share
+// value AND per-denom composition yet differ in skin MIX, so the tray must rebuild when only the mix changes.
+const skinSig = (m) => m ? Object.keys(m).sort().map((k) => k + ':' + sigOf(m[k])).join('/') : '';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildFieldRadio } from './props.js';
 import { RADIO_STATIONS, GHOST_STATION, stationByIndex, stationLabel } from './radio.js';
@@ -319,6 +323,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       this._betLabel.position.set(this._myBetPos.x, this._myBetPos.y + 0.075, this._myBetPos.z);
       this._betLabel.lookAt(this.cam.position);
     }
+    if (this._potLabel) { this._potLabel.position.copy(this._potLabelPos); this._potLabel.lookAt(this.cam.position); } // pot total floats above the pot, camera-facing
   }
 
   // A floating "$N" badge that hovers over the live bet heap — a brass POLYMER pill so the player reads the
@@ -348,6 +353,39 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthTest: false }));
     m.renderOrder = 997; m.userData.tex = tex;                            // above the chips, below the hover outline (998)
     return m;
+  }
+
+  // generic floating money label (pot total / win amount), reused via `prop` ('_potLabel'/'_winLabel').
+  // Rebuilds the brass pill on each value change (cheap at the 8×/roll cadence); amount<=0 removes it.
+  _setMoneyLabel(prop, amount) {
+    if (this[prop]) { this._scene.remove(this[prop]); this._disposeTree(this[prop]); this[prop] = null; }
+    if (amount > 0) { this[prop] = this._moneyLabel('$' + amount); this._scene.add(this[prop]); }
+    return this[prop];
+  }
+  // Roll a money label from→to over an 8-STEP quantized sweep (matches pokerFlip's 0..7 rising-note run),
+  // firing a rising note per step (the juice-research audio-frame-sync lever). posFn()→world pos to follow.
+  _rollMoney(prop, posFn, from, to, dur = 0.6, delay = 0, hold = 0) {
+    const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
+    const tw = new Tween(dur, delay); let lastStep = -1;
+    this._anims.push((dt) => {
+      const e = easeOutCubic(tw.step(dt));
+      if (tw.t < tw.delay) return false;
+      const step = Math.min(7, Math.floor(e * 8));
+      if (step !== lastStep) {
+        lastStep = step;
+        this._setMoneyLabel(prop, Math.max(0, Math.round(from + (to - from) * (step + 1) / 8)));
+        if (a && a.pokerFlip) a.pokerFlip(step);
+      }
+      const lbl = this[prop];
+      if (lbl) { const p = posFn(); lbl.position.set(p.x, p.y, p.z); lbl.lookAt(this.cam.position); lbl.visible = true; }
+      if (tw.done) {
+        this._setMoneyLabel(prop, to);
+        const l2 = this[prop]; if (l2) { const p = posFn(); l2.position.set(p.x, p.y, p.z); l2.lookAt(this.cam.position); }
+        if (hold > 0 && this[prop]) { const h = new Tween(hold); this._anims.push((d2) => { h.step(d2); if (h.done && this[prop]) this[prop].visible = false; return h.done; }); }
+        return true;
+      }
+      return false;
+    });
   }
 
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —
@@ -414,6 +452,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._betPreview.userData.pk = { kind: 'chips', scope: 'bet', ownerName: 'YOU' }; // hoverable: re-pushed to _hoverTargets each _rebuildDyn (an invisible tray is skipped by the raycaster)
     this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null;
     this._betLabel = null; // floating "$total" badge over the live bet heap (built/replaced on amount change)
+    this._potLabel = null; this._winLabel = null; this._potShown = 0; // rolling-counter labels (pot total + win amount)
+    this._potLabelPos = new THREE.Vector3(0, 0.013 + 0.12, POT_Z);     // fixed spot above the pot heap
     this._potFx = new THREE.Group(); scene.add(this._potFx); // transient flying chips (bet→pot rake) — PERSISTS across dyn rebuilds
     this._betAnchors = {};                                   // per-seat bet-zone world position, refreshed each rebuild (slide origin)
     // poker-LOCAL celebration particle pool — the global Effects pool lives in the MAIN game scene, not
@@ -505,7 +545,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; if (this._betLabel) this._betLabel.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {}; this._lastHandNo = 0; this._seenActN = 0; // fresh table → the first hand animates a deal-in + the first check/fold SFX isn't suppressed
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; if (this._betLabel) this._betLabel.visible = false; this._setMoneyLabel('_potLabel', 0); this._setMoneyLabel('_winLabel', 0); this._potShown = 0; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {}; this._lastHandNo = 0; this._seenActN = 0; // fresh table → the first hand animates a deal-in + the first check/fold SFX isn't suppressed
     if (this._potFx) { for (let i = this._potFx.children.length - 1; i >= 0; i--) { const c = this._potFx.children[i]; this._potFx.remove(c); this._disposeTree(c); } } } // fresh table → no stale SFX deltas / dangling anims / bet preview / peek / flying chips
   showLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
@@ -535,6 +575,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // conserved-chip composition: two stacks can share a value yet hold different chips, so the
       // tray must rebuild on composition change, not just value change.
       cs: ch ? sigOf(ch.pot) + '|' + v.seats.map((s) => sigOf(ch.stacks[s.id] || {}) + '/' + sigOf(ch.bets[s.id] || {})).join(',') : '',
+      sk: (ch && ch.skins) ? skinSig(ch.skins.pot) + ';' + v.seats.map((s) => skinSig(ch.skins.stacks[s.id]) + '/' + skinSig(ch.skins.bets[s.id])).join(',') : '', // skin MIX → rebuild trays on a recolour even at the same value
+
     });
     if (key === this._sceneKey) return;
     this._sceneKey = key;
@@ -563,6 +605,12 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const pushDelay = revealCount ? (revealCount - 1) * SHOWDOWN_STAGGER + 0.66 + 0.4 : 0.2;
     if (awarding) this._pushPotToWinner(events, p, pushDelay);       // WIN: pot pile → winner's stack (after the reveal)
     else if (collecting) this._slideBetsToPot(this._prevChips, p.chips); // mid-hand: bets → pot
+    // rolling pot counter (juice): climb the pot total as bets land; clear it the instant the pot is paid out
+    const potNow = p.chips ? value(p.chips.pot) : (v.pot | 0);
+    if (awarding) this._setMoneyLabel('_potLabel', 0);
+    else if (collecting) this._rollMoney('_potLabel', () => this._potLabelPos, this._prevChips ? value(this._prevChips.pot) : 0, potNow, 0.6, COLLECT_FLIGHT * 0.5);
+    else if (potNow !== this._potShown) this._setMoneyLabel('_potLabel', potNow);
+    this._potShown = potNow;
     this._onPokerEvents(events, p, dealIn);
     this._prevView = v; this._prevChips = this._snapChips(p.chips);
   }
@@ -612,6 +660,12 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
     const FELT_Y = 0.013, from = new THREE.Vector3(0, FELT_Y, POT_Z);
     const awards = events.filter((e) => e.t === 'potAward' && e.amount > 0);
+    // rolling WIN counter: the amount climbs over the (top) winner's stack as the pot lands, then holds + fades
+    const top = awards.reduce((m, e) => (e.amount > (m ? m.amount : 0) ? e : m), null);
+    if (top && this._stackAnchors && this._stackAnchors[top.id]) {
+      const at = this._stackAnchors[top.id], amt = top.amount;
+      this._rollMoney('_winLabel', () => ({ x: at.x, y: at.y + 0.11, z: at.z }), 0, amt, 0.7, delay, 1.4);
+    }
     let k = 0;
     for (const aw of awards) {
       const to = this._stackAnchors && this._stackAnchors[aw.id];
@@ -797,7 +851,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       const skinOpt = mine ? undefined : { skin: (p.skins && p.skins[s.id]) || 'dice' };
       this._betAnchors[s.id] = onFelt(0.36).setY(FELT_Y);  // where this seat's street bet sits → the bet→pot slide flies FROM here
       if (s.id === p.youId) { this._myBetPos = onFelt(0.35).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet/heap anchor: in front of your stack, clear of the pot pile (pileLayout caps its radius, so even an all-in heap stays compact, not sprawling)
-      const stack = stackSet ? makeChipTray(stackSet, skinOpt) : makeChipStack(s.stack);
+      const stackSkins = p.chips && p.chips.skins ? p.chips.skins.stacks[s.id] : null;
+      const stack = (stackSkins && Object.keys(stackSkins).length) ? makeMultiSkinTray(stackSkins) // multi-skin once you hold chips won from another skin
+                  : stackSet ? makeChipTray(stackSet, skinOpt) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       this._stackAnchors[s.id] = new THREE.Vector3(stack.position.x, FELT_Y, stack.position.z); // pot-push target (pot → winner's stack)
       stack.userData.pk = { kind: 'chips', scope: 'stack', ownerId: s.id, ownerName: (s.id === p.youId ? 'YOU' : ((p.names && p.names[s.id]) || s.id)) }; this._hoverTargets.push(stack);
@@ -807,7 +863,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // not a static column tray — so skip it here for the local seat whenever we have real chips to heap.
       const skipLocalBet = (s.id === p.youId) && !!chips;
       if (!skipLocalBet) {
-        const betGroup = betSet ? (sigOf(betSet) ? makeChipTray(betSet, skinOpt) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
+        const betSkins = p.chips && p.chips.skins ? p.chips.skins.bets[s.id] : null;
+        const betGroup = (betSkins && Object.keys(betSkins).length) ? makeMultiSkinTray(betSkins)
+                       : betSet ? (sigOf(betSet) ? makeChipTray(betSet, skinOpt) : null) : (s.roundBet > 0 ? makeChipStack(s.roundBet) : null);
         if (betGroup) { betGroup.position.copy(onFelt(0.36)); betGroup.position.y = FELT_Y; betGroup.rotation.y = tilt; betGroup.scale.setScalar(1.3); d.add(betGroup);
           betGroup.userData.pk = { kind: 'chips', scope: 'bet', ownerId: s.id, ownerName: (s.id === p.youId ? 'YOU' : ((p.names && p.names[s.id]) || s.id)) }; this._hoverTargets.push(betGroup); }
       }
@@ -832,7 +890,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     }
     // pot pile (between the board and you) — real pot chips when present
     const potSet = p.chips ? p.chips.pot : null;
-    const potGroup = potSet ? (sigOf(potSet) ? makeChipTray(potSet) : null) : (v.pot > 0 ? makeChipStack(v.pot) : null);
+    const potSkins = p.chips && p.chips.skins ? p.chips.skins.pot : null;       // the provenance MIX (Marx+Lenin+…)
+    const potGroup = (potSkins && Object.keys(potSkins).length) ? makeMultiSkinTray(potSkins)  // FLAGSHIP: render the pot as a skin mix
+                   : potSet ? (sigOf(potSet) ? makeChipTray(potSet) : null) : (v.pot > 0 ? makeChipStack(v.pot) : null);
     if (potGroup) { potGroup.position.set(0, FELT_Y, POT_Z); potGroup.scale.setScalar(1.7); d.add(potGroup);
       potGroup.userData.pk = { kind: 'chips', scope: 'pot', ownerName: 'POT' }; this._hoverTargets.push(potGroup); }
     this._betPreviewAmt = -2; // the stack tray is freshly full → force _updateBetPreview to re-carve the heap out of it
