@@ -27,18 +27,26 @@ const CSS = `
     radial-gradient(130% 90% at 50% -10%, rgba(255,210,150,.10), rgba(0,0,0,.55)),
     repeating-linear-gradient(96deg, #6b3f2a 0 7px, #663a26 7px 14px),
     linear-gradient(180deg,#7c4a2f 0%, #5d3722 60%, #4a2c1b 100%); }
-.pk-top { display:flex; align-items:center; gap:18px; padding:14px 24px;
-  background:linear-gradient(180deg, rgba(11,18,17,.86), rgba(11,18,17,.6));
-  border-bottom:2px solid var(--brass-lo,#9a7636); }
-.pk-top .pk-title { font-family:var(--font-title,'Russo One'); font-size:22px; letter-spacing:1px;
-  color:var(--brass-hi,#f3d999); text-shadow:0 2px 0 #000; }
-.pk-top .pk-meta { margin-left:auto; display:flex; gap:22px; font-family:var(--font-mono,monospace);
-  font-size:14px; color:var(--steel,#84aab2); }
-.pk-top .pk-meta b { color:var(--brass-hi,#f3d999); }
-.pk-top .pk-meta .pk-mybank-meta { padding:2px 12px; border-radius:7px; background:rgba(20,40,30,.7);
-  border:1px solid var(--go,#5cae8c); color:#bfe8d4; font-weight:bold; letter-spacing:.5px; }
-.pk-top .pk-meta .pk-mybank-meta b { color:var(--go,#7fe6b0); font-size:16px; }
-.pk-leave { margin-left:14px; }
+.pk-top { display:flex; align-items:center; gap:20px; padding:11px 24px;
+  background:linear-gradient(180deg, rgba(9,15,14,.93), rgba(9,15,14,.68));
+  border-bottom:1px solid var(--brass-lo,#9a7636);
+  box-shadow:0 3px 16px rgba(0,0,0,.5), inset 0 -1px 0 rgba(243,217,153,.12); }
+.pk-top .pk-titlewrap { display:flex; flex-direction:column; line-height:1; }
+.pk-top .pk-title { font-family:var(--font-title,'Russo One'); font-size:26px; letter-spacing:3px;
+  color:var(--brass-hi,#f3d999); text-shadow:0 2px 0 #000, 0 0 20px rgba(216,176,102,.35); }
+.pk-top .pk-subtitle { font-family:var(--font-mono,monospace); font-size:10px; letter-spacing:5px;
+  color:var(--brass-lo,#9a7636); margin-top:4px; text-transform:uppercase; }
+.pk-top .pk-meta { margin-left:auto; display:flex; gap:9px; align-items:stretch; }
+.pk-top .pk-stat { display:flex; flex-direction:column; align-items:center; gap:2px; min-width:54px;
+  padding:5px 13px; border-radius:9px; background:rgba(11,21,19,.55); border:1px solid var(--brass-deep,#58421a);
+  box-shadow:inset 0 1px 0 rgba(243,217,153,.07); }
+.pk-top .pk-stat .pk-stat-l { font-family:var(--font-mono,monospace); font-size:9px; letter-spacing:1.5px;
+  color:var(--steel,#84aab2); text-transform:uppercase; }
+.pk-top .pk-stat .pk-stat-v { font-family:var(--font-display,'Oswald'); font-size:17px; font-weight:600;
+  color:var(--brass-hi,#f3d999); line-height:1; }
+.pk-top .pk-stat.you { border-color:var(--go,#5cae8c); background:rgba(20,40,30,.62); }
+.pk-top .pk-stat.you .pk-stat-v { color:var(--go,#7fe6b0); }
+.pk-leave { margin-left:6px; align-self:center; }
 
 .pk-felt { flex:1; position:relative; display:flex; flex-direction:column; align-items:center;
   justify-content:space-between; padding:18px 24px 24px; min-height:0; }
@@ -65,20 +73,36 @@ const CSS = `
 .pk-board { display:flex; gap:8px; }
 .pk-pot { font-family:var(--font-mono,monospace); font-size:18px; color:var(--brass-hi,#f3d999);
   background:rgba(0,0,0,.4); padding:4px 16px; border-radius:20px; border:1px solid var(--brass-deep,#58421a); }
-.pk-banner { font-family:var(--font-title,'Russo One'); font-size:26px; color:var(--neon,#45e0cf);
-  text-shadow:0 2px 0 #000; min-height:30px; text-align:center; }
+.pk-banner { min-height:0; text-align:center; display:flex; gap:10px; justify-content:center; }
+.pk-banner:empty { display:none; }
+.pk-win-card { display:inline-flex; flex-direction:column; align-items:center; gap:3px; padding:9px 24px; border-radius:13px;
+  background:linear-gradient(180deg, rgba(22,17,9,.94), rgba(12,10,6,.88)); border:1px solid var(--brass,#d8b066);
+  box-shadow:0 6px 26px rgba(0,0,0,.6), 0 0 26px rgba(216,176,102,.22); animation:pkWinIn .42s cubic-bezier(.2,.9,.25,1.25); }
+.pk-win-card.you { border-color:var(--go,#5cae8c); box-shadow:0 6px 26px rgba(0,0,0,.6), 0 0 36px rgba(92,174,140,.5); }
+.pk-win-name { font-family:var(--font-title,'Russo One'); font-size:23px; letter-spacing:1px; color:var(--brass-hi,#f3d999); text-shadow:0 2px 0 #000; }
+.pk-win-name .amt { color:var(--go,#7fe6b0); }
+.pk-win-card.you .pk-win-name { color:#fff; }
+.pk-win-hand { font-family:var(--font-display,'Oswald'); font-size:13px; letter-spacing:1px; color:var(--steel,#84aab2); text-transform:uppercase; }
+@keyframes pkWinIn { from { opacity:0; transform:translateY(-9px) scale(.9); } to { opacity:1; transform:none; } }
 
 .pk-you { display:flex; align-items:center; gap:18px; width:100%; justify-content:center; }
 .pk-you .pk-myhole { display:flex; gap:8px; }
 .pk-you .pk-mystack { font-family:var(--font-mono,monospace); font-size:18px; color:var(--brass-hi,#f3d999); }
 .pk-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; }
-.pk-btn { cursor:pointer; border:1px solid var(--brass-lo,#9a7636); border-radius:6px; padding:11px 20px;
-  background:linear-gradient(180deg,#14211d,#0d1613); color:var(--ink,#e8e4d8); font-family:var(--font-display,'Oswald');
-  font-size:16px; letter-spacing:.5px; transition:all .15s; }
-.pk-btn:hover:not(:disabled) { transform:translateY(-2px); border-color:var(--brass,#d8b066); }
-.pk-btn:disabled { opacity:.32; cursor:default; }
-.pk-btn.go { background:linear-gradient(180deg,var(--red-2,#f5604c),var(--red-deep,#7a1d12)); color:#fff; border-color:var(--brass,#d8b066); }
-.pk-btn.raise { background:linear-gradient(180deg,#1c3a30,#0d2018); }
+.pk-btn { cursor:pointer; border:1px solid var(--brass-lo,#9a7636); border-radius:8px; padding:12px 22px;
+  background:linear-gradient(180deg,#1a2823,#0e1714); color:var(--ink,#e8e4d8); font-family:var(--font-display,'Oswald');
+  font-size:16px; font-weight:600; letter-spacing:.6px; box-shadow:inset 0 1px 0 rgba(243,217,153,.12),0 2px 6px rgba(0,0,0,.4); transition:all .14s; }
+.pk-btn:hover:not(:disabled) { transform:translateY(-2px); filter:brightness(1.12); box-shadow:inset 0 1px 0 rgba(243,217,153,.18),0 6px 16px rgba(0,0,0,.5); }
+.pk-btn:active:not(:disabled) { transform:translateY(0); filter:brightness(.94); }
+.pk-btn:disabled { opacity:.3; cursor:default; }
+/* poker action semantics: FOLD muted · CALL/CHECK calm steel-teal · RAISE premium brass · ALL-IN hot coral · GO=lobby primary */
+#pk-fold { color:#cdb9a0; border-color:#5a4632; }
+#pk-fold:hover:not(:disabled) { border-color:var(--red-2,#f5604c); color:#f2d2c4; }
+.pk-btn.call { background:linear-gradient(180deg,#205058,#11313a); border-color:var(--neon,#45e0cf); color:#d9fbf4; }
+.pk-btn.raise { background:linear-gradient(180deg,#cf9c41,#7c5a22); border-color:var(--brass-hi,#f3d999); color:#1c1206; text-shadow:0 1px 0 rgba(255,255,255,.25); }
+.pk-btn.allin { background:linear-gradient(180deg,#b23a2a,#6a160e); border-color:var(--red-2,#f5604c); color:#ffe2d8; }
+.pk-btn.allin.armed { background:linear-gradient(180deg,#ff7a4f,#a01c0c); color:#fff; border-color:var(--brass-hi,#f3d999); }
+.pk-btn.go { background:linear-gradient(180deg,var(--go,#5cae8c),#2c6b4f); color:#fff; border-color:var(--brass,#d8b066); }
 .pk-raise { display:flex; flex-direction:column; align-items:center; gap:6px; }
 .pk-presets { display:flex; gap:6px; }
 .pk-preset { cursor:pointer; border:1px solid var(--brass-deep,#58421a); border-radius:5px; padding:5px 11px;
@@ -92,13 +116,24 @@ const CSS = `
 .pk-raiseval { font-family:var(--font-mono,monospace); font-size:15px; color:var(--brass-hi,#f3d999); min-width:54px; }
 .pk-raisebox input[type=number].pk-raiseval { width:66px; min-width:66px; text-align:center; padding:5px 6px;
   background:rgba(0,0,0,.4); border:1px solid var(--brass-deep,#58421a); border-radius:5px; }
-.pk-btn.raise.armed { background:linear-gradient(180deg,var(--red-2,#f5604c),var(--red-deep,#7a1d12)); color:#fff; border-color:var(--brass,#d8b066); }
+/* (RAISE never arms; the ALL-IN arm-to-confirm is styled via .pk-btn.allin.armed above) */
 .pk-wait { font-family:var(--font-display,'Oswald'); font-size:16px; color:var(--steel,#84aab2); min-height:44px; line-height:44px; }
 .pk-count { height:44px; min-height:44px; display:flex; align-items:center; justify-content:center;
   font-family:var(--font-mono,monospace); font-size:30px; font-weight:700; color:var(--brass-hi,#f3d999);
   text-shadow:0 2px 0 #000; letter-spacing:1px; transition:color .25s; } /* calm numeric countdown — only the last 15s, no bar (no stress) */
 .pk-count.urgent { color:var(--red-2,#f5604c); }
-.pk-odds { font-family:var(--font-mono,monospace); font-size:15px; color:var(--neon,#45e0cf); min-height:18px; letter-spacing:.5px; text-shadow:0 1px 0 #000; } /* TV-style odds helper (toggle in Settings) */
+.pk-odds { min-height:0; display:flex; justify-content:center; }
+.pk-odds:empty { display:none; }
+.pk-odds-card { display:inline-flex; align-items:center; gap:11px; padding:5px 13px; border-radius:10px;
+  background:linear-gradient(180deg, rgba(9,18,17,.82), rgba(9,15,14,.7)); border:1px solid var(--brass-deep,#58421a);
+  box-shadow:inset 0 1px 0 rgba(243,217,153,.08); }
+.pk-odds-main { display:flex; align-items:baseline; gap:5px; }
+.pk-odds-pct { font-family:var(--font-display,'Oswald'); font-size:21px; font-weight:700; color:var(--neon,#45e0cf); line-height:1; text-shadow:0 1px 0 #000; }
+.pk-odds-pct small { font-size:12px; opacity:.75; }
+.pk-odds-lbl { font-family:var(--font-mono,monospace); font-size:9px; letter-spacing:1.5px; color:var(--steel,#84aab2); text-transform:uppercase; }
+.pk-odds-bar { width:84px; height:6px; border-radius:3px; background:rgba(255,255,255,.1); overflow:hidden; }
+.pk-odds-bar i { display:block; height:100%; background:linear-gradient(90deg,var(--neon,#45e0cf),var(--go,#5cae8c)); }
+.pk-odds-sub { font-family:var(--font-mono,monospace); font-size:11px; color:var(--steel,#84aab2); letter-spacing:.5px; white-space:nowrap; } /* TV-style odds helper (toggle in Settings) */
 
 /* card face */
 .pk-card { width:44px; height:62px; border-radius:6px; background:#f4efe2; color:#1a1a1a;
@@ -155,13 +190,16 @@ export class PokerDomRenderer {
     this.root.innerHTML = `
       <div class="pk-wrap">
         <div class="pk-top">
-          <span class="pk-title">GAMBLING DEN</span>
+          <div class="pk-titlewrap">
+            <span class="pk-title">КАТРАН</span>
+            <span class="pk-subtitle">KATRAN</span>
+          </div>
           <div class="pk-meta">
-            <span>LVL <b id="pk-lvl">1</b></span>
-            <span>BLINDS <b id="pk-blinds">10/20</b></span>
-            <span>HAND <b id="pk-hand">0</b></span>
-            <span>POOL <b id="pk-pool">0</b></span>
-            <span class="pk-mybank-meta">YOU <b id="pk-mybank">$0</b></span>
+            <div class="pk-stat"><span class="pk-stat-l">Level</span><span class="pk-stat-v" id="pk-lvl">1</span></div>
+            <div class="pk-stat"><span class="pk-stat-l">Blinds</span><span class="pk-stat-v" id="pk-blinds">10/20</span></div>
+            <div class="pk-stat"><span class="pk-stat-l">Hand</span><span class="pk-stat-v" id="pk-hand">0</span></div>
+            <div class="pk-stat"><span class="pk-stat-l">Pool</span><span class="pk-stat-v" id="pk-pool">0</span></div>
+            <div class="pk-stat you"><span class="pk-stat-l">You</span><span class="pk-stat-v" id="pk-mybank">$0</span></div>
           </div>
           <button class="pk-btn pk-leave" id="pk-leave">LEAVE</button>
         </div>
@@ -389,7 +427,7 @@ export class PokerDomRenderer {
       for (let i = 0; i < 5; i++) bh += cardHTML(v.board[i], false);
       this.el.board.innerHTML = bh;
       this.el.potval.textContent = v.pot;
-      this.el.banner.textContent = this._bannerText(p, winners);
+      this.el.banner.innerHTML = this._bannerText(p, winners);
       this._renderYou(v.seats.find((s) => s.id === p.youId), p, winners);
     }
 
@@ -425,26 +463,37 @@ export class PokerDomRenderer {
     this._oddsKey = key;
     const e = equity(me.hole, board, nOpp, 1500, Math.random);
     const win = Math.round((e.win + e.tie * 0.5) * 100);
-    let s = `~${win}% to win  ·  vs ${nOpp}`;
-    if (board.length >= 3) { const o = outs(me.hole, board); if (o > 0) s = `${o} out${o === 1 ? '' : 's'}  ·  ` + s; }
-    this.el.odds.textContent = s;
+    let sub = `vs ${nOpp}`;
+    if (board.length >= 3) { const o = outs(me.hole, board); if (o > 0) sub += ` · ${o} out${o === 1 ? '' : 's'}`; }
+    // TV-broadcast badge: prominent win% + a mini equity bar + the secondary line (opponents · outs)
+    this.el.odds.innerHTML =
+      `<div class="pk-odds-card">` +
+        `<div class="pk-odds-main"><span class="pk-odds-pct">${win}<small>%</small></span><span class="pk-odds-lbl">to win</span></div>` +
+        `<div class="pk-odds-bar"><i style="width:${Math.max(2, Math.min(100, win))}%"></i></div>` +
+        `<div class="pk-odds-sub">${sub}</div>` +
+      `</div>`;
   }
 
+  // Returns HTML (set via innerHTML) — a celebratory win card per winner; the local player's is highlighted.
   _bannerText(p, winners) {
-    if (p.over) return (winners && Object.keys(winners)[0] === p.youId) ? '🏆 YOU WON THE TOURNAMENT' : 'TOURNAMENT OVER';
+    if (p.over) {
+      const meWon = winners && Object.keys(winners)[0] === p.youId;
+      return `<div class="pk-win-card${meWon ? ' you' : ''}"><div class="pk-win-name">${meWon ? '🏆 YOU WON THE TOURNAMENT' : 'TOURNAMENT OVER'}</div></div>`;
+    }
     if (!p.result || !winners) return '';
     const ids = Object.keys(winners).sort((a, b) => winners[b] - winners[a]);
     if (!ids.length) return '';
     const reveals = (p.result.reveals || []);
-    if (reveals.length) {                                   // showdown — name the winning hand
-      const rankOf = {};
-      for (const rv of reveals) rankOf[rv.id] = rv.rank;
-      return ids.map((id) => {
-        const d = rankOf[id] ? describeHand(rankOf[id]) : '';
-        return `${this._rawName(id, p)} wins ${winners[id]}${d ? ' · ' + d : ''}`;
-      }).join('     ');
-    }
-    return ids.map((id) => `${this._rawName(id, p)} wins ${winners[id]}`).join(' · '); // uncontested (cards mucked)
+    const rankOf = {};
+    for (const rv of reveals) rankOf[rv.id] = rv.rank;
+    return ids.map((id) => {
+      const meWon = id === p.youId;
+      const d = (reveals.length && rankOf[id]) ? describeHand(rankOf[id]) : ''; // showdown names the hand; uncontested (mucked) → no hand line
+      return `<div class="pk-win-card${meWon ? ' you' : ''}">` +
+        `<div class="pk-win-name">${this._nameOf(id, p)} wins <span class="amt">$${winners[id]}</span></div>` +
+        (d ? `<div class="pk-win-hand">${esc(d)}</div>` : '') +
+        `</div>`;
+    }).join('');
   }
 
   _rawName(id, p) { return (p.names && p.names[id]) || (id === p.youId ? 'YOU' : id.toUpperCase()); }
@@ -525,7 +574,7 @@ export class PokerDomRenderer {
     this._raiseTo = clampRaise(L.minRaiseTo, L);                  // fresh turn starts at the minimum legal raise
     a.innerHTML = `
       <button class="pk-btn" id="pk-fold">FOLD</button>
-      <button class="pk-btn go" id="pk-callcheck">${callLabel}</button>
+      <button class="pk-btn call" id="pk-callcheck">${callLabel}</button>
       ${L.canRaise ? `<div class="pk-raise">
         <div class="pk-presets">
           <button class="pk-preset" data-min="1">MIN</button>
@@ -537,7 +586,7 @@ export class PokerDomRenderer {
           <button class="pk-step" id="pk-rplus" title="+1 BB">+</button>
           <input type="number" id="pk-raisenum" class="pk-raiseval" min="${L.minRaiseTo}" max="${L.maxRaiseTo}" step="5" value="${this._raiseTo}">
           <button class="pk-btn raise" id="pk-raise">RAISE → ${this._raiseTo}</button>
-          <button class="pk-btn raise" id="pk-allin">ALL-IN</button>
+          <button class="pk-btn allin" id="pk-allin">ALL-IN</button>
         </div>
         <div class="pk-raiseleft" id="pk-raiseleft" style="font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;text-align:center;margin-top:3px">${fmtLeft(this._raiseTo)}</div>
       </div>` : ''}`;
