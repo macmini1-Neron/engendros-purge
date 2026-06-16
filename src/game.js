@@ -1087,10 +1087,10 @@ class Game {
 
     let interp = false, alpha = 0;
     if (this.state === 'playing' && this._fixedStep) {
-      this._camPrev.copy(this.engine.camera.position);      // last frame's final cam pos (restored after last render)
       this._acc += Math.min(dt, 0.25);                       // larger cap than the sim clamp; avoids spiral of death
       let n = 0;
       while (this._acc >= FIXED_STEP && n < MAX_SUBSTEPS) {
+        this._camPrev.copy(this.engine.camera.position);     // capture BEFORE each step → after the loop, _camPrev is exactly ONE step before _camCur (correct interp interval even when N>1)
         this._updatePlaying(FIXED_STEP);
         if (n === 0) this.input.endFrame();                  // consume edges + mouse delta ONCE (first sub-step only)
         this._acc -= FIXED_STEP; n++;
