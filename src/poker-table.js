@@ -16,7 +16,7 @@ import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
 import { ChipBank, value as chipValue } from './poker/chipbank.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
-import { setChipSkin, chipSkinAvailable, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure (no THREE) — sets the shared skin state the 3D chips read
+import { setChipSkin, getChipSkin, chipSkinAvailable, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure (no THREE) — sets the shared skin state the 3D chips read
 import { setCardBackSkin, getCardBackSkin, cardBackAvailable, CARD_BACKS, CARD_BACKS_FREE } from './poker/cardbacks.js'; // pure — card-back skin state
 import { PokerDomRenderer } from './poker-ui.js';
 // NOTE: the THREE-based PokerSceneRenderer is injected as `this.RendererClass` by the browser
@@ -340,6 +340,10 @@ export class PokerTable {
 
   // ---------- physical chip layer (host/solo only; clients render the host's snapshot) ----------
 
+  // DEV/QA only (called from the console): force per-seat skins so the multi-skin pot is visible in SOLO
+  // (where there's just your skin + dice bots). Re-mints the chip ledger with the fake skins. No money/authority effect.
+  setDebugSkins(map) { this.skins = { ...this.skins, ...(map || {}) }; if (this.active && this.chipbank) this._dealChips(); }
+
   _dealChips() {
     this._applyChipSkin(); this._applyCardBack(); // honour the saved cosmetics (fall back if locked) before anything is built
     this.chipbank = new ChipBank();
@@ -347,7 +351,11 @@ export class PokerTable {
     if (chipValue(STARTING_CHIPS) !== this.tour.startStack) {            // STARTING_CHIPS must total the engine start stack
       console.warn(`[poker] STARTING_CHIPS value ${chipValue(STARTING_CHIPS)} != startStack ${this.tour.startStack} — chip/engine values will drift until reconcile`);
     }
-    this.chipbank.dealStart(ids, STARTING_CHIPS, floatFor(ids.length));
+    // provenance: each seat's starting stack is minted in ITS skin. Co-op seats come from the roster
+    // (this.skins); the local 'you' seat always uses the applied global skin so YOUR stack reads as your
+    // pick even in solo. Unlisted bots → 'house' (the dice look). The pot then mixes these as chips flow.
+    const dealSkins = { ...this.skins }; if (!dealSkins[this.youId]) dealSkins[this.youId] = getChipSkin();
+    this.chipbank.dealStart(ids, STARTING_CHIPS, floatFor(ids.length), dealSkins);
     this._lastCommitted = {};
   }
 
@@ -437,7 +445,8 @@ export class PokerTable {
       youId: id, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), moneyPayout, lastAct: this._lastAct,
       // live refs to the bank's chip sets — READ-ONLY contract (clients get a JSON copy via pksnap; the
       // host renderer must only read these, never mutate them, or it would break conservation).
-      chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot } : null,
+      chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot,
+        skins: { stacks: this.chipbank.skinsAt.stacks, bets: this.chipbank.skinsAt.bets, pot: this.chipbank.skinsAt.pot } } : null, // cosmetic provenance ledger (float is host-only, never rendered)
     };
   }
 
