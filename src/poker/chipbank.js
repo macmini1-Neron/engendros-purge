@@ -127,6 +127,77 @@ export function makeChange(set0, float0, amount) {
   return { set, float, short };
 }
 
+// ---- per-skin provenance ledger (COSMETIC — layered over the value economy, never affects value) ----
+// A SkinMap is { skinId: ChipSet }: the SAME chips a location already holds, partitioned by the skin
+// they should RENDER as (so a pot of Marx+Lenin chips reads as a mix, and a winner keeps the won skins).
+// The per-denom sum over skins is kept == the real ChipSet by a SOFT CLAMP after every move — never a
+// thrown invariant. value()/verify() stay skin-blind. The dealer float owns the reserved skin 'house'
+// ('house' is intentionally absent from CHIP_SKINS → it renders as the default dice look for free).
+export const HOUSE_SKIN = 'house';
+
+// deterministic skin order: ids sorted, 'house' last (spillover sink + drawn last)
+function skinOrder(skinMap) {
+  return Object.keys(skinMap).sort((a, b) => ((a === HOUSE_SKIN) - (b === HOUSE_SKIN)) || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+// per-denom total count over all skins → a plain ChipSet (the clamp target + the renderer's layout aggregate)
+export function skinValueByDenom(skinMap) {
+  const r = {};
+  for (const sk in skinMap) for (const d of DENOMS) if (skinMap[sk][d]) r[d] = (r[d] || 0) + skinMap[sk][d];
+  return r;
+}
+
+// union-add src into dst (per skin, per denom) → a NEW SkinMap
+export function mergeSkinned(dst, src) {
+  const r = {};
+  for (const sk in dst) if (sigOf(dst[sk])) r[sk] = cloneSet(dst[sk]);
+  for (const sk in src) if (sigOf(src[sk])) r[sk] = addSet(r[sk] || {}, src[sk]);
+  return r;
+}
+
+// Pull exactly `take` (a ChipSet) out of `src` (MUTATED in place), returning the SkinMap removed. Per
+// denom: prefer `preferSkin`, then the rest in skinOrder; any shortfall (the value economy broke chips
+// out from under the ledger) is attributed to 'house'. Never throws — the caller clamps after.
+export function drawSkinned(src, take, preferSkin, fallbackSkin = HOUSE_SKIN) {
+  const out = {};
+  for (const d of DENOMS) {
+    let need = take[d] || 0;
+    if (!need) continue;
+    const order = (preferSkin && src[preferSkin]) ? [preferSkin, ...skinOrder(src).filter((s) => s !== preferSkin)] : skinOrder(src);
+    for (const sk of order) {
+      if (need <= 0) break;
+      const avail = (src[sk] && src[sk][d]) || 0;
+      const n = Math.min(avail, need);
+      if (n > 0) { (out[sk] || (out[sk] = {}))[d] = (out[sk][d] || 0) + n; src[sk][d] -= n; if (src[sk][d] <= 0) delete src[sk][d]; need -= n; }
+    }
+    if (need > 0) (out[fallbackSkin] || (out[fallbackSkin] = {}))[d] = (out[fallbackSkin][d] || 0) + need; // ledger fell short (value economy broke chips) → attribute to fallbackSkin; clamp fixes the sums
+  }
+  for (const sk in src) if (!sigOf(src[sk])) delete src[sk];
+  return out;
+}
+
+// Soft clamp: re-balance `skinMap` so its per-denom sum == realSet. Deficit → fillSkin; surplus trimmed
+// 'house'-first then the rest. MUTATES + returns skinMap. Never throws. This is what makes the ledger a
+// best-effort cosmetic shadow that always reconciles to the value-authoritative chips.
+export function clampSkinsTo(skinMap, realSet, fillSkin = HOUSE_SKIN) {
+  for (const d of DENOMS) {
+    const real = realSet[d] || 0;
+    let have = 0; for (const sk in skinMap) have += (skinMap[sk][d] || 0);
+    if (have === real) continue;
+    if (have < real) { (skinMap[fillSkin] || (skinMap[fillSkin] = {}))[d] = (skinMap[fillSkin][d] || 0) + (real - have); }
+    else {
+      let over = have - real;
+      for (const sk of [HOUSE_SKIN, ...skinOrder(skinMap).filter((s) => s !== HOUSE_SKIN)]) {
+        if (over <= 0) break;
+        const n = Math.min((skinMap[sk] && skinMap[sk][d]) || 0, over);
+        if (n > 0) { skinMap[sk][d] -= n; if (skinMap[sk][d] <= 0) delete skinMap[sk][d]; over -= n; }
+      }
+    }
+  }
+  for (const sk in skinMap) if (!sigOf(skinMap[sk])) delete skinMap[sk];
+  return skinMap;
+}
+
 // ---- the bank -------------------------------------------------------------
 
 export class ChipBank {
@@ -137,14 +208,25 @@ export class ChipBank {
     this.float = {};    // ChipSet          — dealer rack / change reserve
     this.dust = {};     // { id: 0..4 }     — sub-5 bookkeeping, no physical chip
     this._minted = {};  // per-denom invariant
+    this.skins = {};    // { id: skinId }   — each player's OWN (preferred) skin
+    this.skinsAt = { stacks: {}, bets: {}, pot: {}, float: {} }; // cosmetic provenance ledger (see helpers above)
   }
 
-  dealStart(ids, perPlayerSet, floatSet) {
+  // ledger clamp helpers — re-balance a touched ledger location to the real ChipSet after a value move
+  _skClamp(loc, id) { this.skinsAt[loc][id] = clampSkinsTo(this.skinsAt[loc][id] || {}, this[loc][id] || {}, this.skins[id] || HOUSE_SKIN); }
+  _skClampPool(loc) { this.skinsAt[loc] = clampSkinsTo(this.skinsAt[loc] || {}, this[loc] || {}, HOUSE_SKIN); }
+
+  dealStart(ids, perPlayerSet, floatSet, skinsById = {}) {
     this.stacks = {}; this.bets = {}; this.dust = {};
     for (const id of ids) { this.stacks[id] = cloneSet(perPlayerSet); this.bets[id] = emptySet(); this.dust[id] = 0; }
     this.pot = emptySet();
     this.float = cloneSet(floatSet);
     this._minted = this._totalCounts();
+    // provenance ledger: each player's whole starting stack is THEIR own skin; the float is 'house'.
+    // (Unspecified ids → 'house' = the dice look; the local player + co-op peers pass real skins.)
+    this.skins = {}; this.skinsAt = { stacks: {}, bets: {}, pot: {}, float: {} };
+    for (const id of ids) { this.skins[id] = (skinsById && skinsById[id]) || HOUSE_SKIN; this.skinsAt.stacks[id] = { [this.skins[id]]: cloneSet(perPlayerSet) }; this.skinsAt.bets[id] = {}; }
+    this.skinsAt.float = { [HOUSE_SKIN]: cloneSet(floatSet) };
   }
 
   _totalCounts() {
@@ -173,6 +255,11 @@ export class ChipBank {
     const take = exactSubset(set, pay) || largestFormableLE(set, pay);
     this.stacks[id] = subSet(set, take);
     this.bets[id] = addSet(this.bets[id] || {}, take);
+    // ledger: move `take` stack→bet preferring the player's OWN skin; clamp the three touched locations
+    // (the makeChange break against the float is absorbed by the clamps → change chips read as own skin).
+    const moved = drawSkinned(this.skinsAt.stacks[id] || (this.skinsAt.stacks[id] = {}), take, this.skins[id], this.skins[id]);
+    this.skinsAt.bets[id] = mergeSkinned(this.skinsAt.bets[id] || {}, moved);
+    this._skClamp('stacks', id); this._skClamp('bets', id); this._skClampPool('float');
   }
 
   collectBetsToPot() {
@@ -180,6 +267,9 @@ export class ChipBank {
       if (value(this.bets[id])) this.pot = addSet(this.pot, this.bets[id]);
       this.bets[id] = emptySet();
     }
+    // ledger: union every bet into the pot (preserves each player's skins → the MIX), zero the bet ledgers
+    for (const id in this.skinsAt.bets) { this.skinsAt.pot = mergeSkinned(this.skinsAt.pot, this.skinsAt.bets[id]); this.skinsAt.bets[id] = {}; }
+    this._skClampPool('pot');
   }
 
   // Pay the pot out to winners. A single winner gets the ACTUAL pot chips (no re-derivation). A
@@ -196,9 +286,16 @@ export class ChipBank {
       this.stacks[id] = addSet(this.stacks[id] || {}, take);
       this.dust[id] = (this.dust[id] || 0) + (share - value(take));
       this._normalizeDust(id);
+      // ledger: the winner INHERITS the pot's skin mix for the chips they drew (no prefer → real mix)
+      const skinTake = drawSkinned(this.skinsAt.pot, take, null);
+      this.skinsAt.stacks[id] = mergeSkinned(this.skinsAt.stacks[id] || {}, skinTake);
     }
     this.float = addSet(this.float, this.pot);          // sub-5 leftover chips park in the rack
     this.pot = emptySet();
+    // ledger: leftover pot → float; clamp every touched location to the post-award reality
+    this.skinsAt.float = mergeSkinned(this.skinsAt.float, this.skinsAt.pot); this.skinsAt.pot = {};
+    for (const id of winners) this._skClamp('stacks', id);
+    this._skClampPool('float'); this._skClampPool('pot');
   }
 
   _drawFromPot(amount) {
@@ -266,6 +363,26 @@ export class ChipBank {
         this.stacks[id] = addSet(this.stacks[id] || {}, take);
       }
     }
+    // ledger: clamp every stack (corrective shuffle → own skin) + the float to the corrected reality
+    for (const id in this.stacks) this._skClamp('stacks', id);
+    this._skClampPool('float');
+  }
+
+  // test-only oracle: the cosmetic ledger sums (per location, per denom) to the real ChipSets, no negatives.
+  // (NOT called in production; verify() above is the value invariant and is intentionally skin-blind.)
+  verifySkins() {
+    const chk = (real, skinMap, label) => {
+      for (const d of DENOMS) {
+        let have = 0;
+        for (const sk in skinMap) { const c = skinMap[sk][d] || 0; if (c < 0) throw new Error(`negative skin ${sk} denom ${d} at ${label}`); have += c; }
+        if (have !== (real[d] || 0)) throw new Error(`skin ledger != real at ${label} denom ${d}: ${have} != ${real[d] || 0}`);
+      }
+    };
+    for (const id in this.stacks) chk(this.stacks[id], this.skinsAt.stacks[id] || {}, 'stacks:' + id);
+    for (const id in this.bets) chk(this.bets[id], this.skinsAt.bets[id] || {}, 'bets:' + id);
+    chk(this.pot, this.skinsAt.pot, 'pot');
+    chk(this.float, this.skinsAt.float, 'float');
+    return true;
   }
 
   verify() {
