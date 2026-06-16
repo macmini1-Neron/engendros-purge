@@ -29,8 +29,8 @@ const SHOWDOWN_STAGGER = 0.45;  // s — gap between opponents' hands flipping u
 const FOLD_FLICK = 0.5;         // s — a folder's cards flicking away into the muck
 // Showdown READABLE pose for a revealed opponent pair — lifted off the felt + tipped up toward the seated
 // camera + enlarged, so you can actually read what they held (flat-at-the-rim was unreadable). Tuned live.
-const SHOW_R = 0.56;            // pulled in off the rim toward centre (was 0.62, flat)
-const SHOW_Y = 0.085;           // lifted clear of the felt
+const SHOW_FWD = 0.12;          // world +Z shift — pulls the revealed pair toward the camera, clear IN FRONT of the seat's chips
+const SHOW_Y = 0.10;            // lifted clear of the felt + chip tops
 const SHOW_TILT = 1.0;          // rad (~57°) — face tipped up toward you (+rotX tips the +Y face toward +Z)
 const _PAXIS = new THREE.Vector3(0.3, 1, 0.5).normalize(); // fixed tumble axis for celebration particles
 
@@ -753,16 +753,18 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             card.rotation.z = this._holePeeked ? 0 : Math.PI; // peeked → face-up, else FACE-DOWN (back up), turned on the long axis
             this._holeCards.push(card); this._myHoleCards.push(card); // click to peek
           } else if (s.hole) {
-            // SHOWDOWN: an opponent's revealed pair is LIFTED off the felt, TILTED up toward the seated
-            // camera and enlarged so the player can actually READ what they held — flat-on-the-felt at the
-            // rim (the old scale-0.8 pose) was unreadable from the 3/4 view. Like a dealer turning the cards
-            // up for the table. (Folded players never reach here — their cards muck; see the no-hole branch.)
-            const pos = onFelt(SHOW_R).addScaledVector(tang, (h - 0.5) * 0.08); // pulled in off the rim, the two cards a hair apart
-            card.position.set(pos.x, SHOW_Y, pos.z);
-            card.scale.setScalar(1.18);
+            // SHOWDOWN: an opponent's revealed pair is LIFTED off the felt, TILTED up toward the seated camera,
+            // enlarged, and pulled FORWARD (world +Z, toward the camera) so it sits clearly IN FRONT of the
+            // seat's chip stack — fully readable, never hidden behind the chips. A world-+Z shift puts the cards
+            // camera-side for EVERY seat (a smaller felt-radius would only work for the far seats). Like a dealer
+            // turning the cards up for the table. (Folded players never reach here — their cards muck.)
+            const base = onFelt(0.50);                               // beside the seat's own stack
+            const pos = new THREE.Vector3(base.x + (h - 0.5) * 0.075, SHOW_Y, base.z + SHOW_FWD); // two cards side by side (world X), in front of the chips (world +Z)
+            card.position.copy(pos);
+            card.scale.setScalar(1.22);
             setCardFace(card, s.hole[h]);                            // reveal → face up
             const rd = revealDelay[s.id];
-            if (rd != null) { const ord = Math.round(rd / SHOWDOWN_STAGGER); this._flipInCard(card, { x: pos.x, y: SHOW_Y, z: pos.z, rotX: SHOW_TILT }, rd + h * 0.06, ord * 2 + h); } // newly revealed → flip up INTO the readable pose, staggered per player; note rises across the reveal order (Balatro celebration run)
+            if (rd != null) { const ord = Math.round(rd / SHOWDOWN_STAGGER); this._flipInCard(card, { x: pos.x, y: pos.y, z: pos.z, rotX: SHOW_TILT }, rd + h * 0.06, ord * 2 + h); } // newly revealed → flip up INTO the readable pose, staggered per player; note rises across the reveal order (Balatro celebration run)
             else card.rotation.set(SHOW_TILT, 0, 0);                 // already-revealed (late-join / re-render) → straight to the readable pose
           } else {
             // opponents'/bots' cards still in play: lie FLAT on the felt near their edge, FACE-DOWN (back up)
