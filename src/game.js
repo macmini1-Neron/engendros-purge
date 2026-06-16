@@ -1087,15 +1087,16 @@ class Game {
 
     let interp = false, alpha = 0;
     if (this.state === 'playing' && this._fixedStep) {
-      this._acc += Math.min(dt, 0.25);                       // larger cap than the sim clamp; avoids spiral of death
+      this._acc += Math.min(dt, 0.25);                       // larger cap than the sim clamp; bounds catch-up
       let n = 0;
-      while (this._acc >= FIXED_STEP && n < MAX_SUBSTEPS) {
+      while (this._acc >= FIXED_STEP && n < MAX_SUBSTEPS && this.state === 'playing') { // re-check state: a sub-step (death/wipe) can leave 'playing'
         this._camPrev.copy(this.engine.camera.position);     // capture BEFORE each step → after the loop, _camPrev is exactly ONE step before _camCur (correct interp interval even when N>1)
         this._updatePlaying(FIXED_STEP);
         if (n === 0) this.input.endFrame();                  // consume edges + mouse delta ONCE (first sub-step only)
         this._acc -= FIXED_STEP; n++;
       }
-      if (n > 0) { this._camCur.copy(this.engine.camera.position); alpha = this._acc / FIXED_STEP; interp = true; }
+      if (this._acc >= FIXED_STEP) this._acc %= FIXED_STEP;  // loop exited on the MAX_SUBSTEPS cap (or a state change) with backlog left → SHED it: accept slow-motion, never fast-forward catch-up or alpha>1 camera overshoot (this is the actual spiral-of-death break)
+      if (n > 0) { this._camCur.copy(this.engine.camera.position); alpha = Math.min(this._acc / FIXED_STEP, 1); interp = true; } // clamp alpha so lerpVectors interpolates, never extrapolates
       // n === 0: no sim this frame → camera unchanged; edges NOT consumed (carry to next frame)
     } else if (this.state === 'playing') {
       this._updatePlaying(frameDt);                          // OFF / non-fixed path = unchanged
