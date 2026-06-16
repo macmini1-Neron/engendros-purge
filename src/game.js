@@ -69,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-15 19:59';
+const GAME_BUILD = '2026-06-16 03:08';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -294,6 +294,7 @@ class Game {
     this.input.on('key', (code, ev) => {
       if (this.state !== 'playing') return;
       if (this.devconsole && this.devconsole.open) return; // console eats input while open
+      if (code === 'Escape') { if (ev) ev.preventDefault(); this.pause(); return; } // universal pause — under Keyboard Lock a tapped Esc lands here without dropping fullscreen
       // at the ННП-23 eyepieces: E leave · T day/night branch · F fullscreen · M mute; swallow the
       // rest (must run BEFORE console-open so T toggles the branch instead of opening the console)
       if (this.player.nightPost) {
@@ -377,14 +378,15 @@ class Game {
     this.mode = mode === 'longnight' ? 'longnight' : 'purge';
     this.audio.init(); this.audio.music.setScene('gameplay');
     this._intentionalUnlock = false;
+    this._setUnloadGuard(true); // arm the "leave site?" net for the whole run
     this.reset();
     this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
     this.state = 'playing'; this._startCountdown = 0.6;
     this.freecam = !!this._flyStart; // ?fly=1 → boot straight into the fly-cam (no enemies until you press N)
     if (this.freecam) this.hud.bigMessage('🚁 FREECAM', 'WASD fly · Space up · Ctrl/C down · Shift boost · N toggle');
-    // Go real-fullscreen on this user gesture, then resize & grab the pointer.
+    // Go real-fullscreen on this user gesture, then resize, grab the pointer & lock the keyboard.
     const root = document.documentElement;
-    const after = () => { this.engine.resize(); this.input.requestLock(); };
+    const after = () => { this.engine.resize(); this.input.requestLock(); this._lockKeyboard(); };
     if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().then(after, after);
     else after();
   }
@@ -664,19 +666,28 @@ class Game {
     this._intentionalUnlock = true; this.input.exitLock(); // free the cursor; the 'unlock' handler skips the pause
   }
   _closeInventory() { this._invOpen = false; this.hud.closeInventory(); if (this.state === 'playing') this.input.requestLock(); }
+  // ---- Anti-accidental-exit guards (game-feel) ----
+  // Browser confirm dialog on Ctrl/Cmd+W / reload / nav-away while a run is live. Universal — all browsers.
+  _setUnloadGuard(on) { window.onbeforeunload = on ? (e) => { e.preventDefault(); e.returnValue = ''; return ''; } : null; }
+  // Keyboard Lock API (Chromium, fullscreen only): a tapped Esc pauses IN PLACE instead of dropping fullscreen,
+  // and Ctrl/Cmd+W / Ctrl/Cmd+R reach the game instead of the browser (a held Esc ~2 s is still the safety exit).
+  // Feature-detected + never throws; Firefox/Safari fall back to the beforeunload net + native Esc→pause→resume.
+  _lockKeyboard() { if (navigator.keyboard && navigator.keyboard.lock) { try { const p = navigator.keyboard.lock(['Escape', 'KeyW', 'KeyR']); if (p && p.catch) p.catch(() => {}); } catch (e) {} } }
+  _unlockKeyboard() { if (navigator.keyboard && navigator.keyboard.unlock) { try { navigator.keyboard.unlock(); } catch (e) {} } }
   pause() {
     if (this.state !== 'playing') return;
-    if (this._invOpen) this._closeInventory();
+    if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); } // close the backpack WITHOUT re-locking the pointer (we're about to free the cursor)
     this.weapons.cancelMolotov();
+    if (this.input.locked) { this._intentionalUnlock = true; this.input.exitLock(); } // free the cursor for the menu — Keyboard Lock keeps us pointer-locked through a tapped Esc
     if (this.mp && this.mp.active) { this.mpMenuOpen = true; this.ui.show('pause'); return; }
     this.state = 'paused'; this.ui.show('pause');
   }
   resume() {
     if (this.mp && this.mp.active && this.mpMenuOpen) { this._closeMpMenu(true); return; }
     if (this.state !== 'paused') return;
-    // Re-enter fullscreen (Esc may have dropped it) then re-grab the pointer; 'lock' handler hides the overlay once granted.
+    // Re-enter fullscreen (Esc may have dropped it on FF/Safari) then re-grab the pointer + keyboard lock; 'lock' handler hides the overlay once granted.
     const root = document.documentElement;
-    const after = () => this.input.requestLock();
+    const after = () => { this.input.requestLock(); this._lockKeyboard(); };
     if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().then(after, after);
     else after();
   }
@@ -692,6 +703,7 @@ class Game {
     const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
     this.mpMenuOpen = false;
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this._setUnloadGuard(false); this._unlockKeyboard(); // run over → drop the exit guards
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
     for (const m of this.mortars) m.forceReset(); // clear the ННП-23 NV filter/overlay when leaving to menu
@@ -827,12 +839,13 @@ class Game {
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
     this.audio.init(); this.audio.music.setScene('gameplay'); this._intentionalUnlock = false;
+    this._setUnloadGuard(true); // arm the "leave site?" net for the co-op run too
     this.mpMenuOpen = false;
     if (this.mp) { this.mp._spilledLoot = false; this.mp.spectateTarget = null; } // fresh run → loot can spill again on the next real death
     this.reset(); this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
     const labels = document.getElementById('mp-labels'); if (labels) labels.style.display = 'block';
     this.state = 'playing'; this._startCountdown = this.mp.isHost ? 0.6 : 0;
-    const root = document.documentElement; const after = () => { this.engine.resize(); this.input.requestLock(); };
+    const root = document.documentElement; const after = () => { this.engine.resize(); this.input.requestLock(); this._lockKeyboard(); };
     if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().then(after, after); else after();
   }
   _mpGameOver(msg) {
@@ -842,6 +855,7 @@ class Game {
     if (this.state === 'menu' && !(this.mp && this.mp.active)) return;
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this._setUnloadGuard(false); this._unlockKeyboard(); // squad wiped → back to lobby, drop the exit guards
     this._bankRunMoney(); this._saveMeta(); // each player banks their own run money locally
     if (this.mp && typeof this.mp.endRunToLobby === 'function') this.mp.endRunToLobby(msg);
     this.state = 'menu'; this.mpMenuOpen = false;
@@ -890,6 +904,7 @@ class Game {
     if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); }
     this.state = 'dead'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this._setUnloadGuard(false); this._unlockKeyboard(); // run over → drop the exit guards
     this._bankRunMoney(); // run money → persistent bank (the _saveMeta below persists it)
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
