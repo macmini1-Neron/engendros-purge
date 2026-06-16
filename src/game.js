@@ -292,9 +292,17 @@ class Game {
 
   _wireInput() {
     this.input.on('key', (code, ev) => {
+      // Esc toggles pause/resume in a live run. Under Keyboard Lock (Chromium fullscreen) the tapped Esc is
+      // delivered here without dropping fullscreen, so we drive BOTH pause and resume from it. Handled before
+      // the state/console guards so it also works while paused — but we never steal the dev-console's own Esc.
+      // (On FF/Safari Esc additionally releases pointer-lock and the 'unlock' handler pauses as a fallback.)
+      if (code === 'Escape' && !(this.devconsole && this.devconsole.open) && (this.state === 'playing' || this.state === 'paused')) {
+        if (ev) ev.preventDefault();
+        if (this.state === 'paused' || this.mpMenuOpen) this.resume(); else this.pause();
+        return;
+      }
       if (this.state !== 'playing') return;
       if (this.devconsole && this.devconsole.open) return; // console eats input while open
-      if (code === 'Escape') { if (ev) ev.preventDefault(); this.pause(); return; } // universal pause — under Keyboard Lock a tapped Esc lands here without dropping fullscreen
       // at the ННП-23 eyepieces: E leave · T day/night branch · F fullscreen · M mute; swallow the
       // rest (must run BEFORE console-open so T toggles the branch instead of opening the console)
       if (this.player.nightPost) {
@@ -667,18 +675,22 @@ class Game {
   }
   _closeInventory() { this._invOpen = false; this.hud.closeInventory(); if (this.state === 'playing') this.input.requestLock(); }
   // ---- Anti-accidental-exit guards (game-feel) ----
-  // Browser confirm dialog on Ctrl/Cmd+W / reload / nav-away while a run is live. Universal — all browsers.
+  // Cross-browser backstop: a "leave site?" confirm on tab-close / reload / nav-away during a live run. On
+  // Chromium, Keyboard Lock already eats Ctrl/Cmd+W & Ctrl/Cmd+R; this still covers the window-close button /
+  // Cmd+Q / F5 and is the ONLY net on browsers without Keyboard Lock. (beforeunload needs a prior user gesture —
+  // satisfied because runs start on a click.)
   _setUnloadGuard(on) { window.onbeforeunload = on ? (e) => { e.preventDefault(); e.returnValue = ''; return ''; } : null; }
   // Keyboard Lock API (Chromium, fullscreen only): a tapped Esc pauses IN PLACE instead of dropping fullscreen,
-  // and Ctrl/Cmd+W / Ctrl/Cmd+R reach the game instead of the browser (a held Esc ~2 s is still the safety exit).
-  // Feature-detected + never throws; Firefox/Safari fall back to the beforeunload net + native Esc→pause→resume.
+  // and the locked keys' browser shortcuts (here Ctrl/Cmd+W & Ctrl/Cmd+R) reach the game instead of the browser
+  // (a held Esc ~2 s is still the safety exit). Released only on run-exit, NOT in pause(), so the lock survives a
+  // pause and resume() just re-locks idempotently. Feature-detected + never throws; FF/Safari simply have no lock.
   _lockKeyboard() { if (navigator.keyboard && navigator.keyboard.lock) { try { const p = navigator.keyboard.lock(['Escape', 'KeyW', 'KeyR']); if (p && p.catch) p.catch(() => {}); } catch (e) {} } }
   _unlockKeyboard() { if (navigator.keyboard && navigator.keyboard.unlock) { try { navigator.keyboard.unlock(); } catch (e) {} } }
   pause() {
     if (this.state !== 'playing') return;
     if (this._invOpen) { this._invOpen = false; this.hud.closeInventory(); } // close the backpack WITHOUT re-locking the pointer (we're about to free the cursor)
     this.weapons.cancelMolotov();
-    if (this.input.locked) { this._intentionalUnlock = true; this.input.exitLock(); } // free the cursor for the menu — Keyboard Lock keeps us pointer-locked through a tapped Esc
+    if (this.input.locked) { this._intentionalUnlock = true; this.input.exitLock(); } // free the cursor for the menu — Keyboard Lock keeps us pointer-locked through a tapped Esc; _intentionalUnlock makes the 'unlock' handler skip its own pause
     if (this.mp && this.mp.active) { this.mpMenuOpen = true; this.ui.show('pause'); return; }
     this.state = 'paused'; this.ui.show('pause');
   }
