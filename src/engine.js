@@ -30,6 +30,7 @@ export class Engine {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.autoClear = false; // we drive clears manually for the 2-pass viewmodel render
+    this.renderer.info.autoReset = false; // 2-pass render resets stats per render() call → accumulate, reset once per frame in render()
 
     this.scene = new THREE.Scene();
 
@@ -175,6 +176,7 @@ export class Engine {
   shake(a) { this._shake = Math.min(0.6, (this._shake || 0) + a); }
 
   render() {
+    this.renderer.info.reset(); // once per frame; both passes below accumulate into info.render for the F3 stats
     // Apply camera shake as a transient per-frame offset.
     // The player/controller re-sets camera.position authoritatively every frame
     // before render() is called, so this offset is safely discarded next frame.
