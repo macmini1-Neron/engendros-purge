@@ -71,7 +71,9 @@ export class PokerHover {
     const oblind = this._outBlind = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.012, 24), mat);
     oblind.visible = false; oblind.renderOrder = 998; oblind.matrixAutoUpdate = false;
     this.r._scene.add(oblind);
-    this._Sblind = new THREE.Matrix4().makeScale(1.22, 2.4, 1.22); // grow radially for a rim + taller so it reads at the grazing camera
+    // Hug the puck (r0.034 × h0.012): a THIN rim recentred on the puck MID (y=0.006 within the group),
+    // not the old 1.22×/2.4× halo+tube that left a gap around the model and stuck a yellow tube up above it.
+    this._Sblind = new THREE.Matrix4().makeTranslation(0, 0.006, 0).multiply(new THREE.Matrix4().makeScale(1.07, 1.5, 1.07));
 
     this._ptr = { x: 0, y: 0 };
     this._dirty = false; this._inside = false; this._curKey = null; this._held = null; this._heldSig = null;
