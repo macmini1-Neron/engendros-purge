@@ -132,7 +132,7 @@ export class PokerHover {
     this._heldSig = group.userData.sig; // remember the tray signature so an in-place mutation (live heap / draining stack) re-triggers a resolve next frame
     const pk = group.userData.pk;
     if (pk.kind === 'chips') return this._showChips(group, pk, instMesh);
-    if (pk.kind === 'card') return this._showCard(group, pk);
+    if (pk.kind === 'card') { if (group.userData.anim) { this._hideAll(); return; } return this._showCard(group, pk); } // a card still flipping in → no outline (it'd levitate over the moving card)
     if (pk.kind === 'blind') return this._showBlind(group, pk);
     this._hideAll();
   }

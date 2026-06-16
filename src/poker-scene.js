@@ -222,6 +222,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     card.position.set(rest.x, rest.y + dropY, rest.z);
     card.rotation.set(rest.rotX || 0, 0, Math.PI);         // start: laid FACE-DOWN (turned over on the long axis)
     card.visible = false;                                  // unseen until its turn — a delayed card must not sit face-down on the felt early
+    card.userData.anim = true;                             // mark in-flight → the hover outline skips it so it doesn't "levitate" over a card mid-deal (cleared on settle)
     this._anims.push((dt) => {
       if (!card.parent) return true;                       // card rebuilt away → drop the anim
       const p = tw.step(dt);
@@ -232,7 +233,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       card.position.y = rest.y + dropY * (1 - dealP) + 0.018 * Math.sin(turnP * Math.PI); // settle down, lift a touch mid-turn so the edge clears the felt
       card.rotation.z = Math.PI * (1 - turnP);             // π (face-down) → 0 (face-up): the SIDE-edge turn the dealer does
       if (!snapped && p >= 0.62 && a && a.pokerFlip) { snapped = true; a.pokerFlip(note); } // frame-synced rising-note snap, fired AS the card turns face-up (not at anim start)
-      return tw.done;
+      if (tw.done) { card.userData.anim = false; return true; } // settled at rest → hover outline allowed again
+      return false;
     });
   }
   // Pitch a hole card in from the centre deck (face-down) to its resting spot, like a real dealer. It stays
