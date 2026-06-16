@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ChipBank, value, sigOf,
+  ChipBank, value,
   HOUSE_SKIN, skinValueByDenom, mergeSkinned, drawSkinned, clampSkinsTo,
 } from '../../src/poker/chipbank.js';
 
@@ -117,4 +117,66 @@ test('value invariant verify() is untouched + still passes through ledger ops', 
   b.reconcile([{ id: 'A', stack: 400 }, { id: 'B', stack: 200 }]);
   assert.ok(b.verify(), 'value conservation intact');
   assert.ok(b.verifySkins(), 'skin ledger reconciles');
+});
+
+// ---- degenerate paths (review-hardening: each runs the ledger code with a concrete provenance assert) ----
+
+test('CHOP split-pot: both winners draw from the mixed pot + inherit a foreign skin', () => {
+  const b = new ChipBank();
+  b.dealStart(['A', 'B'], { 50: 2, 10: 5 }, { 50: 2, 10: 5 }, { A: 'marx', B: 'lenin' });
+  b.postBet('A', 50); b.postBet('B', 50);
+  b.awardToWinners({ A: 50, B: 50 }, ['A', 'B']);          // tie → 100 pot chopped 50/50 (the multi-winner award loop)
+  assert.equal(value(b.pot), 0);
+  assert.equal(value(b.stacks.A), 150); assert.equal(value(b.stacks.B), 150); // each: 150 start − 50 bet + 50 chop
+  // no-prefer draw walks skinOrder (lenin<marx): A takes lenin, B takes the marx → each inherits the other's skin
+  assert.ok(b.skinsAt.stacks.A.lenin, 'marx-player A won a lenin chip');
+  assert.ok(b.skinsAt.stacks.B.marx, 'lenin-player B won a marx chip');
+  assert.ok(b.verifySkins());
+});
+
+test('reconcile that actually SHUFFLES chips (overshoot + shortfall) → ledger clamps hold', () => {
+  const b = new ChipBank();
+  b.dealStart(['A', 'B'], { 100: 2, 50: 2 }, { 100: 5, 50: 5, 20: 5, 10: 5, 5: 5 }, { A: 'marx', B: 'lenin' });
+  b.reconcile([{ id: 'A', stack: 250 }, { id: 'B', stack: 350 }]); // A 300→250 (return 50), B 300→350 (top up 50): real moves
+  assert.equal(value(b.stacks.A), 250); assert.equal(value(b.stacks.B), 350);
+  assert.ok(b.verify(), 'value conservation intact');
+  assert.ok(b.verifySkins(), 'skin ledger reconciles after corrective shuffles');
+});
+
+test('busted player (reconcile to 0) empties cleanly; verifySkins holds', () => {
+  const b = new ChipBank();
+  b.dealStart(['A', 'B'], { 100: 2 }, { 100: 4 }, { A: 'marx', B: 'lenin' });
+  b.reconcile([{ id: 'A', stack: 400 }, { id: 'B', stack: 0 }]); // B busts: 200→0 (returns both 100s)
+  assert.equal(value(b.stacks.B), 0);
+  assert.ok(b.verify()); assert.ok(b.verifySkins());
+});
+
+test('COMPOUNDING: betting past your own-skin holdings pushes a WON foreign chip into the pot', () => {
+  const b = new ChipBank();
+  b.dealStart(['A', 'B'], { 50: 1 }, {}, { A: 'marx', B: 'lenin' });
+  b.postBet('A', 50); b.postBet('B', 50); b.collectBetsToPot();    // pot = marx 50 + lenin 50
+  b.awardToWinners({ A: 100 }, ['A', 'B']);                        // A now holds a marx 50 + a won lenin 50
+  b.postBet('A', 100);                                            // bet 100 → must use BOTH, incl the foreign lenin
+  assert.ok(b.skinsAt.bets.A.marx, 'A’s own marx chip is in the bet');
+  assert.ok(b.skinsAt.bets.A.lenin, 'the won lenin chip flows back out as lenin');
+  assert.ok(b.verifySkins());
+});
+
+test('starved float short bet: chips are never invented; both invariants hold', () => {
+  const b = new ChipBank();
+  b.dealStart(['A'], { 100: 1 }, {}, { A: 'marx' });               // empty float can't break the 100 to bet 50
+  b.postBet('A', 50);                                             // → short; nothing physical moves (no minting)
+  assert.equal(value(b.stacks.A), 100); assert.equal(value(b.bets.A || {}), 0);
+  assert.ok(b.verify()); assert.ok(b.verifySkins());
+});
+
+test('mergeSkinned drops an empty source skin set + does not mutate b', () => {
+  const a = { marx: { 100: 1 } }, bb = { marx: {}, lenin: { 100: 1 } };
+  assert.deepEqual(mergeSkinned(a, bb), { marx: { 100: 1 }, lenin: { 100: 1 } });
+  assert.deepEqual(bb, { marx: {}, lenin: { 100: 1 } }, 'mergeSkinned did not mutate b');
+});
+
+test('clampSkinsTo surplus: house exhausted → spills into the remaining skins (sorted)', () => {
+  // real wants one 100; ledger has house 1 + marx 2 = 3 → trim house first (1), then marx (1) to hit the target
+  assert.deepEqual(clampSkinsTo({ [HOUSE_SKIN]: { 100: 1 }, marx: { 100: 2 } }, { 100: 1 }, 'lenin'), { marx: { 100: 1 } });
 });
