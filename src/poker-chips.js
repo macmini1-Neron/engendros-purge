@@ -65,8 +65,8 @@ export function setChipTray(group, chipSet, opts = {}) {
 
 // MULTI-SKIN tray — the flagship pot/stack render. `skinMap` = { skinId: ChipSet } (the cosmetic
 // provenance ledger from chipbank). Lays out ONE coherent heap/stack from the aggregate, then mints one
-// InstancedMesh per (denom, skin) bucket so chips of different owners' skins sit interleaved in the same
-// columns — a pot of Marx+Lenin chips reads as a mix, a winner's stack shows the skins they won. Buckets
+// InstancedMesh per (denom, skin) bucket so chips of different owners' skins share the same columns/heap
+// — a pot of Marx+Lenin chips reads as a mix, a winner's stack shows the skins they won. Buckets
 // are reused across rebuilds of the same group; each carries `mesh.userData.pkBucket = {denom,skin}` for hover.
 export function makeMultiSkinTray(skinMap, opts) { const g = new THREE.Group(); setMultiSkinTray(g, skinMap, opts); return g; }
 

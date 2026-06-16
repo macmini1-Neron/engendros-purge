@@ -367,7 +367,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   _rollMoney(prop, posFn, from, to, dur = 0.6, delay = 0, hold = 0) {
     const a = (typeof window !== 'undefined' && window.GAME) ? window.GAME.audio : null;
     const tw = new Tween(dur, delay); let lastStep = -1;
+    const tok = (this._rollTok[prop] = (this._rollTok[prop] | 0) + 1); // claim the label; a newer roll/clear supersedes us
     this._anims.push((dt) => {
+      if (this._rollTok[prop] !== tok) return true;        // superseded (e.g. the pot was paid out) → stop, don't resurrect the label
       const e = easeOutCubic(tw.step(dt));
       if (tw.t < tw.delay) return false;
       const step = Math.min(7, Math.floor(e * 8));
@@ -452,7 +454,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._betPreview.userData.pk = { kind: 'chips', scope: 'bet', ownerName: 'YOU' }; // hoverable: re-pushed to _hoverTargets each _rebuildDyn (an invisible tray is skipped by the raycaster)
     this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null;
     this._betLabel = null; // floating "$total" badge over the live bet heap (built/replaced on amount change)
-    this._potLabel = null; this._winLabel = null; this._potShown = 0; // rolling-counter labels (pot total + win amount)
+    this._potLabel = null; this._winLabel = null; this._potShown = 0; this._rollTok = {}; // rolling-counter labels (pot total + win amount) + per-label roll token (cancels a superseded in-flight roll)
     this._potLabelPos = new THREE.Vector3(0, 0.013 + 0.12, POT_Z);     // fixed spot above the pot heap
     this._potFx = new THREE.Group(); scene.add(this._potFx); // transient flying chips (bet→pot rake) — PERSISTS across dyn rebuilds
     this._betAnchors = {};                                   // per-seat bet-zone world position, refreshed each rebuild (slide origin)
@@ -607,7 +609,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     else if (collecting) this._slideBetsToPot(this._prevChips, p.chips); // mid-hand: bets → pot
     // rolling pot counter (juice): climb the pot total as bets land; clear it the instant the pot is paid out
     const potNow = p.chips ? value(p.chips.pot) : (v.pot | 0);
-    if (awarding) this._setMoneyLabel('_potLabel', 0);
+    if (awarding) { this._rollTok['_potLabel'] = (this._rollTok['_potLabel'] | 0) + 1; this._setMoneyLabel('_potLabel', 0); } // cancel any in-flight pot roll so it can't resurrect the label over the emptied pot
     else if (collecting) this._rollMoney('_potLabel', () => this._potLabelPos, this._prevChips ? value(this._prevChips.pot) : 0, potNow, 0.6, COLLECT_FLIGHT * 0.5);
     else if (potNow !== this._potShown) this._setMoneyLabel('_potLabel', potNow);
     this._potShown = potNow;
@@ -852,7 +854,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       this._betAnchors[s.id] = onFelt(0.36).setY(FELT_Y);  // where this seat's street bet sits → the bet→pot slide flies FROM here
       if (s.id === p.youId) { this._myBetPos = onFelt(0.35).setY(FELT_Y + 0.001); this._myBetTilt = tilt; } // bet/heap anchor: in front of your stack, clear of the pot pile (pileLayout caps its radius, so even an all-in heap stays compact, not sprawling)
       const stackSkins = p.chips && p.chips.skins ? p.chips.skins.stacks[s.id] : null;
-      const stack = (stackSkins && Object.keys(stackSkins).length) ? makeMultiSkinTray(stackSkins) // multi-skin once you hold chips won from another skin
+      const stack = (stackSkins && Object.keys(stackSkins).length) ? makeMultiSkinTray(stackSkins) // ledger render path whenever a skin ledger exists (single-skin stack = one bucket); a real MIX once you've won chips of another skin
                   : stackSet ? makeChipTray(stackSet, skinOpt) : makeChipStack(s.stack);
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       this._stackAnchors[s.id] = new THREE.Vector3(stack.position.x, FELT_Y, stack.position.z); // pot-push target (pot → winner's stack)

@@ -341,8 +341,9 @@ export class PokerTable {
   // ---------- physical chip layer (host/solo only; clients render the host's snapshot) ----------
 
   // DEV/QA only (called from the console): force per-seat skins so the multi-skin pot is visible in SOLO
-  // (where there's just your skin + dice bots). Re-mints the chip ledger with the fake skins. No money/authority effect.
-  setDebugSkins(map) { this.skins = { ...this.skins, ...(map || {}) }; if (this.active && this.chipbank) this._dealChips(); }
+  // (where there's just your skin + dice bots). Re-mints only the cosmetic ledger (NO value re-deal → safe
+  // mid-hand, no chip/engine desync). No money/authority effect.
+  setDebugSkins(map) { this.skins = { ...this.skins, ...(map || {}) }; if (this.chipbank) this.chipbank.reskin(this.skins); }
 
   _dealChips() {
     this._applyChipSkin(); this._applyCardBack(); // honour the saved cosmetics (fall back if locked) before anything is built
@@ -352,8 +353,9 @@ export class PokerTable {
       console.warn(`[poker] STARTING_CHIPS value ${chipValue(STARTING_CHIPS)} != startStack ${this.tour.startStack} — chip/engine values will drift until reconcile`);
     }
     // provenance: each seat's starting stack is minted in ITS skin. Co-op seats come from the roster
-    // (this.skins); the local 'you' seat always uses the applied global skin so YOUR stack reads as your
-    // pick even in solo. Unlisted bots → 'house' (the dice look). The pot then mixes these as chips flow.
+    // (this.skins); the local 'you' seat FALLS BACK to the applied global skin when it isn't already in the
+    // roster (so YOUR stack reads as your pick in solo; in co-op the roster supplies it). Unlisted bots →
+    // 'house' (the dice look). The pot then mixes these as chips flow.
     const dealSkins = { ...this.skins }; if (!dealSkins[this.youId]) dealSkins[this.youId] = getChipSkin();
     this.chipbank.dealStart(ids, STARTING_CHIPS, floatFor(ids.length), dealSkins);
     this._lastCommitted = {};

@@ -157,7 +157,8 @@ export function mergeSkinned(dst, src) {
 
 // Pull exactly `take` (a ChipSet) out of `src` (MUTATED in place), returning the SkinMap removed. Per
 // denom: prefer `preferSkin`, then the rest in skinOrder; any shortfall (the value economy broke chips
-// out from under the ledger) is attributed to 'house'. Never throws — the caller clamps after.
+// out from under the ledger) is attributed to `fallbackSkin` (default 'house'; postBet passes the
+// owner's own skin so change-broken chips read as the owner). Never throws — the caller clamps after.
 export function drawSkinned(src, take, preferSkin, fallbackSkin = HOUSE_SKIN) {
   const out = {};
   for (const d of DENOMS) {
@@ -368,8 +369,20 @@ export class ChipBank {
     this._skClampPool('float');
   }
 
+  // Re-mint the cosmetic ledger to the CURRENT chip state for a fresh per-seat skin map — provenance only,
+  // NO value re-deal (so it's safe mid-hand). Pot/bet provenance is reset to house (acceptable: used by the
+  // dev skin hook + as a clean re-skin). Each stack becomes its owner's single skin; the float is house.
+  reskin(skinsById) {
+    this.skins = { ...this.skins, ...(skinsById || {}) };
+    this.skinsAt = { stacks: {}, bets: {}, pot: {}, float: {} };
+    for (const id in this.stacks) this.skinsAt.stacks[id] = sigOf(this.stacks[id]) ? { [this.skins[id] || HOUSE_SKIN]: cloneSet(this.stacks[id]) } : {};
+    for (const id in this.bets) this.skinsAt.bets[id] = sigOf(this.bets[id]) ? { [this.skins[id] || HOUSE_SKIN]: cloneSet(this.bets[id]) } : {};
+    if (sigOf(this.pot)) this.skinsAt.pot = { [HOUSE_SKIN]: cloneSet(this.pot) };
+    if (sigOf(this.float)) this.skinsAt.float = { [HOUSE_SKIN]: cloneSet(this.float) };
+  }
+
   // test-only oracle: the cosmetic ledger sums (per location, per denom) to the real ChipSets, no negatives.
-  // (NOT called in production; verify() above is the value invariant and is intentionally skin-blind.)
+  // (NOT called in production; the separate verify() below is the value invariant and is skin-blind.)
   verifySkins() {
     const chk = (real, skinMap, label) => {
       for (const d of DENOMS) {

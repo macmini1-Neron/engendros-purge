@@ -54,8 +54,9 @@ export function layoutChips(chipSet, opts = {}) {
 }
 
 // Tag each placement (from layoutChips/pileLayout) with a render skin, consuming a per-denom FIFO queue
-// built from `skinMap` ({skin:{denom:count}}). Deterministic skin order (ids sorted, 'house' last) → chips
-// of different skins INTERLEAVE within the same denom column/heap (one coherent mixed pile). Pure, testable.
+// built from `skinMap` ({skin:{denom:count}}). Deterministic skin order (ids sorted, 'house' last). Chips of
+// different skins share the SAME denom columns/heap rather than splitting into separate per-skin columns:
+// heaps mix spatially; stacked columns show contiguous skin bands (FIFO, bottom-up). One coherent pile. Pure.
 // The placement count per denom must equal skinMap's per-denom total (the layout is built from that aggregate).
 export function assignSkins(placements, skinMap) {
   const skins = Object.keys(skinMap || {}).sort((a, b) => ((a === HOUSE_SKIN) - (b === HOUSE_SKIN)) || (a < b ? -1 : a > b ? 1 : 0));
