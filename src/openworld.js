@@ -123,7 +123,7 @@ function buildFuelStation(world, cx, cz) {
   solid(world, b, 3, 2.6, 3, bx, 1.37, cz, OCH.hi);
   b.box(1.4, 1.0, 0.12, bx + 1.55, 1.7, cz, 0x35434d);                          // window
   b.box(3.3, 0.3, 3.3, bx, 2.78, cz, RED);                                      // booth roof trim
-  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
+  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m); world.addCullable(m); // compact roadside POI — draw-distance cullable
 }
 
 // автобусная остановка: concrete pad, back-wall shelter on posts, bench, side sign.
@@ -136,7 +136,7 @@ function buildBusStop(world, cx, cz) {
   b.box(5.0, 0.12, 2.6, cx, 2.46, cz, OCH.lo);                                  // roof top tone
   b.box(3.6, 0.5, 0.5, cx, 0.55, cz + 0.6, RUST.mid);                           // bench
   signPlane(world, 'АВТОБУС', 2.2, 0.55, cx - 2.31, 1.95, cz, Math.PI / 2, '#1f5fa0', '#f2efe6');
-  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
+  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m); world.addCullable(m); // compact roadside POI — draw-distance cullable
 }
 
 // КПП checkpoint: pad, booth beside the lane, КПП sign, and a red/white boom in the RAISED (vertical)
@@ -152,7 +152,7 @@ function buildCheckpoint(world, cx, cz) {
   const px = cx + 2.4;                                                          // boom pivot, raised vertical
   solid(world, b, 0.45, 1.0, 0.45, px, 0.55, cz, STEEL.lo);
   for (let i = 0; i < 6; i++) b.box(0.3, 0.72, 0.3, px, 1.15 + i * 0.68, cz, i % 2 ? RED : WHITE);
-  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
+  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m); world.addCullable(m); // compact roadside POI — draw-distance cullable
 }
 
 // burnt-out supply convoy: scorched ground + 3 charred truck hulks (cover), aligned along the road (x).
@@ -167,7 +167,7 @@ function buildConvoyWreck(world, cx, cz) {
     for (const wx of [-2, -0.2, 1.6]) for (const wz of [-1.35, 1.35]) cyl(b, 0.55, 0.5, tx + wx, 0.45, tz + wz, 0x161412, { rx: Math.PI / 2 });
     b.box(0.5, 1.1, 0.5, tx + 1.4, 1.4, tz + (oz > 0 ? 1.7 : -1.7), CHAR);      // twisted debris
   }
-  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
+  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m); world.addCullable(m); // compact roadside POI — draw-distance cullable
 }
 
 // колодец well + lattice windpump: stone ring + gabled roof on posts, steel windpump tower with a fan.
@@ -184,7 +184,7 @@ function buildWell(world, cx, cz) {
   world.boxes.push({ min: new THREE.Vector3(wx - 1.1, 0, cz - 1.1), max: new THREE.Vector3(wx + 1.1, 5, cz + 1.1) });
   for (let i = 0; i < 6; i++) b.box(0.1, 1.7, 0.34, wx, 5.4, cz, STEEL.hi, { rx: i / 6 * TAU }); // fan blades (sweep in YZ)
   cyl(b, 0.3, 0.7, wx, 5.4, cz, STEEL.mid, { rx: Math.PI / 2 });                // hub
-  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m);
+  const m = new THREE.Mesh(b.build(), voxelMaterial()); m.castShadow = true; m.receiveShadow = true; world.scene.add(m); world.addCullable(m); // compact roadside POI — draw-distance cullable
 }
 
 export function buildOpenWorld(world) {

@@ -421,6 +421,26 @@ export class World {
   // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
   groundY(x, z) { return this.terrain.terrainHeightAt(x, z); }
 
+  // Register a static decorative mesh for draw-distance culling (Game._cullByDistance). Precomputes the
+  // mesh's world-space XZ centre ONCE: merged district meshes bake geometry in WORLD coords with
+  // position (0,0,0), so mesh.position is the origin, not the centre — we use the bounding-sphere centre.
+  // Groups without a single geometry fall back to mesh.position. Call AFTER the mesh is positioned/added.
+  // Only register COMPACT meshes (a single POI/district cluster); never spanning geometry (roads, ground,
+  // perimeter) — a centre-distance test would wrongly hide parts still near the player.
+  addCullable(mesh) {
+    if (!mesh) return mesh;
+    mesh.updateMatrixWorld(true);
+    let cx = mesh.position.x, cz = mesh.position.z;
+    if (mesh.geometry) {
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+      const c = mesh.geometry.boundingSphere.center.clone().applyMatrix4(mesh.matrixWorld);
+      cx = c.x; cz = c.z;
+    }
+    mesh.userData._cullX = cx; mesh.userData._cullZ = cz;
+    this.cullProps.push(mesh);
+    return mesh;
+  }
+
   rayHit(origin, dir, maxDist, ignore = null) {
     const ignored = Array.isArray(ignore) ? ignore : null;
     const filter = (ignore != null) ? (b => !(b === ignore || (ignored && ignored.includes(b)))) : null;
