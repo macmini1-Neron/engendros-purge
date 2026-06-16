@@ -9,8 +9,8 @@
 // chipbank.js renders cheaply. setChipTray keeps the old public API.
 import * as THREE from 'three';
 import { breakdown } from './poker/chips.js';
-import { DENOMS, sigOf } from './poker/chipbank.js';
-import { layoutChips, pileLayout } from './poker/chiplayout.js';
+import { DENOMS, sigOf, skinValueByDenom } from './poker/chipbank.js';
+import { layoutChips, pileLayout, assignSkins } from './poker/chiplayout.js';
 import { chipInstanced, chipMaterial, CHIP_GEO_T } from './poker-chip-mesh.js';
 import { getChipSkin } from './poker/chipskins.js';
 
@@ -60,6 +60,45 @@ export function setChipTray(group, chipSet, opts = {}) {
   // GROWS after its sphere was first cached (your stack regrowing as you pull the raise slider back down,
   // the live bet heap swelling) loses its hover hitbox beyond the stale radius — only the base stayed clickable.
   for (const d of DENOMS) { const im = group.userData.inst[d]; im.count = counters[d]; im.instanceMatrix.needsUpdate = true; im.boundingSphere = null; }
+  return group;
+}
+
+// MULTI-SKIN tray — the flagship pot/stack render. `skinMap` = { skinId: ChipSet } (the cosmetic
+// provenance ledger from chipbank). Lays out ONE coherent heap/stack from the aggregate, then mints one
+// InstancedMesh per (denom, skin) bucket so chips of different owners' skins share the same columns/heap
+// — a pot of Marx+Lenin chips reads as a mix, a winner's stack shows the skins they won. Buckets
+// are reused across rebuilds of the same group; each carries `mesh.userData.pkBucket = {denom,skin}` for hover.
+export function makeMultiSkinTray(skinMap, opts) { const g = new THREE.Group(); setMultiSkinTray(g, skinMap, opts); return g; }
+
+export function setMultiSkinTray(group, skinMap, opts = {}) {
+  skinMap = skinMap || {};
+  const skins = Object.keys(skinMap).sort();
+  const sig = 'M|' + skins.map((s) => s + ':' + sigOf(skinMap[s])).join('/') + '|' + (opts.jitter || 0) + '|' + (opts.seed || 0) + (opts.pile ? '|P' : '') + (opts.layoutRef ? '|r' + sigOf(opts.layoutRef) : '');
+  if (group.userData.sig === sig) return group;
+  group.userData.sig = sig;
+  group.userData.multiskin = true;
+  if (!group.userData.imBy) { group.userData.imBy = {}; group.userData.buckets = []; }
+  for (const k in group.userData.imBy) group.userData.imBy[k].count = 0;     // reset; refill below (reuse meshes)
+  const agg = skinValueByDenom(skinMap);                                     // the real ChipSet → one shared layout
+  const places = assignSkins(opts.pile ? pileLayout(agg, opts) : layoutChips(agg, opts), skinMap);
+  const counters = {};
+  for (const p of places) {
+    const key = p.denom + '|' + p.skin;
+    let im = group.userData.imBy[key];
+    if (!im) {
+      im = chipInstanced(p.denom, CAP, p.skin); im.frustumCulled = false;
+      im.userData.pkBucket = { denom: p.denom, skin: p.skin };
+      group.add(im); group.userData.imBy[key] = im; group.userData.buckets.push({ denom: p.denom, skin: p.skin, mesh: im });
+    }
+    const n = counters[key] || 0;
+    if (n >= CAP) continue;
+    _dummy.position.set(p.x, p.y + CHIP_GEO_T / 2, p.z);
+    _dummy.rotation.set(p.tiltX || 0, p.rot || 0, p.tiltZ || 0);
+    _dummy.scale.setScalar(1); _dummy.updateMatrix();
+    im.setMatrixAt(n, _dummy.matrix);
+    counters[key] = n + 1;
+  }
+  for (const k in group.userData.imBy) { const im = group.userData.imBy[k]; im.count = counters[k] || 0; im.instanceMatrix.needsUpdate = true; im.boundingSphere = null; }
   return group;
 }
 

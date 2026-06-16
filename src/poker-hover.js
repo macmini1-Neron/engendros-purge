@@ -142,7 +142,9 @@ export class PokerHover {
     const inst = group.userData.inst || {};
     if (pk.scope === 'pot') {
       // the shared pot is ONE unit: whatever chip you hover, light up ALL of it and show the TOTAL value
-      let total = 0; for (const d of DENOMS) total += d * ((inst[d] && inst[d].count) || 0);
+      let total = 0;
+      if (group.userData.multiskin) { for (const b of group.userData.buckets) total += b.denom * b.mesh.count; } // sum the (denom,skin) buckets
+      else { for (const d of DENOMS) total += d * ((inst[d] && inst[d].count) || 0); }
       const key = 'pot|' + (group.userData.sig || '') + '|' + total;
       if (key !== this._curKey) {
         this._curKey = key;
@@ -156,13 +158,16 @@ export class PokerHover {
       this._place();
       return;
     }
-    let denom = 0;
-    for (const d of DENOMS) { if (inst[d] === instMesh) { denom = d; break; } }
-    if (!denom) { // raycast grazed the group but not a specific colour mesh → fall back to the tallest present
-      for (const d of DENOMS) { if (inst[d] && inst[d].count > 0) { denom = d; instMesh = inst[d]; break; } }
+    let denom = 0, traySkin = group.userData.skin || getChipSkin();  // single-skin tray's OWN skin (per-player), not the global one
+    if (group.userData.multiskin) {                          // a (denom,skin) bucket mesh → read both off it
+      const bk = instMesh && instMesh.userData.pkBucket;
+      if (bk) { denom = bk.denom; traySkin = bk.skin; }
+      else { const b = group.userData.buckets.find((x) => x.mesh.count > 0); if (b) { denom = b.denom; traySkin = b.skin; instMesh = b.mesh; } }
+    } else {
+      for (const d of DENOMS) { if (inst[d] === instMesh) { denom = d; break; } }
+      if (!denom) { for (const d of DENOMS) { if (inst[d] && inst[d].count > 0) { denom = d; instMesh = inst[d]; break; } } } // grazed the group, not a mesh → tallest present
     }
     if (!denom) { this._hideAll(); return; }
-    const traySkin = group.userData.skin || getChipSkin();  // this tray's OWN skin (per-player), not the global one
     const key = 'chips|' + (group.userData.sig || '') + '|' + denom + '|' + traySkin;
     if (key !== this._curKey) {
       this._curKey = key;
@@ -229,11 +234,12 @@ export class PokerHover {
   // denomination meshes all light up together.
   _outlineWholeTray(group) {
     const inst = group.userData.inst || {};
+    const meshes = group.userData.multiskin ? group.userData.buckets.map((b) => b.mesh) : DENOMS.map((d) => inst[d]).filter(Boolean);
     const o = this._outChips;
     o.matrix.identity(); o.matrixWorldNeedsUpdate = true;          // instances are packed in WORLD space
     let k = 0;
-    for (const d of DENOMS) {
-      const im = inst[d]; if (!im || !im.count) continue;
+    for (const im of meshes) {
+      if (!im || !im.count) continue;
       im.updateWorldMatrix(true, false);
       for (let i = 0; i < im.count && k < 256; i++) {
         im.getMatrixAt(i, this._m);

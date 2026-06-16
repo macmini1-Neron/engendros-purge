@@ -4,7 +4,7 @@
 // columns, rows wrap back in depth. Optional SEEDED jitter (research C4: messy
 // stacks read more physical than a perfect grid) — seeded so a rebuild at the
 // same state is stable (no shimmer).
-import { DENOMS } from './chipbank.js';
+import { DENOMS, HOUSE_SKIN } from './chipbank.js';
 
 export const CHIP_R = 0.020, CHIP_T = 0.0033, CHIP_GAP = 0.0006;
 export const COL_CAP = 18;
@@ -51,6 +51,21 @@ export function layoutChips(chipSet, opts = {}) {
     }
   });
   return out;
+}
+
+// Tag each placement (from layoutChips/pileLayout) with a render skin, consuming a per-denom FIFO queue
+// built from `skinMap` ({skin:{denom:count}}). Deterministic skin order (ids sorted, 'house' last). Chips of
+// different skins share the SAME denom columns/heap rather than splitting into separate per-skin columns:
+// heaps mix spatially; stacked columns show contiguous skin bands (FIFO, bottom-up). One coherent pile. Pure.
+// The placement count per denom must equal skinMap's per-denom total (the layout is built from that aggregate).
+export function assignSkins(placements, skinMap) {
+  const skins = Object.keys(skinMap || {}).sort((a, b) => ((a === HOUSE_SKIN) - (b === HOUSE_SKIN)) || (a < b ? -1 : a > b ? 1 : 0));
+  const queue = {}, cur = {};
+  for (const d of DENOMS) {
+    queue[d] = []; cur[d] = 0;
+    for (const sk of skins) { const n = (skinMap[sk] && skinMap[sk][d]) || 0; for (let i = 0; i < n; i++) queue[d].push(sk); }
+  }
+  return placements.map((p) => ({ ...p, skin: (queue[p.denom] && queue[p.denom][cur[p.denom]++]) || HOUSE_SKIN }));
 }
 
 // BET PILE: a real tossed SPLASH, physically plausible. Settled poker chips lie nearly FLAT — they're spun to
