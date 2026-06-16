@@ -296,7 +296,9 @@ export class World {
     this.scene.fog.near = 70; this.scene.fog.far = 460;
     this.HALF = 158;                                   // keep the player inside the 158 m chunk terrain
     this.chunks = new TerrainChunks(this.terrain, {
-      extent: this.HALF, chunkSize: 64, resolution: 32, scene: this.scene,
+      extent: this.HALF, chunkSize: 64,
+      resolutions: [32, 16, 8],   // near LOD 32 = unchanged demo detail; 16/8 kick in by distance
+      scene: this.scene,
     });
     // spawn ring + a couple of loot spots, all sampled onto the terrain surface.
     for (let i = 0; i < 16; i++) {
