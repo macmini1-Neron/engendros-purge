@@ -33,8 +33,16 @@ const SHOWDOWN_STAGGER = 0.45;  // s — gap between opponents' hands flipping u
 const FOLD_FLICK = 0.5;         // s — a folder's cards flicking away into the muck
 // Showdown READABLE pose for a revealed opponent pair — lifted off the felt + tipped up toward the seated
 // camera + enlarged, so you can actually read what they held (flat-at-the-rim was unreadable). Tuned live.
-const SHOW_FWD = 0.12;          // world +Z shift — pulls the revealed pair toward the camera, clear IN FRONT of the seat's chips
-const SHOW_Y = 0.10;            // lifted clear of the felt + chip tops
+// Placed in the seat's OWN spoke/tang frame, NOT world axes — the old world-+Z pull only cleared the FAR seats;
+// at the side/right seats it drove the cards onto the rim-hugging chip stack (worst with a tall post-win stack).
+// The pair is pulled INWARD along the seat's spoke (toward the table centre/camera) to SHOW_R, clear of the stack
+// (which sits at radius ~0.50 +tang*0.14, and after a big pot grows both TALL and DEEP — a maxed stack reaches
+// inward to radius ≈0.41); nudged to the open felt AWAY from the stack (−tang); and lifted above the tallest
+// column. This clears the chips at EVERY seat angle and stack height (verified analytically + by measuring the
+// rendered card/stack bounding boxes in headless Chrome across 2..6-handed, incl. a ~290-chip worst-case stack).
+const SHOW_R = 0.315;           // radius along the spoke — forward of (camera-side of) the rim-hugging chip stack
+const SHOW_SIDE = -0.08;        // tang offset, OPPOSITE the stack's +tang*0.14 — biases the pair onto clear felt
+const SHOW_Y = 0.12;            // lifted clear of the felt + above the tallest possible chip column (~0.11)
 const SHOW_TILT = 1.0;          // rad (~57°) — face tipped up toward you (+rotX tips the +Y face toward +Z)
 const _PAXIS = new THREE.Vector3(0.3, 1, 0.5).normalize(); // fixed tumble axis for celebration particles
 
@@ -812,12 +820,14 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             this._holeCards.push(card); this._myHoleCards.push(card); // click to peek
           } else if (s.hole) {
             // SHOWDOWN: an opponent's revealed pair is LIFTED off the felt, TILTED up toward the seated camera,
-            // enlarged, and pulled FORWARD (world +Z, toward the camera) so it sits clearly IN FRONT of the
-            // seat's chip stack — fully readable, never hidden behind the chips. A world-+Z shift puts the cards
-            // camera-side for EVERY seat (a smaller felt-radius would only work for the far seats). Like a dealer
-            // turning the cards up for the table. (Folded players never reach here — their cards muck.)
-            const base = onFelt(0.50);                               // beside the seat's own stack
-            const pos = new THREE.Vector3(base.x + (h - 0.5) * 0.075, SHOW_Y, base.z + SHOW_FWD); // two cards side by side (world X), in front of the chips (world +Z)
+            // enlarged, and pulled toward the table centre so it sits clearly IN FRONT of (camera-side of) the
+            // seat's chip stack — fully readable, never clipping the chips. Placed in the seat's spoke/tang frame
+            // (NOT world axes): inward to SHOW_R clears the rim-hugging stack at EVERY seat angle (the old world-+Z
+            // pull only cleared the far seats); −tang biases onto open felt; SHOW_Y clears the tallest column. The
+            // two cards still spread along WORLD X so they read flat + side-by-side to the fixed front camera.
+            // Like a dealer turning the cards up for the table. (Folded players never reach here — their cards muck.)
+            const ctr = onFelt(SHOW_R).addScaledVector(tang, SHOW_SIDE); // forward of the chips, biased clear of the stack
+            const pos = new THREE.Vector3(ctr.x + (h - 0.5) * 0.075, SHOW_Y, ctr.z); // two cards side by side (world X)
             card.position.copy(pos);
             card.scale.setScalar(1.22);
             setCardFace(card, s.hole[h]);                            // reveal → face up
