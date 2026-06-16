@@ -1192,6 +1192,7 @@ class Game {
   _restoreVisibility() {
     if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh) e.mesh.visible = !!e.alive; }
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = true; }
+    if (this.world && this.world.chunks) this.world.chunks.drawDistance = 0; // clear cull radius (TerrainChunks.update re-shows next frame)
   }
 }
 
