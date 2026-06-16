@@ -489,6 +489,8 @@ export class PokerDomRenderer {
     return ids.map((id) => {
       const meWon = id === p.youId;
       const d = (reveals.length && rankOf[id]) ? describeHand(rankOf[id]) : ''; // showdown names the hand; uncontested (mucked) → no hand line
+      // XSS-safe innerHTML: _nameOf() ALREADY esc()'s the (untrusted, co-op peer) name — same as _seatHTML;
+      // winners[id] is an engine-computed number; describeHand output is esc()'d too. No raw input reaches HTML.
       return `<div class="pk-win-card${meWon ? ' you' : ''}">` +
         `<div class="pk-win-name">${this._nameOf(id, p)} wins <span class="amt">$${winners[id]}</span></div>` +
         (d ? `<div class="pk-win-hand">${esc(d)}</div>` : '') +
