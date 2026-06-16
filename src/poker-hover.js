@@ -71,7 +71,9 @@ export class PokerHover {
     const oblind = this._outBlind = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.012, 24), mat);
     oblind.visible = false; oblind.renderOrder = 998; oblind.matrixAutoUpdate = false;
     this.r._scene.add(oblind);
-    this._Sblind = new THREE.Matrix4().makeScale(1.22, 2.4, 1.22); // grow radially for a rim + taller so it reads at the grazing camera
+    // Hug the puck (r0.034 × h0.012): a THIN rim recentred on the puck MID (y=0.006 within the group),
+    // not the old 1.22×/2.4× outline that read as a loose radial halo + sat miscentred (low, into the felt).
+    this._Sblind = new THREE.Matrix4().makeTranslation(0, 0.006, 0).multiply(new THREE.Matrix4().makeScale(1.07, 1.5, 1.07));
 
     this._ptr = { x: 0, y: 0 };
     this._dirty = false; this._inside = false; this._curKey = null; this._held = null; this._heldSig = null;
@@ -130,7 +132,7 @@ export class PokerHover {
     this._heldSig = group.userData.sig; // remember the tray signature so an in-place mutation (live heap / draining stack) re-triggers a resolve next frame
     const pk = group.userData.pk;
     if (pk.kind === 'chips') return this._showChips(group, pk, instMesh);
-    if (pk.kind === 'card') return this._showCard(group, pk);
+    if (pk.kind === 'card') { if (group.userData.anim) { this._hideAll(); return; } return this._showCard(group, pk); } // a card still flipping in → no outline (it'd levitate over the moving card)
     if (pk.kind === 'blind') return this._showBlind(group, pk);
     this._hideAll();
   }

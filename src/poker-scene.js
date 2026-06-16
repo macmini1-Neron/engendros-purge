@@ -27,6 +27,12 @@ const BOARD_STAGGER = 0.42;     // s — gap between community cards turning up 
 const POT_PUSH_FLIGHT = 0.7;    // s — the pot sliding FROM the pool TO the winner at showdown (the win, not a collect)
 const SHOWDOWN_STAGGER = 0.45;  // s — gap between opponents' hands flipping up at showdown
 const FOLD_FLICK = 0.5;         // s — a folder's cards flicking away into the muck
+// Showdown READABLE pose for a revealed opponent pair — lifted off the felt + tipped up toward the seated
+// camera + enlarged, so you can actually read what they held (flat-at-the-rim was unreadable). Tuned live.
+const SHOW_FWD = 0.12;          // world +Z shift — pulls the revealed pair toward the camera, clear IN FRONT of the seat's chips
+const SHOW_Y = 0.10;            // lifted clear of the felt + chip tops
+const SHOW_TILT = 1.0;          // rad (~57°) — face tipped up toward you (+rotX tips the +Y face toward +Z)
+const _PAXIS = new THREE.Vector3(0.3, 1, 0.5).normalize(); // fixed tumble axis for celebration particles
 
 const SCENE_CSS = `
 #poker .pk-canvas { position:absolute; inset:0; width:100%; height:100%; z-index:0; display:none; }
@@ -150,11 +156,61 @@ export class PokerSceneRenderer extends PokerDomRenderer {
 
   // ---- table animations (each anim is a closure(dt)->done; orphaned when its card is rebuilt away) ----
   _stepAnims(dt) {
+    if (this._pmesh) this._stepParticles(dt);
     for (let i = this._anims.length - 1; i >= 0; i--) {
       let done = true;
       try { done = this._anims[i](dt); } catch (e) { done = true; console.warn('[poker] anim step failed (dropped):', e); }
       if (done) this._anims.splice(i, 1);
     }
+  }
+
+  // ---- celebration particles (poker-local pool; see _initThree) ----
+  _stepParticles(dt) {
+    const m = this._pm || (this._pm = new THREE.Matrix4());
+    const q = this._pq || (this._pq = new THREE.Quaternion());
+    const s = this._ps || (this._ps = new THREE.Vector3());
+    let any = false;
+    for (let k = 0; k < this._pcap; k++) {
+      const pt = this._parts[k];
+      if (!pt.alive) continue;
+      any = true;
+      pt.life -= dt;
+      if (pt.life <= 0) { pt.alive = false; m.makeScale(0, 0, 0); this._pmesh.setMatrixAt(k, m); continue; }
+      pt.vel.y += pt.grav * dt;
+      pt.vel.multiplyScalar(Math.max(0, 1 - 1.6 * dt));                 // air drag
+      pt.pos.addScaledVector(pt.vel, dt);
+      const lf = pt.life / pt.maxLife;
+      const sz = pt.size * (lf > 0.28 ? 1 : lf / 0.28);                 // hold full size, then shrink out over the last ~28% (punchier than dwindling the whole flight)
+      q.setFromAxisAngle(_PAXIS, pt.life * 9);                          // gentle tumble
+      m.compose(pt.pos, q, s.set(sz, sz, sz));
+      this._pmesh.setMatrixAt(k, m); this._pmesh.setColorAt(k, pt.color);
+    }
+    if (any) { this._pmesh.instanceMatrix.needsUpdate = true; if (this._pmesh.instanceColor) this._pmesh.instanceColor.needsUpdate = true; }
+  }
+  _spawnPart(pos, vel, life, size, color, grav) {
+    let slot = -1;
+    for (let i = 0; i < this._pcap; i++) { const idx = (this._pcur + i) % this._pcap; if (!this._parts[idx].alive) { slot = idx; break; } }
+    if (slot < 0) slot = this._pcur;                                    // pool full → recycle the oldest cursor slot
+    this._pcur = (slot + 1) % this._pcap;
+    const pt = this._parts[slot];
+    pt.alive = true; pt.pos.copy(pos); pt.vel.copy(vel); pt.life = pt.maxLife = life; pt.size = size; pt.grav = grav; pt.color.copy(color);
+  }
+  // a fountain of small gold (+ occasional teal) flecks from `pos` — tabletop-scaled (cm, not metres)
+  _burst(pos, { count = 16, spread = 0.5, up = 1.0, life = 0.8, size = 0.013, grav = -7 } = {}) {
+    if (!this._pmesh || !pos) return;
+    const GOLD = [0xf3d999, 0xd8b066, 0xe2c56b], TEAL = 0x5cae8c, tmp = new THREE.Color();
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2, sp = (0.4 + Math.random()) * spread;
+      const vel = new THREE.Vector3(Math.cos(ang) * sp, up * (0.6 + Math.random() * 0.7), Math.sin(ang) * sp);
+      const col = (Math.random() < 0.18) ? tmp.clone().setHex(TEAL) : tmp.clone().setHex(GOLD[(Math.random() * GOLD.length) | 0]);
+      this._spawnPart(pos, vel, life + (Math.random() - 0.5) * 0.2, size * (0.7 + Math.random() * 0.8), col, grav);
+    }
+  }
+  // YOUR net winnings just landed on your stack → a celebratory chip burst (bigger pot → more flecks)
+  _celebrateWin(level, p) {
+    const at = this._stackAnchors && this._stackAnchors[p.youId];
+    if (!at) return;
+    this._burst(new THREE.Vector3(at.x, at.y + 0.05, at.z), { count: 16 + level * 5, spread: 0.6, up: 1.05, life: 0.9, size: 0.021 });
   }
   // Deal a card in like a real dealer: PHASE 1 it drops onto the felt FACE-DOWN, then PHASE 2 it turns
   // over "from the side" — rotating about its long (Z) axis so a side edge lifts and the face reveals.
@@ -166,6 +222,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     card.position.set(rest.x, rest.y + dropY, rest.z);
     card.rotation.set(rest.rotX || 0, 0, Math.PI);         // start: laid FACE-DOWN (turned over on the long axis)
     card.visible = false;                                  // unseen until its turn — a delayed card must not sit face-down on the felt early
+    card.userData.anim = true;                             // mark in-flight → the hover outline skips it so it doesn't "levitate" over a card mid-deal (cleared on settle)
     this._anims.push((dt) => {
       if (!card.parent) return true;                       // card rebuilt away → drop the anim
       const p = tw.step(dt);
@@ -176,7 +233,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       card.position.y = rest.y + dropY * (1 - dealP) + 0.018 * Math.sin(turnP * Math.PI); // settle down, lift a touch mid-turn so the edge clears the felt
       card.rotation.z = Math.PI * (1 - turnP);             // π (face-down) → 0 (face-up): the SIDE-edge turn the dealer does
       if (!snapped && p >= 0.62 && a && a.pokerFlip) { snapped = true; a.pokerFlip(note); } // frame-synced rising-note snap, fired AS the card turns face-up (not at anim start)
-      return tw.done;
+      if (tw.done) { card.userData.anim = false; return true; } // settled at rest → hover outline allowed again
+      return false;
     });
   }
   // Pitch a hole card in from the centre deck (face-down) to its resting spot, like a real dealer. It stays
@@ -232,7 +290,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
   _updateBetPreview(p) {
     if (!this._betPreview) return;
     if (!this._myBetPos || !this._myStackTray || !this._myStackSet) {  // no chip-backed local seat yet → nothing to heap
-      if (this._betPreviewAmt !== -1) { this._betPreview.visible = false; this._betPreviewAmt = -1; }
+      if (this._betPreviewAmt !== -1) { this._betPreview.visible = false; this._betPreviewAmt = -1; if (this._betLabel) this._betLabel.visible = false; }
       return;
     }
     const L = p.legal;
@@ -252,10 +310,44 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       setChipTray(this._betPreview, heap, { pile: true, seed: 7 });   // tossed into a compact, scattered pile
       setChipTray(this._myStackTray, subSet(this._myStackSet, take), { layoutRef: this._myStackSet }); // the previewed extra LEAVES the stack columns (1:1) — layoutRef pins column positions to the FULL stack so a draining denom shortens in place instead of re-centering the survivors (no jitter)
       this._betPreview.visible = Object.keys(heap).length > 0;
+      this._setBetLabel(this._betPreview.visible ? amount : null);     // floating "$total" above the heap — the whole sum you're putting in, read as ONE number (mirrors how the pot reads as a single total)
     }
     this._betPreview.position.copy(this._myBetPos);
     this._betPreview.rotation.y = this._myBetTilt || 0;
     this._betPreview.scale.setScalar(1.5); // a touch bigger than the trays so the bet reads clearly at the seated angle
+    if (this._betLabel && this._betLabel.visible) {                    // hover the $total above the heap, always facing the camera
+      this._betLabel.position.set(this._myBetPos.x, this._myBetPos.y + 0.075, this._myBetPos.z);
+      this._betLabel.lookAt(this.cam.position);
+    }
+  }
+
+  // A floating "$N" badge that hovers over the live bet heap — a brass POLYMER pill so the player reads the
+  // total they're committing as ONE number (the chips alone read as a vague mound). Rebuilt only on amount
+  // change (texture swap is cheap at that cadence); null hides it.
+  _setBetLabel(amount) {
+    if (amount == null || amount <= 0) { if (this._betLabel) this._betLabel.visible = false; return; }
+    if (this._betLabel) { this._scene.remove(this._betLabel); this._disposeTree(this._betLabel); }
+    const lbl = this._betLabel = this._moneyLabel('$' + amount);
+    this._scene.add(lbl); lbl.visible = true;
+  }
+  // brass pill badge ("$1100") on a camera-facing plane — matches the POLYMER chrome (dark fill, brass rim, gold text)
+  _moneyLabel(text) {
+    const W = 256, H = 96, pad = 7, rad = 30;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.beginPath(); ctx.roundRect(pad, pad, W - 2 * pad, H - 2 * pad, rad);
+    ctx.fillStyle = 'rgba(8,12,11,.88)'; ctx.fill();
+    ctx.lineWidth = 5; ctx.strokeStyle = '#d8b066'; ctx.stroke();         // brass rim
+    ctx.fillStyle = '#f3d999';                                            // brass-hi text
+    ctx.font = '700 50px "Russo One", Oswald, system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, W / 2, H / 2 + 3);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    const ph = 0.05, pw = ph * (W / H);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthTest: false }));
+    m.renderOrder = 997; m.userData.tex = tex;                            // above the chips, below the hover outline (998)
+    return m;
   }
 
   // Reuse the game's diegetic radio (real stations from radio.js) as a working set on the back shelf —
@@ -321,8 +413,20 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this._betPreview = makeChipTray({}); this._betPreview.visible = false; scene.add(this._betPreview); // live raise-amount preview chips
     this._betPreview.userData.pk = { kind: 'chips', scope: 'bet', ownerName: 'YOU' }; // hoverable: re-pushed to _hoverTargets each _rebuildDyn (an invisible tray is skipped by the raycaster)
     this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null;
+    this._betLabel = null; // floating "$total" badge over the live bet heap (built/replaced on amount change)
     this._potFx = new THREE.Group(); scene.add(this._potFx); // transient flying chips (bet→pot rake) — PERSISTS across dyn rebuilds
     this._betAnchors = {};                                   // per-seat bet-zone world position, refreshed each rebuild (slide origin)
+    // poker-LOCAL celebration particle pool — the global Effects pool lives in the MAIN game scene, not
+    // this private one, so it can't be reused here. A small instanced box pool (one draw call), stepped in
+    // _stepAnims, bursts gold/teal flecks when YOUR net winnings land on your stack. NET wins only (research
+    // ethics: never celebrate a loss-dressed-as-a-win).
+    this._pcap = 90;
+    this._pmesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ toneMapped: false }), this._pcap);
+    this._pmesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this._pmesh.frustumCulled = false; this._pmesh.renderOrder = 996;
+    { const z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < this._pcap; i++) this._pmesh.setMatrixAt(i, z); } // all hidden at rest
+    scene.add(this._pmesh);
+    this._parts = []; for (let i = 0; i < this._pcap; i++) this._parts.push({ alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), life: 0, maxLife: 1, size: 0.012, grav: -7, color: new THREE.Color() });
+    this._pcur = 0;
     this._setSize();
   }
 
@@ -401,7 +505,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     } catch (e) { console.warn('[poker] poker-table model load failed — keeping placeholder:', e); }
   }
 
-  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {}; this._lastHandNo = 0; this._seenActN = 0; // fresh table → the first hand animates a deal-in + the first check/fold SFX isn't suppressed
+  showTable() { super.showTable(); this.root.classList.add('pk3d'); this._prevView = null; this._prevChips = null; this._sceneKey = null; this._anims = []; this._betPreviewAmt = -1; if (this._betPreview) this._betPreview.visible = false; if (this._betLabel) this._betLabel.visible = false; this._holePeeked = false; this._myHoleSig = null; this._betAnchors = {}; this._lastHandNo = 0; this._seenActN = 0; // fresh table → the first hand animates a deal-in + the first check/fold SFX isn't suppressed
     if (this._potFx) { for (let i = this._potFx.children.length - 1; i >= 0; i--) { const c = this._potFx.children[i]; this._potFx.remove(c); this._disposeTree(c); } } } // fresh table → no stale SFX deltas / dangling anims / bet preview / peek / flying chips
   showLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showLobby(o); }
   showCoopLobby(o) { if (this._hover) this._hover.hide(); this.root.classList.remove('pk3d'); super.showCoopLobby(o); }
@@ -522,7 +626,9 @@ export class PokerSceneRenderer extends PokerDomRenderer {
         tray.position.lerpVectors(start, to, e);
         tray.position.y = FELT_Y + 0.05 * Math.sin(e * Math.PI); // a push arc toward the winner
         tray.scale.setScalar(1.6 * (1 - 0.5 * e));               // shrink as it merges into the winner's stack
-        if (tw.done) { this._potFx.remove(tray); this._disposeTree(tray); return true; }
+        if (tw.done) { this._potFx.remove(tray); this._disposeTree(tray);
+          if (aw.id === p.youId && aw.net) this._celebrateWin(Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, aw.amount)))), p); // YOUR net winnings landed → chip burst (NET wins only)
+          return true; }
         return false;
       });
     }
@@ -648,16 +754,26 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             if (s.hole) setCardFace(card, s.hole[h]);
             card.rotation.z = this._holePeeked ? 0 : Math.PI; // peeked → face-up, else FACE-DOWN (back up), turned on the long axis
             this._holeCards.push(card); this._myHoleCards.push(card); // click to peek
+          } else if (s.hole) {
+            // SHOWDOWN: an opponent's revealed pair is LIFTED off the felt, TILTED up toward the seated camera,
+            // enlarged, and pulled FORWARD (world +Z, toward the camera) so it sits clearly IN FRONT of the
+            // seat's chip stack — fully readable, never hidden behind the chips. A world-+Z shift puts the cards
+            // camera-side for EVERY seat (a smaller felt-radius would only work for the far seats). Like a dealer
+            // turning the cards up for the table. (Folded players never reach here — their cards muck.)
+            const base = onFelt(0.50);                               // beside the seat's own stack
+            const pos = new THREE.Vector3(base.x + (h - 0.5) * 0.075, SHOW_Y, base.z + SHOW_FWD); // two cards side by side (world X), in front of the chips (world +Z)
+            card.position.copy(pos);
+            card.scale.setScalar(1.22);
+            setCardFace(card, s.hole[h]);                            // reveal → face up
+            const rd = revealDelay[s.id];
+            if (rd != null) { const ord = Math.round(rd / SHOWDOWN_STAGGER); this._flipInCard(card, { x: pos.x, y: pos.y, z: pos.z, rotX: SHOW_TILT }, rd + h * 0.06, ord * 2 + h); } // newly revealed → flip up INTO the readable pose, staggered per player; note rises across the reveal order (Balatro celebration run)
+            else card.rotation.set(SHOW_TILT, 0, 0);                 // already-revealed (late-join / re-render) → straight to the readable pose
           } else {
-            // opponents'/bots' cards: lie FLAT on the felt near their edge, FACE-DOWN (back up); only the showdown reveals faces
+            // opponents'/bots' cards still in play: lie FLAT on the felt near their edge, FACE-DOWN (back up)
             const pos = onFelt(0.62).addScaledVector(tang, (h - 0.5) * 0.034);
             card.position.set(pos.x, 0.012 + h * 0.0026, pos.z); // stack physically ON, not z-fighting INTO each other
             card.scale.setScalar(0.8);
-            if (s.hole) {
-              setCardFace(card, s.hole[h]);                          // showdown reveal → face up
-              const rd = revealDelay[s.id];
-              if (rd != null) { const ord = Math.round(rd / SHOWDOWN_STAGGER); this._flipInCard(card, { x: card.position.x, y: card.position.y, z: card.position.z, rotX: 0 }, rd + h * 0.06, ord * 2 + h); } // newly revealed → flip up, staggered per player; note rises across the reveal order (Balatro celebration run)
-            } else card.rotateX(Math.PI);                            // hidden → back-up (face-down on the table)
+            card.rotateX(Math.PI);                                  // hidden → back-up (face-down on the table)
           }
           d.add(card);
           if (h === 0) this._holeAnchors[s.id] = new THREE.Vector3(card.position.x, FELT_Y, card.position.z); // fold-muck origin for this seat
