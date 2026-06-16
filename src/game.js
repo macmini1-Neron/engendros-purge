@@ -1188,7 +1188,8 @@ class Game {
   }
 
   // Re-show every dynamic mesh the cull may have hidden. Called once when `_drawDist` drops back to 0 so the
-  // feature is safe to toggle (DayNight re-expands fog.far on its own each frame; chunk drawDistance is left).
+  // feature is safe to toggle (DayNight re-expands fog.far on its own each frame; chunk drawDistance is reset
+  // to 0 below so TerrainChunks.update re-shows chunks by frustum-only from the next frame).
   _restoreVisibility() {
     if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh) e.mesh.visible = !!e.alive; }
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = true; }
