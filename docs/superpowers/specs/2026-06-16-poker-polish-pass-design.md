@@ -109,6 +109,39 @@ a change to how chips are committed.
 clear `$total` matching the raise amount, styled like the central pot; hover still shows the
 cost/leaves breakdown. No change to committed-chip economy.
 
+### 5. Rename "GAMBLING DEN" → КАТРАН
+
+**Problem.** The header reads "GAMBLING DEN". The English word "DEN" collides visually with
+the Czech word "den" (= *day*), which is confusing for the (Czech) player. Rename to something
+more thematic that can't be misread as Czech.
+
+**Approach.** Replace the `.pk-title` text with **КАТРАН** (Russian criminal slang for an
+illegal underground card room — on-theme with the already-Cyrillic rankings poster) plus a
+small **KATRAN** transliteration subtitle. Style the subtitle as a muted secondary line under
+the title. Done as part of the item-2 header work in `poker-ui.js`.
+
+**Files.** `poker-ui.js` (header markup + a little CSS for the subtitle).
+
+**Acceptance.** Header shows "КАТРАН" with a small "KATRAN" subtitle, styled in the
+POLYMER family; no "DEN" anywhere.
+
+### 6. Win-notification + TV-odds redesign + net-win particles (added mid-implementation)
+
+Owner expanded the pass with three more feel items, all on-theme:
+
+- **Win banner** (`poker-ui.js`): the showdown/winner text becomes a celebratory POLYMER card —
+  winner name + gold `$amount` + the hand name, with an entrance animation; the local player's win
+  is highlighted (green glow). Set via `innerHTML`; all peer names go through `esc()` (no XSS).
+- **TV odds helper** (`poker-ui.js` `_updateOdds`): the flat `~13% to win · vs N` text becomes a
+  broadcast-style badge — a prominent win% + a mini equity bar + a secondary `vs N · outs` line.
+- **Celebration particles** (`poker-scene.js`): a poker-LOCAL instanced particle pool (the global
+  `Effects` pool lives in the main game scene, not poker's private `_scene`, so it can't be reused).
+  A gold/teal fleck burst fires when YOUR net winnings land on your stack (`_pushPotToWinner` →
+  `_celebrateWin`). **NET wins only** — never celebrate a loss-dressed-as-a-win (juice-research ethics).
+
+Audit (background agent) confirmed the DEFER list below: co-op Stage 2 (per-player skin propagation)
+and Stage 3 (multi-skin pot) are out of scope for this pass.
+
 ## Out of scope
 
 - No netcode authority changes, no new `pstate`/message types.
