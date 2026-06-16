@@ -180,7 +180,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       pt.vel.multiplyScalar(Math.max(0, 1 - 1.6 * dt));                 // air drag
       pt.pos.addScaledVector(pt.vel, dt);
       const lf = pt.life / pt.maxLife;
-      const sz = pt.size * (lf > 0.72 ? 1 : lf / 0.72);                 // shrink out over the last ~28%
+      const sz = pt.size * (lf > 0.28 ? 1 : lf / 0.28);                 // hold full size, then shrink out over the last ~28% (punchier than dwindling the whole flight)
       q.setFromAxisAngle(_PAXIS, pt.life * 9);                          // gentle tumble
       m.compose(pt.pos, q, s.set(sz, sz, sz));
       this._pmesh.setMatrixAt(k, m); this._pmesh.setColorAt(k, pt.color);

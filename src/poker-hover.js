@@ -72,7 +72,7 @@ export class PokerHover {
     oblind.visible = false; oblind.renderOrder = 998; oblind.matrixAutoUpdate = false;
     this.r._scene.add(oblind);
     // Hug the puck (r0.034 × h0.012): a THIN rim recentred on the puck MID (y=0.006 within the group),
-    // not the old 1.22×/2.4× halo+tube that left a gap around the model and stuck a yellow tube up above it.
+    // not the old 1.22×/2.4× outline that read as a loose radial halo + sat miscentred (low, into the felt).
     this._Sblind = new THREE.Matrix4().makeTranslation(0, 0.006, 0).multiply(new THREE.Matrix4().makeScale(1.07, 1.5, 1.07));
 
     this._ptr = { x: 0, y: 0 };
