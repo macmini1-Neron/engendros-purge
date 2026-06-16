@@ -494,7 +494,11 @@ export class World {
     if ((o.y - terr.terrainHeightAt(o.x, o.z)) < 0) return 0; // origin already underground
     const lim = Math.min(maxT, 300), step = 0.5;
     let tPrev = 0;
-    for (let t = step; t <= lim; t += step) {
+    // March in `step`-sized samples but ALWAYS sample the endpoint `lim` (clamp each step to it). The old
+    // `for (t = step; t <= lim; …)` skipped everything when lim < step — so a short ray (e.g. a thrown
+    // molotov's `stepLen + radius` ≈ 0.47 m at 60 fps, < step) never tested the surface and tunnelled
+    // straight through hills. Clamping the march to `lim` closes both that gap and the final partial step.
+    for (let t = Math.min(step, lim); ; t = Math.min(t + step, lim)) {
       const above = (o.y + d.y * t) - terr.terrainHeightAt(o.x + d.x * t, o.z + d.z * t);
       if (above <= 0) {
         let lo = tPrev, hi = t;
@@ -505,6 +509,7 @@ export class World {
         }
         return hi;
       }
+      if (t >= lim) break;
       tPrev = t;
     }
     return null;
