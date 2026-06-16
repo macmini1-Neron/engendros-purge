@@ -25,6 +25,7 @@ export function seatProp(world, x, z, buildFn, opts = {}) {
   mesh.position.set(x, y, z);
   if (opts.yaw) mesh.rotation.y = opts.yaw;
   world.scene.add(mesh);
+  if (opts.cull !== false && world.cullProps) world.cullProps.push(mesh); // draw-distance cullable by default (static decoration)
   if (opts.w && opts.d && opts.h) seatBox(world, x, z, opts.w, opts.d, opts.h, opts.collider || {});
   return mesh;
 }
