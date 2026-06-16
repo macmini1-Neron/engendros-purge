@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxelMaterial } from './util.js';
 import { ENEMY_BURN_SLOW } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
-import { buildNavGrid, findPath } from './pathing.js';
+import { buildNavGrid, findPath, lineBlocked } from './pathing.js';
+import { buildFlowField, flowDirAt } from './flowfield.js';
 import { movementSlow, contactWeaken } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
 
@@ -236,6 +237,9 @@ export class EnemyManager {
     this._ghostFires = []; // CLIENT visual-only fire-zone flicker markers
     this._ghostAimRing = null; // CLIENT visual-only tank cannon aim ring
     this._navGrid = null; // boss A* occupancy grid (built once, lazily, on first boss spawn)
+    this._hordeGrid = null; // HORDE flow-field occupancy grid (finer cell, slope-aware; built once, lazily)
+    this._hordeFlow = null; // Dijkstra flow-field toward the host player (refreshed on _flowT timer)
+    this._flowT = 0;        // seconds until the next flow-field refresh
   }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
@@ -296,6 +300,16 @@ export class EnemyManager {
 
   update(dt) {
     const pp = this.game.player.pos;
+    // HORDE NAV: build a finer, slope-aware occupancy grid once per map, then refresh a
+    // Dijkstra flow-field toward the host player on a ~0.3 s timer. Host-only (enemies.update
+    // only runs under `sim` — game.js). Allocation-light: ONE field rebuild per tick (not per
+    // enemy/frame); enemies just look up a unit direction. Small inflate (≈ enemy radius) +
+    // fine cell keep doorways passable so the horde routes THROUGH them.
+    if (this.active.length) {
+      if (!this._hordeGrid) this._hordeGrid = buildNavGrid(this.world, { cell: 1.5, inflate: 0.7, slopeAware: true });
+      this._flowT -= dt;
+      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z); }
+    }
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       if (!e.alive) { this.active.splice(i, 1); continue; }
@@ -315,6 +329,12 @@ export class EnemyManager {
       // giant routes AROUND buildings instead of wedging in a corner. Falls back
       // to the direct heading (below) when close or in clear line of sight.
       if (e.def.boss) { const wp = this._bossWaypoint(e, tgt, dist, dt); if (wp) { const wxp = wp.x - e.pos.x, wzp = wp.z - e.pos.z, wlp = Math.hypot(wxp, wzp) || 1; dx = wxp / wlp; dz = wzp / wlp; } }
+      // HORDE: when the straight line to the target is blocked, steer along the flow-field
+      // (route around cliffs/walls, funnel through doorways). Open LoS → the beeline above stands.
+      else if (this._hordeFlow && this._hordeGrid && lineBlocked(this._hordeGrid, e.pos.x, e.pos.z, tgt.x, tgt.z)) {
+        const fd = flowDirAt(this._hordeFlow, e.pos.x, e.pos.z);
+        if (fd) { dx = fd.x; dz = fd.z; }
+      }
 
       // separation
       let sx = 0, sz = 0;
