@@ -564,7 +564,7 @@ export function buildIndustrial(world, ox, oz) {
 
   const m = new THREE.Mesh(metal.build(), voxelMaterial());
   m.castShadow = true; m.receiveShadow = true;
-  world.scene.add(m);
+  world.scene.add(m); world.addCullable(m); // compact kombinát machinery cluster — draw-distance cullable (fog hides it past the edge)
 
   // --- OBJECT 3: main production hall (главный цех) — north-centre landmark ---
   buildMainHall(world, ox - 16, oz - 18); // world centre (-16, -18)
@@ -580,7 +580,7 @@ export function buildIndustrial(world, ox, oz) {
   buildBlastFurnace(world, struct, ox - 24, oz - 42, 4.5, 18);
   buildBlastFurnace(world, struct, ox - 24, oz - 54, 4, 16);
   const sm = new THREE.Mesh(struct.build(), voxelMaterial());
-  sm.castShadow = true; sm.receiveShadow = true; world.scene.add(sm);
+  sm.castShadow = true; sm.receiveShadow = true; world.scene.add(sm); world.addCullable(sm); // compact powerhouse/chimneys cluster — cullable
 
   // --- OBJECT 5: support buildings (admin, gatehouse, warehouses, canteen, water tower, silos) ---
   const sup = new MeshBuilder();
