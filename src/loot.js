@@ -3,12 +3,16 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, pick, ri, rr, voxelMaterial } from './util.js';
 import { FOOD_RESTORE } from './tuning.js';
 import { KEY_CASH } from './economy.js';
-import { _strut, buildChuteRig, buildFieldRadio, buildFlare, buildSu24, buildSupplyCrate } from './props.js';
+import { _strut, buildChuteRig, buildFieldRadio, buildFlare, buildSupplyCrate } from './props.js';
 import { FIREARM_KEYS, WEAPONS, buildViewmodel } from './weapons.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
+import { buildIl76AirdropFallback, buildIl76AirdropModel, disposeAircraftObject, preloadIl76AirdropModel } from './aircraft.js';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private; duplicated to avoid a cross-module import)
+const _planeTrailWP = new THREE.Vector3();
+const SUPPLY_PLANE_ALT = 42 * 1.4;
+const SUPPLY_DROP_FALL_SPEED = 3.4; // the +40% release height makes the descent about 40% longer.
 
 
 // Survival inventory items — held things that are NOT weapons (consumables/throwables/materials/callables).
@@ -33,7 +37,7 @@ export const ITEM_DEFS = {
 };
 
 // ---------------------------------------------------------------------------
-// LootManager — pickups, the radio→Su-24 supply-drop, and OP loot crates.
+// LootManager — pickups, the radio->IL-76 supply-drop, and OP loot crates.
 // ---------------------------------------------------------------------------
 export class LootManager {
   constructor(game) {
@@ -43,6 +47,7 @@ export class LootManager {
     this.nearBox = null; this.prompt = null; this.nearPickup = null;
     this._pkSeq = 0; // host-only: monotonic id source for networked (shared) pickups
     this._buildLootboxes();
+    preloadIl76AirdropModel();
   }
   _nextPickupId() { return 'pk' + (++this._pkSeq); } // only the HOST ever mints pickup ids
 
@@ -423,7 +428,7 @@ export class LootManager {
     return bonusCash;
   }
 
-  // Radio call-in: a Su-24 streaks across the map and releases a parachute crate over a random spot.
+  // Radio call-in: an IL-76 crosses the map and releases a parachute crate over a random spot.
   // Radio entry point: host/SP spawn the drop; a client asks the host (which rolls + broadcasts the replication spec).
   requestSupplyDrop() {
     const mp = this.game.mp;
@@ -435,7 +440,7 @@ export class LootManager {
     if (this.plane) { // a previous flyby is still airborne — tear it down first so its LOOPING jet clip doesn't orphan (the "double flyby sound") and its mesh doesn't leak
       if (this.plane.jet) this.plane.jet.stop();
       if (!this.plane.released) this._spawnDropCrate(this.plane.target, this.plane.mesh.position.y - 2, this.plane.dropId, this.plane.net); // still deliver its pending crate (don't waste the radio)
-      this.scene.remove(this.plane.mesh); this.plane.mesh.geometry.dispose(); this.plane.mesh.material.dispose();
+      this.scene.remove(this.plane.mesh); disposeAircraftObject(this.plane.mesh);
       this.plane = null;
     }
     let target, ang, id;
@@ -445,14 +450,31 @@ export class LootManager {
       target = pick(spots).clone(); target.y = 0; ang = rr(0, TAU); id = (this._dropId = (this._dropId || 0) + 1);
       if (mp && mp.active && mp.isHost) mp.net.broadcast('supplydrop', { id, tx: target.x, tz: target.z, ang }); // everyone sees the same drop
     }
-    const ALT = 38, R = 200, dx = Math.sin(ang), dz = Math.cos(ang);
-    const mesh = buildSu24(); mesh.scale.setScalar(1.5); // bigger so the detail reads on the pass
-    mesh.position.set(target.x - dx * R, ALT, target.z - dz * R);
-    mesh.rotation.y = Math.atan2(dx, dz) + Math.PI; // model nose is -Z → add PI so the NOSE (not the tail) leads the travel direction
+    const ALT = SUPPLY_PLANE_ALT, R = 220, dx = Math.sin(ang), dz = Math.cos(ang);
+    let mesh = buildIl76AirdropModel() || buildIl76AirdropFallback();
+    const placePlane = (m) => {
+      m.position.set(target.x - dx * R, ALT, target.z - dz * R);
+      m.rotation.y = Math.atan2(dx, dz) + Math.PI; // model nose is -Z -> add PI so the NOSE leads the travel direction
+    };
+    placePlane(mesh);
     this.scene.add(mesh);
-    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 40, target, alt: ALT, travelled: 0, total: R * 3, released: false, trailT: 0, dropId: id, net: !!spec };
-    this.game.hud.toast('📡 Radio: Su-24 inbound!', 0x6fd0e8);
-    this.game.hud.bigMessage('ЗАПРОС ПОДТВЕРЖДЁН', 'a Fencer is making a pass — watch the smoke');
+    this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 36, target, alt: ALT, travelled: 0, total: R * 3, released: false, trailT: 0, dropId: id, net: !!spec };
+    if (mesh.name !== 'IL-76 airdrop aircraft') {
+      preloadIl76AirdropModel().then(() => {
+        const replacement = buildIl76AirdropModel();
+        const pl = this.plane;
+        if (!replacement) return;
+        if (!pl || pl.mesh !== mesh) { disposeAircraftObject(replacement); return; }
+        replacement.position.copy(mesh.position);
+        replacement.rotation.copy(mesh.rotation);
+        this.scene.remove(mesh); disposeAircraftObject(mesh);
+        this.scene.add(replacement);
+        pl.mesh = replacement;
+        mesh = replacement;
+      });
+    }
+    this.game.hud.toast('📡 Radio: IL-76 inbound!', 0x6fd0e8);
+    this.game.hud.bigMessage('ЗАПРОС ПОДТВЕРЖДЁН', 'an IL-76 is making a pass — watch the smoke');
     this.game.audio.radioCall(); // Soviet-radio confirmation + epic WW2 sting
     this.plane.jet = this.game.audio.startJetClip() || (this.game.audio._jetFailed ? null : this.game.audio.startJet()); // real jet clip (fade in/out), else procedural (skipped if the clip already failed)
   }
@@ -462,12 +484,14 @@ export class LootManager {
     const step = pl.speed * dt; pl.travelled += step;
     pl.mesh.position.addScaledVector(pl.dir, step);
     pl.mesh.position.y = pl.alt + Math.sin(pl.travelled * 0.04) * 0.6; // gentle bob
-    // twin engine contrails — blooming vapour puffs from both exhaust nozzles
+    // engine contrails — IL-76 uses four wing engines; fallback Su-24 keeps its twin nozzles.
     pl.trailT -= dt;
     if (pl.trailT <= 0) {
       pl.trailT = 0.05;
       pl.mesh.updateMatrixWorld();
-      for (const cx of [-0.48, 0.48]) this.game.effects.contrailPuff(pl.mesh.localToWorld(new THREE.Vector3(cx, -0.05, 6.3)), { size: 2.1, life: 3.4 });
+      const ports = Array.isArray(pl.mesh.userData.contrailPorts) ? pl.mesh.userData.contrailPorts : [new THREE.Vector3(-0.48, -0.05, 6.3), new THREE.Vector3(0.48, -0.05, 6.3)];
+      const puff = pl.mesh.userData.contrailPuff || { size: 2.1, life: 3.4 };
+      for (const port of ports) this.game.effects.contrailPuff(pl.mesh.localToWorld(_planeTrailWP.copy(port)), puff);
     }
     if (pl.jet && pl.jet.set) { const pp = this.game.player.pos, mp = pl.mesh.position; const dist = Math.hypot(mp.x - pp.x, mp.y - pp.y, mp.z - pp.z); const near = clamp(1 - (dist - 30) / 170, 0, 1); pl.jet.set(0.25 + near * 0.75, near); }
     // release the crate at closest approach to the target
@@ -475,7 +499,7 @@ export class LootManager {
       const ahead = (pl.target.x - pl.mesh.position.x) * pl.dir.x + (pl.target.z - pl.mesh.position.z) * pl.dir.z;
       if (ahead <= 0) { pl.released = true; this._spawnDropCrate(pl.target, pl.mesh.position.y - 2, pl.dropId, pl.net); this.game.audio.uiClick(); }
     }
-    if (pl.travelled >= pl.total) { if (pl.jet) pl.jet.stop(); this.scene.remove(pl.mesh); pl.mesh.geometry.dispose(); pl.mesh.material.dispose(); this.plane = null; }
+    if (pl.travelled >= pl.total) { if (pl.jet) pl.jet.stop(); this.scene.remove(pl.mesh); disposeAircraftObject(pl.mesh); this.plane = null; }
   }
 
   _spawnDropCrate(pos, fromY, id, isNet) {
@@ -488,11 +512,12 @@ export class LootManager {
     this.scene.add(grp);
     // a REAL lit signal flare strapped to the load (replaces the old glowing orb): burning flame nub + flickering light + smoke
     const flareMesh = buildFlare();
-    flareMesh.position.set(0.5, 1.28, 0.42); flareMesh.rotation.set(0.45, 0.7, 0.5); // jammed onto the crate at an angle, cap up
+    flareMesh.position.set(0.5, 0.78, 0.42); flareMesh.rotation.set(0.45, 0.7, 0.5); // strapped low on the crate so smoke/flame stays under the chute
+    flareMesh.scale.setScalar(0.72);
     grp.add(flareMesh);
-    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.88, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     flame.position.set(0, 0.34, 0); flame.renderOrder = 998; flareMesh.add(flame);                                          // burning nub at the cap (flare local +Y)
-    const flareLight = new THREE.PointLight(0xff5a26, 16, 28, 1.3); flareLight.position.set(0, 0.42, 0); flareMesh.add(flareLight); // starts hot (ignite), eased down in update
+    const flareLight = new THREE.PointLight(0xff5a26, 9, 18, 1.3); flareLight.position.set(0, 0.36, 0); flareMesh.add(flareLight); // starts hot (ignite), eased down in update
     this.drops.push({ id, _net: !!isNet, grp, crate, chute, lines, flareMesh, flame, flameMat: flame.material, flareLight, flareLife: 20, flareSmokeT: 0, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
     this.game.hud.toast('📦 Supply drop released!', 0xff8a3a);
   }
@@ -618,16 +643,16 @@ export class LootManager {
         if (d.state === 'landed') d.flareLife -= dt;                                    // full-bright during the descent; 20s countdown starts on the ground
         const fade = d.flareLife < 3.5 ? Math.max(0, d.flareLife / 3.5) : 1;            // gradual burn-out over the last 3.5s
         const flick = 0.82 + Math.sin(d.t * 22) * 0.12 + Math.sin(d.t * 57) * 0.05;
-        d.flareLight.intensity += (9 * fade * flick - d.flareLight.intensity) * Math.min(1, dt * 6); // ease the ignite spike down, then fade
+        d.flareLight.intensity += (5.5 * fade * flick - d.flareLight.intensity) * Math.min(1, dt * 6); // ease the ignite spike down, then fade
         d.flareLight.color.setHSL(0.035, 1, 0.5 + 0.05 * Math.sin(d.t * 30));
-        d.flame.scale.setScalar((0.8 + Math.sin(d.t * 26) * 0.2) * (0.4 + 0.6 * fade));
-        d.flameMat.opacity = 0.95 * fade;
+        d.flame.scale.setScalar((0.55 + Math.sin(d.t * 26) * 0.12) * (0.4 + 0.6 * fade));
+        d.flameMat.opacity = 0.82 * fade;
         d.flareSmokeT -= dt;
-        if (d.flareSmokeT <= 0) { d.flareSmokeT = 0.08; d.flame.getWorldPosition(_flareWP); this.game.effects.flareSmoke(_flareWP.clone().setY(_flareWP.y + 0.05), fade); }
+        if (d.flareSmokeT <= 0) { d.flareSmokeT = 0.12; d.flame.getWorldPosition(_flareWP); this.game.effects.flareSmoke(_flareWP.clone().setY(_flareWP.y - 0.04), fade * 0.65); }
         if (d.flareLife <= 0) { d.flareLight.intensity = 0; d.flame.visible = false; }  // burned out
       }
       if (d.state === 'falling') {
-        d.y -= dt * 3.4; d.sway += dt;
+        d.y -= dt * SUPPLY_DROP_FALL_SPEED; d.sway += dt;
         // settle on terrain height (flat maps: 0)
         const _landY = (this.game.world.hasTerrain ? this.game.world.terrain.terrainHeightAt(d.pos.x, d.pos.z) : 0) + 0.1;
         if (d.y <= _landY) { d.y = _landY; d.state = 'landed'; d.grp.position.set(d.pos.x, _landY, d.pos.z); d.chute.visible = false; d.lines.visible = false; this.game.hud.toast('📦 Drop landed — go grab it!', 0xff8a3a); this.game.audio.buy(); }
@@ -647,6 +672,6 @@ export class LootManager {
     this.pickups.length = 0; this._pkSeq = 0;
     for (const d of this.drops) this._disposeDrop(d);
     this.drops.length = 0; this.nearDrop = null; this.nearPickup = null;
-    if (this.plane) { if (this.plane.jet) this.plane.jet.stop(); this.scene.remove(this.plane.mesh); this.plane.mesh.geometry.dispose(); this.plane.mesh.material.dispose(); this.plane = null; }
+    if (this.plane) { if (this.plane.jet) this.plane.jet.stop(); this.scene.remove(this.plane.mesh); disposeAircraftObject(this.plane.mesh); this.plane = null; }
   }
 }

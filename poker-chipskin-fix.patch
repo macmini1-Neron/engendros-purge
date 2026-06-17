@@ -1,0 +1,24 @@
+diff --git a/src/mp.js b/src/mp.js
+index e008599b..4f40e874 100644
+--- a/src/mp.js
++++ b/src/mp.js
+@@ -643,6 +643,7 @@ export class MP {
+     n.on('pkleave', (d, from) => { if (this.isHost && g.poker) g.poker.onPeerDisconnect(from); }); // client left the table → eliminate
+     n.on('pkabort', () => { if (!this.isHost && g.poker) g.poker.onAbort(); }); // host ended the session → onAbort refunds + returns to lobby
+     n.on('pkante', (d, from) => { if (this.isHost && g.poker) g.poker.onAnte(from); }); // client confirmed it paid its buy-in → count it in the pool (C1 ante-ack)
++    n.on('chipskin', (d, from) => { if (!this.isHost || !d) return; const r = this.roster.get(from); if (r && typeof d.chipSkin === 'string') { r.chipSkin = d.chipSkin; this.net.send('roster', this._rosterArr()); this._renderRoster(); } }); // cosmetic: update only the peer's poker chip skin, PRESERVING its anted/ready state
+     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
+     n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
+     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio
+@@ -771,7 +772,10 @@ export class MP {
+       const me = this.roster.get('host'); if (me) me.chipSkin = skin;
+       try { this.net.send('roster', this._rosterArr()); } catch (e) {}    // host owns the roster → re-broadcast it
+     } else {
+-      try { this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, chipSkin: skin, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId }); } catch (e) {} // re-hello → host re-stores my chipSkin
++      // Targeted skin-only update — NOT a re-hello: a full hello re-handshake would reset my roster
++      // entry to ready:false on the host (its hello handler always un-readies), which would wipe my
++      // anted state mid-lobby and disable the host's DEAL button. This only touches chipSkin.
++      try { this.net.send('chipskin', { chipSkin: skin }); } catch (e) {}
+     }
+   }
+   _remote(id) {

@@ -29,14 +29,43 @@ const REVIVE_CLICKS = 30;
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
+const LAN_HELPER_PORT = 53736;
 export function mpEscape(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+
+function cleanRoomCode(code) {
+  return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+}
 
 function lanLauncherMode() {
   try { return new URLSearchParams(location.search).get('lan') === '1'; } catch (e) { return false; }
 }
 
+function vercelBridgeMode() {
+  try { return !lanLauncherMode() && location.protocol === 'https:'; } catch (e) { return false; }
+}
+
 function lanInfoUrl() {
   try { return `${location.origin}/__engendros_lan_info`; } catch (e) { return '/__engendros_lan_info'; }
+}
+
+function localLanInfoUrls() {
+  return [
+    `http://127.0.0.1:${LAN_HELPER_PORT}/__engendros_lan_info`,
+    `http://localhost:${LAN_HELPER_PORT}/__engendros_lan_info`,
+  ];
+}
+
+function withUrlParams(url, params) {
+  try {
+    const u = new URL(url, location.href);
+    for (const [k, v] of Object.entries(params || {})) {
+      if (v == null || v === '') u.searchParams.delete(k);
+      else u.searchParams.set(k, String(v));
+    }
+    return u.href;
+  } catch (e) {
+    return url;
+  }
 }
 
 class RemotePlayer {
@@ -146,8 +175,10 @@ export class MP {
   constructor(game) {
     this.game = game;
     this._lanLauncher = lanLauncherMode();
-    this._lanInfo = null; this._lanInfoError = ''; this._lanInfoLoading = false; this._lanInfoTried = false;
+    this._lanInfo = null; this._lanInfoError = ''; this._lanInfoLoading = false; this._lanInfoTried = false; this._lanInfoSource = '';
+    this._lanInviteRoom = (() => { try { return cleanRoomCode(new URLSearchParams(location.search).get('room')) || makeRoomCode(); } catch (e) { return makeRoomCode(); } })();
     if (this._lanLauncher) { try { localStorage.setItem('engendros_lan_mode', '1'); } catch (e) {} }
+    else if (vercelBridgeMode()) { try { localStorage.setItem('engendros_lan_mode', '0'); } catch (e) {} }
     this.net = this._makeNet();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
@@ -268,43 +299,79 @@ export class MP {
     this._renderLanPanel();
   }
   _fetchLanInfo() {
-    if (!this._lanLauncher || this._lanInfoTried || this._lanInfoLoading || typeof fetch === 'undefined') return;
+    if (this._lanInfoTried || this._lanInfoLoading || typeof fetch === 'undefined') return;
     this._lanInfoTried = true;
     this._lanInfoLoading = true;
-    fetch(lanInfoUrl(), { cache: 'no-store' })
+    const urls = this._lanLauncher ? [lanInfoUrl()] : localLanInfoUrls();
+    const tryNext = (i) => fetch(urls[i], { cache: 'no-store', mode: 'cors' })
       .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then((info) => { this._lanInfo = info; this._lanInfoError = ''; })
-      .catch((e) => { this._lanInfoError = 'LAN host info unavailable'; })
+      .then((info) => { this._lanInfo = info; this._lanInfoSource = urls[i]; this._lanInfoError = ''; })
+      .catch((e) => {
+        if (i + 1 < urls.length) return tryNext(i + 1);
+        throw e;
+      });
+    tryNext(0)
+      .catch((e) => { this._lanInfoError = this._lanLauncher ? 'LAN host info unavailable' : 'Local LAN helper not found'; })
       .then(() => { this._lanInfoLoading = false; this._renderLanPanel(); });
   }
   async _copyLanUrl(url) {
     if (!url) return;
     const ok = this.game && this.game._copyText ? await this.game._copyText(url) : false;
     this._setLobbyDiag(ok ? 'LAN join URL copied.' : 'Copy failed. Select the LAN URL and copy it manually.');
+    return ok;
+  }
+  _lanInviteUrls(info) {
+    const room = cleanRoomCode(this._lanInviteRoom) || makeRoomCode();
+    this._lanInviteRoom = room;
+    const hostBase = (info && (info.localUrl || info.preferredUrl)) || '';
+    const friendBase = (info && (info.hamachiUrl || info.preferredUrl || info.localUrl)) || '';
+    return {
+      room,
+      hostUrl: hostBase ? withUrlParams(hostBase, { lan: '1', room, host: '1', join: '' }) : '',
+      friendUrl: friendBase ? withUrlParams(friendBase, { lan: '1', room, join: '1', host: '' }) : '',
+    };
+  }
+  async _hostViaLanHelper(inviteUrl, hostUrl) {
+    if (!hostUrl) return;
+    await this._copyLanUrl(inviteUrl);
+    this._setLobbyDiag('Opening local LAN host. Send the copied invite URL to your squad.');
+    setTimeout(() => { location.href = hostUrl; }, 250);
   }
   _renderLanPanel() {
     const el = document.getElementById('mp-lan-panel'); if (!el) return;
     const lan = this._lanMode();
-    if (!this._lanLauncher && !lan) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    if (!this._lanLauncher) this._fetchLanInfo();
+    const bridge = !this._lanLauncher && !lan;
+    if (!this._lanLauncher && !lan && !this._lanInfo && !this._lanInfoLoading && !this._lanInfoError) { el.style.display = 'none'; el.innerHTML = ''; return; }
     el.style.display = '';
     if (this._lanLauncher) this._fetchLanInfo();
     const info = this._lanInfo;
-    const joinUrl = (info && (info.hamachiUrl || info.preferredUrl || info.localUrl)) || (() => { try { return `${location.origin}/?lan=1`; } catch (e) { return '?lan=1'; } })();
+    const invite = this._lanInviteUrls(info);
+    const joinUrl = invite.friendUrl || (info && (info.hamachiUrl || info.preferredUrl || info.localUrl)) || (() => { try { return `${location.origin}/?lan=1`; } catch (e) { return '?lan=1'; } })();
     const port = info && info.port ? String(info.port) : 'same port';
     const relay = info && info.relay ? `${info.relay.path} · ${info.relay.rooms} rooms · ${info.relay.clients} peers` : (this._lanLauncher ? 'same-origin relay' : 'manual relay :8787');
-    const state = this._lanLauncher
+    const state = bridge
+      ? (info ? 'Local Hamachi helper found' : (this._lanInfoError || 'Looking for local helper...'))
+      : this._lanLauncher
       ? (info ? (info.hamachiUrl ? 'Hamachi IPv4 detected' : 'Hamachi IPv4 not detected') : (this._lanInfoError || 'Reading LAN host info...'))
       : 'Manual LAN mode';
-    const hint = this._lanLauncher
+    const hint = bridge
+      ? (info ? `Room ${invite.room}: host locally and send the copied invite; your friend auto-joins.` : `Run: node scripts/lan-host.js --port ${LAN_HELPER_PORT}`)
+      : (this._lanLauncher && invite.room)
+      ? `Room ${invite.room}: share this URL; it auto-joins without typing the code.`
+      : this._lanLauncher
       ? 'Share this URL, then host a room and share the room code.'
       : 'For one-port hosting, run node scripts/lan-host.js and open its ?lan=1 URL.';
+    const hostButton = bridge && info && invite.hostUrl ? '<button class="btn go mini" data-lan-host-invite="1">HOST &amp; COPY</button>' : '';
     el.innerHTML = `
       <div class="mp-lan-head"><span>LAN HOST</span><b>${mpEscape(state)}</b></div>
-      <div class="mp-lan-url"><span>${mpEscape(joinUrl)}</span><button class="btn sec mini" data-lan-copy="1">COPY</button></div>
+      <div class="mp-lan-url"><span>${mpEscape(joinUrl)}</span><div class="mp-lan-buttons"><button class="btn sec mini" data-lan-copy="1">COPY</button>${hostButton}</div></div>
       <div class="mp-lan-kv"><span>PORT</span><b>${mpEscape(port)}</b><span>RELAY</span><b>${mpEscape(relay)}</b></div>
       <div class="mp-lan-hint">${mpEscape(hint)}</div>`;
     const copy = el.querySelector('[data-lan-copy]');
     if (copy) copy.onclick = () => this._copyLanUrl(joinUrl);
+    const host = el.querySelector('[data-lan-host-invite]');
+    if (host) host.onclick = () => this._hostViaLanHelper(joinUrl, invite.hostUrl);
   }
   toggleRelayMode() {
     const on = !this._forceRelay();
@@ -377,13 +444,13 @@ export class MP {
     this._resetDiag('idle', '');
     this._renderRoomBrowser();
   }
-  startHost(name) {
+  startHost(name, codeOverride = '') {
     this._clearJoinHandshakeTimer();
     this._setLobbyDiag('');
     this._resetLobbyTransport();
     this.name = name || 'Host'; this.isHost = true; this.myId = 'host';
     this.roster.set('host', { name: this.name, skin: this.chosenSkin || 0, chipSkin: (this.game.meta && this.game.meta.chipSkin) || 'dice', ready: true, loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
-    const code = makeRoomCode();
+    const code = cleanRoomCode(codeOverride) || makeRoomCode();
     this._resetDiag('host', code);
     this.net.onPeerOpen = (c) => { this._lobbyMsg(`Room code: <b>${c}</b> — copy it and send it to the squad.`, c); this._setLobbyDiag(this._lanMode() ? 'LAN room is open. Squad joins through the Hamachi IP and this code.' : 'Manual room is open. Share the code; no public-room scanner is running.'); this._renderRoomBrowser(); };
     this.net.onError = (t) => { this._lobbyMsg(this._netErr(t)); };

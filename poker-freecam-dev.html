@@ -1,0 +1,137 @@
+<!doctype html>
+<!-- DEV-ONLY FREE CAMERA for the 3D poker scene. Orbit/pan/dolly the camera with the mouse, read the
+     exact camera values off the HUD, hit COPY, and paste them back. Not part of the game. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>poker free-cam</title>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<style>
+  html,body{margin:0;height:100%;background:#000;font-family:system-ui;overflow:hidden}
+  #poker.overlay{position:fixed;inset:0;display:flex;align-items:stretch;justify-content:stretch}
+  #hud{position:fixed;top:0;left:0;right:0;z-index:99;padding:8px 12px;
+    font:bold 14px ui-monospace,Menlo,monospace;color:#7fffcf;background:rgba(0,0,0,.72);
+    display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  #hud.err{color:#f66}
+  #snippet{color:#ffe08a;user-select:all;white-space:pre}
+  #copy{cursor:pointer;background:#1d6b53;color:#eafff5;border:0;border-radius:6px;padding:5px 12px;font:bold 13px ui-monospace,monospace}
+  #copy:active{background:#2a916f}
+  #hint{position:fixed;bottom:8px;left:8px;z-index:99;color:#9fb;background:rgba(0,0,0,.6);
+    padding:8px 12px;border-radius:8px;font:12px ui-monospace,monospace;line-height:1.55;pointer-events:none}
+  #ok{color:#6f6}
+</style>
+</head>
+<body>
+<div id="hud"><span id="ok">booting…</span></div>
+<div id="poker" class="overlay"></div>
+<div id="hint">
+  <b>FREE CAM</b><br>
+  • drag = otáčení (orbit)<br>
+  • pravé tlačítko / Shift+drag = posun cíle (pan)<br>
+  • kolečko = blíž / dál (dolly)<br>
+  • <b>[</b> / <b>]</b> = FOV − / +    •    <b>W/S</b> = cíl výš/níž<br>
+  • <b>R</b> = reset na výchozí sedící pohled<br>
+  → až máš úhel, klikni <b>COPY</b> nahoře a pošli mi to.
+</div>
+<script type="module">
+import * as THREE from 'three';
+const hud = document.getElementById('hud'); const okEl = document.getElementById('ok');
+const errs = [];
+function fail(msg){ errs.push(msg); hud.className='err'; okEl.textContent='ERROR: '+errs.join(' | '); document.title='ERR'; }
+window.addEventListener('error', e => fail(e.message + ' @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno));
+window.addEventListener('unhandledrejection', e => fail('promise: ' + (e.reason && e.reason.message || e.reason)));
+const _ce = console.error; console.error = (...a)=>{ fail(a.join(' ')); _ce.apply(console,a); };
+
+try {
+  const { PokerSceneRenderer } = await import('./src/poker-scene.js');
+  const names = { you:'YOU', bot0:'СЕРЁГА', bot1:'ДОКТОР', bot2:'КАБАН', bot3:'ТЁТЯ ЗИНА', bot4:'ПРАПОР' };
+  const seats = [
+    { id:'you',  idx:0, stack:1500, roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:[{r:14,s:'s'},{r:13,s:'h'}] },
+    { id:'bot0', idx:1, stack:980,  roundBet:40, committed:60, folded:false, allIn:false, hasCards:true, hole:null },
+    { id:'bot1', idx:2, stack:2200, roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:null },
+    { id:'bot2', idx:3, stack:1500, roundBet:0,  committed:0,  folded:true,  allIn:false, hasCards:false, hole:null },
+    { id:'bot3', idx:4, stack:340,  roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:null },
+    { id:'bot4', idx:5, stack:1500, roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:null },
+  ];
+  const view = { seats, board:[{r:7,s:'c'},{r:2,s:'d'},{r:11,s:'h'}], pot:240, button:0, toAct:0, currentBet:40, minRaise:20, street:'flop', sb:10, bb:20 };
+  const tour = { level:0, sb:10, bb:20, handNumber:3, button:0, prizePool:0, over:false, winner:null, players:seats.map(s=>({id:s.id,stack:s.stack,place:null})) };
+  const payload = {
+    view, tour,
+    legal:{ seat:'you', canCheck:false, canCall:true, callAmount:40, canRaise:true, minRaiseTo:80, maxRaiseTo:1500 },
+    yourTurn:true, timerFrac:0.6, phase:'playing', result:null, over:false, youId:'you', names, moneyPayout:0,
+  };
+  const r = new PokerSceneRenderer(document.getElementById('poker'), { onStart(){}, onAct(){}, onLeave(){} });
+  r.mount(); r.showTable(); r.renderTable(payload);
+
+  // ---- free orbit camera state (starts at the current baked seated pose) ----
+  const DEFAULT = { tx:0, ty:0.04, tz:-0.16, dist:1.229, az:0, pol:0.3835, fov:60 };
+  const cam = { ...DEFAULT };
+  const reset = () => Object.assign(cam, DEFAULT);
+
+  function apply(){
+    const c = r.cam;
+    const ox = cam.dist * Math.cos(cam.pol) * Math.sin(cam.az);
+    const oy = cam.dist * Math.sin(cam.pol);
+    const oz = cam.dist * Math.cos(cam.pol) * Math.cos(cam.az);
+    c.position.set(cam.tx + ox, cam.ty + oy, cam.tz + oz);
+    c.lookAt(cam.tx, cam.ty, cam.tz);
+    c.fov = cam.fov; c.updateProjectionMatrix();
+  }
+  const f2 = n => (Math.round(n*100)/100).toFixed(2);
+  let snippetText = '';
+  function updateHUD(){
+    const c = r.cam;
+    snippetText =
+      `this.cam = new THREE.PerspectiveCamera(${Math.round(cam.fov)}, 1.6, 0.03, 60);\n` +
+      `this.cam.position.set(${f2(c.position.x)}, ${f2(c.position.y)}, ${f2(c.position.z)}); ` +
+      `this.cam.lookAt(${f2(cam.tx)}, ${f2(cam.ty)}, ${f2(cam.tz)});`;
+    hud.innerHTML = '';
+    const s = document.createElement('span'); s.id='snippet'; s.textContent = snippetText;
+    const b = document.createElement('button'); b.id='copy'; b.textContent='COPY';
+    b.onclick = async () => { try { await navigator.clipboard.writeText(snippetText); b.textContent='COPIED ✓'; setTimeout(()=>b.textContent='COPY',1200); } catch(e){ b.textContent='select+⌘C'; } };
+    hud.append(s, b);
+  }
+
+  // ---- input ----  (listen on WINDOW in the CAPTURE phase so events reach us regardless of the
+  // 3D canvas sitting UNDER the z-index:2 .pk-wrap DOM overlay; skip real buttons so COPY/radio still click)
+  const isBtn = (e) => !!(e.target && e.target.closest && e.target.closest('button'));
+  let drag = null;
+  window.addEventListener('contextmenu', e => e.preventDefault(), true);
+  window.addEventListener('pointerdown', e => {
+    if (isBtn(e)) return;
+    drag = { x:e.clientX, y:e.clientY, pan: e.button===2 || e.shiftKey };
+  }, true);
+  window.addEventListener('pointerup', () => drag = null, true);
+  window.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.pan){
+      // pan the look-at target in the camera's local right/up plane
+      const c = r.cam, right = new THREE.Vector3(), up = new THREE.Vector3();
+      c.matrixWorld.extractBasis(right, up, new THREE.Vector3());
+      const k = cam.dist * 0.0016;
+      cam.tx += (-dx*right.x + dy*up.x)*k; cam.ty += (-dx*right.y + dy*up.y)*k; cam.tz += (-dx*right.z + dy*up.z)*k;
+    } else {
+      cam.az -= dx*0.005;
+      cam.pol = Math.max(-1.45, Math.min(1.45, cam.pol + dy*0.005));
+    }
+  }, true);
+  window.addEventListener('wheel', e => {
+    if (isBtn(e)) return;
+    e.preventDefault();
+    cam.dist = Math.max(0.35, Math.min(5, cam.dist * (1 + e.deltaY*0.0012)));
+  }, { capture:true, passive:false });
+  window.addEventListener('keydown', e => {
+    if (e.key===']') cam.fov = Math.min(100, cam.fov+1);
+    else if (e.key==='[') cam.fov = Math.max(25, cam.fov-1);
+    else if (e.key==='w'||e.key==='W') cam.ty += 0.02;
+    else if (e.key==='s'||e.key==='S') cam.ty -= 0.02;
+    else if (e.key==='r'||e.key==='R') reset();
+  });
+
+  if (errs.length===0) okEl.textContent = 'OK';
+  (function loop(){ apply(); r.renderTable(payload); updateHUD(); requestAnimationFrame(loop); })();
+} catch (e) { fail((e && e.stack) || String(e)); }
+</script>
+</body>
+</html>

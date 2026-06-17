@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><title>poker tray preview</title>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<style>html,body{margin:0;height:100%;background:#000;font-family:system-ui}#poker.overlay{position:fixed;inset:0;display:flex}
+#info{position:fixed;top:0;left:0;right:0;z-index:99;padding:6px 10px;font:bold 12px monospace;color:#8f8;background:rgba(0,0,0,.55)}</style>
+</head><body><div id="info">loading… (tahle stránka je jen NÁHLED trayů s uměle velkým stackem — pro hru použij hlavní odkaz)</div><div id="poker" class="overlay"></div>
+<script type="module">
+const info=document.getElementById('info');
+try{
+  const {PokerTable}=await import('./src/poker-table.js');
+  const {PokerSceneRenderer}=await import('./src/poker-scene.js');
+  const game={meta:{bank:0},_saveMeta(){},hud:{toast(){}},settings:{data:{pokerOdds:false}},closePoker(){},mp:{}};
+  const pk=new PokerTable(game);pk.RendererClass=PokerSceneRenderer;pk._ensureRenderer();
+  pk.startTournament({bots:5});
+  pk.chipbank.stacks['bot0']={500:2,100:36,50:14,20:9,10:7,5:8};  // huge win → cap + grid demo
+  window.__pk=pk;pk.render();
+  info.textContent='NÁHLED trayů — bot0 (SHARK) má uměle obří stack ať vidíš cap+mřížku. Ostatní mají startovní stack.';
+  let f=0;(function loop(){window.__pk=pk;pk.render();if(++f<100000)requestAnimationFrame(loop);})();
+}catch(e){info.textContent='ERR: '+((e&&e.message)||e);}
+</script></body></html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<!-- DEV-ONLY camera tuner for PokerSceneRenderer. ?cam=x,y,z,lx,ly,lz,fov overrides the camera. Not part of the game. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>poker cam tuner</title>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<style>
+  html,body{margin:0;height:100%;background:#000;font-family:system-ui}
+  #poker.overlay{position:fixed;inset:0;display:flex;align-items:stretch;justify-content:stretch}
+  #status{position:fixed;top:0;left:0;right:0;z-index:99;padding:6px 10px;font:bold 13px monospace;
+    color:#8f8;background:rgba(0,0,0,.6)}
+  #status.err{color:#f66}
+</style>
+</head>
+<body>
+<div id="status">booting…</div>
+<div id="poker" class="overlay"></div>
+<script type="module">
+const status = document.getElementById('status');
+const errs = []; window.__err = errs;
+function fail(msg){ errs.push(msg); status.className='err'; status.textContent = 'ERROR: '+errs.join(' | '); document.title='ERR'; }
+window.addEventListener('error', e => fail(e.message + ' @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno));
+window.addEventListener('unhandledrejection', e => fail('promise: ' + (e.reason && e.reason.message || e.reason)));
+const _ce = console.error; console.error = (...a)=>{ fail(a.join(' ')); _ce.apply(console,a); };
+
+try {
+  const { PokerSceneRenderer } = await import('./src/poker-scene.js');
+  const names = { you:'YOU', bot0:'СЕРЁГА', bot1:'ДОКТОР', bot2:'КАБАН', bot3:'ТЁТЯ ЗИНА', bot4:'ПРАПОР' };
+  const seats = [
+    { id:'you',  idx:0, stack:1500, roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:[{r:14,s:'s'},{r:13,s:'h'}] },
+    { id:'bot0', idx:1, stack:980,  roundBet:40, committed:60, folded:false, allIn:false, hasCards:true, hole:null },
+    { id:'bot1', idx:2, stack:2200, roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:null },
+    { id:'bot2', idx:3, stack:1500, roundBet:0,  committed:0,  folded:true,  allIn:false, hasCards:false, hole:null },
+    { id:'bot3', idx:4, stack:340,  roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:null },
+    { id:'bot4', idx:5, stack:1500, roundBet:0,  committed:20, folded:false, allIn:false, hasCards:true, hole:null },
+  ];
+  const view = { seats, board:[{r:7,s:'c'},{r:2,s:'d'},{r:11,s:'h'}], pot:240, button:0, toAct:0, currentBet:40, minRaise:20, street:'flop', sb:10, bb:20 };
+  const tour = { level:0, sb:10, bb:20, handNumber:3, button:0, prizePool:0, over:false, winner:null, players:seats.map(s=>({id:s.id,stack:s.stack,place:null})) };
+  const payload = {
+    view, tour,
+    legal:{ seat:'you', canCheck:false, canCall:true, callAmount:40, canRaise:true, minRaiseTo:80, maxRaiseTo:1500 },
+    yourTurn:true, timerFrac:0.6, phase:'playing', result:null, over:false, youId:'you', names, moneyPayout:0,
+  };
+  const r = new PokerSceneRenderer(document.getElementById('poker'), { onStart(){}, onAct(a){console.log('act',a)}, onLeave(){} });
+  r.mount(); r.showTable();
+
+  // ---- camera override from ?cam=x,y,z,lx,ly,lz,fov ----
+  const q = new URLSearchParams(location.search);
+  const cam = (q.get('cam')||'').split(',').map(Number);
+  if (cam.length >= 6 && cam.every(n=>!Number.isNaN(n))) {
+    r.cam.position.set(cam[0], cam[1], cam[2]);
+    r.cam.lookAt(cam[3], cam[4], cam[5]);
+    if (cam[6]) { r.cam.fov = cam[6]; r.cam.updateProjectionMatrix(); }
+    r._camLock = { pos:[cam[0],cam[1],cam[2]], look:[cam[3],cam[4],cam[5]] };
+  }
+  const label = cam.length>=6 ? `cam=[${cam.map(n=>+n.toFixed(2)).join(', ')}]` : 'default cam';
+
+  r.renderTable(payload);
+  if (errs.length === 0) { status.textContent = 'OK · '+label; document.title='OK'; }
+  let frames = 0;
+  (function loop(){
+    // re-assert the override every frame in case renderTable/_draw resets it
+    if (r._camLock) { r.cam.position.set(...r._camLock.pos); r.cam.lookAt(...r._camLock.look); }
+    r.renderTable(payload);
+    if(++frames<400) requestAnimationFrame(loop);
+  })();
+} catch (e) { fail((e && e.stack) || String(e)); }
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- DEV-ONLY modelgen render harness for poker-table (mirrors VIEWER's canonical sweep). Not shipped. -->
+<html><head><meta charset="utf-8"><title>poker-table dev</title>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<style>
+  html,body{margin:0;height:100%;background:#15171c}
+  #c{display:block;width:100vw;height:100vh}
+  #status{position:fixed;top:0;left:0;right:0;z-index:9;padding:5px 9px;font:bold 13px monospace;color:#8f8;background:rgba(0,0,0,.55)}
+  #status.err{color:#f66}
+  #ov{position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;opacity:0;pointer-events:none;z-index:5}
+</style></head>
+<body>
+<div id="status">booting…</div>
+<canvas id="c"></canvas>
+<img id="ov" src="">
+<script type="module">
+import * as THREE from 'three';
+const status = document.getElementById('status');
+const fail = m => { status.className='err'; status.textContent='ERROR: '+m; document.title='ERR'; };
+window.addEventListener('error', e => fail(e.message+' @ '+(e.filename||'').split('/').pop()+':'+e.lineno));
+const q = new URLSearchParams(location.search);
+const view = q.get('view') || 'q34';
+const ghost = q.get('ghost') === '1';
+const overlay = q.get('overlay');
+try {
+  const { buildSpec } = await import('./src/props/voxel-interp.js');
+  const MODEL = q.get('model') || 'poker-table';
+  const spec = await (await fetch('./models/'+MODEL+'/spec.json?cb='+Date.now())).json();
+  const bodymat = q.get('bodymat'); // recolor the part with id 'body' (poker-chip per-denom preview)
+  if (bodymat) { const b = spec.parts.find(p => p.id === 'body'); if (b) b.mat = bodymat; }
+  const model = buildSpec(spec);
+
+  const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias:true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  const W = innerWidth, H = innerHeight; renderer.setSize(W,H,false);
+  renderer.setClearColor(0x15171c,1);
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xfff4e2, 0x303038, 1.15));
+  const key = new THREE.DirectionalLight(0xfff1d0, 1.8); key.position.set(2.5,4,3); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x9fb8ff, 0.5); rim.position.set(-3,2,-2.5); scene.add(rim);
+  scene.add(model);
+  // faint ground grid for scale
+  const grid = new THREE.GridHelper(3, 30, 0x445, 0x223); grid.position.y = 0; scene.add(grid);
+  if (ghost) { const g = new THREE.Mesh(new THREE.BoxGeometry(0.4,1.75,0.25), new THREE.MeshLambertMaterial({color:0x335577,transparent:true,opacity:0.5})); g.position.set(0.95,0.875,0); scene.add(g); }
+
+  const box = new THREE.Box3().setFromObject(model);
+  const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+  const R = Math.max(s.x,s.y,s.z), dist = R*1.9 + 0.4;
+  const cam = new THREE.PerspectiveCamera(40, W/H, 0.02, 60);
+  const DIRS = {
+    front:  new THREE.Vector3(0, 0.35, 1),
+    q34:    new THREE.Vector3(0.85, 0.6, 1),
+    side:   new THREE.Vector3(1, 0.35, 0.05),
+    top:    new THREE.Vector3(0.02, 1, 0.02),
+    graze:  new THREE.Vector3(0.6, 0.12, 1),
+    back34: new THREE.Vector3(-0.8, 0.6, -1),
+  };
+  const dir = (DIRS[view] || DIRS.q34).clone().normalize();
+  cam.position.copy(c).addScaledVector(dir, dist);
+  cam.lookAt(c);
+  renderer.render(scene, cam);
+  if (overlay) { const ov=document.getElementById('ov'); ov.src=overlay; ov.style.opacity=0.5; }
+  status.textContent = `OK · view=${view} · dims ${(s.x*1000)|0}×${(s.y*1000)|0}×${(s.z*1000)|0} mm · ${model.children.length} groups`;
+  document.title='OK';
+} catch(e){ fail((e&&e.stack)||String(e)); }
+</script></body></html>

@@ -1,0 +1,2512 @@
+A
+#g
+
+Jt
+
+UNITED STATES ARMY TRAINING AND DOCTRINE Et)MI
+
+TRADOC
+iiJOliiJ
+
+#
+
+WEAPONS
+TACTICS
+TRAINING
+THE SOVIET
+MAIN BATTLE TANK
+CAPABILITIES
+AND LIMITATIONS
+FEBRUARY 1979
+¥%
+
+20010803 042
+
+.§.*■%*
+
+Form Approved
+OMBNo. 07040188
+
+REPORT DOCUMENTATION PAGE
+Public reporting burden (or this collection of information is estimated to average 1 hour per response, including the time for reviewing instructions, searching existing data sources,
+gathering and maintaining the data needed, and completing and reviewing the collection of information. Send comments regarding this burden estimate or any other aspect of this
+collection of information, including suggestions for reducing this burden, to Washington Headquarters Services, Directorate for Information Operations and Reports, 1215 Jefferson
+Davis Highway, Suite 1204, Arlington, VA 222024302, and to the Oflice of Management and Budget, Paperwork Reduction Project (0704-01881, Washington, DC 2D503.
+
+3. REPORT TYPE AND DATES COVERED
+
+2. REPORT DATE
+
+1. AGENCY USE ONLY /Leaveblank)
+
+FINAL
+
+FEBRUARY 1979
+
+5. FUNDING NUMBERS
+
+4. TITLE AND SUBTITLE
+
+TRADOC BULLETIN 10. THE SOVIET MAIN BATTLE TANK: CAPABILITIES
+AND LIMITATIONS
+6. AUTHOR(S)
+
+7. PERFORMING ORGANIZATION NAME(S) AND ADDRESS(ES)
+
+8. PERFORMING ORGANIZATION
+REPORT NUMBER
+
+HQ U.S. ARMY TRAINING AND DOCTRINE COMMAND
+ATTN: ATCG-T
+FORT MONROE VIRGINIA 23651
+
+9. SPONSORING 1 MONITORING AGENCY NAME(S) AND ADDRESS(ES)
+
+10. SPONSORING / MONITORING
+AGENCY REPORT NUMBER
+
+11, SUPPLEMENTARY NOTES
+
+See TRADOC Bulletin 9 dated September 1977
+
+12b. DISTRIBUTION CODE
+
+12a. DISTRIBUTION / AVAILABILITY STATEMENT
+
+APPROVED FOR PUBLIC RELEASE; DISTRIBUTION IS UNLIMITED.
+
+13. ABSTRACT /Maximum 200 words!
+
+The Soviet Union and its Warsaw Pact allies have built their armies around mechanized combined arms teams The tanks
+in these forces consist of T-54, T-55, T-62, and T-72 models. A new tank, called the T-80, is reportedly under development,
+however, little is known about its characteristics.
+The T-62 is the principal battle tank found in Soviet tank and motorized rifle divisions. It is an accurate, highly-lethal,
+weapon system generally comparable to the US M60 series tank.
+The purpose of this bulletin is to describe the Soviet main battle tank, and to explain: What it can do; Whit it cannot do;
+How it is used; How it is defeated.
+The material in this bulletin is based primarily on the T-62 model since it is the current "workhorse" of Soviet tank units.
+Because other Soviet medium tanks (T-54, T-55) are similar to the T-62, they are not discussed in this bulletin. Some
+information of the T-64 and T-72 tanks can be found in Appendix A.
+The countermeasures discussed in section VI are based on the combat results of recent Middle East wars and of tactical
+studies employed against forces which generally follow Soviet doctrine. Data in this bulletin are from the US Army Foreign
+Science Technology Center's (FSTC) official reports on the Yom Kippur War; the US Army Materiel Systems Analysis
+agency (AMSAA); and the 11th Combat Intelligence Company.
+14. SUBJECT TERMS
+
+15. NUMBER OF PAGES
+
+42
+16. PRICE CODE
+
+17.
+
+SECURITY CLASSIFICATION
+OF REPORT
+
+UNCLASSIFIED
+NSN 7540-01-280-5500
+
+18.
+
+SECURITY CLASSIFICATION OF THIS
+PAGE
+
+UNCLASSIFIED
+
+19.
+
+SECURITY CLASSIFICATION
+OF ABSTRACT
+
+20. LIMITATION OF ABSTRACT
+
+UNCLASSIFIED
+Standard Form 298 (Rev. 2-891
+Prescribed by ANSI Std. Z39-18 298-102
+
+UNLIMITED
+
+I
+^
+^
+
+x>*
+0>
+**
+&
+
+/
+
+<*
+
+A
+
+i
+
+/
+
+^
+
+«*
+
+*ARMY TRAINING AND EVALUATION PROGRAM
+(
+
+UNITED STATES ARMY
+TRAINING AND DOCTRINE COMMAND
+
+BULLETIN NO 10
+9 FEBRUARY 1979
+
+THE SOVIET
+MAIN BATTLE TANK:
+CAPABILITIES
+AND LIMITATIONS
+CONTENTS
+SECTION
+
+Page
+
+I
+
+Introduction
+
+1
+
+II
+
+What It Is
+
+2
+
+III
+
+What It Can Do
+
+9
+
+IV
+
+What It Cannot Do
+
+16
+
+V
+
+How It Is Used
+
+19
+
+VI
+
+How To Defeat It
+
+,
+
+24
+
+AppendixA
+
+—
+
+T-64andT-72Tanks
+
+31
+
+Appendix B
+
+—
+
+References
+
+34
+
+AppendixC
+
+—
+
+Ordering TRADOC Bulletins
+
+36
+
+This TRADOC BULLETIN is intended to provide timely, technical
+information on weapons, tactics, and training to commanders and
+others concerned with military training. It is not intended to
+supplant doctrinal publications, but to supplement "how-to-fight"
+material with data derived from tests, recent intelligence, and
+other sources.
+TRAINERS' NOTE: This bulletin is designed to help trainers
+identify and extract needed information. Charts, illustrations, and
+other key data may be extracted for individual use.
+Comments and recommendations are welcome and should be
+directed to the:
+COMMANDER
+US ARMY TRAINING AND DOCTRINE COMMAND
+ATTN: ATCG-T
+FORT MONROE, VIRGINIA 23651
+(TEL: AUTOVON 680-2972/2445)
+
+TRADOC BULLETIN NO 10
+
+INTRODUCTION
+The Soviet Union and its Warsaw Pact allies have built their armies
+around mechanized combined arms teams. The tanks in these forces consist
+of T-54, T-55, T-62, T-64, and T-72 models. A new tank, called the T-80, is
+reportedly under development, however, little is known about its
+characteristics.
+The T-62 is the principal battle tank found in Soviet tank and motorized
+rifle divisions. It is an accurate, highly-lethal, weapon system generally
+comparable to the US M60 series tank.
+The purpose of this bulletin is to describe the Soviet main battle tank, and
+to explain:
+• WHAT IT CAN DO
+
+• WHAT IT CANNOT DO
+O HOW IT IS USED
+• HOW IT IS DEFEATED
+
+The material in this bulletin is based primarily on the T-62 model since it
+is the current "workhorse" of Soviet tank units. Because other Soviet
+medium tanks (T-54, T-55) are similar to the T-62, they are not discussed in
+this bulletin. Some information on the T-64 and T-72 tanks can be found in
+appendix A.
+The countermeasures discussed in section VI are based on the combat
+results of recent Middle East wars and of tactical studies employed against
+forces which generally follow Soviet doctrine. Data in this bulletin are from
+the US Army Foreign Science Technology Center's (FSTC) official reports
+on the Yom Kippur War; the US Army Materiel Systems Analysis Agency
+(AMSAA); and the 11th Combat Intelligence Company.
+
+SECTION I
+
+TRADOC BULLETIN NO 10
+
+II
+WHAT IT IS
+The T-62 series tank was first shown publicly in 1965 and has since then
+become the "firstline" battle tank of the Soviet Union. Its mounted weapons
+can deliver massed suppressive or accurate point fires. The vehicle can be
+made watertight for fording water obstacles. It has a filtering system which
+eliminates dust from the turret allowing the crew to operate in a nuclear
+environment for limited periods.
+A T-62A version, manufactured after 1970, features a 12.7-mm
+antiaircraft machinegun, an improved transmission, an improved engine
+compartment, and a stabilized main gun. The stabilized main gun enables
+the gunner to track and fire on the move with significantly improved
+accuracy. The Soviet T-62 tank is easily recognized by the following
+features:
+D Rounded, sloping turret.
+0 High dust "rooster tails" rising from the rear deck.
+S Bore evacuator located about one-third of the way back on the gun tube.
+Q Large gaps separating the third, fourth, and fifth roadwheels.
+RECOGNITION OF T-62 TANK
+
+2
+
+oj
+
+0
+
+■^
+
+Characteristics of the T-62 Tank
+Crew
+
+4
+
+Weight
+
+37.1 metric tons
+
+Height
+
+2.4 m
+
+Length (gun forward)
+
+9.33 m
+
+Width
+
+3.29 m
+
+Ground clearance
+Engine
+
+.43 m
+580-hp Diesel V-12
+
+Cruising range
+paved road
+cross country
+
+450 km
+320 km
+
+Cruising range with auxiliary fuel tanks
+paved road
+cross country
+
+650 km
+450 km
+
+Suspension system
+Maximum speed
+Main armament
+Main gun basic load
+HVAPFSDS
+HEAT
+HE
+Muzzle velocity
+Practical rate of fire
+Primary fire control sight
+Secondary fire control sight
+Range finding device
+Effective range (50% Pn)
+Traverse
+Elevation main gun
+Gun stabilization
+Coaxial machinegun
+Antiaircraft machinegun
+Maximum gradient
+Ditch crossing width
+
+Christie System, five road wheels
+50 kmph
+115-mm smoothbore gun
+40 rounds
+12 rounds
+6 rounds
+22 rounds
+Greater than 1615 meters persecond
+3 to 4 rounds per minute
+Articulated telescope
+None
+Stadiametric rangefinders in telescope and periscope
+1500 m
+360° power and manual
+
+-4° to+17°
+Vertical and horizontal
+7.62 mm
+12.7 mm
+30°
+2.85 m
+
+Wall scaling height
+
+0.8 m
+
+Water fording depth
+
+1.4 m
+
+Water obstacle depth (using snorkel)
+
+5.5 m
+
+Water obstacle width (using snorkel)
+
+1000 m
+
+^
+
+SECTION II
+
+TRADOC BULLETIN NO 10
+
+ARMAMENT
+The firepower of the T-62 tank is designed around a turret that contains
+the equipment necessary to operate and fire the three organic weapons.
+These weapons are the 115-mm smoothbore cannon, PKT 7.62-mm coaxial
+machinegun, DShK 12.7-mm antiaircraft machinegun (only on T-62A
+models).
+ARMAMENT ON THE T-62 TANK
+
+Q 115-mm Smoothbore Cannon
+The main gun of the T-62 is an extremely accurate weapon and fires
+projectiles with the highest muzzle velocity of any tank gun in the world.
+The gun is controlled and ranged by the tank commander, and aimed and
+fired by the gunner. It is capable of defeating any type of armor currently in
+the field. The gun fires three types of rounds as described on page 4.
+n PKT 7.62-mm Coaxial Machinegun
+The 7.62-mm coaxial machinegun is mounted to the right of the main gun,
+and it is fired either electrically by the gunner or manually by the loader.
+The machinegun has an effective range of 1500 meters and is primarily used
+against area targets such as troops in the open. It has a basic load of 2500 to
+3500 rounds. This weapon is extremely reliable and rarely jams or
+malfunctions.
+PI DShK 12.7-mm Antiaircraft Machinegun
+The 12.7-mm antiaircraft machinegun is mounted outside the tank
+above the loader's hatch. To fire the weapon, the loader must be partially
+exposed, making him vulnerable to suppressive fires. This also leaves the
+main gun loading duties unattended. The machinegun is used against area
+targets out to 2000 meters and against aircraft at a slant range of 1000
+meters. It has a basic load of 200 to 600 rounds, fed from 50-round metallic,
+link belts.
+
+TRADOC BULLETIN NO 10
+
+SECTION II
+
+MAIN GUN AMMUNITION
+The T-62 carries a mix of 40 hypervelocity, armor-piercing, fin-stabilized,
+discarding sabot; high explosive antitank; and high explosive rounds. The
+specific number of each type round varies with the anticipated tactical
+situation.
+Hypervelocity, Armor-Piercing, Fin-Stabilized, Discarding Sabot
+(HVAPFSDS)
+This is a kinetic energy round that destroys tanks by penetrating their
+armor. When the round hits, shrapnel kills the crew and ignites fuel and
+ammunition. The round is fired at an extremely high muzzle velocity. The
+muzzle velocity is achieved by a collar (sabot) that breaks away from the
+penetrator after the round leaves the gun tube. The penetrator flies in a very
+flat trajectory and is, therefore, extremely accurate out to a range of 1500
+meters. The HVAPFSDS is the T-62's principal armor defeating round.
+OPERATION OF THE HVAPFSDS ROUND
+• THE HVAPFSDS ROUND OF THE T-62 TANK TRAVELS A MILE PER SECOND
+• IT IS THE FASTEST TANK CANNON ROUND IN THE WORLD
+
+-1 SEC0ND-
+
+1 MILE
+(1600 METERS)
+PENETRATOR
+
+HVAPFSDS
+
+H T9%"
+
+High Explosive Antitank (HEAT)
+This is a chemical energy round that kills armored vehicles by producing
+a high velocity jet of gas that penetrates the target's armor and directs the
+force of the explosion inside the vehicle. The penetration capability of the
+HEAT round is not affected by range.
+High Explosive (HE)
+This is a conventional fragmentation round. It has an instantaneous,
+point-detonating fuze that cannot be adjusted. The round is used primarily
+against unarmored targets such as troops, light-skinned vehicles, and
+buildings.
+
+SECTION II
+
+TRADOC BULLETIN NO 10
+
+FIRE CONTROL INSTRUMENTS
+The T-62 has three fire control instruments which enable the crew to sight,
+range, and fire the 115-mm smoothbore cannon.
+TSh2B-41u Telescope
+The TSh2B-4lu telescope is the gunner's primary means of target
+engagement and the only sight for daylight use. The gunner can select 3.5xand 7x- power magnification. A range knob on the bottom of the sight
+introduces the superelevation required for the ammunition specified by the
+tank commander. The gunner's stadiametric rangefinder is at the bottom
+right of the reticle. Shown below is the reticle as it appears to the gunner
+through his telescope.
+RETICLE OF THE TSh2B-4lu TELESCOPE
+
+-37
+
+4B —
+46
+
+36
+19-
+
+Range Line
+30
+
+-26
+24-22
+18
+16-=40
+oc
+2_=r-36
+94=28
+M
+=
+20
+„—12
+
+o_§===-4
+BP
+APDS
+
+12-=-
+
+14
+
+40— 3H
+36—
+—34
+32—
+—30
+28
+—26
+24-=-22
+20-8
+16
+
+-=■14
+12—
+-=-10
+
+"m
+
+0
+
+0
+
+BK
+HEAT
+
+0018
+HE18
+
+A'i'A'i'A'i'A'
+
+_32z
+-30
+282422
+2016
+
+14
+
+12„
+
+8
+
+~U
+«"Ell
+0
+0011
+HEt!
+
+rr
+T
+COAX
+
+'i'A'i'A'"A11-A
+1.4
+
+1
+
+2,7
+
+"ff.T ,T
+
+Rangefinder
+
+TKN-3 Day-Night Periscope
+The TKN-3 day-night periscope, mounted at the tank commander's (TC)
+station, is the primary instrument for determining target range. When fixed*
+on the axis of the main gun, it is used by the TC to lay the gun on target in an
+emergency.
+
+TRADOC BULLETIN NO 10
+
+SECTION II
+
+The 5x-power day mode or the 4.2x-power, infrared (IR) mode can be
+selected with a switch on the sight. When used with the tank commander's
+searchlight, the periscope has a range of 400 meters. However, it has a range
+of 800 meters when used on the same axis as the main searchlight. Shown
+below is the reticle as it appears to the tank commander through his
+periscope.
+
+RETICLE OF THE TKN-3 DAY-NIGHT PERISCOPE
+
+T
+4 mils
+
+2.7
+RANGEFINDER
+
+TPN 1-41-11 Infrared Periscope
+The TPN 1-41-11 infrared periscope is used for night target engagements.
+This 5.5x-power sight has a range of 800 meters when used with the main
+searchlight. It has an illuminated reticle to assist the gunner, but it does not
+have a stadia rangefinder.
+
+TRADOC BULLETIN NO 10
+
+VISION DEVICES
+The T-62 is equipped with vision devices that enable it to fight effectively
+with all hatches closed and in conditions of reduced visibility.
+Vision Blocks
+There are seven vision blocks on the T-62 tank. The tank commander has
+four unmagnified vision blocks, mounted in the cupola and hatch.
+Depending on the position of the cupola, the blocks give the tank
+commander a 180° field of view at any given time. The gunner has an
+unmagnified vision block mounted in the turret ceiling that is used for
+general viewing and main gun orientation. The driver has two vision blocks
+which he uses for driving when the hatch is closed. For night driving, the left
+vision block is replaced with a TVN-2 infrared periscope. The periscope has
+a range of about 60 meters but its position creates a dead space 5 meters
+forward of the tank which makes turning and high speed driving difficult.
+MK-4S Periscope
+This device has a dual vision capability—front and rear. The sight is
+normally oriented to the front providing a 25° field of vision. By pulling
+the headset down, the loader can turn the periscope to the rear providing
+a 16° field of vision.
+Searchlights
+Searchlights on the T-62 are used exclusively for infrared illumination.
+While it is possible to use visible light, the infrared filters are hard to remove.
+Unless some other source of visible light is used, the T-62 cannot effectively
+engage targets at ranges greater than 800 meters during darkness. There
+are two searchlights on the T-62; the L-2G and the OU-3GK.
+
+The L-2G searchlight is used primarily by the gunner in conjunction
+with the TPN 1-41-11 infrared periscope. In the infrared mode, the
+searchlight can illuminate a target at a range of 800 meters. It can also
+be used in the visible light mode by removing the infrared filter.
+The OU-3GK searchlight is used by the tank commander in connection with the TKN-3 periscope. It can only illuminate a target at a
+range of 400 meters. But, like the L-2G, it can be operated in the visible
+light mode by removing the infrared filter.
+Driving Lights
+White driving lights and infrared driving lights are mounted on either
+side of the driver's hatch. The white driving lights can be switched to a high,
+low, or blackout beam. The infrared lights are used in conjunction with the
+
+SECTION II
+
+TRADOC BULLETIN NO 10
+
+SECTION II
+
+driver's infrared periscope. In addition, an auxiliary infrared light is located
+under the main searchlight to extend the driver's vision when the tactical
+situation permits.
+
+AUXILIARY
+
+IR
+
+DRIVING LIGHT
+
+VISION DEVICES ON THE T-62 TANK
+L-2G MAIN SEARCHLIGHT :
+
+«^^iOU-3GK ^SEARCHLIGHT
+
+DRIVING LIGHTS
+LEFT-WHITELIGHT AND BLACKOUT
+RIGHT-IR LIGHT
+
+ENGINE
+The T-62 is powered by a 580-horsepower, water-cooled, diesel engine
+capable of speeds up to 50 kilometers per hour on paved surfaces. The tank
+has a cross-country cruising range of 650 kilometers when equipped with
+auxiliary fuel drums (450 kilometers without them). The auxiliary fuel
+drums are not connected to the main fuel system. The crew must manually
+pump the fuel out of the auxiliary drums and into the fuel cells.
+NUCLEAR PROTECTION
+The T-62 tank has an integral atomic defense system (PAZ) which
+includes a gamma ray sensor to detect nuclear radiation. When activated,
+the system automatically shuts off the engine and seals the combat and
+driver's compartments. The particulate filter and pump are activated
+creating a slight over pressure in the tank. The entire system can also be
+activated manually by the crew.
+The particulate filtering system prevents contaminated dust particles
+from entering the turret. Crew members are thus protected from radioactive
+dust, but must wear individual protective masks and clothing to guard
+against chemical and biological agents. Because the T-62 is not airtight, the
+crew must pass through contaminated areas rapidly and then decontaminate the tank before it is fully operational.
+
+SECTION III
+
+TRADOC BULLETIN NO 10
+
+III
+WHAT IT CAN DO
+The T-62 medium tank is a mobile, effective, and dangerous weapon
+system. It will be present in large numbers in Soviet tank units for at least
+the next decade. It is a rugged but sophisticated system around which Soviet
+ground forces have built their tactical doctrine. In addition, the T-62 is
+comparable to the M60A1 in firepower, armor thickness, and mobility.
+EFFECTIVENESS OF MAIN GUN AMMUNITION
+The ammunition fired by the main gun of the T-62 is effective against a
+variety of targets to include armored vehicles, light-skinned vehicles,
+buildings, and personnel. The powder used to propel the round is technically
+excellent. Also, each type of round has its own powder mixture.
+Hypervelocity, Armor-Piercing, Fin-Stabilized, Discarding Sabot
+The probability of a first round hit for a tank is a function of projectile
+speed, target range, and fire control equipment. These factors combine to
+give the HVAPFSDS a lethal first round hit probability as shown in the
+following two tables.
+
+n
+
+T-62 TANK FIRST ROUND HIT PROBABILITY
+STATIONARY TARGET
+
+M
+
+If a tank halts in the open, the T-62,
+using HVAPFSDS, has a 50-50
+chance of scoring a first round hit
+at 1500 meters.
+IUU
+
+90
+80
+70
+69
+
+t-
+
+60
+
+S
+
+50
+
+"■
+
+40
+
+CC
+LU
+
+30
+.20
+10
+0
+500
+
+1000
+
+1500
+RANGE (METERS)
+
+2000
+
+2500
+
+30 00
+
+TRADOC BULLETIN NO 10
+
+SECTION III
+
+If a tank is making a 30° approach
+at 12 mph, the T-62, using
+HVAPFSDS, has a better than 70
+percent chance of scoring a first
+round hit at 1000 meters.
+•"100
+
+T-62 TANK FIRST ROUND HIT
+PROBABILITY-MOVING TARGET
+
+90
+80
+■j
+
+70
+^ 60
+
+S 50
+oc
+
+UJ
+
+o- 40
+30
+20
+
+10
+500
+
+1000
+
+1500
+2000
+RANGE (METERS)
+
+2500
+
+3000
+
+High Explosive Antitank
+Because of a slower muzzle velocity, the T-62 HEAT round has a
+significantly lower hit probability than the HVAPFSDS as shown in the
+following two tables.
+If a tank halts in the open, the T-62,
+using HEAT, has only a 20 percent
+chance of scoring a first round hit
+at 1500 meters.
+
+500
+
+T-62 TANK FIRST ROUND HIT
+PROBABILITY-STATIONARY TARGET
+
+1500
+
+1000
+
+RANGE (METERS)
+
+10
+
+2000
+
+2500
+
+3000
+
+SECTION III
+
+TRADOC BULLETIN NO 10
+
+El If a tank is making a 30 approach
+M at 12 mph,theT-62, using HEAT,
+has less than a 30 percent char.ce
+of scoring a first round hit at 1000
+meters.
+<„n
+
+T-62 TANK FIRST ROUND HIT
+PROBABILITY-MOVING TARGET
+
+90
+
+\^-
+
+/\
+
+j
+
+|
+
+\
+
+70
+
+N.
+
+jf 60
+
+500
+
+1000
+
+1500
+2000
+RANGE (METERS)
+
+2500
+
+3000
+^
+
+US MAIN TANK GUNS VERSUS T-62 TANK GUN
+TheM60Al main gun is slightly less accurate than that of the T-62 within
+1500 meters, but is more accurate at greater ranges. The table below shows
+the first round hit probability of the M60A1.
+
+FIRST ROUND HIT PROBABILITY-M60A1 TANK
+100
+
+— — -.
+
+90
+80
+70
+60
+
+\
+
+N^
+
+50
+40
+
+s
+
+X.\
+
+vfc
+X
+
+30
+
+.
+
+N.
+
+\
+
+*v
+
+>*
+
+20
+
+^.
+
+10
+500
+1000
+»ARMORED-PIERCING, DISCARDING SABOT
+
+1500
+RANGE (METERS)
+
+11
+
+2000
+
+2500
+
+,3000
+
+TRADOC BULLETIN NO 10
+
+SECTION III
+
+For long range tank battles, the M60A2 provides a decided accuracy
+advantage. It can fire the Shillelagh missile, which can hit a tank 9 times
+out of 10 at 3000 meters.
+Tank rounds are lethal, given a hit. To appreciate this, it is necessary to
+examine the armor protection of both the T-62 and M60A1 tanks.
+ARMOR THICKNESS
+(EQUIVALENT TO CENTIMETERS OF ROLLED HOMOGENEOUS ARMOR AT 0° OBLIQUITY)
+
+TURRET
+
+HULL
+T-62
+
+FRONT
+
+SIDE
+
+FRONT
+
+SIDE
+
+TOP
+
+REAR
+
+MAXIMUM
+
+20.3
+
+8.1
+
+20.3
+
+11.9
+
+3.0
+
+6.1
+
+MINIMUM
+
+20.3
+
+2.0
+
+—
+
+—
+
+—
+
+—
+
+=c=*
+
+TURRET
+
+HULL
+M60A1
+
+FRONT
+
+SIDE
+
+FRONT
+
+SIDE
+
+TOP
+
+REAR
+
+MAXIMUM
+
+22.9
+
+5.3
+
+25.4
+
+14.0
+
+2.3
+
+5.8
+
+MINIMUM
+
+22.9
+
+4.8
+
+—
+
+—
+
+—
+
+—
+
+It is then necessary to examine main gun ammunition penetration
+capabilities. The chart below shows the comparative penetrating power and
+the lethality of the T-62 andM60Al tanks at the expected engagement range
+in Europe.
+r
+
+COMPARATIVE KILL PROBABILITY—T-62 VERSUS M60A1
+TANK
+T-62
+
+ROUND
+
+■;
+
+PROBABILITY OF KILL IF HIT
+
+HVAPFSOS
+
+33cm
+
+71%
+
+HEAT
+
+43.2cm
+
+75%
+
+APDS
+
+25.4cm
+
+54%
+
+HEAT
+
+43.2cm
+
+75%
+
+M60Ä1
+L
+
+ARMOR PENETRATION (CM)
+
+^
+
+V
+12
+
+SECTION III
+
+TRADOC BULLETIN NO 10
+
+From this comparison, it is evident that both tank guns are extremely
+lethal and essentially equal in effectiveness.
+Therefore, if a US tank is hit, there is a good chance it will be destroyed.
+RANGE ESTIMATION
+Ranging is the tank commander's responsibility on the T-62. If the target
+is about 2.7 meters high, the tank commander uses the stadia rangefinder in
+his periscope as shown below.
+STADIA RANGEFINDER
+
+AN M60A1 TANK, 2.8 METERS HIGH, BEING RANGED AT 1200 METERS
+
+The Soviet commander can use the stadia rangefinder to kill an M60A1,
+since it is 2.8 meters high from the ground to the top of the turret. To do this,
+however, the M60A1 must be completely exposed. This is an important
+reason for US tank commanders to use defilade positions.
+The gunner can also determine ranges if the tank commander is unable to
+do so. He has a stadia rangefinder in the lower right corner of his telescope.
+By employing the mil relation (WORM) formula, the gunner can also use the
+lateral lead lines in the telescope to determine range. However, the mil
+relation formula is difficult to use under combat conditions.
+ADDITIONAL CAPABILITIES
+Aside from the capabilities discussed above which are similar to those of
+the M60A1 tank, the T-62 has the following three advantages:
+D.fording with snorkel
+0 smoke generating
+H mine clearing
+Fording With Snorkel
+Soviet tanks, equipped with snorkels, can cross water obstacles up to 5.5
+meters in depth. However, entrance and exit points may require
+preparation. The time needed to prepare a medium tank unit for a snorkeling
+operation varies greatly with the tank model and the amount of preinstalled
+13
+
+TRADOC BULLETIN NO 10
+
+SECTION III
+
+equipment on the vehicle. Normally, a unit selected for this mission can
+prepare within V-h hours. Tanks are steered into the water on a prearranged
+azimuth using a gyroscope compass. Necessary corrections are then given
+by radio from the shore. But due to the hazards of snorkeling operations and
+the time required for preparation, Soviet tank units prefer to ferry or bridge
+water obstacles.
+
+14
+
+SECTION III
+
+TRADOC BULLETIN NO 10
+
+Smoke Generating
+The Soviet medium tank can create its own smoke screen by injecting raw
+diesel fuel into the exhaust manifold of the engine. The heat of the manifold
+vaporizes the fuel, producing thick, white smoke. Thirty-five gallons of fuel
+will generate a smoke screen for 10 minutes.
+Mine Clearing
+Three tanks, equipped with mine clearing attachments (either rollers or
+plows), are found in each Soviet tank company. They clear a path just wide
+enough for each track. When rollers or plows are not available, engineers are
+used to support minefield breaching operations.
+
+KMT-5 ROLLER-PLOW SET
+
+The KMT-5, a roller-plow set, has been recently placed in service. The set
+provides the Soviet commander with a choice of roller or plow. This choice
+depends upon the type of terrain, soil, or minefield encountered at the site of
+the breaching operation. The roller and plow cannot be used simultaneously. Quick disconnects allow the driver to drop both rapidly.
+
+V"
+
+15
+
+TRADOC BULLETIN NO 10
+
+SECTION IV
+
+IV
+WHAT IT CANNOT DO
+Although the T-62 main battle tank is an excellent tactical vehicle, it does
+have weaknesses and vulnerabilities. The T-62's most significant weakness
+is its slow rate of fire. This, coupled with a number of other limitations, gives
+US tanks the advantage on the modern battlefield. But to exploit this
+advantage, US tank crews must be thoroughly trained in the T-62's
+vulnerabilities. Only in this way can they gain the knowledge and
+confidence needed to defeat such a sophisticated and lethal weapon system.
+RATE OF FIRE
+While the T-62 has the fastest tank round in the world, it has a relatively
+slow rate of fire. Compared to the M60A1, which fires 6 to 8 rounds per
+minute, the T-62 fires only 3 to 4 rounds per minute. In other words, the
+M60A1 is twice as fast. This is due to the following factors on the T-62.
+The ammunition is inconveniently stored for rapid loading.
+Under certain conditions, the gun must be elevated before the loader
+can place a new round in the breech.
+The automatic ejection system requires six seconds to complete a cycle.
+MAIN GUN ROUND STOWAGE
+Except for two rounds in the turret ready rack, main gun ammunition on
+the T-62 is not easily accessible as indicated in the diagram below.
+
+MAIN GUN ROUND STOWAGE
+16 ROUNDS^
+
+A ROUND
+
+2 ROUNDS
+
+AUTOMATIC SHELL EJECTOR
+SYSTEM
+
+1 ROUND
+
+20 ROUNDS
+
+Moreover, the T-62 carries only 40 rounds on board while the M60A1
+carries 63 rounds.
+
+16
+
+SECTION IV
+
+TRADOC BULLETIN NO 10
+
+GUN STABILIZATION SYSTEM
+When the main gun is fired in the stabilized mode, the tube automatically
+elevates after ejection to permit reloading. This action moves the gunner's
+sight off target and prevents him from applying the burst-on-target (BOT)
+gunnery technique. More importantly, it consumes time while he resights on
+the target.
+AUTOMATIC SHELL EJECTOR SYSTEM
+The T-62 has an integral spent shell ejector mechanism which is activated
+by the recoil of the main gun. This mechanism ejects the spent casing
+through a port in the rear of the turret. Although the ejector system keeps the
+small turret free of spent casings, it has a number of limitations. After a
+round is fired, all turret power is automatically shut off until the loader turns
+his safety switch on. This prevents the gunner from tracking targets in
+power during the reloading cycle. In addition to taking six seconds to
+complete a cycle, the ejector mechanism opens the tank to nuclear, chemical,
+or biological contamination.
+FIRING FROM COVERED POSITIONS
+The T-62 tank cannot depress its main gun as far as the M60A1. This
+means that the Soviet tank cannot use terrain as effectively. Thus, the T-62
+must expose itself more than theM60Al when firing from covered positions.
+
+This is another important reason for US tankers to use defilade positions.
+
+17
+
+SECTION IV
+
+TRADOC BULLETIN NO 10
+
+ADDITIONAL LIMITATIONS
+The T-62 has the following additional limitations.
+■ It takes 20 seconds to traverse the T-62 tank turret 360°. It takes only 15
+seconds for the M60A1.
+■ The stadia reticle on the T-62 is the only optical aid used for determining
+target range. The M60A1 has a coincidence rangefinder which is more
+accurate.
+■ The T-62 gunner is the only crew member who can accurately fire the
+main gun and coaxial machinegun. On the M60A1, the gunner and
+tank commander can aim and fire the main gun and the coaxial
+machinegun electrically from their positions.
+■ Due to the small size of the turret, crew members are very cramped,
+and their movement is severely restricted.
+
+/'
+\
+18
+
+SECTION V
+
+TRADOC BULLETIN NO 10
+
+V
+HOW IT IS USED
+The T-62 main battle tank is an offensive weapon used as the nucleus
+of the Soviet combined arms team. It provides speed, mobility, momentum,
+and firepower in offensive operations.
+UNIT ORGANIZATION AND TANK CREW
+The medium tank company is the basic building block in Soviet tank
+organization. Usually, a tank company operates as part of a battalion. Tank
+formations are supported by and in turn support other arms such as
+infantry and field artillery.
+Unit Organization
+The tank company consists of three tank platoons and a company
+headquarters. In a tank battalion of a tank regiment, each platoon consists
+of three tanks. In a tank battalion of a motorized rifle regiment, each platoon
+consists of four tanks.
+SOVIET TANK COMPANY ORGANIZATION
+COMPANY
+
+II ■■■'■:',
+COMPANY
+HEADQUARTERS
+
+PLATOON
+■|
+
+♦TANK
+CREW
+* 3 TANKS IN EACH PLATOON OF A TANK REGIMENT
+4 TANKS IN EACH PLATOON OF A MOTORIZED RIFLE REGIMENT
+
+Tank Crew
+The crew of a Soviet medium tank usually consists of four soldiers: a tank
+commander, gunner, driver-mechanic, and loader. There is little evidence of
+formal cross training within the crew. However, Soviet tank crewmen are
+likely to be familiar with some of the operating procedures of fellow
+crewmen and could probably perform some different tasks in an emergency.
+The four crew members are described below.
+D The tank commander is in immediate command of the tank. His
+responsibilities include vehicle maintenance, target acquisition,
+ranging, fire control, fire selection, and resupply. The commander is
+the only crew member trained and authorized to use the tank radio.
+Platoon leaders and company commanders control their own tanks.
+19
+
+TRADOC BULLETIN NO 10
+
+SECTION V
+
+0 The gunner is second in command of the tank. He is responsible for
+firing, servicing, and repairing the tank's main gun and for maintaining the tank's optical and gunnery instruments. He assists the
+driver-mechanic in the technical inspection of the vehicle. In combat,
+the gunner assists in target acquisition, selects the ammunition for
+each target, and sets the superelevation for each round based upon
+range. He fires the main gun and coaxial machinegun.
+H The driver-mechanic maintains and repairs the tank, obtains spare
+parts, and inspects the vehicle. In combat, the driver-mechanic selects
+a route that provides the gunner with good firing positions.
+□ The loader maintains ammunition for the main gun and the machineguns. He assists the gunner in preparing the main gun for combat,
+aids the driver-mechanic in routine maintenance, and assumes the
+duties of the gunner if necessary. He also operates the 12.7-mm antiaircraft machinegun.
+T-62 TANK CREW
+LOADER,
+
+DRIVER
+
+GUNNERJ
+
+TANK COMMANDER
+
+OFFENSIVE OPERATIONS
+Soviet offensive operations use large numbers of mobile, armored
+vehicles to first rupture the enemy's defenses and then to exploit, pursue,
+and completely defeat the enemy. Soviet commanders employ their forces in
+rigid geometrical formations. Simple, well-rehearsed formations facilitate
+command, control, and training for combat. But these large, armored
+formations have difficulty using natural protection afforded by terrain. So,
+during the attack, most Soviet vehicles may be exposed, perhaps easily
+acquired, and therefore vulnerable to antitank guided missile (ATGM) and
+tank fires.
+20
+
+SECTION V
+
+TRADOC BULLETIN NO 10
+
+This illustration shows offensive operations employing a Soviet tank
+company reinforced with a mechanized infantry platoon and a 122-mm
+howitzer battery.
+SOVIET TANK COMPANY OFFENSIVE OPERATIONS
+a
+.a
+
+From 4 to 6 km from the
+line of contact, tanks in
+column lead the
+'■./'/■•
+
+attached
+BMPs
+and
+howitzer batteries.
+'/.VW, -■
+
+•Ä31
+
+About 3 km from the line of contact, tanks move into platoon
+column. The 122-mm howitzer batteries provide indirect fire.
+Less than 1 km from the line of contact, tanks and infantry move into a line assault formation. Infantry, mounted or
+dismounted, follow the tanks to the objective.
+
+<;i>'
+
+■' "*V'V "' ''
+
+21
+
+-.
+
+SECTION V
+
+TRADOC BULLETIN NO 10
+
+DEFENSIVE OPERATIONS
+Soviet units conduct defensive operations only as a temporary measure
+and seek every opportunity to resume the offensive. Tank units defend only
+until they are relieved by motorized rifle units. Characteristics of a Soviet
+defense are:
+■ Depth
+■ Mutual support between positions
+■ Antitank orientation
+■ Counterattacks by tank-heavy forces
+The medium tank company normally defends as part of a battalion,
+performing one or more of the following roles:
+■ Holding an area
+■ Counterattacking an advancing enemy
+B Reinforcing a motorized rifle battalion
+B Covering a sector between nuclear, biological, and chemical (NBC)
+contaminated areas
+B Conducting a tank ambush
+As part of a battalion defense, the tank company usually secures a
+strongpoint approximately 1000 meters wide and 500 meters deep.
+Normally, there are 300 meters between platoons. Individual tanks are
+spaced about 150 meters apart with overlapping fields of fire, as shown
+below.
+SOVIET TANK SPACING IN DEFENSIVE POSITIONS
+
+RANGE
+2000 METERS
+
+22
+
+SECTION V
+
+TRADOC BULLETIN NO 10
+
+If the enemy launches an attack, the Soviet tank company commander
+concentrates his fire on the most threatened position. The order to fire is
+given when the enemy is about 1500 meters from the company. Attached
+infantry and supporting artillery engage the enemy with the aim of
+separating infantry from tanks. When a reserve tank company is positioned
+in depth within a battalion area, it is not only prepared to hold terrain but
+also to counterattack on order. The following illustration shows a typical
+defensive position employing a tank company reinforced with a motorized
+rifle platoon.
+SOVIET TANK COMPANY DEFENSIVE POSITION
+
+., — - ^- ''^^
+-'?<*
+
+23
+
+SECTION VI
+
+TRADOC BULLETIN NO 10
+
+VI
+HOW TO DEFEAT IT
+The T-62 medium tank is vulnerable to a number of antitank weapons and
+defensive techniques. These include the following:
+■ Tanks
+■ TOW and Dragon antitank guided missiles
+■ Light antitank weapons
+■ Close air support
+■ Field artillery weapons
+■ Mines and obstacles
+■ Smoke
+■ Field expedient techniques
+■ Terrain
+The best way to completely destroy the T-62 is to hit the fuel cells or the
+main gun ammunition. Internal fuel cells are located along the right side of
+the tank with the majority around the driver's compartment. External fuel
+cells are located along the right fenders. Auxiliary fuel drums are usually
+jettisoned prior to combat. The main gun ammunition is stowed throughout
+the turret, both in the floor and on the bulkheads. A flank shot, which hits
+the fuel cells and ignites both fuel and ammunition, is the most effective
+method of attack.
+
+T-62's MOST VULNERABLE AREAS
+
+r
+
+X
+
+=nzz:
+
+_IL..
+
+24
+
+SECTION VI
+
+TRADOC BULLETIN NO 10
+
+TANKS
+To defeat Soviet armored formations, US tankers must follow four rules of
+tank gunnery. That is, they must engage at long ranges, fire first, fire fast
+and accurately, and fire flanking shots.
+Engage at long ranges.
+US tank crews must engage T-62s at maximum range with Shillelagh
+missiles and APDS rounds.
+Fire first.
+The tank crew, which is well trained and can fire first in a tank duel,
+normally has a substantial edge in winning.
+Fire fast and accurately.
+The crew that fires fast increases its hit probability. Battlefield gunnery
+techniques give US crews a high probability of first round hits at 1500
+meters, firing 5 to 8 seconds after target identification.
+Fire flanking shots.
+US tank crews that fire at the left flank have a good chance of hitting the
+external fuel cells and the stowed ammunition. This is the T-62's most
+vulnerable point. Based upon normal T-62 tactics, the top and rear of the
+tank are rarely open to attack.
+TOW AND DRAGON ANTITANK GUIDED MISSILES
+Given a hit, the TOW and Dragon ATGMs can penetrate and kill a T-62
+tank. The chart below shows the probability of a first round hit on a T-62 by
+both weapons.
+TOW AND DRAGON FIRST ROUND HIT PROBABILITY
+ON A STATIONARY T-62
+100
+-TOW
+
+DRAGON-
+
+cc
+
+50
+
+65
+
+1000
+
+2000
+RANGE (METERS)
+
+25
+
+3000
+
+SECTION VI
+
+TRADOC BULLETIN NO 10
+
+ATGM accuracy is relatively unaffected by target speeds up to 32 kmph.
+TOW gunners usually engage T-62 tanks at maximum ranges (3000 meters).
+When the enemy formation moves to within 1000 meters, Dragon gunners
+are also committed. Flanking shots are preferred from well-covered and
+concealed positions.
+LIGHT ANTITANK WEAPONS (LAW)*
+The M72A2 LAW is a round of ammunition with a shaped charge,
+contained in a throwaway launcher. It's designed for close protection
+against armor. The chart shows the effectiveness of the LAW against a
+moving target.
+LAW AGAINST MOVING EXPOSED TARGET
+FIRST ROUND HIT PROBABILITY
+100
+90
+
+-^T-
+
+80
+70
+60
+
+z
+UJ
+o
+£
+
+50
+40
+
+Q-
+
+30
+20
+10
+
+o
+100
+
+200
+
+3C 0
+
+RANGE (METERS)
+
+400
+
+I
+
+J
+
+The LAW has a maximum range of 200 meters for moving targets and 250
+meters for stationary ones. It is best to fire at the most vulnerable points on
+the T-62 such as the turret, engine, fuel cells, tracks, and turret rings.
+To maximize hit and kill probabilities with the LAW, the following factors
+are essential:
+■ Thorough training.
+■ Volley, pair, and sequence firing to reduce ranging errors.
+■ Sufficient LAWs to saturate target density.
+■ Obstacles to slow and confine enemy tanks.
+*Detailed discussion of the LA W may be found in TRADOC Bulletin No 5,
+Training With LAW.
+
+26
+
+TRADOC BULLETIN NO 10
+
+SECTION VI
+
+CLOSE AIR SUPPORT
+US Air Force close air support aircraft and US Army attack helicopters
+can engage and destroy T-62 tanks. Recent field tests indicate that the best
+results are achieved when they operate together as a joint air attack team.
+
+The A10 close air support aircraft has—
+■ A GAU-8, 30-mm Gatling gun which can penetrate and destroy a T-62.
+■ Precision guided bombs, such as the Maverick, which can destroy T-62
+tanks with a high first round hit probability.
+■ Conventional munitions, such as machineguns or bombs, which can
+disrupt enemy formations and cause extensive mobility kills to both T62 tanks and infantry carriers.
+
+The AH-1S attack helicopter carries—
+■ TOW missiles which can destroy enemy tanks at long ranges.
+■ 2.75-inch rockets which can cause mobility kills and cause enemy crews
+to button up.
+■ 7.62-mm guns and 40-mm grenade launchers which can degrade
+infantry formations.
+
+FIELD ARTILLERY WEAPONS
+Field artillery weapons have a significant effect on Soviet battle
+formations. They slow the enemy's rate of advance and increase US weapon
+engagement time. They also strip supporting infantry from tank units and
+destroy tanks with precision munitions.
+Field artillery weapons can fire a variety of munitions. Each has a
+different effect on the enemy.
+Cannon launched guided projectile (CLGP) munitions, soon to be
+fielded, can destroy enemy armored vehicles by using artillery projectiles
+guided into point targets by a laser beam.
+Improved conventional munitions (fuel-air munitions or bomblets)
+can immobilize the T-62 tank by creating an overpressure which ruptures
+lines in the tank engine.
+High explosive and white phosphorous munitions can force enemy
+tank crews to remain buttoned up, thereby decreasing their ability to
+maneuver and acquire targets. Also, these munitions can cause damage to
+personnel carriers and dismounted infantry. But, they are not expected to
+kill tanks.
+27
+
+SECTI0N Vl
+
+TRADOC BULLETIN NO 10
+
+MINES AND OBSTACLES
+All standard US emplaced or scatterable antitank mines can either
+immobilize or kill the T-62 medium tank. Mines should be thoroughly
+integrated into the defense plan. All mined areas must be covered with both
+antitank and antipersonnel fires. Scatterable mines can be fired into
+moving T-62 formations, thus placing them in the center of a minefield.
+SMOKE
+Smoke is an effective counter to the T-62 tank. When placed in front of
+known or suspected enemy tank locations, it degrades the enemy gunner's
+ability to acquire targets. Smoke is also an extremely effective cloaking
+device which can be used during attacks and during movement to alternate
+positions or new battle locations. Smoke can be delivered by field artillery
+weapons, mortars, smoke pots, smoke generators, smoke grenades, or
+vehicle smoke grenade launchers.
+FIELD EXPEDIENT TECHNIQUES
+The intensity of modern battle increases the likelihood that enemy tanks
+may infiltrate rear areas which have few antitank defenses. In such
+situations, the initiative of the individual soldier can help defeat the enemy.
+Here are a few techniques used to immobilize the T-62 tank.
+■ Handgrenades can be thrown in an open hatch thereby killing the crew.
+■ Molotov cocktails (glass bottles filled with gasoline and ignited by a
+cloth wick) can be thrown on the back deck. When the glass bottle
+breaks, the gasoline ignites and seeps into the engine compartment.
+This destroys the rubber hoses in the engine and disables the tank. Any
+fire inside the engine compartment activates the automatic fire
+extinguisher system. This releases a mixture of highly toxic gas (carbon
+dioxide and ethylene bromide) which forces the crew to leave the vehicle
+or suffocate.
+■ Satchel charges (large, fuzed packages of plastic explosive or dynamite)
+can be thrown on the back deck or under the tank immobilizing the T-62.
+■ Antitank mines can be placed directly in the path of an oncoming T-62
+immobilizing the tank.
+TERRAIN
+Armored and mechanized forces must always use carefully selected
+routes that provide cover and concealment. Vehicle commanders and
+drivers must also use terrain skillfully, selecting good hull-down firing
+
+28
+
+SECTION VI
+
+TRADOC BULLETIN NO 10
+
+positions. Continuous, rapid movement makes it difficult for T-62 tank
+gunners to acquire targets and fire accurately.
+The ground can provide cover and concealment. Tank commanders must
+shoot and move rapidly. They must fire, back off, and move to an alternate
+firing position. Then, they must engage the enemy again. The graph below
+shows how defilade positions increase a tank crew's chances of survival.
+
+M60A1 SURVIVAL RATE AGAINST T-62
+(FIRST ROUND)
+100
+
+90
+
+80
+
+70
+
+M60A1 STATIONARY y
+HULL DEFILADE,
+
+60
+
+o
+cc
+
+50
+
+LLI
+Q.
+
+40
+
+30
+
+M60A1 EXPOSED
+MOVING 12 MPH
+
+/
+'
+
+20
+
+10
+
+500
+
+1000
+
+/:, ,...: 1500
+
+v
+
+r
+
+RANGE (METERS)
+
+29
+
+2000;
+
+:2500,;
+
+JSOOPi
+
+TRADOC BULLETIN NO 10
+
+SECTION VI
+
+The following table explains how US units on the defensive can defeat a
+formation of Soviet main battle tanks.
+How to defeat the Soviet main battle tank
+BEYOND 3000 METERS
+
+OUT TO 3000 METERS
+
+WITHIN 1500 METERS
+
+LESS THAN 1000 METERS
+
+LESS THAN 500 METERS
+
+Close air support is employed.
+using the 30-mmGatling gun.
+precision-guided bombs, and
+conventional ordnance.
+
+Artillery and mortar fires are
+continued.
+
+Artillery and mortar fires are
+continued.
+
+Artillery and mortar fires are
+continued.
+
+Protective mines are employed.
+
+Smoke is employedtoobscure
+the vision of tank crews.
+
+Standard minefields are used.
+
+Minefields are used.
+
+Dragons continue to engage.
+
+M60A1 tanks continue to
+engage with APDS rounds.
+
+M60A1 tanks continue to
+engage.
+
+{Pu - greater than 3 out of 4
+
+(Ph = 2 or 3 out of 4 rounds)
+
+(Ph = greater than 3 out of 4
+
+(Phk = greater than 75%)
+
+(Pnk = greater than 50%)
+
+rounds)
+
+M60A2 tanks continue to
+engage with Shillelagh mis-
+
+engage with Shillelagh missiles.
+
+{Pn = greater than 1 out of 2
+
+(Pu = greater than 3 out of 4
+
+(Pnk = greater than 33%)
+
+Artillery and mortars are
+employed, firing conventional
+munitions and dual purpose
+improved conventional munitions (DPICM).
+
+Scatterable mines are fired by
+field artillery weapons.
+M60A1 tanks are employed
+using APDS rounds.
+(PR = 1 out of 3 or 4 rounds)
+M60A2 Shillelagh missiles
+are employed.
+(Ph = greater than 3 out of 4
+
+TOWs engage with flanking
+fires.
+
+rounds)
+{Phk = greater than 75%)
+
+{Pn
+
+TOWs are employed.
+
+=
+
+9reater
+
+tnan
+
+3 out of 4
+
+(Phk = greater than 75%)
+
+rounds)
+
+LAWs are employed.
+
+rounds)
+(Pnk = greater than 75%)
+
+rounds)
+
+Field expedients are employed.
+
+TOWs continue to engage
+from the flanks.
+
+(Pn = greater than 3 out of 4
+
+{Pn = greater than 3 out of 4
+
+rounds)
+
+rounds)
+
+(Phk = greater than 75%)'
+
+(Phk = greater than 75%)
+Dragons are employed.
+{Ph = greater than 1 out of 2
+rounds)
+(Pnk = greater than 75%)
+
+The main gun of the T-62 tank is now in
+range of defensive positions. Commanders
+must employ good h nil-down positions.
+
+defensive positions.
+
+KEY
+All US armor and ATGM systems can penetrate the T-62 at any place on the tank. The
+probabilities indicated in this table are at 0° obliquity.
+Pn = Probability of hitt ing a moving {0-32 kmph) T-62 tank at given distance.
+Pnk = Probability of ki ling a T-62 tank, if hit, at given distance.
+
+30 LuiTh
+
+m
+
+TRADOC BULLETIN NO 10
+
+APPENDIX A
+
+APPENDIX A
+T-64 AND T-72 TANKS
+The Soviet Union has recently deployed two new main battle tanks: the
+T-64 and the T-72. Since its issue in 1973, about 2000 T-64s have been fielded
+in the Group of Soviet Forces in East Germany. The T-64, however, is only
+an interim improvement over the T-62, and many of its features now appear
+on the T-72.
+
+■£■
+;|
+
+During a parade in Moscow's Red Square on 7 November 1977, the T-72
+tank made its official debut. While an evolutionary improvement on the
+older T-54, T-55, and T-62 models, the T-72 medium tank has some
+significant advances. Compared with older Soviet tanks, the T-72 features a
+lower silhouette and a shorter length. But it weighs about one ton more than
+the T-62. Its diesel engine develops 750 horsepower, and the Soviets claim
+the tank can reach a speed of 100 kmph. Its cruising range has been
+increased by about 10%. The track is now of the live-type, using rubber
+bushings in the pads and three support rollers rather than the traditional
+Christie system of Soviet armor. The suspension system is protected by a
+series of adjustable skirts, designed to reduce damage from shaped-charge
+warheads.
+The T-72 fire control system has been greatly improved giving the
+commander the ability to accurately range, using an improved rangefinder.
+The main gun is of a larger caliber (125-mm) but the smoothbore,
+hypervelocity, armor-piercing capability remains. The increased caliber of
+the gun is due, perhaps, to the fact that a shorter main gun round is required
+to operate the new automatic main gun loading system. This system
+eliminates the need for a fourth crew member—the loader. The T-72 can
+track and shoot on the move, having its gun system stabilized on both
+vertical and horizontal planes.
+Basic load for the main gun is 40 rounds. Secondary weapon systems
+include the 7.62-mm coaxial machinegun and a new 12.7-mm antiaircraft
+machinegun. Both are similar to the machineguns on the T-62 model. Unlike
+other Soviet tanks, external stowage is extensive on the T-72, with the
+attachment of boxes to the outside of the turret. The principal
+characteristics of both the T-72 and T-64 tanks are shown in the table on
+page 32.
+31
+
+J)
+
+T-64
+REMOTE CONTROLLED
+12.7-mm MACHINEGUN
+EXHAUST VENTS
+AT REAR
+IR LIGHT TO LEFT
+OF MAIN GUN
+
+SIX SMALL, STAMPED ROAD WHEELS
+
+T-72
+
+PINTLE MOUNTED
+12.7-inm MACHINEGUN
+
+VENTS ON
+REAR DECK
+
+IR LIGHT TO RIGHT
+OF MAIN GUN
+
+SIX URGE. DIE-CAST ROAD WHEELS
+
+er-'
+
+TRADOC BULLETIN NO 10
+
+SECTION VI
+
+fr
+
+The following table explains how US units on the defensive can defeat a
+formation of Soviet main battle tanks.
+
+How to defeat the Soviet main battle tank
+LESS THAN 500 METERS
+
+BEYOND 3000 METERS
+
+OUT TO 3000 METERS
+
+WITHIN 1500 METERS
+
+LESS THAN 1000 METERS
+
+Close air support is employed,
+using the 30-mmGatling gun,
+precision-guided bombs, and
+conventional ordnance.
+
+Artillery and mortar fires are
+continued.
+
+Artillery and mortar fires are
+continued.
+
+Artillery and mortar fires are
+continued.
+
+Protective
+ployed.
+
+Smoke isemployedtoobscure
+the vision of tank crews.
+
+Standard minefields are used.
+
+Minefields are used.
+
+Dragons continue to engage.
+
+M60A1 tanks continue to
+engage with APDS rounds.
+
+M60A1 tanks
+engage.
+
+(P. = greater than 3 out of 4
+
+(Ph = 2 or 3 out of 4 rounds)
+
+(Ph = greater than 3 out of 4
+
+Artillery and mortars are
+employed, firing conventional
+munitions and dual purpose
+improved conventional munitions (DPICM).
+
+Scatterable mines are fired by
+field artillery weapons.
+M60A1 tanks are employed
+using APDS rounds.
+(Ph = 1 out of 3 or 4 rounds)
+M60A2 Shillelagh missiles
+are employed.
+(Pu = greater than 3 out of 4
+rounds)
+(Phk = greater than 75%)
+
+continue to
+
+M60A2 tanks continue to
+engage with Shillelagh missiles.
+(Pu = greater than 3 out of 4
+
+TOWs engage with flanking
+re3ter lnan
+
+(Pn ~ 9
+
+3
+
+oul
+
+rounds)
+{Pui. = greater than 75%)
+
+°f 4
+
+TOWs are employed.
+
+TOWs continue to engage
+from the flanks.
+
+(Ph = greater than 3 out of 4
+
+(Pn
+
+rounds)
+
+rounds)
+
+(P.. = greater than 75%)
+
+'phk
+
+=
+
+are
+
+em-
+
+rounds)
+
+(Pu^ - greater than 50%)
+M60A2 tanks continue to
+engage with Shillelagh mis-
+
+mines
+
+(Phk = greater than 75%)
+LAWs are employed.
+(Pn = greater than 1 out of 2
+rounds)
+(Pnl= greater than 33%)
+Field expedients
+ployed-
+
+are
+
+em-
+
+M<
+
+greater than 3 out of 4
+
+=
+
+9reater tnan
+
+75
+
+%'
+
+Dragons are employed.
+(Ph = greater than 1 out of 2
+rounds)
+(Puv = greater than 75%)
+The main gun of th 3 T-62 tank is now in
+range of defensive pc sitions. Commanders
+must employ good h ull-down positions.
+
+The machineguns of the
+T-62 tank are now in rangeof
+defensive positions.
+
+KEY
+All US armor and ATGM systems can penetrate the T-62 at any place on the tank. The
+probabilities indicated in t iis table are at 0° obliquity.
+Ph = Probability of hitt ing a moving (0-32 kmph) T-62 tank at given distance.
+P
+
+hk ~
+
+probabilit
+
+Y
+
+of ki
+
+ling a T-62 tank, if hit, at given distance.
+
+J))
+30 u,;rA
+Gute to
+
+FRADOC BULLETIN NO 10
+
+APPENDIX A
+
+Characteristics of the T-64 and T-72 Tanks
+T-64
+
+T-72
+
+Crew
+Weight
+
+34.5 metric tons
+
+41 metric tons
+
+Height
+
+2.27 m
+
+2.37 m
+
+Length (gun forward)
+
+9.02 m
+
+9.24 m
+
+Width (without skirts)
+
+3.38 m
+
+3.49 m
+
+Width (with skirts)
+
+4.64 m
+
+4.75 m
+
+Ground clearance
+
+.377 m
+
+.42 m
+
+Engine
+
+750-hp diesel V-12
+
+750-hp diesel V-12
+
+Cruising range
+
+500 km
+
+500 km
+
+Cruising range with
+auxiliary fuel tanks
+
+700 km
+
+700 km
+
+Suspension system
+
+Torsion bar with support
+rollers, six road wheels
+
+Torsion bar with support
+rollers, six road wheels
+
+Maximum speed
+
+70 kmph
+
+100 kmph (questionable)
+
+Main armament
+
+125 mm smoothbore gun
+
+125 mm smoothbore gun
+
+40 rounds
+
+40 rounds
+
+Main gun basic load
+(separated, semi-combustible)
+12 rounds
+HVAPFSDS
+HEAT
+6 rounds
+HE
+22 rounds
+
+12 rounds
+6 rounds
+22 rounds
+
+Muzzle velocity
+
+Greater than 1615m per
+second
+
+Greater than 1615m per
+second
+
+Practical rate of fire
+
+Greater than 4 rounds per
+minute
+
+Greater than 4 rounds per
+minute
+
+Primary fire control sight
+
+Articulated telescope
+
+Articulated telescope
+
+Secondary fire control sight
+
+Unknown
+
+Improved
+
+Range finding device
+
+Improved
+
+Improved
+
+Effective range (50% Ph)
+
+2000 m
+
+2000 m
+
+Traverse
+
+360°
+
+Elevation main gun
+
+-5° to +18°
+
+360°
+-5° to+18°
+
+Gun stabilization
+
+Vertical and horizontalelectric/hydraulic
+
+Vertical and horizontalelectric/hydraulic
+
+32
+
+APPENDIX A
+
+TRADOC BULLETIN NO 10
+
+T-72
+
+T-64
+Coaxial machinegun
+
+7.62 mm
+
+7.62 mm
+
+Antiaircraft machinegun
+
+12.7 mm (remote controlled)
+
+12.7 mm (pintle mount)
+
+Maximum gradient
+
+30°
+
+30°
+
+Ditch crossing width
+
+2.72 m
+
+3.07 m
+
+Wall scaling height
+
+0.8 m
+
+0.8 m
+
+Water fording depth
+
+1.4 m
+
+1.32 m
+
+Water obstacle depth
+(using snorkel)
+
+5.5 m
+
+5.5 m
+
+Water obstacle width
+fusing snorkel)
+
+1000 m
+
+1000 m
+
+NOTE:
+
+To compare the characteristics of the T-62, T-64, and T-72 tanks, simply
+fold out page 2.
+
+33
+
+APPENDIX B
+
+TRADOC BULLETIN NO 10
+
+APPENDIX B
+REFERENCES
+THREAT OPERATIONS
+DDI-1120-129-76, Soviet Tank Company Tactics (see note)
+DDI-1100-77-76, The Soviet Motorized Rifle Company (see note)
+FM 30-40, Handbook on Soviet Ground Forces
+FM 30-102, The Opposing Forces, Europe
+TC 30-3, Soviet Equipment Recognition Guide
+TC 30-4, The Motorized Rifle Regiment
+
+US OPERATIONS
+TC 7-1, The Rifle Squad (Mechanized and Light Infantry)
+FM 7-7, The Mechanized Infantry Platoon and Squad
+FM 17-12, Tank Gunnery
+FM 71-1, The Tank and Mechanized Infantry Company Team
+FM 71-2, The Tank and Mechanized Infantry Battalion Task Force
+FM 90-3, Desert Operations
+
+TRADOC BULLETINS
+#1 (C) Range and Lethality of US and Soviet Antiarmor Weapons (U)
+#1 (U) Range and Lethality of US and Soviet Antiarmor Weapons
+#2 (C) Soviet ATGMs: Capabilities and Countermeasures (U)
+#2 (U) Soviet ATGMs: Capabilities and Countermeasures
+#3 (C) The Soviet RPG-7 Antitank Grenade Launcher (U)
+#3 (U) The Soviet RPG-7 Antitank Grenade Launcher
+#4 (C) Soviet ZSU 23-4: Capabilities and Countermeasures (U)
+#5 (U) Training with LAW
+#6 (U) Camouflage and Countersurveillance
+#7 (U) BMP: Capabilities and Limitations
+#9 (U) Infantry Fighting Positions
+34
+
+TRADOC BULLETIN NO 10
+
+APPENDIX B
+
+TRAINING FILMS (TF)
+Battalion Task Force in the Active Defense (TF 21-6112) (television tape
+(TVT) 120-66) (running time (RT) 35 min)
+The BMP - Capabilities and Countermeasures (TF 21-4993), (RT 17 min)
+Field Artillery Battlefield Techniques (TVT 6-104) (RT 27 min)
+Infantry Fighting Positions, Part I (Individual/Crew Served) (TVT 2E-071INF I) (RT 54 min)
+Infantry Fighting Positions, Part II (Desert) (TVT 2E-071-INF II) (RT 55
+min)
+Modern Battle (TF 21-4925) (RT 25 min)
+T-62 Tank Capabilities and Countermeasures (TF 21-4995) (RT 23 min)
+
+NOTE: Copies can be requisitioned from the US Army Adjutant
+General Publications Center, 2800 Eastern Boulevard,
+Baltimore, MD, 21220.
+
+35
+
+APPENDIX C
+
+TRADOC BULLETIN NO 10
+
+APPENDIX C
+ORDERING TRADOC BULLETINS
+PURPOSE
+A series of TRADOC Bulletins is being published by HQ TRADOC to
+provide commanders with timely technical information on weapons,
+tactics, and training techniques. The bulletins are not intended to supplant
+doctrinal publications, but to supplement "How-to-Fight" material with
+data derived from tests, intelligence, or other sources which probe "why?"
+APPLICABILITY
+TRADOC Bulletins are developed by Headquarters, TRADOC, using the
+most comprehensive and current military and civilian data available. Army
+Training and Evaluation Programs (ARTEP), Field Manuals (FM), and
+Training Circulars (TC) continue to be the primary training references.
+TRADOC Bulletins supplement them with an explanation of why we are
+training in a given manner. TRADOC Bulletins should enable'commanders
+to better stimulate and motivate subordinates to understand why we train
+the way we do.
+INDEX OF SERIES
+TRADOC Bulletins are cataloged in DA Pamphlet 310-3 (Index of
+Doctrinal, Training and Organizational Publications). The series is
+numbered consecutively, and each TRADOC Bulletin is announced at the
+time of printing in the information, bulletin distributed to all pinpoint
+account holders by the US Army AG Publications Center.
+ADDITIONAL COPIES
+Requistion from US Army AG Publications Center, Baltimore, MD 21220.
+REFERENCE FOR DISTRIBUTION PROCEDURES
+DA Pamphlet 310-10 explains the pinpoint distribution system and how to
+establish or update an existing account at the US Army AG Publications
+Center.
+
+36
+
+TRADOC BULLETIN 10
+9 FEBRUARY 1979
+
+DONN A. STARRY
+\
+General, United States Army
+Commanding
+
+DISTRIBUTION:
+Active Army, USAR, and ARNG: To be distributed in accordance with DA Form 12-11B,
+TRADOC Training Bulletin (Qty rqr block no. 432).
+Additional copies can be requisitioned from the US Army Adjutant General Publications Center,
+2800 Eastern Boulevard, Baltimore, MD 21220.
+
+* U.S. GOVERMMEHT ERIBTIKG OFFICE 1979 - 635-03V1055
+
+

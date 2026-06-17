@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { createLanRelay } = require('./lan-relay.js');
 
+const DEFAULT_LAN_PORT = 53736;
 const LAN_WS_PATH = '/__engendros_lan_ws';
 const LAN_INFO_PATH = '/__engendros_lan_info';
 
@@ -104,6 +105,14 @@ function send(res, status, headers, body) {
   res.end(body);
 }
 
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+}
+
 function serveStatic(req, res, root) {
   let pathname = '/';
   try { pathname = decodeURIComponent(new URL(req.url || '/', 'http://localhost').pathname); }
@@ -131,12 +140,12 @@ function printInfo(info) {
   for (const u of info.urls.filter((u) => !u.hamachi).slice(0, 3)) console.log(`LAN:     ${u.url} (${u.interface})`);
   console.log(`Relay:   ws://<host>:${info.port}${LAN_WS_PATH}`);
   console.log('');
-  console.log('Share the Hamachi URL, then host a room in the lobby and share the 5-character room code.');
+  console.log('From Vercel or this local URL, use HOST & COPY to create an auto-join Hamachi invite.');
 }
 
 const root = path.resolve(arg('--root') || path.join(__dirname, '..'));
 const host = process.env.HOST || arg('--host') || '0.0.0.0';
-const port = Number(process.env.PORT || arg('--port') || 0);
+const port = Number(process.env.PORT || arg('--port') || DEFAULT_LAN_PORT);
 const relay = createLanRelay({ path: LAN_WS_PATH });
 
 const server = http.createServer((req, res) => {
@@ -144,10 +153,11 @@ const server = http.createServer((req, res) => {
     try { return new URL(req.url || '/', 'http://localhost').pathname; } catch (e) { return ''; }
   })();
   if (pathname === LAN_INFO_PATH) {
+    if (req.method === 'OPTIONS') return send(res, 204, corsHeaders(), '');
     const addr = server.address();
     const actualPort = addr && addr.port ? addr.port : port;
     const info = makeInfo({ host, port: actualPort, root, relay });
-    return send(res, 200, { 'Content-Type': 'application/json; charset=utf-8' }, JSON.stringify(info, null, 2));
+    return send(res, 200, { ...corsHeaders(), 'Content-Type': 'application/json; charset=utf-8' }, JSON.stringify(info, null, 2));
   }
   return serveStatic(req, res, root);
 });

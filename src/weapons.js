@@ -1,5 +1,6 @@
 // weapons.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js';
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
@@ -21,6 +22,70 @@ const DEMO_HE_BLAST = { r1: 2.6, r2: 6.0, tier: 3 };
 // Forced demo loadout so a tester needs no shop: an auto rifle (glass+door+enemies), the
 // BAZOOKA (HE breach + fire), two MOLOTOVs (ignite trees), the debug APFSDS cannon, + a knife.
 export const DEMO_LOADOUT = ['stg44', 'bazooka', 'molotov', 'molotov', 'apfsds', 'knife'];
+
+const MOSIN_ASSET_URL = './assets/weapons/low_poly_mosin_carbine.glb';
+const MOSIN_ASSET_TARGET_LENGTH = 2.72;
+const MOSIN_ASSET_TARGET_CENTER = new THREE.Vector3(0.16, 0.08, -0.28);
+let _gltfLoader = null;
+
+function loadGltf(url) {
+  _gltfLoader = _gltfLoader || new GLTFLoader();
+  return new Promise((resolve, reject) => _gltfLoader.load(url, resolve, undefined, reject));
+}
+
+function disposeObject3D(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.geometry) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) if (mat && typeof mat.dispose === 'function') mat.dispose();
+  });
+}
+
+function prepWeaponMeshTree(root, renderOrder = 1000) {
+  root.traverse((o) => {
+    o.frustumCulled = false;
+    o.layers.set(WEAPON_LAYER);
+    if (!o.isMesh) return;
+    o.renderOrder = renderOrder;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      mat.side = THREE.DoubleSide;
+      mat.needsUpdate = true;
+    }
+  });
+}
+
+function buildMosinAssetViewmodel(assetRoot, fallback) {
+  const wrapper = new THREE.Group();
+  wrapper.name = 'Mosin GLB viewmodel';
+  wrapper.renderOrder = 1000;
+  wrapper.frustumCulled = false;
+
+  const box = new THREE.Box3().setFromObject(assetRoot);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+  const scale = MOSIN_ASSET_TARGET_LENGTH / Math.max(0.001, size.z);
+  assetRoot.scale.setScalar(scale);
+  assetRoot.position.copy(MOSIN_ASSET_TARGET_CENTER).addScaledVector(center, -scale);
+  wrapper.add(assetRoot);
+
+  prepWeaponMeshTree(wrapper);
+
+  const bolt = assetRoot.getObjectByName('Bolt_back') || assetRoot.getObjectByName('Bolt');
+  if (bolt) {
+    bolt.userData.basePos = bolt.position.clone();
+    bolt.userData.baseRot = bolt.rotation.clone();
+    bolt.userData.liftTravel = 0;
+    bolt.userData.backTravel = 0.20 / scale;
+    bolt.userData.boltRotTravel = 1.32;
+  }
+  wrapper.userData.mosin = { bolt, clip: null, round: null };
+  return wrapper;
+}
 
 
 // ---------------------------------------------------------------------------
@@ -1090,6 +1155,25 @@ export class WeaponSystem {
     game.engine.scene.add(game.engine.camera);
 
     this.resetLoadout();
+    this._loadMosinAssetViewmodel();
+  }
+
+  async _loadMosinAssetViewmodel() {
+    const fallback = this.models && this.models.mosin;
+    if (!fallback) return;
+    try {
+      const gltf = await loadGltf(MOSIN_ASSET_URL);
+      if (!this.models || this.models.mosin !== fallback) return;
+      const replacement = buildMosinAssetViewmodel(gltf.scene, fallback);
+      replacement.visible = fallback.visible;
+      this.group.add(replacement);
+      this.models.mosin = replacement;
+      this.group.remove(fallback);
+      disposeObject3D(fallback);
+      this._clearMosinTransient();
+    } catch (e) {
+      console.warn('[weapons] Failed to load Mosin GLB viewmodel; using procedural fallback.', e);
+    }
   }
 
   resetLoadout() {
@@ -1180,7 +1264,8 @@ export class WeaponSystem {
     if (!mos) return;
     if (mos.bolt && mos.bolt.userData.basePos) {
       mos.bolt.position.copy(mos.bolt.userData.basePos);
-      mos.bolt.rotation.set(0, 0, 0);
+      if (mos.bolt.userData.baseRot) mos.bolt.rotation.copy(mos.bolt.userData.baseRot);
+      else mos.bolt.rotation.set(0, 0, 0);
     }
     if (mos.clip) mos.clip.visible = false;
     if (mos.round) mos.round.visible = false;
@@ -1621,8 +1706,13 @@ export class WeaponSystem {
   _applyMosinBolt(mos, pose) {
     if (!mos || !mos.bolt || !mos.bolt.userData.basePos) return;
     const base = mos.bolt.userData.basePos;
-    mos.bolt.position.set(base.x, base.y + pose.lift * 0.018, base.z + pose.back * 0.18);
-    mos.bolt.rotation.z = pose.lift * 0.96;
+    const liftTravel = mos.bolt.userData.liftTravel || 0.018;
+    const backTravel = mos.bolt.userData.backTravel || 0.18;
+    const baseRot = mos.bolt.userData.baseRot;
+    const boltRotTravel = mos.bolt.userData.boltRotTravel || 0.96;
+    mos.bolt.position.set(base.x, base.y + pose.lift * liftTravel, base.z + pose.back * backTravel);
+    if (baseRot) mos.bolt.rotation.set(baseRot.x, baseRot.y, baseRot.z + pose.lift * boltRotTravel);
+    else mos.bolt.rotation.z = pose.lift * boltRotTravel;
   }
   _updateMosinAnim(dt) {
     const model = this.models && this.models.mosin;

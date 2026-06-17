@@ -32,6 +32,7 @@ import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
 import { NightPost } from './nightpost.js';
 import { Mortar } from './mortar.js';
+import { ShilkaStation } from './shilka.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
@@ -69,7 +70,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-17 16:16';
+const GAME_BUILD = '2026-06-17 23:16';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -126,6 +127,11 @@ class Game {
     // Y resolved from terrain in ensureBuilt.
     this.mortars = [];
     if (this.mapId === 'steppe') this.mortars.push(new Mortar(this, new THREE.Vector3(-335, 0, -308), 0));
+    this.shilkas = [];
+    if (this.mapId === 'steppe') {
+      this.shilkas.push(new ShilkaStation(this, new THREE.Vector3(-175, 0, 415), 0.3, { id: 'shilka-airfield-w' }));
+      this.shilkas.push(new ShilkaStation(this, new THREE.Vector3(55, 0, 415), -0.3, { id: 'shilka-airfield-e' }));
+    }
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
     this.inventory = new Inventory(this); // survival backpack + unified held-item model
@@ -167,7 +173,7 @@ class Game {
       setLimp: (entity, on) => { if (entity === this.player) { this.player.legBroken = on; this.hud.setSurvival(this.player); } },
     };
 
-    this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin();
+    this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin(); this._maybeAutoLanInvite();
     this.player.update(0.0001); this.engine.render();
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
   }
@@ -207,6 +213,34 @@ class Game {
         if (this.hud && this.hud.toast) this.hud.toast('Rejoining host on the new map...', 0x6fd0e8);
       } catch (e) {}
     }, 900);
+  }
+
+  _maybeAutoLanInvite() {
+    let p = null;
+    try { p = new URLSearchParams(location.search); } catch (e) {}
+    if (!p || p.get('lan') !== '1') return;
+    const room = String(p.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    const host = p.get('host') === '1';
+    const join = p.get('join') === '1';
+    if (!room || room.length !== 5 || (!host && !join)) return;
+    const name = (() => { try { return localStorage.getItem('engendros_name') || ''; } catch (e) { return ''; } })() || (host ? 'Host' : 'Player');
+    const run = (tries = 0) => {
+      try {
+        this.toLobby();
+        if (this.mp._lanMode && !this.mp._lanMode()) this.mp.toggleLanMode();
+        const codeEl = document.getElementById('mp-code'); if (codeEl) codeEl.value = room;
+        const nameEl = document.getElementById('mp-name'); if (nameEl && !nameEl.value) nameEl.value = name;
+        if (host) {
+          this.mp.startHost(name, room);
+          this.mp._setLobbyDiag(`LAN invite room ${room} is hosted. Send the invite URL to your squad.`);
+        } else {
+          this.mp._setLobbyDiag(`Auto-joining LAN invite room ${room}...`);
+          this.mp.startJoin(room, name);
+          if (tries < 4) setTimeout(() => { if (!this.mp.active && !this.mp.isHost && !(this.mp.net && this.mp.net.connected)) run(tries + 1); }, 3000);
+        }
+      } catch (e) {}
+    };
+    setTimeout(() => run(0), 900);
   }
 
   _wireUI() {
@@ -263,7 +297,12 @@ class Game {
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
     this.input.on('lock', () => { if (this.mpMenuOpen) this._closeMpMenu(false); else if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
-    this.input.on('unlock', () => { if (this._intentionalUnlock) { this._intentionalUnlock = false; return; } if (this._invOpen) { this._closeInventory(); return; } if (this.state === 'playing') this.pause(); });
+    this.input.on('unlock', () => {
+      if (this.player && this.player.shilka) { this.player.shilka.onPointerUnlock(); return; }
+      if (this._intentionalUnlock) { this._intentionalUnlock = false; return; }
+      if (this._invOpen) { this._closeInventory(); return; }
+      if (this.state === 'playing') this.pause();
+    });
     document.addEventListener('fullscreenchange', () => this.engine.resize());
   }
 
@@ -298,6 +337,11 @@ class Game {
       // delivered here without dropping fullscreen, so we drive BOTH pause and resume from it. Handled before
       // the state/console guards so it also works while paused — but we never steal the dev-console's own Esc.
       // (On FF/Safari Esc additionally releases pointer-lock and the 'unlock' handler pauses as a fallback.)
+      if (code === 'Escape' && this.state === 'playing' && this.player && this.player.shilka) {
+        if (ev) ev.preventDefault();
+        this.player.shilka._setCursorMode(true);
+        return;
+      }
       if (code === 'Escape' && !(this.devconsole && this.devconsole.open) && (this.state === 'playing' || this.state === 'paused')) {
         if (ev) ev.preventDefault();
         if (this.state === 'paused' || this.mpMenuOpen) this.resume(); else this.pause();
@@ -305,6 +349,13 @@ class Game {
       }
       if (this.state !== 'playing') return;
       if (this.devconsole && this.devconsole.open) return; // console eats input while open
+      // ЗСУ-23-4 Shilka station: E leave · Tab role · R search · X drop lock · RMB/LMB handled in Shilka.controlUpdate.
+      if (this.player.shilka) {
+        if (code === 'KeyE') this.player.shilka.dismount();
+        else if (code === 'KeyF') this.toggleFullscreen();
+        else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
+        return;
+      }
       // at the ННП-23 eyepieces: E leave · T day/night branch · F fullscreen · M mute; swallow the
       // rest (must run BEFORE console-open so T toggles the branch instead of opening the console)
       if (this.player.nightPost) {
@@ -356,6 +407,7 @@ class Game {
           if (gun) gun.mount();
           else if (this.nearestNightPost()) { this.nearestNightPost().enter(); } // ННП-23: step up to the eyepieces
           else if (this.nearestMortar()) { this.nearestMortar().mount(); } // 82-ПМ-37: man the indirect-fire station
+          else if (this.nearestShilka()) { this.nearestShilka().mount(); } // ЗСУ-23-4: radar/fire-control station
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
@@ -443,6 +495,11 @@ class Game {
     for (const m of this.mortars) if (m.canMount(this.player.pos)) return m;
     return null;
   }
+  nearestShilka() {
+    if (this.player.mountedGun || this.player.nightPost || this.player.mortar || this.player.shilka) return null;
+    for (const s of this.shilkas || []) if (s.updateNearby(this.player.pos)) return s;
+    return null;
+  }
   // Spotter (v1 minimal): march the look-ray to the ground → range+bearing FROM THE MORTAR to that
   // point (the firing solution the gunner must dial), shown to the spotter + a shared marker. ЛПР-1
   // will later replace the look-ray with a real lased target; the {range,bearing} contract is the same.
@@ -493,12 +550,14 @@ class Game {
   reset() {
     if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
+    if (this.player && this.player.shilka) this.player.shilka.dismount();
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
     this._nextTagId = 1; // new run → enemy tag ids restart at 1
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
     for (const m of this.mortars) m.forceReset(); // step away from the ННП-23 (restores lights/FOV/overlay)
+    for (const s of this.shilkas || []) s.forceReset();
     if (this.hud) this.hud.setCompass(null); // body-level overlay — hud.show(false) won't hide it; clear on run reset
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
@@ -1052,15 +1111,19 @@ class Game {
 
     for (const np of this.nightPosts) np.ensureBuilt(); // place the ННП-23 prop once its spec registers (async boot fetch)
     for (const m of this.mortars) { m.ensureBuilt(); m.update(dt); } // mortar: lazy place + tick in-flight shells (even unseated)
+    for (const s of this.shilkas || []) s.update(dt); // Shilka: drones + projectile visuals tick even when unseated
     if (this._mortarMark) { this._mortarMarkT -= dt; if (this._mortarMarkT <= 0) { this.engine.scene.remove(this._mortarMark); this._mortarMark.geometry.dispose(); this._mortarMark.material.dispose(); this._mortarMark = null; } } // fade the spotter beacon
     if (this.mp.active && this.mp.frozen) {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
       if (this.player.nightPost) this.player.nightPost.exit();
       if (this.player.mortar) this.player.mortar.dismount();
+      if (this.player.shilka) this.player.shilka.dismount();
       this.weapons.cancelMolotov();
       this.hud.setCompass(null); // downed/dead in co-op: weapons.update() is skipped → tear the буссоль overlay down
     }
-    if (this.player.mountedGun) {
+    if (this.player.shilka) {
+      this.player.shilka.controlUpdate(dt); // Shilka radar/fire-control overlay, camera, lock, range gate, burst fire
+    } else if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
     } else if (this.player.mortar) {
       this.player.mortar.controlUpdate(dt); // indirect-fire lay (W/S/A/D) + framing camera + fire handled here
@@ -1134,9 +1197,12 @@ class Game {
     }
     const _nearMountedGun = this.nearestMountedGun(this.player.pos, (gun) => gun.updateNearby(this.player.pos));
     const _reloadGun = this.nearestMountedGun(this.player.pos, (gun) => gun.near(this.player.pos));
+    const _nearShilka = this.nearestShilka();
     const activeGun = this.player.mountedGun || _nearMountedGun || _reloadGun;
     const mgName = activeGun && activeGun.displayName ? activeGun.displayName : 'mounted gun';
-    if (this.player.mountedGun) {
+    if (this.player.shilka) {
+      this.hud.setInteract('');
+    } else if (this.player.mountedGun) {
       this.hud.setInteract(`Press <b>E</b> to leave the ${mgName}`);
     } else if (this.player.nightPost) {
       this.hud.setInteract(''); // at the optic: the controls hint is self-contained in the NV overlay (#nvhint, timed fade)
@@ -1146,6 +1212,8 @@ class Game {
       this.hud.setInteract(''); // at the mortar: the dial HUD is self-contained (#mortarpanel)
     } else if (this.nearestMortar()) {
       this.hud.setInteract(`Press <b>E</b> to man the 82-PM-37 mortar — ${this.nearestMortar().ammo} rounds · indirect fire`);
+    } else if (_nearShilka) {
+      this.hud.setInteract('Press <b>E</b> to enter ZSU-23-4 Shilka — radar fire-control trainer');
     } else if (this.inventory.isHoldingFiftyCan() && _reloadGun) {
       // holding the ammo can at the gun: refill, never mount (switch to a weapon to man it)
       this.hud.setInteract(_reloadGun.ammo >= _reloadGun.maxAmmo

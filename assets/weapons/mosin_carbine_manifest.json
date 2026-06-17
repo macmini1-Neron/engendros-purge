@@ -1,0 +1,11 @@
+{
+  "asset": "low_poly_mosin_carbine.glb",
+  "title": "Low Poly Mosin Carbine",
+  "author": "austincford",
+  "source": "https://sketchfab.com/3d-models/low-poly-mosin-carbine-021d6917f1fe4fd9a3b2b4f97f9fc7e3",
+  "license": "CC-BY-4.0",
+  "notes": [
+    "Runtime viewmodel replacement for the procedural Mosin fallback.",
+    "GLB keeps named bolt nodes so the existing Mosin bolt-cycle animation can drive the asset."
+  ]
+}

@@ -6,9 +6,9 @@ no package install, and no build step. The current focus is fast co-op
 iteration, Hamachi/LAN stability, synchronized multiplayer state, and readable
 debugging when browser networking gets weird.
 
-Current documented build: `v288`
+Current documented build: `v289`
 
-Build stamp shown in the lobby: `2026-06-17 16:16`
+Build stamp shown in the lobby: `2026-06-17 16:48`
 
 Primary branch for the latest co-op work: `codex/sync-mp-day-night`
 
@@ -23,7 +23,7 @@ python3 -m http.server 8099
 Open:
 
 ```text
-http://localhost:8099/?cb=v288
+http://localhost:8099/?cb=v289
 ```
 
 For one-command Hamachi co-op, run this on the host Mac:
@@ -35,7 +35,7 @@ node scripts/lan-host.js
 The launcher prints a local URL and, when Hamachi is active, a Hamachi URL:
 
 ```text
-http://25.44.189.90:54321/?lan=1&cb=v288
+http://25.44.189.90:53736/?lan=1&cb=v289
 ```
 
 The host opens the local URL; the other player opens the Hamachi URL. The lobby
@@ -159,14 +159,14 @@ python3 -m http.server 8099
 Open:
 
 ```text
-http://localhost:8099/?cb=v288
+http://localhost:8099/?cb=v289
 ```
 
 The `?cb=` query is only a cache-bust helper. The actual module version shown in
 the lobby comes from the script URL:
 
 ```html
-<script type="module" src="./src/game.js?v=288"></script>
+<script type="module" src="./src/game.js?v=289"></script>
 ```
 
 When changing game code, bump this `v=` value in `index.html` and update
@@ -210,7 +210,7 @@ After deploy, verify the build label in the co-op lobby. For this README it
 should say:
 
 ```text
-ENGENDROS PURGE v288 (2026-06-17 16:16)
+ENGENDROS PURGE v289 (2026-06-17 16:48)
 ```
 
 ## Multiplayer Overview
@@ -267,19 +267,19 @@ On the host Mac, use the one-command launcher:
 node scripts/lan-host.js
 ```
 
-It chooses a free port, serves the game, starts the LAN relay on that same port,
-and prints URLs like:
+It serves the game on port `53736` by default, starts the LAN relay on that same
+port, and prints URLs like:
 
 ```text
-Local:   http://localhost:54321/?lan=1&cb=v288
-Hamachi: http://25.44.189.90:54321/?lan=1&cb=v288
+Local:   http://localhost:53736/?lan=1&cb=v289
+Hamachi: http://25.44.189.90:53736/?lan=1&cb=v289
 ```
 
 Open the local URL on the host. Open the Hamachi URL on the other machine.
 The launcher metadata is available at:
 
 ```text
-http://localhost:54321/__engendros_lan_info
+http://localhost:53736/__engendros_lan_info
 ```
 
 Then:
@@ -291,6 +291,39 @@ Then:
 5. Client pastes the room code and joins.
 6. Client clicks ready.
 7. Host starts the run.
+
+### Experimental Vercel LAN Bridge
+
+If the local helper is already running on the host Mac, the normal Vercel game
+can discover it from the co-op lobby.
+
+1. Host Mac runs:
+
+```bash
+node scripts/lan-host.js --port 53736
+```
+
+2. Host opens the normal Vercel game and enters `CO-OP`.
+3. The lobby probes `http://127.0.0.1:53736/__engendros_lan_info`.
+4. If found, the LAN panel shows a ready Hamachi invite URL and a
+   `HOST & COPY` button.
+5. `HOST & COPY` copies a friend URL like:
+
+```text
+http://25.44.189.90:53736/?lan=1&cb=v289&room=ABCDE&join=1
+```
+
+6. The host browser redirects locally to:
+
+```text
+http://localhost:53736/?lan=1&cb=v289&room=ABCDE&host=1
+```
+
+7. The friend opens the copied Hamachi URL and auto-joins room `ABCDE`; no room
+   code typing is needed.
+
+This is a best-effort browser experiment. If a browser blocks HTTPS-to-localhost
+probing, open the printed local URL from `scripts/lan-host.js` directly.
 
 Optional launcher flags:
 
@@ -307,7 +340,7 @@ node scripts/lan-server.js --host 0.0.0.0 --port 8787
 python3 -m http.server 8099
 ```
 
-With the fallback, open `http://<hamachi-ip>:8099/?cb=v288`, switch the lobby
+With the fallback, open `http://<hamachi-ip>:8099/?cb=v289`, switch the lobby
 to `NET: LAN`, and the browser connects to `ws://<hamachi-ip>:8787`.
 
 If Hamachi asks macOS for a driver/system-extension permission, it must be
@@ -447,7 +480,7 @@ When a player loses HP in co-op:
 
 ### Revive / CPR
 
-Current v288 revive rules:
+Current v289 revive rules:
 
 - Reviver must be on foot.
 - Reviver must be near the downed player.
@@ -615,14 +648,14 @@ Local page:
 
 ```bash
 python3 -m http.server 8099
-curl -fsS 'http://localhost:8099/?cb=v288' | rg 'game\.js\?v=288'
+curl -fsS 'http://localhost:8099/?cb=v289' | rg 'game\.js\?v=289'
 ```
 
 LAN launcher smoke:
 
 ```bash
 node scripts/lan-host.js
-curl -fsS 'http://localhost:<printed-port>/?lan=1&cb=v288' | rg 'game\.js\?v=288'
+curl -fsS 'http://localhost:<printed-port>/?lan=1&cb=v289' | rg 'game\.js\?v=289'
 curl -fsS 'http://localhost:<printed-port>/__engendros_lan_info' | rg '"port"|"preferredUrl"'
 ```
 
@@ -654,12 +687,12 @@ Manual MP test plan:
 
 - Make sure it is served over HTTP.
 - Use `python3 -m http.server 8099`.
-- Open `http://localhost:8099/?cb=v288`.
+- Open `http://localhost:8099/?cb=v289`.
 - Check browser console for module load or asset path errors.
 
 ### Browser Shows Old Version
 
-- Confirm `index.html` points at `./src/game.js?v=288`.
+- Confirm `index.html` points at `./src/game.js?v=289`.
 - Hard refresh.
 - Add or change the `?cb=` query.
 - On Vercel, verify `vercel.json` no-store headers are deployed.
@@ -793,11 +826,12 @@ Tank/boss visuals:
 - `src/tankglb.js`
 - `assets/modely/`
 
-## Release Notes: v288
+## Release Notes: v289
 
-This README is current through v288. Major recent co-op changes:
+This README is current through v289. Major recent co-op changes:
 
 - one-command Hamachi LAN launcher with same-port HTTP + WebSocket relay
+- experimental Vercel LAN bridge can copy an auto-join Hamachi invite URL
 - lobby LAN panel shows the detected join URL and relay port
 - world time/sky sync is host-authoritative
 - Purge mode resets clients to bright noon
