@@ -360,6 +360,15 @@
     .btn.danger::before { background: #000; opacity: .35; }
     .btn.mini:disabled, .btn:disabled { cursor: default; opacity: .48; transform: none; filter: saturate(.5); }
     .mp-status { margin: 8px 0; font-size: 13px; opacity: .85; min-height: 18px; text-align: center; }
+    .mp-lanpanel { margin: 8px 0; padding: 9px 10px; border: 1px solid rgba(69,224,207,.24); border-radius: var(--r-sm); background: rgba(3,28,25,.42); box-shadow: inset 0 1px 0 rgba(69,224,207,.08); }
+    .mp-lan-head, .mp-lan-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 9px; align-items: center; font-size: 11px; }
+    .mp-lan-head { margin-bottom: 7px; }
+    .mp-lan-head span, .mp-lan-kv span { font-family: var(--font-display); color: var(--ink-dim); letter-spacing: 1.4px; text-transform: uppercase; }
+    .mp-lan-head b, .mp-lan-kv b { color: var(--neon); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mp-lan-url { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin: 6px 0; padding: 6px 7px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: rgba(0,0,0,.24); }
+    .mp-lan-url span { min-width: 0; color: var(--paper); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+    .mp-lan-url .btn { margin: 0; width: auto; }
+    .mp-lan-hint { margin-top: 6px; color: var(--ink-dim); font-size: 11px; line-height: 1.25; text-align: center; }
     .mp-diag { min-height: 17px; margin-top: 9px; font-size: 12px; color: var(--ink-dim); text-align: center; }
     .mp-diagbox { margin: 8px 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(0,0,0,.18); }
     .mp-diagtitle { margin-bottom: 7px; font-family: var(--font-display); font-size: 10px; letter-spacing: 1.8px; color: var(--ink-dim); text-transform: uppercase; text-align: center; }
@@ -1362,6 +1371,7 @@
           </div>
           <div id="mp-modenote" class="mp-status" style="margin:0 0 8px;font-size:12px;opacity:.7;">Arcade waves — special waves &amp; mini-bosses. Host picks the mode for the squad.</div>
           <div id="mp-poker-buyin" class="mp-status" style="display:none;margin:0 0 8px;font-size:12px;"></div>
+          <div id="mp-lan-panel" class="mp-lanpanel" style="display:none;"></div>
           <div id="mp-status" class="mp-status">Host a room or paste a code.</div>
           <div class="mp-diagbox">
             <div class="mp-diagtitle">CONNECTION CHECK</div>
@@ -1599,6 +1609,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=287"></script>
+  <script type="module" src="./src/game.js?v=288"></script>
 </body>
 </html>

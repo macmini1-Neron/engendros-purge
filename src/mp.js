@@ -31,6 +31,14 @@ const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
 export function mpEscape(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
 
+function lanLauncherMode() {
+  try { return new URLSearchParams(location.search).get('lan') === '1'; } catch (e) { return false; }
+}
+
+function lanInfoUrl() {
+  try { return `${location.origin}/__engendros_lan_info`; } catch (e) { return '/__engendros_lan_info'; }
+}
+
 class RemotePlayer {
   constructor(game, id, name, skinIdx) {
     this.game = game; this.id = id; this.name = name || 'Flopo';
@@ -136,7 +144,11 @@ class RemotePlayer {
 
 export class MP {
   constructor(game) {
-    this.game = game; this.net = this._makeNet();
+    this.game = game;
+    this._lanLauncher = lanLauncherMode();
+    this._lanInfo = null; this._lanInfoError = ''; this._lanInfoLoading = false; this._lanInfoTried = false;
+    if (this._lanLauncher) { try { localStorage.setItem('engendros_lan_mode', '1'); } catch (e) {} }
+    this.net = this._makeNet();
     this.active = false; this.isHost = false; this.myId = null; this.name = '';
     this.remotes = new Map(); this.roster = new Map(); this.pstate = new Map(); this.ghosts = new Map();
     this._ghostProjectiles = []; // VISUAL-ONLY thrown/launched projectiles from teammates (never deal damage)
@@ -241,7 +253,7 @@ export class MP {
   toggleLanMode() {
     const on = !this._lanMode();
     try { localStorage.setItem('engendros_lan_mode', on ? '1' : '0'); } catch (e) {}
-    this._setLobbyDiag(on ? 'LAN mode enabled. Start scripts/lan-server.js, host on this Mac, and have the squad open the Hamachi IP.' : 'WebRTC mode enabled.');
+    this._setLobbyDiag(on ? 'LAN mode enabled. For one-port Hamachi hosting, run node scripts/lan-host.js and share its URL.' : 'WebRTC mode enabled.');
     this._resetLobbyTransport();
     this._resetDiag('idle', '');
     this._renderLanMode();
@@ -253,6 +265,46 @@ export class MP {
     const on = this._lanMode();
     b.textContent = on ? 'NET: LAN' : 'NET: WEBRTC';
     b.classList.toggle('danger', on);
+    this._renderLanPanel();
+  }
+  _fetchLanInfo() {
+    if (!this._lanLauncher || this._lanInfoTried || this._lanInfoLoading || typeof fetch === 'undefined') return;
+    this._lanInfoTried = true;
+    this._lanInfoLoading = true;
+    fetch(lanInfoUrl(), { cache: 'no-store' })
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then((info) => { this._lanInfo = info; this._lanInfoError = ''; })
+      .catch((e) => { this._lanInfoError = 'LAN host info unavailable'; })
+      .then(() => { this._lanInfoLoading = false; this._renderLanPanel(); });
+  }
+  async _copyLanUrl(url) {
+    if (!url) return;
+    const ok = this.game && this.game._copyText ? await this.game._copyText(url) : false;
+    this._setLobbyDiag(ok ? 'LAN join URL copied.' : 'Copy failed. Select the LAN URL and copy it manually.');
+  }
+  _renderLanPanel() {
+    const el = document.getElementById('mp-lan-panel'); if (!el) return;
+    const lan = this._lanMode();
+    if (!this._lanLauncher && !lan) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = '';
+    if (this._lanLauncher) this._fetchLanInfo();
+    const info = this._lanInfo;
+    const joinUrl = (info && (info.hamachiUrl || info.preferredUrl || info.localUrl)) || (() => { try { return `${location.origin}/?lan=1`; } catch (e) { return '?lan=1'; } })();
+    const port = info && info.port ? String(info.port) : 'same port';
+    const relay = info && info.relay ? `${info.relay.path} · ${info.relay.rooms} rooms · ${info.relay.clients} peers` : (this._lanLauncher ? 'same-origin relay' : 'manual relay :8787');
+    const state = this._lanLauncher
+      ? (info ? (info.hamachiUrl ? 'Hamachi IPv4 detected' : 'Hamachi IPv4 not detected') : (this._lanInfoError || 'Reading LAN host info...'))
+      : 'Manual LAN mode';
+    const hint = this._lanLauncher
+      ? 'Share this URL, then host a room and share the room code.'
+      : 'For one-port hosting, run node scripts/lan-host.js and open its ?lan=1 URL.';
+    el.innerHTML = `
+      <div class="mp-lan-head"><span>LAN HOST</span><b>${mpEscape(state)}</b></div>
+      <div class="mp-lan-url"><span>${mpEscape(joinUrl)}</span><button class="btn sec mini" data-lan-copy="1">COPY</button></div>
+      <div class="mp-lan-kv"><span>PORT</span><b>${mpEscape(port)}</b><span>RELAY</span><b>${mpEscape(relay)}</b></div>
+      <div class="mp-lan-hint">${mpEscape(hint)}</div>`;
+    const copy = el.querySelector('[data-lan-copy]');
+    if (copy) copy.onclick = () => this._copyLanUrl(joinUrl);
   }
   toggleRelayMode() {
     const on = !this._forceRelay();

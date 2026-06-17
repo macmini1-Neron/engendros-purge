@@ -6,9 +6,9 @@ no package install, and no build step. The current focus is fast co-op
 iteration, Hamachi/LAN stability, synchronized multiplayer state, and readable
 debugging when browser networking gets weird.
 
-Current documented build: `v190`
+Current documented build: `v288`
 
-Build stamp shown in the lobby: `2026-06-02 10:01 WEST`
+Build stamp shown in the lobby: `2026-06-17 16:16`
 
 Primary branch for the latest co-op work: `codex/sync-mp-day-night`
 
@@ -23,16 +23,23 @@ python3 -m http.server 8099
 Open:
 
 ```text
-http://localhost:8099/?cb=v190
+http://localhost:8099/?cb=v288
 ```
 
-For Hamachi co-op, the other player opens the host Mac's Hamachi IP:
+For one-command Hamachi co-op, run this on the host Mac:
+
+```bash
+node scripts/lan-host.js
+```
+
+The launcher prints a local URL and, when Hamachi is active, a Hamachi URL:
 
 ```text
-http://25.44.189.90:8099/?cb=v190
+http://25.44.189.90:54321/?lan=1&cb=v288
 ```
 
-If that IP changes, replace it with the host Mac's current Hamachi address.
+The host opens the local URL; the other player opens the Hamachi URL. The lobby
+auto-switches to `NET: LAN`; host a room and share the 5-character room code.
 
 Do not open `index.html` through `file://`. The game uses native ES modules,
 asset loading, audio files, and browser APIs that expect HTTP.
@@ -85,7 +92,9 @@ Core loop:
 |-- vercel.json                 # No-store headers for HTML/src during deploys
 |-- README.md                   # This document
 |-- scripts/
-|   `-- lan-server.js           # Zero-dependency WebSocket LAN relay
+|   |-- lan-host.js             # One-command static HTTP + same-port LAN relay
+|   |-- lan-relay.js            # Shared zero-dependency WebSocket relay core
+|   `-- lan-server.js           # Legacy standalone WebSocket LAN relay
 |-- src/
 |   |-- game.js                 # Main loop, modes, UI wiring, run lifecycle
 |   |-- mp.js                   # Co-op lobby, sync, player state, revive, LAN
@@ -150,14 +159,14 @@ python3 -m http.server 8099
 Open:
 
 ```text
-http://localhost:8099/?cb=v190
+http://localhost:8099/?cb=v288
 ```
 
 The `?cb=` query is only a cache-bust helper. The actual module version shown in
 the lobby comes from the script URL:
 
 ```html
-<script type="module" src="./src/game.js?v=190"></script>
+<script type="module" src="./src/game.js?v=288"></script>
 ```
 
 When changing game code, bump this `v=` value in `index.html` and update
@@ -167,6 +176,10 @@ show the same version the browser actually loaded.
 Syntax checks:
 
 ```bash
+node --check scripts/lan-host.js
+node --check scripts/lan-server.js
+node --check scripts/lan-relay.js
+node --check src/net.js
 node --check src/game.js
 node --check src/mp.js
 node --check src/player.js
@@ -197,7 +210,7 @@ After deploy, verify the build label in the co-op lobby. For this README it
 should say:
 
 ```text
-ENGENDROS PURGE v190 (2026-06-02 10:01 WEST)
+ENGENDROS PURGE v288 (2026-06-17 16:16)
 ```
 
 ## Multiplayer Overview
@@ -210,7 +223,8 @@ There are two transport modes:
    - Good for normal internet play when NAT/firewalls allow it.
 
 2. `NET: LAN`
-   - Uses the local WebSocket relay in `scripts/lan-server.js`.
+   - Uses the same-port launcher relay from `scripts/lan-host.js`, or the
+     legacy standalone relay in `scripts/lan-server.js`.
    - Designed for Hamachi or same-LAN play.
    - Avoids WebRTC NAT problems by having both browsers talk to the host Mac's
      WebSocket relay.
@@ -247,37 +261,54 @@ Clients own locally:
 
 Use this when normal WebRTC or iPhone hotspot routing fails.
 
-On the host Mac:
+On the host Mac, use the one-command launcher:
 
 ```bash
-node scripts/lan-server.js --host 0.0.0.0 --port 8787
-python3 -m http.server 8099
+node scripts/lan-host.js
 ```
 
-Open on the host:
+It chooses a free port, serves the game, starts the LAN relay on that same port,
+and prints URLs like:
 
 ```text
-http://localhost:8099/?cb=v190
+Local:   http://localhost:54321/?lan=1&cb=v288
+Hamachi: http://25.44.189.90:54321/?lan=1&cb=v288
 ```
 
-Open on the other machine through the host Mac's Hamachi IP:
+Open the local URL on the host. Open the Hamachi URL on the other machine.
+The launcher metadata is available at:
 
 ```text
-http://25.44.189.90:8099/?cb=v190
+http://localhost:54321/__engendros_lan_info
 ```
 
 Then:
 
 1. Both players open the same Hamachi HTTP URL.
-2. In the co-op lobby, switch from `NET: WEBRTC` to `NET: LAN`.
+2. The co-op lobby auto-switches from `NET: WEBRTC` to `NET: LAN`.
 3. Host clicks host/create room.
 4. Host copies the room code.
 5. Client pastes the room code and joins.
 6. Client clicks ready.
 7. Host starts the run.
 
-The LAN relay itself listens on port `8787`; the static game page in the current
-workflow listens on port `8099`.
+Optional launcher flags:
+
+```bash
+node scripts/lan-host.js --host 0.0.0.0 --port 0
+node scripts/lan-host.js --host 0.0.0.0 --port 8099
+node scripts/lan-host.js --root /path/to/engendros-purge
+```
+
+Legacy fallback, still supported:
+
+```bash
+node scripts/lan-server.js --host 0.0.0.0 --port 8787
+python3 -m http.server 8099
+```
+
+With the fallback, open `http://<hamachi-ip>:8099/?cb=v288`, switch the lobby
+to `NET: LAN`, and the browser connects to `ws://<hamachi-ip>:8787`.
 
 If Hamachi asks macOS for a driver/system-extension permission, it must be
 approved manually in System Settings. Code cannot bypass that macOS security
@@ -416,7 +447,7 @@ When a player loses HP in co-op:
 
 ### Revive / CPR
 
-Current v190 revive rules:
+Current v288 revive rules:
 
 - Reviver must be on foot.
 - Reviver must be near the downed player.
@@ -584,13 +615,15 @@ Local page:
 
 ```bash
 python3 -m http.server 8099
-curl -fsS 'http://localhost:8099/?cb=v190' | rg 'game\.js\?v=190'
+curl -fsS 'http://localhost:8099/?cb=v288' | rg 'game\.js\?v=288'
 ```
 
-Hamachi page:
+LAN launcher smoke:
 
 ```bash
-curl -fsS 'http://25.44.189.90:8099/?cb=v190' | rg 'game\.js\?v=190'
+node scripts/lan-host.js
+curl -fsS 'http://localhost:<printed-port>/?lan=1&cb=v288' | rg 'game\.js\?v=288'
+curl -fsS 'http://localhost:<printed-port>/__engendros_lan_info' | rg '"port"|"preferredUrl"'
 ```
 
 Manual MP test plan:
@@ -621,12 +654,12 @@ Manual MP test plan:
 
 - Make sure it is served over HTTP.
 - Use `python3 -m http.server 8099`.
-- Open `http://localhost:8099/?cb=v190`.
+- Open `http://localhost:8099/?cb=v288`.
 - Check browser console for module load or asset path errors.
 
 ### Browser Shows Old Version
 
-- Confirm `index.html` points at `./src/game.js?v=190`.
+- Confirm `index.html` points at `./src/game.js?v=288`.
 - Hard refresh.
 - Add or change the `?cb=` query.
 - On Vercel, verify `vercel.json` no-store headers are deployed.
@@ -646,18 +679,20 @@ Manual MP test plan:
 On the host Mac:
 
 ```bash
-node scripts/lan-server.js --host 0.0.0.0 --port 8787
-python3 -m http.server 8099
+node scripts/lan-host.js
 ```
 
 Then check:
 
 - both machines are in the same Hamachi network
-- both open the host Mac's Hamachi HTTP URL
+- both open the host Mac's printed Hamachi HTTP URL
+- the URL contains `?lan=1`
 - lobby is switched to `NET: LAN`
-- static page port is `8099`
-- LAN relay port is `8787`
+- the LAN panel shows the same port as the browser URL
 - macOS firewall/Hamachi driver permission is approved
+
+If using the legacy fallback, also check that the static page port is `8099`
+and the LAN relay port is `8787`.
 
 ### Room Code Copy Does Not Work
 
@@ -720,6 +755,8 @@ Networking:
 
 - `src/net.js`
 - `src/mp.js`
+- `scripts/lan-host.js`
+- `scripts/lan-relay.js`
 - `scripts/lan-server.js`
 
 Run lifecycle:
@@ -756,10 +793,12 @@ Tank/boss visuals:
 - `src/tankglb.js`
 - `assets/modely/`
 
-## Release Notes: v190
+## Release Notes: v288
 
-This README is current through v190. Major recent co-op changes:
+This README is current through v288. Major recent co-op changes:
 
+- one-command Hamachi LAN launcher with same-port HTTP + WebSocket relay
+- lobby LAN panel shows the detected join URL and relay port
 - world time/sky sync is host-authoritative
 - Purge mode resets clients to bright noon
 - Long Night syncs clock/night/blood moon from host

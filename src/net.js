@@ -341,6 +341,12 @@ function lanWsUrl() {
   const explicit = (typeof window !== 'undefined' && window.ENGENDROS_LAN_WS) || storageGet('engendros_lan_ws');
   if (explicit) return explicit;
   const proto = (typeof location !== 'undefined' && location.protocol === 'https:') ? 'wss:' : 'ws:';
+  let launcher = false;
+  try { launcher = new URLSearchParams(location.search).get('lan') === '1'; } catch (e) {}
+  if (launcher) {
+    const sameOrigin = (typeof location !== 'undefined' && location.host) ? location.host : 'localhost';
+    return `${proto}//${sameOrigin}/__engendros_lan_ws`;
+  }
   const host = (typeof location !== 'undefined' && location.hostname) ? location.hostname : 'localhost';
   return `${proto}//${host}:8787`;
 }
