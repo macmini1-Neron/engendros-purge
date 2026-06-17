@@ -448,7 +448,8 @@ function buildSu25(world, b, cx, cz, bort) {
 
 // =====================================================================
 // ⑥ ПВО (air defense) — С-75 «Двина» SAM site («цветок»: 6 launchers in a hexagon + central Fan-Song radar),
-// ЗСУ-23-4 «Шилка» SPAAG, П-18 «Терек» radar (Yagi billboard), ЗУ-23-2 towed twin AA. All 4БО green.
+// П-18 «Терек» radar (Yagi billboard), ЗУ-23-2 towed twin AA. All 4БО green.
+// ZSU-23-4 Shilkas are runtime GLB stations now (src/shilka.js), not baked voxel map props.
 // =====================================================================
 const G4BO = { hi: 0x6a7a42, mid: 0x55632e, lo: 0x3e4a1f };               // защитный 4БО
 
@@ -530,44 +531,6 @@ function buildSAMSite(world, b, cx, cz, R = 22) {
     for (let a = 0; a < 8; a++) { const ra = a * Math.PI / 4; b.box(2.6, 1.5, 2.6, lx + Math.cos(ra) * 4.2, 0.75, lz + Math.sin(ra) * 4.2, a % 2 ? EARTH.mid : EARTH.lo, { ry: ra, tint: 0.03 }); b.box(2.4, 0.3, 2.4, lx + Math.cos(ra) * 4.2, 1.5, lz + Math.sin(ra) * 4.2, SOD.mid); } // revetment berm + grass
     placeS75(world, b, lx, lz, phi);   // detailed modelgen S-75 «Двина» (was the hand-coded buildSAMLauncher)
   }
-}
-function buildShilka(world, b, cx, cz, ry = 0) {                          // ЗСУ-23-4 «Шилка» — squat box turret, 2×2 water-jacketed barrels, Gun-Dish at rear
-  const c = Math.cos(ry), s = Math.sin(ry), P = (dx, dz) => [cx + dx * c - dz * s, cz + dx * s + dz * c];
-  const IRX = 0x2a2a2e, TRK = 0x1f1f1c, WHL = 0x161618, GUN = 0x33333a, JKT = 0x42424a, DISH = 0xa4a097;
-  // hull (6.5×3.1): body + ~55° glacis + rear engine deck (grilles), driver hatch + headlight + towing eyes
-  world._solid(b, 3.1, 1.2, 5.2, cx, 0.95, cz + 0.3, G4BO.mid, { tint: 0.03, ry });
-  { const [x, z] = P(0, -2.5); b.box(3.0, 0.85, 1.5, x, 1.05, z, G4BO.lo, { ry, tint: 0.02 }); }              // sloped glacis
-  { const [x, z] = P(0, 2.5); b.box(3.0, 0.7, 1.4, x, 1.0, z, G4BO.lo, { ry, tint: 0.02 }); }                 // rear engine deck
-  for (const ex of [-0.7, 0, 0.7]) { const [gx, gz] = P(ex, 2.55); b.box(0.55, 0.1, 1.0, gx, 1.37, gz, IRX, { ry }); } // deck grilles
-  { const [x, z] = P(-0.85, -1.9); b.box(0.6, 0.18, 0.6, x, 1.5, z, G4BO.hi, { ry }); b.box(0.16, 0.12, 0.12, x, 1.62, z - 0.22, 0x141414, { ry }); } // driver hatch + periscope (front-left)
-  { const [x, z] = P(-1.1, -2.95); cyl(b, 0.17, 0.14, x, 1.12, z, 0xcfcabd, { rx: Math.PI / 2, ry, seg: 8 }); b.box(0.36, 0.3, 0.05, x, 1.12, z - 0.05, IRX, { ry }); } // headlight + blackout shield
-  for (const sx of [-1, 1]) { const [x, z] = P(sx * 0.9, -3.18); b.box(0.18, 0.18, 0.3, x, 0.7, z, IRX, { ry }); }     // front towing eyes
-  for (const sx of [-1, 1]) {                                                                    // running gear: track + 6 road wheels + idler (front) + toothed sprocket (rear) + fenders
-    const [tx, tz] = P(sx * 1.5, 0.1); b.box(0.5, 0.6, 6.4, tx, 0.55, tz, TRK, { ry }); b.box(0.54, 0.14, 6.5, tx, 0.95, tz, IRX, { ry });
-    for (let i = 0; i < 6; i++) { const [wx, wz] = P(sx * 1.5, -2.3 + i * 0.92); cyl(b, 0.38, 0.18, wx, 0.45, wz, WHL, { rx: Math.PI / 2, ry, seg: 12 }); cyl(b, 0.13, 0.2, wx, 0.45, wz, 0x2a2a2c, { rx: Math.PI / 2, ry, seg: 6 }); }
-    { const [ix, iz] = P(sx * 1.5, -3.05); cyl(b, 0.33, 0.2, ix, 0.42, iz, 0x222226, { rx: Math.PI / 2, ry, seg: 12 }); }
-    { const [dx, dz] = P(sx * 1.5, 3.05); cyl(b, 0.38, 0.22, dx, 0.55, dz, 0x2c2c30, { rx: Math.PI / 2, ry, seg: 10 }); for (let t = 0; t < 10; t++) { const a = t * Math.PI / 5; b.box(0.1, 0.1, 0.24, dx + Math.cos(a) * 0.42, 0.55 + Math.sin(a) * 0.42, dz, IRX, { ry }); } }
-    { const [fx, fz] = P(sx * 1.58, -1.3); b.box(0.16, 0.18, 1.3, fx, 1.32, fz, G4BO.mid, { ry, tint: 0.02 }); }
-    { const [fx, fz] = P(sx * 1.58, 1.7); b.box(0.16, 0.16, 0.9, fx, 1.3, fz, G4BO.mid, { ry, tint: 0.02 }); }
-  }
-  { const [x, z] = P(0, -0.1); world._solid(b, 2.6, 0.85, 2.3, x, 1.95, z, G4BO.lo, { tint: 0.03, ry }); }    // box turret
-  { const [x, z] = P(0, -1.2); b.box(2.5, 0.85, 0.5, x, 1.85, z, G4BO.mid, { ry, tint: 0.03 }); }             // sloped front face (~22°)
-  { const [x, z] = P(0.7, -0.5); cyl(b, 0.32, 0.26, x, 2.48, z, G4BO.hi, { ry, seg: 12, tint: 0.03 }); b.box(0.5, 0.1, 0.5, x, 2.64, z, G4BO.mid, { ry }); for (const pv of [[-0.2, 0.18], [0.18, 0.06]]) { const [vx, vz] = P(0.7 + pv[0], -0.5 + pv[1]); b.box(0.13, 0.1, 0.1, vx, 2.48, vz, 0x12120f, { ry }); } } // commander cupola (front-right) + hatch + vision blocks
-  for (const sx of [-1, 1]) { const [x, z] = P(sx * 0.55, 0.6); b.box(0.68, 0.1, 0.58, x, 2.42, z, G4BO.mid, { ry, tint: 0.02 }); } // 2 ammo-access hatches
-  for (const sx of [-1, 1]) { const [x, z] = P(sx * 1.32, 0.1); b.box(0.06, 0.52, 0.7, x, 1.95, z, G4BO.hi, { ry }); }             // side escape hatches
-  { const [x, z] = P(-0.95, 0.95); b.box(0.4, 0.32, 0.45, x, 2.3, z, G4BO.mid, { ry, tint: 0.02 }); }         // turret-rear stowage
-  { const [x, z] = P(0, -1.7); b.box(1.0, 0.7, 0.7, x, 2.0, z, GUN, { ry, tint: 0.02 }); }                    // gun cradle block (mantlet)
-  for (const ox of [-0.28, 0.28]) for (const oy of [-0.24, 0.24]) {                                           // 2×2 jacketed AZP-23 barrels + bare muzzle + muzzle brake
-    const [jx, jz] = P(ox, -3.1); cyl(b, 0.12, 2.6, jx, 2.0 + oy, jz, JKT, { rx: Math.PI / 2, ry, seg: 10 });
-    const [bx, bz] = P(ox, -4.6); cyl(b, 0.055, 0.7, bx, 2.0 + oy, bz, IRX, { rx: Math.PI / 2, ry, seg: 8 });
-    const [mx, mz] = P(ox, -5.05); cyl(b, 0.1, 0.35, mx, 2.0 + oy, mz, 0x18181a, { rx: Math.PI / 2, ry, seg: 8 });
-  }
-  { const [bx, bz] = P(0, 1.0); b.box(0.45, 0.4, 0.45, bx, 2.5, bz, IRX, { ry }); }                           // Gun Dish arm base
-  { const [ax, az] = P(0, 1.25); b.box(0.16, 0.9, 0.16, ax, 3.0, az, IRX, { ry }); }                          // folding arm
-  { const [dx, dz] = P(0, 1.5); cyl(b, 0.62, 0.14, dx, 3.55, dz, DISH, { rx: -0.5, ry, seg: 16, tint: 0.03 });
-    for (let r = 0; r < 6; r++) { const a = r * Math.PI / 3; b.box(0.06, 0.06, 1.05, dx + Math.cos(a) * 0.28, 3.62, dz, 0x6a6760, { ry, rz: a }); } cyl(b, 0.07, 0.4, dx, 3.78, dz, IRX, { rx: -0.5, ry, seg: 6 }); } // ribbed dish + feed
-  { const [ex, ez] = P(0.5, 0.62); b.box(0.42, 0.34, 0.34, ex, 2.32, ez, IRX, { ry }); }                      // radar electronics box
-  collider(world, cx, cz, 1.7, 0, 3.3, 3.3);
 }
 function buildRadarP18(world, b, cx, cz) {                                // П-18 «Spoon Rest» — flat 16-Yagi billboard (wider than tall, ~3:1), static cabin (no truck)
   const IRX = 0x2a2a2e, ROD = 0x9a958b, M = G4BO, HW = 6, FY = 7;
@@ -748,9 +711,8 @@ export function buildAirfield(world, ox, oz) {
   buildMiG23(world, b, ox - 55, oz + 118, '31');
   buildSu25(world, b, ox + 34, oz + 122, '25');
 
-  // ⑥ ПВО — С-75 SAM site (N, OUTSIDE the fence, shrunk to clear the mountains) + Шилка ×2 (N corners) + П-18 + ЗУ-23 ×2
+  // ⑥ ПВО — С-75 SAM site (N, OUTSIDE the fence, shrunk to clear the mountains) + runtime GLB Shilka stations + П-18 + ЗУ-23 ×2
   buildSAMSite(world, b, ox - 70, oz + 240, 18);   // pushed 10 m further N so the «цветок» S petal clears the perimeter fence (still ~20 m off the N mountains)
-  buildShilka(world, b, ox - 175, oz + 205, 0.3); buildShilka(world, b, ox + 55, oz + 205, -0.3); // mid-N, clear of the corner watchtowers
   buildRadarP18(world, b, ox - 135, oz + 230);
   placeP37(world, ox + 8, oz + 238, 2.2);          // P-37 «Bar Lock» early-warning radar (modelgen) — N radar line, E of the SAM site
   buildZU23(world, b, ox - 92, oz + 50); buildZU23(world, b, ox + 98, oz + 90, 0.4);             // E flank, clear of the E shelter

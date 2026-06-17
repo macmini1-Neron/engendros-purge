@@ -61,10 +61,16 @@ export class Input {
   }
 
   requestLock() {
-    if (!this.locked && this.dom.requestPointerLock) this.dom.requestPointerLock();
+    if (!this.locked && this.dom.requestPointerLock) {
+      const p = this.dom.requestPointerLock();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
   }
   exitLock() {
-    if (this.locked && document.exitPointerLock) document.exitPointerLock();
+    if (this.locked && document.exitPointerLock) {
+      const p = document.exitPointerLock();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
   }
 
   isDown(code) { return this.down.has(code); }

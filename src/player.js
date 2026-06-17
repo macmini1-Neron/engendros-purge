@@ -27,6 +27,7 @@ export class Player {
     this.moveSpeedMult = 1; this.damageMult = 1; this.reloadMult = 1;
     this.armorOnWave = 0;
     this.mountedGun = null;
+    this.shilka = null;
     // --- survival mechanics ---
     this.legBroken = false; this._splintT = 0; this.splints = 0;
     this.hunger = HUNGER_MAX; this._starveT = 0; this._wasFrozen = false;
