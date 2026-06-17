@@ -7,8 +7,8 @@
 import * as THREE from 'three';
 import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
-import { makeChipStack, makeChipTray, setChipTray, makeMultiSkinTray } from './poker-chips.js';
-import { sigOf, exactSubset, subSet, addSet, largestFormableLE, value } from './poker/chipbank.js';
+import { makeChipStack, makeChipTray, setChipTray, makeMultiSkinTray, setMultiSkinTray } from './poker-chips.js';
+import { sigOf, exactSubset, subSet, addSet, largestFormableLE, value, drawSkinned, mergeSkinned } from './poker/chipbank.js';
 
 // compact signature of a provenance SkinMap ({skin:{denom:count}}) for the scene-key — two pots can share
 // value AND per-denom composition yet differ in skin MIX, so the tray must rebuild when only the mix changes.
@@ -315,14 +315,33 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     const amount = previewing ? (this._raiseTo | 0) : committed;        // heap value: live raise target, else your standing commit
     if (amount !== this._betPreviewAmt) {
       this._betPreviewAmt = amount;
-      const betSet = this._myBetSet || {};                             // the REAL chips the engine already moved to your bet
       const addAmt = Math.max(0, amount - committed);                  // extra to pull from the stack for a raise preview
       const take = addAmt > 0 ? ((exactSubset(this._myStackSet, addAmt) || largestFormableLE(this._myStackSet, addAmt)) || {}) : {};
-      const heap = addSet(betSet, take);                              // committed chips + previewed extra → the mound
-      setChipTray(this._betPreview, heap, { pile: true, seed: 7 });   // tossed into a compact, scattered pile
-      setChipTray(this._myStackTray, subSet(this._myStackSet, take), { layoutRef: this._myStackSet }); // the previewed extra LEAVES the stack columns (1:1) — layoutRef pins column positions to the FULL stack so a draining denom shortens in place instead of re-centering the survivors (no jitter)
-      this._betPreview.visible = Object.keys(heap).length > 0;
-      this._setBetLabel(this._betPreview.visible ? amount : null);     // floating "$total" above the heap — the whole sum you're putting in, read as ONE number (mirrors how the pot reads as a single total)
+      let visible;
+      if (this._myStackSkins) {
+        // SKIN-AWARE drain (the norm since the provenance pot): the stack renders as a MULTI-skin tray, so it must
+        // be re-rendered through setMultiSkinTray — a plain setChipTray would mint a parallel single-skin tray and
+        // leave the multi-skin columns frozen at full height (the "stuck stacks" the live bet was showing). Pull
+        // `take` out of a COPY of the stack ledger and re-lay BOTH trays so the columns shorten 1:1 AND the heap
+        // keeps each chip's provenance skin. preferSkin = your own (the stack's dominant skin) so you spend your
+        // own chips before any you've WON of another skin — matching the engine's postBet.
+        const prefer = this._dominantSkin(this._myStackSkins);
+        const stackLedger = mergeSkinned({}, this._myStackSkins);       // drawSkinned MUTATES → work on a deep copy
+        const drawn = drawSkinned(stackLedger, take, prefer, prefer);   // { skin: ChipSet } pulled into the heap
+        const heapSkins = mergeSkinned(this._myBetSkins || {}, drawn);  // committed bet (by skin) + previewed extra
+        setMultiSkinTray(this._betPreview, heapSkins, { pile: true, seed: 7 });        // tossed into a compact, scattered pile
+        setMultiSkinTray(this._myStackTray, stackLedger, { layoutRef: this._myStackSet }); // columns shorten in place — layoutRef pins them to the FULL stack so a draining denom shrinks where it stands (no re-center jitter)
+        visible = Object.keys(heapSkins).length > 0;
+      } else {
+        // single-skin fallback (no provenance ledger — e.g. a legacy snapshot): the original value-set path
+        const betSet = this._myBetSet || {};                           // the REAL chips the engine already moved to your bet
+        const heap = addSet(betSet, take);                             // committed chips + previewed extra → the mound
+        setChipTray(this._betPreview, heap, { pile: true, seed: 7 });  // tossed into a compact, scattered pile
+        setChipTray(this._myStackTray, subSet(this._myStackSet, take), { layoutRef: this._myStackSet }); // the previewed extra LEAVES the stack columns (1:1)
+        visible = Object.keys(heap).length > 0;
+      }
+      this._betPreview.visible = visible;
+      this._setBetLabel(visible ? amount : null);                      // floating "$total" above the heap — the whole sum you're putting in, read as ONE number (mirrors how the pot reads as a single total)
     }
     this._betPreview.position.copy(this._myBetPos);
     this._betPreview.rotation.y = this._myBetTilt || 0;
@@ -332,6 +351,13 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       this._betLabel.lookAt(this.cam.position);
     }
     if (this._potLabel) { this._potLabel.position.copy(this._potLabelPos); this._potLabel.lookAt(this.cam.position); } // pot total floats above the pot, camera-facing
+  }
+
+  // highest-value skin in a ledger — your OWN chips dominate your stack, so this is your skin (drawn from first)
+  _dominantSkin(skinMap) {
+    let best = null, bv = -1;
+    for (const sk in skinMap) { const v = value(skinMap[sk]); if (v > bv) { bv = v; best = sk; } }
+    return best;
   }
 
   // A floating "$N" badge that hovers over the live bet heap — a brass POLYMER pill so the player reads the
@@ -869,7 +895,14 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       stack.position.copy(onFelt(0.50)).addScaledVector(tang, 0.14); stack.position.y = FELT_Y; stack.rotation.y = tilt; stack.scale.setScalar(1.4); d.add(stack);
       this._stackAnchors[s.id] = new THREE.Vector3(stack.position.x, FELT_Y, stack.position.z); // pot-push target (pot → winner's stack)
       stack.userData.pk = { kind: 'chips', scope: 'stack', ownerId: s.id, ownerName: (s.id === p.youId ? 'YOU' : ((p.names && p.names[s.id]) || s.id)) }; this._hoverTargets.push(stack);
-      if (s.id === p.youId) { this._myStackTray = stack; this._myStackSet = stackSet ? { ...stackSet } : null; this._myBetSet = (chips && chips.bets[s.id]) ? { ...chips.bets[s.id] } : {}; } // bet heap pulls chips FROM this real stack
+      if (s.id === p.youId) { this._myStackTray = stack; this._myStackSet = stackSet ? { ...stackSet } : null; this._myBetSet = (chips && chips.bets[s.id]) ? { ...chips.bets[s.id] } : {}; // bet heap pulls chips FROM this real stack
+        // Stash the cosmetic skin ledgers so the live drain stays skin-aware: when the stack renders as a
+        // multi-skin tray (the norm since the provenance pot), the bet preview must drain it via setMultiSkinTray —
+        // a plain setChipTray would mint a PARALLEL single-skin tray and leave the multi-skin columns at full height
+        // (the "stuck stacks" bug). mergeSkinned({}, …) deep-copies so drawSkinned (which mutates) can't touch these.
+        const betSkins0 = p.chips && p.chips.skins ? p.chips.skins.bets[s.id] : null;
+        this._myStackSkins = (stackSkins && Object.keys(stackSkins).length) ? mergeSkinned({}, stackSkins) : null;
+        this._myBetSkins = (betSkins0 && Object.keys(betSkins0).length) ? mergeSkinned({}, betSkins0) : null; }
       const betSet = chips ? chips.bets[s.id] : null;
       // YOUR own street bet (blind/call/raise) is drawn as the live grows-with-the-slider heap (_betPreview),
       // not a static column tray — so skip it here for the local seat whenever we have real chips to heap.

@@ -60,6 +60,9 @@ export function setChipTray(group, chipSet, opts = {}) {
   // GROWS after its sphere was first cached (your stack regrowing as you pull the raise slider back down,
   // the live bet heap swelling) loses its hover hitbox beyond the stale radius — only the base stayed clickable.
   for (const d of DENOMS) { const im = group.userData.inst[d]; im.count = counters[d]; im.instanceMatrix.needsUpdate = true; im.boundingSphere = null; }
+  // mode-switch safety: if this group was ever drawn through the MULTI-skin path, hide those buckets so they don't
+  // double-render OVER the single-skin meshes we just laid out (a group fed by both paths would otherwise show both).
+  if (group.userData.imBy) { for (const k in group.userData.imBy) { const im = group.userData.imBy[k]; if (im.count) { im.count = 0; im.instanceMatrix.needsUpdate = true; } } group.userData.multiskin = false; }
   return group;
 }
 
@@ -99,6 +102,9 @@ export function setMultiSkinTray(group, skinMap, opts = {}) {
     counters[key] = n + 1;
   }
   for (const k in group.userData.imBy) { const im = group.userData.imBy[k]; im.count = counters[k] || 0; im.instanceMatrix.needsUpdate = true; im.boundingSphere = null; }
+  // mode-switch safety: hide any leftover SINGLE-skin meshes (this group was once drawn via setChipTray) so the
+  // two render paths never stack on top of each other.
+  if (group.userData.inst) { for (const d of DENOMS) { const im = group.userData.inst[d]; if (im.count) { im.count = 0; im.instanceMatrix.needsUpdate = true; } } }
   return group;
 }
 
