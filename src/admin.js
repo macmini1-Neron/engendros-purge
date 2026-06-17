@@ -1,12 +1,13 @@
 // admin.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
 import { clamp, voxelMaterial } from './util.js';
-import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSu24, buildSupplyCrate } from './props.js';
+import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSupplyCrate } from './props.js';
 import { buildGramophone } from './fonoteka.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
 import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
+import { buildIl76AirdropFallback, buildIl76AirdropModel, preloadIl76AirdropModel } from './aircraft.js';
 
 
 // ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ export class Admin {
       this.tabsEl.appendChild(t);
     }
   }
-  open() { this.game.audio.init(); this.game.ui.show('admin'); this.viewer.setSize(); this._render(); }
+  open() { this.game.audio.init(); preloadIl76AirdropModel(); this.game.ui.show('admin'); this.viewer.setSize(); this._render(); }
   _crate() { return buildSupplyCrate(); }
   _chuteRig() {   // crate + full parachute rigging (canopy, crossed risers, carabiners)
     const grp = new THREE.Group();
@@ -107,7 +108,7 @@ export class Admin {
       return list;
     }
     if (this.tab === 'props') return [
-      { name: 'Su-24M Fencer', sub: 'supply plane', make: () => buildSu24() },
+      { name: 'IL-76 Candid', sub: 'supply plane', make: () => buildIl76AirdropModel() || buildIl76AirdropFallback() },
       { name: 'Field Radio «Р-105»', sub: 'music prop (NEW)', make: () => buildFieldRadio() },
       { name: 'Vysílačka (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('airbeacon') },
       { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
@@ -134,7 +135,7 @@ export class Admin {
   _sounds() {
     const a = this.game.audio;
     return [
-      ['📻 Radio call (Su-24)', () => a.radioCall()],
+      ['📻 Radio call (IL-76)', () => a.radioCall()],
       ['✈ Jet pass (demo)', () => { const j = a.startJetClip() || (a._jetFailed ? null : a.startJet()); if (!j) return; if (j.set) { let t = 0; const id = setInterval(() => { t += 0.1; const near = Math.max(0, 1 - Math.abs(t - 1.6) / 1.6); j.set(0.3 + near * 0.7, near); if (t >= 3.3) { clearInterval(id); j.stop(); } }, 100); } else { setTimeout(() => j.stop(1.4), 3800); } }],
       ['Gunshot', () => a.gunshot({})], ['Explosion', () => a.explosion()],
       ['Reload click', () => a.reloadClick()], ['Reload in', () => a.reloadIn()], ['Dry fire', () => a.dryFire()],
