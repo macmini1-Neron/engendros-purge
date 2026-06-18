@@ -154,7 +154,7 @@ export class ShilkaStation {
     grp.name = `${this.id} driver periscopes`;
     const metal = new THREE.MeshStandardMaterial({ color: 0x232a20, metalness: 0.45, roughness: 0.65 }); // dark frame = black border
     const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, metalness: 0.1, roughness: 0.08, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
-    const greenMat = new THREE.MeshStandardMaterial({ color: 0x51614c, metalness: 0.25, roughness: 0.72 }); // Shilka green (owner-matched)
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x74875f, metalness: 0, roughness: 0.8 }); // brightened to match the LIT, texture-baked hull green (metal=0 like the GLB); dial s._housing.material.color
     const W = 0.30, H = 0.18, D = 0.13, T = 0.035;
     // ONE integrated optic: dark frame (black border) + glass, with a beveled green housing box behind it
     const b = new THREE.Group();
