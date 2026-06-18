@@ -1,0 +1,3 @@
+{ "asset":"sks_tactical.glb","title":"Low Poly SKS (Modernised)","author":"samanthacford","source":"Sketchfab (low-poly weapon pack)","license":"CC-BY-4.0",
+  "converted_from":"14- Low.Poly.SKS.Mod / .obj -> gltf (obj2gltf), mesh-name material surgery -> glb",
+  "notes":["Runtime viewmodel for 'sksm' (tactical SKS: polymer stock, PSO scope, suppressor). All source textures REAL; re-mapped to named meshes (SKS metal, polymer body, accessories, plum mag)."] }

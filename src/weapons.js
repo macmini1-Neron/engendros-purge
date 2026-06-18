@@ -169,6 +169,9 @@ const GLB_WEAPONS = {
   rpk74:   { url: './assets/weapons/rpk74.glb',         length: 2.5,  center: [0.03, -0.10, -0.36], rot: [0, 0, 0], world: 2.0, emissive: 0.35, fb: 'rifle' },     // AK-platform LMG (bipod): meshes re-mapped to named materials (wood furniture + mag), black body → gunmetal
   rpg7:    { url: './assets/weapons/rpg7.glb',          length: 2.6,  center: [0.03, -0.10, -0.38], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.3, fb: 'rifle' }, // single REAL texture → keep map. FBX-sourced .gltf → flip
   toz34:   { url: './assets/weapons/toz34.glb',         length: 1.6,  center: [0.03, -0.08, -0.30], rot: [0, 0, 0], world: 1.3, emissive: 0.25, fb: 'shotgun' },   // over/under shotgun, single REAL texture → keep map
+  smw:     { url: './assets/weapons/smw_m29.glb',       length: 0.66, center: [0.02, -0.05, -0.20], rot: [0, 0, 0], world: 0.55, emissive: 0.3, fb: 'pistol' },   // .44 revolver, both source textures REAL (body + cylinder rounds) → keep maps
+  sksm:    { url: './assets/weapons/sks_tactical.glb',  length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.3, fb: 'rifle' },     // tactical SKS, all source textures REAL → keep maps
+  gp25:    { url: './assets/weapons/ak74_gp25.glb',     length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.35, fb: 'rifle' },    // AK-platform + GP-25: wood furniture re-mapped, black body → gunmetal
 };
 
 // Layer + material setup for a loaded GLB tree. metalness→0 (a glTF PBR metal map renders pure black
@@ -291,6 +294,8 @@ export const WEAPONS = {
   ak74:     { name: 'AK-74',      class: 'rifle', shape: 'ak74',  dmg: 40, rpm: 650, auto: true,  mag: 30, reserveMax: 180, reload: 2.3, spread: 0.014, bloom: 0.016, pellets: 1, recoil: 0.8, range: 300, adsFov: 54, adsCrosshair: true, price: 2600, loot: 6, recoilClimb: 0.03, recoilYaw: 0.10, color: 0x3a2e1c, accent: 0x6e4a28 }, // 5.45×39mm assault rifle (GLB viewmodel) — controllable full-auto
   sks:      { name: 'SKS',        class: 'rifle', shape: 'sks',   dmg: 55, rpm: 180, auto: false, mag: 10, reserveMax: 70,  reload: 2.6, spread: 0.009, bloom: 0.012, pellets: 1, recoil: 1.3, range: 320, adsFov: 50, price: 1600, loot: 7, color: 0x6e4a28, accent: 0x4a4e54 }, // 7.62×39mm semi-auto carbine (GLB viewmodel)
   rpk74:    { name: 'RPK-74',     class: 'rifle', shape: 'rpk74', dmg: 42, rpm: 600, auto: true,  mag: 45, reserveMax: 225, reload: 3.4, spread: 0.013, bloom: 0.016, pellets: 1, recoil: 0.75, range: 360, adsFov: 56, adsCrosshair: true, price: 3000, loot: 5, recoilClimb: 0.03, recoilYaw: 0.10, bipod: true, color: 0x3a2e1c, accent: 0x6e4a28 }, // 5.45×39mm squad LMG (GLB viewmodel) — big mag, long range
+  sksm:     { name: 'SKS Tactical', class: 'rifle', shape: 'sksm', dmg: 56, rpm: 200, auto: false, mag: 10, reserveMax: 80, reload: 2.5, spread: 0.007, bloom: 0.010, pellets: 1, recoil: 1.1, range: 360, adsFov: 46, price: 2000, loot: 6, color: 0x3a3d42, accent: 0x4a4e54 }, // modernised SKS w/ PSO scope + suppressor (GLB viewmodel)
+  gp25:     { name: 'AK-74 GP-25', class: 'rifle', shape: 'gp25', dmg: 41, rpm: 640, auto: true,  mag: 30, reserveMax: 180, reload: 2.4, spread: 0.014, bloom: 0.016, pellets: 1, recoil: 0.85, range: 300, adsFov: 54, adsCrosshair: true, price: 2800, loot: 5, recoilClimb: 0.03, recoilYaw: 0.10, color: 0x3a2e1c, accent: 0x6e4a28 }, // AK-74 w/ underbarrel GP-25 (GLB viewmodel)
   // --- shotguns ---
   shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 0.45, shellReload: true, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
   sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 200, auto: false, mag: 2, reserveMax: 18, reload: 1.6, spread: 0.14,  bloom: 0, pellets: 12, recoil: 2.9, range: 30, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
@@ -299,6 +304,7 @@ export const WEAPONS = {
   kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 165, rpm: 50, auto: false, mag: 5, reserveMax: 35, reload: 2.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 2.7, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, boltCycle: 1.2, color: 0x20242a, accent: 0x6fa8e8 },
   // --- extra arsenal (loot + shop) ---
   magnum:   { name: '.44 Magnum',  class: 'pistol', shape: 'magnum', dmg: 98, rpm: 95, auto: false, mag: 6, reserveMax: 24, reload: 2.4, spread: 0.009, bloom: 0.014, pellets: 1, recoil: 2.2, range: 140, adsFov: 58, price: 1400, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a },
+  smw:      { name: 'S&W M29',     class: 'pistol', shape: 'smw', dmg: 102, rpm: 100, auto: false, mag: 6, reserveMax: 24, reload: 2.6, spread: 0.008, bloom: 0.012, pellets: 1, recoil: 2.3, range: 145, adsFov: 58, price: 1500, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a }, // .44 revolver (GLB viewmodel)
   mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 18, rpm: 500, auto: true, mag: 32, reserveMax: 160, reload: 2.0, spread: 0.018, bloom: 0.014, pellets: 1, recoil: 0.4, range: 150, adsFov: 62, price: 1300, loot: 11, recoilClimb: 0.015, recoilYaw: 0.05, color: 0x2e3036, accent: 0x3a3a3a },
   grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 22, rpm: 450, auto: true, mag: 30, reserveMax: 150, reload: 2.2, spread: 0.026, bloom: 0.02, pellets: 1, recoil: 0.5, range: 120, adsFov: 62, price: 1250, loot: 9, recoilClimb: 0.02, recoilYaw: 0.10, color: 0x3a3d42, accent: 0x262626 },
   bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 52, rpm: 500, auto: true, mag: 20, reserveMax: 120, reload: 3.0, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.6, range: 300, adsFov: 55, price: 2600, loot: 6, recoilClimb: 0.10, recoilYaw: 0.15, color: 0x3a3128, accent: 0x26262a },
@@ -321,7 +327,7 @@ export const WEAPONS = {
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'ak74', 'sks', 'rpk74', 'shotgun', 'sawed_off', 'toz34', 'bazooka', 'rpg7', 'apfsds', 'mosin', 'svd', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'ak74', 'gp25', 'sks', 'sksm', 'rpk74', 'shotgun', 'sawed_off', 'toz34', 'bazooka', 'rpg7', 'apfsds', 'mosin', 'svd', 'smw', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -336,7 +342,7 @@ export function buildViewmodel(def) {
   switch (def.shape) {
     // GLB-asset weapons (factory above): return the real world model once loaded, else a crude
     // silhouette built into `b` that the shared tail turns into a Mesh (visible only until the swap).
-    case 'ak74': case 'svd': case 'sks': case 'rpk74': case 'rpg7': case 'toz34': {
+    case 'ak74': case 'svd': case 'sks': case 'rpk74': case 'rpg7': case 'toz34': case 'smw': case 'sksm': case 'gp25': {
       const tpl = ensureGlbWorldTemplate(def.shape);
       if (tpl) return cloneGlbModel(tpl);
       crudeGunFallback(b, def, GLB_WEAPONS[def.shape].fb);
