@@ -244,6 +244,34 @@ export class EnemyManager {
     this._hordeFlow = null; // Dijkstra flow-field toward the host player (refreshed on _flowT timer)
     this._flowT = 0;        // seconds until the next flow-field refresh
   }
+  // Pre-pay the boss-fight's one-time costs at run-start so they don't land as a frame hitch mid-fight:
+  // (1) the heavy buildTolo() geometry (MeshBuilder + BufferGeometryUtils merge — a multi-hundred-ms
+  // spike on the first boss spawn), and (2) the boss-FX shader programs (MeshBasicMaterial fog:false,
+  // additive, and the mapped blob), compiled now via renderer.compile. The warm materials are kept
+  // referenced (this._warmMats) so their compiled GL programs stay in the renderer's cache.
+  // Idempotent. The boss Lambert material program is already warm from regular enemies; the courier
+  // pack (5-box MeshBuilder) is left lazy — it's tiny and ~1% of spawns, not a hitch source.
+  prewarm() {
+    if (this._prewarmed) return;
+    const engine = this.game.engine; if (!engine || !engine.scene) return;
+    this._prewarmed = true;
+    this._geo('boss', { body: 0xede7df, name: 'Tolo' }, 'boss'); // build + cache the heavy Tolo geometry
+    // Pre-build the A* / flow-field nav grids (built lazily on the first boss spawn / first horde nav).
+    // On terrain maps (steppe/airfield) the slope-aware horde grid scans ~every cell via terrainSlopeAt
+    // — a big first-boss spike exactly where the owner saw it (airfield + airdrop). Cheap on the arena.
+    if (!this._navGrid) this._navGrid = buildNavGrid(this.world);
+    if (!this._hordeGrid) this._hordeGrid = buildNavGrid(this.world, { cell: 1.5, inflate: 0.7, slopeAware: true });
+    this._ensureBossBlob();                                       // build the blob (canvas texture + mapped program)
+    const warm = [
+      new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, depthWrite: false, fog: false })),                                                     // laser beam
+      new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.05, 22), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })), // belly glow
+      new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 1.6), new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false })),                                                                              // blaster bolt
+    ];
+    for (const m of warm) { m.visible = false; m.position.set(0, -999, 0); engine.scene.add(m); }
+    if (engine.renderer && engine.renderer.compile) engine.renderer.compile(engine.scene, engine.camera);
+    for (const m of warm) { engine.scene.remove(m); m.geometry.dispose(); } // free the temp warm geometries (never rendered); programs live on the materials
+    this._warmMats = warm.map((m) => m.material); // hold refs so the compiled programs aren't released
+  }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }
   _get(geoKey, col, variant) {
     const list = (this.pool[geoKey] ||= []);
@@ -613,7 +641,7 @@ export class EnemyManager {
       if (!dead) {
         for (const en of this.active) {
           if (!en.alive || en.def.boss) continue;
-          if (Math.hypot(m.x - en.pos.x, m.z - en.pos.z) < en.radius + 0.4) { this.damage(en, 9999, 'gun', m.clone()); dead = true; break; }
+          if (Math.hypot(m.x - en.pos.x, m.z - en.pos.z) < en.radius + 0.4) { this.damage(en, 9999, 'gun', m); dead = true; break; }
         }
       }
       if (!dead && b.life <= 0) dead = true;
@@ -728,7 +756,7 @@ export class EnemyManager {
       if (!en.alive || en.def.boss) continue;
       const te = clamp((en.pos.x - belly.x) * dir.x + (en.pos.z - belly.z) * dir.z, 0, len);
       const de = Math.hypot(en.pos.x - (belly.x + dir.x * te), en.pos.z - (belly.z + dir.z * te));
-      if (de < reach + en.radius) this.damage(en, 9999, 'gun', en.pos.clone());
+      if (de < reach + en.radius) this.damage(en, 9999, 'gun', en.pos);
     }
     if (e.sweepT >= e.sweepDur) {
       e.sweepPass++;

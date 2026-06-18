@@ -6,6 +6,14 @@ import { applyEffect, removeEffect, clearEffects } from './effects-status.js';
 
 const CLIMB_SPEED = 3.7; // m/s on a ladder/скоб-трап (escape shaft + bunker tower)
 
+// Per-frame movement scratch — reused each frame to avoid 3 Vector3 allocations/frame (GC churn).
+// Safe: Player.update / _freecamUpdate run once per frame on the local player and never re-enter;
+// the walk and freecam paths are mutually exclusive within a frame. _pMove is distinct from
+// _pFwd/_pRight so addScaledVector never aliases.
+const _pFwd = new THREE.Vector3();
+const _pRight = new THREE.Vector3();
+const _pMove = new THREE.Vector3();
+
 
 // ---------------------------------------------------------------------------
 // Player
@@ -132,10 +140,10 @@ export class Player {
     }
     this.pitch = clamp(this.pitch, -1.54, 1.54); // allow near-straight-down for top-downs
     const cp = Math.cos(this.pitch);
-    const fwd = new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const fwd = _pFwd.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+    const right = _pRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const boost = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    const move = new THREE.Vector3().addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
+    const move = _pMove.set(0, 0, 0).addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
     if (input.isDown('Space')) move.y += 1;
     if (input.isDown('ControlLeft') || input.isDown('ControlRight') || input.isDown('KeyC')) move.y -= 1;
     if (controlsPaused) move.set(0, 0, 0);
@@ -187,15 +195,16 @@ export class Player {
       return;
     }
 
-    const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const fwd = _pFwd.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const right = _pRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const sprint = !controlsPaused && (input.isDown('ShiftLeft') || input.isDown('ShiftRight')) && !this.legBroken && this._splintT <= 0;
     let survMult = 1;
     if (this.legBroken) survMult *= LIMP_SPEED_MULT;
     if (this.hunger < HUNGER_LOW) survMult *= HUNGER_LOW_SPEED_MULT;
     if (this._splintT > 0) survMult = 0; // immobile while binding the splint
     const speed = (sprint ? 7.6 : 5.2) * this.moveSpeedMult * survMult;
-    const wish = controlsPaused ? new THREE.Vector3() : new THREE.Vector3().addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
+    const wish = _pMove.set(0, 0, 0);
+    if (!controlsPaused) wish.addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
     if (wish.lengthSq() > 1) wish.normalize();
     wish.multiplyScalar(speed);
     const accel = this.onGround ? 6 : 1.2;
