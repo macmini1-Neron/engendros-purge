@@ -7,7 +7,7 @@ export const SHILKA_RIG_GROUPS = Object.freeze(['hull', 'track', 'wheel', 'sproc
 // centre (cx,cy,cz) + size (sx,sy,sz) of a mesh's world AABB, model loaded raw (front = -Z).
 export function classifyShilkaPart(cx, cy, cz, sx, sy, sz) {
   // low running gear
-  if (sx < 0.30 && cy < 0.65 && sy >= 0.45 && sz >= 0.45 && sz < 0.75) return 'wheel';
+  if (sx < 0.30 && cy < 0.48 && sy >= 0.45 && sz >= 0.45 && sz < 0.75) return 'wheel'; // road wheels sit low (cy≈0.25); cy<0.48 leaves the RAISED rear drive sprocket (cy≈0.5) for the sprocket rule so the per-side 6-cap can't drop it (was: rear wheel vanished)
   if (sx < 0.30 && cy < 0.65 && sy >= 0.30 && sy < 0.48) return 'sprocket';
   if (sz > 3.5 && cy < 0.60 && sx < 0.6) return 'track';
   // whip antennas: tall + super-thin verticals -> own physics rig (NOT radar)
