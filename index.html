@@ -1064,14 +1064,11 @@
     #shilka-periscope-mask.show{display:block}
     #shilka-periscope-mask .pv{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
       width:64vw;height:19vh;border-radius:7px;
-      box-shadow:0 0 0 100vmax #000, inset 0 0 50px 12px rgba(0,0,0,.92);
+      box-shadow:0 0 0 100vmax #000, inset 0 0 22px 3px rgba(0,0,0,.5);
       border:3px solid #070806;outline:2px solid #14170e}
-    /* voxel glass: tiny hard-edged pixel grid + faint green tint, kept subtle so it reads as part of the model */
-    #shilka-periscope-mask .glass{position:absolute;inset:0;border-radius:5px;image-rendering:pixelated;mix-blend-mode:screen;
-      background:
-        repeating-linear-gradient(0deg, rgba(150,200,195,.05) 0 5px, rgba(110,170,165,.025) 5px 10px),
-        repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 5px, transparent 5px 10px),
-        radial-gradient(ellipse at 50% 45%, rgba(160,210,205,.05), rgba(6,16,14,0) 70%)}
+    /* glass: ONE clean see-through pane — just a faint sheen so it still reads as glass but you see the world */
+    #shilka-periscope-mask .glass{position:absolute;inset:0;border-radius:5px;mix-blend-mode:screen;
+      background:radial-gradient(ellipse at 50% 45%, rgba(150,205,200,.04), transparent 78%)}
     #shilka-periscope-mask .glare{position:absolute;left:9%;top:8%;width:24%;height:34%;border-radius:50%;
       background:radial-gradient(ellipse, rgba(200,235,230,.08), transparent 70%);filter:blur(6px)}
   </style>

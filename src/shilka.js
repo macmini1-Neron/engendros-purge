@@ -155,7 +155,7 @@ export class ShilkaStation {
     const metal = new THREE.MeshStandardMaterial({ color: 0x232a20, metalness: 0.45, roughness: 0.65 });
     const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, metalness: 0.1, roughness: 0.08, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
     const W = 0.30, H = 0.18, D = 0.13, T = 0.035;
-    for (const bx of [-0.32, 0, 0.32]) {
+    for (const bx of [0]) { // single optic block (owner: one piece, the 2 side ones removed)
       const b = new THREE.Group();
       const bar = (sx, sy, sz, px, py, pz) => { const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), metal); m.position.set(px, py, pz); b.add(m); };
       bar(W, T, D, 0, H / 2, 0);   // top
@@ -540,7 +540,7 @@ export class ShilkaStation {
     // driver eye: left-seat driver, head-out at the periscope station looking forward over the glacis.
     // (y1.3/z1.4 buried the camera INSIDE the opaque hull → all-black; y1.7/z2.2 clears it — headless-swept.)
     // driver VIEW (separate from the periscope model): head-out on the +X driver side, clear of the hull.
-    const EYE = this._eye || (this._eye = { x: 0.565, y: 0.65, z: 2.4 }); // baked driver view; still dev-tweakable: s._eye.{x,y,z}
+    const EYE = this._eye || (this._eye = { x: 0.565, y: 0.75, z: 2.4 }); // baked driver view; still dev-tweakable: s._eye.{x,y,z}
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
     const ex = d.x + (EYE.x * cos + EYE.z * sin);
     const ez = d.z + (-EYE.x * sin + EYE.z * cos);
