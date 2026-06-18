@@ -152,7 +152,7 @@ export class ShilkaStation {
   _buildDriverPeriscopes() {
     const grp = new THREE.Group();
     grp.name = `${this.id} driver periscopes`;
-    const greenMat = new THREE.MeshStandardMaterial({ color: 0x5d6b50, metalness: 0.25, roughness: 0.72 }); // Shilka-green housing
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x51614c, metalness: 0.25, roughness: 0.72 }); // Shilka-green housing (owner-matched)
     const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, metalness: 0.1, roughness: 0.08, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
     const W = 0.30, H = 0.18, D = 0.22;
     const b = new THREE.Group();
