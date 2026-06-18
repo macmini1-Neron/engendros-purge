@@ -161,6 +161,8 @@ const GLB_WEAPONS = {
   makarov: { url: './assets/weapons/makarov_pm.glb',    length: 0.62, center: [0.02, -0.05, -0.20], rot: [0, Math.PI, 0], world: 0.55, emissive: 0.6, fb: 'pistol' }, // FBX-sourced .gltf imports muzzle +Z → flip 180° so it points forward (−Z), unlike the OBJ guns
   ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.5, fb: 'rifle' },
   sawed:   { url: './assets/weapons/sawed_off_db.glb',  length: 1.05, center: [0.03, -0.07, -0.26], rot: [0, 0, 0], world: 0.95, emissive: 0.5, fb: 'shotgun' }, // upgrades the existing 'sawed_off' weapon (shape 'sawed'); procedural art stays as its pre-load fallback
+  svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.5, fb: 'rifle' }, // FBX-sourced .gltf → muzzle +Z, flip like the Makarov
+  sks:     { url: './assets/weapons/sks.glb',           length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.5, fb: 'rifle' },
 
 };
 
@@ -279,6 +281,7 @@ export const WEAPONS = {
   garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 80, rpm: 270, auto: false, mag: 8,  reserveMax: 64,  reload: 2.6, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.6, range: 340, adsFov: 48, price: 2000, loot: 7,  enBloc: true, color: 0x52371f, accent: 0x222226 },
   stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 38, rpm: 560, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.85, range: 260, adsFov: 54, price: 2400, loot: 6,  recoilClimb: 0.03, recoilYaw: 0.10, color: 0x33373d, accent: 0x6e4a28 },
   ak74:     { name: 'AK-74',      class: 'rifle', shape: 'ak74',  dmg: 40, rpm: 650, auto: true,  mag: 30, reserveMax: 180, reload: 2.3, spread: 0.014, bloom: 0.016, pellets: 1, recoil: 0.8, range: 300, adsFov: 54, adsCrosshair: true, price: 2600, loot: 6, recoilClimb: 0.03, recoilYaw: 0.10, color: 0x3a2e1c, accent: 0x6e4a28 }, // 5.45×39mm assault rifle (GLB viewmodel) — controllable full-auto
+  sks:      { name: 'SKS',        class: 'rifle', shape: 'sks',   dmg: 55, rpm: 180, auto: false, mag: 10, reserveMax: 70,  reload: 2.6, spread: 0.009, bloom: 0.012, pellets: 1, recoil: 1.3, range: 320, adsFov: 50, price: 1600, loot: 7, color: 0x6e4a28, accent: 0x4a4e54 }, // 7.62×39mm semi-auto carbine (GLB viewmodel)
   // --- shotguns ---
   shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 0.45, shellReload: true, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
   sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 200, auto: false, mag: 2, reserveMax: 18, reload: 1.6, spread: 0.14,  bloom: 0, pellets: 12, recoil: 2.9, range: 30, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
@@ -292,6 +295,7 @@ export const WEAPONS = {
   bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 52, rpm: 500, auto: true, mag: 20, reserveMax: 120, reload: 3.0, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.6, range: 300, adsFov: 55, price: 2600, loot: 6, recoilClimb: 0.10, recoilYaw: 0.15, color: 0x3a3128, accent: 0x26262a },
   dp28:     { name: 'DP-28',       class: 'rifle', shape: 'dp28', dmg: 33, rpm: 550, auto: true, mag: 47, reserveMax: 141, reload: 3.6, spread: 0.018, bloom: 0.020, pellets: 1, recoil: 0.9, range: 280, adsFov: 56, price: 2700, loot: 5, recoilClimb: 0.05, recoilYaw: 0.20, color: 0x3a352c, accent: 0x4a4a50, spinMag: { shape: 'pan', x: 0, y: 0.2, z: -0.3, r: 0.28, axis: 'y', step: TAU / 47 } },
   mosin:    { name: 'Mosin 91/30', class: 'sniper', shape: 'mosin', dmg: 175, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0020, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 38, scope: false, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54, boltAction: true, reloadStyle: 'mosin', clipReload: 1.95, roundReload: 0.54 },
+  svd:      { name: 'SVD Dragunov', class: 'sniper', shape: 'svd', dmg: 110, rpm: 60, auto: false, mag: 10, reserveMax: 60, reload: 2.8, spread: 0.0040, bloom: 0.006, pellets: 1, recoil: 2.2, range: 470, adsFov: 40, scope: false, price: 2900, loot: 5, color: 0x3a2e1c, accent: 0x5a3a1c }, // 7.62×54R semi-auto marksman rifle (GLB viewmodel) — faster than the Mosin, lower per-shot
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 24, auto: false, mag: 1, reserveMax: 5, reload: 4.0, spread: 0.004, bloom: 0, pellets: 1, recoil: 0.6, range: 250, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
   // DEMO-ONLY debug "tank cannon" firing an APFSDS long-rod (CALIBERS.apfsds): NO explosion —
@@ -307,7 +311,7 @@ export const WEAPONS = {
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'makarov', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'ak74', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'makarov', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'ak74', 'sks', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'svd', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -322,7 +326,7 @@ export function buildViewmodel(def) {
   switch (def.shape) {
     // GLB-asset weapons (factory above): return the real world model once loaded, else a crude
     // silhouette built into `b` that the shared tail turns into a Mesh (visible only until the swap).
-    case 'makarov': case 'ak74': {
+    case 'makarov': case 'ak74': case 'svd': case 'sks': {
       const tpl = ensureGlbWorldTemplate(def.shape);
       if (tpl) return cloneGlbModel(tpl);
       crudeGunFallback(b, def, GLB_WEAPONS[def.shape].fb);

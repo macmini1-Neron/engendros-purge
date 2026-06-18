@@ -1,0 +1,12 @@
+{
+  "asset": "svd.glb",
+  "title": "Low Poly SVD Dragunov",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "06- Low.Poly.SVD / 25f43f9027424c53a6fd6030cfbc0913_Textured.gltf (embedded buffers) + RGB_AK_* textures, embedded to GLB via gltf-pipeline",
+  "notes": [
+    "Runtime first-person + world viewmodel for the new 'svd' marksman rifle (GLB_WEAPONS factory).",
+    "Source gltf material references a single AK-platform body atlas; faithful single-texture embed."
+  ]
+}

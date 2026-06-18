@@ -1,0 +1,12 @@
+{
+  "asset": "sks.glb",
+  "title": "Low Poly SKS",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "15- Low.Poly.SKS / f1d2c00d07394e9cbfe1266e07f5ca9f.obj + model.mtl + RGB_SKS_texture.png, embedded to GLB via obj2gltf",
+  "notes": [
+    "Runtime first-person + world viewmodel for the new 'sks' semi-auto carbine (GLB_WEAPONS factory).",
+    "Source OBJ uses the SKS body atlas (single usemtl); faithful single-texture embed."
+  ]
+}
