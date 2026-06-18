@@ -1,0 +1,9 @@
+{
+  "asset": "toz34.glb",
+  "title": "Low Poly TOZ-34",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "12- Low.Poly.Toz.34 / .obj + Double_Barrel_Shotgun_Body_Texture.png, embedded to GLB via obj2gltf",
+  "notes": ["Runtime viewmodel for the new 'toz34' over/under shotgun. Source texture is intact (single real atlas) — kept as-is."]
+}

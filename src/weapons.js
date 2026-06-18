@@ -154,22 +154,21 @@ function buildMosinAssetViewmodel(assetRoot, fallback) {
 //   rot      – [x,y,z] Euler baked BEFORE measuring (3D-ripped models import in arbitrary poses);
 //              flip Y by π if the muzzle points back toward the camera
 //   world    – WORLD model length along Z (ground/preview footprint, ~matches the voxel weapons)
-//   emissive – 0..1 self-light of the base texture; lifts dark gunmetal out of shadow (glTF metal
-//              maps read near-black under the scene lights with no env map). 0 = leave lit normally.
-//   tint     – placeholder base colour when the imported diffuse is BROKEN (the 3D-rip baked several
-//              of these textures as PURE BLACK, max=0 — makarov / sawn-off / AK+SVD "body"). Set tint →
-//              drop the useless black map and render a clean lit gunmetal/wood-grey instead of a black
-//              (or, with the old white emissive floor, washed-out) blob. Omit tint when the texture is
-//              real (SKS) so its actual wood+metal shows. The Blender pass will re-bake proper textures.
-//   emissive – modest map-gated self-light for guns that KEEP their texture (SKS) — lifts shadowed
-//              detail without washing it; ignored when `tint` is set.
+//   emissive – 0..1 modest map-gated self-light; lifts dark/shadowed texture detail without washing it
+//              (these imported wood/metal albedos are fairly dark). Ignored when `tint` is set.
+//   tint     – OPTIONAL placeholder base colour for a gun whose imported diffuse is BROKEN (some 3D-rip
+//              "body" atlases are baked PURE BLACK, max=0). Set tint → drop the useless black map and
+//              render a clean lit gunmetal/wood-grey. Currently unused: every shipped gun either has a
+//              real texture (SKS, RPG-7, TOZ-34) or one recovered by re-mapping meshes to their named
+//              materials (AK / SVD / RPK — black "body" swapped for a gunmetal solid at convert time).
 //   fb       – crude fallback silhouette family: 'pistol' | 'rifle' | 'shotgun'
 const GLB_WEAPONS = {
-  makarov: { url: './assets/weapons/makarov_pm.glb',    length: 0.62, center: [0.02, -0.05, -0.20], rot: [0, Math.PI, 0], world: 0.55, tint: 0x55585e, fb: 'pistol' }, // texture is pure black → flat gunmetal. FBX-sourced .gltf imports muzzle +Z → flip 180°
   ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.35, fb: 'rifle' },   // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + textured mag/muzzle), black "body" tex swapped for a gunmetal solid
-  sawed:   { url: './assets/weapons/sawed_off_db.glb',  length: 1.05, center: [0.03, -0.07, -0.26], rot: [0, 0, 0], world: 0.95, tint: 0x6a5848, fb: 'shotgun' }, // texture pure black → wood-steel grey. Upgrades the existing 'sawed_off' (shape 'sawed'); procedural art stays as the pre-load fallback
   svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.35, fb: 'rifle' }, // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + plum mag), black "body" tex swapped for a gunmetal solid. FBX-sourced .gltf → flip
   sks:     { url: './assets/weapons/sks.glb',           length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.25, fb: 'rifle' },     // SKS texture is REAL (wood+metal) → keep the map + a gentle self-light
+  rpk74:   { url: './assets/weapons/rpk74.glb',         length: 2.5,  center: [0.03, -0.10, -0.36], rot: [0, 0, 0], world: 2.0, emissive: 0.35, fb: 'rifle' },     // AK-platform LMG (bipod): meshes re-mapped to named materials (wood furniture + mag), black body → gunmetal
+  rpg7:    { url: './assets/weapons/rpg7.glb',          length: 2.6,  center: [0.03, -0.10, -0.38], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.3, fb: 'rifle' }, // single REAL texture → keep map. FBX-sourced .gltf → flip
+  toz34:   { url: './assets/weapons/toz34.glb',         length: 1.6,  center: [0.03, -0.08, -0.30], rot: [0, 0, 0], world: 1.3, emissive: 0.25, fb: 'shotgun' },   // over/under shotgun, single REAL texture → keep map
 };
 
 // Layer + material setup for a loaded GLB tree. metalness→0 (a glTF PBR metal map renders pure black
@@ -291,14 +290,15 @@ export const WEAPONS = {
   stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 38, rpm: 560, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.85, range: 260, adsFov: 54, price: 2400, loot: 6,  recoilClimb: 0.03, recoilYaw: 0.10, color: 0x33373d, accent: 0x6e4a28 },
   ak74:     { name: 'AK-74',      class: 'rifle', shape: 'ak74',  dmg: 40, rpm: 650, auto: true,  mag: 30, reserveMax: 180, reload: 2.3, spread: 0.014, bloom: 0.016, pellets: 1, recoil: 0.8, range: 300, adsFov: 54, adsCrosshair: true, price: 2600, loot: 6, recoilClimb: 0.03, recoilYaw: 0.10, color: 0x3a2e1c, accent: 0x6e4a28 }, // 5.45×39mm assault rifle (GLB viewmodel) — controllable full-auto
   sks:      { name: 'SKS',        class: 'rifle', shape: 'sks',   dmg: 55, rpm: 180, auto: false, mag: 10, reserveMax: 70,  reload: 2.6, spread: 0.009, bloom: 0.012, pellets: 1, recoil: 1.3, range: 320, adsFov: 50, price: 1600, loot: 7, color: 0x6e4a28, accent: 0x4a4e54 }, // 7.62×39mm semi-auto carbine (GLB viewmodel)
+  rpk74:    { name: 'RPK-74',     class: 'rifle', shape: 'rpk74', dmg: 42, rpm: 600, auto: true,  mag: 45, reserveMax: 225, reload: 3.4, spread: 0.013, bloom: 0.016, pellets: 1, recoil: 0.75, range: 360, adsFov: 56, adsCrosshair: true, price: 3000, loot: 5, recoilClimb: 0.03, recoilYaw: 0.10, bipod: true, color: 0x3a2e1c, accent: 0x6e4a28 }, // 5.45×39mm squad LMG (GLB viewmodel) — big mag, long range
   // --- shotguns ---
   shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 0.45, shellReload: true, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
   sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 200, auto: false, mag: 2, reserveMax: 18, reload: 1.6, spread: 0.14,  bloom: 0, pellets: 12, recoil: 2.9, range: 30, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
+  toz34:    { name: 'TOZ-34',     class: 'shotgun', shape: 'toz34', dmg: 15, rpm: 75, auto: false, mag: 2, reserveMax: 24, reload: 1.9, spread: 0.095, bloom: 0, pellets: 11, recoil: 2.5, range: 40, adsFov: 68, price: 1600, loot: 8, color: 0x5a3a1c, accent: 0x4a4e54 }, // over/under hunting 12ga (GLB viewmodel) — tighter than the sawn-off, 2 shells
   // --- sniper ---
   kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 165, rpm: 50, auto: false, mag: 5, reserveMax: 35, reload: 2.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 2.7, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, boltCycle: 1.2, color: 0x20242a, accent: 0x6fa8e8 },
   // --- extra arsenal (loot + shop) ---
   magnum:   { name: '.44 Magnum',  class: 'pistol', shape: 'magnum', dmg: 98, rpm: 95, auto: false, mag: 6, reserveMax: 24, reload: 2.4, spread: 0.009, bloom: 0.014, pellets: 1, recoil: 2.2, range: 140, adsFov: 58, price: 1400, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a },
-  makarov:  { name: 'Makarov PM',  class: 'pistol', shape: 'makarov', dmg: 26, rpm: 360, auto: false, mag: 8, reserveMax: 48, reload: 1.6, spread: 0.011, bloom: 0.012, pellets: 1, recoil: 0.6, range: 110, adsFov: 60, price: 450, loot: 9, color: 0x2a2c30, accent: 0x4a3a2a }, // 9×18mm service pistol (GLB viewmodel) — cheap, fast, low recoil
   mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 18, rpm: 500, auto: true, mag: 32, reserveMax: 160, reload: 2.0, spread: 0.018, bloom: 0.014, pellets: 1, recoil: 0.4, range: 150, adsFov: 62, price: 1300, loot: 11, recoilClimb: 0.015, recoilYaw: 0.05, color: 0x2e3036, accent: 0x3a3a3a },
   grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 22, rpm: 450, auto: true, mag: 30, reserveMax: 150, reload: 2.2, spread: 0.026, bloom: 0.02, pellets: 1, recoil: 0.5, range: 120, adsFov: 62, price: 1250, loot: 9, recoilClimb: 0.02, recoilYaw: 0.10, color: 0x3a3d42, accent: 0x262626 },
   bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 52, rpm: 500, auto: true, mag: 20, reserveMax: 120, reload: 3.0, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.6, range: 300, adsFov: 55, price: 2600, loot: 6, recoilClimb: 0.10, recoilYaw: 0.15, color: 0x3a3128, accent: 0x26262a },
@@ -306,6 +306,7 @@ export const WEAPONS = {
   mosin:    { name: 'Mosin 91/30', class: 'sniper', shape: 'mosin', dmg: 175, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0020, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 38, scope: false, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54, boltAction: true, reloadStyle: 'mosin', clipReload: 1.95, roundReload: 0.54 },
   svd:      { name: 'SVD Dragunov', class: 'sniper', shape: 'svd', dmg: 110, rpm: 60, auto: false, mag: 10, reserveMax: 60, reload: 2.8, spread: 0.0040, bloom: 0.006, pellets: 1, recoil: 2.2, range: 470, adsFov: 40, scope: false, price: 2900, loot: 5, color: 0x3a2e1c, accent: 0x5a3a1c }, // 7.62×54R semi-auto marksman rifle (GLB viewmodel) — faster than the Mosin, lower per-shot
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 24, auto: false, mag: 1, reserveMax: 5, reload: 4.0, spread: 0.004, bloom: 0, pellets: 1, recoil: 0.6, range: 250, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
+  rpg7:     { name: 'RPG-7',       class: 'launcher', shape: 'rpg7', dmg: 0, rpm: 20, auto: false, mag: 1, reserveMax: 5, reload: 4.2, spread: 0.004, bloom: 0, pellets: 1, recoil: 0.6, range: 240, adsFov: 62, explodeDmg: 230, explodeRadius: 7.0, price: 3300, loot: 3, color: 0x4a5238, accent: 0x2e2e2e }, // PG-7 rocket launcher (GLB viewmodel)
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
   // DEMO-ONLY debug "tank cannon" firing an APFSDS long-rod (CALIBERS.apfsds): NO explosion —
   // obliterates fragile parts (glass/wood/trunk) along the ray, leaves a through-hole in
@@ -320,7 +321,7 @@ export const WEAPONS = {
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'makarov', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'ak74', 'sks', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'svd', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'ak74', 'sks', 'rpk74', 'shotgun', 'sawed_off', 'toz34', 'bazooka', 'rpg7', 'apfsds', 'mosin', 'svd', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -335,7 +336,7 @@ export function buildViewmodel(def) {
   switch (def.shape) {
     // GLB-asset weapons (factory above): return the real world model once loaded, else a crude
     // silhouette built into `b` that the shared tail turns into a Mesh (visible only until the swap).
-    case 'makarov': case 'ak74': case 'svd': case 'sks': {
+    case 'ak74': case 'svd': case 'sks': case 'rpk74': case 'rpg7': case 'toz34': {
       const tpl = ensureGlbWorldTemplate(def.shape);
       if (tpl) return cloneGlbModel(tpl);
       crudeGunFallback(b, def, GLB_WEAPONS[def.shape].fb);
@@ -691,8 +692,6 @@ export function buildViewmodel(def) {
       break;
     }
     case 'sawed': { // Sawed-off side-by-side 12ga — twin stubby barrels, boxlock, external hammers, cut-down checkered stock (break, 2 shells)
-      const tpl = ensureGlbWorldTemplate('sawed');                 // real GLB double-barrel once loaded; the procedural art below is the pre-load / load-failure fallback
-      if (tpl) return cloneGlbModel(tpl);
       const sHi = 0x4a5058, sMid = 0x2b2e33, sLo = 0x1c1e22, sSlot = 0x121417, sBright = 0x5e646c; // blue-black steel
       const wHi = 0x7a4f34, wMid = 0x5a3826, wLo = 0x3a2418;
       // twin side-by-side barrels (figure-8 bores at muzzle)
