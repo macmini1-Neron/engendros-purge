@@ -641,7 +641,7 @@ export class EnemyManager {
       if (!dead) {
         for (const en of this.active) {
           if (!en.alive || en.def.boss) continue;
-          if (Math.hypot(m.x - en.pos.x, m.z - en.pos.z) < en.radius + 0.4) { this.damage(en, 9999, 'gun', m.clone()); dead = true; break; }
+          if (Math.hypot(m.x - en.pos.x, m.z - en.pos.z) < en.radius + 0.4) { this.damage(en, 9999, 'gun', m); dead = true; break; }
         }
       }
       if (!dead && b.life <= 0) dead = true;
@@ -756,7 +756,7 @@ export class EnemyManager {
       if (!en.alive || en.def.boss) continue;
       const te = clamp((en.pos.x - belly.x) * dir.x + (en.pos.z - belly.z) * dir.z, 0, len);
       const de = Math.hypot(en.pos.x - (belly.x + dir.x * te), en.pos.z - (belly.z + dir.z * te));
-      if (de < reach + en.radius) this.damage(en, 9999, 'gun', en.pos.clone());
+      if (de < reach + en.radius) this.damage(en, 9999, 'gun', en.pos);
     }
     if (e.sweepT >= e.sweepDur) {
       e.sweepPass++;
