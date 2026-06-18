@@ -156,19 +156,26 @@ function buildMosinAssetViewmodel(assetRoot, fallback) {
 //   world    – WORLD model length along Z (ground/preview footprint, ~matches the voxel weapons)
 //   emissive – 0..1 self-light of the base texture; lifts dark gunmetal out of shadow (glTF metal
 //              maps read near-black under the scene lights with no env map). 0 = leave lit normally.
+//   tint     – placeholder base colour when the imported diffuse is BROKEN (the 3D-rip baked several
+//              of these textures as PURE BLACK, max=0 — makarov / sawn-off / AK+SVD "body"). Set tint →
+//              drop the useless black map and render a clean lit gunmetal/wood-grey instead of a black
+//              (or, with the old white emissive floor, washed-out) blob. Omit tint when the texture is
+//              real (SKS) so its actual wood+metal shows. The Blender pass will re-bake proper textures.
+//   emissive – modest map-gated self-light for guns that KEEP their texture (SKS) — lifts shadowed
+//              detail without washing it; ignored when `tint` is set.
 //   fb       – crude fallback silhouette family: 'pistol' | 'rifle' | 'shotgun'
 const GLB_WEAPONS = {
-  makarov: { url: './assets/weapons/makarov_pm.glb',    length: 0.62, center: [0.02, -0.05, -0.20], rot: [0, Math.PI, 0], world: 0.55, emissive: 0.6, fb: 'pistol' }, // FBX-sourced .gltf imports muzzle +Z → flip 180° so it points forward (−Z), unlike the OBJ guns
-  ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.5, fb: 'rifle' },
-  sawed:   { url: './assets/weapons/sawed_off_db.glb',  length: 1.05, center: [0.03, -0.07, -0.26], rot: [0, 0, 0], world: 0.95, emissive: 0.5, fb: 'shotgun' }, // upgrades the existing 'sawed_off' weapon (shape 'sawed'); procedural art stays as its pre-load fallback
-  svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.5, fb: 'rifle' }, // FBX-sourced .gltf → muzzle +Z, flip like the Makarov
-  sks:     { url: './assets/weapons/sks.glb',           length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.5, fb: 'rifle' },
-
+  makarov: { url: './assets/weapons/makarov_pm.glb',    length: 0.62, center: [0.02, -0.05, -0.20], rot: [0, Math.PI, 0], world: 0.55, tint: 0x55585e, fb: 'pistol' }, // texture is pure black → flat gunmetal. FBX-sourced .gltf imports muzzle +Z → flip 180°
+  ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  tint: 0x60584a, fb: 'rifle' },   // body texture black (wood/accessory textures exist but the single-material OBJ can't use them) → warm gun-grey
+  sawed:   { url: './assets/weapons/sawed_off_db.glb',  length: 1.05, center: [0.03, -0.07, -0.26], rot: [0, 0, 0], world: 0.95, tint: 0x6a5848, fb: 'shotgun' }, // texture pure black → wood-steel grey. Upgrades the existing 'sawed_off' (shape 'sawed'); procedural art stays as the pre-load fallback
+  svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, tint: 0x60584a, fb: 'rifle' }, // body texture black (like the AK) → warm gun-grey. FBX-sourced .gltf → flip
+  sks:     { url: './assets/weapons/sks.glb',           length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.25, fb: 'rifle' },     // SKS texture is REAL (wood+metal) → keep the map + a gentle self-light
 };
 
 // Layer + material setup for a loaded GLB tree. metalness→0 (a glTF PBR metal map renders pure black
-// with no environment map); roughness floored so it isn't a mirror; optional emissive self-light.
-function setupGlbTree(root, layer, renderOrder, emissive) {
+// with no environment map); roughness floored so it isn't a mirror; then either a flat placeholder
+// tint (broken/black source texture) or a modest map-gated self-light (real texture).
+function setupGlbTree(root, layer, renderOrder, cfg) {
   root.traverse((o) => {
     o.frustumCulled = false;
     o.layers.set(layer);
@@ -180,15 +187,17 @@ function setupGlbTree(root, layer, renderOrder, emissive) {
       mat.side = THREE.DoubleSide;
       if ('metalness' in mat) mat.metalness = 0;
       if ('roughness' in mat) mat.roughness = Math.max(mat.roughness ?? 0.7, 0.6);
-      if (emissive > 0 && 'emissive' in mat) {
-        // Flat emissive FLOOR — a uniform self-glow that is NOT gated by the base colour map. The
-        // imported gunmetal/black albedo textures are near-black, so a map-gated emissive (white ×
-        // dark map) stays black; lifting the whole surface to a readable gunmetal instead, while the
-        // lit (dark) albedo still supplies the 3-D form shading on top. Per-weapon `emissive` = floor
-        // strength. (Map-gated self-light is kept for the Mosin, whose honey-wood albedo is already light.)
-        mat.emissiveMap = null;
-        mat.emissive = new THREE.Color(0x9aa0a8);
-        mat.emissiveIntensity = emissive;
+      if (cfg.tint != null) {
+        // Imported diffuse is black/broken → discard it and use a flat placeholder colour. Scene lights
+        // give the 3-D form shading; a faint same-colour emissive keeps the shadowed side off pure black.
+        mat.map = null;
+        if ('color' in mat) mat.color = new THREE.Color(cfg.tint);
+        if ('emissive' in mat) { mat.emissive = new THREE.Color(cfg.tint); mat.emissiveIntensity = 0.18; }
+      } else if (cfg.emissive > 0 && 'emissive' in mat && mat.map) {
+        // Real texture → keep it; gentle map-gated self-light lifts the shadowed detail without washing it.
+        mat.emissiveMap = mat.map;
+        mat.emissive = new THREE.Color(0xffffff);
+        mat.emissiveIntensity = cfg.emissive;
       }
       mat.needsUpdate = true;
     }
@@ -215,7 +224,7 @@ function buildGlbWeaponModel(assetRoot, cfg, world) {
   const c = world ? [0, 0, 0] : cfg.center;
   oriented.position.set(c[0] - center.x * scale, c[1] - center.y * scale, c[2] - center.z * scale);
   wrapper.add(oriented);
-  setupGlbTree(wrapper, world ? 0 : WEAPON_LAYER, world ? 0 : 1000, cfg.emissive);
+  setupGlbTree(wrapper, world ? 0 : WEAPON_LAYER, world ? 0 : 1000, cfg);
   return wrapper;
 }
 
