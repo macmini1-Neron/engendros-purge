@@ -1,5 +1,6 @@
 // weapons.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weightedPick } from './util.js';
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
@@ -21,6 +22,120 @@ const DEMO_HE_BLAST = { r1: 2.6, r2: 6.0, tier: 3 };
 // Forced demo loadout so a tester needs no shop: an auto rifle (glass+door+enemies), the
 // BAZOOKA (HE breach + fire), two MOLOTOVs (ignite trees), the debug APFSDS cannon, + a knife.
 export const DEMO_LOADOUT = ['stg44', 'bazooka', 'molotov', 'molotov', 'apfsds', 'knife'];
+
+const MOSIN_ASSET_URL = './assets/weapons/low_poly_mosin_carbine.glb';
+const MOSIN_ASSET_TARGET_LENGTH = 2.78;
+// Anchor the GLB by its bounding-box centre. X is kept small so the bore/sight line sits on the
+// group centreline — hip-fire offset comes from WeaponSystem.basePos, and ADS (which pulls the
+// group to x≈0) then lands the iron sights on the crosshair instead of off to the right.
+const MOSIN_ASSET_TARGET_CENTER = new THREE.Vector3(0.032, -0.042, -0.30);
+let _gltfLoader = null;
+
+function loadGltf(url) {
+  _gltfLoader = _gltfLoader || new GLTFLoader();
+  return new Promise((resolve, reject) => _gltfLoader.load(url, resolve, undefined, reject));
+}
+
+function disposeObject3D(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.geometry) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) if (mat && typeof mat.dispose === 'function') mat.dispose();
+  });
+}
+
+function prepWeaponMeshTree(root, renderOrder = 1000) {
+  root.traverse((o) => {
+    o.frustumCulled = false;
+    o.layers.set(WEAPON_LAYER);
+    if (!o.isMesh) return;
+    o.renderOrder = renderOrder;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      mat.side = THREE.DoubleSide;
+      mat.needsUpdate = true;
+    }
+  });
+}
+
+// 7.62×54R round, built VERTICAL with the copper bullet UP (+Y) and the rim at the base (−Y), the
+// same orientation as the procedural Mosin's clip rounds (the established in-game look). Uses the
+// .50-cal's brass palette so the clip/cases read as real rounded brass, not voxel cubes.
+function _mosinCartridge(mb, x, y, z, scale) {
+  const brass = 0xcaa64a, brassHi = 0xe2c56b, brassLo = 0x8c6b2e, copper = 0xb3683a, copperHi = 0xcf9152;
+  let g = new THREE.CylinderGeometry(0.0098 * scale, 0.0125 * scale, 0.082 * scale, 12); mb.geo(g, x, y, z, brass, { tint: 0.03 }); g.dispose();        // bottlenecked brass case
+  g = new THREE.CylinderGeometry(0.014 * scale, 0.014 * scale, 0.011 * scale, 12); mb.geo(g, x, y - 0.046 * scale, z, brassHi, { tint: 0.02 }); g.dispose(); // rim
+  g = new THREE.CylinderGeometry(0.0108 * scale, 0.0108 * scale, 0.009 * scale, 12); mb.geo(g, x, y - 0.036 * scale, z, brassLo); g.dispose();              // extractor groove
+  g = new THREE.CylinderGeometry(0.0072 * scale, 0.0072 * scale, 0.046 * scale, 12); mb.geo(g, x, y + 0.064 * scale, z, copper, { tint: 0.02 }); g.dispose(); // copper bullet
+  g = new THREE.CylinderGeometry(0.0009 * scale, 0.0072 * scale, 0.020 * scale, 12); mb.geo(g, x, y + 0.097 * scale, z, copperHi); g.dispose();              // pointed tip
+}
+function _buildMosinReloadProps() {
+  const mk = (b) => { const m = new THREE.Mesh(b.build(), voxelMaterial({ side: THREE.DoubleSide })); m.frustumCulled = false; m.visible = false; return m; };
+  const bclip = new MeshBuilder();
+  bclip.box(0.150, 0.013, 0.026, 0, 0.016, 0, 0x9aa1aa);                  // stripper-clip spine gripping the case bodies (matches the procedural layout)
+  for (let i = 0; i < 5; i++) _mosinCartridge(bclip, -0.054 + i * 0.027, -0.028, 0, 0.82);
+  const bround = new MeshBuilder();
+  _mosinCartridge(bround, 0, 0, 0, 0.92);
+  return { clip: mk(bclip), round: mk(bround) };
+}
+
+function buildMosinAssetViewmodel(assetRoot, fallback) {
+  const wrapper = new THREE.Group();
+  wrapper.name = 'Mosin GLB viewmodel';
+  wrapper.renderOrder = 1000;
+  wrapper.frustumCulled = false;
+
+  const box = new THREE.Box3().setFromObject(assetRoot);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+  const scale = MOSIN_ASSET_TARGET_LENGTH / Math.max(0.001, size.z);
+  assetRoot.scale.setScalar(scale);
+  assetRoot.position.copy(MOSIN_ASSET_TARGET_CENTER).addScaledVector(center, -scale);
+  wrapper.add(assetRoot);
+
+  const boltNode = assetRoot.getObjectByName('Bolt_back') || assetRoot.getObjectByName('Bolt');
+  let bolt = null;
+  if (boltNode) {
+    // The GLB's bolt node pivots at the model origin, so rotating it swings the bolt out of the gun.
+    // Pivot on the BORE AXIS instead — the symmetric rear bolt body (Bolt_back mesh) sits dead on the
+    // centreline — so the lift is pure rotation about the bore: the handle sweeps up, nothing slides
+    // out. No back-travel (the bolt only turns, it doesn't leave the receiver).
+    wrapper.updateMatrixWorld(true);
+    const boltBody = assetRoot.getObjectByName('Bolt_back_Mosin_Parts_mat_0') || boltNode;
+    const pivotWorld = new THREE.Box3().setFromObject(boltBody).getCenter(new THREE.Vector3());
+    bolt = new THREE.Group();
+    bolt.name = 'Mosin bolt pivot';
+    wrapper.add(bolt);
+    bolt.position.copy(wrapper.worldToLocal(pivotWorld.clone()));
+    bolt.updateMatrixWorld(true);
+    bolt.attach(boltNode);             // reparent keeping world pose → boltNode now turns about the bore
+    bolt.userData.basePos = bolt.position.clone();
+    bolt.userData.baseRot = bolt.rotation.clone();
+    bolt.userData.liftTravel = 0;      // pure rotation, no vertical slide
+    bolt.userData.backTravel = 0;      // the bolt only turns about its axis — it never slides out
+    bolt.userData.boltRotTravel = 1.5; // ~86° handle lift about the bore (verified in-engine)
+  }
+  // Reload props: a 5-round stripper clip + a single cartridge, hung off a "charger" anchor on the
+  // receiver top. The shared Mosin reload choreography (_updateMosinAnim) drives them into the
+  // chamber; positions are charger-local so they don't depend on the procedural model's layout.
+  const { clip, round } = _buildMosinReloadProps();
+  const charger = new THREE.Group();
+  charger.name = 'Mosin charger';
+  // Anchor above the open chamber on the bore line — derived from the bolt pivot so it tracks the
+  // placement automatically (the pivot already sits on the bore, dead centre over the receiver).
+  const chamberRef = bolt ? bolt.position.clone() : new THREE.Vector3(0.021, 0.139, 0.132);
+  charger.position.copy(chamberRef).add(new THREE.Vector3(0, 0.031, -0.19));
+  charger.add(clip, round);
+  wrapper.add(charger);
+
+  prepWeaponMeshTree(wrapper);
+  wrapper.userData.mosin = { bolt, clip, round, charger };
+  return wrapper;
+}
 
 
 // ---------------------------------------------------------------------------
@@ -1090,6 +1205,25 @@ export class WeaponSystem {
     game.engine.scene.add(game.engine.camera);
 
     this.resetLoadout();
+    this._loadMosinAssetViewmodel();
+  }
+
+  async _loadMosinAssetViewmodel() {
+    const fallback = this.models && this.models.mosin;
+    if (!fallback) return;
+    try {
+      const gltf = await loadGltf(MOSIN_ASSET_URL);
+      if (!this.models || this.models.mosin !== fallback) return;
+      const replacement = buildMosinAssetViewmodel(gltf.scene, fallback);
+      replacement.visible = fallback.visible;
+      this.group.add(replacement);
+      this.models.mosin = replacement;
+      this.group.remove(fallback);
+      disposeObject3D(fallback);
+      this._clearMosinTransient();
+    } catch (e) {
+      console.warn('[weapons] Failed to load Mosin GLB viewmodel; using procedural fallback.', e);
+    }
   }
 
   resetLoadout() {
@@ -1180,7 +1314,8 @@ export class WeaponSystem {
     if (!mos) return;
     if (mos.bolt && mos.bolt.userData.basePos) {
       mos.bolt.position.copy(mos.bolt.userData.basePos);
-      mos.bolt.rotation.set(0, 0, 0);
+      if (mos.bolt.userData.baseRot) mos.bolt.rotation.copy(mos.bolt.userData.baseRot);
+      else mos.bolt.rotation.set(0, 0, 0);
     }
     if (mos.clip) mos.clip.visible = false;
     if (mos.round) mos.round.visible = false;
@@ -1216,7 +1351,7 @@ export class WeaponSystem {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
     const pos = origin.clone().addScaledVector(fwd, 0.56).addScaledVector(right, 0.20).addScaledVector(up, -0.12);
     this.game.effects.shell(pos, right, {
-      size: 0.046, color: 0xc9a64a, life: 1.8,
+      mesh: 'fiftyCase', size: 0.45, color: 0xc9a64a, life: 2.2, // real brass case mesh (the .50-cal's), scaled down for 7.62×54R — not particle cubes
       sideMin: 2.4, sideMax: 3.7, upMin: 1.0, upMax: 1.9,
     });
     this._playMosinCue('mosinCaseEject', 'caseEject', 'reloadClick');
@@ -1621,8 +1756,13 @@ export class WeaponSystem {
   _applyMosinBolt(mos, pose) {
     if (!mos || !mos.bolt || !mos.bolt.userData.basePos) return;
     const base = mos.bolt.userData.basePos;
-    mos.bolt.position.set(base.x, base.y + pose.lift * 0.018, base.z + pose.back * 0.18);
-    mos.bolt.rotation.z = pose.lift * 0.96;
+    const liftTravel = mos.bolt.userData.liftTravel || 0.018;
+    const backTravel = mos.bolt.userData.backTravel || 0.18;
+    const baseRot = mos.bolt.userData.baseRot;
+    const boltRotTravel = mos.bolt.userData.boltRotTravel || 0.96;
+    mos.bolt.position.set(base.x, base.y + pose.lift * liftTravel, base.z + pose.back * backTravel);
+    if (baseRot) mos.bolt.rotation.set(baseRot.x, baseRot.y, baseRot.z + pose.lift * boltRotTravel);
+    else mos.bolt.rotation.z = pose.lift * boltRotTravel;
   }
   _updateMosinAnim(dt) {
     const model = this.models && this.models.mosin;
@@ -1644,8 +1784,13 @@ export class WeaponSystem {
         const down = this._smooth01((p - 0.22) / 0.34);
         const out = this._smooth01((p - 0.58) / 0.12);
         clip.visible = true;
-        clip.position.set(0.004 * Math.sin(p * Math.PI * 6), 0.250 - down * 0.150 + out * 0.085, -0.030 + down * 0.038);
-        clip.rotation.set(-0.30 + down * 0.18, 0, 0.08 * Math.sin(p * Math.PI * 2));
+        if (mos.charger) { // GLB: charger-local — the vertical clip drops straight down into the charger guide, then withdraws (procedural-style)
+          clip.position.set(0.003 * Math.sin(p * Math.PI * 6), 0.120 - down * 0.120 + out * 0.095, 0.004 + down * 0.010);
+          clip.rotation.set(-0.26 + down * 0.14, 0, 0.05 * Math.sin(p * Math.PI * 2));
+        } else {
+          clip.position.set(0.004 * Math.sin(p * Math.PI * 6), 0.250 - down * 0.150 + out * 0.085, -0.030 + down * 0.038);
+          clip.rotation.set(-0.30 + down * 0.18, 0, 0.08 * Math.sin(p * Math.PI * 2));
+        }
       } else if (plan.kind === 'single' && round && plan.loaded < plan.total) {
         const start = 0.20, end = 0.80;
         const step = (end - start) / Math.max(1, plan.total);
@@ -1654,8 +1799,13 @@ export class WeaponSystem {
         if (p >= start - 0.05 && p <= end + 0.08) {
           const s = this._smooth01(u);
           round.visible = true;
-          round.position.set(0.072 - s * 0.060, 0.238 - s * 0.145, -0.040 + s * 0.050);
-          round.rotation.set(-0.28 + s * 0.18, 0, 0.32 - s * 0.62);
+          if (mos.charger) { // GLB: charger-local — a single vertical cartridge thumbed down into the chamber
+            round.position.set(0.045 - s * 0.045, 0.105 - s * 0.105, 0.004);
+            round.rotation.set(-0.22 + s * 0.12, 0, 0.30 - s * 0.55);
+          } else {
+            round.position.set(0.072 - s * 0.060, 0.238 - s * 0.145, -0.040 + s * 0.050);
+            round.rotation.set(-0.28 + s * 0.18, 0, 0.32 - s * 0.62);
+          }
         }
       }
     } else if (isMosin && this._boltT > 0) {
