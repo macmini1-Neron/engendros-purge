@@ -4,6 +4,7 @@ import { buildSu24 } from './props.js';
 
 const IL76_ASSET_URL = './assets/aircraft/low_poly_il-76.glb';
 const IL76_TARGET_LENGTH = 46.6; // 1:1 — real Il-76 fuselage is 46.59 m and the game runs ~1 unit ≈ 1 m
+// Auto-rigged GLB bone names of the landing gear — hidden so the IL-76 flies gear-up.
 const IL76_HIDDEN_GEAR = new Set(['bone4_77', 'bone18_76', 'bone19_84', 'bone20_97', 'bone21_110']);
 
 let _gltfLoader = null;
@@ -75,6 +76,7 @@ export function buildIl76AirdropModel() {
   if (!_il76Source) return null;
   const root = cloneForRuntime(_il76Source);
   root.name = 'IL-76 airdrop aircraft';
+  root.userData.isFallback = false; // the real GLB — loot._updatePlane reads this to decide whether to hot-swap
   prepAircraftTree(root);
   fitIl76(root);
   // Engine exhausts, in the plane's ROOT-LOCAL frame (the space _updatePlane feeds
@@ -96,6 +98,7 @@ export function buildIl76AirdropModel() {
 export function buildIl76AirdropFallback() {
   const fallback = buildSu24();
   fallback.scale.setScalar(1.5);
+  fallback.userData.isFallback = true; // stand-in until the GLB finishes loading; loot._updatePlane hot-swaps it out
   fallback.userData.contrailPorts = [
     new THREE.Vector3(-0.48, -0.05, 6.3),
     new THREE.Vector3(0.48, -0.05, 6.3),

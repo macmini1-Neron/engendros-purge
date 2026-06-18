@@ -11,8 +11,8 @@ import { buildIl76AirdropFallback, buildIl76AirdropModel, disposeAircraftObject,
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private; duplicated to avoid a cross-module import)
 const _planeTrailWP = new THREE.Vector3();
-const SUPPLY_PLANE_ALT = 42 * 1.4;
-const SUPPLY_DROP_FALL_SPEED = 3.4; // the +40% release height makes the descent about 40% longer.
+const SUPPLY_PLANE_ALT = 58.8; // release height; ~55% above the old 38-unit Su-24 pass so the larger IL-76 clears the skyline and the parachute descent reads longer
+const SUPPLY_DROP_FALL_SPEED = 3.4; // unchanged from the old Su-24 era — the higher SUPPLY_PLANE_ALT alone makes the chute descent proportionally longer.
 
 
 // Survival inventory items — held things that are NOT weapons (consumables/throwables/materials/callables).
@@ -451,7 +451,7 @@ export class LootManager {
       if (mp && mp.active && mp.isHost) mp.net.broadcast('supplydrop', { id, tx: target.x, tz: target.z, ang }); // everyone sees the same drop
     }
     const ALT = SUPPLY_PLANE_ALT, R = 220, dx = Math.sin(ang), dz = Math.cos(ang);
-    let mesh = buildIl76AirdropModel() || buildIl76AirdropFallback();
+    const mesh = buildIl76AirdropModel() || buildIl76AirdropFallback();
     const placePlane = (m) => {
       m.position.set(target.x - dx * R, ALT, target.z - dz * R);
       m.rotation.y = Math.atan2(dx, dz) + Math.PI; // model nose is -Z -> add PI so the NOSE leads the travel direction
@@ -459,7 +459,7 @@ export class LootManager {
     placePlane(mesh);
     this.scene.add(mesh);
     this.plane = { mesh, dir: new THREE.Vector3(dx, 0, dz), speed: 36, target, alt: ALT, travelled: 0, total: R * 3, released: false, trailT: 0, dropId: id, net: !!spec };
-    if (mesh.name !== 'IL-76 airdrop aircraft') {
+    if (mesh.userData.isFallback) { // GLB wasn't ready — flew the Su-24 stand-in; hot-swap to the real IL-76 once it loads
       preloadIl76AirdropModel().then(() => {
         const replacement = buildIl76AirdropModel();
         const pl = this.plane;
@@ -470,7 +470,6 @@ export class LootManager {
         this.scene.remove(mesh); disposeAircraftObject(mesh);
         this.scene.add(replacement);
         pl.mesh = replacement;
-        mesh = replacement;
       });
     }
     this.game.hud.toast('📡 Radio: IL-76 inbound!', 0x6fd0e8);
