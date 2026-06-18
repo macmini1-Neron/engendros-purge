@@ -317,6 +317,25 @@ export class World {
     seatProp(this, -16, 12, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 1.2 });
     seatProp(this, 46, -31, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: -0.5 }); // on the big-hill flank (a slope)
     seatProp(this, -10, -24, () => buildFieldRadio(), { w: 1.2, d: 0.7, h: 1.0 });
+
+    // HORDE-NAV TEST FIXTURE — a 10 m concrete enclosure with ONE doorway, on flat-ish
+    // ground ~25 m from spawn. The horde must route AROUND three solid walls and FUNNEL
+    // through the doorway to reach a player standing inside (proves flow-field nav). Each
+    // wall is its own self-grounding seatProp (mesh + matching AABB collider). The doorway
+    // is on the +X (east) wall, facing the arena centre. NB: a literal ~2 m gap rasterizes
+    // CLOSED under the horde grid (cell 1.5, inflate 0.7) — widened to ~3.4 m so a free
+    // doorway cell survives; physical clearance is still ~2 m.
+    {
+      const ECX = -24, ECZ = 6, S = 5, WT = 0.6, WH = 3.0, DOOR = 3.4;
+      const seg = (2 * S + WT - DOOR) / 2;                          // each E-wall segment length
+      const wall = (w, d, h) => () => { const b = new MeshBuilder(); b.box(w, h, d, 0, h / 2, 0, 0x6f6f69, { tint: 0.04 }); return new THREE.Mesh(b.build(), voxelMaterial()); };
+      seatProp(this, ECX,     ECZ - S, wall(2 * S + WT, WT, WH), { w: 2 * S + WT, d: WT, h: WH }); // N wall (solid)
+      seatProp(this, ECX,     ECZ + S, wall(2 * S + WT, WT, WH), { w: 2 * S + WT, d: WT, h: WH }); // S wall (solid)
+      seatProp(this, ECX - S, ECZ,     wall(WT, 2 * S + WT, WH), { w: WT, d: 2 * S + WT, h: WH }); // W wall (solid, far side)
+      const off = DOOR / 2 + seg / 2;                               // E-wall segment centre offset from ECZ
+      seatProp(this, ECX + S, ECZ - off, wall(WT, seg, WH), { w: WT, d: seg, h: WH });            // E wall — north of doorway
+      seatProp(this, ECX + S, ECZ + off, wall(WT, seg, WH), { w: WT, d: seg, h: WH });            // E wall — south of doorway
+    }
   }
 
   collide(pos, vel, r, h, dt) {
