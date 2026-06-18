@@ -69,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-18 09:54';
+const GAME_BUILD = '2026-06-18 09:57';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -1177,13 +1177,14 @@ class Game {
     }
   }
 
-  // Hide dynamic entities + terrain chunks beyond `d` metres of the camera; clamp fog so the cull edge
-  // isn't visible. Cheap per-frame visibility toggles (no allocation). Static map props are not touched.
+  // Hide dynamic entities + terrain chunks + registered static decor beyond `d` metres of the camera; clamp
+  // fog so the cull edge isn't visible. Cheap per-frame visibility toggles (no allocation).
   _cullByDistance(d) {
     const cam = this.engine.camera.position, d2 = d * d;
     const far = (p) => { const dx = p.x - cam.x, dz = p.z - cam.z; return dx * dx + dz * dz > d2; };
     if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh && e.pos) e.mesh.visible = !!e.alive && !far(e.pos); }
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = !far(pu.mesh.position); }
+    if (this.world && this.world.cullProps) for (const m of this.world.cullProps) { if (m) { const ud = m.userData, dx = (ud._cullX != null ? ud._cullX : m.position.x) - cam.x, dz = (ud._cullZ != null ? ud._cullZ : m.position.z) - cam.z; m.visible = dx * dx + dz * dz <= d2; } } // cull by precomputed world centre (district meshes bake geometry in world coords → position is origin)
     if (this.world && this.world.chunks) this.world.chunks.drawDistance = d;
     if (this.engine.scene && this.engine.scene.fog) this.engine.scene.fog.far = Math.min(this.engine.scene.fog.far, d);
   }
@@ -1194,6 +1195,7 @@ class Game {
   _restoreVisibility() {
     if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh) e.mesh.visible = !!e.alive; }
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = true; }
+    if (this.world && this.world.cullProps) for (const m of this.world.cullProps) { if (m) m.visible = true; }
     if (this.world && this.world.chunks) this.world.chunks.drawDistance = 0; // clear cull radius (TerrainChunks.update re-shows next frame)
   }
 }
