@@ -522,8 +522,7 @@ Append to `src/shilka-rig.js`:
 // classifier module stays import-free. Returns a rig handle the adapter animates each frame.
 export function buildShilkaRig(modelScene, THREE) {
   modelScene.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(modelScene);
-  const center = new THREE.Vector3(); box.getCenter(center);
+  const center = new THREE.Box3().setFromObject(modelScene).getCenter(new THREE.Vector3());
 
   const root = new THREE.Group(); root.name = 'shilka rig root';
   const body = new THREE.Group(); body.name = 'shilka body (tilt)';
@@ -536,7 +535,7 @@ export function buildShilkaRig(modelScene, THREE) {
   for (const m of meshes) {
     tmp.setFromObject(m); tmp.getCenter(ctr); tmp.getSize(siz);
     const g = classifyShilkaPart(ctr.x, ctr.y, ctr.z, siz.x, siz.y, siz.z);
-    buckets[g].push({ mesh: m, cx: ctr.x, cz: ctr.z });
+    buckets[g].push({ mesh: m, cx: ctr.x, cy: ctr.y, cz: ctr.z });
   }
 
   // helper: make a pivot group at a world point and re-home a mesh under it (keep world transform)
@@ -558,13 +557,14 @@ export function buildShilkaRig(modelScene, THREE) {
   for (const w of wheelEntries) {
     const side = (w.cx >= center.x) ? wheelsR : wheelsL;
     if (side.length >= 6) continue; // guard against stray extra meshes
-    const pivot = pivotAt(w.cx, 0, w.cz, `wheel ${side === wheelsL ? 'L' : 'R'}${side.length}`);
+    const pivot = pivotAt(w.cx, w.cy, w.cz, `wheel ${side === wheelsL ? 'L' : 'R'}${side.length}`);
+    pivot.userData.restY = w.cy; // axle rest height; the adapter adds suspension offset on top
     body.add(pivot); reparentKeepWorld(w.mesh, pivot);
     side.push(pivot);
   }
 
-  const sprockets = buckets.sprocket.map(b => { const p = pivotAt(b.cx, 0, b.cz, 'sprocket'); body.add(p); reparentKeepWorld(b.mesh, p); return p; });
-  const tracks = buckets.track.map(b => b.mesh);
+  const sprockets = buckets.sprocket.map(b => { const p = pivotAt(b.cx, b.cy, b.cz, 'sprocket'); body.add(p); reparentKeepWorld(b.mesh, p); return p; });
+  const tracks = buckets.track.map(b => b.mesh); // mesh refs under body — not pivoted (no spin)
 
   // antenna whips: each gets its own base pivot for sway
   const antennas = buckets.antenna.map((b) => {
@@ -759,8 +759,8 @@ Add the new methods to the class:
     this.vehicleRoot.rotation.y = d.heading;
     rig.body.rotation.set(d.pitch, 0, d.roll);
     const s = this._rigScale || 1;
-    for (let i = 0; i < rig.wheelsL.length; i++) { rig.wheelsL[i].position.y = d.wheelOffsetL[i] / s; rig.wheelsL[i].rotation.x = d.wheelSpin; }
-    for (let i = 0; i < rig.wheelsR.length; i++) { rig.wheelsR[i].position.y = d.wheelOffsetR[i] / s; rig.wheelsR[i].rotation.x = d.wheelSpin; }
+    for (let i = 0; i < rig.wheelsL.length; i++) { const w = rig.wheelsL[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetL[i] / s; w.rotation.x = d.wheelSpin; }
+    for (let i = 0; i < rig.wheelsR.length; i++) { const w = rig.wheelsR[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetR[i] / s; w.rotation.x = d.wheelSpin; }
     for (const sp of rig.sprockets) sp.rotation.x = d.wheelSpin;
     const sway = clamp(-d.yawRate * 0.25 + (d.speed * 0.0), -0.25, 0.25);
     for (const a of rig.antennas) a.rotation.z = damp(a.rotation.z || 0, sway, 8, 1 / 60);
