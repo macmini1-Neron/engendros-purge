@@ -152,21 +152,28 @@ export class ShilkaStation {
   _buildDriverPeriscopes() {
     const grp = new THREE.Group();
     grp.name = `${this.id} driver periscopes`;
-    const greenMat = new THREE.MeshStandardMaterial({ color: 0x51614c, metalness: 0.25, roughness: 0.72 }); // Shilka-green housing (owner-matched)
+    const metal = new THREE.MeshStandardMaterial({ color: 0x232a20, metalness: 0.45, roughness: 0.65 }); // dark frame = black border
     const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, metalness: 0.1, roughness: 0.08, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
-    const W = 0.30, H = 0.18, D = 0.22;
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x51614c, metalness: 0.25, roughness: 0.72 }); // Shilka green (owner-matched)
+    const W = 0.30, H = 0.18, D = 0.13, T = 0.035;
+    // ONE integrated optic: dark frame (black border) + glass, with a beveled green housing box behind it
     const b = new THREE.Group();
-    // solid green housing box directly BEHIND the glass (the periscope body — owner: a box, not a visor)
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), greenMat);
-    housing.position.z = -D / 2;
-    b.add(housing);
-    // glass on the front face
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.82, H * 0.82), glassMat);
-    glass.position.z = 0.002;
+    const bar = (sx, sy, sz, px, py, pz) => { const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), metal); m.position.set(px, py, pz); b.add(m); };
+    bar(W, T, D, 0, H / 2, 0); bar(W, T, D, 0, -H / 2, 0); bar(T, H, D, -W / 2, 0, 0); bar(T, H, D, W / 2, 0, 0);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(W - T, H - T), glassMat);
+    glass.position.z = D / 2;
     b.add(glass);
+    // beveled (top/bottom-tapered) green housing directly behind the optic — the periscope body
+    const L = 0.30, bevel = 0.05;
+    const prof = new THREE.Shape();
+    prof.moveTo(0, -H / 2); prof.lineTo(0, H / 2); prof.lineTo(L, H / 2 - bevel); prof.lineTo(L, -H / 2 + bevel); prof.closePath();
+    const housing = new THREE.Mesh(new THREE.ExtrudeGeometry(prof, { depth: W, bevelEnabled: false }), greenMat);
+    housing.rotation.y = Math.PI / 2; housing.position.set(-W / 2, 0, -D / 2);
+    b.add(housing);
     b.scale.setScalar(0.75); // optic 25% smaller (owner)
     grp.add(b);
-    this._optic = b; // live-tweak: s._optic.scale.setScalar(n) · s._optic.position.set(x,y,z) · housing colour s._optic.children[0].material.color.set(0x..) // tweak live: s._visor.position.set(x,y,z) · .rotation.x · .scale.setScalar(n) · .material.color.set(0x..)
+    this._optic = b;          // whole integrated optic (frame+glass+housing)
+    this._housing = housing;  // tweak the beveled box live: s._housing.scale/position/rotation, .material.color.set(0x..) // tweak live: s._visor.position.set(x,y,z) · .rotation.x · .scale.setScalar(n) · .material.color.set(0x..)
     grp.position.set(0.565, 0.74, 2.4); // driver's periscope optics on the MODEL (placed live by the owner) — a separate thing from the camera/view
     this.vehicleRoot.add(grp);
     this.periscopes = grp;
