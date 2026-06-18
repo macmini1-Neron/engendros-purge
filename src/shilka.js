@@ -50,6 +50,7 @@ const SHILKA_ASSET_URL = './assets/vehicles/lowpoly_zsu-23-4.glb?v=20260617-2';
 const SHILKA_ASSET_TARGET_LENGTH_M = 6.7;
 const TMP_ORIGIN = new THREE.Vector3();
 const TMP_END = new THREE.Vector3();
+const TMP_FWD = new THREE.Vector3();
 let _gltfLoader = null;
 
 function loadGltf(url) {
@@ -182,6 +183,7 @@ export class ShilkaStation {
     // sync drive state to where the vehicle physically sits
     this.drive.x = this.base.x; this.drive.z = this.base.z; this.drive.heading = this.baseYaw;
     this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = true; this.drive.stalled = false;
+    this._lookYaw = 0; this._lookPitch = 0;
     this._showDriveHud(true);
     if (!this.game.input.locked) this.game.input.requestLock();
     this._frameDriverCamera(0.001);
@@ -421,7 +423,6 @@ export class ShilkaStation {
 
   _driveControlUpdate(dt) {
     const input = this.game.input;
-    const T = SHILKA_DRIVE_TUNING;
     // gear selection (mode-gated; clash-free with commander digits in a later slice)
     let gearReq = null;
     if (input.wasPressed('Digit1')) gearReq = '1';
@@ -441,7 +442,7 @@ export class ShilkaStation {
     };
     const ground = this._sampleWheelGround();
     this.drive = stepDrive(this.drive, dt, inp, ground);
-    this._applyRig();
+    this._applyRig(dt);
     this._frameDriverCamera(dt);
     this._updateDriveHud();
   }
@@ -466,7 +467,7 @@ export class ShilkaStation {
     return { L, R };
   }
 
-  _applyRig() {
+  _applyRig(dt) {
     const rig = this.rig; if (!rig) return;
     const d = this.drive;
     this.vehicleRoot.position.set(d.x, d.y, d.z);
@@ -476,15 +477,15 @@ export class ShilkaStation {
     for (let i = 0; i < rig.wheelsL.length; i++) { const w = rig.wheelsL[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetL[i] / s; w.rotation.x = d.wheelSpin; }
     for (let i = 0; i < rig.wheelsR.length; i++) { const w = rig.wheelsR[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetR[i] / s; w.rotation.x = d.wheelSpin; }
     for (const sp of rig.sprockets) sp.rotation.x = d.wheelSpin;
-    const sway = clamp(-d.yawRate * 0.25 + (d.speed * 0.0), -0.25, 0.25);
-    for (const a of rig.antennas) a.rotation.z = damp(a.rotation.z || 0, sway, 8, 1 / 60);
+    const sway = clamp(-d.yawRate * 0.25, -0.25, 0.25);
+    for (const a of rig.antennas) a.rotation.z = damp(a.rotation.z || 0, sway, 8, dt);
   }
 
   _frameDriverCamera(dt) {
     const cam = this.game.engine.camera;
     const d = this.drive;
     // driver eye: front-left of the hull, low; tunable in verification
-    const EYE = { x: 0.7, y: 2.0, z: 1.7 };
+    const EYE = { x: -0.7, y: 2.0, z: 1.7 };
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
     const ex = d.x + (EYE.x * cos + EYE.z * sin);
     const ez = d.z + (-EYE.x * sin + EYE.z * cos);
@@ -493,7 +494,7 @@ export class ShilkaStation {
     // periscope look: mouse pans a limited cone around the hull's forward axis
     this._lookYaw = clamp((this._lookYaw || 0) + this.game.input.mouseDX * 0.0022, -0.9, 0.9);
     this._lookPitch = clamp((this._lookPitch || 0) - this.game.input.mouseDY * 0.0022, -0.5, 0.6);
-    const fwd = new THREE.Vector3(
+    const fwd = TMP_FWD.set(
       Math.sin(d.heading + this._lookYaw) * Math.cos(this._lookPitch),
       Math.sin(this._lookPitch),
       Math.cos(d.heading + this._lookYaw) * Math.cos(this._lookPitch),
