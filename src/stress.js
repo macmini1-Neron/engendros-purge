@@ -25,18 +25,24 @@ export function installStress(game) {
   const spawnGrunts = (n) => ring(n, 16, (dx, dz) => game.enemies.spawn('grunt', at(dx, dz)));
   const teleport = (x, z) => { game.player.pos.set(x, game.world.groundY(x, z) + 1.7, z); };
 
+  // Fire `fn` now and then every `every` seconds for the rest of the run (ticked from game._frame).
+  // Repeated airdrops are how the IL-76 clone-vs-cache difference becomes visible (1st drop builds,
+  // every later drop reuses) and they mirror a real run where drops recur during a sustained fight.
+  const repeat = (every, fn) => { fn(); game._stressTick = { every, acc: 0, fn }; };
+
   const SC = {
     tolo5() { spawnBosses(5); },
-    airdrop() { game.loot.callSupplyDrop(); },
-    airfield_airdrop() { teleport(120, -140); game.loot.callSupplyDrop(); },
+    airdrop() { repeat(4, () => game.loot.callSupplyDrop()); },
+    airfield_airdrop() { teleport(120, -140); repeat(4, () => game.loot.callSupplyDrop()); },
     waveburst() { spawnGrunts(40); },
-    worstcase() { spawnBosses(5); spawnGrunts(20); game.loot.callSupplyDrop(); },
+    worstcase() { spawnBosses(5); spawnGrunts(20); repeat(4, () => game.loot.callSupplyDrop()); },
   };
 
   game.stress = (name, { seconds = 12 } = {}) => {
     if (!SC[name]) { console.warn('[stress] unknown scenario:', name, '— try', Object.keys(SC)); return; }
     if (game.state !== 'playing') { console.warn('[stress] start a run first: GAME.startGame("purge")'); return; }
     game.hitch.reset();
+    game._stressTick = null;
     game._stressName = name;
     game._stressSeconds = seconds;
     game._stressElapsed = 0;

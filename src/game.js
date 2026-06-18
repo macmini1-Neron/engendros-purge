@@ -1024,13 +1024,14 @@ class Game {
     if (!(dt > 0)) dt = 0.0001;
     const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
     if (this._stressName) { // dev stress harness: sample RAW frame-time (pre-clamp) to catch hitches
+      if (this._stressTick) { this._stressTick.acc += dt; if (this._stressTick.acc >= this._stressTick.every) { this._stressTick.acc = 0; this._stressTick.fn(); } }
       this.hitch.sample(dt * 1000);
       this._stressElapsed += dt;
       if (this._stressElapsed >= this._stressSeconds) {
         this._hitchReport = this.hitch.report();
         console.table([this._hitchReport]);
         console.log('[stress] "' + this._stressName + '" done →', JSON.stringify(this._hitchReport));
-        this._stressName = null;
+        this._stressName = null; this._stressTick = null;
       }
     }
     dt = Math.min(dt, 0.05);
