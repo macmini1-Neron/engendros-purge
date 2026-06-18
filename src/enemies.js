@@ -269,7 +269,7 @@ export class EnemyManager {
     ];
     for (const m of warm) { m.visible = false; m.position.set(0, -999, 0); engine.scene.add(m); }
     if (engine.renderer && engine.renderer.compile) engine.renderer.compile(engine.scene, engine.camera);
-    for (const m of warm) engine.scene.remove(m);
+    for (const m of warm) { engine.scene.remove(m); m.geometry.dispose(); } // free the temp warm geometries (never rendered); programs live on the materials
     this._warmMats = warm.map((m) => m.material); // hold refs so the compiled programs aren't released
   }
   _geo(key, col, variant) { return this.geos[key] || (this.geos[key] = (variant === 'boss' ? buildTolo() : buildEngendro(col, variant))); }

@@ -108,7 +108,7 @@ export class Admin {
       return list;
     }
     if (this.tab === 'props') return [
-      { name: 'IL-76 Candid', sub: 'supply plane', make: () => buildIl76AirdropModel() || buildIl76AirdropFallback() },
+      { name: 'IL-76 Candid', sub: 'supply plane', make: () => buildIl76AirdropModel({ cache: false }) || buildIl76AirdropFallback() }, // cache:false → the viewer's clear() can dispose it; never touches loot's reused singleton
       { name: 'Field Radio «Р-105»', sub: 'music prop (NEW)', make: () => buildFieldRadio() },
       { name: 'Vysílačka (Falcon III)', sub: 'pickup', make: () => g.loot._pickupMesh('airbeacon') },
       { name: 'Supply crate', sub: 'air drop', make: () => this._crate() },
