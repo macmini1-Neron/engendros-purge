@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Shilka rig cut</title>
+<style>
+  html,body{margin:0;height:100%;background:#1b1f24;color:#cfe;font:13px/1.45 monospace;overflow:hidden}
+  #legend{position:fixed;left:12px;top:12px;background:rgba(8,12,16,.86);padding:11px 13px;border:1px solid #2c3a44;border-radius:7px;z-index:5}
+  #legend b{color:#9fe;font-size:14px}
+  .row{display:flex;align-items:center;margin-top:5px}
+  .sw{width:15px;height:15px;border-radius:3px;margin-right:9px;border:1px solid #0008}
+  #status{position:fixed;right:12px;top:12px;color:#fc7;z-index:5}
+  .cap{position:fixed;color:#9fb6c4;font-size:12px;z-index:5;text-shadow:0 1px 2px #000}
+  canvas{display:block}
+</style>
+<script type="importmap">{"imports":{"three":"../vendor/three.module.min.js"}}</script>
+</head>
+<body>
+<div id="legend"><b>ZSU-23-4 — rig cut v2 (antény zvlášť · kanón=hlavně · věž utažená · radar=dish)</b><div id="legrows"></div></div>
+<div id="status">loading…</div>
+<div class="cap" style="left:12px;top:54%">▲ čelní 3/4 (čelo = −Z)</div>
+<div class="cap" style="left:51%;top:54%">▲ pravý bok</div>
+<div class="cap" style="left:12px;bottom:8px">▲ shora</div>
+<div class="cap" style="left:51%;bottom:8px">▲ zadní 3/4</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
+import { classifyShilkaPart } from '../src/shilka-rig.js';
+
+const GROUPS = {
+  hull:    {c:0x3a6ea5, label:'Korba / hull (statická)'},
+  track:   {c:0x232a30, label:'Pás / track'},
+  wheel:   {c:0x46c46a, label:'Pojezdové kolo / road wheel'},
+  sprocket:{c:0x18b9b0, label:'Napínák + hnací kolo'},
+  turret:  {c:0xe8923a, label:'Věž / turret (YAW)'},
+  gun:     {c:0xe0413a, label:'Hlavně 23mm / barrels (ELEV)'},
+  radar:   {c:0xd24bd0, label:'Radar dish (SCAN)'},
+  antenna: {c:0xf4d03f, label:'Antény / whips (vlastní rig)'},
+};
+
+const status = document.getElementById('status');
+window.__err = null; window.__ready = false; window.__counts = {};
+try {
+  const W=1320, H=900;
+  const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+  renderer.setSize(W,H); renderer.setPixelRatio(1); renderer.autoClear=false;
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1b1f24);
+  scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x35302a, 1.05));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.15); dl.position.set(5,9,4); scene.add(dl);
+  const dl2 = new THREE.DirectionalLight(0xffffff, 0.5); dl2.position.set(-6,4,-5); scene.add(dl2);
+
+  const loader = new GLTFLoader();
+  loader.load('../assets/vehicles/lowpoly_zsu-23-4.glb', (gltf)=>{
+    const model = gltf.scene;
+    scene.add(model);
+    scene.updateMatrixWorld(true);
+
+    const counts={};
+    const tmp=new THREE.Box3(), ctr=new THREE.Vector3(), siz=new THREE.Vector3();
+    model.traverse((o)=>{
+      if(!o.isMesh) return;
+      tmp.setFromObject(o); tmp.getCenter(ctr); tmp.getSize(siz);
+      const g = classifyShilkaPart(ctr.x,ctr.y,ctr.z, siz.x,siz.y,siz.z);
+      counts[g]=(counts[g]||0)+1;
+      o.material = new THREE.MeshLambertMaterial({color:GROUPS[g].c, side:THREE.DoubleSide});
+    });
+    window.__counts = counts;
+
+    const lr = document.getElementById('legrows');
+    for(const k of Object.keys(GROUPS)){
+      const d=document.createElement('div'); d.className='row';
+      d.innerHTML = `<span class="sw" style="background:#${GROUPS[k].c.toString(16).padStart(6,'0')}"></span>${GROUPS[k].label} — <b>${counts[k]||0}</b>`;
+      lr.appendChild(d);
+    }
+
+    const box = new THREE.Box3().setFromObject(model);
+    const c = new THREE.Vector3(); box.getCenter(c);
+    const s = new THREE.Vector3(); box.getSize(s);
+    const R = Math.max(s.x,s.y,s.z);
+
+    const grid = new THREE.GridHelper(R*3, 24, 0x33424c, 0x222b31);
+    grid.position.set(c.x, box.min.y, c.z); scene.add(grid);
+
+    const cam = new THREE.PerspectiveCamera(38, (W/2)/(H/2), 0.1, 500);
+    const dist = R*1.75;
+    const views = [ [215,22], [90,10], [200,78], [35,24] ];
+    function camFor(azDeg, elDeg){
+      const az=azDeg*Math.PI/180, el=elDeg*Math.PI/180;
+      return new THREE.Vector3(
+        c.x + dist*Math.sin(az)*Math.cos(el),
+        c.y + dist*Math.sin(el),
+        c.z + dist*Math.cos(az)*Math.cos(el));
+    }
+    const cells = [ [0,H/2], [W/2,H/2], [0,0], [W/2,0] ];
+    renderer.setViewport(0,0,W,H); renderer.setScissor(0,0,W,H);
+    renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true);
+    for(let i=0;i<4;i++){
+      const [vx,vy]=cells[i];
+      renderer.setViewport(vx,vy,W/2,H/2);
+      renderer.setScissor(vx,vy,W/2,H/2);
+      cam.position.copy(camFor(views[i][0],views[i][1]));
+      cam.lookAt(c); cam.updateProjectionMatrix();
+      renderer.render(scene,cam);
+    }
+    status.textContent='ready';
+    window.__ready=true;
+  }, undefined, (e)=>{ window.__err='load:'+(e&&e.message||e); status.textContent='LOAD ERROR'; });
+} catch(e){ window.__err=String(e); status.textContent='ERR '+e; }
+</script>
+</body>
+</html>
