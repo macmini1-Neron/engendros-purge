@@ -152,32 +152,21 @@ export class ShilkaStation {
   _buildDriverPeriscopes() {
     const grp = new THREE.Group();
     grp.name = `${this.id} driver periscopes`;
-    const metal = new THREE.MeshStandardMaterial({ color: 0x232a20, metalness: 0.45, roughness: 0.65 });
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x5d6b50, metalness: 0.25, roughness: 0.72 }); // Shilka-green housing
     const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, metalness: 0.1, roughness: 0.08, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
-    const W = 0.30, H = 0.18, D = 0.13, T = 0.035;
-    for (const bx of [0]) { // single optic block (owner: one piece, the 2 side ones removed)
-      const b = new THREE.Group();
-      const bar = (sx, sy, sz, px, py, pz) => { const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), metal); m.position.set(px, py, pz); b.add(m); };
-      bar(W, T, D, 0, H / 2, 0);   // top
-      bar(W, T, D, 0, -H / 2, 0);  // bottom
-      bar(T, H, D, -W / 2, 0, 0);  // left
-      bar(T, H, D, W / 2, 0, 0);   // right
-      const glass = new THREE.Mesh(new THREE.PlaneGeometry(W - T, H - T), glassMat);
-      glass.position.z = D / 2;
-      b.add(glass);
-      b.position.x = bx;
-      b.rotation.y = -bx * 0.7;
-      b.scale.setScalar(0.75); // optic 25% smaller (owner)
-      grp.add(b);
-    }
-    // green triangular visor/hood (Shilka colour) that joins the optic to the hull — live-tweakable as s._visor
-    const greenMat = new THREE.MeshStandardMaterial({ color: 0x5d6b50, metalness: 0.2, roughness: 0.75 });
-    const tri = new THREE.Shape();
-    tri.moveTo(-0.2, 0.12); tri.lineTo(0.2, 0.12); tri.lineTo(0, -0.14); tri.closePath();
-    const visor = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 0.05, bevelEnabled: false }), greenMat);
-    visor.position.set(0, 0.0, -0.1); visor.rotation.x = 0.3;
-    grp.add(visor);
-    this._visor = visor; // tweak live: s._visor.position.set(x,y,z) · .rotation.x · .scale.setScalar(n) · .material.color.set(0x..)
+    const W = 0.30, H = 0.18, D = 0.22;
+    const b = new THREE.Group();
+    // solid green housing box directly BEHIND the glass (the periscope body — owner: a box, not a visor)
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), greenMat);
+    housing.position.z = -D / 2;
+    b.add(housing);
+    // glass on the front face
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.82, H * 0.82), glassMat);
+    glass.position.z = 0.002;
+    b.add(glass);
+    b.scale.setScalar(0.75); // optic 25% smaller (owner)
+    grp.add(b);
+    this._optic = b; // live-tweak: s._optic.scale.setScalar(n) · s._optic.position.set(x,y,z) · housing colour s._optic.children[0].material.color.set(0x..) // tweak live: s._visor.position.set(x,y,z) · .rotation.x · .scale.setScalar(n) · .material.color.set(0x..)
     grp.position.set(0.565, 0.74, 2.4); // driver's periscope optics on the MODEL (placed live by the owner) — a separate thing from the camera/view
     this.vehicleRoot.add(grp);
     this.periscopes = grp;
