@@ -863,6 +863,7 @@ class Game {
     this.reset(); this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
     const labels = document.getElementById('mp-labels'); if (labels) labels.style.display = 'block';
     this.state = 'playing'; this._startCountdown = this.mp.isHost ? 0.6 : 0;
+    this.enemies.prewarm(); // co-op too: the host runs the boss sim (buildTolo/navGrid/FX), clients render boss ghosts → both want it warm, not mid-fight
     const root = document.documentElement; const after = () => { this.engine.resize(); this.input.requestLock(); this._lockKeyboard(); };
     if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().then(after, after); else after();
   }

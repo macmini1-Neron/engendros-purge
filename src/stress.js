@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-// DEV-ONLY perf stress harness. Imported by game.js but NEVER auto-runs — the player must
-// call GAME.stress(name) from the console (or load with ?stress to expose it in the F3 help).
+// DEV-ONLY perf stress harness. Imported by game.js but NEVER auto-runs and has no URL/UI entry
+// point — it is console-only: call GAME.stress(name) (names from GAME.stressScenarios()) in DevTools.
 // Each scenario sets up an extreme world state, then the normal _frame loop + game.hitch
 // (HitchLogger) measure frame-time spikes for `seconds`. Positions are DETERMINISTIC so the
 // before/after multi-agent sweep produces comparable numbers (no Math.random / unseeded RNG).
