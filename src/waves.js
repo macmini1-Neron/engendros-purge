@@ -4,6 +4,10 @@ import { TAU, chc, clamp, pick, rr, weightedPick } from './util.js';
 import { BOSS_ROSTER, MINIBOSS_NAMES, WAVE_ADVANCE_SECS, WAVE_TYPES } from './tuning.js';
 import { ENEMY_TYPES } from './enemies.js';
 
+// Spawn-position scratch — safe to reuse: _spawnPos() returns it straight into enemies.spawn(), which
+// copies it (Enemy.spawn: this.pos.copy(pos) + mesh.position.copy(pos)) and never retains the vector.
+const _spawnV = new THREE.Vector3();
+
 
 export class WaveManager {
   constructor(game) { this.game = game; this.wave = 0; this.active = false; }
@@ -125,13 +129,13 @@ export class WaveManager {
       for (const b of near) { if (x > b.min.x - 1 && x < b.max.x + 1 && z > b.min.z - 1 && z < b.max.z + 1 && b.max.y > 1) { blocked = true; break; } }
       if (!blocked) {
         const sy = this.game.world.groundY(x, z);
-        return new THREE.Vector3(x, sy, z);
+        return _spawnV.set(x, sy, z);
       }
     }
     const a = rr(0, TAU); // fallback: a plain offset from the player
     const spx = clamp(pp.x + Math.sin(a) * 90, -HALF + 6, HALF - 6), spz = clamp(pp.z + Math.cos(a) * 90, -HALF + 6, HALF - 6);
     const spy = this.game.world.groundY(spx, spz);
-    return new THREE.Vector3(spx, spy, spz);
+    return _spawnV.set(spx, spy, spz);
   }
   _spawnOne() {
     const n = this.wave, pos = this._spawnPos();
