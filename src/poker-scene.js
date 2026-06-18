@@ -9,6 +9,7 @@ import { PokerDomRenderer } from './poker-ui.js';
 import { makeCardMesh, setCardFace } from './poker-cards.js';
 import { makeChipStack, makeChipTray, setChipTray, makeMultiSkinTray, setMultiSkinTray } from './poker-chips.js';
 import { sigOf, exactSubset, subSet, addSet, largestFormableLE, value, drawSkinned, mergeSkinned } from './poker/chipbank.js';
+import { getChipSkin } from './poker/chipskins.js';
 
 // compact signature of a provenance SkinMap ({skin:{denom:count}}) for the scene-key — two pots can share
 // value AND per-denom composition yet differ in skin MIX, so the tray must rebuild when only the mix changes.
@@ -323,9 +324,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
         // be re-rendered through setMultiSkinTray — a plain setChipTray would mint a parallel single-skin tray and
         // leave the multi-skin columns frozen at full height (the "stuck stacks" the live bet was showing). Pull
         // `take` out of a COPY of the stack ledger and re-lay BOTH trays so the columns shorten 1:1 AND the heap
-        // keeps each chip's provenance skin. preferSkin = your own (the stack's dominant skin) so you spend your
-        // own chips before any you've WON of another skin — matching the engine's postBet.
-        const prefer = this._dominantSkin(this._myStackSkins);
+        // keeps each chip's provenance skin. preferSkin = your OWN registered skin (p.skins[you], or the global
+        // pick in solo where p.skins carries no local entry) so you spend your own chips before any you've WON of
+        // another skin — exactly the ledger key the engine's postBet draws from. Never null → no 'null' bucket.
+        const prefer = (p.skins && p.skins[p.youId]) || getChipSkin();
         const stackLedger = mergeSkinned({}, this._myStackSkins);       // drawSkinned MUTATES → work on a deep copy
         const drawn = drawSkinned(stackLedger, take, prefer, prefer);   // { skin: ChipSet } pulled into the heap
         const heapSkins = mergeSkinned(this._myBetSkins || {}, drawn);  // committed bet (by skin) + previewed extra
@@ -351,13 +353,6 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       this._betLabel.lookAt(this.cam.position);
     }
     if (this._potLabel) { this._potLabel.position.copy(this._potLabelPos); this._potLabel.lookAt(this.cam.position); } // pot total floats above the pot, camera-facing
-  }
-
-  // highest-value skin in a ledger — your OWN chips dominate your stack, so this is your skin (drawn from first)
-  _dominantSkin(skinMap) {
-    let best = null, bv = -1;
-    for (const sk in skinMap) { const v = value(skinMap[sk]); if (v > bv) { bv = v; best = sk; } }
-    return best;
   }
 
   // A floating "$N" badge that hovers over the live bet heap — a brass POLYMER pill so the player reads the
@@ -486,7 +481,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     this.dyn = new THREE.Group(); scene.add(this.dyn); // dealt cards / chips / markers, rebuilt on key change
     this._betPreview = makeChipTray({}); this._betPreview.visible = false; scene.add(this._betPreview); // live raise-amount preview chips
     this._betPreview.userData.pk = { kind: 'chips', scope: 'bet', ownerName: 'YOU' }; // hoverable: re-pushed to _hoverTargets each _rebuildDyn (an invisible tray is skipped by the raycaster)
-    this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null;
+    this._betPreviewAmt = -1; this._myBetPos = null; this._myBetTilt = 0; this._myStackTray = null; this._myStackSet = null; this._myBetSet = null; this._myStackSkins = null; this._myBetSkins = null;
     this._betLabel = null; // floating "$total" badge over the live bet heap (built/replaced on amount change)
     this._potLabel = null; this._winLabel = null; this._potShown = 0; this._rollTok = {}; // rolling-counter labels (pot total + win amount) + per-label roll token (cancels a superseded in-flight roll)
     this._potLabelPos = new THREE.Vector3(0, 0.013 + 0.12, POT_Z);     // fixed spot above the pot heap
@@ -792,6 +787,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
     this._boardCards = []; this._holeCards = []; this._myHoleCards = []; this._betAnchors = {}; this._hoverTargets = []; // refreshed each rebuild — click/peek/hover targets + bet→pot slide origins
     this._holeAnchors = {}; this._stackAnchors = {}; // per-seat hole-card + stack positions → fold-muck origin + pot-push target
+    // local-seat heap state is re-derived below ONLY if you're seated this hand. Clear it first so a rebuild that
+    // omits your seat (you busted → spectating; v.seats excludes youId) can't leave _updateBetPreview pointing at
+    // the now-disposed stack tray (line above) and rendering a phantom heap at last hand's position.
+    this._myStackTray = null; this._myStackSet = null; this._myBetSet = null; this._myBetPos = null; this._myStackSkins = null; this._myBetSkins = null;
 
     // NEW-HAND deal-in: map each (seat j, card h=pass) → its pitch index in the real two-pass dealing order
     // (clockwise from left-of-button, button last; active seats only). The index sets the per-card stagger.
