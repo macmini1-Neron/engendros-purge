@@ -540,7 +540,7 @@ export class ShilkaStation {
     // driver eye: left-seat driver, head-out at the periscope station looking forward over the glacis.
     // (y1.3/z1.4 buried the camera INSIDE the opaque hull → all-black; y1.7/z2.2 clears it — headless-swept.)
     // driver VIEW (separate from the periscope model): head-out on the +X driver side, clear of the hull.
-    const EYE = this._eye || (this._eye = { x: 0.565, y: 1.6, z: 2.4 }); // dev-tweakable live: s._eye.{x,y,z}
+    const EYE = this._eye || (this._eye = { x: 0.565, y: 0.65, z: 2.4 }); // baked driver view; still dev-tweakable: s._eye.{x,y,z}
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
     const ex = d.x + (EYE.x * cos + EYE.z * sin);
     const ez = d.z + (-EYE.x * sin + EYE.z * cos);
