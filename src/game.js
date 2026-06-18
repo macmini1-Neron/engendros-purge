@@ -395,6 +395,7 @@ class Game {
     this.reset();
     this.ui.hideAll(); this.hud.show(true); this.ui.hint.style.display = 'none';
     this.state = 'playing'; this._startCountdown = 0.6;
+    this.enemies.prewarm(); // pre-pay buildTolo() + boss-FX shader programs now (run-start), not mid-fight
     this.freecam = !!this._flyStart; // ?fly=1 → boot straight into the fly-cam (no enemies until you press N)
     if (this.freecam) this.hud.bigMessage('🚁 FREECAM', 'WASD fly · Space up · Ctrl/C down · Shift boost · N toggle');
     // Go real-fullscreen on this user gesture, then resize, grab the pointer & lock the keyboard.
