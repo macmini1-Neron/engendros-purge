@@ -386,7 +386,11 @@ export class WeaponPreview {
   show(key) {
     if (this.cur === key) return; this.cur = key;
     this._clearHolder();
-    const m = buildViewmodel(WEAPONS[key]); m.material.depthTest = true; m.renderOrder = 0; this.holder.add(m);
+    // buildViewmodel returns a Mesh (procedural) OR a Group (GLB world model) — traverse so depthTest /
+    // renderOrder are set on either; m.material is undefined on a Group (would throw if accessed directly).
+    const m = buildViewmodel(WEAPONS[key]); m.renderOrder = 0;
+    m.traverse((n) => { if (!n.isMesh) return; n.renderOrder = 0; (Array.isArray(n.material) ? n.material : [n.material]).forEach((mt) => { if (mt) mt.depthTest = true; }); });
+    this.holder.add(m);
     const sm = WEAPONS[key].spinMag; if (sm) { const mag = buildMag(sm); mag.material.depthTest = true; mag.renderOrder = 0; mag.position.set(sm.x, sm.y, sm.z); this.holder.add(mag); }
     const box = new THREE.Box3().setFromObject(this.holder);
     const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
