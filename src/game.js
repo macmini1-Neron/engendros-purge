@@ -32,6 +32,8 @@ import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
 import { NightPost } from './nightpost.js';
 import { Mortar } from './mortar.js';
+import { HitchLogger } from './hitch.js';
+import { installStress } from './stress.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
@@ -99,6 +101,8 @@ class Game {
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
+    this.hitch = new HitchLogger(); installStress(this); // dev perf stress harness (GAME.stress) — never auto-runs
+    this._stressName = null;
     this._drawDist = 0; this._showFps = false; this._fpsEl = null; this._culling = false;
     this._nextTagId = 1; // per-run id stamped onto each spawned enemy's e.tag (reset in reset())
     this.weapons = new WeaponSystem(this);
@@ -1019,6 +1023,16 @@ class Game {
     let dt = (t - this._last) / 1000; this._last = t;
     if (!(dt > 0)) dt = 0.0001;
     const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
+    if (this._stressName) { // dev stress harness: sample RAW frame-time (pre-clamp) to catch hitches
+      this.hitch.sample(dt * 1000);
+      this._stressElapsed += dt;
+      if (this._stressElapsed >= this._stressSeconds) {
+        this._hitchReport = this.hitch.report();
+        console.table([this._hitchReport]);
+        console.log('[stress] "' + this._stressName + '" done →', JSON.stringify(this._hitchReport));
+        this._stressName = null;
+      }
+    }
     dt = Math.min(dt, 0.05);
     if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
     if (this.state === 'playing') this._updatePlaying(dt);
