@@ -166,9 +166,18 @@ export class ShilkaStation {
       glass.position.z = D / 2;
       b.add(glass);
       b.position.x = bx;
-      b.rotation.y = -bx * 0.7; // side blocks fan outward
+      b.rotation.y = -bx * 0.7;
+      b.scale.setScalar(0.75); // optic 25% smaller (owner)
       grp.add(b);
     }
+    // green triangular visor/hood (Shilka colour) that joins the optic to the hull — live-tweakable as s._visor
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x5d6b50, metalness: 0.2, roughness: 0.75 });
+    const tri = new THREE.Shape();
+    tri.moveTo(-0.2, 0.12); tri.lineTo(0.2, 0.12); tri.lineTo(0, -0.14); tri.closePath();
+    const visor = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 0.05, bevelEnabled: false }), greenMat);
+    visor.position.set(0, 0.0, -0.1); visor.rotation.x = 0.3;
+    grp.add(visor);
+    this._visor = visor; // tweak live: s._visor.position.set(x,y,z) · .rotation.x · .scale.setScalar(n) · .material.color.set(0x..)
     grp.position.set(0.565, 0.74, 2.4); // driver's periscope optics on the MODEL (placed live by the owner) — a separate thing from the camera/view
     this.vehicleRoot.add(grp);
     this.periscopes = grp;
