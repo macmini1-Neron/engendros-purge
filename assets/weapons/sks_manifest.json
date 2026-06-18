@@ -7,6 +7,6 @@
   "converted_from": "15- Low.Poly.SKS / .obj -> gltf (obj2gltf), mesh-name material surgery -> glb (gltf-pipeline)",
   "notes": [
     "Runtime viewmodel for the 'sks' semi-auto carbine.",
-    "Body uses the real SKS wood+metal texture; the fixed magazine was re-mapped to its own plum/bakelite material by mesh name (the straight single-atlas convert had wrongly painted the magazine with the body texture)."
+    "Body uses the real SKS wood+metal texture. The fixed magazine mesh was given a flat dark gunmetal (#333133, sampled from the body's blued-steel tone) so it matches the receiver metal — not the body wood (straight convert) nor the plum bakelite (first fix), per owner."
   ]
 }
