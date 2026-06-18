@@ -9,6 +9,7 @@ import { icon, WEAPON_ICON, ITEM_ICON, KEY_ICON } from './icons.js';
 import { EFFECTS, EFFECT_TPS } from './effects-status.js';
 import { formatHHMM } from './worldclock.js';
 import { formatUglomer } from './bearing.js';
+import { presetConfig } from './graphics.js';
 
 
 // ---------------------------------------------------------------------------
@@ -290,7 +291,7 @@ export class UI {
 // ---------------------------------------------------------------------------
 // Settings — persisted (localStorage) options, applied live.
 // ---------------------------------------------------------------------------
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1 };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 1, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0 };
 
 export class Settings {
   constructor(game) {
@@ -299,13 +300,20 @@ export class Settings {
     this.returnTo = 'menu';
     this.load(); this._wire(); this.apply();
   }
-  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); } catch (e) {} }
+  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; } catch (e) {} }
   save() { try { localStorage.setItem('engendros_settings', JSON.stringify(this.data)); } catch (e) {} }
   apply() {
     if (this.game.player) { this.game.player.sens = this.data.sens; this.game.player.nick = this.data.nick; }
     this.game.audio.setVolume(this.data.sfx);
     this.game.audio.setMusicVolume(this.data.music);
     this.game.engine.setFov(this.data.fov);
+    const e = this.game.engine;
+    if (e.setShadowQuality) e.setShadowQuality(this.data.shadowQ);
+    if (e.setAdaptive) e.setAdaptive(!!this.data.adaptiveRes);
+    if (e.setRenderScale && !this.data.adaptiveRes) e.setRenderScale(this.data.renderScale); // manual: honor preset scale
+    this.game._drawDist = this.data.drawDist | 0;
+    this.game._showFps = !!this.data.showFps;
+    if (!this.data.showFps) { const f = document.getElementById('fps'); if (f) f.style.display = 'none'; }
     const mpName = document.getElementById('mp-name'); if (mpName && !mpName.value) mpName.value = this.data.nick; // pre-fill the co-op lobby name
     this._refresh();
   }
@@ -320,12 +328,24 @@ export class Settings {
     val('s-fov', this.data.fov);
     val('s-nick', this.data.nick);
     const po = document.getElementById('s-pokerodds'); if (po) { po.textContent = this.data.pokerOdds ? 'ON' : 'OFF'; po.style.color = this.data.pokerOdds ? 'var(--neon, #45e0cf)' : '#888'; }
+    const setTog = (id, on, onTxt, offTxt) => { const el = document.getElementById(id); if (el) { el.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); el.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
+    const gpv = document.getElementById('s-gfx'); if (gpv) gpv.textContent = String(this.data.gfxPreset).toUpperCase();
+    setTog('s-adapt', this.data.adaptiveRes); setTog('s-showfps', this.data.showFps); setTog('s-aa', this.data.aa, 'ON (reload)', 'OFF');
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
     bind('s-sens', 'sens'); bind('s-sfx', 'sfx'); bind('s-music', 'music'); bind('s-fov', 'fov');
     const nickEl = document.getElementById('s-nick'); if (nickEl) nickEl.addEventListener('input', () => { this.data.nick = (nickEl.value || 'Player').slice(0, 14); this.apply(); this.save(); }); // text field, not parseFloat
     const po = document.getElementById('s-pokerodds'); if (po) po.addEventListener('click', () => { this.data.pokerOdds = this.data.pokerOdds ? 0 : 1; this.save(); this._refresh(); }); // poker outs/% helper toggle
+    const presets = ['Low', 'Medium', 'High'];
+    const gp = document.getElementById('s-gfx'); if (gp) gp.addEventListener('click', () => {
+      const i = (presets.indexOf(this.data.gfxPreset) + 1) % presets.length; this.data.gfxPreset = presets[i];
+      const c = presetConfig(this.data.gfxPreset); this.data.shadowQ = c.shadowQ; this.data.drawDist = c.drawDist; this.data.renderScale = c.renderScale; this.data.aa = c.aa;
+      this.apply(); this.save(); this._refresh();
+    });
+    const ar = document.getElementById('s-adapt'); if (ar) ar.addEventListener('click', () => { this.data.adaptiveRes = this.data.adaptiveRes ? 0 : 1; this.apply(); this.save(); this._refresh(); });
+    const sfps = document.getElementById('s-showfps'); if (sfps) sfps.addEventListener('click', () => { this.data.showFps = this.data.showFps ? 0 : 1; this.apply(); this.save(); this._refresh(); });
+    const aaEl = document.getElementById('s-aa'); if (aaEl) aaEl.addEventListener('click', () => { this.data.aa = this.data.aa ? 0 : 1; this.save(); this._refresh(); }); // MSAA applies on reload
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }

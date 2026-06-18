@@ -1024,6 +1024,7 @@
     <div id="bossbar"><div class="bn" id="bossname">BOSS TOLO</div><div class="bb"><div id="bossfill"></div><div id="bosspip"></div></div></div>
     <div id="killfeed"></div>
     <div id="f3debug"></div>
+    <div id="fps" style="position:fixed;top:6px;left:8px;z-index:50;font:600 13px/1.2 monospace;color:#9effa0;text-shadow:0 1px 2px #000;display:none;pointer-events:none;"></div>
     <canvas id="entlabels"></canvas>
     <div id="console">
       <div id="console-log"></div>
@@ -1399,6 +1400,10 @@
         <label class="srow"><span>Music volume</span><input type="range" id="s-music" min="0" max="1" step="0.05"><b id="s-music-v"></b></label>
         <label class="srow"><span>Field of view</span><input type="range" id="s-fov" min="60" max="100" step="1"><b id="s-fov-v"></b></label>
         <div class="srow"><span>Poker odds helper</span><b id="s-pokerodds" style="cursor:pointer">ON</b></div>
+        <div class="srow"><span>Graphics preset</span><b id="s-gfx" style="cursor:pointer">HIGH</b></div>
+        <div class="srow"><span>Adaptive resolution</span><b id="s-adapt" style="cursor:pointer">ON</b></div>
+        <div class="srow"><span>Antialiasing</span><b id="s-aa" style="cursor:pointer">OFF</b></div>
+        <div class="srow"><span>Show FPS</span><b id="s-showfps" style="cursor:pointer">OFF</b></div>
         <label class="srow"><span>Player name</span><input type="text" id="s-nick" maxlength="14" placeholder="Player" style="background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.18); border-radius: 6px; color: #fff; padding: 6px 10px; font: inherit; outline: none;"><b></b></label>
       </div>
       <button class="btn sec" id="s-fullscreen">⛶ TOGGLE FULLSCREEN</button>
@@ -1599,6 +1604,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=294"></script>
+  <script type="module" src="./src/game.js?v=295"></script>
 </body>
 </html>
