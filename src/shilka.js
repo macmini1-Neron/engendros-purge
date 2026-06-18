@@ -150,12 +150,21 @@ export class ShilkaStation {
       const gltf = await loadGltf(SHILKA_ASSET_URL);
       if (!this.vehicleRoot) return;
       const rig = buildShilkaRig(gltf.scene, THREE);
-      // scale the assembled rig to the target length and ground it
+      // scale the assembled rig to the target length
       rig.root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(rig.root);
       const size = new THREE.Vector3(); box.getSize(size);
       const scale = SHILKA_ASSET_TARGET_LENGTH_M / Math.max(0.001, size.x, size.z);
       rig.root.scale.setScalar(scale);
+      // ground it: recenter X/Z and drop the model so its lowest point sits (wheelRadius+rideHeight)
+      // below the rig.root origin. stepDrive then parks vehicleRoot.y at meanGround+wheelRadius+
+      // rideHeight, so the wheels/tracks rest on the terrain. Measured BEFORE the vehicleRoot.add
+      // so the bbox is in rig.root's own (parent-local) frame — the frame rig.root.position lives in.
+      rig.root.updateMatrixWorld(true);
+      const fb = new THREE.Box3().setFromObject(rig.root);
+      const fc = fb.getCenter(new THREE.Vector3());
+      const groundDrop = SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
+      rig.root.position.set(-fc.x, -fb.min.y - groundDrop, -fc.z);
       prepVehicleMeshTree(rig.root);
       this.vehicleRoot.add(rig.root);
       this.vehicleModel = rig.root;
@@ -447,22 +456,16 @@ export class ShilkaStation {
     this._updateDriveHud();
   }
 
-  // world XZ of each road wheel from the current drive pose, then terrain height there
+  // terrain height under each road wheel, read from the ACTUAL rig pivots' world XZ.
+  // Sampling the real pivots (not reconstructed geometry) keeps L[i]/R[i] in lockstep with
+  // rig.wheelsL[i]/rig.wheelsR[i] through the rig's π re-orient — so stepDrive's front
+  // (index 0) is the true front wheel and _applyRig feeds suspension back to the same wheel.
   _sampleWheelGround() {
     if (!this.rig) return null;
-    const T = SHILKA_DRIVE_TUNING;
-    const cos = Math.cos(this.drive.heading), sin = Math.sin(this.drive.heading);
-    const half = T.trackWidth / 2;
-    const z0 = -T.wheelbase / 2, dz = T.wheelbase / 5;
     const L = [], R = [];
     for (let i = 0; i < 6; i++) {
-      const lz = z0 + dz * i;
-      // left wheel local (-X), right wheel local (+X); rotate into world by heading
-      const lx = -half, rx = half;
-      const lwx = this.drive.x + (lx * cos + lz * sin), lwz = this.drive.z + (-lx * sin + lz * cos);
-      const rwx = this.drive.x + (rx * cos + lz * sin), rwz = this.drive.z + (-rx * sin + lz * cos);
-      L.push(this._groundY(lwx, lwz));
-      R.push(this._groundY(rwx, rwz));
+      this.rig.wheelsL[i].getWorldPosition(TMP_ORIGIN); L.push(this._groundY(TMP_ORIGIN.x, TMP_ORIGIN.z));
+      this.rig.wheelsR[i].getWorldPosition(TMP_ORIGIN); R.push(this._groundY(TMP_ORIGIN.x, TMP_ORIGIN.z));
     }
     return { L, R };
   }
@@ -472,7 +475,14 @@ export class ShilkaStation {
     const d = this.drive;
     this.vehicleRoot.position.set(d.x, d.y, d.z);
     this.vehicleRoot.rotation.y = d.heading;
-    rig.body.rotation.set(d.pitch, 0, d.roll);
+    // hull tilt: +pitch raises the model front (-Z) → nose up climbing forward; roll negated
+    // because the rig's π re-orient flips the body-local Z axis the roll is applied about
+    // (so the higher-terrain side of the hull rises). Verified headless on sloped steppe.
+    rig.body.rotation.set(d.pitch, 0, -d.roll);
+    // keep the re-enter anchor + teal ring on the vehicle so it stays mountable after driving off
+    const gy = this._groundY(d.x, d.z);
+    this.base.set(d.x, gy, d.z);
+    if (this.marker) this.marker.position.set(d.x, gy + 0.05, d.z);
     const s = this._rigScale || 1;
     for (let i = 0; i < rig.wheelsL.length; i++) { const w = rig.wheelsL[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetL[i] / s; w.rotation.x = d.wheelSpin; }
     for (let i = 0; i < rig.wheelsR.length; i++) { const w = rig.wheelsR[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetR[i] / s; w.rotation.x = d.wheelSpin; }
@@ -494,12 +504,17 @@ export class ShilkaStation {
     // periscope look: mouse pans a limited cone around the hull's forward axis
     this._lookYaw = clamp((this._lookYaw || 0) + this.game.input.mouseDX * 0.0022, -0.9, 0.9);
     this._lookPitch = clamp((this._lookPitch || 0) - this.game.input.mouseDY * 0.0022, -0.5, 0.6);
+    // tilt the driver view with the terrain (spec §4): fold the hull pitch into the look pitch
+    // (+pitch = nose up = look up, matching the hull) so the horizon climbs going uphill.
+    const camPitch = clamp(this._lookPitch + d.pitch, -1.3, 1.3);
     const fwd = TMP_FWD.set(
-      Math.sin(d.heading + this._lookYaw) * Math.cos(this._lookPitch),
-      Math.sin(this._lookPitch),
-      Math.cos(d.heading + this._lookYaw) * Math.cos(this._lookPitch),
+      Math.sin(d.heading + this._lookYaw) * Math.cos(camPitch),
+      Math.sin(camPitch),
+      Math.cos(d.heading + this._lookYaw) * Math.cos(camPitch),
     );
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
+    // hull roll banks the horizon (sign matches the hull's negated roll)
+    cam.rotation.z = -d.roll;
     this.game.engine.setFov(70);
     const pl = this.game.player;
     pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
