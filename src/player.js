@@ -35,7 +35,11 @@ export class Player {
   }
   reset() {
     this.pos.set(0, 0, 30); this.vel.set(0, 0, 0); this.yaw = Math.PI; this.pitch = 0;
-    if (this.game && this.game.mapId === 'steppe') { this.pos.set(-330, 0, -282); this.yaw = Math.PI; } // spawn in the field strongpoint (home base, far SW), facing in
+    if (this.game && this.game.mapId === 'steppe') {
+      this.pos.set(-330, 0, -282); this.yaw = Math.PI; // spawn in the field strongpoint (home base, far SW), facing in
+      // DEV opt-in (?spawn=shilka): start right by the airfield Shilka so testing doesn't need a long fly from camp
+      try { if (new URLSearchParams(location.search).get('spawn') === 'shilka') { const t = this.game.world && this.game.world.terrain; this.pos.set(-175, t ? t.terrainHeightAt(-175, 408) : 0, 408); this.yaw = Math.PI; } } catch (e) {}
+    }
     else if (this.game && this.game.mapId === 'demo') { // ?map=demo: spawn ON the terrain, near + facing the big hill (60,-40) so it's a short walk up
       const t = this.game.world && this.game.world.terrain;
       const sx = 35, sz = -8;
