@@ -169,7 +169,7 @@ export class ShilkaStation {
       b.rotation.y = -bx * 0.7; // side blocks fan outward
       grp.add(b);
     }
-    grp.position.set(-0.7, 1.28, 1.7); // driver hatch, just forward of the EYE (z 1.4) — tuned live
+    grp.position.set(-0.7, 1.55, 2.6); // on the glacis just forward of the EYE (z 2.2), framing the lower view — tuned live
     this.vehicleRoot.add(grp);
     this.periscopes = grp;
   }
@@ -537,9 +537,9 @@ export class ShilkaStation {
   _frameDriverCamera(dt) {
     const cam = this.game.engine.camera;
     const d = this.drive;
-    // driver eye: front-left of the hull, at hatch/periscope level looking forward; tunable in verification.
-    // y was 2.0 (≈0.9 m ABOVE the deck → looked down onto the hull/barrels); 1.3 sits at the hatch.
-    const EYE = { x: -0.7, y: 1.3, z: 1.4 };
+    // driver eye: left-seat driver, head-out at the periscope station looking forward over the glacis.
+    // (y1.3/z1.4 buried the camera INSIDE the opaque hull → all-black; y1.7/z2.2 clears it — headless-swept.)
+    const EYE = { x: -0.7, y: 1.7, z: 2.2 };
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
     const ex = d.x + (EYE.x * cos + EYE.z * sin);
     const ez = d.z + (-EYE.x * sin + EYE.z * cos);
