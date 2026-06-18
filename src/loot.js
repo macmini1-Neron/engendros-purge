@@ -517,6 +517,7 @@ export class LootManager {
     const flame = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.88, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     flame.position.set(0, 0.34, 0); flame.renderOrder = 998; flareMesh.add(flame);                                          // burning nub at the cap (flare local +Y)
     const flareLH = this.game.engine.acquireFxLight(0xff5a26, 9, 18, 1.3); const flareLight = flareLH.light; // borrowed from the fixed FX pool (no scene.add → no shader recompile); positioned per-frame from the flame's world pos
+    flareLight.position.set(pos.x, fromY, pos.z); // seed the position so it doesn't flash at a stale pool spot for the first frame (refined per-frame below)
     this.drops.push({ id, _net: !!isNet, grp, crate, chute, lines, flareMesh, flame, flameMat: flame.material, flareLight, flareLH, flareLife: 20, flareSmokeT: 0, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
     this.game.hud.toast('📦 Supply drop released!', 0xff8a3a);
   }

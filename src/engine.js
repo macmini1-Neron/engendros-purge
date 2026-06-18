@@ -80,8 +80,9 @@ export class Engine {
     // glows (molotov puddles, signal flares) borrow from this fixed pool instead, so the
     // light count stays constant → shaders compile once at load, never mid-game. Lambert
     // lights are evaluated per-vertex, so a dozen idle (intensity-0) pool lights are cheap.
+    // pool size: realistic concurrent need is FIRE_POOL_MAX molotovs (4) + a few flares (~6) ≈ 10; 12 gives margin
     this._fxLights = []; this._fxIdx = 0; this._fxTok = 0;
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 12; i++) {
       const L = new THREE.PointLight(0xffffff, 0, 10, 2);
       L.position.set(0, -999, 0);
       this.scene.add(L);
