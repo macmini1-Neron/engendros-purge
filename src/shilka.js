@@ -31,6 +31,8 @@ import {
   tryShilkaAngleLock,
   updateShilkaTrack,
 } from './shilka-mechanics.js';
+import { buildShilkaRig } from './shilka-rig.js';
+import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING } from './shilka-drive.js';
 import { formatUglomer } from './bearing.js';
 import { clamp, damp, TAU } from './util.js';
 
@@ -70,27 +72,6 @@ function prepVehicleMeshTree(root) {
   });
 }
 
-function fitShilkaAsset(assetScene) {
-  const assetRoot = new THREE.Group();
-  assetRoot.name = 'fitted Shilka GLB';
-  assetScene.rotation.set(-Math.PI / 2, 0, 0); // Sketchfab export is Z-up; runtime world is Y-up.
-  assetRoot.add(assetScene);
-  assetRoot.updateMatrixWorld(true);
-
-  const box = new THREE.Box3().setFromObject(assetRoot);
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const rawLength = Math.max(0.001, size.x, size.z);
-  const scale = SHILKA_ASSET_TARGET_LENGTH_M / rawLength;
-  assetRoot.scale.setScalar(scale);
-  assetRoot.updateMatrixWorld(true);
-
-  const fitted = new THREE.Box3().setFromObject(assetRoot);
-  const center = new THREE.Vector3();
-  fitted.getCenter(center);
-  assetRoot.position.add(new THREE.Vector3(-center.x, -fitted.min.y, -center.z));
-  return assetRoot;
-}
 
 export class ShilkaStation {
   constructor(game, pos, yaw = 0, opts = {}) {
@@ -99,6 +80,9 @@ export class ShilkaStation {
     this.base = pos.clone();
     this.baseYaw = yaw;
     this.state = createShilkaState({ rangeGateM: 1200 });
+    this.driveMode = false;
+    this.drive = createDriveState({ x: this.base.x, z: this.base.z, heading: this.baseYaw });
+    this.rig = null; // set when the GLB finishes loading (see _loadVehicleAsset)
     this.aimAzMils = 0;
     this.aimElDeg = 8;
     this.drones = [
@@ -164,13 +148,20 @@ export class ShilkaStation {
     try {
       const gltf = await loadGltf(SHILKA_ASSET_URL);
       if (!this.vehicleRoot) return;
-      const root = fitShilkaAsset(gltf.scene);
-      root.name = `${this.id} GLB vehicle`;
-      prepVehicleMeshTree(root);
-      this.vehicleRoot.add(root);
-      this.vehicleModel = root;
+      const rig = buildShilkaRig(gltf.scene, THREE);
+      // scale the assembled rig to the target length and ground it
+      rig.root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(rig.root);
+      const size = new THREE.Vector3(); box.getSize(size);
+      const scale = SHILKA_ASSET_TARGET_LENGTH_M / Math.max(0.001, size.x, size.z);
+      rig.root.scale.setScalar(scale);
+      prepVehicleMeshTree(rig.root);
+      this.vehicleRoot.add(rig.root);
+      this.vehicleModel = rig.root;
+      this.rig = rig;
+      this._rigScale = scale;
     } catch (e) {
-      console.warn('[shilka] Failed to load GLB vehicle; station marker remains without a vehicle mesh.', e);
+      console.warn('[shilka] Failed to load/rig GLB vehicle; station marker remains.', e);
     }
   }
 
@@ -185,17 +176,21 @@ export class ShilkaStation {
   mount() {
     const pl = this.game.player;
     pl.shilka = this;
+    this.driveMode = true;
     this.game.weapons.group.visible = false;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0';
-    this._showPanel(true);
-    this._setCursorMode(true);
-    this._frameCamera(0.001);
-    this._updatePanel();
+    // sync drive state to where the vehicle physically sits
+    this.drive.x = this.base.x; this.drive.z = this.base.z; this.drive.heading = this.baseYaw;
+    this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = true; this.drive.stalled = false;
+    this._showDriveHud(true);
+    if (!this.game.input.locked) this.game.input.requestLock();
+    this._frameDriverCamera(0.001);
   }
 
   dismount() {
     const pl = this.game.player;
     if (pl.shilka !== this) return;
+    this.driveMode = false; this._showDriveHud(false);
     pl.shilka = null;
     this.game.weapons.group.visible = true;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '';
@@ -230,6 +225,8 @@ export class ShilkaStation {
   }
 
   controlUpdate(dt) {
+    if (this.driveMode) { this._driveControlUpdate(dt); return; }
+    // --- v1 fire-control (dormant this slice; re-wired in the commander/scope layer) ---
     const input = this.game.input;
     this._wirePanelOnce();
     this._targetT += dt;
@@ -420,6 +417,102 @@ export class ShilkaStation {
     pl.vel.set(0, 0, 0);
     pl.yaw = damp(pl.yaw, yaw + Math.PI, 12, dt);
     pl.pitch = damp(pl.pitch, -0.08, 12, dt);
+  }
+
+  _driveControlUpdate(dt) {
+    const input = this.game.input;
+    const T = SHILKA_DRIVE_TUNING;
+    // gear selection (mode-gated; clash-free with commander digits in a later slice)
+    let gearReq = null;
+    if (input.wasPressed('Digit1')) gearReq = '1';
+    else if (input.wasPressed('Digit2')) gearReq = '2';
+    else if (input.wasPressed('Digit3')) gearReq = '3';
+    else if (input.wasPressed('Digit4')) gearReq = '4';
+    else if (input.wasPressed('Digit5')) gearReq = '5';
+    else if (input.wasPressed('KeyR')) gearReq = 'R';
+    else if (input.wasPressed('Backquote') || input.wasPressed('Digit0')) gearReq = 'N';
+    const inp = {
+      throttle: input.isDown('KeyW') ? 1 : 0,
+      brake: input.isDown('KeyS') ? 1 : 0,
+      steer: (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0),
+      clutch: (input.isDown('Space')) ? 0 : 1, // Space pressed = clutch in (disengaged)
+      gearReq,
+      starter: input.isDown('Enter'),
+    };
+    const ground = this._sampleWheelGround();
+    this.drive = stepDrive(this.drive, dt, inp, ground);
+    this._applyRig();
+    this._frameDriverCamera(dt);
+    this._updateDriveHud();
+  }
+
+  // world XZ of each road wheel from the current drive pose, then terrain height there
+  _sampleWheelGround() {
+    if (!this.rig) return null;
+    const T = SHILKA_DRIVE_TUNING;
+    const cos = Math.cos(this.drive.heading), sin = Math.sin(this.drive.heading);
+    const half = T.trackWidth / 2;
+    const z0 = -T.wheelbase / 2, dz = T.wheelbase / 5;
+    const L = [], R = [];
+    for (let i = 0; i < 6; i++) {
+      const lz = z0 + dz * i;
+      // left wheel local (-X), right wheel local (+X); rotate into world by heading
+      const lx = -half, rx = half;
+      const lwx = this.drive.x + (lx * cos + lz * sin), lwz = this.drive.z + (-lx * sin + lz * cos);
+      const rwx = this.drive.x + (rx * cos + lz * sin), rwz = this.drive.z + (-rx * sin + lz * cos);
+      L.push(this._groundY(lwx, lwz));
+      R.push(this._groundY(rwx, rwz));
+    }
+    return { L, R };
+  }
+
+  _applyRig() {
+    const rig = this.rig; if (!rig) return;
+    const d = this.drive;
+    this.vehicleRoot.position.set(d.x, d.y, d.z);
+    this.vehicleRoot.rotation.y = d.heading;
+    rig.body.rotation.set(d.pitch, 0, d.roll);
+    const s = this._rigScale || 1;
+    for (let i = 0; i < rig.wheelsL.length; i++) { const w = rig.wheelsL[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetL[i] / s; w.rotation.x = d.wheelSpin; }
+    for (let i = 0; i < rig.wheelsR.length; i++) { const w = rig.wheelsR[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetR[i] / s; w.rotation.x = d.wheelSpin; }
+    for (const sp of rig.sprockets) sp.rotation.x = d.wheelSpin;
+    const sway = clamp(-d.yawRate * 0.25 + (d.speed * 0.0), -0.25, 0.25);
+    for (const a of rig.antennas) a.rotation.z = damp(a.rotation.z || 0, sway, 8, 1 / 60);
+  }
+
+  _frameDriverCamera(dt) {
+    const cam = this.game.engine.camera;
+    const d = this.drive;
+    // driver eye: front-left of the hull, low; tunable in verification
+    const EYE = { x: 0.7, y: 2.0, z: 1.7 };
+    const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
+    const ex = d.x + (EYE.x * cos + EYE.z * sin);
+    const ez = d.z + (-EYE.x * sin + EYE.z * cos);
+    cam.position.set(ex, d.y + EYE.y, ez);
+    cam.rotation.order = 'YXZ';
+    // periscope look: mouse pans a limited cone around the hull's forward axis
+    this._lookYaw = clamp((this._lookYaw || 0) + this.game.input.mouseDX * 0.0022, -0.9, 0.9);
+    this._lookPitch = clamp((this._lookPitch || 0) - this.game.input.mouseDY * 0.0022, -0.5, 0.6);
+    const fwd = new THREE.Vector3(
+      Math.sin(d.heading + this._lookYaw) * Math.cos(this._lookPitch),
+      Math.sin(this._lookPitch),
+      Math.cos(d.heading + this._lookYaw) * Math.cos(this._lookPitch),
+    );
+    cam.lookAt(TMP_END.copy(cam.position).add(fwd));
+    this.game.engine.setFov(70);
+    const pl = this.game.player;
+    pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
+  }
+
+  _showDriveHud(on) { const el = document.getElementById('shilka-drive-hud'); if (el) el.classList.toggle('show', !!on); }
+  _updateDriveHud() {
+    const el = document.getElementById('shilka-drive-hud'); if (!el) return;
+    const d = this.drive;
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('shilka-dh-gear', d.gear);
+    set('shilka-dh-speed', `${Math.round(Math.abs(d.speed) * 3.6)} km/h`);
+    set('shilka-dh-rpm', d.engineOn ? `${Math.round(d.engineRpm)} rpm` : 'STALL');
+    el.classList.toggle('stall', !d.engineOn);
   }
 
   _showPanel(on) {

@@ -1183,7 +1183,7 @@ class Game {
     } else if (this.nearestMortar()) {
       this.hud.setInteract(`Press <b>E</b> to man the 82-PM-37 mortar — ${this.nearestMortar().ammo} rounds · indirect fire`);
     } else if (_nearShilka) {
-      this.hud.setInteract('Press <b>E</b> to enter ZSU-23-4 Shilka — radar fire-control trainer');
+      this.hud.setInteract('Press <b>E</b> to drive the ЗСУ-23-4 «Shilka»');
     } else if (this.inventory.isHoldingFiftyCan() && _reloadGun) {
       // holding the ammo can at the gun: refill, never mount (switch to a weapon to man it)
       this.hud.setInteract(_reloadGun.ammo >= _reloadGun.maxAmmo
