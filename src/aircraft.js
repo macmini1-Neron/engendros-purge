@@ -3,7 +3,7 @@ import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { buildSu24 } from './props.js';
 
 const IL76_ASSET_URL = './assets/aircraft/low_poly_il-76.glb';
-const IL76_TARGET_LENGTH = 36;
+const IL76_TARGET_LENGTH = 46.6; // 1:1 — real Il-76 fuselage is 46.59 m and the game runs ~1 unit ≈ 1 m
 const IL76_HIDDEN_GEAR = new Set(['bone4_77', 'bone18_76', 'bone19_84', 'bone20_97', 'bone21_110']);
 
 let _gltfLoader = null;
@@ -77,13 +77,17 @@ export function buildIl76AirdropModel() {
   root.name = 'IL-76 airdrop aircraft';
   prepAircraftTree(root);
   fitIl76(root);
-  // Measured from the GLB nacelle tail edges after fitting the 46.6 m IL-76
-  // to 36 in-game units; smoke now starts at the four actual engine exits.
+  // Engine exhausts, in the plane's ROOT-LOCAL frame (the space _updatePlane feeds
+  // through mesh.localToWorld). Solved via worldToLocal from each D-30 nacelle's
+  // measured rear-face world position on the fitted 1:1 model, nudged 0.35 behind the
+  // nozzle so the puff trails. Order: outer-L, inner-L, inner-R, outer-R.
+  // (The earlier values were raw world coords stored where LOCAL was expected, so
+  // localToWorld re-scaled them ~3.3× → contrails spawned far below/outside the jet.)
   root.userData.contrailPorts = [
-    new THREE.Vector3(-8.46, -2.79, 1.2),
-    new THREE.Vector3(-4.49, -2.63, 0.4),
-    new THREE.Vector3(4.49, -2.63, 0.4),
-    new THREE.Vector3(8.46, -2.79, 1.2),
+    new THREE.Vector3(-3.30, 1.26, 2.39),
+    new THREE.Vector3(-1.75, 1.33, 2.07),
+    new THREE.Vector3(1.75, 1.33, 2.07),
+    new THREE.Vector3(3.30, 1.26, 2.39),
   ];
   root.userData.contrailPuff = { size: 1.55, life: 4.0, color: 0xf0f4f7 };
   return root;
