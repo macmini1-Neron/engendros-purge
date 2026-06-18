@@ -539,7 +539,7 @@ export class ShilkaStation {
     const d = this.drive;
     // driver eye: left-seat driver, head-out at the periscope station looking forward over the glacis.
     // (y1.3/z1.4 buried the camera INSIDE the opaque hull → all-black; y1.7/z2.2 clears it — headless-swept.)
-    const EYE = { x: -0.7, y: 1.7, z: 2.2 };
+    const EYE = this._eye || (this._eye = { x: -0.7, y: 1.7, z: 2.2 }); // dev-tweakable live: s._eye.{x,y,z}
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
     const ex = d.x + (EYE.x * cos + EYE.z * sin);
     const ez = d.z + (-EYE.x * sin + EYE.z * cos);
@@ -563,6 +563,14 @@ export class ShilkaStation {
     this.game.engine.setFov(70);
     const pl = this.game.player;
     pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
+  }
+
+  // DEV: while mounted, nudge s._eye.{x,y,z} and s.periscopes.position.set(x,y,z) in the console
+  // (camera + blocks update live each frame), then call this to print values to bake into the code.
+  dumpDriverPlacement() {
+    const p = this.periscopes ? this.periscopes.position.toArray().map((n) => +n.toFixed(2)) : null;
+    console.log('[shilka] EYE', JSON.stringify(this._eye), '· PERISCOPES', JSON.stringify(p));
+    return { eye: this._eye, periscopes: p };
   }
 
   _showDriveHud(on) { const el = document.getElementById('shilka-drive-hud'); if (el) el.classList.toggle('show', !!on); }
