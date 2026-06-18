@@ -190,7 +190,10 @@ export const ENEMY_TYPES = {
 class Enemy {
   constructor(geo, geoKey) {
     this.mesh = new THREE.Mesh(geo, voxelMaterial());
-    this.mesh.castShadow = true;
+    // Tolo's ~8,400-tri mesh is by far the heaviest shadow-caster — it's re-rendered into the
+    // shadow map EVERY frame. Skip casting for the boss (it's dramatic enough without a ground
+    // shadow); keep the small mobs' shadows. Big, safe win against the boss-fight stutter.
+    this.mesh.castShadow = (geoKey !== 'boss');
     this.geoKey = geoKey;
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
@@ -453,9 +456,32 @@ export class EnemyManager {
 
   // Belly bullseye = the laser emitter AND the only weak spot. Phases gate by HP:
   //   1 (>66%) blaster burst · 2 (33–66%) sweep · 3 (<33%) double sweep + fire (sweep/fire land in later steps).
+  _ensureBossBlob() {
+    if (this._bossBlob) return this._bossBlob;
+    // soft radial dark→transparent disc, generated once (cheap "blob" shadow)
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const g2 = cv.getContext('2d');
+    const grd = g2.createRadialGradient(32, 32, 2, 32, 32, 31);
+    grd.addColorStop(0, 'rgba(0,0,0,0.55)'); grd.addColorStop(0.55, 'rgba(0,0,0,0.34)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g2.fillStyle = grd; g2.fillRect(0, 0, 64, 64);
+    const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
+    blob.rotation.x = -Math.PI / 2; blob.renderOrder = 1; blob.visible = false;
+    this.game.engine.scene.add(blob);
+    return (this._bossBlob = blob);
+  }
+
   _bossTolo(e, dt) {
     const pp = this._tgt(e);
     this.game.hud.setBoss(e.hp / e.maxHp, e.name);
+
+    // primitive "blob" ground shadow — a soft dark disc that tracks Tolo on the ground. Costs ~one
+    // textured quad (no shadow-map render), so it grounds the boss while keeping the perf win of
+    // NOT casting his ~8.4k-tri mesh into the real shadow map every frame.
+    const blob = this._ensureBossBlob();
+    const gy = this.game.world.groundY ? this.game.world.groundY(e.pos.x, e.pos.z) : 0;
+    blob.visible = true; blob.position.set(e.pos.x, gy + 0.04, e.pos.z);
+    const bs = (e.radius || e.scale || 2.85) * 3.0; blob.scale.set(bs, bs, 1);
 
     // belly-bullseye glow telegraphs the charge (lazy child of the boss mesh, the laser emitter)
     if (!e._tolGlow) {
@@ -535,7 +561,8 @@ export class EnemyManager {
   _spawnBolt(e, dir) {
     const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
     if (!this._boltGeo) this._boltGeo = new THREE.BoxGeometry(0.18, 0.18, 1.6);
-    const m = new THREE.Mesh(this._boltGeo, new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }));
+    if (!this._boltMat) this._boltMat = new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }); // shared across all bolts — no per-bolt material alloc/dispose (GC churn)
+    const m = new THREE.Mesh(this._boltGeo, this._boltMat);
     m.renderOrder = 998; m.position.copy(belly); m.lookAt(belly.clone().add(dir));
     this.game.engine.scene.add(m);
     this.bossBolts.push({ mesh: m, dir: dir.clone(), spd: 55, life: 70 / 55, dmg: e.def.dmg }); // range = 50% of the 140-wide arena
@@ -562,7 +589,7 @@ export class EnemyManager {
       }
       if (!dead && b.life <= 0) dead = true;
       if (!dead) { const hid = this._playerHitByPoint(m, 1.1); if (hid) { this.game._hurtTarget(hid, b.dmg); dead = true; } }
-      if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); b.mesh.material.dispose(); this.bossBolts.splice(i, 1); }
+      if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.splice(i, 1); } // material is shared (this._boltMat) → never dispose per-bolt
     }
   }
 
@@ -634,11 +661,12 @@ export class EnemyManager {
     e.sweepT += dt; e.sweepHitCD -= dt;
     const frac = clamp(e.sweepT / e.sweepDur, 0, 1);
     const ang = e.sweepFrom + (e.sweepTo - e.sweepFrom) * frac;
-    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
-    const dir = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
+    // reuse scratch vectors — this runs every frame for the whole ~3s sweep; fresh Vector3s here were GC churn
+    const belly = (this._swBelly || (this._swBelly = new THREE.Vector3())).set(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
+    const dir = (this._swDir || (this._swDir = new THREE.Vector3())).set(Math.sin(ang), 0, Math.cos(ang));
     let len = e.sweepLen;
     { const wh = this.game.world.rayHit(belly, dir, len); if (wh) len = Math.max(2, belly.distanceTo(wh.point) - 0.2); } // all phases stop at walls — cover always works
-    const end = belly.clone().addScaledVector(dir, len);
+    const end = (this._swEnd || (this._swEnd = new THREE.Vector3())).copy(belly).addScaledVector(dir, len);
     const thick = e.phase === 3 ? 0.9 : 0.55;
     e._beam.position.copy(belly).add(end).multiplyScalar(0.5);
     e._beam.scale.set(thick, thick, len); e._beam.lookAt(end);
@@ -823,6 +851,7 @@ export class EnemyManager {
       }
       if (e.def.boss || e.isElite) this.game.hud.hideBoss();
       if (e.def.boss && e._beam) e._beam.visible = false;
+      if (e.def.boss && this._bossBlob) this._bossBlob.visible = false; // hide the blob shadow on boss death
       this.game.onEnemyKilled(e, attacker);
       if (_mp && _mp.active && _mp.isHost) _mp.onEnemyDie(e, attacker);
       return true;
@@ -840,7 +869,7 @@ export class EnemyManager {
       if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center);
     }
   }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; if (this._bossBlob) this._bossBlob.visible = false; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
