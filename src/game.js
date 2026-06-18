@@ -69,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-18 09:44';
+const GAME_BUILD = '2026-06-18 09:48';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -1188,10 +1188,12 @@ class Game {
   }
 
   // Re-show every dynamic mesh the cull may have hidden. Called once when `_drawDist` drops back to 0 so the
-  // feature is safe to toggle (DayNight re-expands fog.far on its own each frame; chunk drawDistance is left).
+  // feature is safe to toggle (DayNight re-expands fog.far on its own each frame; chunk drawDistance is reset
+  // to 0 below so TerrainChunks.update re-shows chunks by frustum-only from the next frame).
   _restoreVisibility() {
     if (this.enemies && this.enemies.active) for (const e of this.enemies.active) { if (e.mesh) e.mesh.visible = !!e.alive; }
     if (this.loot && this.loot.pickups) for (const pu of this.loot.pickups) { if (pu.mesh) pu.mesh.visible = true; }
+    if (this.world && this.world.chunks) this.world.chunks.drawDistance = 0; // clear cull radius (TerrainChunks.update re-shows next frame)
   }
 }
 
