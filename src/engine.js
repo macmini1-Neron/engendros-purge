@@ -3,6 +3,10 @@
 import * as THREE from 'three';
 import { clamp } from './util.js';
 import { adaptiveStep } from './graphics.js';
+import { EffectComposer } from '../vendor/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from '../vendor/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from '../vendor/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from '../vendor/jsm/postprocessing/OutputPass.js';
 
 // The held weapon (viewmodel) renders in a SECOND pass on its own layer with a
 // freshly-cleared depth buffer: always drawn on top of the world, yet it still
@@ -23,6 +27,11 @@ export class Engine {
     this._renderScale = 1;                                   // graphics-quality render scale (×DPR)
     this._baseDpr = Math.min(window.devicePixelRatio || 1, 2);
     this._adaptive = false;                                  // adaptive resolution on/off
+    // Bloom post-processing — lazily built on first enable (setBloom). World-only:
+    // the world pass goes through the composer, the viewmodel is forward-drawn on top.
+    this._bloomOn = false; this._composer = null; this._bloomPass = null;
+    this._dbSize = new THREE.Vector2();                      // scratch for the drawing-buffer size
+    this._bloomParams = { strength: 0.6, radius: 0.4, threshold: 0.82 };
     this.renderer.setClearColor(0x9fd3e8, 1);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.autoUpdate = false; // we refresh shadows ourselves (every other frame in render()) — re-rendering the 2048² shadow map EVERY frame is wasted work; 1-frame-stale shadows are imperceptible and it ~halves the shadow pass
@@ -160,6 +169,7 @@ export class Engine {
     this.renderer.setSize(w, h, false);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
+    this._syncComposerSize(); // after setSize → composer targets follow the new drawing buffer
   }
 
   setFov(fov) {
@@ -167,8 +177,40 @@ export class Engine {
     this.camera.updateProjectionMatrix();
   }
 
+  setExposure(v) { this.renderer.toneMappingExposure = clamp(v, 0.4, 2.0); }
+
+  // Bloom on/off. Builds the composer once on first enable (cheap to keep idle once built).
+  setBloom(on) {
+    on = !!on;
+    if (on && !this._composer) this._buildComposer();
+    this._bloomOn = on;
+  }
+  _buildComposer() {
+    this.renderer.getDrawingBufferSize(this._dbSize);
+    // Match the world pass's MSAA to the AA setting (canvas-level MSAA doesn't reach a render target).
+    let samples = 0;
+    try { samples = JSON.parse(localStorage.getItem('engendros_settings') || '{}').aa === 1 ? 4 : 0; } catch (e) {}
+    // HDR target so values >1 survive into the bloom threshold; depth buffer for the 3D world pass.
+    const rt = new THREE.WebGLRenderTarget(this._dbSize.x, this._dbSize.y, { type: THREE.HalfFloatType, samples });
+    this._composer = new EffectComposer(this.renderer, rt);
+    this._composer.setPixelRatio(1); // we drive size from the real drawing buffer ourselves
+    const p = this._bloomParams;
+    this._bloomPass = new UnrealBloomPass(this._dbSize.clone(), p.strength, p.radius, p.threshold);
+    this._composer.addPass(new RenderPass(this.scene, this.camera));
+    this._composer.addPass(this._bloomPass);
+    this._composer.addPass(new OutputPass()); // re-applies renderer.toneMapping + sRGB → tone matches the direct path
+    this._syncComposerSize();
+  }
+  // Keep the composer's internal targets the size of the real drawing buffer (DPR × renderScale).
+  _syncComposerSize() {
+    if (!this._composer) return;
+    this.renderer.getDrawingBufferSize(this._dbSize);
+    this._composer.setSize(this._dbSize.x, this._dbSize.y);
+  }
+
   _applyPixelRatio() {
     this.renderer.setPixelRatio(this._baseDpr * this._renderScale);
+    this._syncComposerSize(); // adaptive-resolution path: pixelRatio changed → resize composer in lockstep
   }
   setRenderScale(scale) {
     this._renderScale = Math.max(0.5, Math.min(1, scale));
@@ -224,15 +266,29 @@ export class Engine {
     // that builds it. Halves the shadow-pass cost; moving casters' shadows lag at most one frame.
     this._shadowTick = (this._shadowTick || 0) + 1;
     r.shadowMap.needsUpdate = (this._shadowTick % 2) === 0;
-    r.clear();                          // autoClear is off → clear colour+depth ourselves
-    cam.layers.set(0);                  // pass 1 — the world (default layer)
-    r.render(sc, cam);
-    r.clearDepth();                     // wipe ONLY depth so the weapon can never lose a depth test to the world…
-    const bg = sc.background; sc.background = null; // …and don't repaint the sky over the world in pass 2
-    cam.layers.set(WEAPON_LAYER);       // pass 2 — the viewmodel, self-occluding (its materials keep depthTest on)
-    r.render(sc, cam);
-    sc.background = bg;
-    cam.layers.set(0);                  // restore the default layer (raycasts / game logic expect it)
+    if (this._bloomOn && this._composer) {
+      // Pass 1 (world, layer 0) runs through the bloom composer to the screen; the viewmodel
+      // is then forward-rendered on top with a fresh depth buffer (same depth trick as below).
+      cam.layers.set(0);
+      this._composer.render();          // world → UnrealBloom → OutputPass(tonemap+sRGB) → screen
+      r.setRenderTarget(null);
+      r.clearDepth();                   // wipe ONLY depth so the weapon can't lose a depth test to the world…
+      const bg = sc.background; sc.background = null; // …and don't repaint the sky over the composited frame
+      cam.layers.set(WEAPON_LAYER);     // pass 2 — the viewmodel, self-occluding (depthTest stays on)
+      r.render(sc, cam);
+      sc.background = bg;
+      cam.layers.set(0);                // restore the default layer (raycasts / game logic expect it)
+    } else {
+      r.clear();                          // autoClear is off → clear colour+depth ourselves
+      cam.layers.set(0);                  // pass 1 — the world (default layer)
+      r.render(sc, cam);
+      r.clearDepth();                     // wipe ONLY depth so the weapon can never lose a depth test to the world…
+      const bg = sc.background; sc.background = null; // …and don't repaint the sky over the world in pass 2
+      cam.layers.set(WEAPON_LAYER);       // pass 2 — the viewmodel, self-occluding (its materials keep depthTest on)
+      r.render(sc, cam);
+      sc.background = bg;
+      cam.layers.set(0);                  // restore the default layer (raycasts / game logic expect it)
+    }
   }
 
   dispose() {

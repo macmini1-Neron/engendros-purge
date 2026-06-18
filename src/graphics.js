@@ -1,11 +1,12 @@
 // Pure graphics-quality config + adaptive-resolution controller. NO THREE → node-testable.
 // renderScale multiplies the device pixel ratio (0.5 = quarter the pixels, sharpness↓ not textures↓);
 // shadowQ is the directional shadow-map size (0 = shadows off); drawDist in metres (0 = unlimited);
-// aa = MSAA on/off (applied at renderer construction, i.e. on reload).
+// aa = MSAA on/off (applied at renderer construction, i.e. on reload);
+// bloom = post-processing glow on/off (live, no reload).
 export const GFX_PRESETS = {
-  Low:    { renderScale: 0.6, shadowQ: 0,    drawDist: 220, aa: 0 },
-  Medium: { renderScale: 0.85, shadowQ: 1024, drawDist: 0,   aa: 0 },
-  High:   { renderScale: 1.0, shadowQ: 2048, drawDist: 0,   aa: 1 },
+  Low:    { renderScale: 0.6, shadowQ: 0,    drawDist: 220, aa: 0, bloom: 0 },
+  Medium: { renderScale: 0.85, shadowQ: 1024, drawDist: 0,   aa: 0, bloom: 1 },
+  High:   { renderScale: 1.0, shadowQ: 2048, drawDist: 0,   aa: 1, bloom: 1 },
 };
 
 export function presetConfig(name) {
