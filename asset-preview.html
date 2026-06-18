@@ -24,12 +24,20 @@
       border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; }
     #backToGame:hover { color: var(--txt); border-color: var(--acc); }
     #list { overflow-y: auto; flex: 1; padding: 6px; }
-    .ap-item { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
-      padding: 8px 12px; border-radius: 6px; cursor: pointer; color: var(--txt); }
+    .ap-item { display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 6px; cursor: pointer; color: var(--txt); }
     .ap-item:hover { background: #232833; }
     .ap-item.sel { background: #2e2616; outline: 1px solid var(--acc); }
-    .ap-name { font-size: 13px; }
+    .ap-item.pinned { background: #2a2414; }
+    .ap-item.pinned.sel { background: #3a2e16; }
+    .ap-name { flex: 1; font-size: 13px; }
     .ap-cls { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+    .ap-pin { background: none; border: 0; padding: 0; cursor: pointer; font-size: 12px; line-height: 1;
+      filter: grayscale(1); opacity: .3; transition: opacity .12s, filter .12s; }
+    .ap-item:hover .ap-pin { opacity: .6; }
+    .ap-item.pinned .ap-pin { filter: none; opacity: 1; }
+    .ap-divider { font-size: 9px; letter-spacing: .1em; color: var(--dim); opacity: .65;
+      text-transform: uppercase; padding: 8px 12px 4px; }
 
     /* main stage */
     #main { flex: 1; position: relative; }
@@ -84,6 +92,6 @@
       <div id="hint">drag = orbit · shift/right-drag = pan · wheel = zoom</div>
     </div>
   </div>
-  <script type="module" src="./src/assetpreview.js?v=1"></script>
+  <script type="module" src="./src/assetpreview.js?v=2"></script>
 </body>
 </html>

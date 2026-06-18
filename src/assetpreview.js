@@ -85,6 +85,7 @@ export class AssetPreview {
     this.orbit = new OrbitCam(this.camera, canvas);
     this.holder = new THREE.Group(); this.scene.add(this.holder);
     this.spin = true; this.spinT = 0; this.cur = null; this.radius = 1; this.entries = [];
+    this.pinned = this._loadPins();          // weapon keys the user flagged "to redo" — sorted to the top, persisted
     this._registerWeapons();
     this._buildList();
     this._resize(); window.addEventListener('resize', () => this._resize());
@@ -108,17 +109,33 @@ export class AssetPreview {
       });
     }
   }
+  // Pins ("to redo" flags) persist in localStorage and sort to the top of the list.
+  _loadPins() { try { return new Set(JSON.parse(localStorage.getItem('assetpreview_pinned') || '[]')); } catch (_) { return new Set(); } }
+  _savePins() { try { localStorage.setItem('assetpreview_pinned', JSON.stringify([...this.pinned])); } catch (_) {} }
+  togglePin(key) { if (this.pinned.has(key)) this.pinned.delete(key); else this.pinned.add(key); this._savePins(); this._buildList(); }
   _buildList() {
     this.listEl.innerHTML = '';
-    for (const e of this.entries) {
+    const pinned = this.entries.filter((e) => this.pinned.has(e.key));
+    const rest = this.entries.filter((e) => !this.pinned.has(e.key));
+    [...pinned, ...rest].forEach((e, i) => {
+      if (pinned.length && i === pinned.length) {            // divider between the pinned group and the rest
+        const d = document.createElement('div'); d.className = 'ap-divider'; d.textContent = '↑ to redo · all assets ↓';
+        this.listEl.appendChild(d);
+      }
+      const isPinned = this.pinned.has(e.key);
       const li = document.createElement('div');
-      li.className = 'ap-item'; li.dataset.key = e.key;
-      li.innerHTML = `<span class="ap-name"></span><span class="ap-cls"></span>`;
-      li.querySelector('.ap-name').textContent = e.name;
-      li.querySelector('.ap-cls').textContent = e.cls;
+      li.className = 'ap-item' + (isPinned ? ' pinned' : '') + (e.key === this.cur ? ' sel' : '');
+      li.dataset.key = e.key;
+      const pin = document.createElement('button');
+      pin.className = 'ap-pin'; pin.textContent = '📌';
+      pin.title = isPinned ? 'Unpin' : 'Pin — mark to redo';
+      pin.addEventListener('click', (ev) => { ev.stopPropagation(); this.togglePin(e.key); });
+      const name = document.createElement('span'); name.className = 'ap-name'; name.textContent = e.name;
+      const cls = document.createElement('span'); cls.className = 'ap-cls'; cls.textContent = e.cls;
+      li.append(pin, name, cls);
       li.addEventListener('click', () => this.select(e.key));
       this.listEl.appendChild(li);
-    }
+    });
   }
   select(key) {
     const e = this.entries.find((x) => x.key === key); if (!e) return;
