@@ -574,7 +574,7 @@ export class ShilkaStation {
     return { eye: this._eye, periscopes: p };
   }
 
-  _showDriveHud(on) { const el = document.getElementById('shilka-drive-hud'); if (el) el.classList.toggle('show', !!on); }
+  _showDriveHud(on) { const el = document.getElementById('shilka-drive-hud'); if (el) el.classList.toggle('show', !!on); const pm = document.getElementById('shilka-periscope-mask'); if (pm) pm.classList.toggle('show', !!on); }
   _updateDriveHud() {
     const el = document.getElementById('shilka-drive-hud'); if (!el) return;
     const d = this.drive;
