@@ -143,6 +143,35 @@ export class ShilkaStation {
       scene.add(g);
       d.mesh = g;
     }
+    this._buildDriverPeriscopes();
+  }
+
+  // First-pass driver periscopes: 3 vision blocks (metal frame + tinted glass) on the driver's
+  // raised hatch, in vehicleRoot-local space (x=right, y=up, z=forward — the same frame as the
+  // driver EYE). The camera sits just behind the centre block so the buttoned-up view is framed.
+  _buildDriverPeriscopes() {
+    const grp = new THREE.Group();
+    grp.name = `${this.id} driver periscopes`;
+    const metal = new THREE.MeshStandardMaterial({ color: 0x232a20, metalness: 0.45, roughness: 0.65 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, metalness: 0.1, roughness: 0.08, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
+    const W = 0.30, H = 0.18, D = 0.13, T = 0.035;
+    for (const bx of [-0.32, 0, 0.32]) {
+      const b = new THREE.Group();
+      const bar = (sx, sy, sz, px, py, pz) => { const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), metal); m.position.set(px, py, pz); b.add(m); };
+      bar(W, T, D, 0, H / 2, 0);   // top
+      bar(W, T, D, 0, -H / 2, 0);  // bottom
+      bar(T, H, D, -W / 2, 0, 0);  // left
+      bar(T, H, D, W / 2, 0, 0);   // right
+      const glass = new THREE.Mesh(new THREE.PlaneGeometry(W - T, H - T), glassMat);
+      glass.position.z = D / 2;
+      b.add(glass);
+      b.position.x = bx;
+      b.rotation.y = -bx * 0.7; // side blocks fan outward
+      grp.add(b);
+    }
+    grp.position.set(-0.7, 1.28, 1.7); // driver hatch, just forward of the EYE (z 1.4) — tuned live
+    this.vehicleRoot.add(grp);
+    this.periscopes = grp;
   }
 
   async _loadVehicleAsset() {
@@ -530,6 +559,7 @@ export class ShilkaStation {
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
     // hull roll banks the horizon (sign matches the hull's negated roll)
     cam.rotation.z = -d.roll;
+    if (this.periscopes) this.periscopes.rotation.set(d.pitch, 0, -d.roll); // periscopes tilt with the hull
     this.game.engine.setFov(70);
     const pl = this.game.player;
     pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
