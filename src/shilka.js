@@ -169,7 +169,7 @@ export class ShilkaStation {
       b.rotation.y = -bx * 0.7; // side blocks fan outward
       grp.add(b);
     }
-    grp.position.set(-0.7, 1.55, 2.6); // on the glacis just forward of the EYE (z 2.2), framing the lower view — tuned live
+    grp.position.set(0.565, 0.74, 2.4); // driver's periscope optics on the MODEL (placed live by the owner) — a separate thing from the camera/view
     this.vehicleRoot.add(grp);
     this.periscopes = grp;
   }
@@ -539,7 +539,8 @@ export class ShilkaStation {
     const d = this.drive;
     // driver eye: left-seat driver, head-out at the periscope station looking forward over the glacis.
     // (y1.3/z1.4 buried the camera INSIDE the opaque hull → all-black; y1.7/z2.2 clears it — headless-swept.)
-    const EYE = this._eye || (this._eye = { x: -0.7, y: 1.7, z: 2.2 }); // dev-tweakable live: s._eye.{x,y,z}
+    // driver VIEW (separate from the periscope model): head-out on the +X driver side, clear of the hull.
+    const EYE = this._eye || (this._eye = { x: 0.565, y: 1.6, z: 2.4 }); // dev-tweakable live: s._eye.{x,y,z}
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
     const ex = d.x + (EYE.x * cos + EYE.z * sin);
     const ez = d.z + (-EYE.x * sin + EYE.z * cos);
