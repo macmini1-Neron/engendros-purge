@@ -69,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-18 01:37';
+const GAME_BUILD = '2026-06-18 01:57';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -519,7 +519,7 @@ class Game {
     this._startCountdown = 0.6; this._waveBreak = 0; this._banked = false; // _banked: per-run guard for bank deposit
   }
   _disposeFlare(f) {
-    this.engine.scene.remove(f.mesh); this.engine.scene.remove(f.light);
+    this.engine.scene.remove(f.mesh); this.engine.releaseFxLight(f.lightH);
     f.mesh.geometry.dispose(); f.mesh.material.dispose();
     if (f.flame) { f.flame.geometry.dispose(); f.flame.material.dispose(); }
   }
@@ -540,11 +540,11 @@ class Game {
     const flame = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
       new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     flame.position.set(0, 0.34, 0); flame.renderOrder = 998; mesh.add(flame);
-    const light = new THREE.PointLight(0xff5a26, 18, 28, 1.2); // starts hot → eases down (ignite flash)
-    light.position.copy(mesh.position);
-    this.engine.scene.add(mesh); this.engine.scene.add(light);
+    const lh = this.engine.acquireFxLight(0xff5a26, 18, 28, 1.2); // starts hot → eases down; borrowed from the fixed FX pool (no scene.add → no shader recompile)
+    const light = lh.light; light.position.copy(mesh.position);
+    this.engine.scene.add(mesh);
     this.effects.muzzleFlash(mesh.position.clone(), fwd, 0.6); // small ignite flash
-    this.flares.push({ mesh, light, flame, flameMat: flame.material,
+    this.flares.push({ mesh, light, lightH: lh, flame, flameMat: flame.material,
       vel: fwd.clone().multiplyScalar(15).add(new THREE.Vector3(0, 4.5, 0)),
       spin: new THREE.Vector3(randRange(-7, 7), randRange(-4, 4), randRange(-7, 7)),
       life: 22, grounded: false, out: false, smokeT: 0 });
@@ -575,7 +575,7 @@ class Game {
       f.flameMat.opacity = 0.95 * fade;
       f.smokeT -= dt;
       if (f.smokeT <= 0) { f.smokeT = 0.07; this.effects.flareSmoke(_flareWP.clone().setY(_flareWP.y + 0.05), fade); }
-      if (f.life <= 0) { f.out = true; f.light.intensity = 0; this.engine.scene.remove(f.light); f.flame.visible = false; }
+      if (f.life <= 0) { f.out = true; this.engine.releaseFxLight(f.lightH); f.flame.visible = false; }
     }
   }
   // Line-of-sight test so molotov fire cannot reach through a wall into the next room.
@@ -602,8 +602,8 @@ class Game {
     this._downV = this._downV || new THREE.Vector3(0, -1, 0); // drop the burning liquid onto the floor under the impact so the fire never floats
     const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200);
     const py = gh ? gh.point.y + 0.02 : 0.05;
-    const light = new THREE.PointLight(0xff5a26, 7, 14, 1.4); light.position.set(pos.x, py + 0.45, pos.z); this.engine.scene.add(light);
-    const pool = { pos: new THREE.Vector3(pos.x, py, pos.z), light, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 };
+    const lh = this.engine.acquireFxLight(0xff5a26, 7, 14, 1.4); lh.light.position.set(pos.x, py + 0.45, pos.z); // borrow from the fixed FX pool (no scene.add → no shader recompile)
+    const pool = { pos: new THREE.Vector3(pos.x, py, pos.z), light: lh.light, lightH: lh, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 };
     this.molotovPools.push(pool);
     // Register the burning puddle as a generic fire SOURCE — FireManager re-ignites flammables near
     // it without any molotov-specific knowledge (the only coupling; removed again on dispose).
@@ -617,7 +617,7 @@ class Game {
     this.engine.scene.add(beam);
     setTimeout(() => { this.engine.scene.remove(beam); beam.geometry.dispose(); beam.material.dispose(); }, 180);
   }
-  _disposeMolotovPool(p) { if (p && p.light) this.engine.scene.remove(p.light); if (this.fire && p && p._emitter) this.fire.removeEmitter(p._emitter); }
+  _disposeMolotovPool(p) { if (p) this.engine.releaseFxLight(p.lightH); if (this.fire && p && p._emitter) this.fire.removeEmitter(p._emitter); }
   _clearMolotovPools() { if (this.molotovPools) { for (const p of this.molotovPools) this._disposeMolotovPool(p); this.molotovPools.length = 0; } }
   _updateMolotovPools(dt) {
     if (!this.molotovPools || !this.molotovPools.length) return;

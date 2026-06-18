@@ -21,6 +21,7 @@ export class Engine {
     });
     this.renderer.setClearColor(0x9fd3e8, 1);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.autoUpdate = false; // we refresh shadows ourselves (every other frame in render()) — re-rendering the 2048² shadow map EVERY frame is wasted work; 1-frame-stale shadows are imperceptible and it ~halves the shadow pass
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -72,7 +73,35 @@ export class Engine {
     this.hemi.layers.enable(WEAPON_LAYER);
     this.sun.layers.enable(WEAPON_LAYER);
     this.ambient.layers.enable(WEAPON_LAYER);
+
+    // FX point-light POOL — pre-created ONCE so the scene's point-light COUNT never changes
+    // at runtime. Adding/removing a light mid-game forces THREE.js to recompile EVERY lit
+    // material's shader program (a measured ~12-program stall = visible stutter). Transient
+    // glows (molotov puddles, signal flares) borrow from this fixed pool instead, so the
+    // light count stays constant → shaders compile once at load, never mid-game. Lambert
+    // lights are evaluated per-vertex, so a dozen idle (intensity-0) pool lights are cheap.
+    this._fxLights = []; this._fxIdx = 0; this._fxTok = 0;
+    for (let i = 0; i < 16; i++) {
+      const L = new THREE.PointLight(0xffffff, 0, 10, 2);
+      L.position.set(0, -999, 0);
+      this.scene.add(L);
+      this._fxLights.push(L);
+    }
   }
+
+  // Borrow an FX point light from the fixed pool (round-robin). Returns a handle { light, tok };
+  // keep the handle, move/recolor handle.light each frame while it burns, then releaseFxLight(handle).
+  acquireFxLight(color, intensity, distance, decay = 2) {
+    const L = this._fxLights[this._fxIdx];
+    this._fxIdx = (this._fxIdx + 1) % this._fxLights.length;
+    const tok = ++this._fxTok; L.userData.fxTok = tok;
+    L.color.setHex(color); L.intensity = intensity; L.distance = distance; L.decay = decay;
+    return { light: L, tok };
+  }
+
+  // Dim a borrowed light — but ONLY if it hasn't since been re-lent to a newer owner (token guard),
+  // so a late release can never snuff out someone else's glow.
+  releaseFxLight(h) { if (h && h.light && h.light.userData.fxTok === h.tok) h.light.intensity = 0; }
 
   _buildSky() {
     // Big gradient dome.
@@ -154,6 +183,10 @@ export class Engine {
     }
     // Two-pass render: world first, then wipe depth and draw the viewmodel on top.
     const r = this.renderer, cam = this.camera, sc = this.scene;
+    // Refresh the (autoUpdate-off) shadow map every other frame — must be set before the world pass
+    // that builds it. Halves the shadow-pass cost; moving casters' shadows lag at most one frame.
+    this._shadowTick = (this._shadowTick || 0) + 1;
+    r.shadowMap.needsUpdate = (this._shadowTick % 2) === 0;
     r.clear();                          // autoClear is off → clear colour+depth ourselves
     cam.layers.set(0);                  // pass 1 — the world (default layer)
     r.render(sc, cam);

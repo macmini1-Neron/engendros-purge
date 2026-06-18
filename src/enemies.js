@@ -190,7 +190,10 @@ export const ENEMY_TYPES = {
 class Enemy {
   constructor(geo, geoKey) {
     this.mesh = new THREE.Mesh(geo, voxelMaterial());
-    this.mesh.castShadow = true;
+    // Tolo's ~8,400-tri mesh is by far the heaviest shadow-caster — it's re-rendered into the
+    // shadow map EVERY frame. Skip casting for the boss (it's dramatic enough without a ground
+    // shadow); keep the small mobs' shadows. Big, safe win against the boss-fight stutter.
+    this.mesh.castShadow = (geoKey !== 'boss');
     this.geoKey = geoKey;
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
@@ -535,7 +538,8 @@ export class EnemyManager {
   _spawnBolt(e, dir) {
     const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
     if (!this._boltGeo) this._boltGeo = new THREE.BoxGeometry(0.18, 0.18, 1.6);
-    const m = new THREE.Mesh(this._boltGeo, new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }));
+    if (!this._boltMat) this._boltMat = new THREE.MeshBasicMaterial({ color: 0xff2436, fog: false, depthWrite: false }); // shared across all bolts — no per-bolt material alloc/dispose (GC churn)
+    const m = new THREE.Mesh(this._boltGeo, this._boltMat);
     m.renderOrder = 998; m.position.copy(belly); m.lookAt(belly.clone().add(dir));
     this.game.engine.scene.add(m);
     this.bossBolts.push({ mesh: m, dir: dir.clone(), spd: 55, life: 70 / 55, dmg: e.def.dmg }); // range = 50% of the 140-wide arena
@@ -562,7 +566,7 @@ export class EnemyManager {
       }
       if (!dead && b.life <= 0) dead = true;
       if (!dead) { const hid = this._playerHitByPoint(m, 1.1); if (hid) { this.game._hurtTarget(hid, b.dmg); dead = true; } }
-      if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); b.mesh.material.dispose(); this.bossBolts.splice(i, 1); }
+      if (dead) { if (b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.splice(i, 1); } // material is shared (this._boltMat) → never dispose per-bolt
     }
   }
 
@@ -634,11 +638,12 @@ export class EnemyManager {
     e.sweepT += dt; e.sweepHitCD -= dt;
     const frac = clamp(e.sweepT / e.sweepDur, 0, 1);
     const ang = e.sweepFrom + (e.sweepTo - e.sweepFrom) * frac;
-    const belly = new THREE.Vector3(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
-    const dir = new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang));
+    // reuse scratch vectors — this runs every frame for the whole ~3s sweep; fresh Vector3s here were GC churn
+    const belly = (this._swBelly || (this._swBelly = new THREE.Vector3())).set(e.pos.x, e.pos.y + 0.6 * e.scale, e.pos.z + 0.4 * e.scale);
+    const dir = (this._swDir || (this._swDir = new THREE.Vector3())).set(Math.sin(ang), 0, Math.cos(ang));
     let len = e.sweepLen;
     { const wh = this.game.world.rayHit(belly, dir, len); if (wh) len = Math.max(2, belly.distanceTo(wh.point) - 0.2); } // all phases stop at walls — cover always works
-    const end = belly.clone().addScaledVector(dir, len);
+    const end = (this._swEnd || (this._swEnd = new THREE.Vector3())).copy(belly).addScaledVector(dir, len);
     const thick = e.phase === 3 ? 0.9 : 0.55;
     e._beam.position.copy(belly).add(end).multiplyScalar(0.5);
     e._beam.scale.set(thick, thick, len); e._beam.lookAt(end);

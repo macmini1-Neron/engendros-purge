@@ -516,8 +516,8 @@ export class LootManager {
     grp.add(flareMesh);
     const flame = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd14a, transparent: true, opacity: 0.88, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     flame.position.set(0, 0.34, 0); flame.renderOrder = 998; flareMesh.add(flame);                                          // burning nub at the cap (flare local +Y)
-    const flareLight = new THREE.PointLight(0xff5a26, 9, 18, 1.3); flareLight.position.set(0, 0.36, 0); flareMesh.add(flareLight); // starts hot (ignite), eased down in update
-    this.drops.push({ id, _net: !!isNet, grp, crate, chute, lines, flareMesh, flame, flameMat: flame.material, flareLight, flareLife: 20, flareSmokeT: 0, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
+    const flareLH = this.game.engine.acquireFxLight(0xff5a26, 9, 18, 1.3); const flareLight = flareLH.light; // borrowed from the fixed FX pool (no scene.add → no shader recompile); positioned per-frame from the flame's world pos
+    this.drops.push({ id, _net: !!isNet, grp, crate, chute, lines, flareMesh, flame, flameMat: flame.material, flareLight, flareLH, flareLife: 20, flareSmokeT: 0, pos: pos.clone(), y: fromY, state: 'falling', sway: rr(0, TAU), opened: false });
     this.game.hud.toast('📦 Supply drop released!', 0xff8a3a);
   }
 
@@ -570,6 +570,7 @@ export class LootManager {
   }
   _disposeDrop(d) {
     this.scene.remove(d.grp);
+    if (d.flareLH) this.game.engine.releaseFxLight(d.flareLH); // return the pooled signal-flare light (it's no longer a child of grp)
     d.grp.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
   }
 
@@ -640,6 +641,7 @@ export class LootManager {
       // burning signal flare on the load: lit + flickering + smoking while falling; burns out ~20s after it lands (then a dark stick)
       if (d.flareMesh && d.flareLife > 0) {
         if (d.state === 'landed') d.flareLife -= dt;                                    // full-bright during the descent; 20s countdown starts on the ground
+        d.flame.getWorldPosition(_flareWP); d.flareLight.position.copy(_flareWP);       // pooled light tracks the flame (it's a scene light now, not parented)
         const fade = d.flareLife < 3.5 ? Math.max(0, d.flareLife / 3.5) : 1;            // gradual burn-out over the last 3.5s
         const flick = 0.82 + Math.sin(d.t * 22) * 0.12 + Math.sin(d.t * 57) * 0.05;
         d.flareLight.intensity += (5.5 * fade * flick - d.flareLight.intensity) * Math.min(1, dt * 6); // ease the ignite spike down, then fade
@@ -648,7 +650,7 @@ export class LootManager {
         d.flameMat.opacity = 0.82 * fade;
         d.flareSmokeT -= dt;
         if (d.flareSmokeT <= 0) { d.flareSmokeT = 0.12; d.flame.getWorldPosition(_flareWP); this.game.effects.flareSmoke(_flareWP.clone().setY(_flareWP.y - 0.04), fade * 0.65); }
-        if (d.flareLife <= 0) { d.flareLight.intensity = 0; d.flame.visible = false; }  // burned out
+        if (d.flareLife <= 0) { this.game.engine.releaseFxLight(d.flareLH); d.flame.visible = false; }  // burned out → return the pooled light
       }
       if (d.state === 'falling') {
         d.y -= dt * SUPPLY_DROP_FALL_SPEED; d.sway += dt;
