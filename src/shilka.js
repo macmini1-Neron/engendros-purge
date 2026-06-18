@@ -171,6 +171,7 @@ export class ShilkaStation {
       this.rig = rig;
       this._rigScale = scale;
     } catch (e) {
+      this._assetFailed = true;
       console.warn('[shilka] Failed to load/rig GLB vehicle; station marker remains.', e);
     }
   }
@@ -184,6 +185,11 @@ export class ShilkaStation {
   }
 
   mount() {
+    if (!this.rig) {
+      // GLB not ready (or failed): don't enter a phantom drive with an invisible, un-re-enterable vehicle.
+      if (this.game.hud) this.game.hud.bigMessage(this._assetFailed ? 'SHILKA — model unavailable' : 'SHILKA — loading…');
+      return;
+    }
     const pl = this.game.player;
     pl.shilka = this;
     this.driveMode = true;
@@ -462,6 +468,10 @@ export class ShilkaStation {
   // (index 0) is the true front wheel and _applyRig feeds suspension back to the same wheel.
   _sampleWheelGround() {
     if (!this.rig) return null;
+    if (this.rig.wheelsL.length < 6 || this.rig.wheelsR.length < 6) {
+      if (!this._wheelCountWarned) { this._wheelCountWarned = true; console.warn(`[shilka] ${this.id}: rig has ${this.rig.wheelsL.length}L/${this.rig.wheelsR.length}R wheels (expected 6/side) — suspension disabled, drive still works.`); }
+      return null; // stepDrive accepts null wheelGroundY → no tilt, but no crash
+    }
     const L = [], R = [];
     for (let i = 0; i < 6; i++) {
       this.rig.wheelsL[i].getWorldPosition(TMP_ORIGIN); L.push(this._groundY(TMP_ORIGIN.x, TMP_ORIGIN.z));

@@ -84,5 +84,8 @@ export function buildShilkaRig(modelScene, THREE) {
   // orient: model front is -Z; rotate the assembly so front faces world +Z
   root.rotation.y = Math.PI;
 
+  if (wheelsL.length !== 6 || wheelsR.length !== 6) {
+    console.warn(`[shilka-rig] wheel classification produced ${wheelsL.length}L/${wheelsR.length}R pivots (expected 6/side) — check classifyShilkaPart bounds against the loaded GLB.`);
+  }
   return { root, body, turret, wheelsL, wheelsR, sprockets, tracks, guns, dish, antennas };
 }

@@ -26,3 +26,9 @@ test('every returned group is a known rig group', () => {
     assert.ok(SHILKA_RIG_GROUPS.includes(g));
   }
 });
+test('a long low Z-axis slab is a track', () => {
+  assert.equal(classifyShilkaPart(1.3, 0.38, 0.1, 0.5, 0.55, 6.4), 'track');
+});
+test('a thin low disc shorter than a wheel is a sprocket', () => {
+  assert.equal(classifyShilkaPart(1.4, 0.50, 2.8, 0.22, 0.38, 0.22), 'sprocket');
+});

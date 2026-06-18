@@ -48,6 +48,7 @@ test('shifting under load (clutch engaged) grinds and does not change gear', () 
   let s = createDriveState({ gear: '2', speed: 4, engineOn: true });
   const after = stepDrive(s, 1 / 60, I({ gear: undefined, clutch: 1, gearReq: '3', throttle: 0.5 }));
   assert.equal(after.gear, '2', 'gear unchanged without the clutch');
+  assert.equal(after.grind, true, 'grind flag set when shifting under load');
 });
 
 test('starter restarts a stalled engine after the starter delay', () => {
@@ -58,10 +59,16 @@ test('starter restarts a stalled engine after the starter delay', () => {
   assert.ok(s.engineRpm >= T.idleRpm - 1);
 });
 
-test('deterministic: identical inputs produce identical state', () => {
-  const a = run(createDriveState(), 200, 1 / 60, I({ gear: '1', throttle: 1 }));
-  const b = run(createDriveState(), 200, 1 / 60, I({ gear: '1', throttle: 1 }));
+test('deterministic: identical inputs produce identical state (with real movement)', () => {
+  // gearReq:'1' actually engages the gear (a stray `gear` field is ignored), so this exercises the
+  // integrator (speed/x/z/heading), suspension (pitch/roll/wheelOffsets) and rpm — not a neutral no-op.
+  const init = createDriveState({ gear: '1' });
+  const inp = I({ throttle: 0.4, steer: 0.3 });
+  const ground = { L: [0.1, 0.05, 0, -0.05, -0.1, -0.15], R: [0.1, 0.05, 0, -0.05, -0.1, -0.15] };
+  const a = run(init, 200, 1 / 60, inp, ground);
+  const b = run(init, 200, 1 / 60, inp, ground);
   assert.deepEqual(a, b);
+  assert.ok(a.x !== 0 || a.z !== 0, 'sanity: the vehicle actually moved');
 });
 
 const flat = () => ({ L: [0, 0, 0, 0, 0, 0], R: [0, 0, 0, 0, 0, 0] });
@@ -96,4 +103,26 @@ test('a side slope rolls the hull and wheel offsets stay within travel', () => {
   for (const o of [...s.wheelOffsetL, ...s.wheelOffsetR]) {
     assert.ok(Math.abs(o) <= SHILKA_DRIVE_TUNING.suspTravel + 1e-9, 'wheel offset clamped to suspension travel');
   }
+});
+
+test('full brake brings a moving vehicle to rest and never overshoots into reverse', () => {
+  let s = createDriveState({ gear: '3', speed: 7.0 }); // ~25 km/h forward
+  s = run(s, Math.ceil(7.0 / T.brakeDecel * 60) + 10, 1 / 60, I({ brake: 1 }));
+  assert.equal(s.speed, 0, 'braking from forward stops at 0, does not reverse');
+});
+
+test('an unknown gear request is ignored and does not corrupt the gear', () => {
+  let s = createDriveState({ gear: '2', speed: 4 });
+  const after = stepDrive(s, 1 / 60, I({ clutch: 0, gearReq: '6' }));
+  assert.equal(after.gear, '2', 'unknown gear leaves the current gear unchanged');
+  assert.equal(after.grind, false, 'an unknown gear is dropped, not treated as a grind');
+});
+
+test('dt=0 is a no-op step (no movement, no NaN)', () => {
+  const s0 = createDriveState({ gear: '1', speed: 5 });
+  const s1 = stepDrive(s0, 0, I({ throttle: 1 }), flat());
+  assert.equal(s1.x, s0.x);
+  assert.equal(s1.z, s0.z);
+  assert.equal(s1.speed, s0.speed);
+  assert.ok(Number.isFinite(s1.pitch) && Number.isFinite(s1.heading), 'no NaN leaks at dt=0');
 });
