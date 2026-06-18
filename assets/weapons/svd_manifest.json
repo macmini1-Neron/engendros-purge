@@ -4,9 +4,10 @@
   "author": "samanthacford",
   "source": "Sketchfab (low-poly Soviet weapon pack)",
   "license": "CC-BY-4.0",
-  "converted_from": "06- Low.Poly.SVD / 25f43f9027424c53a6fd6030cfbc0913_Textured.gltf (embedded buffers) + RGB_AK_* textures, embedded to GLB via gltf-pipeline",
+  "converted_from": "06- Low.Poly.SVD / 25f43f9027424c53a6fd6030cfbc0913_Textured.gltf, material surgery -> glb (gltf-pipeline)",
   "notes": [
     "Runtime first-person + world viewmodel for the new 'svd' marksman rifle (GLB_WEAPONS factory).",
-    "Source gltf material references a single AK-platform body atlas; faithful single-texture embed."
+    "Material FIX: the source gltf defines 4 correct materials but the export assigned EVERY mesh to material 0 (the 'AK_Barrel_And_Body' texture, baked PURE BLACK). Each mesh was re-mapped to its named material (mesh-name suffix), restoring the real Guards/Stocks wood, Accesories and Magazine(plum) textures; the black body texture was replaced with a solid gunmetal.",
+    "Re-bake proper textures in Blender for final art."
   ]
 }

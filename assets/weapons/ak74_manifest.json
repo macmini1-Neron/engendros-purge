@@ -4,10 +4,10 @@
   "author": "samanthacford",
   "source": "Sketchfab (low-poly Soviet weapon pack)",
   "license": "CC-BY-4.0",
-  "converted_from": "09- Low.Poly.AKS.74 / 0bc2ac56183c4145b4c54fd76a10c0a4.obj + model.mtl + RGB_AK_*_Texture.png, embedded to GLB via obj2gltf",
+  "converted_from": "09- Low.Poly.AKS.74 / 0bc2ac56183c4145b4c54fd76a10c0a4.obj -> gltf (obj2gltf), then material surgery -> glb (gltf-pipeline)",
   "notes": [
-    "Runtime first-person + world viewmodel for the new 'ak74' rifle (GLB_WEAPONS factory in weapons.js).",
-    "Source OBJ uses a single material/atlas (one usemtl across all parts) — faithful single-texture embed.",
-    "Named part meshes preserved (Body / Bolt / Magazine / Stock_Skeleton / Muzzle_Brake / Ironsights)."
+    "Runtime first-person + world viewmodel for the new 'ak74' rifle (GLB_WEAPONS factory).",
+    "Material FIX: the source OBJ collapsed every part to one material whose 'AK_Barrel_And_Body' texture is baked PURE BLACK. Each mesh was re-mapped to its named material (mesh-name suffix _AK_Platform_<Mat>_mat) and the 3 real textures (Guards/Stocks wood, Accesories, Magazine) re-attached; the black body texture was replaced with a solid gunmetal.",
+    "Re-bake proper textures in Blender for final art."
   ]
 }

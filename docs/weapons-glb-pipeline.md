@@ -41,13 +41,20 @@ The factory builds the hand model (WEAPON_LAYER + hip offset), the origin-centre
 drops / ghosts / lootbox), the async fallback→GLB swap, and the `buildViewmodel()` crude silhouette.
 
 Two recipe facts learned and encoded:
-- **Material:** `metalness = 0` (a glTF metal map renders black with no env map). Then **most of these
-  3D-ripped diffuse textures are baked PURE BLACK** (`max = 0`) — Makarov, sawn-off, and the AK/SVD
-  "body" atlas the single-material OBJ uses. So per gun: if the source texture is broken → set a flat
-  **`tint`** (drop the useless map, render a lit gunmetal/wood-grey + a faint same-colour emissive so
-  the shadow side isn't pure black); if it's real (only the SKS — wood+metal, `max = 146`) → keep the
-  map + a gentle map-gated self-light. Check a texture's avg/max (PIL) before choosing. *(A flat white
-  emissive floor was tried first and rejected — it washes every gun to a uniform light-grey blob.)*
+- **Material:** `metalness = 0` (a glTF metal map renders black with no env map). Then **many of these
+  3D-ripped diffuse textures are baked PURE BLACK** (`max = 0`). Two distinct cases:
+  - **Multi-material guns with a wrong assignment (AK, SVD) — RECOVERABLE.** The model defines several
+    correct materials (body / wood furniture / accessories / magazine) but the export points *every
+    mesh* at the black "body" material. The **mesh names encode the intended material** (suffix
+    `_AK_Platform_<Mat>_mat`), so re-map each mesh to its named material, re-attach the real textures
+    (the wood/accessory/mag textures are fine), and swap only the black body texture for a solid
+    gunmetal. → proper wood-furniture + metal guns. (See `/tmp/glbconv` surgery scripts.)
+  - **Single-texture guns whose one texture is black (Makarov, sawn-off) — NOT recoverable** from this
+    pack (no other texture exists). Use a flat **`tint`** (drop the map, lit gunmetal/wood-grey + a
+    faint same-colour emissive). A Blender re-bake or a different source model is the only real fix.
+  - **Intact texture (SKS, `max = 146`):** keep the map + a gentle map-gated self-light.
+  Check a texture's avg/max (PIL) before choosing. *(A flat white emissive floor was tried first and
+  rejected — it washes every gun to a uniform light-grey blob.)*
 - **Orientation:** OBJ→glb guns import **muzzle −Z** (`rot = [0,0,0]`); the FBX-sourced **Makarov**
   gltf imports **muzzle +Z** → flip 180° (`rot = [0, π, 0]`). Verify per model with a screenshot.
 

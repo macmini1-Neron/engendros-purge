@@ -166,9 +166,9 @@ function buildMosinAssetViewmodel(assetRoot, fallback) {
 //   fb       – crude fallback silhouette family: 'pistol' | 'rifle' | 'shotgun'
 const GLB_WEAPONS = {
   makarov: { url: './assets/weapons/makarov_pm.glb',    length: 0.62, center: [0.02, -0.05, -0.20], rot: [0, Math.PI, 0], world: 0.55, tint: 0x55585e, fb: 'pistol' }, // texture is pure black → flat gunmetal. FBX-sourced .gltf imports muzzle +Z → flip 180°
-  ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  tint: 0x60584a, fb: 'rifle' },   // body texture black (wood/accessory textures exist but the single-material OBJ can't use them) → warm gun-grey
+  ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.35, fb: 'rifle' },   // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + textured mag/muzzle), black "body" tex swapped for a gunmetal solid
   sawed:   { url: './assets/weapons/sawed_off_db.glb',  length: 1.05, center: [0.03, -0.07, -0.26], rot: [0, 0, 0], world: 0.95, tint: 0x6a5848, fb: 'shotgun' }, // texture pure black → wood-steel grey. Upgrades the existing 'sawed_off' (shape 'sawed'); procedural art stays as the pre-load fallback
-  svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, tint: 0x60584a, fb: 'rifle' }, // body texture black (like the AK) → warm gun-grey. FBX-sourced .gltf → flip
+  svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.35, fb: 'rifle' }, // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + plum mag), black "body" tex swapped for a gunmetal solid. FBX-sourced .gltf → flip
   sks:     { url: './assets/weapons/sks.glb',           length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.25, fb: 'rifle' },     // SKS texture is REAL (wood+metal) → keep the map + a gentle self-light
 };
 
