@@ -163,15 +163,15 @@ function buildMosinAssetViewmodel(assetRoot, fallback) {
 //              materials (AK / SVD / RPK — black "body" swapped for a gunmetal solid at convert time).
 //   fb       – crude fallback silhouette family: 'pistol' | 'rifle' | 'shotgun'
 const GLB_WEAPONS = {
-  ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.35, fb: 'rifle' },   // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + textured mag/muzzle), black "body" tex swapped for a gunmetal solid
-  svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.35, fb: 'rifle' }, // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + plum mag), black "body" tex swapped for a gunmetal solid. FBX-sourced .gltf → flip
+  ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.35, frontSide: true, fb: 'rifle' },   // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + textured mag/muzzle), black "body" tex swapped for a gunmetal solid
+  svd:     { url: './assets/weapons/svd.glb',           length: 2.7,  center: [0.03, -0.10, -0.36], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.35, frontSide: true, fb: 'rifle' }, // REAL textures restored: meshes re-mapped to their named materials (wood handguard/stock/grip + plum mag), black "body" tex swapped for a gunmetal solid. FBX-sourced .gltf → flip
   sks:     { url: './assets/weapons/sks.glb',           length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.25, fb: 'rifle' },     // SKS texture is REAL (wood+metal) → keep the map + a gentle self-light
-  rpk74:   { url: './assets/weapons/rpk74.glb',         length: 2.5,  center: [0.03, -0.10, -0.36], rot: [0, 0, 0], world: 2.0, emissive: 0.35, fb: 'rifle' },     // AK-platform LMG (bipod): meshes re-mapped to named materials (wood furniture + mag), black body → gunmetal
+  rpk74:   { url: './assets/weapons/rpk74.glb',         length: 2.5,  center: [0.03, -0.10, -0.36], rot: [0, 0, 0], world: 2.0, emissive: 0.35, frontSide: true, fb: 'rifle' },     // AK-platform LMG (bipod): meshes re-mapped to named materials (wood furniture + mag), black body → gunmetal
   rpg7:    { url: './assets/weapons/rpg7.glb',          length: 2.6,  center: [0.03, -0.10, -0.38], rot: [0, Math.PI, 0], world: 2.0, emissive: 0.3, fb: 'rifle' }, // single REAL texture → keep map. FBX-sourced .gltf → flip
   toz34:   { url: './assets/weapons/toz34.glb',         length: 1.6,  center: [0.03, -0.08, -0.30], rot: [0, 0, 0], world: 1.3, emissive: 0.25, fb: 'shotgun' },   // over/under shotgun, single REAL texture → keep map
   smw:     { url: './assets/weapons/smw_m29.glb',       length: 0.66, center: [0.02, -0.05, -0.20], rot: [0, 0, 0], world: 0.55, emissive: 0.3, fb: 'pistol' },   // .44 revolver, both source textures REAL (body + cylinder rounds) → keep maps
   sksm:    { url: './assets/weapons/sks_tactical.glb',  length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.3, fb: 'rifle' },     // tactical SKS, all source textures REAL → keep maps
-  gp25:    { url: './assets/weapons/ak74_gp25.glb',     length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.35, fb: 'rifle' },    // AK-platform + GP-25: wood furniture re-mapped, black body → gunmetal
+  gp25:    { url: './assets/weapons/ak74_gp25.glb',     length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.35, frontSide: true, fb: 'rifle' },    // AK-platform + GP-25: wood furniture re-mapped, black body → gunmetal
 };
 
 // Layer + material setup for a loaded GLB tree. metalness→0 (a glTF PBR metal map renders pure black
@@ -186,7 +186,11 @@ function setupGlbTree(root, layer, renderOrder, cfg) {
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const mat of mats) {
       if (!mat) continue;
-      mat.side = THREE.DoubleSide;
+      // DoubleSide by default (these rips have open tubes that'd otherwise see-through); but a few guns
+      // have a separate top-cover mesh sitting on the receiver — DoubleSide renders the body's interior
+      // back-faces which z-fight the cover (visible diagonal streaks once cover/body differ in colour).
+      // `frontSide` culls those back-faces for such guns (the AK family) — they have no open tubes that'd break.
+      mat.side = cfg.frontSide ? THREE.FrontSide : THREE.DoubleSide;
       if ('metalness' in mat) mat.metalness = 0;
       if ('roughness' in mat) mat.roughness = Math.max(mat.roughness ?? 0.7, 0.6);
       if (cfg.tint != null) {
