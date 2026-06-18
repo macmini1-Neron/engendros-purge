@@ -610,6 +610,25 @@ gh pr create --title "perf: anti-stutter pass #2 — pooling, scratch vectors, b
 
 ---
 
+## Deferred during execution (low value × untestable / dispose-coupled)
+
+- **Task 8 (mortar shell/trace/ring pooling) — DEFERRED.** The mortar is a niche crewed co-op weapon
+  (`?map=steppe`); the stress harness can't fire it headlessly, so a pooling change can't be verified
+  here. Crucially, shells **dispose** their geo/material on detonation (`mortar.js:335-336`, `:140`,
+  `:172`), so caching shared geo/material would require a pooling + dispose-skip guard across all three
+  sites — non-trivial work in an unverifiable, rarely-hit path. Low value (only while actively firing
+  the mortar). Revisit if mortar spam is ever reported as a hitch.
+- **Task 10 (loot crate/chute/flame cache + dispose batch) — DEFERRED.** Drops **dispose** all their
+  geo/material on collection/expiry (`_disposeDrop`, `loot.js:575`), so sharing cached geo/material
+  needs the same dispose-skip coordination as the IL-76. The crate/chute/flame are small `MeshBuilder`
+  builds, and the **real** airdrop hitch — the multi-mesh IL-76 `clone(true)` — is already fixed
+  (Task 5). Low residual value for real dispose-coordination risk. Revisit only if repeated drops show
+  a measurable residual spike after Task 5.
+
+Net: the shipped fixes are the high-value, headless-verifiable ones (harness, player scratch, IL-76
+cache, boss/nav pre-warm, wave-spawn scratch, non-boss hitPoint clones). The two deferred tasks are
+dispose-coupled and untestable in this harness.
+
 ## Verification Workflow (orchestrator — Milestones A & B)
 
 A `Workflow` run, one agent per scenario, each in an **isolated** headless Chrome (own port + profile + swiftshader — shared procs steal ports, per the headless-verify recipe). Each agent:
