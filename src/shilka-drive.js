@@ -4,6 +4,9 @@
 
 const TAU = Math.PI * 2;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+// frame-rate-independent exponential smoothing toward a target
+const damp = (cur, target, lambda, dt) => target + (cur - target) * Math.exp(-lambda * dt);
+const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
 
 export const SHILKA_GEARS = Object.freeze(['R', 'N', '1', '2', '3', '4', '5']);
 
@@ -115,9 +118,33 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
     next.engineRpm = clamp(T.idleRpm + clamp(inp.throttle, 0, 1) * (T.maxRpm - T.idleRpm), T.idleRpm, T.maxRpm);
   }
 
-  // 6) integrate heading-aligned position (lateral steering added in Task 2)
+  // 6a) steering: clutch-and-brake levers — pivot at standstill, wider radius at speed
+  const canSteer = engaged || Math.abs(next.speed) > 0.2;
+  const topAbs = Math.abs(T.gearTopSpeed['5']) || 1;
+  const speedFrac = clamp(Math.abs(next.speed) / topAbs, 0, 1);
+  const maxYaw = T.pivotYawRate + (T.driveYawRateAtTop - T.pivotYawRate) * speedFrac;
+  next.yawRate = canSteer ? clamp(inp.steer, -1, 1) * maxYaw : 0;
+  next.heading = (next.heading + next.yawRate * dt) % TAU;
+
+  // 6b) integrate heading-aligned position
   next.x += Math.sin(next.heading) * next.speed * dt;
   next.z += Math.cos(next.heading) * next.speed * dt;
+
+  // 6c) suspension + hull tilt from per-wheel terrain heights (front→rear, index 0 = front)
+  if (wheelGroundY && Array.isArray(wheelGroundY.L) && Array.isArray(wheelGroundY.R)
+      && wheelGroundY.L.length === 6 && wheelGroundY.R.length === 6) {
+    const L = wheelGroundY.L, R = wheelGroundY.R;
+    const meanG = mean([...L, ...R]);
+    const pitchT = Math.atan2(((L[0] + R[0]) / 2) - ((L[5] + R[5]) / 2), T.wheelbase);
+    const rollT = Math.atan2(mean(L) - mean(R), T.trackWidth);
+    next.pitch = damp(next.pitch, pitchT, T.tiltLambda, dt);
+    next.roll = damp(next.roll, rollT, T.tiltLambda, dt);
+    next.y = damp(next.y, meanG + T.wheelRadius + T.rideHeight, T.tiltLambda, dt);
+    for (let i = 0; i < 6; i++) {
+      next.wheelOffsetL[i] = damp(next.wheelOffsetL[i], clamp(L[i] - meanG, -T.suspTravel, T.suspTravel), T.wheelLambda, dt);
+      next.wheelOffsetR[i] = damp(next.wheelOffsetR[i], clamp(R[i] - meanG, -T.suspTravel, T.suspTravel), T.wheelLambda, dt);
+    }
+  }
 
   // 7) visuals that depend only on speed
   next.wheelSpin = (next.wheelSpin + (next.speed / T.wheelRadius) * dt) % TAU;

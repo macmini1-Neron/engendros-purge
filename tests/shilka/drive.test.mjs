@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING as T } from '../../src/shilka-drive.js';
+import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_DRIVE_TUNING as T } from '../../src/shilka-drive.js';
 
 // helper: run N fixed steps with constant input
 function run(state, n, dt, input, ground = null) {
@@ -62,4 +62,38 @@ test('deterministic: identical inputs produce identical state', () => {
   const a = run(createDriveState(), 200, 1 / 60, I({ gear: '1', throttle: 1 }));
   const b = run(createDriveState(), 200, 1 / 60, I({ gear: '1', throttle: 1 }));
   assert.deepEqual(a, b);
+});
+
+const flat = () => ({ L: [0, 0, 0, 0, 0, 0], R: [0, 0, 0, 0, 0, 0] });
+
+test('steering pivots in place at a standstill (engaged) and turns the heading', () => {
+  let s = createDriveState({ gear: '1' });
+  // throttle just above stall threshold so the engine survives a standstill, full right lever
+  s = run(s, 30, 1 / 60, I({ gear: '1', throttle: 0.2, steer: 1 }), flat());
+  assert.ok(s.heading > 0, 'heading rotated to the right');
+});
+
+test('turn rate is wider (smaller yaw) at speed than at a standstill', () => {
+  const slow = run(createDriveState({ gear: '1' }), 5, 1 / 60, I({ gear: '1', throttle: 0.2, steer: 1 }), flat());
+  const fast = run(createDriveState({ gear: '5', speed: SHILKA_DRIVE_TUNING_TOP() }), 5, 1 / 60, I({ gear: '5', throttle: 1, steer: 1 }), flat());
+  assert.ok(Math.abs(fast.yawRate) < Math.abs(slow.yawRate), 'yaw rate shrinks with speed');
+});
+function SHILKA_DRIVE_TUNING_TOP() { return T.gearTopSpeed['5']; }
+
+test('flat terrain produces no tilt; a front-high ramp pitches the nose up', () => {
+  let s = createDriveState();
+  s = run(s, 60, 1 / 60, I(), flat());
+  assert.ok(Math.abs(s.pitch) < 1e-3 && Math.abs(s.roll) < 1e-3, 'flat => level');
+  const ramp = { L: [1, 0.8, 0.6, 0.4, 0.2, 0], R: [1, 0.8, 0.6, 0.4, 0.2, 0] }; // front (idx0) higher
+  s = run(createDriveState(), 120, 1 / 60, I(), ramp);
+  assert.ok(s.pitch > 0.05, 'nose pitches up when the front wheels sit higher');
+});
+
+test('a side slope rolls the hull and wheel offsets stay within travel', () => {
+  const side = { L: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], R: [-0.5, -0.5, -0.5, -0.5, -0.5, -0.5] };
+  const s = run(createDriveState(), 120, 1 / 60, I(), side);
+  assert.ok(Math.abs(s.roll) > 0.05, 'left-high side slope rolls the hull');
+  for (const o of [...s.wheelOffsetL, ...s.wheelOffsetR]) {
+    assert.ok(Math.abs(o) <= SHILKA_DRIVE_TUNING.suspTravel + 1e-9, 'wheel offset clamped to suspension travel');
+  }
 });
