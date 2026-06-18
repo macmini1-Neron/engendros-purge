@@ -170,6 +170,10 @@ export class ShilkaStation {
       this.vehicleModel = rig.root;
       this.rig = rig;
       this._rigScale = scale;
+      // ground the PARKED vehicle too: _applyRig only lifts it to drive.y while mounted, so without
+      // this the un-mounted Shilka sits groundDrop (~0.87 m) below the terrain.
+      this.vehicleRoot.position.y = this.base.y + groundDrop;
+      this.drive.y = this.vehicleRoot.position.y;
     } catch (e) {
       this._assetFailed = true;
       console.warn('[shilka] Failed to load/rig GLB vehicle; station marker remains.', e);
@@ -504,8 +508,9 @@ export class ShilkaStation {
   _frameDriverCamera(dt) {
     const cam = this.game.engine.camera;
     const d = this.drive;
-    // driver eye: front-left of the hull, low; tunable in verification
-    const EYE = { x: -0.7, y: 2.0, z: 1.7 };
+    // driver eye: front-left of the hull, at hatch/periscope level looking forward; tunable in verification.
+    // y was 2.0 (≈0.9 m ABOVE the deck → looked down onto the hull/barrels); 1.3 sits at the hatch.
+    const EYE = { x: -0.7, y: 1.3, z: 1.4 };
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
     const ex = d.x + (EYE.x * cos + EYE.z * sin);
     const ez = d.z + (-EYE.x * sin + EYE.z * cos);
