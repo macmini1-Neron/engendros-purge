@@ -456,9 +456,32 @@ export class EnemyManager {
 
   // Belly bullseye = the laser emitter AND the only weak spot. Phases gate by HP:
   //   1 (>66%) blaster burst · 2 (33–66%) sweep · 3 (<33%) double sweep + fire (sweep/fire land in later steps).
+  _ensureBossBlob() {
+    if (this._bossBlob) return this._bossBlob;
+    // soft radial dark→transparent disc, generated once (cheap "blob" shadow)
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const g2 = cv.getContext('2d');
+    const grd = g2.createRadialGradient(32, 32, 2, 32, 32, 31);
+    grd.addColorStop(0, 'rgba(0,0,0,0.55)'); grd.addColorStop(0.55, 'rgba(0,0,0,0.34)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g2.fillStyle = grd; g2.fillRect(0, 0, 64, 64);
+    const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
+    blob.rotation.x = -Math.PI / 2; blob.renderOrder = 1; blob.visible = false;
+    this.game.engine.scene.add(blob);
+    return (this._bossBlob = blob);
+  }
+
   _bossTolo(e, dt) {
     const pp = this._tgt(e);
     this.game.hud.setBoss(e.hp / e.maxHp, e.name);
+
+    // primitive "blob" ground shadow — a soft dark disc that tracks Tolo on the ground. Costs ~one
+    // textured quad (no shadow-map render), so it grounds the boss while keeping the perf win of
+    // NOT casting his ~8.4k-tri mesh into the real shadow map every frame.
+    const blob = this._ensureBossBlob();
+    const gy = this.game.world.groundY ? this.game.world.groundY(e.pos.x, e.pos.z) : 0;
+    blob.visible = true; blob.position.set(e.pos.x, gy + 0.04, e.pos.z);
+    const bs = (e.radius || e.scale || 2.85) * 3.0; blob.scale.set(bs, bs, 1);
 
     // belly-bullseye glow telegraphs the charge (lazy child of the boss mesh, the laser emitter)
     if (!e._tolGlow) {
@@ -828,6 +851,7 @@ export class EnemyManager {
       }
       if (e.def.boss || e.isElite) this.game.hud.hideBoss();
       if (e.def.boss && e._beam) e._beam.visible = false;
+      if (e.def.boss && this._bossBlob) this._bossBlob.visible = false; // hide the blob shadow on boss death
       this.game.onEnemyKilled(e, attacker);
       if (_mp && _mp.active && _mp.isHost) _mp.onEnemyDie(e, attacker);
       return true;
@@ -845,7 +869,7 @@ export class EnemyManager {
       if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center);
     }
   }
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; if (this._bossBlob) this._bossBlob.visible = false; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }
