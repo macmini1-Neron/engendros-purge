@@ -11,6 +11,9 @@ let _gltfLoader = null;
 let _il76Promise = null;
 let _il76Source = null;
 let _il76Failed = false;
+let _il76Runtime = null; // the ONE reused runtime instance — airdrops are never concurrent (callSupplyDrop
+                         // tears down any airborne plane first), so cloning the multi-mesh GLB per drop
+                         // (clone(true) + per-mesh geo/material clone) was a pure waste + a frame stall.
 
 function loadGltf(url) {
   _gltfLoader = _gltfLoader || new GLTFLoader();
@@ -74,6 +77,10 @@ export function preloadIl76AirdropModel() {
 
 export function buildIl76AirdropModel() {
   if (!_il76Source) return null;
+  // Reuse the cached instance when it isn't currently airborne. No re-fit: loot._updatePlane drives
+  // world position/rotation each frame (placePlane overwrites them anyway), so reuse is behaviour-
+  // identical; re-running fitIl76 would wrongly reset scale to 1×. Hidden gear children stay hidden.
+  if (_il76Runtime && !_il76Runtime.parent) { _il76Runtime.visible = true; return _il76Runtime; }
   const root = cloneForRuntime(_il76Source);
   root.name = 'IL-76 airdrop aircraft';
   root.userData.isFallback = false; // the real GLB — loot._updatePlane reads this to decide whether to hot-swap
@@ -92,6 +99,9 @@ export function buildIl76AirdropModel() {
     new THREE.Vector3(3.30, 1.26, 2.39),
   ];
   root.userData.contrailPuff = { size: 1.55, life: 4.0, color: 0xf0f4f7 };
+  // Cache the FIRST built instance as the reusable one; mark it so disposeAircraftObject never frees
+  // it. A rare concurrent fallthrough clone (not cached) stays disposable → no leak.
+  if (!_il76Runtime) { _il76Runtime = root; root.userData.reusable = true; }
   return root;
 }
 
@@ -109,6 +119,7 @@ export function buildIl76AirdropFallback() {
 
 export function disposeAircraftObject(root) {
   if (!root) return;
+  if (root.userData && root.userData.reusable) return; // the cached IL-76 is kept alive for reuse, never freed
   const geometries = new Set();
   const materials = new Set();
   root.traverse((o) => {
