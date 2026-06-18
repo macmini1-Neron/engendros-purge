@@ -69,7 +69,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-18 10:00';
+const GAME_BUILD = '2026-06-18 14:03';
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -1117,6 +1117,11 @@ class Game {
     if (this.fire) this.fire.update(dt); // Phase 8: ember-chain spread + burn-through (own fixed clock; reads molotovPools as sources)
     if (hostSim) this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount); // clients get the authoritative count via 'clock'
     this.effects.update(dt);
+    // ADS hides the crosshair so you aim down the iron sight, which is 1:1 with the shot. F3 keeps it
+    // always-on as a safety fallback. Mounted-gun / night-post views manage their own reticle, so skip them.
+    if (!this.player.mountedGun && !this.player.nightPost && this.hud.el.cross) {
+      this.hud.el.cross.style.opacity = (!this.weapons.ads || this.f3) ? '' : '0';
+    }
     this.hud.update(dt);
     // ---- Interact prompt priority: tank crew > mounted MG > loot ----
     if (this.mp.active && this.mp._localDead) {
