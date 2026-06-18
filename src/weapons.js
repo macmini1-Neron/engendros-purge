@@ -137,6 +137,127 @@ function buildMosinAssetViewmodel(assetRoot, fallback) {
   return wrapper;
 }
 
+// ── Generic GLB-weapon viewmodel factory ───────────────────────────────────────
+// Config-driven loader so each downloaded (sketchfab/3D-ripped) gun is ONE entry below instead of the
+// ~120 copied lines the Mosin/PKM each carry. It covers the full surface a weapon model is consumed
+// through: (1) the first-person HAND model (WEAPON_LAYER, hip offset from the per-weapon `center`),
+// (2) a WORLD model (layer 0, origin-centred) for the lobby Armory preview / ground drops / co-op
+// ghosts / lootbox / admin viewer, (3) the async fallback→GLB swap in WeaponSystem, and (4) the
+// buildViewmodel() path (returns the world template clone, or a crude box silhouette until it loads).
+// The Mosin keeps its bespoke builder (bolt + stripper-clip animation); plain guns ride this factory.
+//
+// Per-weapon tuning (all measured/verified in-engine via screenshots):
+//   url      – the converted self-contained .glb (geometry + embedded textures) in assets/weapons/
+//   length   – HAND viewmodel length in viewmodel units along Z (Mosin≈2.78, PKM≈2.55 for reference)
+//   center   – [x,y,z] anchor of the bbox centre in HAND space; x≈0 keeps the bore on the group
+//              centreline so ADS (which pulls the group to screen-x 0) lands the dot on the barrel
+//   rot      – [x,y,z] Euler baked BEFORE measuring (3D-ripped models import in arbitrary poses);
+//              flip Y by π if the muzzle points back toward the camera
+//   world    – WORLD model length along Z (ground/preview footprint, ~matches the voxel weapons)
+//   emissive – 0..1 self-light of the base texture; lifts dark gunmetal out of shadow (glTF metal
+//              maps read near-black under the scene lights with no env map). 0 = leave lit normally.
+//   fb       – crude fallback silhouette family: 'pistol' | 'rifle' | 'shotgun'
+const GLB_WEAPONS = {
+  makarov: { url: './assets/weapons/makarov_pm.glb',    length: 0.62, center: [0.02, -0.05, -0.20], rot: [0, Math.PI, 0], world: 0.55, emissive: 0.6, fb: 'pistol' }, // FBX-sourced .gltf imports muzzle +Z → flip 180° so it points forward (−Z), unlike the OBJ guns
+  ak74:    { url: './assets/weapons/ak74.glb',          length: 2.25, center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9,  emissive: 0.5, fb: 'rifle' },
+  sawed:   { url: './assets/weapons/sawed_off_db.glb',  length: 1.05, center: [0.03, -0.07, -0.26], rot: [0, 0, 0], world: 0.95, emissive: 0.5, fb: 'shotgun' }, // upgrades the existing 'sawed_off' weapon (shape 'sawed'); procedural art stays as its pre-load fallback
+
+};
+
+// Layer + material setup for a loaded GLB tree. metalness→0 (a glTF PBR metal map renders pure black
+// with no environment map); roughness floored so it isn't a mirror; optional emissive self-light.
+function setupGlbTree(root, layer, renderOrder, emissive) {
+  root.traverse((o) => {
+    o.frustumCulled = false;
+    o.layers.set(layer);
+    if (!o.isMesh) return;
+    o.renderOrder = renderOrder;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      mat.side = THREE.DoubleSide;
+      if ('metalness' in mat) mat.metalness = 0;
+      if ('roughness' in mat) mat.roughness = Math.max(mat.roughness ?? 0.7, 0.6);
+      if (emissive > 0 && 'emissive' in mat) {
+        // Flat emissive FLOOR — a uniform self-glow that is NOT gated by the base colour map. The
+        // imported gunmetal/black albedo textures are near-black, so a map-gated emissive (white ×
+        // dark map) stays black; lifting the whole surface to a readable gunmetal instead, while the
+        // lit (dark) albedo still supplies the 3-D form shading on top. Per-weapon `emissive` = floor
+        // strength. (Map-gated self-light is kept for the Mosin, whose honey-wood albedo is already light.)
+        mat.emissiveMap = null;
+        mat.emissive = new THREE.Color(0x9aa0a8);
+        mat.emissiveIntensity = emissive;
+      }
+      mat.needsUpdate = true;
+    }
+  });
+}
+
+// Build a positioned viewmodel from a (fresh, clonable) GLB scene. `world=false` → hand model on
+// WEAPON_LAYER with the hip offset baked in; `world=true` → origin-centred on layer 0 for the main pass.
+function buildGlbWeaponModel(assetRoot, cfg, world) {
+  const wrapper = new THREE.Group();
+  wrapper.name = (world ? 'GLB world: ' : 'GLB hand: ') + cfg.url.split('/').pop();
+  wrapper.renderOrder = world ? 0 : 1000;
+  wrapper.frustumCulled = false;
+  // Bake the import orientation into an inner pivot so the scale/centre math stays axis-aligned on Z.
+  const oriented = new THREE.Group();
+  oriented.rotation.set(cfg.rot[0], cfg.rot[1], cfg.rot[2]);
+  oriented.add(assetRoot);
+  oriented.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(oriented);
+  const size = new THREE.Vector3(); const center = new THREE.Vector3();
+  box.getSize(size); box.getCenter(center);
+  const scale = (world ? cfg.world : cfg.length) / Math.max(0.001, size.z);
+  oriented.scale.setScalar(scale);
+  const c = world ? [0, 0, 0] : cfg.center;
+  oriented.position.set(c[0] - center.x * scale, c[1] - center.y * scale, c[2] - center.z * scale);
+  wrapper.add(oriented);
+  setupGlbTree(wrapper, world ? 0 : WEAPON_LAYER, world ? 0 : 1000, cfg.emissive);
+  return wrapper;
+}
+
+// Shared per-key load promise + world template cache. The template is built once from the loaded GLB;
+// every consumer gets its OWN geometry/material clone (textures stay shared, never disposed per-clone)
+// so a call site that deep-disposes on teardown can't free the template's buffers from the others.
+const _glbLoad = {};
+const _glbWorldTpl = {};
+function loadGlbWeapon(key) { if (!_glbLoad[key]) _glbLoad[key] = loadGltf(GLB_WEAPONS[key].url); return _glbLoad[key]; }
+function ensureGlbWorldTemplate(key) {                       // returns the template if ready, else null + warms the async load
+  if (_glbWorldTpl[key]) return _glbWorldTpl[key];
+  loadGlbWeapon(key).then((g) => { if (!_glbWorldTpl[key]) _glbWorldTpl[key] = buildGlbWeaponModel(g.scene.clone(true), GLB_WEAPONS[key], true); }).catch(() => {});
+  return _glbWorldTpl[key] || null;
+}
+function cloneGlbModel(tpl) {
+  const c = tpl.clone(true);
+  c.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.geometry) o.geometry = o.geometry.clone();
+    if (o.material) o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+  });
+  return c;
+}
+
+// Crude voxel silhouette shown only for the frame or two before the (local, fast) GLB load swaps in —
+// or permanently if the asset fails to load. Built into the shared buildViewmodel MeshBuilder `b`.
+function crudeGunFallback(b, def, kind) {
+  const body = def.color || 0x3a3d42, dark = shade(body, -0.3), wood = def.accent || 0x4a3a2a;
+  if (kind === 'pistol') {
+    b.box(0.06, 0.10, 0.30, 0, 0.0, -0.10, body);   // slide/frame
+    b.box(0.05, 0.18, 0.07, 0, -0.12, 0.02, dark);  // grip
+    b.box(0.03, 0.03, 0.12, 0, 0.02, -0.27, dark);  // muzzle
+  } else if (kind === 'shotgun') {
+    b.box(0.09, 0.10, 0.95, 0, 0.02, -0.48, dark);  // twin barrels
+    b.box(0.07, 0.12, 0.34, 0, -0.02, 0.18, wood);  // action/body
+    b.box(0.05, 0.15, 0.10, 0, -0.10, 0.34, wood);  // grip wrist
+  } else { // rifle
+    b.box(0.08, 0.14, 0.55, 0, 0.0, -0.10, body);   // receiver
+    b.box(0.05, 0.05, 1.00, 0, 0.03, -0.86, dark);  // barrel
+    b.box(0.06, 0.10, 0.34, 0, -0.02, 0.42, wood);  // stock
+    b.box(0.05, 0.16, 0.06, 0, -0.10, 0.10, body);  // grip/mag
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // Weapons — guns + melee. dmg is BASE (rarity & perks multiply at use).
@@ -157,6 +278,7 @@ export const WEAPONS = {
   carbine:  { name: 'M1 Carbine', class: 'rifle', shape: 'carbine', dmg: 32, rpm: 400, auto: false, mag: 15, reserveMax: 90, reload: 1.7, spread: 0.01,  bloom: 0.012, pellets: 1, recoil: 0.55, range: 240, adsFov: 55, price: 1100, loot: 10, color: 0x4a3422, accent: 0x2a2a30 },
   garand:   { name: 'M1 Garand',  class: 'rifle', shape: 'garand', dmg: 80, rpm: 270, auto: false, mag: 8,  reserveMax: 64,  reload: 2.6, spread: 0.008, bloom: 0.01,  pellets: 1, recoil: 1.6, range: 340, adsFov: 48, price: 2000, loot: 7,  enBloc: true, color: 0x52371f, accent: 0x222226 },
   stg44:    { name: 'StG 44',     class: 'rifle', shape: 'stg',   dmg: 38, rpm: 560, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.015, bloom: 0.016, pellets: 1, recoil: 0.85, range: 260, adsFov: 54, price: 2400, loot: 6,  recoilClimb: 0.03, recoilYaw: 0.10, color: 0x33373d, accent: 0x6e4a28 },
+  ak74:     { name: 'AK-74',      class: 'rifle', shape: 'ak74',  dmg: 40, rpm: 650, auto: true,  mag: 30, reserveMax: 180, reload: 2.3, spread: 0.014, bloom: 0.016, pellets: 1, recoil: 0.8, range: 300, adsFov: 54, adsCrosshair: true, price: 2600, loot: 6, recoilClimb: 0.03, recoilYaw: 0.10, color: 0x3a2e1c, accent: 0x6e4a28 }, // 5.45×39mm assault rifle (GLB viewmodel) — controllable full-auto
   // --- shotguns ---
   shotgun:  { name: 'Trench Gun', class: 'shotgun', shape: 'shotgun', dmg: 13, rpm: 80,  auto: false, mag: 6, reserveMax: 36, reload: 0.45, shellReload: true, spread: 0.085, bloom: 0, pellets: 9,  recoil: 1.7, range: 55, adsFov: 66, price: 1700, loot: 9, color: 0x3a2418, accent: 0x9c6a32 },
   sawed_off:{ name: 'Sawed-Off',  class: 'shotgun', shape: 'sawed',   dmg: 16, rpm: 200, auto: false, mag: 2, reserveMax: 18, reload: 1.6, spread: 0.14,  bloom: 0, pellets: 12, recoil: 2.9, range: 30, adsFov: 70, price: 1500, loot: 8, color: 0x4a2e1c, accent: 0xc25b3a },
@@ -164,6 +286,7 @@ export const WEAPONS = {
   kar98:    { name: 'Kar98 Scoped', class: 'sniper', shape: 'sniper', dmg: 165, rpm: 50, auto: false, mag: 5, reserveMax: 35, reload: 2.4, spread: 0.0015, bloom: 0, pellets: 1, recoil: 2.7, range: 500, adsFov: 22, scope: true, price: 2600, loot: 5, boltCycle: 1.2, color: 0x20242a, accent: 0x6fa8e8 },
   // --- extra arsenal (loot + shop) ---
   magnum:   { name: '.44 Magnum',  class: 'pistol', shape: 'magnum', dmg: 98, rpm: 95, auto: false, mag: 6, reserveMax: 24, reload: 2.4, spread: 0.009, bloom: 0.014, pellets: 1, recoil: 2.2, range: 140, adsFov: 58, price: 1400, loot: 8, color: 0x4a4a52, accent: 0x6b4a2a },
+  makarov:  { name: 'Makarov PM',  class: 'pistol', shape: 'makarov', dmg: 26, rpm: 360, auto: false, mag: 8, reserveMax: 48, reload: 1.6, spread: 0.011, bloom: 0.012, pellets: 1, recoil: 0.6, range: 110, adsFov: 60, price: 450, loot: 9, color: 0x2a2c30, accent: 0x4a3a2a }, // 9×18mm service pistol (GLB viewmodel) — cheap, fast, low recoil
   mp40:     { name: 'MP 40',       class: 'smg', shape: 'mp40',  dmg: 18, rpm: 500, auto: true, mag: 32, reserveMax: 160, reload: 2.0, spread: 0.018, bloom: 0.014, pellets: 1, recoil: 0.4, range: 150, adsFov: 62, price: 1300, loot: 11, recoilClimb: 0.015, recoilYaw: 0.05, color: 0x2e3036, accent: 0x3a3a3a },
   grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 22, rpm: 450, auto: true, mag: 30, reserveMax: 150, reload: 2.2, spread: 0.026, bloom: 0.02, pellets: 1, recoil: 0.5, range: 120, adsFov: 62, price: 1250, loot: 9, recoilClimb: 0.02, recoilYaw: 0.10, color: 0x3a3d42, accent: 0x262626 },
   bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 52, rpm: 500, auto: true, mag: 20, reserveMax: 120, reload: 3.0, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.6, range: 300, adsFov: 55, price: 2600, loot: 6, recoilClimb: 0.10, recoilYaw: 0.15, color: 0x3a3128, accent: 0x26262a },
@@ -184,7 +307,7 @@ export const WEAPONS = {
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'makarov', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'ak74', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -197,6 +320,14 @@ export function buildViewmodel(def) {
   const c = def.color, a = def.accent, dark = shade(c, -0.1);
   let _post = null; // optional callback(mesh) run after the merged mesh exists — for articulated child parts (e.g. the flashlight's press-button)
   switch (def.shape) {
+    // GLB-asset weapons (factory above): return the real world model once loaded, else a crude
+    // silhouette built into `b` that the shared tail turns into a Mesh (visible only until the swap).
+    case 'makarov': case 'ak74': {
+      const tpl = ensureGlbWorldTemplate(def.shape);
+      if (tpl) return cloneGlbModel(tpl);
+      crudeGunFallback(b, def, GLB_WEAPONS[def.shape].fb);
+      break;
+    }
     case 'knife': { // Seitengewehr 84/98 III — K98k knife bayonet: fullered spear-point blade, bakelite grip, beak pommel (NO muzzle ring)
       const sHi = 0x6f747b, sMid = 0x52565c, sLo = 0x2c2f33, sSlot = 0x1c1e21, sBright = 0x8a8f96; // blued steel
       const kHi = 0x7a4d33, kMid = 0x5a3826, kLo = 0x3a2417;                                          // reddish bakelite grip
@@ -547,6 +678,8 @@ export function buildViewmodel(def) {
       break;
     }
     case 'sawed': { // Sawed-off side-by-side 12ga — twin stubby barrels, boxlock, external hammers, cut-down checkered stock (break, 2 shells)
+      const tpl = ensureGlbWorldTemplate('sawed');                 // real GLB double-barrel once loaded; the procedural art below is the pre-load / load-failure fallback
+      if (tpl) return cloneGlbModel(tpl);
       const sHi = 0x4a5058, sMid = 0x2b2e33, sLo = 0x1c1e22, sSlot = 0x121417, sBright = 0x5e646c; // blue-black steel
       const wHi = 0x7a4f34, wMid = 0x5a3826, wLo = 0x3a2418;
       // twin side-by-side barrels (figure-8 bores at muzzle)
@@ -1206,6 +1339,34 @@ export class WeaponSystem {
 
     this.resetLoadout();
     this._loadMosinAssetViewmodel();
+    this._loadGlbViewmodels();
+  }
+
+  // Swap each GLB-asset weapon's procedural/crude fallback for its real loaded model (hand model on
+  // WEAPON_LAYER + hip offset). Mirrors _loadMosinAssetViewmodel; one entry per GLB_WEAPONS shape.
+  _loadGlbViewmodels() {
+    const seen = new Set();
+    for (const key of WEAPON_ORDER) {
+      const shape = WEAPONS[key].shape;
+      if (GLB_WEAPONS[shape] && !seen.has(key)) { seen.add(key); this._loadGlbViewmodel(key, shape); }
+    }
+  }
+  async _loadGlbViewmodel(key, shape) {
+    const fallback = this.models && this.models[key];
+    if (!fallback) return;
+    try {
+      const gltf = await loadGlbWeapon(shape);                                  // shared promise — the world template reuses this load
+      if (!this.models || this.models[key] !== fallback) return;               // selection swapped out from under us / already replaced
+      const replacement = buildGlbWeaponModel(gltf.scene.clone(true), GLB_WEAPONS[shape], false); // clone so the scene stays pristine for the world template
+      replacement.visible = fallback.visible;
+      this.group.add(replacement);
+      this.models[key] = replacement;
+      this.group.remove(fallback);
+      disposeObject3D(fallback);
+      ensureGlbWorldTemplate(shape);                                           // warm the shared world model for shop/drops/viewer/crate
+    } catch (e) {
+      console.warn('[weapons] Failed to load GLB viewmodel for ' + key + '; using fallback.', e);
+    }
   }
 
   async _loadMosinAssetViewmodel() {

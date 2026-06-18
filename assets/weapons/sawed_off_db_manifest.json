@@ -1,0 +1,13 @@
+{
+  "asset": "sawed_off_db.glb",
+  "title": "Low Poly Sawed-Off Double Barrel",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "17- Low.Poly.Sawed.Off.Shotgun / 70219eb77fe4410b95d78ae3a6ce6230.obj + model.mtl + RGB_Double_Barrel_Shotgun_texture.png, embedded to GLB via obj2gltf",
+  "notes": [
+    "Runtime first-person + world viewmodel that UPGRADES the existing 'sawed_off' weapon (shape 'sawed').",
+    "The procedural voxel sawn-off stays as the pre-load / load-failure fallback (buildViewmodel case 'sawed').",
+    "Named part meshes preserved (Barrel_Short / Body / Body_Action / Grip / Trigger)."
+  ]
+}

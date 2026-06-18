@@ -1,0 +1,13 @@
+{
+  "asset": "ak74.glb",
+  "title": "Low Poly AKS-74",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "09- Low.Poly.AKS.74 / 0bc2ac56183c4145b4c54fd76a10c0a4.obj + model.mtl + RGB_AK_*_Texture.png, embedded to GLB via obj2gltf",
+  "notes": [
+    "Runtime first-person + world viewmodel for the new 'ak74' rifle (GLB_WEAPONS factory in weapons.js).",
+    "Source OBJ uses a single material/atlas (one usemtl across all parts) — faithful single-texture embed.",
+    "Named part meshes preserved (Body / Bolt / Magazine / Stock_Skeleton / Muzzle_Brake / Ironsights)."
+  ]
+}

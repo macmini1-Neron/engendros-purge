@@ -1,0 +1,12 @@
+{
+  "asset": "makarov_pm.glb",
+  "title": "Low Poly Makarov PM",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "07- Low.Poly.Makarov.PM / 7c4cb0323d9645938e204045297efe8c_Textured.gltf (embedded buffers) + RGB_Pistol_Markov_Texture.png, embedded to GLB via gltf-pipeline",
+  "notes": [
+    "Runtime first-person + world viewmodel for the new 'makarov' pistol (GLB_WEAPONS factory in weapons.js).",
+    "Named part nodes preserved (Slide / Magazine / Hammer / Trigger / Grip) for future slide/hammer animation."
+  ]
+}
