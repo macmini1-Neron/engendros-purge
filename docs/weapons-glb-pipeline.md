@@ -41,10 +41,13 @@ The factory builds the hand model (WEAPON_LAYER + hip offset), the origin-centre
 drops / ghosts / lootbox), the async fallback→GLB swap, and the `buildViewmodel()` crude silhouette.
 
 Two recipe facts learned and encoded:
-- **Material:** a glTF metallic map renders near-black with no env map → `metalness = 0`, plus a
-  **flat emissive floor** (uniform self-glow, *not* gated by the often-near-black base map) lifts dark
-  gunmetal/black albedo to a readable tone. (Map-gated self-light stays only on the Mosin, whose wood
-  albedo is already light.)
+- **Material:** `metalness = 0` (a glTF metal map renders black with no env map). Then **most of these
+  3D-ripped diffuse textures are baked PURE BLACK** (`max = 0`) — Makarov, sawn-off, and the AK/SVD
+  "body" atlas the single-material OBJ uses. So per gun: if the source texture is broken → set a flat
+  **`tint`** (drop the useless map, render a lit gunmetal/wood-grey + a faint same-colour emissive so
+  the shadow side isn't pure black); if it's real (only the SKS — wood+metal, `max = 146`) → keep the
+  map + a gentle map-gated self-light. Check a texture's avg/max (PIL) before choosing. *(A flat white
+  emissive floor was tried first and rejected — it washes every gun to a uniform light-grey blob.)*
 - **Orientation:** OBJ→glb guns import **muzzle −Z** (`rot = [0,0,0]`); the FBX-sourced **Makarov**
   gltf imports **muzzle +Z** → flip 180° (`rot = [0, π, 0]`). Verify per model with a screenshot.
 
