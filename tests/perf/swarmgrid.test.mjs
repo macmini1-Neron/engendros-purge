@@ -7,7 +7,7 @@ function lcg(seed) { let s = seed >>> 0; return () => (s = (s * 1664525 + 101390
 
 const mk = (x, z) => ({ pos: { x, z } });
 const R2 = 2.6;            // the horde separation radius² (enemies.js)
-const CELL = 1.7;         // must be ≥ √R2 (≈1.612) so a 3×3 block can't miss an in-range neighbour
+const CELL = 2.0;         // production cell — ≥ √R2 (≈1.612) so a 3×3 block can't miss an in-range neighbour (with drift slack)
 
 // brute-force: indices of OTHER items within √R2 of items[i]
 function bruteNeighbors(items, i) {

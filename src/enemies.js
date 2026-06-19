@@ -250,6 +250,7 @@ export class EnemyManager {
     this._hordeFlow = null; // Dijkstra flow-field toward the host player (refreshed on _flowT timer)
     this._flowT = 0;        // seconds until the next flow-field refresh
     this._navGraph = null;  // LAYERED surface nav graph (navgraph.js) — built lazily the first time the player is elevated
+    this._navCtr = null;    // world XZ the surface graph was built around (rebuild when the player leaves it) — reset with the graph
     this._surfFlow = null;  // surface flow-field toward the player's actual (x,y,z) level
     this._surfT = 0;        // seconds until the next surface-flow refresh
     this._playerUp = false; // is the host player elevated on a structure this frame (gates the layered nav)
@@ -407,11 +408,13 @@ export class EnemyManager {
       this._surfT -= dt;
       if (!this._surfFlow || this._surfT <= 0) { this._surfT = 0.3; this._surfFlow = buildSurfaceFlow(this._navGraph, pp.x, pp.y, pp.z); }
     }
-    // Big hordes: bucket mobs into a uniform spatial hash (cell ≥ separation radius) so each agent's
-    // separation scans only its 3×3 block — O(n) instead of the all-pairs O(n²) scan. Tiny hordes keep
-    // the trivial scan (no Map churn). Built once per frame from current positions (a stable snapshot;
-    // intra-frame drift << the cell margin, and separation is a soft force).
-    const _swarm = this.active.length > 64 ? buildSwarmGrid(this.active, 1.7) : null;
+    // Big hordes: bucket mobs into a uniform spatial hash so each agent's separation scans only its 3×3
+    // block — O(n) instead of the all-pairs O(n²) scan. Tiny hordes keep the trivial scan (no Map churn).
+    // Built once per frame from start-of-frame positions, but the distance check reads LIVE o.pos as mobs
+    // move during the loop. Cell = 2.0 (vs the √2.6≈1.61 m separation radius) leaves ≥0.39 m of slack so a
+    // neighbour that drifted up to a 50 ms-clamp frame's worth (~0.22 m at top mob speed) is still inside
+    // the queried block — i.e. the snapshot/live mismatch can't silently drop an in-range neighbour.
+    const _swarm = this.active.length > 64 ? buildSwarmGrid(this.active, 2.0) : null;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       if (!e.alive) { this.active.splice(i, 1); continue; }
