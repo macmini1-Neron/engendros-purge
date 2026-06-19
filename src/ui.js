@@ -291,7 +291,12 @@ export class UI {
 // ---------------------------------------------------------------------------
 // Settings — persisted (localStorage) options, applied live.
 // ---------------------------------------------------------------------------
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 1, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 1, exposure: 1.05 };
+// Bumped when graphics-knob DEFAULTS change in a way existing saves should pick up (see load() migration).
+const SETTINGS_VER = 1;
+// adaptiveRes + bloom default OFF: on high-refresh (144 Hz) displays the 60 fps-targeted adaptive resolution
+// churns the render-target size (stutter) and renders sub-native (blur), and bloom softens the crisp voxel look.
+// Both stay toggleable in Settings; the High/Medium presets can still switch bloom back on.
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, setVer: SETTINGS_VER };
 
 export class Settings {
   constructor(game) {
@@ -300,7 +305,7 @@ export class Settings {
     this.returnTo = 'menu';
     this.load(); this._wire(); this.apply();
   }
-  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; } catch (e) {} }
+  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } } catch (e) {} }
   save() { try { localStorage.setItem('engendros_settings', JSON.stringify(this.data)); } catch (e) {} }
   apply() {
     if (this.game.player) { this.game.player.sens = this.data.sens; this.game.player.nick = this.data.nick; }
