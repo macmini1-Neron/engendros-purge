@@ -11,18 +11,26 @@ const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
 export const SHILKA_GEARS = Object.freeze(['R', 'N', '1', '2', '3', '4', '5']);
 
 export const SHILKA_DRIVE_TUNING = Object.freeze({
-  // top speeds scaled from real 50 km/h road (≈13.9 m/s); gameplay-tuned [design]
-  gearTopSpeed: Object.freeze({ R: -3.2, N: 0, '1': 2.6, '2': 5.0, '3': 8.0, '4': 11.0, '5': 13.9 }),
+  // Per-gear ceilings map onto the real ГМ-575 terrain bands (manual TTH): 1st ≈10 km/h = off-road/heavy
+  // crawler ("1-я только для тяжёлых участков"), 4th ≈40 km/h = field road, 5th ≈50 km/h = highway max.
+  // 1st is the unsynchronised low-range gear — you START OFF on 2nd; 1st is for mud/steep grades only.
+  gearTopSpeed: Object.freeze({ R: -3.2, N: 0, '1': 2.8, '2': 5.0, '3': 8.0, '4': 11.0, '5': 13.9 }),
   gearPull:     Object.freeze({ R: 3.0,  N: 0, '1': 4.5, '2': 3.2, '3': 2.2, '4': 1.5, '5': 1.0 }), // accel m/s^2
+  // Lug floor (m/s): below this a gear is "too tall" — the big V-6 bogs and stalls even at full throttle.
+  // You LAUNCH on 2nd (the manual's start gear); 1st is the heavy-terrain crawler (both pull from a dead
+  // stop). 3rd–5th only engage once already rolling — flooring them from a standstill just kills the engine.
+  gearMinSpeed: Object.freeze({ R: 0, N: 0, '1': 0, '2': 0, '3': 2.5, '4': 4.5, '5': 7.0 }),
   brakeDecel: 9.0,
   coastDecel: 1.2,
-  idleRpm: 800,
-  maxRpm: 2600,
-  stallRpm: 650,            // realistic: stalls readily
+  // V-6R/V-6М-1 diesel: low-idling big-bore (19.1 L), 280 hp @ 2000 rpm. Idle floor ~500, redline ~2100.
+  idleRpm: 600,
+  maxRpm: 2100,
+  stallRpm: 500,           // engine's min-idle floor (documented; the stall trigger is speed/throttle below)
   starterSeconds: 1.1,      // realistic: restart is felt
   clutchEngageThresh: 0.35, // engagement (1=engaged) above which torque transfers
   stallMinSpeedFrac: 0.12,  // below this fraction of gear top + low throttle => stall
   stallThrottle: 0.15,
+  synchroSpeed: 0.6,        // m/s — above this, the UNsynchronised 1st & ЗХ(reverse) clash when engaged
   // --- lateral + suspension (used in Task 2; defined here so the frozen object is complete) ---
   pivotYawRate: 1.1,        // rad/s, full lever at standstill
   driveYawRateAtTop: 0.5,   // rad/s, full lever at top speed
@@ -43,7 +51,7 @@ export function createDriveState(overrides = {}) {
     yawRate: 0,
     gear: 'N',
     clutch: 1,
-    engineRpm: 800,
+    engineRpm: 600,
     engineOn: true,
     stalled: false,
     starterT: 0,
@@ -79,17 +87,27 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
     } else next.starterT = 0;
   }
 
-  // 2) gear change — clean only with the clutch disengaged; otherwise it grinds
+  // 2) gear change — must declutch; II–V are synchronised (clean), but 1st and ЗХ(reverse) have NO
+  //    synchroniser, so engaging them while the machine is still rolling clashes (real ГМ-575 gearbox).
   if (inp.gearReq != null && inp.gearReq !== next.gear && SHILKA_GEARS.includes(inp.gearReq)) {
-    if (next.clutch < T.clutchEngageThresh) next.gear = inp.gearReq;
-    else next.grind = true;
+    const declutched = next.clutch < T.clutchEngageThresh;
+    const unsynced = inp.gearReq === '1' || inp.gearReq === 'R'; // 1st & reverse: no synchroniser
+    if (!declutched) next.grind = true;                          // shifting under load grinds the dogs
+    else if (unsynced && Math.abs(next.speed) > T.synchroSpeed) next.grind = true; // clash → slow first
+    else next.gear = inp.gearReq;                                // synchronised (II–V) or near a stop
   }
 
-  // 3) stall check (before torque): engaged + in gear + too slow for the gear + low throttle
+  // 3) stall check (before torque): engaged + in gear, killed by either —
+  //   (a) LUGGING: the gear is too tall for the current speed (below gearMinSpeed), so the V-6 bogs even
+  //       at full throttle. This is why 3rd–5th can't pull away from a stop (launch on 2nd) and why you
+  //       must downshift rather than let a tall gear drag the engine down as you slow.
+  //   (b) IDLING-OUT: nearly stopped in a launch gear with no throttle (clutch dumped, no gas).
   const inGear = next.gear !== 'N';
   if (next.engineOn && !next.stalled && next.clutch >= T.clutchEngageThresh && inGear) {
     const top = Math.abs(T.gearTopSpeed[next.gear]) || 1;
-    if (Math.abs(next.speed) < top * T.stallMinSpeedFrac && inp.throttle < T.stallThrottle) {
+    const lugging = Math.abs(next.speed) < (T.gearMinSpeed[next.gear] || 0);
+    const idlingOut = Math.abs(next.speed) < top * T.stallMinSpeedFrac && inp.throttle < T.stallThrottle;
+    if (lugging || idlingOut) {
       next.engineOn = false; next.stalled = true; next.engineRpm = 0;
     }
   }
@@ -151,4 +169,41 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
   next.trackScroll += next.speed * dt;
 
   return next;
+}
+
+// --- shift gate (ГМ-575 double-H selector) -------------------------------------------------------
+// The real selector is a double-H: three vertical rails joined by one central neutral channel.
+// The lever position is (gx, gy), each in [-1,1]:
+//   gx: -1 left rail · 0 mid rail · +1 right rail   (gx rests on a rail centre when seated)
+//   gy: +1 up slot · 0 neutral channel · -1 down slot
+// Rail map (from the ГМ-575 manual): left up=5 / down=4 · mid up=3 / down=2 · right up=ЗХ(R) / down=1.
+export const SHILKA_GATE_SLOTS = Object.freeze({
+  '5': Object.freeze({ gx: -1, gy:  1 }), '4': Object.freeze({ gx: -1, gy: -1 }),
+  '3': Object.freeze({ gx:  0, gy:  1 }), '2': Object.freeze({ gx:  0, gy: -1 }),
+  'R': Object.freeze({ gx:  1, gy:  1 }), '1': Object.freeze({ gx:  1, gy: -1 }),
+  'N': Object.freeze({ gx:  0, gy:  0 }),
+});
+
+const GATE_RAILS = Object.freeze([-1, 0, 1]); // left, mid, right rail centres
+const GATE_ENGAGE_Y = 0.5;                    // |gy| past this = seated in a gear; inside = neutral channel
+const nearestRail = (gx) => GATE_RAILS.reduce((a, b) => (Math.abs(b - gx) < Math.abs(a - gx) ? b : a), GATE_RAILS[0]);
+
+// Which gear the lever at (gx, gy) selects. Neutral channel (|gy| < engage) is always N.
+export function gateGear(gx, gy) {
+  if (Math.abs(gy) < GATE_ENGAGE_Y) return 'N';
+  const rail = nearestRail(gx);
+  if (rail < -0.5) return gy > 0 ? '5' : '4';
+  if (rail >  0.5) return gy > 0 ? 'R' : '1';
+  return gy > 0 ? '3' : '2';
+}
+
+// Move the lever by (dx, dy) under the H-gate constraint: you may only cross rails (change gx) while
+// the lever is in the neutral channel; once seated in a gear it locks onto that rail until pulled back
+// through neutral. Returns the new clamped { gx, gy } and the resolved gear — pure, for unit tests.
+export function moveShiftLever(lever, dx, dy) {
+  const gy = clamp((lever.gy || 0) + (Number.isFinite(dy) ? dy : 0), -1, 1);
+  let gx = lever.gx || 0;
+  if (Math.abs(gy) < GATE_ENGAGE_Y) gx = clamp(gx + (Number.isFinite(dx) ? dx : 0), -1, 1); // free to cross
+  else gx = nearestRail(gx);                                                                 // seated → lock to rail
+  return { gx, gy, gear: gateGear(gx, gy) };
 }

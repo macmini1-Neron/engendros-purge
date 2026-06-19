@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_DRIVE_TUNING as T } from '../../src/shilka-drive.js';
+import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_DRIVE_TUNING as T,
+  SHILKA_GATE_SLOTS, gateGear, moveShiftLever } from '../../src/shilka-drive.js';
 
 // helper: run N fixed steps with constant input
 function run(state, n, dt, input, ground = null) {
@@ -49,6 +50,73 @@ test('shifting under load (clutch engaged) grinds and does not change gear', () 
   const after = stepDrive(s, 1 / 60, I({ gear: undefined, clutch: 1, gearReq: '3', throttle: 0.5 }));
   assert.equal(after.gear, '2', 'gear unchanged without the clutch');
   assert.equal(after.grind, true, 'grind flag set when shifting under load');
+});
+
+test('unsynchronised 1st/ЗХ clash when engaged while rolling, even declutched', () => {
+  // 1st & reverse have no synchro: engaging them above synchroSpeed clashes and does NOT change gear…
+  const rolling = createDriveState({ gear: '3', speed: T.synchroSpeed + 2 });
+  const clash1 = stepDrive(rolling, 1 / 60, I({ clutch: 0, gearReq: '1' }));
+  assert.equal(clash1.gear, '3', '1st rejected (clash) while rolling, even with the clutch in');
+  assert.equal(clash1.grind, true, 'grind flag set on the 1st-gear clash');
+  const clashR = stepDrive(rolling, 1 / 60, I({ clutch: 0, gearReq: 'R' }));
+  assert.equal(clashR.gear, '3', 'reverse rejected (clash) while rolling');
+  // …but a synchronised gear (II–V) engages cleanly while rolling, declutched
+  const synced = stepDrive(rolling, 1 / 60, I({ clutch: 0, gearReq: '4' }));
+  assert.equal(synced.gear, '4', '4th (synchronised) engages cleanly while rolling');
+  assert.equal(synced.grind, false, 'no grind on a synchronised shift');
+  // …and 1st engages cleanly once nearly stopped
+  const stopped = createDriveState({ gear: 'N', speed: 0.1 });
+  const eng1 = stepDrive(stopped, 1 / 60, I({ clutch: 0, gearReq: '1' }));
+  assert.equal(eng1.gear, '1', '1st engages near a stop');
+});
+
+test('gate slots map to the ГМ-575 double-H (each gear is the slot it claims)', () => {
+  for (const [gear, slot] of Object.entries(SHILKA_GATE_SLOTS)) {
+    assert.equal(gateGear(slot.gx, slot.gy), gear, `slot ${gear} resolves back to ${gear}`);
+  }
+  // neutral channel is N regardless of which rail you sit over
+  assert.equal(gateGear(-1, 0), 'N');
+  assert.equal(gateGear(1, 0.3), 'N', 'still in the channel below the engage threshold');
+});
+
+test('H-gate: rails can only be crossed through the neutral channel', () => {
+  // seated in 4th (left rail, down): a sideways shove must NOT slide straight into 2nd/1st
+  const seated = { gx: -1, gy: -1 };
+  const shoved = moveShiftLever(seated, 1.0, 0); // big rightward push while seated
+  assert.equal(shoved.gx, -1, 'stays locked to the left rail while seated');
+  assert.equal(shoved.gear, '4', 'still in 4th — no illegal cross under load');
+  // pull back to the neutral channel first, THEN cross to the mid rail, THEN push up into 3rd
+  const toNeutral = moveShiftLever(seated, 0, 1);          // up into the channel
+  assert.equal(toNeutral.gear, 'N');
+  const crossed = moveShiftLever(toNeutral, 1.0, 0);       // slide fully onto the mid rail
+  assert.equal(crossed.gear, 'N', 'still neutral while crossing');
+  const intoThird = moveShiftLever(crossed, 0, 1);         // push up on the mid rail
+  assert.equal(intoThird.gear, '3', 'reaches 3rd only after passing through neutral');
+});
+
+test('moveShiftLever clamps to the gate and ignores non-finite deltas', () => {
+  const far = moveShiftLever({ gx: 0, gy: 0 }, 5, 5);
+  assert.ok(far.gx <= 1 && far.gy <= 1, 'clamped inside the gate');
+  const safe = moveShiftLever({ gx: 0, gy: 0 }, NaN, undefined);
+  assert.deepEqual({ gx: safe.gx, gy: safe.gy }, { gx: 0, gy: 0 }, 'bad deltas are no-ops');
+});
+
+test('cannot launch a tall gear (3rd–5th) from a standstill — the engine lugs and stalls', () => {
+  // floor it from a dead stop in 5th: far too tall, the V-6 bogs and dies even at full throttle
+  let s = createDriveState({ gear: '5', speed: 0, engineOn: true });
+  s = stepDrive(s, 1 / 60, I({ throttle: 1 }));
+  assert.equal(s.engineOn, false, '5th-gear standstill launch lugs the engine dead');
+  assert.equal(s.stalled, true);
+  // 2nd is the manual's launch gear — pulls away cleanly from a stop, no stall
+  let t = createDriveState({ gear: '2', speed: 0, engineOn: true });
+  t = run(t, 30, 1 / 60, I({ throttle: 1 }));
+  assert.equal(t.engineOn, true, '2nd launches without lugging');
+  assert.ok(t.speed > 0, 'and actually moves off');
+  // 1st (heavy-terrain crawler) also launches from a dead stop
+  let u = createDriveState({ gear: '1', speed: 0, engineOn: true });
+  u = run(u, 30, 1 / 60, I({ throttle: 1 }));
+  assert.equal(u.engineOn, true, '1st (crawler) launches too');
+  assert.ok(u.speed > 0);
 });
 
 test('starter restarts a stalled engine after the starter delay', () => {
