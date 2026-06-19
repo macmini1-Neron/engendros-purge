@@ -27,18 +27,30 @@ export function buildNavGraph(world, opts = {}) {
   const o = { ...DEF, ...opts };
   const { cell, stepUp, head, mergeH } = o;
   const half = world.HALF;
-  const cols = Math.ceil((half * 2) / cell), rows = cols;
-  const originX = -half, originZ = -half;
+  // Default = the whole map; opts.bounds (world-space {minX,minZ,maxX,maxZ}) restricts the graph to a
+  // sub-WINDOW (cell-aligned to the full grid, so node coords stay absolute). M and the build/flow cost
+  // then scale with the window (player + structure), NOT the map — the elevated-on-a-big-map fix.
+  let originX = -half, originZ = -half, cols = Math.ceil((half * 2) / cell), rows = cols;
+  if (o.bounds) {
+    const b = o.bounds, full = cols;
+    const cl = (v) => (v < 0 ? 0 : v >= full ? full - 1 : v);
+    const c0 = cl(Math.floor((b.minX + half) / cell)), c1 = cl(Math.floor((b.maxX + half) / cell));
+    const r0 = cl(Math.floor((b.minZ + half) / cell)), r1 = cl(Math.floor((b.maxZ + half) / cell));
+    originX = -half + c0 * cell; originZ = -half + r0 * cell; cols = c1 - c0 + 1; rows = r1 - r0 + 1;
+  }
   const N = cols * rows;
   const terr = world.terrain || null;
   const cc = (v) => (v < 0 ? 0 : v >= cols ? cols - 1 : v);
   const rc = (v) => (v < 0 ? 0 : v >= rows ? rows - 1 : v);
-  const cellOf = (x, z) => rc(Math.floor((z - originZ) / cell)) * cols + cc(Math.floor((x - originX) / cell));
+  const inWin = (x, z) => x >= originX && z >= originZ && x < originX + cols * cell && z < originZ + rows * cell;
+  const cellOf = (x, z) => inWin(x, z) ? (Math.floor((z - originZ) / cell) * cols + Math.floor((x - originX) / cell)) : -1; // -1 → outside the window (link endpoint skipped)
 
-  // 1) bucket non-struct, non-trivial boxes into the cells their footprint covers
+  // 1) bucket non-struct, non-trivial boxes (that overlap the window) into the cells their footprint covers
   const boxesAt = new Array(N);
+  const wMaxX = originX + cols * cell, wMaxZ = originZ + rows * cell;
   for (const b of world.boxes) {
     if (b.struct) continue;
+    if (b.max.x <= originX || b.min.x >= wMaxX || b.max.z <= originZ || b.min.z >= wMaxZ) continue; // fully outside the window → no phantom edge surface
     const c0 = cc(Math.floor((b.min.x - originX) / cell)), c1 = cc(Math.floor((b.max.x - originX) / cell));
     const r0 = rc(Math.floor((b.min.z - originZ) / cell)), r1 = rc(Math.floor((b.max.z - originZ) / cell));
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const i = r * cols + c; (boxesAt[i] || (boxesAt[i] = [])).push(b); }

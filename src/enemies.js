@@ -352,23 +352,24 @@ export class EnemyManager {
     return true;
   }
 
-  // World-space window for the horde flow-field rebuild: the AABB of the player + every active mob,
-  // padded for routing room and hard-capped to ±FLOW_CAP from the player. Keeps the Dijkstra (and its
-  // allocations) O(window cells) instead of O(map cells) — the horde always clusters on the player, so
-  // cells far across a large open map are never walked. This is THE steppe-stutter fix: on the 1000 m
-  // steppe the full grid is ~445 k cells (a ~166 ms rebuild freeze every 0.3 s); the window is a few k.
-  // On the small arena the cap exceeds the map, so the window IS the whole grid → behaviour unchanged.
-  _hordeBounds(pp) {
+  // World-space window for a nav rebuild: the AABB of the player + every active mob, padded for routing
+  // room and hard-capped to ±`cap` from the player. Keeps the per-rebuild cost (Dijkstra + allocations)
+  // O(window cells) instead of O(map cells) — the horde always clusters on the player, so cells far
+  // across a large open map are never walked. THE steppe-stutter fix: on the 1000 m steppe the full grid
+  // is ~445 k cells (the ground flow froze ~166 ms / the elevated surface flow ~80 ms, every 0.3 s); the
+  // window is a few k. On the small arena the cap exceeds the map, so the window IS the whole grid →
+  // behaviour unchanged. A stray mob past `cap` falls outside → it beelines (flowDirAt/surfaceDirAt null).
+  _bounds(pp, cap) {
     let minX = pp.x, maxX = pp.x, minZ = pp.z, maxZ = pp.z;
     for (const e of this.active) {
       if (!e.alive) continue;
       if (e.pos.x < minX) minX = e.pos.x; else if (e.pos.x > maxX) maxX = e.pos.x;
       if (e.pos.z < minZ) minZ = e.pos.z; else if (e.pos.z > maxZ) maxZ = e.pos.z;
     }
-    const PAD = 16, CAP = 110; // routing margin; hard cap so a stray far mob can't blow up the window (it beelines instead)
+    const PAD = 16; // routing margin around the cluster
     return {
-      minX: Math.max(pp.x - CAP, minX - PAD), maxX: Math.min(pp.x + CAP, maxX + PAD),
-      minZ: Math.max(pp.z - CAP, minZ - PAD), maxZ: Math.min(pp.z + CAP, maxZ + PAD),
+      minX: Math.max(pp.x - cap, minX - PAD), maxX: Math.min(pp.x + cap, maxX + PAD),
+      minZ: Math.max(pp.z - cap, minZ - PAD), maxZ: Math.min(pp.z + cap, maxZ + PAD),
     };
   }
 
@@ -382,7 +383,7 @@ export class EnemyManager {
     if (this.active.length) {
       if (!this._hordeGrid) this._hordeGrid = buildNavGrid(this.world, { cell: 1.5, inflate: 0.7, slopeAware: true });
       this._flowT -= dt;
-      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z, this._hordeBounds(pp)); }
+      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z, this._bounds(pp, 110)); }
     }
     // LAYERED NAV: only when the player is ELEVATED on a structure (roof / upper floor / bunker level) do
     // we build the multi-surface graph + a surface flow toward the player's ACTUAL level, so the horde
@@ -390,7 +391,13 @@ export class EnemyManager {
     // and the 2D flow above is unchanged. Graph built once per map (lazily); flow refreshed on a timer.
     this._playerUp = this.active.length > 0 && Math.abs(pp.y - this.world.groundY(pp.x, pp.z)) > 1.2;
     if (this._playerUp) {
-      if (!this._navGraph) this._navGraph = buildNavGraph(this.world, { stepUp: STEP_UP });
+      // Windowed surface graph (±80 m around the player+horde): rebuild on first elevation or when the
+      // player leaves the built window's core (moved > 32 m, still well inside the ±80 m + pad window).
+      // Stationary on a roof → built once; only the surface flow refreshes on the 0.3 s timer.
+      if (!this._navGraph || !this._navCtr || Math.hypot(pp.x - this._navCtr.x, pp.z - this._navCtr.z) > 32) {
+        this._navGraph = buildNavGraph(this.world, { stepUp: STEP_UP, bounds: this._bounds(pp, 80) });
+        this._navCtr = { x: pp.x, z: pp.z }; this._surfFlow = null; // graph moved → drop the stale flow
+      }
       this._surfT -= dt;
       if (!this._surfFlow || this._surfT <= 0) { this._surfT = 0.3; this._surfFlow = buildSurfaceFlow(this._navGraph, pp.x, pp.y, pp.z); }
     }
