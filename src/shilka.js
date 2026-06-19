@@ -474,17 +474,22 @@ export class ShilkaStation {
 
   _localPeerId() { return (this.game.mp && this.game.mp.myId) || 'local'; }
 
-  // Pick a seat by where the player stands: in front of the hull → driver hatch; otherwise the turret
-  // (first free of gunner/commander/range — gunner first so a solo player reaches the radar control).
+  // Pick the nearest FREE seat by where the player stands: at the front hatch → driver first; at the
+  // turret → turret seats first (gunner first, so a solo player reaches the radar). Falls through to the
+  // next free seat so pressing E always boards when there's room (occupancy is host-authoritative). -1 = full.
   _pickSeat(playerPos) {
     const d = this.drive;
     const fwd = (playerPos.x - d.x) * Math.sin(d.heading) + (playerPos.z - d.z) * Math.cos(d.heading);
-    if (fwd > 0.5) return SHILKA_DRIVER_SEAT;
-    for (const s of [2, 1, 3]) if (this.seats[s] == null) return s;
-    return SHILKA_DRIVER_SEAT;
+    const order = fwd > 0.5 ? [0, 2, 1, 3] : [2, 1, 3, 0];
+    for (const s of order) if (this.seats[s] == null) return s;
+    return -1;
   }
 
-  mountNearest(playerPos) { this.mount(this._pickSeat(playerPos)); }
+  mountNearest(playerPos) {
+    const seat = this._pickSeat(playerPos);
+    if (seat < 0) { if (this.game.hud) this.game.hud.bigMessage('SHILKA — ПОЛНЫЙ ЭКИПАЖ'); return; } // every seat taken
+    this.mount(seat);
+  }
 
   // Board a seat. Co-op: ask the host (it assigns occupancy authoritatively and replies with
   // shilkastate, which actually seats us via _netMount). Solo: seat immediately.
