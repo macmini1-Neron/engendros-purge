@@ -383,7 +383,7 @@ class Game {
           if (gun) gun.mount();
           else if (this.nearestNightPost()) { this.nearestNightPost().enter(); } // ННП-23: step up to the eyepieces
           else if (this.nearestMortar()) { this.nearestMortar().mount(); } // 82-ПМ-37: man the indirect-fire station
-          else if (this.nearestShilka()) { this.nearestShilka().mount(); } // ЗСУ-23-4: radar/fire-control station
+          else if (this.nearestShilka()) { this.nearestShilka().mountNearest(this.player.pos); } // ЗСУ-23-4: board the nearest seat (driver hatch / turret)
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
@@ -526,7 +526,7 @@ class Game {
   reset() {
     if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
-    if (this.player && this.player.shilka) this.player.shilka.dismount();
+    if (this.player && this.player.shilka) this.player.shilka.dismount(true);
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
     this._nextTagId = 1; // new run → enemy tag ids restart at 1
@@ -1093,7 +1093,7 @@ class Game {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
       if (this.player.nightPost) this.player.nightPost.exit();
       if (this.player.mortar) this.player.mortar.dismount();
-      if (this.player.shilka) this.player.shilka.dismount();
+      if (this.player.shilka) this.player.shilka.dismount(true);
       this.weapons.cancelMolotov();
       this.hud.setCompass(null); // downed/dead in co-op: weapons.update() is skipped → tear the буссоль overlay down
     }

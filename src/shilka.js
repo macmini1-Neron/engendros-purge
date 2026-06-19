@@ -33,6 +33,7 @@ import {
 } from './shilka-mechanics.js';
 import { buildShilkaRig } from './shilka-rig.js';
 import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_GATE_SLOTS, moveShiftLever } from './shilka-drive.js';
+import { SHILKA_SEATS, SHILKA_SEAT_COUNT, SHILKA_DRIVER_SEAT, SHILKA_DISMOUNT_SPEED_EPS, isDriverSeat } from './shilka-crew.js';
 import { formatUglomer } from './bearing.js';
 import { WEAPON_LAYER } from './engine.js';
 import { clamp, damp, TAU } from './util.js';
@@ -50,6 +51,14 @@ const SHILKA_GATE_MOUSE = 0.014;
 const SHILKA_PERI_VFOV = 20;       // degrees, БМО-190Б vertical field of observation
 const SHILKA_PERI_TILT = -0.07;    // rad (~-4°), optical axis below level
 const SHILKA_PERI_DIM = new THREE.Color(0.86, 0.90, 0.88); // coated-optic dimming/tint (≥0.43 transmission)
+// Turret-crew eye points in hull-local metres (x right, y up, z forward): commander/gunner/range sit
+// side by side atop the turret. Placeholder ride-along viewpoints for this slice — refined with the 3D
+// cockpit later. Keyed by seat index (1=commander, 2=gunner, 3=range).
+const SHILKA_TURRET_EYES = {
+  1: { x: -0.55, y: 2.25, z: -0.15 },
+  2: { x: 0.0, y: 2.25, z: -0.15 },
+  3: { x: 0.55, y: 2.25, z: -0.15 },
+};
 
 // Shadow-cast cutoff (world metres): a model mesh whose largest dimension is under this spans fewer
 // than ~4 sun-shadow texels (2048² over 240 m ≈ 0.12 m/texel), so its shadow is invisible — skipping
@@ -126,6 +135,8 @@ export class ShilkaStation {
     this.baseYaw = yaw;
     this.state = createShilkaState({ rangeGateM: 1200 });
     this.driveMode = false;
+    this.seats = new Array(SHILKA_SEAT_COUNT).fill(null); // occupant peerId per seat (authoritative in co-op)
+    this.localSeat = -1;                                  // seat the LOCAL player holds (-1 = not aboard)
     this.drive = createDriveState({ x: this.base.x, z: this.base.z, heading: this.baseYaw });
     this.rig = null; // set when the GLB finishes loading (see _loadVehicleAsset)
     this.aimAzMils = 0;
@@ -462,7 +473,21 @@ export class ShilkaStation {
     return this.near(p);
   }
 
-  mount() {
+  _localPeerId() { return (this.game.mp && this.game.mp.myId) || 'local'; }
+
+  // Pick a seat by where the player stands: in front of the hull → driver hatch; otherwise the turret
+  // (first free of gunner/commander/range — gunner first so a solo player reaches the radar control).
+  _pickSeat(playerPos) {
+    const d = this.drive;
+    const fwd = (playerPos.x - d.x) * Math.sin(d.heading) + (playerPos.z - d.z) * Math.cos(d.heading);
+    if (fwd > 0.5) return SHILKA_DRIVER_SEAT;
+    for (const s of [2, 1, 3]) if (this.seats[s] == null) return s;
+    return SHILKA_DRIVER_SEAT;
+  }
+
+  mountNearest(playerPos) { this.mount(this._pickSeat(playerPos)); }
+
+  mount(seat = SHILKA_DRIVER_SEAT) {
     if (!this.rig) {
       // GLB not ready (or failed): don't enter a phantom drive with an invisible, un-re-enterable vehicle.
       if (this.game.hud) this.game.hud.bigMessage(this._assetFailed ? 'SHILKA — model unavailable' : 'SHILKA — loading…');
@@ -470,11 +495,22 @@ export class ShilkaStation {
     }
     const pl = this.game.player;
     pl.shilka = this;
-    this.driveMode = true;
+    this.localSeat = seat;
+    this.seats[seat] = this._localPeerId(); // co-op overwrites this from the host's shilkastate (Task 3)
+    // ground the hull height if the vehicle has never been driven (drive.y starts at 0) so seat cameras
+    // and the rig sit on the terrain from frame one rather than sinking until the suspension converges.
+    if (!(this.drive.y > 0.01)) this.drive.y = this._groundY(this.drive.x, this.drive.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
     this.game.weapons.group.visible = false;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0';
-    // sync drive state to where the vehicle physically sits
-    this.drive.x = this.base.x; this.drive.z = this.base.z; this.drive.heading = this.baseYaw;
+    if (!this.game.input.locked) this.game.input.requestLock();
+    if (isDriverSeat(seat)) this._enterDriverSeat();
+    else this._enterTurretSeat(seat);
+  }
+
+  _enterDriverSeat() {
+    this.driveMode = true;
+    // resync to where the vehicle physically sits; speed/gear/engine start fresh (heading kept as-is)
+    this.drive.x = this.base.x; this.drive.z = this.base.z;
     this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = true; this.drive.stalled = false;
     this._lever = { ...SHILKA_GATE_SLOTS[this.drive.gear] }; // shift lever rests in the engaged gear's slot
     // driver looks THROUGH a real 3D periscope hood (hull-fixed enclosure + slit, on WEAPON_LAYER): show
@@ -484,16 +520,32 @@ export class ShilkaStation {
     this._ensurePeriscopeRTT(); // build the RTT periscope (camera + render target + screen quad) once
     if (this._hood) this._hood.visible = true;
     this._showDriveHud(true);
-    if (!this.game.input.locked) this.game.input.requestLock();
     this._frameDriverCamera(0.001);
   }
 
-  dismount() {
+  _enterTurretSeat(seat) {
+    this.driveMode = false;
+    this._tYaw = 0; this._tPitch = 0;
+    if (this.game.hud) this.game.hud.bigMessage(`SHILKA — ${SHILKA_SEATS[seat].ru}`);
+    this._frameTurretCamera(0.001, seat);
+  }
+
+  dismount(force = false) {
     const pl = this.game.player;
     if (pl.shilka !== this) return;
-    this.driveMode = false; this._showDriveHud(false);
-    if (this._hood) this._hood.visible = false;
-    if (this.periscopes) this.periscopes.visible = true; // restore the model optic for 3rd-person / other players
+    const seat = this.localSeat;
+    // the isolated driver can't bail while the vehicle rolls (forced on death/reset, which passes force)
+    if (!force && isDriverSeat(seat) && Math.abs(this.drive.speed) > SHILKA_DISMOUNT_SPEED_EPS) {
+      if (this.game.hud) this.game.hud.bigMessage('ZASTAV PRO VÝSTUP');
+      return;
+    }
+    if (isDriverSeat(seat)) {
+      this.driveMode = false; this._showDriveHud(false);
+      if (this._hood) this._hood.visible = false;
+      if (this.periscopes) this.periscopes.visible = true; // restore the model optic for 3rd-person / other players
+    }
+    if (seat >= 0) this.seats[seat] = null;
+    this.localSeat = -1;
     pl.shilka = null;
     this.game.weapons.group.visible = true;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '';
@@ -509,7 +561,7 @@ export class ShilkaStation {
   }
 
   forceReset() {
-    if (this.game.player.shilka === this) this.dismount();
+    if (this.game.player.shilka === this) this.dismount(true);
     this.state = createShilkaState({ rangeGateM: 1200 });
     this.aimAzMils = 0;
     this.aimElDeg = 8;
@@ -531,8 +583,43 @@ export class ShilkaStation {
   }
 
   controlUpdate(dt) {
-    if (this.driveMode) { this._driveControlUpdate(dt); return; }
-    // --- v1 fire-control (dormant this slice; re-wired in the commander/scope layer) ---
+    if (this.localSeat === SHILKA_DRIVER_SEAT) { this._driveControlUpdate(dt); return; }
+    if (this.localSeat >= 1) { this._turretControlUpdate(dt); return; }
+    // localSeat === -1: the local player isn't aboard this vehicle (e.g. a remote crew drives it) — no control
+  }
+
+  // Turret-crew ride-along for this slice: a free-look seat camera + the gunner's (seat 2) radar on/off.
+  // Full fire-control (aim/track/lock/fire) is the autocannon slice and lives dormant in
+  // _stationControlUpdate below (kept intact, not yet wired to a seat).
+  _turretControlUpdate(dt) {
+    const input = this.game.input;
+    if (this.localSeat === 2 && input.wasPressed('KeyR')) this._setRadar(!this.state.radarOnAir);
+    this._frameTurretCamera(dt, this.localSeat);
+  }
+
+  _frameTurretCamera(dt, seat) {
+    const cam = this.game.engine.camera;
+    const d = this.drive;
+    const e = SHILKA_TURRET_EYES[seat] || SHILKA_TURRET_EYES[2];
+    const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
+    cam.position.set(d.x + (e.x * cos + e.z * sin), d.y + e.y, d.z + (-e.x * sin + e.z * cos));
+    // free look around the station (clamped); the base heading rides the hull
+    this._tYaw = (this._tYaw || 0) + this.game.input.mouseDX * 0.0022;
+    this._tPitch = clamp((this._tPitch || 0) - this.game.input.mouseDY * 0.0022, -0.5, 0.55);
+    const yaw = d.heading + this._tYaw, pitch = this._tPitch;
+    const fwd = TMP_FWD.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+    cam.rotation.order = 'YXZ';
+    cam.lookAt(TMP_END.copy(cam.position).add(fwd));
+    cam.rotation.z = 0;
+    this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
+    const pl = this.game.player;
+    pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
+  }
+
+  _setRadar(on) { this.state = setShilkaSwitch(this.state, 'radarOnAir', !!on); }
+
+  // --- v1 fire-control station (dormant this slice; the autocannon slice wires it to the gunner seat) ---
+  _stationControlUpdate(dt) {
     const input = this.game.input;
     this._wirePanelOnce();
     this._targetT += dt;
