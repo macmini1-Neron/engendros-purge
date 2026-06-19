@@ -404,6 +404,12 @@ export class MP {
     if (this.remotes.has(peerId)) { this.remotes.get(peerId).dispose(); this.remotes.delete(peerId); }
     this.roster.delete(peerId); this.pstate.delete(peerId); if (this._lastXf) this._lastXf.delete(peerId);
     if (this.isHost) {
+      // free any Shilka seat the dropped peer held so the vehicle isn't stranded (esp. the driver, seat 0)
+      for (const sh of this.game.shilkas || []) {
+        let freed = false;
+        for (let i = 0; i < sh.seats.length; i++) if (sh.seats[i] === peerId) { sh.seats[i] = null; freed = true; }
+        if (freed) { const pay = sh._statePayload(); this._applyShilkaState(pay); this.net.send('shilkastate', pay); }
+      }
       this.net.broadcast('playerLeft', { id: peerId });   // other clients dispose this character immediately
       this.net.send('roster', this._rosterArr());
       this._renderRoster(); this._checkGameOver();
@@ -868,7 +874,7 @@ export class MP {
     this._xfT -= dt;
     if (this._xfT <= 0) {
       this._xfT = 0.066; const p = g.player;
-      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, waiting: this._localWaiting, wep: g.weapons.cur, fl: g.inventory.isHoldingFlashlight() && !!(g.dayNight && g.dayNight.flashOn), bf: (g.player.burnT > 0) ? 1 : 0, seat: (g.player.mountedGun ? 1 : 0) });
+      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, waiting: this._localWaiting, wep: g.weapons.cur, fl: g.inventory.isHoldingFlashlight() && !!(g.dayNight && g.dayNight.flashOn), bf: (g.player.burnT > 0) ? 1 : 0, seat: ((g.player.mountedGun || g.player.shilka) ? 1 : 0) });
     }
     for (const [, rp] of this.remotes) rp.update(dt, cam);
     this._updateGhostProjectiles(dt);
@@ -1190,6 +1196,19 @@ export class MP {
     if (b && typeof b.netSnapshot === 'function') { const snap = b.netSnapshot(); if (snap.parts.length || snap.holes.length) this.net.sendTo(pid, 'bdestroy', snap); } // existing breaches / shattered panes / APFSDS holes
     if (this.game.forest && typeof this.game.forest.netSnapshot === 'function') for (const fx of this.game.forest.netSnapshot()) this.net.sendTo(pid, 'forestfx', fx); // felled / charred trees + consumed grass
     if (this.game.fire && typeof this.game.fire.netSnapshot === 'function') for (const ig of this.game.fire.netSnapshot()) this.net.sendTo(pid, 'fireignite', ig); // currently-burning parts
+    // late-join: occupied Shilkas — seat occupancy + the driver's current transform, so the joiner sees
+    // them manned and positioned (an empty vehicle needs nothing; it's placed identically at world init)
+    for (const sh of this.game.shilkas || []) {
+      if (!sh.seats.some((s) => s != null)) continue;
+      this.net.sendTo(pid, 'shilkastate', sh._statePayload());
+      if (sh.seats[0] != null) {                                   // a driver is seated → send the live transform (host's sh.drive is current via _applyRemoteDrive)
+        const d = sh.drive;
+        this.net.sendTo(pid, 'shilkamove', { pid: sh.seats[0], v: sh.id,
+          x: +d.x.toFixed(2), z: +d.z.toFixed(2), heading: +d.heading.toFixed(3),
+          pitch: +d.pitch.toFixed(3), roll: +d.roll.toFixed(3),
+          gear: d.gear, speed: +d.speed.toFixed(2), ws: +d.wheelSpin.toFixed(2), ts: +d.trackScroll.toFixed(2) });
+      }
+    }
   }
   worldTimeState() {
     const g = this.game;
