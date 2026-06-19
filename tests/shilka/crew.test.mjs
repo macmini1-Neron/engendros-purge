@@ -23,6 +23,14 @@ test('mounting an empty seat seats the peer', () => {
   assert.equal(seatOf(r.seats, 'alice'), 2);
 });
 
+test('mounting the empty driver seat (0) succeeds, and a stopped driver leaves with no speed given', () => {
+  const m = resolveSeatClaim(empty(), 0, 'alice', 'mount');
+  assert.ok(m.ok && m.seats[0] === 'alice', 'driver seat boards');
+  // opts omitted → speed defaults to 0 → the driver may dismount
+  const d = resolveSeatClaim(m.seats, 0, 'alice', 'dismount');
+  assert.ok(d.ok && d.seats[0] === null, 'no opts.speed defaults to a stop → dismount allowed');
+});
+
 test('a seat occupied by someone else is refused', () => {
   const seats = empty(); seats[2] = 'bob';
   const r = resolveSeatClaim(seats, 2, 'alice', 'mount');

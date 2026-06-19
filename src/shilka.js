@@ -134,7 +134,6 @@ export class ShilkaStation {
     this.base = pos.clone();
     this.baseYaw = yaw;
     this.state = createShilkaState({ rangeGateM: 1200 });
-    this.driveMode = false;
     this.seats = new Array(SHILKA_SEAT_COUNT).fill(null); // occupant peerId per seat (authoritative in co-op)
     this.localSeat = -1;                                  // seat the LOCAL player holds (-1 = not aboard)
     this.drive = createDriveState({ x: this.base.x, z: this.base.z, heading: this.baseYaw });
@@ -512,9 +511,9 @@ export class ShilkaStation {
     const pl = this.game.player;
     pl.shilka = this;
     this.localSeat = seat;
-    // ground the hull height if the vehicle has never been driven (drive.y starts at 0) so seat cameras
-    // and the rig sit on the terrain from frame one rather than sinking until the suspension converges.
-    if (!(this.drive.y > 0.01)) this.drive.y = this._groundY(this.drive.x, this.drive.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
+    // seat the hull origin at its suspension rest height (matches stepDrive's target) so seat cameras read
+    // a consistent y from frame one rather than the rig-root spawn height until the suspension converges.
+    this.drive.y = this._groundY(this.drive.x, this.drive.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
     this.game.weapons.group.visible = false;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '0';
     if (!this.game.input.locked) this.game.input.requestLock();
@@ -523,7 +522,6 @@ export class ShilkaStation {
   }
 
   _enterDriverSeat() {
-    this.driveMode = true;
     // resync to where the vehicle physically sits; speed/gear/engine start fresh (heading kept as-is)
     this.drive.x = this.base.x; this.drive.z = this.base.z;
     this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = true; this.drive.stalled = false;
@@ -539,7 +537,6 @@ export class ShilkaStation {
   }
 
   _enterTurretSeat(seat) {
-    this.driveMode = false;
     this._tYaw = 0; this._tPitch = 0;
     if (this.game.hud) this.game.hud.bigMessage(`SHILKA — ${SHILKA_SEATS[seat].ru}`);
     this._frameTurretCamera(0.001, seat);
@@ -573,7 +570,7 @@ export class ShilkaStation {
   // Local seat teardown — shared by the solo path and the co-op state apply.
   _leaveSeat(seat) {
     if (isDriverSeat(seat)) {
-      this.driveMode = false; this._showDriveHud(false);
+      this._showDriveHud(false);
       if (this._hood) this._hood.visible = false;
       if (this.periscopes) this.periscopes.visible = true; // restore the model optic for 3rd-person / other players
     }
@@ -590,8 +587,26 @@ export class ShilkaStation {
 
   // Authoritative state shape the host broadcasts (and clients reconcile against) — occupancy + the
   // shared radar flag. Built here so the payload shape lives in one place (mp.js calls sh._statePayload()).
-  _statePayload() { return { v: this.id, seats: this.seats.slice(), radar: !!this.state.radarOnAir }; }
+  _statePayload() {
+    const d = this.drive;
+    // carry a coarse position snapshot (xf) so a late joiner positions a driven-then-parked vehicle
+    // correctly instead of at its spawn; a live-driven vehicle is positioned by the smooth shilkamove.
+    return {
+      v: this.id, seats: this.seats.slice(), radar: !!this.state.radarOnAir,
+      xf: { x: +d.x.toFixed(2), z: +d.z.toFixed(2), heading: +d.heading.toFixed(3), pitch: +d.pitch.toFixed(3), roll: +d.roll.toFixed(3), gear: d.gear, ws: +d.wheelSpin.toFixed(2), ts: +d.trackScroll.toFixed(2) },
+    };
+  }
   setRadar(on) { this.state = setShilkaSwitch(this.state, 'radarOnAir', !!on); }
+
+  // Apply a coarse transform snapshot from shilkastate — positions a PARKED vehicle (no seated driver) on
+  // a late joiner / resolves drift. The live driven path uses _applyRemoteDrive (shilkamove) instead.
+  _applyNetTransform(t) {
+    const d = this.drive;
+    d.x = t.x; d.z = t.z; d.heading = t.heading; d.pitch = t.pitch; d.roll = t.roll;
+    d.gear = t.gear; d.wheelSpin = t.ws; d.trackScroll = t.ts;
+    d.y = this._groundY(d.x, d.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
+    if (this.rig) this._applyRig(0); else this._pendingRig = true; // rig may still be loading on a fresh joiner
+  }
 
   onPointerUnlock() {
     if (this.game.player.shilka === this) this._setCursorMode(true);
@@ -599,6 +614,7 @@ export class ShilkaStation {
 
   forceReset() {
     if (this.game.player.shilka === this) this.dismount(true);
+    this.seats.fill(null); this.localSeat = -1; // wipe per-run occupancy so a stale id can't lock a seat after a reset
     this.state = createShilkaState({ rangeGateM: 1200 });
     this.aimAzMils = 0;
     this.aimElDeg = 8;
@@ -611,6 +627,7 @@ export class ShilkaStation {
   update(dt) {
     this._updateDrones(dt);
     this._updateProjectiles(dt);
+    if (this._pendingRig && this.rig) { this._applyRig(0); this._pendingRig = false; } // apply a snapshot that arrived before the GLB finished loading
     // radar "Gun Dish" scans continuously — visible on the parked model from any angle (this.update
     // ticks even when unseated). Dev: s._radarSpin = 0 stops it, larger = faster (rad/s).
     if (this.rig && this.rig.radar) this.rig.radar.rotation.y += dt * (this._radarSpin ?? SHILKA_RADAR_SPIN);
@@ -634,7 +651,11 @@ export class ShilkaStation {
   // _stationControlUpdate below (kept intact, not yet wired to a seat).
   _turretControlUpdate(dt) {
     const input = this.game.input;
-    if (this.localSeat === 2 && input.wasPressed('KeyR')) this._setRadar(!this.state.radarOnAir);
+    if (this.localSeat === 2 && input.wasPressed('KeyR')) {
+      const want = !this.state.radarOnAir;            // (client may not flip locally until the host echoes — show the intent)
+      this._setRadar(want);
+      if (this.game.hud) this.game.hud.bigMessage(want ? 'РЛС — ВКЛ' : 'РЛС — ВЫКЛ'); // visible feedback for the placeholder toggle
+    }
     this._frameTurretCamera(dt, this.localSeat);
   }
 

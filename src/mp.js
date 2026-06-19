@@ -728,7 +728,7 @@ export class MP {
     // ── ЗСУ-23-4 «Shilka» multi-crew ──
     n.on('shilkaclaim', (d, from) => { if (this.isHost && d) this._hostShilkaClaim(d.want, from, d.v, d.seat, d); }); // client → host: mount/dismount a seat (or gunner radar toggle)
     n.on('shilkastate', (d) => { if (!this.isHost && d) this._applyShilkaState(d); });                              // host → clients: authoritative seat occupancy + radar flag
-    n.on('shilkamove', (d) => { if (!d || d.pid === this.myId) return; const sh = this._shilkaById(d.v); if (sh && sh.seats[0] === d.pid) sh._recvMove(d); }); // mirror the seated driver's transform (only the driver is trusted; host relays via _r)
+    n.on('shilkamove', (d) => { if (!d || d.pid === this.myId) return; const sh = this._shilkaById(d.v); if (sh && sh.seats[0] === d.pid) sh._recvMove(d); }); // apply only the seated driver's transform — a per-recipient check (the _r relay itself is unconditional); PvE, so a spoofed pid is a non-issue
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
@@ -863,6 +863,7 @@ export class MP {
     const sh = this._shilkaById(d && d.v); if (!sh) return;
     if (Array.isArray(d.seats)) sh.seats = d.seats.slice();
     if (typeof d.radar === 'boolean') sh.setRadar(d.radar);                  // mirror the shared radar flag (no re-broadcast)
+    if (d.xf && sh.seats[0] == null) sh._applyNetTransform(d.xf);            // position a PARKED vehicle; a driven one rides the live shilkamove, and a local driver owns its own motion
     const mySeat = sh.seats.indexOf(this.myId);
     if (mySeat !== -1) { if (sh.localSeat !== mySeat) sh._netMount(mySeat); } // the host seated me here
     else if (sh.localSeat !== -1) { sh._netDismount(); }                     // someone freed my seat (or I left)
@@ -1196,12 +1197,12 @@ export class MP {
     if (b && typeof b.netSnapshot === 'function') { const snap = b.netSnapshot(); if (snap.parts.length || snap.holes.length) this.net.sendTo(pid, 'bdestroy', snap); } // existing breaches / shattered panes / APFSDS holes
     if (this.game.forest && typeof this.game.forest.netSnapshot === 'function') for (const fx of this.game.forest.netSnapshot()) this.net.sendTo(pid, 'forestfx', fx); // felled / charred trees + consumed grass
     if (this.game.fire && typeof this.game.fire.netSnapshot === 'function') for (const ig of this.game.fire.netSnapshot()) this.net.sendTo(pid, 'fireignite', ig); // currently-burning parts
-    // late-join: occupied Shilkas — seat occupancy + the driver's current transform, so the joiner sees
-    // them manned and positioned (an empty vehicle needs nothing; it's placed identically at world init)
+    // late-join: every Shilka — its seat occupancy + a position snapshot (shilkastate carries xf), so a
+    // joiner sees a driven-then-parked vehicle in the right place (a never-driven one snaps to its spawn,
+    // a no-op). An occupied-by-a-driver vehicle also gets the live shilkamove to seed the smooth stream.
     for (const sh of this.game.shilkas || []) {
-      if (!sh.seats.some((s) => s != null)) continue;
       this.net.sendTo(pid, 'shilkastate', sh._statePayload());
-      if (sh.seats[0] != null) {                                   // a driver is seated → send the live transform (host's sh.drive is current via _applyRemoteDrive)
+      if (sh.seats[0] != null) {                                   // a driver is seated → seed the live transform (host's sh.drive is current via _applyRemoteDrive)
         const d = sh.drive;
         this.net.sendTo(pid, 'shilkamove', { pid: sh.seats[0], v: sh.id,
           x: +d.x.toFixed(2), z: +d.z.toFixed(2), heading: +d.heading.toFixed(3),
