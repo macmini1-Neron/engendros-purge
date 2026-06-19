@@ -81,7 +81,9 @@ export class AssetPreview {
     const d1 = new THREE.DirectionalLight(0xfff1d8, 1.7); d1.position.set(4, 7, 5); this.scene.add(d1);
     const d2 = new THREE.DirectionalLight(0x9fb6ff, 0.5); d2.position.set(-5, -1, -4); this.scene.add(d2);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.18));
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 400);
+    // near/far kept TIGHT (models are ~1-2 units, orbit maxDist 40) — a wide range like 0.01..400
+    // wrecks depth-buffer precision and z-fights coplanar faces (e.g. an AK dust cover on the receiver).
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 120);
     this.orbit = new OrbitCam(this.camera, canvas);
     this.holder = new THREE.Group(); this.scene.add(this.holder);
     this.spin = true; this.spinT = 0; this.cur = null; this.radius = 1; this.entries = [];
