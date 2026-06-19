@@ -32,7 +32,7 @@ import {
   updateShilkaTrack,
 } from './shilka-mechanics.js';
 import { buildShilkaRig } from './shilka-rig.js';
-import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING } from './shilka-drive.js';
+import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_GATE_SLOTS, moveShiftLever } from './shilka-drive.js';
 import { formatUglomer } from './bearing.js';
 import { WEAPON_LAYER } from './engine.js';
 import { clamp, damp, TAU } from './util.js';
@@ -40,6 +40,16 @@ import { clamp, damp, TAU } from './util.js';
 // radar "Gun Dish" (RPK-2 «Тобол») continuous scan rate, rad/s — the signature ЗСУ-23-4 animation.
 // Per-instance dev override: s._radarSpin = 0 stops it, larger spins faster.
 const SHILKA_RADAR_SPIN = 2.0;
+// Shift-lever sensitivity: mouse delta (px) → gate units. The gate spans 2 units (-1..1) per axis, so
+// at ~0.014 a ~70 px flick crosses one rail and a ~36 px pull seats/unseats a gear — deliberate, "felt".
+const SHILKA_GATE_MOUSE = 0.014;
+// Driver day periscope БМО-190Б: a FIXED wide-angle unity optic (no traverse). Real field of observation
+// ≥69° horizontal × ≥20° vertical (9° up + 9° down). We set the camera's VERTICAL fov to 20°; at the slit's
+// ~4.36 aspect that yields ~75° horizontal — both meet the "≥" spec. Optical axis sits 4° below level so the
+// 20° field spans roughly +6°..−14° (horizon + ground close ahead). Light transmission ≥0.43 → image dimmed.
+const SHILKA_PERI_VFOV = 20;       // degrees, БМО-190Б vertical field of observation
+const SHILKA_PERI_TILT = -0.07;    // rad (~-4°), optical axis below level
+const SHILKA_PERI_DIM = new THREE.Color(0.86, 0.90, 0.88); // coated-optic dimming/tint (≥0.43 transmission)
 
 // Shadow-cast cutoff (world metres): a model mesh whose largest dimension is under this spans fewer
 // than ~4 sun-shadow texels (2048² over 240 m ≈ 0.12 m/texel), so its shadow is invisible — skipping
@@ -244,6 +254,99 @@ export class ShilkaStation {
     this._hood = grp; // dev: tune live — s._hood.scale.setScalar(n) / s._hood.children[i].scale; rebuild for slit size
   }
 
+  // RTT optical periscope: built lazily on first mount. A periscope camera at the head (rides rig.body
+  // via this.periscopes, so it inherits hull tilt/heading/position) renders the world+tank into an
+  // off-screen target each driving frame; the result is shown on a screen quad in the hood slit. Because
+  // the head sits in open air above the glacis looking outward, the tank's exterior renders solidly —
+  // no near-plane hull clipping, no DoubleSide see-through. Fixed-forward (owner): no mouselook traverse.
+  _ensurePeriscopeRTT() {
+    if (this._periRT || !this.periscopes || !this._hood) return;
+    const W = 2560, H = 588; // ≈4.36:1 (matches the slit); hi-res so the upscaled slit image stays sharp
+    const rt = new THREE.WebGLRenderTarget(W, H, {
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
+      depthBuffer: true, stencilBuffer: false,
+    });
+    rt.texture.colorSpace = THREE.SRGBColorSpace; // RT holds the fully-developed (ACES+sRGB) image
+    rt.texture.generateMipmaps = false;
+    this._periRT = rt;
+    // periscope camera: head above the glacis (optic looks −Z; parent +Z = hull-forward). FIXED forward at
+    // the БМО-190Б field (vfov 20° → ~75° h at this aspect); no mouselook traverse — a real driver's day
+    // periscope is a fixed wide-angle prism, which also keeps the optic from ever pointing into the guns.
+    const cam = new THREE.PerspectiveCamera(SHILKA_PERI_VFOV, W / H, 0.05, 1200); // dev: s._periCam.fov + updateProjectionMatrix
+    cam.layers.set(0);                 // world + tank ONLY — never WEAPON_LAYER (no hood/quad → no feedback)
+    cam.position.set(0, 0.12, 0.22);   // periscopes-local: up+forward of the housing, clear of the glass
+    cam.rotation.set(SHILKA_PERI_TILT, Math.PI, 0);
+    // dev: tune framing live — s._periCam.position.set(x,y,z) / s._periCam.rotation.x / .fov (+updateProjectionMatrix)
+    this.periscopes.add(cam);
+    this._periCam = cam;
+    // screen quad: shows the RT in the hood slit, unlit, no second tone-map (repo convention).
+    const screen = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.48, 0.11), // == slit (slitW 0.24 × slitH 0.055 half-extents)
+      // color multiplies the RT → a gentle dim/cool tint for the optic's ≥0.43 light transmission + coating
+      new THREE.MeshBasicMaterial({ map: rt.texture, color: SHILKA_PERI_DIM.clone(), toneMapped: false, fog: false }),
+    );
+    screen.position.set(0, 0, 0.261);  // hood-local: on the +Z front face (front 0.26), slit-centred
+    screen.rotation.y = Math.PI;       // face the eye (−Z)
+    screen.layers.set(WEAPON_LAYER);
+    screen.frustumCulled = false;
+    screen.renderOrder = 1001;         // draws just after the 1000 hood frame
+    this._hood.add(screen);            // rides the hood; shown/hidden with hood.visible
+    this._periScreen = screen;
+    // glass overlay: a transparent optic-glass texture (vignette + reflection streak + scratches + dust)
+    // sat just in front of the screen → the image reads as seen THROUGH periscope glass.
+    const glass = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.48, 0.11),
+      new THREE.MeshBasicMaterial({ map: this._buildGlassTexture(), transparent: true, depthWrite: false, toneMapped: false, fog: false }),
+    );
+    glass.position.set(0, 0, 0.259);   // in front of the screen (eye side), behind the frame plane (0.26)
+    glass.rotation.y = Math.PI;
+    glass.layers.set(WEAPON_LAYER);
+    glass.frustumCulled = false;
+    glass.renderOrder = 1002;          // over the screen (1001)
+    this._hood.add(glass);
+    this._periGlass = glass;
+  }
+
+  // Procedural periscope-glass overlay (CanvasTexture, mostly transparent): soft vignette toward the
+  // slit edges, a faint diagonal reflection streak, a few scratches and dust specks. Kept subtle so the
+  // optical image stays readable. Deterministic (no Math.random) so it's stable across reloads.
+  _buildGlassTexture() {
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 236;
+    const x = cv.getContext('2d');
+    const vg = x.createRadialGradient(512, 118, 230, 512, 118, 640); // edge vignette (optic tube)
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(0.78, 'rgba(0,0,0,0.10)'); vg.addColorStop(1, 'rgba(4,9,7,0.46)');
+    x.fillStyle = vg; x.fillRect(0, 0, 1024, 236);
+    x.fillStyle = 'rgba(120,150,148,0.045)'; x.fillRect(0, 0, 1024, 236); // faint cool tint
+    const rf = x.createLinearGradient(0, 0, 1024, 236);                   // diagonal reflection streak
+    rf.addColorStop(0, 'rgba(255,255,255,0)'); rf.addColorStop(0.40, 'rgba(255,255,255,0.05)');
+    rf.addColorStop(0.50, 'rgba(255,255,255,0.10)'); rf.addColorStop(0.60, 'rgba(255,255,255,0.04)');
+    rf.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = rf; x.fillRect(0, 0, 1024, 236);
+    x.strokeStyle = 'rgba(225,232,230,0.10)'; x.lineWidth = 1;           // scratches
+    for (const [a, b, c, d] of [[60, 40, 300, 70], [430, 200, 720, 150], [150, 205, 270, 175], [800, 28, 940, 120], [505, 55, 560, 225]]) {
+      x.beginPath(); x.moveTo(a, b); x.lineTo(c, d); x.stroke();
+    }
+    x.fillStyle = 'rgba(205,212,208,0.13)';                              // dust specks (deterministic)
+    for (let i = 0; i < 44; i++) { const px = (i * 97 + 13) % 1024, py = (i * 53 + 31) % 236, r = ((i * 7) % 3) * 0.6 + 0.4; x.beginPath(); x.arc(px, py, r, 0, Math.PI * 2); x.fill(); }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  // Render the world+tank from the periscope head into _periRT. Called each driving frame from
+  // _driveControlUpdate (before engine.render), so the slit quad shows this frame's clean optical image.
+  _renderPeriscope() {
+    if (!this._periCam || !this._periRT) return;
+    const r = this.game.engine.renderer, sc = this.game.engine.scene;
+    this._periCam.layers.set(0);
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this._periRT);
+    r.clear();                     // engine autoClear is off → clear the RT's colour+depth ourselves
+    r.render(sc, this._periCam);   // scene.updateMatrixWorld() inside picks up this frame's hull pose + head
+    r.setRenderTarget(prev);
+  }
+
   async _loadVehicleAsset() {
     try {
       const gltf = await loadGltf(SHILKA_ASSET_URL);
@@ -276,6 +379,12 @@ export class ShilkaStation {
       this.drive.y = this.vehicleRoot.position.y;
       // periscope housing wears the hull's own GLB material now that it's loaded → exact colour match.
       this._matchHousingToHull(rig.root);
+      // Weld the periscope optic (an ADDED part, built under vehicleRoot which only gets heading) onto
+      // the rig's tilting body, so it inherits the hull's terrain pitch/roll AND heading AND position
+      // rigidly — no more "levitating" when the hull tilts on slopes. .attach() keeps its tuned world
+      // pose. This replaces the old per-frame rotation hack (which only ran while driving, when the optic
+      // is hidden, so the visible parked/3rd-person optic never tilted).
+      if (this.periscopes && rig.body) rig.body.attach(this.periscopes);
     } catch (e) {
       this._assetFailed = true;
       console.warn('[shilka] Failed to load/rig GLB vehicle; station marker remains.', e);
@@ -367,11 +476,12 @@ export class ShilkaStation {
     // sync drive state to where the vehicle physically sits
     this.drive.x = this.base.x; this.drive.z = this.base.z; this.drive.heading = this.baseYaw;
     this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = true; this.drive.stalled = false;
-    this._lookYaw = 0; this._lookPitch = 0;
+    this._lever = { ...SHILKA_GATE_SLOTS[this.drive.gear] }; // shift lever rests in the engaged gear's slot
     // driver looks THROUGH a real 3D periscope hood (hull-fixed enclosure + slit, on WEAPON_LAYER): show
     // it and hide the exterior optic so it doesn't double up / clip. The hood is the viewport now — the
     // camera turns inside it (see _frameDriverCamera), the old 2D DOM mask is retired.
     if (this.periscopes) this.periscopes.visible = false;
+    this._ensurePeriscopeRTT(); // build the RTT periscope (camera + render target + screen quad) once
     if (this._hood) this._hood.visible = true;
     this._showDriveHud(true);
     if (!this.game.input.locked) this.game.input.requestLock();
@@ -617,15 +727,26 @@ export class ShilkaStation {
 
   _driveControlUpdate(dt) {
     const input = this.game.input;
-    // gear selection (mode-gated; clash-free with commander digits in a later slice)
+    if (!this._lever) this._lever = { ...SHILKA_GATE_SLOTS[this.drive.gear] || SHILKA_GATE_SLOTS.N };
+    // SHIFTING: hold Space (clutch in) and the mouse drags the lever through the ГМ-575 double-H gate;
+    // the lever's slot is fed as gearReq (stepDrive's synchro logic decides if it actually engages).
+    // While shifting, the periscope traverse is suspended (see _frameDriverCamera) so the mouse is the lever.
+    this._shifting = input.isDown('Space');
     let gearReq = null;
-    if (input.wasPressed('Digit1')) gearReq = '1';
-    else if (input.wasPressed('Digit2')) gearReq = '2';
-    else if (input.wasPressed('Digit3')) gearReq = '3';
-    else if (input.wasPressed('Digit4')) gearReq = '4';
-    else if (input.wasPressed('Digit5')) gearReq = '5';
-    else if (input.wasPressed('KeyR')) gearReq = 'R';
-    else if (input.wasPressed('Backquote') || input.wasPressed('Digit0')) gearReq = 'N';
+    if (this._shifting) {
+      const moved = moveShiftLever(this._lever, input.mouseDX * SHILKA_GATE_MOUSE, -input.mouseDY * SHILKA_GATE_MOUSE);
+      this._lever.gx = moved.gx; this._lever.gy = moved.gy;
+      gearReq = moved.gear;
+    }
+    // digit shortcuts: snap the lever straight to a slot (and request it) — power-user / accessibility path.
+    const snap = (g) => { this._lever = { ...SHILKA_GATE_SLOTS[g] }; gearReq = g; };
+    if (input.wasPressed('Digit1')) snap('1');
+    else if (input.wasPressed('Digit2')) snap('2');
+    else if (input.wasPressed('Digit3')) snap('3');
+    else if (input.wasPressed('Digit4')) snap('4');
+    else if (input.wasPressed('Digit5')) snap('5');
+    else if (input.wasPressed('KeyR')) snap('R');
+    else if (input.wasPressed('Backquote') || input.wasPressed('Digit0')) snap('N');
     const inp = {
       throttle: input.isDown('KeyW') ? 1 : 0,
       brake: input.isDown('KeyS') ? 1 : 0,
@@ -638,6 +759,7 @@ export class ShilkaStation {
     this.drive = stepDrive(this.drive, dt, inp, ground);
     this._applyRig(dt);
     this._frameDriverCamera(dt);
+    this._renderPeriscope(); // RTT the optical periscope into _periRT, BEFORE engine.render()
     this._updateDriveHud();
   }
 
@@ -683,45 +805,34 @@ export class ShilkaStation {
   _frameDriverCamera(dt) {
     const cam = this.game.engine.camera;
     const d = this.drive;
-    // driver eye: left-seat driver, head-out at the periscope station looking forward over the glacis.
-    // (y1.3/z1.4 buried the camera INSIDE the opaque hull → all-black; y1.7/z2.2 clears it — headless-swept.)
-    // driver VIEW (separate from the periscope model): head-out on the +X driver side, clear of the hull.
-    const EYE = this._eye || (this._eye = { x: 0.565, y: 0.75, z: 2.4 }); // baked driver view; still dev-tweakable: s._eye.{x,y,z}
+    // Buttoned-up driver: the main camera only ever sees the black hood + the periscope SCREEN (the RTT
+    // quad) in the slit, so its exact spot just needs to seat the hood sensibly at the driver station.
+    const EYE = this._eye || (this._eye = { x: 0.565, y: 0.75, z: 2.4 }); // dev-tweakable: s._eye.{x,y,z}
     const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
-    const ex = d.x + (EYE.x * cos + EYE.z * sin);
-    const ez = d.z + (-EYE.x * sin + EYE.z * cos);
-    cam.position.set(ex, d.y + EYE.y, ez);
+    cam.position.set(d.x + (EYE.x * cos + EYE.z * sin), d.y + EYE.y, d.z + (-EYE.x * sin + EYE.z * cos));
     cam.rotation.order = 'YXZ';
-    // periscope look: mouse pans a limited cone around the hull's forward axis
-    this._lookYaw = clamp((this._lookYaw || 0) + this.game.input.mouseDX * 0.0022, -0.9, 0.9);
-    this._lookPitch = clamp((this._lookPitch || 0) - this.game.input.mouseDY * 0.0022, -0.5, 0.6);
-    // tilt the driver view with the terrain (spec §4): fold the hull pitch into the look pitch
-    // (+pitch = nose up = look up, matching the hull) so the horizon climbs going uphill.
-    const camPitch = clamp(this._lookPitch + d.pitch, -1.3, 1.3);
+    // Main camera is PINNED to hull-forward (heading + terrain pitch), banked by -roll — NO mouselook,
+    // so the hood never sweeps through the hull. The fixed-forward periscope screen lives in the slit.
     const fwd = TMP_FWD.set(
-      Math.sin(d.heading + this._lookYaw) * Math.cos(camPitch),
-      Math.sin(camPitch),
-      Math.cos(d.heading + this._lookYaw) * Math.cos(camPitch),
+      Math.sin(d.heading) * Math.cos(d.pitch),
+      Math.sin(d.pitch),
+      Math.cos(d.heading) * Math.cos(d.pitch),
     );
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
-    // hull roll banks the horizon (sign matches the hull's negated roll)
     cam.rotation.z = -d.roll;
-    // periscope hood: sit it on the eye, oriented to HULL-forward (heading + d.pitch, NO mouselook) and
-    // banked by -d.roll — i.e. the camera's orientation with _lookYaw/_lookPitch zeroed. The hood is the
-    // hull-fixed reference; the camera turns inside it via mouselook, so the slit slides aside as you look.
+    // hood: identical pose → slit stays dead-centre; its child screen quad (the RTT image) sits in it.
     if (this._hood && this._hood.visible) {
       this._hood.position.copy(cam.position);
       this._hood.rotation.order = 'YXZ';
-      const fH = TMP_FWD.set(
-        Math.sin(d.heading) * Math.cos(d.pitch),
-        Math.sin(d.pitch),
-        Math.cos(d.heading) * Math.cos(d.pitch),
-      );
-      this._hood.lookAt(TMP_END.copy(cam.position).add(fH));
+      this._hood.lookAt(TMP_END.copy(cam.position).add(fwd));
       this._hood.rotation.z = -d.roll;
     }
-    if (this.periscopes) this.periscopes.rotation.set(d.pitch, 0, -d.roll); // periscopes tilt with the hull
-    this.game.engine.setFov(70);
+    // periscope optic: FIXED forward at the БМО-190Б field (no traverse — a real driver's day periscope is
+    // a fixed wide-angle prism). Its world pose comes entirely from the parent (rig.body → heading + tilt);
+    // we just hold the fixed local axis. The mouse is free for the shift lever (see _driveControlUpdate).
+    if (this._periCam) this._periCam.rotation.set(SHILKA_PERI_TILT, Math.PI, 0, 'YXZ');
+    // setFov narrower than on-foot so the hood/slit fills more of the screen.
+    this.game.engine.setFov(58);
     const pl = this.game.player;
     pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
   }
@@ -739,10 +850,24 @@ export class ShilkaStation {
     const el = document.getElementById('shilka-drive-hud'); if (!el) return;
     const d = this.drive;
     const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-    set('shilka-dh-gear', d.gear);
+    set('shilka-dh-gear', d.gear === 'R' ? 'ЗХ' : d.gear); // reverse = ЗХ (задний ход), authentic Cyrillic
     set('shilka-dh-speed', `${Math.round(Math.abs(d.speed) * 3.6)} km/h`);
     set('shilka-dh-rpm', d.engineOn ? `${Math.round(d.engineRpm)} rpm` : 'STALL');
     el.classList.toggle('stall', !d.engineOn);
+    // H-gate lever dot: map (gx,gy) ∈ [-1,1]² to the SVG (rails at x 18/50/82, slots at y 12/60, channel 36)
+    const lev = document.getElementById('shilka-gate-lever');
+    if (lev && this._lever) {
+      lev.setAttribute('cx', (50 + (this._lever.gx || 0) * 32).toFixed(1));
+      lev.setAttribute('cy', (36 - (this._lever.gy || 0) * 24).toFixed(1));
+    }
+    el.classList.toggle('grind', !!d.grind);      // lever in a slot the dogs won't take → flash the gate
+    el.classList.toggle('shifting', !!this._shifting);
+    // highlight the engaged gear's label
+    if (this._gateLabel !== d.gear) {
+      const prev = document.getElementById(`shilka-gl-${this._gateLabel}`); if (prev) prev.classList.remove('on');
+      const cur = document.getElementById(`shilka-gl-${d.gear}`); if (cur) cur.classList.add('on');
+      this._gateLabel = d.gear;
+    }
   }
 
   _showPanel(on) {

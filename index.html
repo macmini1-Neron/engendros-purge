@@ -1058,7 +1058,19 @@
     #shilka-drive-hud .dh-k{color:#7fa6b8;font-size:11px}
     #shilka-drive-hud #shilka-dh-gear{color:#ffd16a;font-size:18px;min-width:1.2em;text-align:center}
     #shilka-drive-hud.stall #shilka-dh-rpm{color:#ff5a4a}
-    #shilka-drive-hud .dh-hint{color:#8fb0bf;font-size:10px;border-left:1px solid #2c3a44;padding-left:12px}
+    #shilka-drive-hud .dh-readouts{display:flex;gap:16px;align-items:center}
+    #shilka-drive-hud .dh-hint{color:#8fb0bf;font-size:10px;border-left:1px solid #2c3a44;padding-left:12px;max-width:230px}
+    #shilka-drive-hud .dh-hint b{color:#ffd16a}
+    /* H-gate selector diagram */
+    #shilka-gate{flex:0 0 auto;border-right:1px solid #2c3a44;padding-right:12px;overflow:visible}
+    #shilka-gate .gate-rails path{fill:none;stroke:#3a4d57;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}
+    #shilka-gate .gate-labels text{fill:#6f93a3;font:bold 12px 'Russo One',monospace;text-anchor:middle;dominant-baseline:middle}
+    #shilka-gate .gate-labels text.on{fill:#fff}  /* active slot: white reads clearly over the brass lever dot */
+    #shilka-gate #shilka-gate-lever{fill:#ffd16a;stroke:#1a1206;stroke-width:1.5;transition:cx .05s linear,cy .05s linear}
+    #shilka-drive-hud.shifting #shilka-gate-lever{fill:#7fe0c8;r:7.5}
+    #shilka-drive-hud.grind #shilka-gate-lever{fill:#ff5a4a;animation:gate-rattle .09s linear infinite}
+    #shilka-drive-hud.grind #shilka-gate .gate-rails path{stroke:#ff5a4a}
+    @keyframes gate-rattle{0%,100%{transform:translateX(-1px)}50%{transform:translateX(1px)}}
     /* buttoned-up driver periscope: screen goes PURE black, world seen through one long fixed glass slit */
     #shilka-periscope-mask{position:fixed;inset:0;z-index:34;display:none;pointer-events:none}
     #shilka-periscope-mask.show{display:block}
@@ -1185,10 +1197,24 @@
       <div id="shilka-help">MOUSE AIM · RMB LOCK · TAB ROLE · E EXIT</div>
     </div>
     <div id="shilka-drive-hud">
-      <div class="dh-row"><span class="dh-k">GEAR</span><span id="shilka-dh-gear">N</span></div>
-      <div class="dh-row"><span class="dh-k">SPD</span><span id="shilka-dh-speed">0 km/h</span></div>
-      <div class="dh-row"><span class="dh-k">ENG</span><span id="shilka-dh-rpm">800 rpm</span></div>
-      <div class="dh-hint">W/S plyn·brzda · A/D páky · SPACE spojka · 1–5/R/0 stupeň · ENTER startér · E ven</div>
+      <!-- ГМ-575 double-H shift gate: 3 rails + neutral channel; lever dot driven by shilka.js (gx,gy) -->
+      <svg id="shilka-gate" viewBox="0 0 100 76" width="100" height="76" aria-label="shift gate">
+        <g class="gate-rails"><path d="M18 12 V60 M50 12 V60 M82 12 V60 M18 36 H82"/></g>
+        <!-- lever first, labels after → slot labels always render ON TOP of the dot (stay readable) -->
+        <circle id="shilka-gate-lever" cx="50" cy="36" r="6.5"/>
+        <g class="gate-labels">
+          <text id="shilka-gl-5" x="18" y="7">5</text><text id="shilka-gl-4" x="18" y="74">4</text>
+          <text id="shilka-gl-3" x="50" y="7">3</text><text id="shilka-gl-2" x="50" y="74">2</text>
+          <text id="shilka-gl-R" x="82" y="7" font-size="10">ЗХ</text><text id="shilka-gl-1" x="82" y="74">1</text>
+          <text id="shilka-gl-N" x="93" y="39">N</text>
+        </g>
+      </svg>
+      <div class="dh-readouts">
+        <div class="dh-row"><span class="dh-k">GEAR</span><span id="shilka-dh-gear">N</span></div>
+        <div class="dh-row"><span class="dh-k">SPD</span><span id="shilka-dh-speed">0 km/h</span></div>
+        <div class="dh-row"><span class="dh-k">ENG</span><span id="shilka-dh-rpm">600 rpm</span></div>
+        <div class="dh-hint">W/S plyn·brzda · A/D páky · <b>SPACE = spojka + myší řadíš</b> · <b>rozjezd na 2.</b> · 1–5/R/0 zkratka · ENTER startér · E ven</div>
+      </div>
     </div>
     <div id="shilka-periscope-mask"><div class="pv"><div class="glass"></div><div class="glare"></div></div></div>
     <div id="spotcall"></div>
