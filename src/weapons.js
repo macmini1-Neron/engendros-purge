@@ -174,21 +174,60 @@ const GLB_WEAPONS = {
   gp25:    { url: './assets/weapons/ak74_gp25.glb',     length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.35, fb: 'rifle' },    // AK-platform + GP-25: wood furniture re-mapped, black body → gunmetal
 };
 
-// These models are 3D Ripper Pro GPU captures, which often contain DUPLICATE overlapping triangles
-// (the rip recorded the same faces twice). Two identical coplanar tris are an exact depth tie that no
-// camera near/far or polygonOffset can break — they z-fight forever as stray streaks ("weird crosses"
-// on the AK rear sight). Drop the duplicates: keep one tri per unique position-triple, rebuild the
-// index. Idempotent (guarded), cheap (hundreds of tris), and fixes the geometry at the source.
-function dedupeTriangles(geo) {
-  if (!geo || !geo.attributes || !geo.attributes.position || geo.userData._deduped) return 0;
-  geo.userData._deduped = true;
+// These models are 3D Ripper Pro GPU captures, which contain DUPLICATE and OVERLAPPING coplanar faces
+// (the rip recorded the same surface twice, sometimes with a different triangulation, sometimes jittered).
+// Two coplanar overlapping tris are a depth tie that NO camera near/far, polygonOffset or FrontSide can
+// break — they z-fight forever as stray streaks ("weird crosses" on the AK rear sight). Fix it at the
+// geometry source: per mesh, group tris by plane, then greedily keep tris whose 2-D projection doesn't
+// overlap an already-kept tri in that plane (drops exact dups, jittered dups, AND genuinely-overlapping
+// redundant faces; degenerate slivers go too). Same-mesh = same material, so the kept face covers the
+// dropped one seamlessly. Idempotent (guarded); one-time at load; a few hundred tris per mesh.
+function cleanRipGeometry(geo) {
+  if (!geo || !geo.attributes || !geo.attributes.position || geo.userData._cleaned) return 0;
+  geo.userData._cleaned = true;
   const pos = geo.attributes.position, idx = geo.index;
   const n = idx ? idx.count : pos.count, gi = (i) => (idx ? idx.getX(i) : i);
-  const seen = new Set(), keep = [];
-  const key = (a, b, c) => [a, b, c].map((i) => Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4)).sort().join('|');
-  for (let i = 0; i < n; i += 3) { const a = gi(i), b = gi(i + 1), c = gi(i + 2); const k = key(a, b, c); if (seen.has(k)) continue; seen.add(k); keep.push(a, b, c); }
+  const V = (i) => new THREE.Vector3().fromBufferAttribute(pos, i);
+  const groups = new Map();
+  for (let i = 0; i < n; i += 3) {
+    const a = gi(i), b = gi(i + 1), c = gi(i + 2), A = V(a), B = V(b), C = V(c);
+    const nrm = new THREE.Vector3().subVectors(B, A).cross(new THREE.Vector3().subVectors(C, A));
+    if (nrm.lengthSq() < 1e-12) continue;                          // degenerate sliver → drop
+    nrm.normalize();
+    if (nrm.x < 0 || (Math.abs(nrm.x) < 1e-6 && nrm.y < 0) || (Math.abs(nrm.x) < 1e-6 && Math.abs(nrm.y) < 1e-6 && nrm.z < 0)) nrm.multiplyScalar(-1);
+    const d = nrm.dot(A);
+    const key = Math.round(nrm.x * 40) / 40 + '_' + Math.round(nrm.y * 40) / 40 + '_' + Math.round(nrm.z * 40) / 40 + '_' + Math.round(d * 100) / 100;
+    let arr = groups.get(key); if (!arr) groups.set(key, arr = []);
+    arr.push({ a, b, c, A, B, C, nrm });
+  }
+  const sat = (P, Q) => {                                          // 2-D triangle overlap (SAT)
+    for (const T of [P, Q]) for (let e = 0; e < 3; e++) {
+      const a = T[e], b = T[(e + 1) % 3], ax = -(b[1] - a[1]), ay = (b[0] - a[0]);
+      let mnA = 1e9, mxA = -1e9, mnB = 1e9, mxB = -1e9;
+      for (const q of P) { const dd = q[0] * ax + q[1] * ay; if (dd < mnA) mnA = dd; if (dd > mxA) mxA = dd; }
+      for (const q of Q) { const dd = q[0] * ax + q[1] * ay; if (dd < mnB) mnB = dd; if (dd > mxB) mxB = dd; }
+      if (mxA <= mnB + 1e-7 || mxB <= mnA + 1e-7) return false;
+    }
+    return true;
+  };
+  const keep = []; let removed = 0;
+  for (const [, arr] of groups) {
+    const nrm = arr[0].nrm;
+    const u = (Math.abs(nrm.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
+    u.sub(nrm.clone().multiplyScalar(u.dot(nrm))).normalize();
+    const w = new THREE.Vector3().crossVectors(nrm, u);
+    const o = arr[0].A;
+    const p2 = (P) => { const dv = new THREE.Vector3().subVectors(P, o); return [dv.dot(u), dv.dot(w)]; };
+    const kept = [];
+    for (const t of arr) {
+      const me = [p2(t.A), p2(t.B), p2(t.C)];
+      let ov = false; for (const kt of kept) { if (sat(me, kt)) { ov = true; break; } }
+      if (ov) { removed++; continue; }
+      kept.push(me); keep.push(t.a, t.b, t.c);
+    }
+  }
   if (keep.length !== n) geo.setIndex(keep);
-  return (n - keep.length) / 3;
+  return removed;
 }
 
 // Layer + material setup for a loaded GLB tree. metalness→0 (a glTF PBR metal map renders pure black
@@ -200,7 +239,7 @@ function setupGlbTree(root, layer, renderOrder, cfg) {
     o.layers.set(layer);
     if (!o.isMesh) return;
     o.renderOrder = renderOrder;
-    dedupeTriangles(o.geometry);   // strip the rip's duplicate overlapping faces (kills baked-in z-fight)
+    cleanRipGeometry(o.geometry);   // strip the rip's duplicate/overlapping coplanar faces (kills baked-in z-fight)
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const mat of mats) {
       if (!mat) continue;
