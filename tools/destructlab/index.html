@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>DESTRUCTLAB — destruction experiment scene</title>
+  <script type="importmap">
+    { "imports": { "three": "../../vendor/three.module.min.js" } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1a1d16; overflow: hidden;
+                 font: 12px/1.4 ui-monospace, Menlo, monospace; color: #cfd2c4; }
+    #canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+    #cross { position: fixed; left: 50%; top: 50%; width: 10px; height: 10px;
+             margin: -5px 0 0 -5px; pointer-events: none;
+             border: 1px solid #e8e6d8; border-radius: 50%; opacity: .8; }
+    #hud { position: fixed; left: 10px; top: 10px; user-select: none; }
+    #hud button { display: block; margin: 2px 0; padding: 4px 10px; min-width: 150px;
+                  background: #2a2e24; color: #cfd2c4; border: 1px solid #4a4f3d;
+                  font: inherit; text-align: left; cursor: pointer; }
+    #hud button.sel { background: #5a2e22; border-color: #a0522d; color: #fff; }
+    #perf { position: fixed; right: 10px; top: 10px; text-align: right; white-space: pre; }
+    #log  { position: fixed; left: 10px; bottom: 10px; white-space: pre; opacity: .85; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="cross"></div>
+  <div id="hud"></div>
+  <div id="perf"></div>
+  <div id="log"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
