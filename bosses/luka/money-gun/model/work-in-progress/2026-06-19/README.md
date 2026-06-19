@@ -21,3 +21,9 @@ They are part of the recovery set, not disposable build output.
 
 On Windows, run `game-integration/bosses/start-money-gun-dilna.bat`. It starts
 the bundled local server and opens the animation/effects workshop on port 8132.
+
+## Git LFS
+
+Binary model and render assets are stored with Git LFS so a normal Git clone
+stays small. After checkout, install Git LFS and materialize the assets with
+`git lfs install` followed by `git lfs pull`.
