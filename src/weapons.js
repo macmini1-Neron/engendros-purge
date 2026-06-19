@@ -174,6 +174,23 @@ const GLB_WEAPONS = {
   gp25:    { url: './assets/weapons/ak74_gp25.glb',     length: 2.3,  center: [0.03, -0.10, -0.34], rot: [0, 0, 0], world: 1.9, emissive: 0.35, fb: 'rifle' },    // AK-platform + GP-25: wood furniture re-mapped, black body → gunmetal
 };
 
+// These models are 3D Ripper Pro GPU captures, which often contain DUPLICATE overlapping triangles
+// (the rip recorded the same faces twice). Two identical coplanar tris are an exact depth tie that no
+// camera near/far or polygonOffset can break — they z-fight forever as stray streaks ("weird crosses"
+// on the AK rear sight). Drop the duplicates: keep one tri per unique position-triple, rebuild the
+// index. Idempotent (guarded), cheap (hundreds of tris), and fixes the geometry at the source.
+function dedupeTriangles(geo) {
+  if (!geo || !geo.attributes || !geo.attributes.position || geo.userData._deduped) return 0;
+  geo.userData._deduped = true;
+  const pos = geo.attributes.position, idx = geo.index;
+  const n = idx ? idx.count : pos.count, gi = (i) => (idx ? idx.getX(i) : i);
+  const seen = new Set(), keep = [];
+  const key = (a, b, c) => [a, b, c].map((i) => Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4)).sort().join('|');
+  for (let i = 0; i < n; i += 3) { const a = gi(i), b = gi(i + 1), c = gi(i + 2); const k = key(a, b, c); if (seen.has(k)) continue; seen.add(k); keep.push(a, b, c); }
+  if (keep.length !== n) geo.setIndex(keep);
+  return (n - keep.length) / 3;
+}
+
 // Layer + material setup for a loaded GLB tree. metalness→0 (a glTF PBR metal map renders pure black
 // with no environment map); roughness floored so it isn't a mirror; then either a flat placeholder
 // tint (broken/black source texture) or a modest map-gated self-light (real texture).
@@ -183,6 +200,7 @@ function setupGlbTree(root, layer, renderOrder, cfg) {
     o.layers.set(layer);
     if (!o.isMesh) return;
     o.renderOrder = renderOrder;
+    dedupeTriangles(o.geometry);   // strip the rip's duplicate overlapping faces (kills baked-in z-fight)
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const mat of mats) {
       if (!mat) continue;
