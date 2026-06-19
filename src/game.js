@@ -132,6 +132,12 @@ class Game {
       this.shilkas.push(new ShilkaStation(this, new THREE.Vector3(-175, 0, 415), 0.3, { id: 'shilka-airfield-w' }));
       this.shilkas.push(new ShilkaStation(this, new THREE.Vector3(55, 0, 415), -0.3, { id: 'shilka-airfield-e' }));
     }
+    if (this.mapId === 'demo') {
+      // ?map=demo walkable-terrain slice: one Shilka on the open ground just ahead of the spawn (the
+      // player starts at 35,-8 facing the hill at 60,-40), so it's a few steps away for driving the
+      // terrain. Heading ~2.5 faces it uphill. Grounds itself per-wheel via _groundY, like on steppe.
+      this.shilkas.push(new ShilkaStation(this, new THREE.Vector3(44, 0, -20), 2.5, { id: 'shilka-demo' }));
+    }
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
     this.inventory = new Inventory(this); // survival backpack + unified held-item model
