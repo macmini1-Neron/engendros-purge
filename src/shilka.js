@@ -53,6 +53,13 @@ const SHILKA_ROUND_DMG = 6;
 // Burst cadence: while the trigger is held, fire one burst of this length every this-many seconds, so
 // ammo/heat integrate to roundsPerSecond regardless of frame rate (input.buttons[0] is a HELD state).
 const SHILKA_BURST_SECONDS = 0.16;
+// Interact-prompt label per seat role, so the player sees WHICH seat they'd board before pressing E.
+const SHILKA_SEAT_PROMPT = {
+  driver: 'ŘIDIČ (řízení)',
+  commander: 'VELITEL',
+  gunner: 'STŘELEC (kanón)',
+  range: 'OPERÁTOR DÁLKY',
+};
 // Driver day periscope БМО-190Б: a FIXED wide-angle unity optic (no traverse). Real field of observation
 // ≥69° horizontal × ≥20° vertical (9° up + 9° down). We set the camera's VERTICAL fov to 20°; at the slit's
 // ~4.36 aspect that yields ~75° horizontal — both meet the "≥" spec. Optical axis sits 4° below level so the
@@ -492,6 +499,14 @@ export class ShilkaStation {
 
   updateNearby(p) {
     return this.near(p);
+  }
+
+  // Interact-prompt text showing which seat the player at `p` would board (so they pick the right hatch).
+  interactLabel(p) {
+    const seat = this._pickSeat(p);
+    if (seat < 0) return 'ЗСУ-23-4 «Shilka» — посада plná (4/4)';
+    const lab = SHILKA_SEAT_PROMPT[SHILKA_SEATS[seat].role] || SHILKA_SEATS[seat].ru;
+    return `Press <b>E</b> — Shilka: <b>${lab}</b>`;
   }
 
   _localPeerId() { return (this.game.mp && this.game.mp.myId) || 'local'; }
