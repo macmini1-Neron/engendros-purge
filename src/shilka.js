@@ -487,16 +487,31 @@ export class ShilkaStation {
 
   mountNearest(playerPos) { this.mount(this._pickSeat(playerPos)); }
 
+  // Board a seat. Co-op: ask the host (it assigns occupancy authoritatively and replies with
+  // shilkastate, which actually seats us via _netMount). Solo: seat immediately.
   mount(seat = SHILKA_DRIVER_SEAT) {
     if (!this.rig) {
       // GLB not ready (or failed): don't enter a phantom drive with an invisible, un-re-enterable vehicle.
       if (this.game.hud) this.game.hud.bigMessage(this._assetFailed ? 'SHILKA — model unavailable' : 'SHILKA — loading…');
       return;
     }
+    const mp = this.game.mp;
+    if (mp && mp.active) {
+      if (mp.isHost) mp._hostShilkaClaim('mount', mp.myId, this.id, seat, null); // host is the authority — apply + broadcast
+      else mp.net.send('shilkaclaim', { v: this.id, seat, want: 'mount' });       // client: ask host; seat only when shilkastate grants it
+      return;
+    }
+    this.seats[seat] = this._localPeerId();
+    this._enterSeat(seat);
+  }
+
+  _netMount(seat) { this._enterSeat(seat); } // co-op: the host seated me (occupancy already set from shilkastate)
+
+  // Local seat entry — the camera/visual/control setup, shared by the solo path and the co-op state apply.
+  _enterSeat(seat) {
     const pl = this.game.player;
     pl.shilka = this;
     this.localSeat = seat;
-    this.seats[seat] = this._localPeerId(); // co-op overwrites this from the host's shilkastate (Task 3)
     // ground the hull height if the vehicle has never been driven (drive.y starts at 0) so seat cameras
     // and the rig sit on the terrain from frame one rather than sinking until the suspension converges.
     if (!(this.drive.y > 0.01)) this.drive.y = this._groundY(this.drive.x, this.drive.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
@@ -530,23 +545,37 @@ export class ShilkaStation {
     this._frameTurretCamera(0.001, seat);
   }
 
+  // Leave your seat. Co-op: ask the host (it frees the seat and replies with shilkastate, which tears
+  // down via _netDismount). Solo: leave immediately. The isolated driver can't bail while rolling
+  // (death/reset pass force=true).
   dismount(force = false) {
-    const pl = this.game.player;
-    if (pl.shilka !== this) return;
+    if (this.game.player.shilka !== this) return;
     const seat = this.localSeat;
-    // the isolated driver can't bail while the vehicle rolls (forced on death/reset, which passes force)
     if (!force && isDriverSeat(seat) && Math.abs(this.drive.speed) > SHILKA_DISMOUNT_SPEED_EPS) {
       if (this.game.hud) this.game.hud.bigMessage('ZASTAV PRO VÝSTUP');
       return;
     }
+    const mp = this.game.mp;
+    if (mp && mp.active) {
+      if (mp.isHost) mp._hostShilkaClaim('dismount', mp.myId, this.id, seat, { force }); // host: apply + broadcast
+      else mp.net.send('shilkaclaim', { v: this.id, seat, want: 'dismount', force });     // client: ask host
+      return;
+    }
+    if (seat >= 0) this.seats[seat] = null;
+    this._leaveSeat(seat);
+  }
+
+  _netDismount() { this._leaveSeat(this.localSeat); } // co-op: the host freed my seat
+
+  // Local seat teardown — shared by the solo path and the co-op state apply.
+  _leaveSeat(seat) {
     if (isDriverSeat(seat)) {
       this.driveMode = false; this._showDriveHud(false);
       if (this._hood) this._hood.visible = false;
       if (this.periscopes) this.periscopes.visible = true; // restore the model optic for 3rd-person / other players
     }
-    if (seat >= 0) this.seats[seat] = null;
     this.localSeat = -1;
-    pl.shilka = null;
+    this.game.player.shilka = null;
     this.game.weapons.group.visible = true;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '';
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
@@ -555,6 +584,11 @@ export class ShilkaStation {
     if (this.game.state === 'playing' && !this.game.input.locked) this.game.input.requestLock();
     this.game.hud.setWeapon(this.game.weapons);
   }
+
+  // Authoritative state shape the host broadcasts (and clients reconcile against) — occupancy + the
+  // shared radar flag. Built here so the payload shape lives in one place (mp.js calls sh._statePayload()).
+  _statePayload() { return { v: this.id, seats: this.seats.slice(), radar: !!this.state.radarOnAir, engineOn: !!this.drive.engineOn }; }
+  setRadar(on) { this.state = setShilkaSwitch(this.state, 'radarOnAir', !!on); }
 
   onPointerUnlock() {
     if (this.game.player.shilka === this) this._setCursorMode(true);
@@ -616,7 +650,13 @@ export class ShilkaStation {
     pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
   }
 
-  _setRadar(on) { this.state = setShilkaSwitch(this.state, 'radarOnAir', !!on); }
+  // Gunner (seat 2) radar on/off. Co-op client → ask the host; host/solo → set + (host) broadcast state.
+  _setRadar(on) {
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) { mp.net.send('shilkaclaim', { v: this.id, seat: this.localSeat, want: 'radar', radar: !!on }); return; }
+    this.setRadar(on);
+    if (mp && mp.active && mp.isHost) mp.net.send('shilkastate', this._statePayload());
+  }
 
   // --- v1 fire-control station (dormant this slice; the autocannon slice wires it to the gunner seat) ---
   _stationControlUpdate(dt) {

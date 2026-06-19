@@ -31,9 +31,10 @@ export function seatOf(seats, peerId) {
 //   peerId     : who is asking
 //   want       : 'mount' | 'dismount'
 //   opts.speed : current vehicle speed (m/s) — the driver may only dismount near a stop
+//   opts.force : bypass the driver's stop gate (death/reset must always eject the crew)
 // Rules: mount only an empty seat, and only if you hold NO other seat (the driver is isolated and any
 // role change is an explicit dismount-then-remount, per the manual); dismount only your own seat; the
-// driver's dismount is refused while the vehicle is moving.
+// driver's dismount is refused while the vehicle is moving (unless forced).
 export function resolveSeatClaim(seats, seat, peerId, want, opts = {}) {
   const next = seats.slice();
   if (!Number.isInteger(seat) || seat < 0 || seat >= SHILKA_SEAT_COUNT) return { seats: next, ok: false };
@@ -50,8 +51,8 @@ export function resolveSeatClaim(seats, seat, peerId, want, opts = {}) {
 
   if (want === 'dismount') {
     if (next[seat] !== peerId) return { seats: next, ok: false }; // not your seat
-    if (isDriverSeat(seat) && Math.abs(opts.speed || 0) > SHILKA_DISMOUNT_SPEED_EPS) {
-      return { seats: next, ok: false }; // driver can't bail while rolling
+    if (isDriverSeat(seat) && !opts.force && Math.abs(opts.speed || 0) > SHILKA_DISMOUNT_SPEED_EPS) {
+      return { seats: next, ok: false }; // driver can't bail while rolling (unless forced — death/reset)
     }
     next[seat] = null;
     return { seats: next, ok: true };

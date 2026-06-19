@@ -9,6 +9,7 @@ import { buildFlopo } from './props.js';
 import { LanNet, Net, makeRoomCode } from './net.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
+import { resolveSeatClaim } from './shilka-crew.js';
 
 
 // ---------------------------------------------------------------------------
@@ -718,6 +719,9 @@ export class MP {
     n.on('mortarfire', (d) => { if (this.isHost || !d) return; const m = this._mortarById(d.m); if (m) m.spawnShell(d, false); }); // host → clients: render the identical arc (NO damage)
     n.on('mortarspot', (d, from) => { if (this.isHost && d) this._hostMortarSpot(d.p, from); });                   // spotter → host: compute the firing solution
     n.on('mortarmark', (d) => { if (!this.isHost && d) this.game._dropMortarMark(d); });                           // host → clients: shared target marker + call
+    // ── ЗСУ-23-4 «Shilka» multi-crew ──
+    n.on('shilkaclaim', (d, from) => { if (this.isHost && d) this._hostShilkaClaim(d.want, from, d.v, d.seat, d); }); // client → host: mount/dismount a seat (or gunner radar toggle)
+    n.on('shilkastate', (d) => { if (!this.isHost && d) this._applyShilkaState(d); });                              // host → clients: authoritative seat occupancy + radar flag
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
@@ -833,6 +837,28 @@ export class MP {
     const mark = { p: [+hit.x.toFixed(2), +iy.toFixed(2), +hit.z.toFixed(2)], rng: Math.round(rangeMeters(m.base, hit)), mils: formatUglomer(bearingMils(m.base, hit)) };
     this.game._dropMortarMark(mark);                                         // host sees it locally
     this.net.send('mortarmark', mark);                                       // → all clients
+  }
+  // ---- ЗСУ-23-4 «Shilka» multi-crew host authority (seat occupancy + shared radar flag) ----
+  _shilkaById(id) { return (this.game.shilkas || []).find((sh) => sh.id === id) || null; }
+  _hostShilkaClaim(want, from, vid, seat, d) {
+    if (!this.isHost) return; const sh = this._shilkaById(vid); if (!sh) return;
+    if (want === 'radar') {
+      if (sh.seats[2] === from) sh.setRadar(!!(d && d.radar));               // only the seated gunner toggles the radar
+    } else {
+      const res = resolveSeatClaim(sh.seats, seat, from, want, { speed: sh.drive ? sh.drive.speed : 0, force: !!(d && d.force) });
+      if (res.ok) sh.seats = res.seats;                                      // rejected claims leave occupancy unchanged (asker resyncs from the state below)
+    }
+    const payload = sh._statePayload();
+    this._applyShilkaState(payload);                                         // host applies locally (reconciles its own seat)
+    this.net.send('shilkastate', payload);                                   // → all clients
+  }
+  _applyShilkaState(d) {
+    const sh = this._shilkaById(d && d.v); if (!sh) return;
+    if (Array.isArray(d.seats)) sh.seats = d.seats.slice();
+    if (typeof d.radar === 'boolean') sh.setRadar(d.radar);                  // mirror the shared radar flag (no re-broadcast)
+    const mySeat = sh.seats.indexOf(this.myId);
+    if (mySeat !== -1) { if (sh.localSeat !== mySeat) sh._netMount(mySeat); } // the host seated me here
+    else if (sh.localSeat !== -1) { sh._netDismount(); }                     // someone freed my seat (or I left)
   }
   // ---- per-frame ----
   update(dt) {

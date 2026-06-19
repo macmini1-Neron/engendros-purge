@@ -63,6 +63,13 @@ test('the driver cannot dismount while the vehicle is moving, but can at a stop'
   assert.equal(stopped.seats[0], null);
 });
 
+test('a forced dismount ejects the driver even at speed (death/reset)', () => {
+  const seats = empty(); seats[0] = 'alice';
+  const r = resolveSeatClaim(seats, 0, 'alice', 'dismount', { speed: 10, force: true });
+  assert.ok(r.ok, 'force bypasses the stop gate');
+  assert.equal(r.seats[0], null);
+});
+
 test('a turret occupant may leave even while the vehicle is moving (only the driver is gated)', () => {
   const seats = empty(); seats[2] = 'alice';
   const r = resolveSeatClaim(seats, 2, 'alice', 'dismount', { speed: 5 });
