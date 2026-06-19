@@ -26,6 +26,7 @@ import { PokerTable } from './poker-table.js';
 import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
 import { Engine } from './engine.js';
+import { SimWorker } from './sim-worker-client.js';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
@@ -89,6 +90,7 @@ class Game {
     this.input = new Input(this.canvas);
     this.audio = new AudioManager();
     this.effects = new Effects(this);
+    this.simWorker = new SimWorker(); // background thread for pure-math sim (horde flow-field; terrain in Phase B). Falls back to sync if unavailable.
     // Map selection. World reads game.mapId in its constructor, so this MUST precede `new World`.
     // Priority: ?map= URL override (dev) -> the menu's saved pick (localStorage) -> 'arena' default.
     this.mapId = (() => { try {

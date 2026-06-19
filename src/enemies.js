@@ -256,6 +256,7 @@ export class EnemyManager {
     this._surfFlow = null;  // surface flow-field toward the player's actual (x,y,z) level
     this._surfT = 0;        // seconds until the next surface-flow refresh
     this._playerUp = false; // is the host player elevated on a structure this frame (gates the layered nav)
+    this._sentGrid = null;  // which _hordeGrid object we've shipped to the sim worker (re-send if it changes)
   }
   // Pre-pay the boss-fight's one-time costs at run-start so they don't land as a frame hitch mid-fight:
   // (1) the heavy buildTolo() geometry (MeshBuilder + BufferGeometryUtils merge — a multi-hundred-ms
@@ -405,8 +406,18 @@ export class EnemyManager {
     // fine cell keep doorways passable so the horde routes THROUGH them.
     if (this.active.length) {
       if (!this._hordeGrid) this._hordeGrid = buildNavGrid(this.world, { cell: 1.5, inflate: 0.7, slopeAware: true });
+      const sw = this.game.simWorker;
+      if (sw && this._sentGrid !== this._hordeGrid) { this._sentGrid = this._hordeGrid; sw.setGrid(this._hordeGrid); } // ship the static grid once (re-send if rebuilt)
       this._flowT -= dt;
-      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z, this._bounds(pp, 110)); }
+      if (!this._hordeFlow || this._flowT <= 0) {
+        this._flowT = 0.3;
+        const fb = this._bounds(pp, 110); // WINDOWED flow-field bounds (steppe anti-stutter) — must travel WITH the worker request, else the offload silently reverts to a full-grid Dijkstra
+        // Offload the Dijkstra rebuild to the worker; the PREVIOUS field keeps steering the horde
+        // until the fresh one lands (≤1–2 frames later — the field is already 0.3 s stale by design).
+        if (!(sw && sw.requestFlow(pp.x, pp.z, fb, (field) => { this._hordeFlow = field; }))) {
+          this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z, fb); // no worker → synchronous fallback (windowed, unchanged behaviour)
+        }
+      }
     }
     // LAYERED NAV: only when the player is ELEVATED on a structure (roof / upper floor / bunker level) do
     // we build the multi-surface graph + a surface flow toward the player's ACTUAL level, so the horde
