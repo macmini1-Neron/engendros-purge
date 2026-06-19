@@ -52,7 +52,21 @@ export function buildShilkaRig(modelScene, THREE) {
   const turret = new THREE.Group(); turret.name = 'turret'; body.add(turret);
   for (const { mesh } of buckets.hull) reparentKeepWorld(mesh, body);
   for (const { mesh } of buckets.track) reparentKeepWorld(mesh, body);
-  for (const { mesh } of [...buckets.turret, ...buckets.gun, ...buckets.radar]) reparentKeepWorld(mesh, turret);
+  for (const { mesh } of [...buckets.turret, ...buckets.gun]) reparentKeepWorld(mesh, turret);
+
+  // radar "Gun Dish" antenna: one pivot at the dish cluster's vertical axis so it spins in place
+  // (RPK-2 «Тобол» scans continuously). Built BEFORE root's π re-orient like the wheel pivots, so the
+  // cluster-centre world coords map straight to the pivot's local position. Rides the turret; the
+  // adapter turns radar.rotation.y each frame.
+  let radar = null;
+  if (buckets.radar.length) {
+    const rbox = new THREE.Box3();
+    for (const { mesh } of buckets.radar) rbox.expandByObject(mesh);
+    rbox.getCenter(ctr);
+    radar = pivotAt(ctr.x, ctr.y, ctr.z, 'radar dish');
+    turret.add(radar);
+    for (const { mesh } of buckets.radar) reparentKeepWorld(mesh, radar);
+  }
 
   const guns = buckets.gun.map(b => b.mesh);
   const dish = buckets.radar.map(b => b.mesh);
@@ -87,5 +101,5 @@ export function buildShilkaRig(modelScene, THREE) {
   if (wheelsL.length !== 6 || wheelsR.length !== 6) {
     console.warn(`[shilka-rig] wheel classification produced ${wheelsL.length}L/${wheelsR.length}R pivots (expected 6/side) — check classifyShilkaPart bounds against the loaded GLB.`);
   }
-  return { root, body, turret, wheelsL, wheelsR, sprockets, tracks, guns, dish, antennas };
+  return { root, body, turret, wheelsL, wheelsR, sprockets, tracks, guns, dish, radar, antennas };
 }
