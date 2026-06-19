@@ -545,7 +545,15 @@ export class ShilkaStation {
   _enterTurretSeat(seat) {
     this._tYaw = 0; this._tPitch = 0;
     if (this.game.hud) this.game.hud.bigMessage(`SHILKA — ${SHILKA_SEATS[seat].ru}`);
-    this._frameTurretCamera(0.001, seat);
+    if (seat === 2) {
+      // gunner: bring up the fire-control panel and start in cursor mode (click AUTO START / switches /
+      // the scope; clicking the scope locks the pointer to aim — see _wirePanelOnce).
+      this._showPanel(true);
+      this._setCursorMode(true);
+      this._frameCamera(0.001);
+    } else {
+      this._frameTurretCamera(0.001, seat);
+    }
   }
 
   // Leave your seat. Co-op: ask the host (it frees the seat and replies with shilkastate, which tears
@@ -649,20 +657,14 @@ export class ShilkaStation {
 
   controlUpdate(dt) {
     if (this.localSeat === SHILKA_DRIVER_SEAT) { this._driveControlUpdate(dt); return; }
-    if (this.localSeat >= 1) { this._turretControlUpdate(dt); return; }
+    if (this.localSeat === 2) { this._stationControlUpdate(dt); return; } // gunner: radar fire-control station
+    if (this.localSeat >= 1) { this._turretControlUpdate(dt); return; }   // commander / range-op ride-along
     // localSeat === -1: the local player isn't aboard this vehicle (e.g. a remote crew drives it) — no control
   }
 
-  // Turret-crew ride-along for this slice: a free-look seat camera + the gunner's (seat 2) radar on/off.
-  // Full fire-control (aim/track/lock/fire) is the autocannon slice and lives dormant in
-  // _stationControlUpdate below (kept intact, not yet wired to a seat).
+  // Ride-along seat camera for the commander (1) and range operator (3). The gunner (2) gets the full
+  // fire-control station (_stationControlUpdate). Their full roles are a later slice.
   _turretControlUpdate(dt) {
-    const input = this.game.input;
-    if (this.localSeat === 2 && input.wasPressed('KeyR')) {
-      const want = !this.state.radarOnAir;            // (client may not flip locally until the host echoes — show the intent)
-      this._setRadar(want);
-      if (this.game.hud) this.game.hud.bigMessage(want ? 'РЛС — ВКЛ' : 'РЛС — ВЫКЛ'); // visible feedback for the placeholder toggle
-    }
     this._frameTurretCamera(dt, this.localSeat);
   }
 
