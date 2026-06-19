@@ -107,16 +107,36 @@ export function buildFlowField(g, goalX, goalZ, bounds) {
   return field;
 }
 
-// Look up the cell for world (x,z); returns { x:dirX, z:dirZ } (unit) toward the goal, or null if
-// the cell is OUTSIDE the (possibly windowed) field, unreached/blocked, or IS the goal — in every
-// null case the caller falls back to a straight beeline.
+// Look up the steering for world (x,z): a unit { x, z } toward the goal, or null if the cell is OUTSIDE
+// the (possibly windowed) field, unreached/blocked, or IS the goal — in every null case the caller beelines.
+//
+// The direction is BILINEARLY interpolated across the 4 cells whose centres bracket (x,z), so it varies
+// CONTINUOUSLY as a mob crosses cell boundaries instead of snapping between the 8 discrete grid directions
+// (that snap is the visible horde "jitter"). Cells that are blocked / unreached / zero-dir (across a wall,
+// or the goal) drop out of the blend and the weights renormalise — near a wall this degrades gracefully to
+// the mob's own cell direction. At a cell centre the blend weights collapse to that one cell → the discrete
+// legacy direction (so the routing/window tests are unchanged).
 export function flowDirAt(field, x, z) {
-  const c = Math.floor((x - field.originX) / field.cell);
-  const r = Math.floor((z - field.originZ) / field.cell);
-  if (c < 0 || r < 0 || c >= field.cols || r >= field.rows) return null; // outside the window → beeline
-  const i = r * field.cols + c;
-  if (!isFinite(field.dist[i])) return null;      // unreached / blocked
-  const dx = field.dirX[i], dz = field.dirZ[i];
-  if (dx === 0 && dz === 0) return null;          // goal cell — beeline the last step
-  return { x: dx, z: dz };
+  const { cols, rows, cell, originX, originZ, dirX, dirZ, dist } = field;
+  const c = Math.floor((x - originX) / cell);
+  const r = Math.floor((z - originZ) / cell);
+  if (c < 0 || r < 0 || c >= cols || r >= rows) return null; // outside the window → beeline
+  const ic = r * cols + c;
+  if (!isFinite(dist[ic])) return null;                       // the mob's own cell is unreached/blocked → beeline
+  if (dirX[ic] === 0 && dirZ[ic] === 0) return null;          // goal cell — beeline the last step
+
+  const gx = (x - originX) / cell - 0.5, gz = (z - originZ) / cell - 0.5; // cell-centre grid coords
+  const c0 = Math.floor(gx), r0 = Math.floor(gz), tx = gx - c0, tz = gz - r0;
+  let sx = 0, sz = 0, sw = 0;
+  for (let dr = 0; dr < 2; dr++) for (let dc = 0; dc < 2; dc++) {
+    const cc = c0 + dc, rr = r0 + dr;
+    if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
+    const k = rr * cols + cc;
+    if (!isFinite(dist[k]) || (dirX[k] === 0 && dirZ[k] === 0)) continue; // skip blocked / unreached / goal cells
+    const w = (dc ? tx : 1 - tx) * (dr ? tz : 1 - tz);
+    sx += dirX[k] * w; sz += dirZ[k] * w; sw += w;
+  }
+  const len = Math.hypot(sx, sz);
+  if (sw === 0 || len < 1e-6) return { x: dirX[ic], z: dirZ[ic] }; // degenerate blend → the mob's own cell dir
+  return { x: sx / len, z: sz / len };
 }

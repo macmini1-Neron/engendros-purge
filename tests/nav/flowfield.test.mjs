@@ -96,6 +96,20 @@ test('(f) inside the window, windowed directions match the full-grid field', () 
   }
 });
 
+test('(h) flowDirAt is bilinearly smoothed — cell-centre values unchanged, between cells a blend', () => {
+  const g = wallGapGrid();
+  const f = buildFlowField(g, 2.5, 0.5);
+  // at cell centres it must still equal the discrete cell direction (so all the above tests hold)
+  const c13 = at(f, 1, 3), c23 = at(f, 2, 3);
+  assert.ok(c13.x > 0, 'cell (1,3) still points toward the gap');
+  assert.ok(Math.abs(c23.x) < 1e-6, 'cell (2,3) (above the gap) still points straight down');
+  // BETWEEN the two cell centres (x=2.0, z=3.5) the direction is a BLEND of the two, not a snap to either:
+  const mid = flowDirAt(f, 2.0, 3.5);
+  assert.ok(mid, 'boundary point resolves');
+  assert.ok(mid.x > 1e-6 && mid.x < c13.x, `blended dir.x must sit strictly between the two cells (0 < ${mid.x} < ${c13.x})`);
+  assert.ok(Math.abs(Math.hypot(mid.x, mid.z) - 1) < 1e-6, 'still a unit vector after blending');
+});
+
 test('(g) windowed flow ROUTES AROUND an obstacle whose detour lies inside the window', () => {
   // 11×11; wall row r=5 across cols 2..8 (gaps only at the far ends, cols 0-1 and 9-10). Goal south at
   // (5,1); a far-side cell (5,9) must steer LATERALLY toward an end gap — not straight into the wall.

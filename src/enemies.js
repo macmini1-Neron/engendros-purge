@@ -13,6 +13,7 @@ import { slopeBlocks } from './terrain.js';
 
 const ENEMY_GRAVITY = 22;  // m/s² — pulls a mob off a ledge/roof once it walks past the edge (matches the player)
 const ENEMY_CLIMB = 3.0;   // m/s up a ladder zone toward a target above (player uses 3.7)
+const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steering snaps (flow cell-crossings, separation jostling, flow↔beeline flips) into turns instead of visible twitches
 
 
 // ---------------------------------------------------------------------------
@@ -532,7 +533,14 @@ export class EnemyManager {
         e._wireT = (e._wireT || 0) + dt;
         if (e._wireT >= 0.4) { e._wireT = 0; if (this.damage(e, STRUCT_DEFS.wire.dot * 0.4, 'wire')) continue; }
       }
-      e.vel.x = (wx / wl) * spd; e.vel.z = (wz / wl) * spd;
+      // Heading low-pass: damp the smoothed heading (e._hx,e._hz) toward this frame's desired direction so
+      // the residual per-frame snapping (separation jostling, flow↔beeline flips) becomes a smooth turn. The
+      // flow direction itself is already continuous (bilinear flowDirAt); this also covers the rest.
+      const _dhx = wx / wl, _dhz = wz / wl;
+      if (e._hx === undefined) { e._hx = _dhx; e._hz = _dhz; }
+      else { const _k = 1 - Math.exp(-HEADING_LAMBDA * dt); e._hx += (_dhx - e._hx) * _k; e._hz += (_dhz - e._hz) * _k; }
+      const _hl = Math.hypot(e._hx, e._hz) || 1;
+      e.vel.x = (e._hx / _hl) * spd; e.vel.z = (e._hz / _hl) * spd;
       e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
       // Horde slope-limit: don't let mobs scale cliffs (terrain steeper than slopeLimit). Revert the whole
       // step — they bunch at the cliff base and re-steer. Gated on hasTerrain so flat maps are untouched.
@@ -607,7 +615,7 @@ export class EnemyManager {
       if (e.burnT > 0) { e.burnT -= dt; if (Math.random() < 0.16) this.game.effects.firePool(e.pos, 0.45, 0.4); }
       const sq = e.squash > 0 ? 1 - e.squash * 1.6 : 1;
       e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
-      e.mesh.rotation.y = Math.atan2(dx, dz);
+      e.mesh.rotation.y = Math.atan2(e._hx, e._hz); // face the smoothed movement heading (no twitchy snap)
       e.mesh.rotation.z = Math.sin(e.bob) * 0.08;
       e.mesh.scale.set(e.scale, e.scale * sq, e.scale);
 
