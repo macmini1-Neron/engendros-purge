@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
 import { SpatialGrid } from './grid.js';
-import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
+import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STEP_UP, STRUCT_FX_COLOR } from './tuning.js';
 import { skyPhase, isNight, keywordMinute, MINUTES_PER_DAY } from './worldclock.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
@@ -429,7 +429,7 @@ export class World {
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
       // step-up: climb low ledges/stairs instead of blocking
       const step = b.max.y - pos.y;
-      if (step > 0.02 && step <= 0.62 && this._headClear(pos, r, h, b.max.y + 0.002, b)) { pos.y = b.max.y + 0.002; continue; }
+      if (step > 0.02 && step <= STEP_UP && this._headClear(pos, r, h, b.max.y + 0.002, b)) { pos.y = b.max.y + 0.002; continue; }
       if (ax === 'x') { if (vel.x > 0) pos.x = b.min.x - r; else if (vel.x < 0) pos.x = b.max.x + r; else pos.x = pos.x < (b.min.x + b.max.x) / 2 ? b.min.x - r : b.max.x + r; vel.x = 0; }
       else { if (vel.z > 0) pos.z = b.min.z - r; else if (vel.z < 0) pos.z = b.max.z + r; else pos.z = pos.z < (b.min.z + b.max.z) / 2 ? b.min.z - r : b.max.z + r; vel.z = 0; }
     }
@@ -439,6 +439,21 @@ export class World {
   // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
   // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
   groundY(x, z) { return this.terrain.terrainHeightAt(x, z); }
+
+  // The ladder zone (скоб-трап) containing a body at (x,z) whose feet are fy / head fy+h, else null.
+  // Mirrors player._onLadder but returns the zone (enemies clamp their climb to zone.top). Zones are
+  // registered by skobTrap() (bunker); maps without ladders leave _ladders undefined → null.
+  ladderZoneAt(x, z, fy, h) {
+    const zones = this._ladders;
+    if (!zones || !zones.length) return null;
+    const hy = fy + h;
+    for (const a of zones) {
+      if (x < a.minX || x > a.maxX || z < a.minZ || z > a.maxZ) continue;
+      if (hy < a.bottom || fy > a.top) continue;
+      return a;
+    }
+    return null;
+  }
 
   // Register a static decorative mesh for draw-distance culling (Game._cullByDistance). Precomputes the
   // mesh's world-space XZ centre ONCE: merged district meshes bake geometry in WORLD coords with

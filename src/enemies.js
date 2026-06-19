@@ -1,12 +1,15 @@
 // enemies.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxelMaterial } from './util.js';
-import { ENEMY_BURN_SLOW } from './tuning.js';
+import { ENEMY_BURN_SLOW, STEP_UP } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { buildNavGrid, findPath, lineBlocked } from './pathing.js';
 import { buildFlowField, flowDirAt } from './flowfield.js';
 import { movementSlow, contactWeaken } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
+
+const ENEMY_GRAVITY = 22;  // m/s² — pulls a mob off a ledge/roof once it walks past the edge (matches the player)
+const ENEMY_CLIMB = 3.0;   // m/s up a ladder zone toward a target above (player uses 3.7)
 
 
 // ---------------------------------------------------------------------------
@@ -329,6 +332,20 @@ export class EnemyManager {
   }
   get aliveCount() { return this.active.length; }
 
+  // Would an enemy standing at height `top` hit its head? Only a genuine OVERHANG blocks — a box whose
+  // UNDERSIDE (min.y) sits within the body column (top..top+height). A box rising from at/below `top`
+  // (a stair riser, wall, or the surface itself) is NOT a ceiling, so solid staircases stay climbable.
+  _headClearE(cands, e, top) {
+    for (const o of cands) {
+      if (o.struct) continue;
+      if (o.min.y <= top + 0.05 || o.min.y >= top + e.height) continue; // rises from below, or clears the head
+      if (e.pos.x + e.radius <= o.min.x || e.pos.x - e.radius >= o.max.x) continue;
+      if (e.pos.z + e.radius <= o.min.z || e.pos.z - e.radius >= o.max.z) continue;
+      return false;
+    }
+    return true;
+  }
+
   update(dt) {
     const pp = this.game.player.pos;
     // HORDE NAV: build a finer, slope-aware occupancy grid once per map, then refresh a
@@ -374,10 +391,15 @@ export class EnemyManager {
         const ox = e.pos.x - o.pos.x, oz = e.pos.z - o.pos.z, d2 = ox * ox + oz * oz;
         if (d2 < 2.6 && d2 > 1e-4) { const inv = 1 / Math.sqrt(d2); sx += ox * inv; sz += oz * inv; }
       }
-      // crate avoidance
+      // On a raised surface (stairs/ledge/roof — feet above the terrain) the crate-avoidance turns into a
+      // lateral shove off a wide step face (it pushes radially from the box centre), sliding the mob off
+      // the side. So once climbing, drop avoidance and just beeline up toward the target. (Phase-2 routing
+      // will steer multi-level properly; here it only keeps the locomotion from self-sabotaging.)
+      const _onStruct = e.pos.y > this.world.groundY(e.pos.x, e.pos.z) + 0.4;
+      // crate avoidance — skip surfaces we can step onto (top ≤ feet+STEP_UP) so we don't back off our own stairs.
       let ax = 0, az = 0;
-      for (const b of this.world.grid.queryAABB(e.pos.x - 1.8, e.pos.z - 1.8, e.pos.x + 1.8, e.pos.z + 1.8)) {
-        if (b.max.y < 0.6) continue;
+      for (const b of (_onStruct ? [] : this.world.grid.queryAABB(e.pos.x - 1.8, e.pos.z - 1.8, e.pos.x + 1.8, e.pos.z + 1.8))) {
+        if (b.max.y < 0.6 || b.max.y <= e.pos.y + STEP_UP) continue;
         const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2;
         const rx = e.pos.x - cx, rz = e.pos.z - cz;
         const hx = (b.max.x - b.min.x) / 2 + 1.3, hz = (b.max.z - b.min.z) / 2 + 1.3;
@@ -409,23 +431,37 @@ export class EnemyManager {
           e.pos.x = bx; e.pos.z = bz; e.vel.x = 0; e.vel.z = 0;
         }
       }
-      // terrain grounding: sample height every frame so enemies follow hills;
-      // flat maps (hasTerrain = false) keep y=0 — byte-identical to before.
-      e.pos.y = this.world.groundY(e.pos.x, e.pos.z);
       const lim = this.world.HALF - e.radius;
       e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
       e._blockStruct = null;
+      // VERTICAL + box resolution in ONE footprint pass (was: e.pos.y = groundY then horizontal push-out).
+      // A box TOP within step-up (with headroom) is a SURFACE to stand on — stairs/ledges/roofs; anything
+      // taller is a WALL to push out of. Enemies now match the player's STEP_UP; gravity drops them off edges.
+      const reach = e.pos.y + STEP_UP;
+      let supp = this.world.groundY(e.pos.x, e.pos.z); // terrain baseline under the feet
       const _cr = e.radius + 1.5; // query window (radius + slack); whole-cell results over-cover the small push-out
-      for (const b of this.world.grid.queryAABB(e.pos.x - _cr, e.pos.z - _cr, e.pos.x + _cr, e.pos.z + _cr)) {
-        if (b.max.y < 0.6) continue;
+      const _cands = this.world.grid.queryAABB(e.pos.x - _cr, e.pos.z - _cr, e.pos.x + _cr, e.pos.z + _cr);
+      for (const b of _cands) {
         if (e.pos.x + e.radius <= b.min.x || e.pos.x - e.radius >= b.max.x) continue;
         if (e.pos.z + e.radius <= b.min.z || e.pos.z - e.radius >= b.max.z) continue;
+        const top = b.max.y;
+        // SURFACE: a box top within step-up (with head clearance) is something to STAND ON — low steps,
+        // stairs, ledges, roofs. Considered even below 0.6 m so 0.45–0.6 m stairs are climbable.
+        const steppable = !b.struct && top <= reach && this._headClearE(_cands, e, top);
+        if (steppable && top > supp) supp = top;
+        // WALL: too tall to step onto and our feet are below its top → push out (ground clutter <0.6 ignored).
+        if (top < 0.6 || steppable || e.pos.y >= top - 0.05) continue;
         const px = Math.min(b.max.x + e.radius - e.pos.x, e.pos.x - (b.min.x - e.radius));
         const pz = Math.min(b.max.z + e.radius - e.pos.z, e.pos.z - (b.min.z - e.radius));
         if (px < pz) e.pos.x += (e.pos.x < (b.min.x + b.max.x) / 2 ? -px : px);
         else e.pos.z += (e.pos.z < (b.min.z + b.max.z) / 2 ? -pz : pz);
         if (b.struct) e._blockStruct = b._ref; // pushing against a player-built wall
       }
+      // ladder climb (capability — routing onto ladders is Phase 2): inside a zone with the target above → ascend.
+      const _lad = (!e.def.boss && tgt.y > e.pos.y + 0.6) ? this.world.ladderZoneAt(e.pos.x, e.pos.z, e.pos.y, e.height) : null;
+      if (_lad) { e.pos.y = Math.min(e.pos.y + ENEMY_CLIMB * dt, _lad.top); e.vel.y = 0; }
+      else if (e.pos.y <= supp + 0.02) { e.pos.y = supp; e.vel.y = 0; }                              // grounded / step up onto a surface
+      else { e.vel.y -= ENEMY_GRAVITY * dt; e.pos.y += e.vel.y * dt; if (e.pos.y < supp) { e.pos.y = supp; e.vel.y = 0; } } // fall to support
       // heavy enemies crush a blocking structure instantly (no caging the boss) — after the boxes loop so the splice is safe
       if (e._blockStruct && (e.def.boss || (e.def.scale || 1) >= 1.6)) { this.game.build.attackStructure(e._blockStruct, e._blockStruct.maxHp, e); e._blockStruct = null; }
 
