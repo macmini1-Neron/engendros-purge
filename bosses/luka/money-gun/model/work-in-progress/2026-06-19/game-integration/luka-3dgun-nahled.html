@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8" />
+<title>LUKA — náhled fází (3D money gun)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0a0c; overflow: hidden; font-family: system-ui, sans-serif; color: #e8e8ee; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #ui { position: fixed; left: 16px; top: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+  .row { display: flex; gap: 6px; }
+  button { background: #1b1b22; color: #d8d8e2; border: 1px solid #34343e; border-radius: 7px; padding: 9px 13px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #26262f; }
+  button.on { background: #c9a227; color: #14140a; border-color: #e7c245; font-weight: 700; }
+  #title { font-size: 13px; letter-spacing: 2px; color: #8a8a96; margin-bottom: 2px; }
+  #hint { position: fixed; right: 16px; bottom: 14px; font-size: 12px; color: #6a6a76; z-index: 10; }
+  #phaseName { font-size: 15px; font-weight: 700; color: #f0d27a; min-height: 18px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">LUKA · FÁZE · 3D MONEY GUN</div>
+  <div class="row">
+    <button data-ph="1">FÁZE 1</button>
+    <button data-ph="2">FÁZE 2</button>
+    <button data-ph="3">FÁZE 3</button>
+    <button data-ph="4" class="on">FÁZE 4</button>
+  </div>
+  <div class="row">
+    <button id="spin" class="on">⟳ Otáčet</button>
+    <button id="fire" class="on">🔫 Střílet (animace)</button>
+  </div>
+  <div id="phaseName">FÁZE 4 — cylindr + money gun (zlatý $)</div>
+</div>
+<div id="hint">táhni myší = orbit · kolečko = zoom</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { voxelMaterial } from './src/util.js';
+import { buildLuka, buildTopHat, buildMoneyBag, LUKA_DOLLAR, LUKA_PROP, lukaAnchorA } from './src/lukaboss.js';
+import { preloadLukaGun, buildLukaGun } from './src/lukagun.js';
+import { LukaGunFX } from './src/lukagunfx.js';
+
+// gun transform — same as enemies.js _attachLukaGun (LUKA_GUN_GLB)
+const GUN = { scale: 0.431, rot: [0, -Math.PI / 2, 0], fireTimeScale: 1 }; // dílní rychlost animace (1×)
+
+const PHASE_LABEL = {
+  1: 'FÁZE 1 — „otřes se" (černý $, měďáky)',
+  2: 'FÁZE 2 — hrst drobáků (měděný $)',
+  3: 'FÁZE 3 — pytel peněz (stříbrný $)',
+  4: 'FÁZE 4 — cylindr + money gun (zlatý $)',
+};
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d11);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
+
+// ── lighting + env (matches engine.js so the gold reads right) ──
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0xb89b6a, 0.95));
+const sun = new THREE.DirectionalLight(0xfff1d0, 2.1); sun.position.set(6, 11, 4); scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+(function buildEnv() {
+  const cv = document.createElement('canvas'); cv.width = 8; cv.height = 128;
+  const ctx = cv.getContext('2d'); const g = ctx.createLinearGradient(0, 0, 0, 128);
+  g.addColorStop(0, '#eaf4ff'); g.addColorStop(0.45, '#bfe3f2'); g.addColorStop(0.52, '#f6ecd2'); g.addColorStop(1, '#5b4a30');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 8, 128);
+  const tex = new THREE.CanvasTexture(cv); tex.mapping = THREE.EquirectangularReflectionMapping; tex.colorSpace = THREE.SRGBColorSpace;
+  const es = new THREE.Scene();
+  es.add(new THREE.Mesh(new THREE.SphereGeometry(40, 24, 16), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide })));
+  const sd = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8), new THREE.MeshBasicMaterial({ color: 0xfff4d8 })); sd.position.set(18, 26, 12); es.add(sd);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(es, 0.04).texture; pm.dispose(); tex.dispose();
+})();
+
+// neutral floor grid
+const grid = new THREE.GridHelper(14, 14, 0x3a3a44, 0x222229); grid.position.y = 0; scene.add(grid);
+
+// ── Luka body + dollar ──
+const r = buildLuka();
+const bake = r.bake;
+const luka = new THREE.Group();
+luka.add(new THREE.Mesh(r.geo, voxelMaterial()));
+const dollar = new THREE.Mesh(r.dollar, voxelMaterial());
+luka.add(dollar);
+scene.add(luka);
+
+// frame the camera on Luka's height
+const box = new THREE.Box3().setFromObject(luka); const sz = box.getSize(new THREE.Vector3());
+const cy = (box.min.y + box.max.y) / 2;
+let orbit = { az: 0.5, el: 0.12, rad: Math.max(sz.x, sz.y) * 1.9, tx: 0, ty: cy, tz: 0 };
+
+// ── props: hat + bag (voxel, as in game) ──
+function mkProp(geo, anchor, s) {
+  const m = new THREE.Mesh(geo, voxelMaterial());
+  m.rotation.y = Math.PI; m.scale.setScalar(s * bake.S); m.position.copy(lukaAnchorA(anchor, bake));
+  m.visible = false; luka.add(m); return m;
+}
+const hat = mkProp(buildTopHat(), LUKA_PROP.anchor.headT, LUKA_PROP.hatS);
+const bag = mkProp(buildMoneyBag(LUKA_DOLLAR[3]), LUKA_PROP.anchor.handL, LUKA_PROP.bagS[3]);
+
+// ── gun: real 3D GLB (async) + black-powder FX synced to the looping animation ──
+let gun = null, mixer = null, actions = [];
+const lukaFX = new LukaGunFX(scene);
+let prevClipT = 0, firedStrike = false, firedMuzzle = false;
+preloadLukaGun().then(() => {
+  const g = buildLukaGun(); if (!g) return;
+  gun = g.root;
+  gun.scale.setScalar(GUN.scale * bake.S);
+  gun.position.copy(lukaAnchorA(LUKA_PROP.anchor.gun, bake));
+  gun.rotation.set(GUN.rot[0], GUN.rot[1], GUN.rot[2]);
+  luka.add(gun);
+  mixer = new THREE.AnimationMixer(gun);
+  actions = g.clips.map(c => { const a = mixer.clipAction(c); a.setLoop(THREE.LoopRepeat, Infinity); a.timeScale = GUN.fireTimeScale; return a; });
+  applyPhase(phase);
+}).catch(e => console.warn('gun load failed', e));
+
+// ── phase switching ──
+let phase = 4, spinning = true, firing = true;
+function applyPhase(p) {
+  phase = p;
+  dollar.material.color.setHex(LUKA_DOLLAR[p]);
+  bag.visible = (p === 3 || p === 4);
+  hat.visible = (p === 4);
+  if (gun) gun.visible = (p === 4);
+  if (actions.length) { const run = firing && p === 4; for (const a of actions) { if (run) { a.reset(); a.play(); } else a.stop(); } }
+  document.getElementById('phaseName').textContent = PHASE_LABEL[p];
+  for (const b of document.querySelectorAll('[data-ph]')) b.classList.toggle('on', +b.dataset.ph === p);
+}
+document.querySelectorAll('[data-ph]').forEach(b => b.onclick = () => applyPhase(+b.dataset.ph));
+document.getElementById('spin').onclick = (e) => { spinning = !spinning; e.target.classList.toggle('on', spinning); };
+document.getElementById('fire').onclick = (e) => { firing = !firing; e.target.classList.toggle('on', firing); applyPhase(phase); };
+
+// ── minimal orbit controls ──
+let drag = false, px = 0, py = 0;
+canvas.addEventListener('pointerdown', e => { drag = true; px = e.clientX; py = e.clientY; });
+addEventListener('pointerup', () => drag = false);
+addEventListener('pointermove', e => { if (!drag) return; orbit.az -= (e.clientX - px) * 0.01; orbit.el = Math.max(-1.2, Math.min(1.3, orbit.el + (e.clientY - py) * 0.01)); px = e.clientX; py = e.clientY; });
+canvas.addEventListener('wheel', e => { orbit.rad = Math.max(1, Math.min(20, orbit.rad + e.deltaY * 0.002 * orbit.rad)); e.preventDefault(); }, { passive: false });
+
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(0.05, clock.getDelta());
+  if (spinning) orbit.az += dt * 0.5;
+  if (mixer) mixer.update(dt);
+  // FX synced to the looping fire animation (sparks+pan at strike 0.57, muzzle blast at 0.73) — like the dílna
+  if (mixer && gun && gun.visible && firing && actions.length) {
+    const act = actions[0], cd = act.getClip().duration || 1.25, t = act.time % cd;
+    if (t < prevClipT) { firedStrike = false; firedMuzzle = false; } // looped
+    if (!firedStrike && t >= cd * 0.57) { firedStrike = true; const fr = gun.getObjectByName('Frizzen'), pw = gun.getObjectByName('PanPowder') || gun.getObjectByName('Pan'); if (fr && pw) lukaFX.lockBurst(fr.getWorldPosition(new THREE.Vector3()), pw.getWorldPosition(new THREE.Vector3())); }
+    if (!firedMuzzle && t >= cd * 0.73) { firedMuzzle = true; const mz = gun.getObjectByName('muzzle'); if (mz) lukaFX.muzzleBlast(mz.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(1, 0, 0).transformDirection(gun.matrixWorld).normalize()); }
+    prevClipT = t;
+  }
+  lukaFX.update(dt);
+  const ce = Math.cos(orbit.el), x = orbit.tx + Math.sin(orbit.az) * ce * orbit.rad, y = orbit.ty + Math.sin(orbit.el) * orbit.rad, z = orbit.tz + Math.cos(orbit.az) * ce * orbit.rad;
+  camera.position.set(x, y, z); camera.lookAt(orbit.tx, orbit.ty, orbit.tz);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+applyPhase(4);
+frame();
+</script>
+</body>
+</html>

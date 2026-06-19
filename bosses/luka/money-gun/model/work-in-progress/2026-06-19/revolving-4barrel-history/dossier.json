@@ -1,0 +1,42 @@
+{
+  "id": "revolving_4barrel_pistol",
+  "title": "Revolving 4-barrel flintlock pistol, France 18th C. — gold & ivory (Denix-style)",
+  "subject": "Denix replica 'Revolving 4 barrel flintlock pistol, France 18th. C.' (4-barrel revolving cluster, ivory grip, gilt furniture). Owner variant: ALL metal = gold (no steel), ivory grip, fires copper coins (Luka boss money items).",
+  "units": "mm in dossier; spec authored in metres",
+  "dimensions": {
+    "overall_length": { "mm": 305, "src": "denix#4barrel_overall", "note": "Denix 4-barrel models 1307/1310 listed 30.2-30.5 cm overall" },
+    "weight": { "g": 1159, "src": "denix#4barrel_weight" },
+    "barrel_cluster_length": { "mm": 165, "src": "derivation#barrel_len", "note": "~0.54 * overall, measured off side reference photo (image 1)" },
+    "barrel_diameter": { "mm": 13, "src": "derivation#barrel_dia", "note": "muzzle photo (image 6): 4 barrels touching in diamond; bore ~10mm" },
+    "barrel_center_radius": { "mm": 9.2, "src": "derivation#barrel_dia", "note": "Rc = db/sqrt(2) so adjacent barrels touch; cluster outer ~31mm across" },
+    "grip_drop": { "mm": 130, "src": "derivation#grip", "note": "plow-handle grip diagonal, measured ratio off side photo" }
+  },
+  "feature_inventory": {
+    "barrels": "4 barrels in a diamond (2x2 rotated 45deg) cluster; octagonal/faceted at breech transitioning to round toward muzzle; fine fleur-de-lis engraving bands; turned ring grooves at the octa/round transition. src: images 1,2,3,6",
+    "revolving": "the 4-barrel cluster ROTATES about the bore axis to index the next barrel under the cock after each shot; gold clover muzzle-cap has 4 corner index pins. src: image 6, denix#revolving",
+    "muzzle_cap": "gold clover/diamond plate uniting the 4 muzzles, 4 small index pins at the diamond points. src: image 6",
+    "collar_band": "gold collar band wrapping the cluster near the breech. src: image 3",
+    "breech": "bulbous gold breech form at the rear of the cluster. src: image 3",
+    "lock": "flintlock on the right side: ornate engraved lockplate, S-shaped cock holding a flint in screw jaws, frizzen (battery) + frizzen spring, pan. Original = dark engraved steel; OWNER OVERRIDE = gold. src: images 1,2",
+    "grip": "ivory grip, plow-handle profile, gold acanthus scrollwork lines inlaid; both sides ivory. src: images 1,2,4,5",
+    "pommel": "ornate bulbous flared gold pommel cap with heavy baroque acanthus/scroll relief + rounded gold end-cap. src: images 4,5",
+    "trigger": "gold trigger inside a gold trigger guard bow. src: images 1,2",
+    "ammo": "OWNER FICTION: fires copper coins (matches Luka boss money items). Loose copper coin pile presented beside the weapon as ammo. src: owner"
+  },
+  "materials_override": {
+    "all_metal": "GOLD (#C9962E) — no steel anywhere per owner: barrels, muzzle cap, collar, breech, lock, cock, frizzen, trigger guard, trigger, pommel, scroll inlay",
+    "grip": "IVORY (#E8DCC0) with craquelure",
+    "coins": "COPPER (#B06A3A)",
+    "flint": "grey stone (only non-gold metal-area part)",
+    "bores": "near-black recessed muzzle holes"
+  },
+  "needs": [
+    "exact barrel length / lock plate dims for the specific ivory variant (used measured photo ratios + 305mm overall anchor instead)",
+    "literal fleur-de-lis barrel engraving (suggested with turned bands; not literally engraved in v1)"
+  ],
+  "derivation": {
+    "barrel_len": "0.54 * 305mm = 165mm",
+    "barrel_dia": "muzzle photo: 4 barrels touching -> Rc = 13/sqrt(2) = 9.2mm",
+    "grip": "plow-handle drop ~0.43 * overall measured off image 1"
+  }
+}
