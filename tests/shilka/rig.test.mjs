@@ -9,6 +9,13 @@ test('a low compact disc near the ground is a road wheel', () => {
 test('a long thin Z-axis tube at turret height is a gun barrel', () => {
   assert.equal(classifyShilkaPart(0.2, 1.3, -2.0, 0.18, 0.18, 1.8), 'gun');
 });
+
+test('a gun-shaped tube on the hull SIDE (off the turret centreline) is NOT a gun — it stays hull', () => {
+  // same thin/long/turret-height shape as a barrel, but far off-centre (a fender/skirt rail). The cx gate
+  // keeps it out of the gun bucket so it no longer flips up on elevation (mis-rig the playtest caught).
+  assert.equal(classifyShilkaPart(1.28, 1.3, -1.2, 0.1, 0.3, 1.5), 'hull');
+  assert.equal(classifyShilkaPart(-1.28, 1.3, -1.2, 0.1, 0.3, 1.5), 'hull');
+});
 test('a tall super-thin vertical is an antenna whip', () => {
   assert.equal(classifyShilkaPart(0.8, 1.4, 0.2, 0.08, 1.2, 0.08), 'antenna');
 });

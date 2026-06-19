@@ -12,8 +12,10 @@ export function classifyShilkaPart(cx, cy, cz, sx, sy, sz) {
   if (sz > 3.5 && cy < 0.60 && sx < 0.6) return 'track';
   // whip antennas: tall + super-thin verticals -> own physics rig (NOT radar)
   if (sx < 0.14 && sz < 0.14 && sy > 0.60) return 'antenna';
-  // 23 mm barrels: long in Z, thin both ways, at turret height
-  if (sz > 1.0 && cy >= 1.05 && cy <= 1.6 && sx < 0.5 && sy < 0.5) return 'gun';
+  // 23 mm barrels: long in Z, thin both ways, at turret height, and on the turret CENTRELINE (cx≈-0.22) —
+  // the cx gate keeps thin Z-long fender/skirt rails on the hull SIDES out of the gun bucket (they were
+  // mis-rigged as barrels and flipped up on elevation).
+  if (sz > 1.0 && cy >= 1.05 && cy <= 1.6 && sx < 0.5 && sy < 0.5 && Math.abs(cx - (-0.22)) < 0.6) return 'gun';
   // radar gun-dish drum: rear-top cluster only
   if (cy > 1.70 && cz > 0.45) return 'radar';
   // turret vs hull-deck: central compact = turret; side sponsons/fenders/engine deck = hull
