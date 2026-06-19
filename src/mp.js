@@ -722,6 +722,7 @@ export class MP {
     // ── ЗСУ-23-4 «Shilka» multi-crew ──
     n.on('shilkaclaim', (d, from) => { if (this.isHost && d) this._hostShilkaClaim(d.want, from, d.v, d.seat, d); }); // client → host: mount/dismount a seat (or gunner radar toggle)
     n.on('shilkastate', (d) => { if (!this.isHost && d) this._applyShilkaState(d); });                              // host → clients: authoritative seat occupancy + radar flag
+    n.on('shilkamove', (d) => { if (!d || d.pid === this.myId) return; const sh = this._shilkaById(d.v); if (sh && sh.seats[0] === d.pid) sh._recvMove(d); }); // mirror the seated driver's transform (only the driver is trusted; host relays via _r)
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });

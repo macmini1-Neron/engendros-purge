@@ -557,8 +557,11 @@ export class ShilkaStation {
     }
     const mp = this.game.mp;
     if (mp && mp.active) {
-      if (mp.isHost) mp._hostShilkaClaim('dismount', mp.myId, this.id, seat, { force }); // host: apply + broadcast
-      else mp.net.send('shilkaclaim', { v: this.id, seat, want: 'dismount', force });     // client: ask host
+      if (mp.isHost) { mp._hostShilkaClaim('dismount', mp.myId, this.id, seat, { force }); return; } // host: apply + broadcast
+      // client: a forced dismount (death/reset) tears the local seat down NOW so a dead driver stops
+      // reading input + broadcasting moves; the host frees the seat when the claim arrives.
+      if (force) this._leaveSeat(seat);
+      mp.net.send('shilkaclaim', { v: this.id, seat, want: 'dismount', force });
       return;
     }
     if (seat >= 0) this.seats[seat] = null;
@@ -587,7 +590,7 @@ export class ShilkaStation {
 
   // Authoritative state shape the host broadcasts (and clients reconcile against) — occupancy + the
   // shared radar flag. Built here so the payload shape lives in one place (mp.js calls sh._statePayload()).
-  _statePayload() { return { v: this.id, seats: this.seats.slice(), radar: !!this.state.radarOnAir, engineOn: !!this.drive.engineOn }; }
+  _statePayload() { return { v: this.id, seats: this.seats.slice(), radar: !!this.state.radarOnAir }; }
   setRadar(on) { this.state = setShilkaSwitch(this.state, 'radarOnAir', !!on); }
 
   onPointerUnlock() {
@@ -611,6 +614,10 @@ export class ShilkaStation {
     // radar "Gun Dish" scans continuously — visible on the parked model from any angle (this.update
     // ticks even when unseated). Dev: s._radarSpin = 0 stops it, larger = faster (rad/s).
     if (this.rig && this.rig.radar) this.rig.radar.rotation.y += dt * (this._radarSpin ?? SHILKA_RADAR_SPIN);
+    // co-op: a REMOTE driver holds seat 0 → drive the rig from their broadcast (we don't simulate it).
+    // Gated on seats[0] !== myId so the local driver, who runs _driveControlUpdate, never double-applies.
+    const mp = this.game.mp;
+    if (mp && mp.active && this.seats[0] && this.seats[0] !== mp.myId) this._applyRemoteDrive(dt);
     if (this.marker) {
       this.marker.material.opacity = this.game.player.shilka === this ? 0.48 : 0.24 + Math.sin(performance.now() * 0.003) * 0.08;
     }
@@ -888,7 +895,48 @@ export class ShilkaStation {
     this._frameDriverCamera(dt);
     this._renderPeriscope(); // RTT the optical periscope into _periRT, BEFORE engine.render()
     this._updateDriveHud();
+    this._broadcastMove(dt); // co-op: the driver is authoritative over motion → push the transform to everyone
   }
+
+  // The seated driver broadcasts the vehicle transform ~15 Hz; every other client applies it in update()
+  // (see _applyRemoteDrive). Only the driver runs this — _driveControlUpdate only runs for seat 0.
+  _broadcastMove(dt) {
+    const mp = this.game.mp;
+    if (!mp || !mp.active) return;
+    this._moveT = (this._moveT || 0) - dt;
+    if (this._moveT > 0) return;
+    this._moveT = 0.066;
+    const d = this.drive;
+    mp.net.broadcast('shilkamove', {
+      pid: mp.myId, v: this.id,
+      x: +d.x.toFixed(2), z: +d.z.toFixed(2), heading: +d.heading.toFixed(3),
+      pitch: +d.pitch.toFixed(3), roll: +d.roll.toFixed(3),
+      gear: d.gear, speed: +d.speed.toFixed(2),
+      ws: +d.wheelSpin.toFixed(2), ts: +d.trackScroll.toFixed(2),
+    });
+  }
+
+  // Apply the driver's last broadcast on a NON-driving client: smooth toward it and drive the rig. y is
+  // recomputed from the shared (deterministic) terrain so it isn't sent. Never runs for the local driver
+  // (update() gates on seats[0] !== myId) — that would double-simulate and fight the local sim.
+  _applyRemoteDrive(dt) {
+    const m = this._netMove; if (!m) return;
+    const d = this.drive;
+    const k = Math.min(1, dt * 12); // short lerp to hide the 66 ms cadence (matches RemotePlayer smoothing)
+    d.x += (m.x - d.x) * k;
+    d.z += (m.z - d.z) * k;
+    d.heading = this._lerpAngle(d.heading, m.heading, k);
+    d.pitch += (m.pitch - d.pitch) * k;
+    d.roll += (m.roll - d.roll) * k;
+    d.gear = m.gear; d.speed = m.speed;
+    d.wheelSpin = m.ws; d.trackScroll = m.ts;
+    d.y = this._groundY(d.x, d.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
+    this._applyRig(dt);
+  }
+
+  _recvMove(d) { this._netMove = d; } // latest authoritative transform from the seated driver (mp validates the sender)
+
+  _lerpAngle(a, b, k) { const T = Math.PI * 2; const diff = ((b - a + Math.PI) % T + T) % T - Math.PI; return a + diff * k; }
 
   // terrain height under each road wheel, read from the ACTUAL rig pivots' world XZ.
   // Sampling the real pivots (not reconstructed geometry) keeps L[i]/R[i] in lockstep with
