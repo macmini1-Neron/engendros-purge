@@ -5,6 +5,7 @@ import { ENEMY_BURN_SLOW, STEP_UP } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { buildNavGrid, findPath, lineBlocked } from './pathing.js';
 import { buildFlowField, flowDirAt } from './flowfield.js';
+import { buildNavGraph, buildSurfaceFlow, surfaceDirAt } from './navgraph.js';
 import { movementSlow, contactWeaken } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
 
@@ -213,6 +214,7 @@ class Enemy {
     this.headY = 1.18 * def.scale;
     this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map(); // effects map: clear on pool reuse / init on first spawn
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
+    this._climb = null; this._climbT = 0; // latched stair/ladder link traversal (layered nav) — {x,z,y} target + timeout
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.noAI = false;    // console /summon {NoAI:1} dummy flag — reset here so a recycled pooled enemy never inherits it
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
@@ -246,6 +248,10 @@ export class EnemyManager {
     this._hordeGrid = null; // HORDE flow-field occupancy grid (finer cell, slope-aware; built once, lazily)
     this._hordeFlow = null; // Dijkstra flow-field toward the host player (refreshed on _flowT timer)
     this._flowT = 0;        // seconds until the next flow-field refresh
+    this._navGraph = null;  // LAYERED surface nav graph (navgraph.js) — built lazily the first time the player is elevated
+    this._surfFlow = null;  // surface flow-field toward the player's actual (x,y,z) level
+    this._surfT = 0;        // seconds until the next surface-flow refresh
+    this._playerUp = false; // is the host player elevated on a structure this frame (gates the layered nav)
   }
   // Pre-pay the boss-fight's one-time costs at run-start so they don't land as a frame hitch mid-fight:
   // (1) the heavy buildTolo() geometry (MeshBuilder + BufferGeometryUtils merge — a multi-hundred-ms
@@ -358,6 +364,16 @@ export class EnemyManager {
       this._flowT -= dt;
       if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z); }
     }
+    // LAYERED NAV: only when the player is ELEVATED on a structure (roof / upper floor / bunker level) do
+    // we build the multi-surface graph + a surface flow toward the player's ACTUAL level, so the horde
+    // routes UP stairs/ladders. On the ground (the common case) this is skipped entirely → zero overhead,
+    // and the 2D flow above is unchanged. Graph built once per map (lazily); flow refreshed on a timer.
+    this._playerUp = this.active.length > 0 && Math.abs(pp.y - this.world.groundY(pp.x, pp.z)) > 1.2;
+    if (this._playerUp) {
+      if (!this._navGraph) this._navGraph = buildNavGraph(this.world, { stepUp: STEP_UP });
+      this._surfT -= dt;
+      if (!this._surfFlow || this._surfT <= 0) { this._surfT = 0.3; this._surfFlow = buildSurfaceFlow(this._navGraph, pp.x, pp.y, pp.z); }
+    }
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       if (!e.alive) { this.active.splice(i, 1); continue; }
@@ -373,11 +389,26 @@ export class EnemyManager {
       let dx = tgt.x - e.pos.x, dz = tgt.z - e.pos.z;
       const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;
 
+      // LATCHED onto a stair/ladder link: COMMIT to physically reaching its top (head straight at the
+      // link's top XZ + let Phase-1 step-up/ladder-climb ascend), ignoring the flow's pull back to the
+      // link foot — that off-mesh-connection traversal is what gets the mob up the stairs.
+      if (e._climb && e._climbT > 0) {
+        e._climbT -= dt;
+        const cxp = e._climb.x - e.pos.x, czp = e._climb.z - e.pos.z, cl = Math.hypot(cxp, czp) || 1;
+        dx = cxp / cl; dz = czp / cl;
+        if (e.pos.y >= e._climb.y - 0.4) { e._climb = null; e._climbT = 0; } // reached the top → release
+      }
       // BOSS TOLO: grid-A* navigation — steer toward the next waypoint so the
       // giant routes AROUND buildings instead of wedging in a corner. Falls back
       // to the direct heading (below) when close or in clear line of sight.
-      if (e.def.boss) { const wp = this._bossWaypoint(e, tgt, dist, dt); if (wp) { const wxp = wp.x - e.pos.x, wzp = wp.z - e.pos.z, wlp = Math.hypot(wxp, wzp) || 1; dx = wxp / wlp; dz = wzp / wlp; } }
-      // HORDE: when the straight line to the target is blocked, steer along the flow-field
+      else if (e.def.boss) { const wp = this._bossWaypoint(e, tgt, dist, dt); if (wp) { const wxp = wp.x - e.pos.x, wzp = wp.z - e.pos.z, wlp = Math.hypot(wxp, wzp) || 1; dx = wxp / wlp; dz = wzp / wlp; } }
+      // HORDE — player UP a structure: steer along the LAYERED surface flow (routes around AND up toward
+      // the player's level). A `climb` step LATCHES the link above so the mob commits to traversing it.
+      else if (this._playerUp && this._surfFlow) {
+        const sd = surfaceDirAt(this._surfFlow, e.pos.x, e.pos.y, e.pos.z);
+        if (sd) { dx = sd.x; dz = sd.z; if (sd.climb) { e._climb = { x: sd.targetX, z: sd.targetZ, y: sd.targetY }; e._climbT = 4; } }
+      }
+      // HORDE — player on the ground: when the straight line is blocked, steer along the 2D flow-field
       // (route around cliffs/walls, funnel through doorways). Open LoS → the beeline above stands.
       else if (this._hordeFlow && this._hordeGrid && lineBlocked(this._hordeGrid, e.pos.x, e.pos.z, tgt.x, tgt.z)) {
         const fd = flowDirAt(this._hordeFlow, e.pos.x, e.pos.z);
@@ -395,7 +426,7 @@ export class EnemyManager {
       // lateral shove off a wide step face (it pushes radially from the box centre), sliding the mob off
       // the side. So once climbing, drop avoidance and just beeline up toward the target. (Phase-2 routing
       // will steer multi-level properly; here it only keeps the locomotion from self-sabotaging.)
-      const _onStruct = e.pos.y > this.world.groundY(e.pos.x, e.pos.z) + 0.4;
+      const _onStruct = (e._climb && e._climbT > 0) || e.pos.y > this.world.groundY(e.pos.x, e.pos.z) + 0.4; // latched-to-a-link OR elevated → no avoidance
       // crate avoidance — skip surfaces we can step onto (top ≤ feet+STEP_UP) so we don't back off our own stairs.
       let ax = 0, az = 0;
       for (const b of (_onStruct ? [] : this.world.grid.queryAABB(e.pos.x - 1.8, e.pos.z - 1.8, e.pos.x + 1.8, e.pos.z + 1.8))) {

@@ -49,6 +49,7 @@ export class World {
     this.scene = game.engine.scene;
     this.HALF = 70;
     this.boxes = [];
+    this._navLinks = [];             // vertical stair links {x0,z0,y0,x1,z1,y1} for the layered horde nav (navgraph.js); _stairs registers them
     this.cullProps = [];             // static decorative meshes eligible for draw-distance culling (Game._cullByDistance)
     this.grid = new SpatialGrid();   // spatial index over `boxes` (built after the map, addBox on runtime adds)
     this.spawns = [];
@@ -81,6 +82,12 @@ export class World {
       const cx = sx + dx * i * stepD, cz = sz + dz * i * stepD, hY = (i + 1) * stepH;
       this._solid(builder, dx !== 0 ? stepD : width, hY, dz !== 0 ? stepD : width, cx, baseY + hY / 2, cz, color, { tint: 0.05 });
     }
+    // Register a vertical nav link (foot ground → last-step top) so the layered horde nav routes mobs
+    // UP the stairs regardless of grid-cell granularity. (Ladders are registered separately by skobTrap.)
+    if (this._navLinks) this._navLinks.push({
+      x0: sx - dx * 0.8, z0: sz - dz * 0.8, y0: baseY,
+      x1: sx + dx * (steps - 1) * stepD, z1: sz + dz * (steps - 1) * stepD, y1: baseY + steps * stepH,
+    });
   }
 
   // Wall along axis 'x' or 'z' centered at (cx,cz), with an optional doorway/window gap { width, height, offset }.
