@@ -34,7 +34,18 @@ import {
 import { buildShilkaRig } from './shilka-rig.js';
 import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING } from './shilka-drive.js';
 import { formatUglomer } from './bearing.js';
+import { WEAPON_LAYER } from './engine.js';
 import { clamp, damp, TAU } from './util.js';
+
+// radar "Gun Dish" (RPK-2 «Тобол») continuous scan rate, rad/s — the signature ЗСУ-23-4 animation.
+// Per-instance dev override: s._radarSpin = 0 stops it, larger spins faster.
+const SHILKA_RADAR_SPIN = 2.0;
+
+// Shadow-cast cutoff (world metres): a model mesh whose largest dimension is under this spans fewer
+// than ~4 sun-shadow texels (2048² over 240 m ≈ 0.12 m/texel), so its shadow is invisible — skipping
+// it as a caster halves the shadow-pass draw count with no visible change. Silhouette parts (hull,
+// turret, barrels, wheels, antennas) clear the bar and still cast.
+const SHILKA_SHADOW_MIN_M = 0.5;
 
 const SWITCH_LABELS = [
   ['power54v', '54V'],
@@ -59,17 +70,40 @@ function loadGltf(url) {
 }
 
 function prepVehicleMeshTree(root) {
+  root.updateMatrixWorld(true); // world matrices fresh so per-mesh AABB sizes are in real metres
+  const box = new THREE.Box3(), size = new THREE.Vector3();
+  // The GLB ships MeshStandardMaterial that is fully DIFFUSE (metalness 0, roughness ~1) with only a
+  // base-colour map — no normal/rough/metal maps. The PBR BRDF is costlier PER FRAGMENT than the game's
+  // own MeshLambertMaterial for ZERO visual gain here (at metalness0/roughness1 PBR collapses to
+  // diffuse — look is identical, verified). Convert to Lambert to match the rest of the game and shave
+  // fragment cost; share one converted material per source so 93 meshes reuse the ~12 sources.
+  // DoubleSide (NOT FrontSide): the close-up "stutter" turned out to be a swiftshader (CPU-rasterizer)
+  // artifact — on a real GPU there is no spike — so the FrontSide back-face-cull saved nothing real and
+  // instead opened see-through holes where this ripped GLB has inward-facing / single-sided shells.
+  // Render both sides so the model is solid from every angle. (Mantlet z-fight is fixed geometrically in
+  // _fixMantletPlates, independent of side, so DoubleSide does not reintroduce it.)
+  const lambertCache = new Map();
+  const toLambert = (mat) => {
+    if (!mat) return mat;
+    let lm = lambertCache.get(mat);
+    if (!lm) {
+      lm = new THREE.MeshLambertMaterial({ map: mat.map || null, color: mat.color ? mat.color.clone() : new THREE.Color(0xffffff), side: THREE.DoubleSide });
+      lambertCache.set(mat, lm);
+    }
+    return lm;
+  };
   root.traverse((o) => {
     o.frustumCulled = false;
     if (!o.isMesh) return;
-    o.castShadow = true;
-    o.receiveShadow = true;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    for (const mat of mats) {
-      if (!mat) continue;
-      mat.side = THREE.DoubleSide;
-      mat.needsUpdate = true;
-    }
+    // The vehicle is lit directly by the sun; it must NOT receive the coarse ~0.12 m self-shadow map.
+    // At low sun the flat deck grazed the shadow comparison and dithered into shadow-acne ("biting").
+    // It still CASTS onto the ground (terrain receiveShadow stays on), so the vehicle keeps its shadow.
+    o.receiveShadow = false;
+    // Only silhouette-defining parts cast (see SHILKA_SHADOW_MIN_M): drops sub-texel detail meshes
+    // from the shadow pass with no visible change.
+    box.setFromObject(o); box.getSize(size);
+    o.castShadow = Math.max(size.x, size.y, size.z) >= SHILKA_SHADOW_MIN_M;
+    o.material = Array.isArray(o.material) ? o.material.map(toLambert) : toLambert(o.material);
   });
 }
 
@@ -121,12 +155,9 @@ export class ShilkaStation {
     this.vehicleModel = null;
     this._loadVehicleAsset();
 
-    const ringGeo = new THREE.RingGeometry(1.8, 2.15, 18);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x45e0cf, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
-    this.marker = new THREE.Mesh(ringGeo, ringMat);
-    this.marker.rotation.x = -Math.PI / 2;
-    this.marker.position.set(this.base.x, y + 0.05, this.base.z);
-    scene.add(this.marker);
+    // No ground ring — the "Press E to drive" prompt is the interaction cue. (`this.marker` stays null;
+    // every user is guarded by `if (this.marker)`.)
+    this.marker = null;
 
     const droneGeo = new THREE.BoxGeometry(2.7, 0.5, 1.2);
     const wingGeo = new THREE.BoxGeometry(6.2, 0.16, 0.72);
@@ -144,6 +175,7 @@ export class ShilkaStation {
       d.mesh = g;
     }
     this._buildDriverPeriscopes();
+    this._buildDriverHood();
   }
 
   // First-pass driver periscopes: 3 vision blocks (metal frame + tinted glass) on the driver's
@@ -154,7 +186,7 @@ export class ShilkaStation {
     grp.name = `${this.id} driver periscopes`;
     const metal = new THREE.MeshStandardMaterial({ color: 0x232a20, metalness: 0.45, roughness: 0.65 }); // dark frame = black border
     const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, metalness: 0.1, roughness: 0.08, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
-    const greenMat = new THREE.MeshStandardMaterial({ color: 0x74875f, metalness: 0, roughness: 0.8 }); // brightened to match the LIT, texture-baked hull green (metal=0 like the GLB); dial s._housing.material.color
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x74875f, metalness: 0, roughness: 0.8 }); // placeholder until GLB loads — _matchHousingToHull() then swaps in the hull's own baked material for an exact colour match
     const W = 0.30, H = 0.18, D = 0.13, T = 0.035;
     // ONE integrated optic: dark frame (black border) + glass, with a beveled green housing box behind it
     const b = new THREE.Group();
@@ -174,9 +206,42 @@ export class ShilkaStation {
     grp.add(b);
     this._optic = b;          // whole integrated optic (frame+glass+housing)
     this._housing = housing;  // tweak the beveled box live: s._housing.scale/position/rotation, .material.color.set(0x..) // tweak live: s._visor.position.set(x,y,z) · .rotation.x · .scale.setScalar(n) · .material.color.set(0x..)
-    grp.position.set(0.565, 0.74, 2.4); // driver's periscope optics on the MODEL (placed live by the owner) — a separate thing from the camera/view
+    grp.position.set(0.565, 0.74, 2.15); // driver's periscope optic on the MODEL — pulled back from the glacis lip (was z2.4) so the whole footprint rests on the flat deck instead of overhanging the sloped front. Separate from the camera EYE.
     this.vehicleRoot.add(grp);
     this.periscopes = grp;
+  }
+
+  // Real 3D driver periscope hood: a near-black enclosure around the driver's eye with a horizontal
+  // slit facing forward. Rendered on WEAPON_LAYER so it draws OVER the world (pass 2, depth pre-cleared
+  // → never clips the near plane, always on top); the slit is a hole the world shows through.
+  // _frameDriverCamera repositions it each frame at the camera eye with the HULL's orientation MINUS
+  // mouselook, so it stays bolted to the model: the camera turns INSIDE the static hood → the slit
+  // slides aside and the black walls swing in, like a real periscope.
+  // NOTE: the slit faces hood-local +Z — Object3D.lookAt() on a plain Group points +Z at the target
+  // (only Cameras/Lights point −Z), so the forward (view) direction here is +Z.
+  _buildDriverHood() {
+    const grp = new THREE.Group();
+    grp.name = `${this.id} driver hood`;
+    const mat = new THREE.MeshStandardMaterial({ color: 0x080a08, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+    // hood-local: eye at origin, view (slit) = +Z. Enclosure half-extents + centred forward slit window.
+    const halfW = 0.42, halfH = 0.30, front = 0.26, back = 0.20, t = 0.02; // walls ≥0.20 m off the eye (near=0.05 safe)
+    const slitW = 0.24, slitH = 0.055; // half-extents of the forward slit opening
+    const cz = (front - back) / 2;     // enclosure centre in Z (walls span −back..+front)
+    const panel = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); grp.add(m); };
+    panel(t, halfH * 2, front + back, -halfW, 0, cz);  // left wall
+    panel(t, halfH * 2, front + back,  halfW, 0, cz);  // right wall
+    panel(halfW * 2, t, front + back, 0,  halfH, cz);  // top wall
+    panel(halfW * 2, t, front + back, 0, -halfH, cz);  // bottom wall
+    panel(halfW * 2, halfH * 2, t, 0, 0, -back);       // back wall (behind the eye)
+    // front wall (at +Z) = frame around the centred slit (top/bottom/left/right of the opening)
+    panel(halfW * 2, halfH - slitH, t, 0,  (slitH + halfH) / 2, front); // front-top
+    panel(halfW * 2, halfH - slitH, t, 0, -(slitH + halfH) / 2, front); // front-bottom
+    panel(halfW - slitW, slitH * 2, t, -(slitW + halfW) / 2, 0, front); // front-left
+    panel(halfW - slitW, slitH * 2, t,  (slitW + halfW) / 2, 0, front); // front-right
+    grp.traverse((o) => { if (o.isMesh) { o.layers.set(WEAPON_LAYER); o.frustumCulled = false; o.renderOrder = 1000; } });
+    grp.visible = false;
+    this.game.engine.scene.add(grp);
+    this._hood = grp; // dev: tune live — s._hood.scale.setScalar(n) / s._hood.children[i].scale; rebuild for slit size
   }
 
   async _loadVehicleAsset() {
@@ -204,13 +269,79 @@ export class ShilkaStation {
       this.vehicleModel = rig.root;
       this.rig = rig;
       this._rigScale = scale;
+      this._fixMantletPlates(); // re-skin the white plate + de-z-fight the stacked mantlet armour
       // ground the PARKED vehicle too: _applyRig only lifts it to drive.y while mounted, so without
       // this the un-mounted Shilka sits groundDrop (~0.87 m) below the terrain.
       this.vehicleRoot.position.y = this.base.y + groundDrop;
       this.drive.y = this.vehicleRoot.position.y;
+      // periscope housing wears the hull's own GLB material now that it's loaded → exact colour match.
+      this._matchHousingToHull(rig.root);
     } catch (e) {
       this._assetFailed = true;
       console.warn('[shilka] Failed to load/rig GLB vehicle; station marker remains.', e);
+    }
+  }
+
+  // Make the driver-periscope housing literally wear the GLB deck panel it rests on: raycast straight
+  // down from the optic onto the hull, take the HIT mesh's material, and collapse the housing's
+  // procedural UVs onto the exact texel under the periscope. The panel it sits on is by definition the
+  // right colour, so the housing matches the surrounding deck under the same lighting — no hex to dial.
+  // The GLB's mantlet stacks several armour plates at the SAME depth (Object_84/86/154/155/157), which
+  // z-fought into a dithered checkerboard up close (FrontSide can't fix coincident same-facing plates).
+  // One plate (Object_157) is the rip's untextured "none" duplicate: no real UVs, so it renders flat
+  // near-white AND can't be re-skinned (a borrowed texture samples through its broken UVs as coloured
+  // streak garbage). A textured twin (Object_154) occupies the same area, so we HIDE the untextured
+  // duplicate(s) — no white, no streaks, no gap — then spread the remaining textured plates a few mm
+  // apart along each one's outward radial so no two share a depth. Names are from the fixed asset; re-
+  // derive with a ray-sweep (see /tmp probes) if the GLB is re-exported. Verified: hiding kills the
+  // streaks (reproduced) and the remaining sweep shows 0 truly-coincident ray hits (gap < 0.3 mm).
+  _fixMantletPlates() {
+    const rig = this.rig;
+    if (!rig || !rig.turret) return;
+    const NAMES = ['Object_84', 'Object_86', 'Object_154', 'Object_155', 'Object_157'];
+    rig.root.updateMatrixWorld(true);
+    const cluster = [];
+    rig.root.traverse((m) => { if (m.isMesh && NAMES.includes(m.name)) cluster.push(m); });
+    if (!cluster.length) return;
+    const mat0 = (m) => (Array.isArray(m.material) ? m.material[0] : m.material);
+    // (1) hide untextured duplicate plate(s) — the textured twin covers the same area
+    const visible = cluster.filter((m) => {
+      if (mat0(m) && mat0(m).map) return true;
+      m.visible = false;
+      return false;
+    });
+    // (2) de-z-fight the remaining textured plates: spread them apart in depth along their outward radial
+    const center = new THREE.Box3().setFromObject(rig.turret).getCenter(new THREE.Vector3());
+    const bb = new THREE.Box3(), mc = new THREE.Vector3(), wp = new THREE.Vector3(), dir = new THREE.Vector3();
+    visible.forEach((m) => {
+      bb.setFromObject(m).getCenter(mc);
+      dir.copy(mc).sub(center).normalize();
+      const i = NAMES.indexOf(m.name); // deterministic per-name offset (verified to fully de-z-fight)
+      const off = (i - (NAMES.length - 1) / 2) * 0.0028; // centred spread, ≥2.8 mm between any two
+      m.getWorldPosition(wp).addScaledVector(dir, off);
+      m.parent.worldToLocal(wp);
+      m.position.copy(wp);
+    });
+    rig.root.updateMatrixWorld(true);
+  }
+
+  _matchHousingToHull(root) {
+    if (!this._housing || !this._optic) return;
+    try {
+      this.vehicleRoot.updateMatrixWorld(true);
+      const rigMeshes = [];
+      root.traverse((o) => { if (o.isMesh && o.material && o.geometry && o.geometry.attributes.uv) rigMeshes.push(o); });
+      if (!rigMeshes.length) return;
+      const origin = this._optic.getWorldPosition(new THREE.Vector3()); origin.y += 1.2;
+      const rc = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, 6);
+      const hit = rc.intersectObjects(rigMeshes, false)[0];
+      if (!hit || !hit.uv) return; // no deck under the optic, or panel has no UVs — keep the flat green
+      const su = hit.uv.x, sv = hit.uv.y;
+      const huv = this._housing.geometry.attributes.uv;
+      if (huv) { for (let i = 0; i < huv.count; i++) huv.setXY(i, su, sv); huv.needsUpdate = true; }
+      this._housing.material = hit.object.material;
+    } catch (e) {
+      console.warn('[shilka] hull-material match failed; keeping flat green housing.', e);
     }
   }
 
@@ -237,6 +368,11 @@ export class ShilkaStation {
     this.drive.x = this.base.x; this.drive.z = this.base.z; this.drive.heading = this.baseYaw;
     this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = true; this.drive.stalled = false;
     this._lookYaw = 0; this._lookPitch = 0;
+    // driver looks THROUGH a real 3D periscope hood (hull-fixed enclosure + slit, on WEAPON_LAYER): show
+    // it and hide the exterior optic so it doesn't double up / clip. The hood is the viewport now — the
+    // camera turns inside it (see _frameDriverCamera), the old 2D DOM mask is retired.
+    if (this.periscopes) this.periscopes.visible = false;
+    if (this._hood) this._hood.visible = true;
     this._showDriveHud(true);
     if (!this.game.input.locked) this.game.input.requestLock();
     this._frameDriverCamera(0.001);
@@ -246,6 +382,8 @@ export class ShilkaStation {
     const pl = this.game.player;
     if (pl.shilka !== this) return;
     this.driveMode = false; this._showDriveHud(false);
+    if (this._hood) this._hood.visible = false;
+    if (this.periscopes) this.periscopes.visible = true; // restore the model optic for 3rd-person / other players
     pl.shilka = null;
     this.game.weapons.group.visible = true;
     if (this.game.hud.el.cross) this.game.hud.el.cross.style.opacity = '';
@@ -274,6 +412,9 @@ export class ShilkaStation {
   update(dt) {
     this._updateDrones(dt);
     this._updateProjectiles(dt);
+    // radar "Gun Dish" scans continuously — visible on the parked model from any angle (this.update
+    // ticks even when unseated). Dev: s._radarSpin = 0 stops it, larger = faster (rad/s).
+    if (this.rig && this.rig.radar) this.rig.radar.rotation.y += dt * (this._radarSpin ?? SHILKA_RADAR_SPIN);
     if (this.marker) {
       this.marker.material.opacity = this.game.player.shilka === this ? 0.48 : 0.24 + Math.sin(performance.now() * 0.003) * 0.08;
     }
@@ -565,6 +706,20 @@ export class ShilkaStation {
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
     // hull roll banks the horizon (sign matches the hull's negated roll)
     cam.rotation.z = -d.roll;
+    // periscope hood: sit it on the eye, oriented to HULL-forward (heading + d.pitch, NO mouselook) and
+    // banked by -d.roll — i.e. the camera's orientation with _lookYaw/_lookPitch zeroed. The hood is the
+    // hull-fixed reference; the camera turns inside it via mouselook, so the slit slides aside as you look.
+    if (this._hood && this._hood.visible) {
+      this._hood.position.copy(cam.position);
+      this._hood.rotation.order = 'YXZ';
+      const fH = TMP_FWD.set(
+        Math.sin(d.heading) * Math.cos(d.pitch),
+        Math.sin(d.pitch),
+        Math.cos(d.heading) * Math.cos(d.pitch),
+      );
+      this._hood.lookAt(TMP_END.copy(cam.position).add(fH));
+      this._hood.rotation.z = -d.roll;
+    }
     if (this.periscopes) this.periscopes.rotation.set(d.pitch, 0, -d.roll); // periscopes tilt with the hull
     this.game.engine.setFov(70);
     const pl = this.game.player;
@@ -579,7 +734,7 @@ export class ShilkaStation {
     return { eye: this._eye, periscopes: p };
   }
 
-  _showDriveHud(on) { const el = document.getElementById('shilka-drive-hud'); if (el) el.classList.toggle('show', !!on); const pm = document.getElementById('shilka-periscope-mask'); if (pm) pm.classList.toggle('show', !!on); }
+  _showDriveHud(on) { const el = document.getElementById('shilka-drive-hud'); if (el) el.classList.toggle('show', !!on); } // periscope viewport is now the 3D hood (_buildDriverHood), not the old 2D #shilka-periscope-mask overlay
   _updateDriveHud() {
     const el = document.getElementById('shilka-drive-hud'); if (!el) return;
     const d = this.drive;
