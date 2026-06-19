@@ -27,6 +27,7 @@ import {
   stepShilka,
   tryShilkaAngleLock,
   updateShilkaTrack,
+  aimToTurret,
 } from '../../src/shilka-mechanics.js';
 import { dirToMils } from '../../src/bearing.js';
 
@@ -266,4 +267,18 @@ test('deterministic drone route repeats with same seed and advances smoothly', (
   const b2 = stepShilkaDrone(b, 10);
   assert.deepEqual(a2.pos, b2.pos);
   assert.notDeepEqual(a.pos, a2.pos);
+});
+
+test('aimToTurret maps Soviet mils to a hull-relative turret yaw and clamps barrel elevation', () => {
+  const TAU = Math.PI * 2;
+  assert.ok(Math.abs(aimToTurret(0, 8).yaw) < 1e-9, '0 mils → 0 rad');
+  assert.ok(Math.abs(aimToTurret(1500, 0).yaw - TAU / 4) < 1e-9, '1500 mils → 90°');
+  assert.ok(Math.abs(aimToTurret(3000, 0).yaw - Math.PI) < 1e-9, '3000 mils → 180°');
+  // wraps cleanly past 6000 and for negatives
+  assert.ok(Math.abs(aimToTurret(6000, 0).yaw) < 1e-9, '6000 mils wraps to 0');
+  assert.ok(Math.abs(aimToTurret(-1500, 0).yaw - (TAU * 3 / 4)) < 1e-9, '-1500 mils → 270°');
+  // elevation in degrees → radians, clamped to the gun travel (-4..62)
+  assert.ok(Math.abs(aimToTurret(0, 45).pitch - 45 * Math.PI / 180) < 1e-9, '45° → rad');
+  assert.equal(aimToTurret(0, 200).pitch, 62 * Math.PI / 180, 'over-elevation clamps to 62°');
+  assert.equal(aimToTurret(0, -90).pitch, -4 * Math.PI / 180, 'depression clamps to -4°');
 });

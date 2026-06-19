@@ -90,6 +90,13 @@ const norm3 = (v) => {
   return { x: v.x / l, y: v.y / l, z: v.z / l };
 };
 
+// Map the gunner's lay (azimuth in Soviet mils 0..6000, elevation in degrees) to rig rotations:
+// turret yaw (radians, hull-relative) and gun-barrel pitch (radians, clamped to the gun's travel).
+// Pure — the adapter applies the result to rig.turret / rig.guns.
+export function aimToTurret(azMils, elDeg) {
+  return { yaw: (((azMils % 6000) + 6000) % 6000) * MILS_TO_RAD, pitch: clamp(elDeg, -4, 62) * D2R };
+}
+
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;

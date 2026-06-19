@@ -30,6 +30,7 @@ import {
   stepShilkaDrone,
   tryShilkaAngleLock,
   updateShilkaTrack,
+  aimToTurret,
 } from './shilka-mechanics.js';
 import { buildShilkaRig } from './shilka-rig.js';
 import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_GATE_SLOTS, moveShiftLever } from './shilka-drive.js';
@@ -640,6 +641,7 @@ export class ShilkaStation {
     // Gated on seats[0] !== myId so the local driver, who runs _driveControlUpdate, never double-applies.
     const mp = this.game.mp;
     if (mp && mp.active && this.seats[0] && this.seats[0] !== mp.myId) this._applyRemoteDrive(dt);
+    if (this.seats[2] != null) this._applyTurretAim(); // a gunner is laying the turret (local aim or remote shilkaaim)
     if (this.marker) {
       this.marker.material.opacity = this.game.player.shilka === this ? 0.48 : 0.24 + Math.sin(performance.now() * 0.003) * 0.08;
     }
@@ -1001,6 +1003,16 @@ export class ShilkaStation {
     for (const sp of rig.sprockets) sp.rotation.x = d.wheelSpin;
     const sway = clamp(-d.yawRate * 0.25, -0.25, 0.25);
     for (const a of rig.antennas) a.rotation.z = damp(a.rotation.z || 0, sway, 8, dt);
+  }
+
+  // Lay the turret + barrels from the gunner's aim (this.aimAzMils/ElDeg). Runs independently of driving
+  // so the turret tracks even on a parked vehicle. The local gunner sets the aim via its control update;
+  // remote clients get it from shilkaaim. Hull-relative yaw (rest = guns forward), barrels elevate.
+  _applyTurretAim() {
+    const rig = this.rig; if (!rig) return;
+    const { yaw, pitch } = aimToTurret(this.aimAzMils, this.aimElDeg);
+    if (rig.turret) rig.turret.rotation.y = yaw;
+    for (const g of (rig.guns || [])) g.rotation.x = pitch;
   }
 
   _frameDriverCamera(dt) {
