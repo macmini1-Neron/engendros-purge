@@ -515,10 +515,12 @@ export class EnemyManager {
       if (dist > e.radius + this.game.player.radius + 0.8 && moved < e.speed * dt * 0.35) e.stuck += dt;
       else e.stuck = Math.max(0, e.stuck - dt * 0.6);
       const beeline = e.stuck > 1.6;
-      // Separation weight: full on open ground; CUT hard while climbing/elevated (_onStruct) so the
+      // Separation weight: full on open ground; CUT hard ONLY while LATCHED to a climb link, so the
       // neighbours' repulsion (which on a narrow stair has a big LATERAL component) can't shove a latched
       // climber off the flight — letting the strong climb heading dominate so the horde ascends as a column.
-      const _sepW = e.def.boss ? 0 : (_onStruct ? 0.12 : 0.6); // Tolo (boss) is too big to shove → 0
+      // Keyed on the latch, NOT _onStruct: _onStruct also fires for any mob standing on a box top (groundY
+      // ignores boxes), and those mobs should keep normal spacing instead of stacking.
+      const _sepW = e.def.boss ? 0 : ((e._climb && e._climbT > 0) ? 0.12 : 0.6); // Tolo (boss) is too big to shove → 0
 
       const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
