@@ -882,6 +882,19 @@ export class EnemyManager {
       m.visible = false;
       e.mesh.add(m);
       e._lukaGun = m;
+      // The preload is asynchronous. If this Luka spawned before it completed,
+      // replace only this still-active fallback once the GLB becomes available.
+      // Preserve phase visibility and avoid replacing the weapon mid-shot.
+      preloadLukaGun().then(() => {
+        const upgrade = () => {
+          if (!e.alive || e._lukaGun !== m) return;
+          if (e._gunShotActive) { setTimeout(upgrade, 50); return; }
+          const wasVisible = m.visible;
+          this._attachLukaGun(e, bake);
+          if (e._lukaGun) e._lukaGun.visible = wasVisible;
+        };
+        upgrade();
+      }).catch(() => {});
     }
   }
   _lukaG(e) { return this._lukaBake.S * e.scale; } // model→world faktor (bake × def.scale), pro velikosti projektilů

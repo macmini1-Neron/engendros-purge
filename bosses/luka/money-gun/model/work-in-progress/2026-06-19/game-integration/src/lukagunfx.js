@@ -15,7 +15,7 @@ const _s1 = new THREE.Vector3(), _s2 = new THREE.Vector3(), _up = new THREE.Vect
 
 const SPARK = { n: 24, gap: 0.07 };   // 2 waves (flint scrapes down the frizzen), total n
 const SPK_THICK = 0.006;              // streak rectangle cross-section
-const PMAX = 900;                     // live-particle ceiling (gameplay safety vs rapid fire)
+const PMAX = 280;                     // hard draw-call ceiling; meshes are reused below
 const FIRE_WIN = 0.12, SMOKE_WIN = 0.18; // muzzle stream emission windows (s)
 
 function addMat(color, opacity, additive) {
@@ -26,11 +26,30 @@ export class LukaGunFX {
   constructor(scene) {
     this.scene = scene;
     this.parts = [];                 // flat particle pool
+    this.free = [];                  // inactive Mesh+material instances for reuse
     this.spark2 = [];                // pending 2nd spark waves: {t, p, pan, n}
     this.panQ = [];                  // pending pan ignition: {t, kind:'fire'|'smoke', pan}
     this.smokeT = -1; this.fireT = -1; this.smokeCarry = 0; this.fireCarry = 0;
     this.mPos = new THREE.Vector3(); this.mDir = new THREE.Vector3();
-    this.SMOKE_RATE = 3200; this.FIRE_RATE = 1900; // tunables (puffs / SIM-second)
+    this.SMOKE_RATE = 900; this.FIRE_RATE = 600; // tunables (puffs / SIM-second)
+  }
+
+  _takeMesh(geometry, color, opacity, additive) {
+    const m = this.free.pop() || new THREE.Mesh(geometry, addMat(color, opacity, additive));
+    m.geometry = geometry;
+    m.material.color.set(color);
+    m.material.opacity = opacity;
+    const blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+    if (m.material.blending !== blending) { m.material.blending = blending; m.material.needsUpdate = true; }
+    m.visible = true;
+    this.scene.add(m);
+    return m;
+  }
+
+  _releaseMesh(m) {
+    this.scene.remove(m);
+    m.visible = false;
+    this.free.push(m);
   }
 
   // ── public: lock sparks (frizzen→pan) ──
@@ -58,7 +77,7 @@ export class LukaGunFX {
       if (this.parts.length >= PMAX) break;
       const r = Math.random();
       const c = r < 0.6 ? 0xff6a14 : (r < 0.85 ? 0xffa028 : 0xffe6a0);
-      const m = new THREE.Mesh(GEO_BOX, addMat(c, 1, true));
+      const m = this._takeMesh(GEO_BOX, c, 1, true);
       m.position.copy(p).addScaledVector(panDir, 0.03);
       this.scene.add(m);
       let vx, vy, vz;
@@ -83,13 +102,13 @@ export class LukaGunFX {
   _emitFlash() {
     const P = this.mPos, D = this.mDir;
     // 1) white-hot core bloom
-    let m = new THREE.Mesh(GEO_FIRE, addMat(0xfff6df, 1, true));
+    let m = this._takeMesh(GEO_FIRE, 0xfff6df, 1, true);
     m.position.copy(P).addScaledVector(D, 0.03); m.scale.setScalar(0.13); this.scene.add(m);
     this.parts.push({ m, kind: 'flashcore', r0: 0.13, vx: D.x * 0.6, vy: D.y * 0.6, vz: D.z * 0.6, life: 0.085, max: 0.085, grow: 1.7 });
     // 2) forward fireball teardrop — stretched ellipsoids, hot white → orange → red toward the tip
     const tear = [[0.09, 0.085, 0xfff2cc, 2.4], [0.20, 0.07, 0xffbe48, 3.4], [0.32, 0.052, 0xff6a1e, 3.2]];
     for (const seg of tear) {
-      const e = new THREE.Mesh(GEO_FIRE, addMat(seg[2], 0.95, true));
+      const e = this._takeMesh(GEO_FIRE, seg[2], 0.95, true);
       e.position.copy(P).addScaledVector(D, seg[0]);
       e.quaternion.setFromUnitVectors(_zAxis, D); e.scale.set(seg[1], seg[1], seg[1] * seg[3]); this.scene.add(e);
       this.parts.push({ m: e, kind: 'flashlance', r0: seg[1], lz: seg[3], vx: D.x * 2.6, vy: D.y * 2.6, vz: D.z * 2.6, life: 0.10 + Math.random() * 0.05, max: 0.15 });
@@ -101,7 +120,7 @@ export class LukaGunFX {
       const ang = Math.random() * Math.PI * 2, spread = 0.3 + Math.random() * 0.7;
       const dir = D.clone().addScaledVector(_s1, Math.cos(ang) * spread).addScaledVector(_s2, Math.sin(ang) * spread).normalize();
       const r0 = 0.022 + Math.random() * 0.03;
-      m = new THREE.Mesh(GEO_FIRE, addMat(Math.random() < 0.5 ? 0xffe89a : 0xffae3a, 1, true));
+      m = this._takeMesh(GEO_FIRE, Math.random() < 0.5 ? 0xffe89a : 0xffae3a, 1, true);
       m.position.copy(P).addScaledVector(D, 0.03); m.scale.setScalar(r0); this.scene.add(m);
       const sp = 3.0 + Math.random() * 4.0;
       this.parts.push({ m, kind: 'mspike', r0, vx: dir.x * sp, vy: dir.y * sp, vz: dir.z * sp, life: 0.07 + Math.random() * 0.06, max: 0.13 });
@@ -110,7 +129,7 @@ export class LukaGunFX {
     for (let i = 0; i < 22; i++) {
       if (this.parts.length >= PMAX) break;
       const r0 = 0.008 + Math.random() * 0.012;
-      m = new THREE.Mesh(GEO_FIRE, addMat(Math.random() < 0.5 ? 0xffd24a : 0xff7a1e, 1, true));
+      m = this._takeMesh(GEO_FIRE, Math.random() < 0.5 ? 0xffd24a : 0xff7a1e, 1, true);
       m.position.copy(P); m.scale.setScalar(r0); this.scene.add(m);
       const v = D.clone().multiplyScalar(2.2 + Math.random() * 4.5).add(new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)));
       this.parts.push({ m, kind: 'member', r0, vx: v.x, vy: v.y, vz: v.z, life: 0.15 + Math.random() * 0.35, max: 0.5 });
@@ -125,7 +144,7 @@ export class LukaGunFX {
       if (this.parts.length >= PMAX) break;
       const c = Math.random() < 0.4 ? 0xfff0bc : (Math.random() < 0.65 ? 0xffa828 : 0xff5210);
       const r0 = 0.035 + Math.random() * 0.06;
-      const m = new THREE.Mesh(GEO_FIRE, addMat(c, 0.95, true));
+      const m = this._takeMesh(GEO_FIRE, c, 0.95, true);
       m.position.copy(P).addScaledVector(D, 0.02 + Math.random() * 0.06); m.scale.setScalar(r0); this.scene.add(m);
       const ang = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * 0.26;
       const dir = D.clone().addScaledVector(_s1, Math.cos(ang) * rad).addScaledVector(_s2, Math.sin(ang) * rad).normalize();
@@ -141,7 +160,7 @@ export class LukaGunFX {
     for (let k = 0; k < n; k++) {
       if (this.parts.length >= PMAX) break;
       const r0 = 0.027 + Math.random() * 0.036;
-      const m = new THREE.Mesh(GEO_SPHERE, addMat(new THREE.Color(0.26, 0.25, 0.26), 0, false));
+      const m = this._takeMesh(GEO_SPHERE, new THREE.Color(0.26, 0.25, 0.26), 0, false);
       m.position.copy(P).addScaledVector(D, 0.01 + Math.random() * 0.03);
       m.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
       const sv = new THREE.Vector3((0.75 + Math.random() * 0.6) * r0, (0.75 + Math.random() * 0.6) * r0, (0.75 + Math.random() * 0.6) * r0);
@@ -155,14 +174,14 @@ export class LukaGunFX {
 
   // ── pan ignition flame: bright core burst + flame licks in the priming pan ──
   _emitPanFire(pan) {
-    let m = new THREE.Mesh(GEO_FIRE, addMat(0xfff0c2, 1, true));
+    let m = this._takeMesh(GEO_FIRE, 0xfff0c2, 1, true);
     m.position.copy(pan); m.scale.setScalar(0.09); this.scene.add(m);
     this.parts.push({ m, kind: 'flashcore', r0: 0.09, vx: 0, vy: 0.35, vz: 0, life: 0.13, max: 0.13, grow: 1.9 });
     for (let i = 0; i < 14; i++) {
       if (this.parts.length >= PMAX) break;
       const c = Math.random() < 0.45 ? 0xffe06a : (Math.random() < 0.72 ? 0xffb024 : 0xff6a12);
       const r0 = 0.022 + Math.random() * 0.042;
-      m = new THREE.Mesh(GEO_FIRE, addMat(c, 0.98, true));
+      m = this._takeMesh(GEO_FIRE, c, 0.98, true);
       m.position.copy(pan); m.position.x += (Math.random() - 0.5) * 0.045; m.position.y += (Math.random() - 0.5) * 0.02; m.position.z += (Math.random() - 0.5) * 0.045; m.scale.setScalar(r0); this.scene.add(m);
       this.parts.push({ m, kind: 'fire', r0, vx: (Math.random() - 0.5) * 0.22, vy: 0.42 + Math.random() * 0.7, vz: (Math.random() - 0.5) * 0.22, life: 0.18 + Math.random() * 0.24, max: 0.42 });
     }
@@ -174,7 +193,7 @@ export class LukaGunFX {
       if (this.parts.length >= PMAX) break;
       const w = 0.86 + Math.random() * 0.12, col = new THREE.Color(w, w * 0.99, w * 0.97);
       const r0 = 0.032 + Math.random() * 0.05;
-      const m = new THREE.Mesh(GEO_SPHERE, addMat(col, 0, false));
+      const m = this._takeMesh(GEO_SPHERE, col, 0, false);
       m.position.copy(pan); m.position.x += (Math.random() - 0.5) * 0.05; m.position.y += 0.01 + Math.random() * 0.02; m.position.z += (Math.random() - 0.5) * 0.05; this.scene.add(m);
       const sv = new THREE.Vector3((0.85 + Math.random() * 0.3) * r0, (0.85 + Math.random() * 0.3) * r0, (0.85 + Math.random() * 0.3) * r0);
       this.parts.push({ m, kind: 'smoke', vx: (Math.random() - 0.5) * 0.30, vy: 0.16 + Math.random() * 0.26, vz: (Math.random() - 0.5) * 0.30, life: 1.7 + Math.random() * 0.7, max: 2.4, grow: 1.9 + Math.random() * 2.0, drag: 1.2, buoy: 0.16, turb: 0.6, peak: 0.8, s0: 0.8, sv, c0: new THREE.Color(0.92, 0.92, 0.93), c1: new THREE.Color(0.80, 0.80, 0.84) });
@@ -253,7 +272,7 @@ export class LukaGunFX {
         s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt;
         s.m.material.opacity = u; s.m.scale.setScalar(s.r0 * (0.5 + u * 0.6));
       }
-      if (s.life <= 0) { this.scene.remove(s.m); s.m.material.dispose(); this.parts.splice(i, 1); }
+      if (s.life <= 0) { this._releaseMesh(s.m); this.parts.splice(i, 1); }
     }
   }
 }

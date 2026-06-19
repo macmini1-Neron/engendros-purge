@@ -36,9 +36,9 @@ export function preloadLukaGun() {
   if (_loading) return _loading;
   _loading = new Promise((resolve, reject) => {
     new GLTFLoader().load(GLB_URL,
-      (gltf) => { try { TEMPLATE = buildTemplate(gltf.scene); CLIPS = gltf.animations || []; resolve(TEMPLATE); } catch (e) { reject(e); } },
+      (gltf) => { try { TEMPLATE = buildTemplate(gltf.scene); CLIPS = gltf.animations || []; resolve(TEMPLATE); } catch (e) { _loading = null; reject(e); } },
       undefined,
-      (err) => { console.warn('[lukagun] GLB load failed — voxel fallback in use', err); reject(err); });
+      (err) => { _loading = null; console.warn('[lukagun] GLB load failed — voxel fallback in use', err); reject(err); });
   });
   return _loading;
 }
