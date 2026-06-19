@@ -243,6 +243,7 @@ export class EnemyManager {
     this._hordeGrid = null; // HORDE flow-field occupancy grid (finer cell, slope-aware; built once, lazily)
     this._hordeFlow = null; // Dijkstra flow-field toward the host player (refreshed on _flowT timer)
     this._flowT = 0;        // seconds until the next flow-field refresh
+    this._sentGrid = null;  // which _hordeGrid object we've shipped to the sim worker (re-send if it changes)
   }
   // Pre-pay the boss-fight's one-time costs at run-start so they don't land as a frame hitch mid-fight:
   // (1) the heavy buildTolo() geometry (MeshBuilder + BufferGeometryUtils merge — a multi-hundred-ms
@@ -338,8 +339,17 @@ export class EnemyManager {
     // fine cell keep doorways passable so the horde routes THROUGH them.
     if (this.active.length) {
       if (!this._hordeGrid) this._hordeGrid = buildNavGrid(this.world, { cell: 1.5, inflate: 0.7, slopeAware: true });
+      const sw = this.game.simWorker;
+      if (sw && this._sentGrid !== this._hordeGrid) { this._sentGrid = this._hordeGrid; sw.setGrid(this._hordeGrid); } // ship the static grid once (re-send if rebuilt)
       this._flowT -= dt;
-      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z); }
+      if (!this._hordeFlow || this._flowT <= 0) {
+        this._flowT = 0.3;
+        // Offload the Dijkstra rebuild to the worker; the PREVIOUS field keeps steering the horde
+        // until the fresh one lands (≤1–2 frames later — the field is already 0.3 s stale by design).
+        if (!(sw && sw.requestFlow(pp.x, pp.z, (field) => { this._hordeFlow = field; }))) {
+          this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z); // no worker → synchronous fallback (unchanged behaviour)
+        }
+      }
     }
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
