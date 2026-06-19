@@ -7,6 +7,7 @@ import { buildNavGrid, findPath, lineBlocked } from './pathing.js';
 import { buildFlowField, flowDirAt } from './flowfield.js';
 import { buildNavGraph, buildSurfaceFlow, surfaceDirAt } from './navgraph.js';
 import { buildSwarmGrid, eachNeighbor } from './swarmgrid.js';
+import { segDist2 } from './geom.js';
 import { movementSlow, contactWeaken } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
 
@@ -380,6 +381,20 @@ export class EnemyManager {
     };
   }
 
+  // The registered up-link (world._stairs → world._navLinks foot→top segment) whose XZ line passes within
+  // ~2 m of (x,z) and whose top is above `y` — the stair this mob should commit to climbing. Cheap: a scan
+  // of the few map links, only called while the player is elevated. null when no stair is near.
+  _nearUpLink(x, z, y) {
+    const links = this.world._navLinks; if (!links || !links.length) return null;
+    let best = null, bd = 2.0 * 2.0;                 // latch within ~2 m of the stair line (covers the 3 m-wide flight + slack)
+    for (const L of links) {
+      if (y > L.y1 - 0.5) continue;                  // already at/above this link's top
+      const d = segDist2(x, z, L.x0, L.z0, L.x1, L.z1);
+      if (d < bd) { bd = d; best = L; }
+    }
+    return best;
+  }
+
   update(dt) {
     const pp = this.game.player.pos;
     // HORDE NAV: build a finer, slope-aware occupancy grid once per map, then refresh a
@@ -429,6 +444,16 @@ export class EnemyManager {
       let tgt = pp, tgtId = 'host'; const _mp = this.game.mp; if (_mp && _mp.active && _mp.isHost) { const _np = _mp.nearestPlayer(e.pos.x, e.pos.z); if (_np) { tgt = _np.pos; tgtId = _np.id; } } e._tgtId = tgtId;
       let dx = tgt.x - e.pos.x, dz = tgt.z - e.pos.z;
       const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;
+
+      // LINK-PROXIMITY LATCH (crowd-stair fix): a mob ON or NEAR a registered up-link (a stair), with the
+      // player above it, COMMITS to climbing that link — not only the single mob sitting in the exact
+      // link-foot cell (which is all surfaceDirAt's climb flag catches). Without this a dense wave overshoots
+      // the foot onto the lower steps, gets no climb instruction there, and slides back down — so only ~1 of
+      // N tops out (the steppe-era crowd/choke jam). Host-only (this whole update runs under `sim`).
+      if (this._playerUp && !e.def.boss && !(e._climb && e._climbT > 0) && tgt.y > e.pos.y + 1.0) {
+        const L = this._nearUpLink(e.pos.x, e.pos.z, e.pos.y);
+        if (L) { e._climb = { x: L.x1, z: L.z1, y: L.y1 }; e._climbT = 6; }
+      }
 
       // LATCHED onto a stair/ladder link: COMMIT to physically reaching its top (head straight at the
       // link's top XZ + let Phase-1 step-up/ladder-climb ascend), ignoring the flow's pull back to the
@@ -490,7 +515,11 @@ export class EnemyManager {
       if (dist > e.radius + this.game.player.radius + 0.8 && moved < e.speed * dt * 0.35) e.stuck += dt;
       else e.stuck = Math.max(0, e.stuck - dt * 0.6);
       const beeline = e.stuck > 1.6;
-      const _sepW = e.def.boss ? 0 : 0.6; // Tolo is a giant — small mobs can't shove him off; he beelines for the nearest player
+      // Separation weight: full on open ground; CUT hard while climbing/elevated (_onStruct) so the
+      // neighbours' repulsion (which on a narrow stair has a big LATERAL component) can't shove a latched
+      // climber off the flight — letting the strong climb heading dominate so the horde ascends as a column.
+      const _sepW = e.def.boss ? 0 : (_onStruct ? 0.12 : 0.6); // Tolo (boss) is too big to shove → 0
+
       const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
       const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
