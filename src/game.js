@@ -162,7 +162,8 @@ class Game {
     this.state = 'menu'; this.score = 0; this.kills = 0; this.mpMenuOpen = false;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
     this._last = 0; this._bound = this._frame.bind(this);
-    this._fixedStep = false; this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // M4 fixed-timestep sim (default OFF) + render-time camera interpolation
+    this._fixedStep = (() => { try { return new URLSearchParams(location.search).get('fixed') === '1'; } catch (e) { return false; } })(); // M4 fixed-timestep: ?fixed=1 URL opt-in or F8 toggle (default OFF)
+    this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // render-time camera interpolation state
 
     // --- status effects (src/effects-status.js) ---
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
@@ -337,6 +338,7 @@ class Game {
       if (code === 'KeyT' && this.weapons.lprRaised) { this.weapons.lprMeasure(); return; }
       if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
       if (code === 'F3') { this.f3 = !this.f3; return; }
+      if (code === 'F8') { this._fixedStep = !this._fixedStep; this._acc = 0; const _fs = this._fixedStep; this.hud.bigMessage('FIXED-STEP ' + (_fs ? 'ON · 60Hz' : 'OFF')); console.log('[fixed-step] ' + (_fs ? 'ON (60 Hz sim + camera interp)' : 'OFF (variable dt)')); return; } // M4 dev toggle (mirrors ?fixed=1)
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
       // dev fly-cam toggle (solo only): N, or Ctrl+F
       if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
