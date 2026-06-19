@@ -1,0 +1,12 @@
+{
+  "asset": "sks_tactical.glb",
+  "title": "Low Poly SKS (Modernised)",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "14- Low.Poly.SKS.Mod / .obj -> gltf (obj2gltf), mesh-name material surgery -> glb (gltf-pipeline)",
+  "notes": [
+    "Runtime viewmodel for 'sksm' (tactical SKS: polymer stock, PSO scope, suppressor).",
+    "Real SKS / polymer / accessory textures re-mapped to their named meshes; the magazine uses the same flat dark gunmetal (#333133) as the classic SKS so it matches the receiver (not the plum bakelite), per owner."
+  ]
+}

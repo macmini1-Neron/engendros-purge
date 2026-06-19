@@ -1,0 +1,9 @@
+{
+  "asset": "rpk74.glb",
+  "title": "Low Poly RPK-74",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "11- Low.Poly.RPK.74 / .obj -> gltf (obj2gltf), mesh-name material surgery -> glb (gltf-pipeline)",
+  "notes": ["Runtime viewmodel for the new 'rpk74' LMG (bipod). Black 'body' texture swapped for gunmetal; real Guards(wood) + Magazine textures re-mapped to their named meshes."]
+}

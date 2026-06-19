@@ -1,0 +1,3 @@
+{ "asset":"smw_m29.glb","title":"Low Poly S&W Model 29","author":"samanthacford","source":"Sketchfab (low-poly weapon pack)","license":"CC-BY-4.0",
+  "converted_from":"13- Low.Poly.SampW.Model.29 / .obj -> gltf (obj2gltf), mesh-name material surgery -> glb",
+  "notes":["Runtime viewmodel for the new 'smw' .44 revolver. Both source textures REAL (Magnum body + Ammo bullets), re-mapped to their named meshes (cylinder rounds get the bullet texture)."] }

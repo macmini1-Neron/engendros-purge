@@ -1,0 +1,3 @@
+{ "asset":"ak74_gp25.glb","title":"Low Poly AK-74 GP-25","author":"samanthacford","source":"Sketchfab (low-poly weapon pack)","license":"CC-BY-4.0",
+  "converted_from":"10- Low.Poly.AK.74.GP.25 / .obj -> gltf (obj2gltf), mesh-name material surgery -> glb",
+  "notes":["Runtime viewmodel for 'gp25' (AK-74 with GP-25 underbarrel launcher). AK-platform: black body -> gunmetal, real wood furniture + magazine/launcher textures re-mapped to named meshes."] }

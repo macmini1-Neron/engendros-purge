@@ -1,0 +1,9 @@
+{
+  "asset": "rpg7.glb",
+  "title": "Low Poly RPG-7",
+  "author": "samanthacford",
+  "source": "Sketchfab (low-poly Soviet weapon pack)",
+  "license": "CC-BY-4.0",
+  "converted_from": "05- Low.Poly.RPG.7 / *_Textured.gltf + RPG_Texture.png, embedded to GLB via gltf-pipeline",
+  "notes": ["Runtime viewmodel for the new 'rpg7' launcher. Source texture is intact (single real RPG atlas) — kept as-is."]
+}
