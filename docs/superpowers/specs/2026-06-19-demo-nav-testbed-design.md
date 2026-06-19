@@ -27,13 +27,17 @@ representative environment.
 1. **External staircase to the roof** — a flight of steppable steps (rise ≤ `STEP_UP`) up one outside
    face from the terrain to the roof slab, built with `world._stairs(...)` so it auto-registers a
    foot→top entry in `world._navLinks`. Exercises **E** via stairs + the windowed surface nav.
-2. **Ladder, second route up** — a `world._ladders` zone (terrain→roof) on a different face. Exercises
-   the ladder-climb path and gives the horde a route CHOICE between two ways up.
+2. **Second route up** — originally a ladder on a perpendicular face. IMPLEMENTATION NOTE: an exterior
+   wall ladder hit a geometry/connectivity wall (the wall collider shoves the climber out of the zone;
+   pushed out for clearance, its top overshoots the roof overhang and the roof-node link won't connect),
+   and the ladder-climb mechanic is already covered by the bunker/airfield interiors — so the second
+   route is a SECOND STAIRCASE on a perpendicular wall (proven, robust). Still gives the horde a route
+   CHOICE between two ways up. (A working exterior ladder can be revisited later if desired.)
 3. **Door choke + walls** — already present; exercises **F/G/H** (route through the door / around the
    walls; jitter at corners; stuck-buster behaviour).
-4. **Terrain cliff** — ensure one hill face beside the building is steeper than `terrain.slopeLimit`
-   (use an existing steep face if present, else sculpt one in `_buildDemo`) so the horde must route
-   AROUND it rather than scale it. Exercises the slope-limit backstop + 2D flow routing.
+4. **Terrain cliff** — DEFERRED for now: the existing demo hills already provide slopes near the
+   building, and the slope-limit backstop is already verified on the steppe. Add a dedicated steep face
+   only if the F/G/H tuning needs a sharper slope case than the demo hills give.
 
 **Out of scope (YAGNI):** a mezzanine / 2nd interior floor. Terrain + roof + stairs + ladder already give
 a 2-level surface graph with links; deeper multi-level is already covered by airfield/bunker. Add later
