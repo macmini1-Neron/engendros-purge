@@ -163,6 +163,19 @@ export class ShilkaStation {
     return { x: this.base.x, y: this.base.y + 2.2, z: this.base.z };
   }
 
+  // Live game enemies as radar targets. shilkaRadarSignal gates on altitude, so feeding all enemies is
+  // safe — only AIRBORNE ones produce a trackable signal (ground hordes stay for the optical mode). The
+  // `_enemy` backref lets a radar burst claim host-authoritative damage against the real Enemy.
+  _radarTargets() {
+    const list = (this.game.enemies && this.game.enemies.active) || [];
+    const out = [];
+    for (const e of list) {
+      if (!e.alive) continue;
+      out.push({ id: e.id, alive: true, pos: e.pos, vel: e.vel, rcs: (e.def && e.def.rcs) || 1, jamming: 0, _enemy: e });
+    }
+    return out;
+  }
+
   _buildRuntimeMeshes() {
     const scene = this.game.engine.scene;
     const y = this._groundY(this.base.x, this.base.z);
@@ -727,7 +740,9 @@ export class ShilkaStation {
     if (input.wasPressed('Digit7')) this._toggleSwitch('radarOnAir');
 
     const origin = this._origin();
-    this.state = updateShilkaTrack(this.state, origin, this.drones);
+    // track the test drones AND real game enemies; shilkaRadarSignal rejects low/ground targets, so only
+    // AIRBORNE enemies (e.g. flying bosses) get a radar lock — ground hordes are the optical mode's job.
+    this.state = updateShilkaTrack(this.state, origin, [...this.drones.filter((d) => d.alive), ...this._radarTargets()]);
     const aimError = this._aimErrorDeg();
     if (input.buttonsPressed[2]) this.state = tryShilkaAngleLock(this.state, aimError);
     this.state = stepShilka(this.state, dt, aimError);
