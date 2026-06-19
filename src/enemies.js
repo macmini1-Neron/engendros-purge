@@ -352,6 +352,26 @@ export class EnemyManager {
     return true;
   }
 
+  // World-space window for the horde flow-field rebuild: the AABB of the player + every active mob,
+  // padded for routing room and hard-capped to ±FLOW_CAP from the player. Keeps the Dijkstra (and its
+  // allocations) O(window cells) instead of O(map cells) — the horde always clusters on the player, so
+  // cells far across a large open map are never walked. This is THE steppe-stutter fix: on the 1000 m
+  // steppe the full grid is ~445 k cells (a ~166 ms rebuild freeze every 0.3 s); the window is a few k.
+  // On the small arena the cap exceeds the map, so the window IS the whole grid → behaviour unchanged.
+  _hordeBounds(pp) {
+    let minX = pp.x, maxX = pp.x, minZ = pp.z, maxZ = pp.z;
+    for (const e of this.active) {
+      if (!e.alive) continue;
+      if (e.pos.x < minX) minX = e.pos.x; else if (e.pos.x > maxX) maxX = e.pos.x;
+      if (e.pos.z < minZ) minZ = e.pos.z; else if (e.pos.z > maxZ) maxZ = e.pos.z;
+    }
+    const PAD = 16, CAP = 110; // routing margin; hard cap so a stray far mob can't blow up the window (it beelines instead)
+    return {
+      minX: Math.max(pp.x - CAP, minX - PAD), maxX: Math.min(pp.x + CAP, maxX + PAD),
+      minZ: Math.max(pp.z - CAP, minZ - PAD), maxZ: Math.min(pp.z + CAP, maxZ + PAD),
+    };
+  }
+
   update(dt) {
     const pp = this.game.player.pos;
     // HORDE NAV: build a finer, slope-aware occupancy grid once per map, then refresh a
@@ -362,7 +382,7 @@ export class EnemyManager {
     if (this.active.length) {
       if (!this._hordeGrid) this._hordeGrid = buildNavGrid(this.world, { cell: 1.5, inflate: 0.7, slopeAware: true });
       this._flowT -= dt;
-      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z); }
+      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z, this._hordeBounds(pp)); }
     }
     // LAYERED NAV: only when the player is ELEVATED on a structure (roof / upper floor / bunker level) do
     // we build the multi-surface graph + a surface flow toward the player's ACTUAL level, so the horde

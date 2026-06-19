@@ -60,3 +60,38 @@ test('(c) flowDirAt returns a unit vector in open cells, null for a walled-off c
   // and the goal side is still reachable from within its own region.
   assert.ok(at(fw, 0, 0) === null || at(fw, 1, 0), 'goal-region cells resolve normally');
 });
+
+// ── Windowed flow-field (bounds) — the map-size-independent rebuild. ──────────────
+// A 4th arg `bounds` (world-space {minX,minZ,maxX,maxZ}) restricts the Dijkstra to a
+// sub-window of the grid, so the rebuild cost scales with the window (player+horde),
+// NOT the whole map. The returned field describes the WINDOW (its own cols/rows/origin).
+
+test('(d) bounds → field covers only the window (its own cols/rows/origin)', () => {
+  const g = grid(10, 10, []);                       // cell=1, origin=0
+  // window over cells c,r ∈ [3,6] → world [3,7)×[3,7)
+  const f = buildFlowField(g, 4.5, 4.5, { minX: 3, minZ: 3, maxX: 6.999, maxZ: 6.999 });
+  assert.equal(f.cols, 4, `window cols, got ${f.cols}`);
+  assert.equal(f.rows, 4, `window rows, got ${f.rows}`);
+  assert.equal(f.originX, 3, `window originX, got ${f.originX}`);
+  assert.equal(f.originZ, 3, `window originZ, got ${f.originZ}`);
+});
+
+test('(e) a cell OUTSIDE the window returns null; inside resolves', () => {
+  const g = grid(10, 10, []);
+  const f = buildFlowField(g, 4.5, 4.5, { minX: 3, minZ: 3, maxX: 6.999, maxZ: 6.999 });
+  assert.equal(at(f, 0, 0), null, 'cell far outside the window must be null (beeline fallback)');
+  assert.equal(at(f, 8, 8), null, 'cell outside the window must be null');
+  assert.ok(at(f, 6, 6), 'a cell inside the window must resolve');
+});
+
+test('(f) inside the window, windowed directions match the full-grid field', () => {
+  const g = grid(12, 12, []);                       // open grid, goal at centre cell (6,6)
+  const full = buildFlowField(g, 6.5, 6.5);
+  const win = buildFlowField(g, 6.5, 6.5, { minX: 4, minZ: 4, maxX: 8.999, maxZ: 8.999 }); // cells [4,8]
+  for (let c = 5; c <= 7; c++) for (let r = 5; r <= 7; r++) {   // interior of the window (off the edge)
+    const a = at(full, c, r), b = at(win, c, r);
+    if (a === null) { assert.equal(b, null); continue; }
+    assert.ok(b, `windowed cell (${c},${r}) must resolve`);
+    assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 1e-6, `dir mismatch at (${c},${r}): full ${JSON.stringify(a)} vs win ${JSON.stringify(b)}`);
+  }
+});
