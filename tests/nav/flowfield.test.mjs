@@ -95,3 +95,20 @@ test('(f) inside the window, windowed directions match the full-grid field', () 
     assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 1e-6, `dir mismatch at (${c},${r}): full ${JSON.stringify(a)} vs win ${JSON.stringify(b)}`);
   }
 });
+
+test('(g) windowed flow ROUTES AROUND an obstacle whose detour lies inside the window', () => {
+  // 11×11; wall row r=5 across cols 2..8 (gaps only at the far ends, cols 0-1 and 9-10). Goal south at
+  // (5,1); a far-side cell (5,9) must steer LATERALLY toward an end gap — not straight into the wall.
+  const blocks = [];
+  for (let c = 2; c <= 8; c++) blocks.push([c, 5]);
+  const g = grid(11, 11, blocks);
+  // window contains the goal, the agent, AND both end gaps (whole width, rows 0..10) → detour fits inside it
+  const win = buildFlowField(g, 5.5, 1.5, { minX: 0, minZ: 0, maxX: 10.99, maxZ: 10.99 });
+  const d = at(win, 5, 9);
+  assert.ok(d, 'far-side cell must be reachable through an end gap (not isolated)');
+  assert.ok(Math.abs(d.x) > 0.3, `must steer laterally toward a gap, got dir.x=${d.x}`);
+  // and it matches the full-grid routing decision
+  const full = buildFlowField(g, 5.5, 1.5);
+  const df = at(full, 5, 9);
+  assert.ok(Math.sign(d.x) === Math.sign(df.x), 'windowed routes the same side as the full field');
+});

@@ -367,10 +367,15 @@ export class EnemyManager {
       if (e.pos.x < minX) minX = e.pos.x; else if (e.pos.x > maxX) maxX = e.pos.x;
       if (e.pos.z < minZ) minZ = e.pos.z; else if (e.pos.z > maxZ) maxZ = e.pos.z;
     }
-    const PAD = 16; // routing margin around the cluster
+    // PAD = routing margin around the cluster; MIN = a floor on the half-extent AROUND THE PLAYER. The
+    // floor matters: when the player and the horde are collinear the raw bbox can be a thin sliver (e.g.
+    // both near x=0 → near-zero width in x), and a sliver window clips any detour around nearby structures
+    // — isolating the goal so the flood never reaches the mobs (they'd fall back to a wall-wedging beeline).
+    // MIN guarantees room around the player to route around a building either side. All capped at ±cap.
+    const PAD = 16, MIN = 64;
     return {
-      minX: Math.max(pp.x - cap, minX - PAD), maxX: Math.min(pp.x + cap, maxX + PAD),
-      minZ: Math.max(pp.z - cap, minZ - PAD), maxZ: Math.min(pp.z + cap, maxZ + PAD),
+      minX: Math.max(pp.x - cap, Math.min(pp.x - MIN, minX - PAD)), maxX: Math.min(pp.x + cap, Math.max(pp.x + MIN, maxX + PAD)),
+      minZ: Math.max(pp.z - cap, Math.min(pp.z - MIN, minZ - PAD)), maxZ: Math.min(pp.z + cap, Math.max(pp.z + MIN, maxZ + PAD)),
     };
   }
 
