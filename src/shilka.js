@@ -31,6 +31,8 @@ import {
   tryShilkaAngleLock,
   updateShilkaTrack,
   aimToTurret,
+  makeOpticalBurstGrant,
+  sweepShilkaBurst,
 } from './shilka-mechanics.js';
 import { buildShilkaRig } from './shilka-rig.js';
 import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_GATE_SLOTS, moveShiftLever } from './shilka-drive.js';
@@ -45,6 +47,9 @@ const SHILKA_RADAR_SPIN = 2.0;
 // Shift-lever sensitivity: mouse delta (px) → gate units. The gate spans 2 units (-1..1) per axis, so
 // at ~0.014 a ~70 px flick crosses one rail and a ~36 px pull seats/unseats a gear — deliberate, "felt".
 const SHILKA_GATE_MOUSE = 0.014;
+// Damage per 23 mm round that connects (optical direct fire). A burst lands several rounds → balance is
+// held by ammo (2000) + heat/overheat + the burst cap, not by a tiny per-round number. Tuned in balance.
+const SHILKA_ROUND_DMG = 6;
 // Driver day periscope БМО-190Б: a FIXED wide-angle unity optic (no traverse). Real field of observation
 // ≥69° horizontal × ≥20° vertical (9° up + 9° down). We set the camera's VERTICAL fov to 20°; at the slit's
 // ~4.36 aspect that yields ~75° horizontal — both meet the "≥" spec. Optical axis sits 4° below level so the
@@ -559,8 +564,9 @@ export class ShilkaStation {
     this._tYaw = 0; this._tPitch = 0;
     if (this.game.hud) this.game.hud.bigMessage(`SHILKA — ${SHILKA_SEATS[seat].ru}`);
     if (seat === 2) {
-      // gunner: bring up the fire-control panel and start in cursor mode (click AUTO START / switches /
-      // the scope; clicking the scope locks the pointer to aim — see _wirePanelOnce).
+      // gunner: default to the radar console (bring up the panel in cursor mode); V switches to the
+      // optical direct-fire sight for ground targets.
+      this._gunMode = 'radar';
       this._showPanel(true);
       this._setCursorMode(true);
       this._frameCamera(0.001);
@@ -670,7 +676,7 @@ export class ShilkaStation {
 
   controlUpdate(dt) {
     if (this.localSeat === SHILKA_DRIVER_SEAT) { this._driveControlUpdate(dt); return; }
-    if (this.localSeat === 2) { this._stationControlUpdate(dt); return; } // gunner: radar fire-control station
+    if (this.localSeat === 2) { this._gunnerControlUpdate(dt); return; } // gunner: radar / optical fire-control
     if (this.localSeat >= 1) { this._turretControlUpdate(dt); return; }   // commander / range-op ride-along
     // localSeat === -1: the local player isn't aboard this vehicle (e.g. a remote crew drives it) — no control
   }
@@ -709,6 +715,79 @@ export class ShilkaStation {
   }
 
   // --- v1 fire-control station (dormant this slice; the autocannon slice wires it to the gunner seat) ---
+  // Gunner dispatch: V toggles between the radar console (РЛС) and the optical direct-fire sight (ОПТИКА).
+  _gunnerControlUpdate(dt) {
+    if (this.game.input.wasPressed('KeyV')) {
+      this._gunMode = (this._gunMode === 'optical') ? 'radar' : 'optical';
+      if (this._gunMode === 'radar') { this._showPanel(true); this._setCursorMode(true); }
+      else { this._showPanel(false); this._setCursorMode(false); } // optical: hide the console, lock the pointer to lay the guns
+      if (this.game.hud) this.game.hud.bigMessage(this._gunMode === 'optical' ? 'ОПТИКА — прямая наводка' : 'РЛС — радар');
+    }
+    if (this._gunMode === 'optical') this._opticalControlUpdate(dt);
+    else this._stationControlUpdate(dt);
+  }
+
+  // World aim direction of the guns: hull heading + turret traverse, plus barrel elevation.
+  _aimDir() {
+    const { yaw, pitch } = aimToTurret(this.aimAzMils, this.aimElDeg);
+    const world = this.drive.heading + yaw, ce = Math.cos(pitch);
+    return { x: Math.sin(world) * ce, y: Math.sin(pitch), z: Math.cos(world) * ce };
+  }
+
+  // ОПТИКА: manual turret/elevation by mouse, magnified sight, LMB direct-fires the 4×23 mm at ground.
+  _opticalControlUpdate(dt) {
+    const input = this.game.input;
+    this.aimAzMils = (this.aimAzMils + input.mouseDX * 0.9 + 6000) % 6000;
+    this.aimElDeg = clamp(this.aimElDeg - input.mouseDY * 0.04, -4, 62);
+    this.state = stepShilka(this.state, dt, 0); // cools heat (no radar lock in optical)
+    if (input.buttons[0]) this._fireOptical(0.16);
+    this._frameOpticalCamera(dt);
+  }
+
+  _fireOptical(seconds) {
+    if (this.state.ammo <= 0 || this.state.heat >= SHILKA_TUNING.firingHeatLimit) return;
+    const muzzle = this._origin();
+    const aimDir = this._aimDir();
+    const seed = ((performance.now() * 1000) ^ (this.state.ammo * 2654435761)) >>> 0;
+    const grant = makeOpticalBurstGrant(this.state, this.id, muzzle, aimDir, seed, seconds);
+    if (!grant) return;
+    this.state = fireShilkaBurst(this.state, seconds, false); // deduct ammo/heat (no solution gate)
+    const enemies = (this.game.enemies && this.game.enemies.active) || [];
+    const hits = sweepShilkaBurst(grant, enemies, { radiusPad: 0.4 });
+    const hostSim = !this.game.mp || !this.game.mp.active || this.game.mp.isHost;
+    for (const id in hits) {
+      const e = enemies.find((x) => String(x.id) === String(id) && x.alive);
+      if (!e) continue;
+      const dmg = hits[id] * SHILKA_ROUND_DMG;
+      if (hostSim) this.game.enemies.damage(e, dmg, 'shilka');
+      else if (this.game.mp.claimHit) this.game.mp.claimHit(e, dmg, 'shilka');
+    }
+    this._spawnOpticalVisuals(grant, muzzle, aimDir);
+  }
+
+  _spawnOpticalVisuals(grant, muzzle, aimDir) {
+    const fx = this.game.effects; if (!fx) return;
+    const o = new THREE.Vector3(muzzle.x, muzzle.y, muzzle.z);
+    fx.muzzleFlash(o, new THREE.Vector3(aimDir.x, aimDir.y, aimDir.z), 2.4);
+    const shown = Math.min(6, grant.roundCount);
+    for (let i = 0; i < shown; i++) {
+      const rd = grantRoundDir(grant, i * 3);
+      const end = o.clone().addScaledVector(new THREE.Vector3(rd.x, rd.y, rd.z), 700);
+      fx.tracer(o, end, i % 3 === 0 ? 0xff3428 : 0xffd16a);
+    }
+  }
+
+  _frameOpticalCamera(dt) {
+    const cam = this.game.engine.camera;
+    const d = this.drive;
+    const aim = this._aimDir();
+    cam.position.set(d.x, d.y + 2.3, d.z); // sight head above the turret
+    cam.rotation.order = 'YXZ';
+    cam.lookAt(d.x + aim.x, d.y + 2.3 + aim.y, d.z + aim.z);
+    this.game.engine.setFov(18); // ~4× magnified optical sight
+    const pl = this.game.player; pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
+  }
+
   _stationControlUpdate(dt) {
     const input = this.game.input;
     this._wirePanelOnce();

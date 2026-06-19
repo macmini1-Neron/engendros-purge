@@ -28,6 +28,8 @@ import {
   tryShilkaAngleLock,
   updateShilkaTrack,
   aimToTurret,
+  makeOpticalBurstGrant,
+  sweepShilkaBurst,
 } from '../../src/shilka-mechanics.js';
 import { dirToMils } from '../../src/bearing.js';
 
@@ -281,4 +283,25 @@ test('aimToTurret maps Soviet mils to a hull-relative turret yaw and clamps barr
   assert.ok(Math.abs(aimToTurret(0, 45).pitch - 45 * Math.PI / 180) < 1e-9, '45° → rad');
   assert.equal(aimToTurret(0, 200).pitch, 62 * Math.PI / 180, 'over-elevation clamps to 62°');
   assert.equal(aimToTurret(0, -90).pitch, -4 * Math.PI / 180, 'depression clamps to -4°');
+});
+
+test('sweepShilkaBurst: a direct-fire burst hits a target in the line of fire, misses one off-axis', () => {
+  const grant = { muzzle: { x: 0, y: 0, z: 0 }, baseDir: { x: 0, y: 0, z: 1 }, roundCount: 40, dispersionMils: 8, seed: 12345 };
+  const onAxis = [{ id: 'a', alive: true, pos: { x: 0, y: 0, z: 100 }, radius: 5 }];
+  const offAxis = [{ id: 'b', alive: true, pos: { x: 80, y: 0, z: 100 }, radius: 5 }];
+  const hitsOn = sweepShilkaBurst(grant, onAxis);
+  assert.ok((hitsOn.a || 0) > 0, 'a target dead ahead takes rounds');
+  assert.equal(sweepShilkaBurst(grant, offAxis).b || 0, 0, 'a target well off the aim line is missed');
+  assert.deepEqual(sweepShilkaBurst(grant, onAxis), hitsOn, 'deterministic for the same seed');
+  // a dead target is skipped
+  assert.equal(sweepShilkaBurst(grant, [{ id: 'a', alive: false, pos: { x: 0, y: 0, z: 100 }, radius: 5 }]).a || 0, 0);
+});
+
+test('optical grant fires on ammo alone (no radar solution); radar grant needs the solution', () => {
+  let s = createShilkaState(); // unpowered, no solution
+  const optical = makeOpticalBurstGrant(s, 'sh', { x: 0, y: 2, z: 0 }, { x: 0, y: 0, z: 1 }, 999, 0.25);
+  assert.ok(optical && optical.roundCount > 0, 'optical fires without a lock');
+  assert.equal(makeShilkaBurstGrant(s, 'sh', { x: 0, y: 2, z: 0 }, 999, 0.25), null, 'radar refuses without a solution');
+  // empty ammo refuses even optical
+  assert.equal(makeOpticalBurstGrant({ ...s, ammo: 0 }, 'sh', { x: 0, y: 2, z: 0 }, { x: 0, y: 0, z: 1 }, 999, 0.25), null);
 });

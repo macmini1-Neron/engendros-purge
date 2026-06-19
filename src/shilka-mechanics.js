@@ -401,8 +401,10 @@ export function shilkaFireControl(state) {
   };
 }
 
-export function shilkaBurstRoundCount(state, seconds = 0.25) {
-  if (!shilkaSolutionReady(state) || state.ammo <= 0 || state.heat >= SHILKA_TUNING.firingHeatLimit) return 0;
+// requireSolution=true (radar): needs a ready firing solution. false (optical direct fire): only ammo +
+// heat gate, the gunner lays the guns by eye through the optical sight.
+export function shilkaBurstRoundCount(state, seconds = 0.25, requireSolution = true) {
+  if ((requireSolution && !shilkaSolutionReady(state)) || state.ammo <= 0 || state.heat >= SHILKA_TUNING.firingHeatLimit) return 0;
   const burst = clamp(Number.isFinite(seconds) ? seconds : 0, 0, SHILKA_TUNING.burstSecondsMax);
   const requested = Math.max(1, Math.round(burst * SHILKA_TUNING.roundsPerSecond));
   const heatRoom = Math.max(0, SHILKA_TUNING.overheatAt - state.heat);
@@ -410,8 +412,8 @@ export function shilkaBurstRoundCount(state, seconds = 0.25) {
   return Math.max(0, Math.min(state.ammo, requested, heatLimited));
 }
 
-export function fireShilkaBurst(state, seconds = 0.25) {
-  const rounds = shilkaBurstRoundCount(state, seconds);
+export function fireShilkaBurst(state, seconds = 0.25, requireSolution = true) {
+  const rounds = shilkaBurstRoundCount(state, seconds, requireSolution);
   return {
     ...state,
     ammo: state.ammo - rounds,
@@ -459,6 +461,45 @@ export function segmentSphereHit(a, b, center, radius) {
   const p = add3(a, mul3(ab, t));
   const d = len3(sub3(center, p));
   return d <= radius ? { hit: true, t, point: p, distanceToCenter: d } : { hit: false, t, point: p, distanceToCenter: d };
+}
+
+// Direct-fire grant for the OPTICAL sight (no radar solution): rounds scatter around the gunner's manual
+// aim direction with a fixed, coarser dispersion than a computed radar solution.
+export function makeOpticalBurstGrant(state, shilkaId, muzzle, aimDir, seed, seconds = 0.25) {
+  const roundCount = shilkaBurstRoundCount(state, seconds, false);
+  if (roundCount <= 0) return null;
+  const d = norm3(aimDir || { x: 0, y: 0, z: 1 });
+  return {
+    shilkaId, targetId: null, seed: seed >>> 0, roundCount,
+    muzzle: { x: muzzle.x, y: muzzle.y, z: muzzle.z },
+    baseDir: { x: d.x, y: d.y, z: d.z },
+    dispersionMils: SHILKA_TUNING.opticalDispersionMils != null ? SHILKA_TUNING.opticalDispersionMils : SHILKA_TUNING.dispersionMilsAtZeroQuality,
+    startTime: 0,
+  };
+}
+
+// Resolve a direct-fire burst against a target list: each round (with its seeded dispersion) is a ray from
+// the muzzle; it hits the nearest target sphere it crosses. Returns rounds-hit per target id. Pure —
+// targets need { id, alive, pos:{x,y,z}, radius? }.
+export function sweepShilkaBurst(grant, targets, opts = {}) {
+  const maxRange = opts.maxRange != null ? opts.maxRange : 2500;
+  const pad = opts.radiusPad || 0;
+  const hits = {};
+  if (!grant) return hits;
+  const n = Math.min(grant.roundCount, 84);
+  for (let i = 0; i < n; i++) {
+    const dir = grantRoundDir(grant, i);
+    const end = { x: grant.muzzle.x + dir.x * maxRange, y: grant.muzzle.y + dir.y * maxRange, z: grant.muzzle.z + dir.z * maxRange };
+    let best = null, bestT = Infinity;
+    for (const e of (targets || [])) {
+      if (!e || e.alive === false) continue;
+      const r = (e.radius != null ? e.radius : 1) + pad;
+      const h = segmentSphereHit(grant.muzzle, end, e.pos, r);
+      if (h.hit && h.t < bestT) { bestT = h.t; best = e; }
+    }
+    if (best) hits[best.id] = (hits[best.id] || 0) + 1;
+  }
+  return hits;
 }
 
 export function simulateShilkaProjectile({ origin, dir, speed = SHILKA_TUNING.projectileSpeedMps, maxTime = SHILKA_TUNING.projectileMaxTimeS, step = SHILKA_TUNING.projectileStepS, targetStart, targetVel = { x: 0, y: 0, z: 0 }, targetRadius = SHILKA_TUNING.droneHitRadiusM }) {
