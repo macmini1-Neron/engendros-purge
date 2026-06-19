@@ -50,6 +50,9 @@ const SHILKA_GATE_MOUSE = 0.014;
 // Damage per 23 mm round that connects (optical direct fire). A burst lands several rounds → balance is
 // held by ammo (2000) + heat/overheat + the burst cap, not by a tiny per-round number. Tuned in balance.
 const SHILKA_ROUND_DMG = 6;
+// Burst cadence: while the trigger is held, fire one burst of this length every this-many seconds, so
+// ammo/heat integrate to roundsPerSecond regardless of frame rate (input.buttons[0] is a HELD state).
+const SHILKA_BURST_SECONDS = 0.16;
 // Driver day periscope БМО-190Б: a FIXED wide-angle unity optic (no traverse). Real field of observation
 // ≥69° horizontal × ≥20° vertical (9° up + 9° down). We set the camera's VERTICAL fov to 20°; at the slit's
 // ~4.36 aspect that yields ~75° horizontal — both meet the "≥" spec. Optical axis sits 4° below level so the
@@ -737,8 +740,9 @@ export class ShilkaStation {
     mp.net.broadcast('shilkaaim', { pid: mp.myId, v: this.id, az: Math.round(this.aimAzMils), el: +this.aimElDeg.toFixed(1) });
   }
 
-  // Broadcast a burst's muzzle/dir/seed so teammates render identical tracers + flash (NO damage — that
-  // is host-authoritative via claimHit). Recipients reproduce the seeded tracer pattern in _renderRemoteFire.
+  // Broadcast a burst's muzzle/dir/seed so teammates render matching tracers + flash (NO damage — that is
+  // host-authoritative via claimHit). _renderRemoteFire reproduces the seeded pattern with a nominal
+  // dispersion (the exact dispersion isn't transmitted — cosmetic only).
   _broadcastFire(muzzle, dir, seed, rounds) {
     const mp = this.game.mp; if (!mp || !mp.active || !rounds) return;
     mp.net.broadcast('shilkafire', { pid: mp.myId, v: this.id,
@@ -773,7 +777,8 @@ export class ShilkaStation {
     this.aimAzMils = (this.aimAzMils + input.mouseDX * 0.9 + 6000) % 6000;
     this.aimElDeg = clamp(this.aimElDeg - input.mouseDY * 0.04, -4, 62);
     this.state = stepShilka(this.state, dt, 0); // cools heat (no radar lock in optical)
-    if (input.buttons[0]) this._fireOptical(0.16);
+    this._fireCD = Math.max(0, (this._fireCD || 0) - dt);
+    if (input.buttons[0] && this._fireCD <= 0) { this._fireOptical(SHILKA_BURST_SECONDS); this._fireCD = SHILKA_BURST_SECONDS; }
     this._frameOpticalCamera(dt);
   }
 
@@ -859,7 +864,8 @@ export class ShilkaStation {
     const aimError = this._aimErrorDeg();
     if (input.buttonsPressed[2]) this.state = tryShilkaAngleLock(this.state, aimError);
     this.state = stepShilka(this.state, dt, aimError);
-    if (input.buttons[0]) this._tryFire(0.16);
+    this._fireCD = Math.max(0, (this._fireCD || 0) - dt);
+    if (input.buttons[0] && this._fireCD <= 0) { this._tryFire(SHILKA_BURST_SECONDS); this._fireCD = SHILKA_BURST_SECONDS; }
 
     this._frameCamera(dt);
     this._updatePanel();
