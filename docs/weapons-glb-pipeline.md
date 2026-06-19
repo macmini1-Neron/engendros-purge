@@ -93,6 +93,20 @@ The two AR-pattern guns (03 LR-300, 16 ADAR-15) convert fine but read as Western
 
 ---
 
+## 2b. Known issue — rip interpenetration (Blender pass)
+
+The pack is a **3D Ripper Pro GPU capture**, so the meshes are draw-call snapshots, not clean topology.
+The runtime factory already strips what code reliably can — `cleanRipGeometry()` removes duplicate,
+jittered-duplicate, coplanar-overlapping and degenerate faces (per mesh; verified **0 within-mesh
+coplanar overlaps** across all 9 guns). But the rips also have **interpenetrating geometry**: separate
+parts physically pass *through* each other (e.g. the AK-74 GP-25 upper has ~485 intersecting face pairs
+— rear sight ⨉ body 107, dust cover ⨉ body 45, barrel ⨉ muzzle-brake 60, …). Where two surfaces cross
+at an angle you get a visible crease / "X"; some faces are also missing texture. This is **not**
+z-fighting and is **not** auto-fixable (it'd need CSG/boolean trimming, which breaks UVs) — it's
+inherent rip damage. **Fix in Blender**: import → *Merge by Distance* → manually separate/trim the
+interpenetrating parts (or rebuild the offending part). The in-game models are functional placeholders
+until then (correct orientation, recovered textures, dedup'd).
+
 ## 3. "Download several formats and mix them?" — the answer
 
 **Mostly a dead end, with one useful kernel and a better idea.**
