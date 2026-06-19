@@ -6,6 +6,7 @@ import { STRUCT_DEFS } from './economy.js';
 import { buildNavGrid, findPath, lineBlocked } from './pathing.js';
 import { buildFlowField, flowDirAt } from './flowfield.js';
 import { buildNavGraph, buildSurfaceFlow, surfaceDirAt } from './navgraph.js';
+import { buildSwarmGrid, eachNeighbor } from './swarmgrid.js';
 import { movementSlow, contactWeaken } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
 
@@ -401,6 +402,11 @@ export class EnemyManager {
       this._surfT -= dt;
       if (!this._surfFlow || this._surfT <= 0) { this._surfT = 0.3; this._surfFlow = buildSurfaceFlow(this._navGraph, pp.x, pp.y, pp.z); }
     }
+    // Big hordes: bucket mobs into a uniform spatial hash (cell ≥ separation radius) so each agent's
+    // separation scans only its 3×3 block — O(n) instead of the all-pairs O(n²) scan. Tiny hordes keep
+    // the trivial scan (no Map churn). Built once per frame from current positions (a stable snapshot;
+    // intra-frame drift << the cell margin, and separation is a soft force).
+    const _swarm = this.active.length > 64 ? buildSwarmGrid(this.active, 1.7) : null;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       if (!e.alive) { this.active.splice(i, 1); continue; }
@@ -442,12 +448,20 @@ export class EnemyManager {
         if (fd) { dx = fd.x; dz = fd.z; }
       }
 
-      // separation
+      // separation — neighbours within √2.6 m push the mob apart (keeps the horde from stacking)
       let sx = 0, sz = 0;
-      for (const o of this.active) {
-        if (o === e || !o.alive) continue;
-        const ox = e.pos.x - o.pos.x, oz = e.pos.z - o.pos.z, d2 = ox * ox + oz * oz;
-        if (d2 < 2.6 && d2 > 1e-4) { const inv = 1 / Math.sqrt(d2); sx += ox * inv; sz += oz * inv; }
+      if (_swarm) {
+        eachNeighbor(_swarm, e.pos.x, e.pos.z, (o) => {
+          if (o === e || !o.alive) return;
+          const ox = e.pos.x - o.pos.x, oz = e.pos.z - o.pos.z, d2 = ox * ox + oz * oz;
+          if (d2 < 2.6 && d2 > 1e-4) { const inv = 1 / Math.sqrt(d2); sx += ox * inv; sz += oz * inv; }
+        });
+      } else {
+        for (const o of this.active) {
+          if (o === e || !o.alive) continue;
+          const ox = e.pos.x - o.pos.x, oz = e.pos.z - o.pos.z, d2 = ox * ox + oz * oz;
+          if (d2 < 2.6 && d2 > 1e-4) { const inv = 1 / Math.sqrt(d2); sx += ox * inv; sz += oz * inv; }
+        }
       }
       // On a raised surface (stairs/ledge/roof — feet above the terrain) the crate-avoidance turns into a
       // lateral shove off a wide step face (it pushes radially from the box centre), sliding the mob off
