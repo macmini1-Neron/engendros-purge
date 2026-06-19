@@ -57,10 +57,14 @@ export class Engine {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const s = this.sun.shadow.camera;
-    s.left = -120; s.right = 120; s.top = 120; s.bottom = -120;
+    // Tighter ortho frustum (±100 = 200 m, ~0.098 m/texel vs 0.117 at ±120) follows the player
+    // (world.js re-centres the sun on the camera each frame), so the finer texels land where it
+    // matters — this is the primary lever against shadow-acne on flat ground at low sun.
+    s.left = -100; s.right = 100; s.top = 100; s.bottom = -100;
     s.near = 1; s.far = 360;
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.04;
+    this.sun.shadow.bias = -0.0009;
+    this.sun.shadow.normalBias = 0.12; // bumped from 0.04: offsets the lookup along the surface normal
+                                       // to kill grazing-angle self-shadow dither (the white "biting")
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
