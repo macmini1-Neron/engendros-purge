@@ -867,7 +867,11 @@ export class ShilkaStation {
 
   _tryFire(seconds) {
     if (!shilkaSolutionReady(this.state) || this.state.heat >= SHILKA_TUNING.firingHeatLimit) return;
-    const target = this.drones.find((d) => d.id === this.state.selectedTargetId && d.alive);
+    const tid = this.state.selectedTargetId;
+    const drone = this.drones.find((d) => d.id === tid && d.alive);
+    // the locked target is either a test drone (local health) or a real airborne enemy (host-auth damage)
+    const enemy = drone ? null : ((this.game.enemies && this.game.enemies.active) || []).find((e) => e.id === tid && e.alive);
+    const target = drone || enemy;
     if (!target) return;
     const seed = ((performance.now() * 1000) ^ (this.state.ammo * 2654435761)) >>> 0;
     const muzzle = this._origin();
@@ -876,12 +880,20 @@ export class ShilkaStation {
     this.state = fireShilkaBurst(this.state, seconds);
     const hits = this._resolveBurst(grant, target);
     if (hits > 0) {
-      target.health -= hits * 28;
-      if (target.health <= 0) {
-        target.alive = false;
-        if (this.game.effects) this.game.effects.explosion(new THREE.Vector3(target.pos.x, target.pos.y, target.pos.z), 4.5);
-        if (this.game.hud) this.game.hud.toast('METEOR-1 TARGET DESTROYED', 0xd8b066);
-      } else if (this.game.hud) this.game.hud.hitmarker(false);
+      if (drone) {
+        drone.health -= hits * 28;
+        if (drone.health <= 0) {
+          drone.alive = false;
+          if (this.game.effects) this.game.effects.explosion(new THREE.Vector3(drone.pos.x, drone.pos.y, drone.pos.z), 4.5);
+          if (this.game.hud) this.game.hud.toast('METEOR-1 TARGET DESTROYED', 0xd8b066);
+        } else if (this.game.hud) this.game.hud.hitmarker(false);
+      } else {
+        const dmg = hits * SHILKA_ROUND_DMG;
+        const hostSim = !this.game.mp || !this.game.mp.active || this.game.mp.isHost;
+        if (hostSim) this.game.enemies.damage(enemy, dmg, 'shilka');
+        else if (this.game.mp.claimHit) this.game.mp.claimHit(enemy, dmg, 'shilka');
+        if (this.game.hud) this.game.hud.hitmarker(false);
+      }
     }
     this._spawnBurstVisuals(grant, target, hits);
   }
