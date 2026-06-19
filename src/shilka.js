@@ -725,6 +725,39 @@ export class ShilkaStation {
     }
     if (this._gunMode === 'optical') this._opticalControlUpdate(dt);
     else this._stationControlUpdate(dt);
+    this._broadcastAim(dt); // co-op: push the lay so the turret slews for everyone
+  }
+
+  // The gunner broadcasts the turret lay ~12 Hz; recipients apply it (update() → _applyTurretAim).
+  _broadcastAim(dt) {
+    const mp = this.game.mp; if (!mp || !mp.active) return;
+    this._aimT = (this._aimT || 0) - dt;
+    if (this._aimT > 0) return;
+    this._aimT = 0.08;
+    mp.net.broadcast('shilkaaim', { pid: mp.myId, v: this.id, az: Math.round(this.aimAzMils), el: +this.aimElDeg.toFixed(1) });
+  }
+
+  // Broadcast a burst's muzzle/dir/seed so teammates render identical tracers + flash (NO damage — that
+  // is host-authoritative via claimHit). Recipients reproduce the seeded tracer pattern in _renderRemoteFire.
+  _broadcastFire(muzzle, dir, seed, rounds) {
+    const mp = this.game.mp; if (!mp || !mp.active || !rounds) return;
+    mp.net.broadcast('shilkafire', { pid: mp.myId, v: this.id,
+      o: [+muzzle.x.toFixed(1), +muzzle.y.toFixed(1), +muzzle.z.toFixed(1)],
+      d: [+dir.x.toFixed(3), +dir.y.toFixed(3), +dir.z.toFixed(3)], s: seed >>> 0, r: rounds });
+  }
+
+  _renderRemoteFire(d) {
+    const fx = this.game.effects; if (!fx || !d || !d.o || !d.d) return;
+    const o = new THREE.Vector3(d.o[0], d.o[1], d.o[2]);
+    const dir = new THREE.Vector3(d.d[0], d.d[1], d.d[2]);
+    const grant = { muzzle: { x: o.x, y: o.y, z: o.z }, baseDir: { x: dir.x, y: dir.y, z: dir.z }, roundCount: d.r || 1, dispersionMils: 8, seed: (d.s >>> 0) || 1 };
+    fx.muzzleFlash(o, dir, 2.4);
+    const shown = Math.min(6, d.r || 1);
+    for (let i = 0; i < shown; i++) {
+      const rd = grantRoundDir(grant, i * 3);
+      const end = o.clone().addScaledVector(new THREE.Vector3(rd.x, rd.y, rd.z), 700);
+      fx.tracer(o, end, i % 3 === 0 ? 0xff3428 : 0xffd16a);
+    }
   }
 
   // World aim direction of the guns: hull heading + turret traverse, plus barrel elevation.
@@ -763,6 +796,7 @@ export class ShilkaStation {
       else if (this.game.mp.claimHit) this.game.mp.claimHit(e, dmg, 'shilka');
     }
     this._spawnOpticalVisuals(grant, muzzle, aimDir);
+    this._broadcastFire(muzzle, aimDir, grant.seed, grant.roundCount);
   }
 
   _spawnOpticalVisuals(grant, muzzle, aimDir) {
@@ -896,6 +930,7 @@ export class ShilkaStation {
       }
     }
     this._spawnBurstVisuals(grant, target, hits);
+    this._broadcastFire(muzzle, grant.baseDir, grant.seed, grant.roundCount);
   }
 
   _resolveBurst(grant, target) {
