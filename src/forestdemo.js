@@ -111,7 +111,9 @@ export class ForestDemo {
     const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     const sd = ((seed ?? (rec.id * 2654435761)) >>> 0) || 1;
     const breakAt = rec.cls === 1 ? 0.1 : 0.12 + Math.random() * 0.18;     // snap low; saplings near the base
-    const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt });
+    // A fire-killed tree fells as its BARE BLACKENED charred self (no leaves); a bullet/blast-felled tree
+    // keeps its foliage. Either way pass height: rec.height so the split matches the standing tree exactly.
+    const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, height: rec.height, breakAt, damage: rec.charred ? 'charred' : undefined });
     const y0 = rec.baseY;
     const stump = new THREE.Mesh(split.stumpGeometry, split.material);
     stump.position.set(rec.x, y0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = true;
@@ -167,7 +169,23 @@ export class ForestDemo {
     if (!tree || !tree.standing || tree.charred) return;
     tree.charred = true;
     if (tree.part) tree.part.dhp = Math.max(1, tree.part.dhp * 0.5);   // charred wood snaps under the next hit
-    if (tree.mesh && tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x4a4038); // scorched
+    if (!tree.mesh) return;
+    // Rebuild the STANDING tree as its bare, blackened CHARRED self — same species/seed/scale and the
+    // SAME height (rec.height, NOT the short burntCharred snag) so the dead snag matches its neighbours.
+    // The leaves burn off in place (the fire keeps spanning the now-bare trunk) and it later fells charred.
+    try {
+      const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, height: tree.height, lod: 0, damage: 'charred' });
+      const old = tree.mesh;
+      const m = new THREE.Mesh(res.geometry, res.material);
+      m.position.copy(old.position); m.rotation.y = tree.yaw; m.castShadow = true;
+      this.scene.add(m); tree.mesh = m;
+      for (const w of this.windy) if (w.m === old) { w.m = m; break; }   // keep the (barely-swaying) snag wired to wind
+      this.scene.remove(old);
+      if (old.geometry) old.geometry.dispose();
+      if (old.material && old.material.dispose) old.material.dispose();
+    } catch (e) {
+      if (tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x4a4038); // fallback: just scorch-tint
+    }
   }
   charTreeById(id) { const t = this._treeById(id); if (t) this.charTree(t); }
 
