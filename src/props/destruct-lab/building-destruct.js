@@ -336,6 +336,34 @@ export class BuildingDestruct {
     return true;
   }
 
+  // vehicle crush (spec Pillar 4): a hull AABB shoves into the structure. Cells HARDER than the
+  // vehicle's crushTier are immovable → BLOCKED (a tank can't push through concrete / a железобетон
+  // bunker / steel). Softer cells (brick & below for a tank) get shoved through, leaving a hole;
+  // `drag` ∈ (0,1] is how much the vehicle slows this frame (more / harder cells ⇒ slower).
+  applyCrush(aabb, opts = {}) {
+    const crushTier = opts.crushTier ?? 3;
+    const lo = this._local(new THREE.Vector3(aabb.min.x, aabb.min.y, aabb.min.z));
+    const hi = this._local(new THREE.Vector3(aabb.max.x, aabb.max.y, aabb.max.z));
+    const x0 = Math.min(lo.x, hi.x), x1 = Math.max(lo.x, hi.x), y0 = Math.min(lo.y, hi.y), y1 = Math.max(lo.y, hi.y), z0 = Math.min(lo.z, hi.z), z1 = Math.max(lo.z, hi.z);
+    const hit = [];
+    for (const c of this.cells) {
+      if (!c.alive) continue;
+      if (c.cx + c.sx / 2 < x0 || c.cx - c.sx / 2 > x1) continue;
+      if (c.cy + c.sy / 2 < y0 || c.cy - c.sy / 2 > y1) continue;
+      if (c.cz + c.sz / 2 < z0 || c.cz - c.sz / 2 > z1) continue;
+      hit.push(c);
+    }
+    if (!hit.length) return { blocked: false, drag: 1, crushed: 0 };
+    if (hit.some((c) => MATERIALS[c.mat].tier > crushTier)) return { blocked: true, drag: 0, crushed: 0 };   // immovable → stop dead
+    const dirty = new Set(); let resist = 0;
+    for (const c of hit) { c.alive = false; dirty.add(c.bucket); resist += MATERIALS[c.mat].tier + 1; }
+    const cx = (aabb.min.x + aabb.max.x) / 2, cy = (aabb.min.y + aabb.max.y) / 2, cz = (aabb.min.z + aabb.max.z) / 2;
+    this.debris.burst('rubble', [cx, cy, cz], this._seed(), 5);
+    this._rebarFor(hit);
+    this._settle(dirty);
+    return { blocked: false, drag: Math.max(0.4, 1 - resist * 0.02), crushed: hit.length };
+  }
+
   // hero glass: shard burst + a clinging jagged remnant (cosmetic)
   _shatterPane(p) {
     if (p.userData.dead) return;

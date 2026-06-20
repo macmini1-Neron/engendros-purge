@@ -264,12 +264,13 @@ function applyCam() {
 }
 const keys = {}; let drag = false, lx = 0, ly = 0, dsum = 0, dt0 = 0;
 canvas.addEventListener('pointerdown', e => { drag = true; lx = e.clientX; ly = e.clientY; dsum = 0; dt0 = performance.now(); canvas.setPointerCapture(e.pointerId); });
-canvas.addEventListener('pointerup', () => { drag = false; if (dsum < 7 && performance.now() - dt0 < 350) fire(); }); // quick tap = shoot
+canvas.addEventListener('pointerup', () => { drag = false; if (!vehicleMode && dsum < 7 && performance.now() - dt0 < 350) fire(); }); // quick tap = shoot
 canvas.addEventListener('pointermove', e => { if (!drag) return; const ddx = e.clientX - lx, ddy = e.clientY - ly; dsum += Math.abs(ddx) + Math.abs(ddy); cam.az -= ddx * 0.22; cam.el = THREE.MathUtils.clamp(cam.el - ddy * 0.22, -60, 70); lx = e.clientX; ly = e.clientY; });
 addEventListener('keydown', e => { const k = e.key.toLowerCase(); keys[k] = true;
   if (k === 'n') { timeIdx = (timeIdx + 1) % 3; setTime(['day', 'dusk', 'night'][timeIdx]); }
   if (k >= '1' && k <= '9' && +k - 1 < CALS.length) { cal = +k - 1; refreshWpn(); }
-  if (k === 'f') fire();
+  if (k === 'v') { vehicleMode = !vehicleMode; if (vehicleMode && !tank.grp) spawnTank(); }
+  if (k === 'f' && !vehicleMode) fire();
 });
 addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 function fly() {
@@ -278,6 +279,51 @@ function fly() {
   if (keys['a']) { target.x -= fz * sp; target.z += fx * sp; } if (keys['d']) { target.x += fz * sp; target.z -= fx * sp; }
   if (keys['e']) target.y += sp; if (keys['q']) target.y = Math.max(0.5, target.y - sp);
 }
+
+// ====================================================================
+// DRIVABLE TANK (press V) — vehicle crush (spec Pillar 4): plows through a BRICK wall with
+// resistance (slows), but CONCRETE / a железобетон bunker / a mature oak STOP it dead. Realistic:
+// a tank shoves soft masonry aside, it does not drive through reinforced concrete.
+// ====================================================================
+let vehicleMode = false;
+const tank = { grp: null, pos: new THREE.Vector3(3.5, 0, 4), ry: Math.PI, speed: 0 };
+function buildTank() {
+  const g = new THREE.Group();
+  const box = (w, h, d, x, y, z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: c })); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+  box(2.6, 0.7, 4.6, 0, 0.95, 0, 0x4b5320);              // hull
+  box(0.62, 0.72, 4.8, -1.24, 0.55, 0, 0x1d2110); box(0.62, 0.72, 4.8, 1.24, 0.55, 0, 0x1d2110); // tracks
+  box(1.8, 0.62, 2.2, 0, 1.55, 0.1, 0x55602a);           // turret
+  box(0.18, 0.18, 2.8, 0, 1.6, 2.0, 0x6b6f73);           // barrel → local +Z = forward
+  box(2.5, 0.22, 0.55, 0, 1.18, -2.0, 0x3a421d);         // rear stowage
+  return g;
+}
+function _placeTank() { tank.grp.position.set(tank.pos.x, 0, tank.pos.z); tank.grp.rotation.y = tank.ry; }
+function spawnTank() { tank.grp = buildTank(); scene.add(tank.grp); clearTreesUnder(tank.pos.x, tank.pos.z, 2.2, 3); _placeTank(); }
+function driveTank(dt) {
+  const accel = 9, maxF = 8, maxR = 4, turn = 1.5, fric = 4;
+  if (keys['w']) tank.speed = Math.min(maxF, tank.speed + accel * dt);
+  else if (keys['s']) tank.speed = Math.max(-maxR, tank.speed - accel * dt);
+  else tank.speed += (tank.speed > 0 ? -1 : 1) * Math.min(Math.abs(tank.speed), fric * dt);
+  if (keys['a']) tank.ry += turn * dt; if (keys['d']) tank.ry -= turn * dt;
+  const fwd = new THREE.Vector3(Math.sin(tank.ry), 0, Math.cos(tank.ry));
+  if (tank.speed > 0.0005) {                              // crush only while driving FORWARD into things
+    const lead = tank.pos.clone().addScaledVector(fwd, 2.6);
+    const aabb = new THREE.Box3(new THREE.Vector3(lead.x - 1.5, 0.4, lead.z - 1.5), new THREE.Vector3(lead.x + 1.5, 1.85, lead.z + 1.5));
+    let blocked = false, drag = 1;
+    for (const bd of destructibles) { const r = bd.applyCrush(aabb, { crushTier: 3 }); if (r.blocked) blocked = true; if (r.drag < drag) drag = r.drag; }
+    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - lead.x, dz = rec.z - lead.z; if (dx * dx + dz * dz < 1.8 * 1.8) { if (rec.cls >= 3) blocked = true; else { breakTree(rec, 0, 'topple', tank.pos.x, tank.pos.z); if (drag > 0.7) drag = 0.7; } } }
+    if (blocked) tank.speed = 0;                          // immovable wall (concrete / bunker / oak) → stop dead
+    else { tank.speed *= drag; tank.pos.addScaledVector(fwd, tank.speed * dt); }
+  } else tank.pos.addScaledVector(fwd, tank.speed * dt);
+  tank.pos.x = THREE.MathUtils.clamp(tank.pos.x, -60, 60); tank.pos.z = THREE.MathUtils.clamp(tank.pos.z, -60, 60);
+  _placeTank();
+}
+function chaseCam() {
+  const fwd = new THREE.Vector3(Math.sin(tank.ry), 0, Math.cos(tank.ry));
+  camera.position.set(tank.pos.x - fwd.x * 8.5, 5.2, tank.pos.z - fwd.z * 8.5);
+  camera.lookAt(tank.pos.x + fwd.x * 4, 1.4, tank.pos.z + fwd.z * 4);
+}
+
 function resize() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 
 // ---- pollen + fireflies + day/night ----
@@ -301,7 +347,8 @@ function setTime(mode) {
 let t = 0, _fc = 0, _ft = 0, _fps = 0;
 function frame() {
   _fc++; const _n = performance.now(); if (_n - _ft >= 1000) { _fps = _fc; _fc = 0; _ft = _n; }
-  const dt = 0.016; t += dt; fly(); resize(); applyCam();
+  const dt = 0.016; t += dt; resize();
+  if (vehicleMode && tank.grp) { driveTank(dt); chaseCam(); } else { fly(); applyCam(); }
   // falling-body physics
   for (const f of FALLING) {
     if (f.body.settled) continue;
@@ -321,7 +368,7 @@ function frame() {
   renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 applyCam(); refreshWpn(); requestAnimationFrame(frame);
-hud.textContent = '🌲🏠💥 LES + DESTRUKCE  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-6 = ráže  ·  N = den/noc\nDŮM: RAKETA vykrojí díru · APFSDS provrtá tunel · OF-152 (6) bere víc + drtí beton (rebar) · BUNKR vlevo = ŽELEZOBETON, ten neprorazí ani HE/APFSDS';
+hud.textContent = '🌲🏠💥🛞 LES + DESTRUKCE + TANK(V)  ·  táhni=rozhled · WASD=pohyb/řízení · ŤUKNI/F=výstřel · 1-6=ráže · N=den/noc · V=NASEDNI/SESEDNI\nDŮM: RAKETA díra · APFSDS tunel · OF-152(6) drtí beton · BUNKR = ŽELEZOBETON (neprorazí nic).  TANK(V): cihlovou zeď prorazí (zpomalí), beton/bunkr/dub ho ZASTAVÍ';
 { const T0 = new URLSearchParams(location.search).get('time'); const idx = ['day', 'dusk', 'night'].indexOf(T0); if (idx >= 0) { timeIdx = idx; setTime(T0); } }
 window.__READY = true;
 window.DEMO = {
@@ -353,6 +400,20 @@ window.DEMO = {
       const treeR = (w.blast.r2 || 6) * 1.33, felled = [];
       for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - x, dz = rec.z - z; if (dx * dx + dz * dz <= treeR * treeR) { breakTree(rec, 0, 'topple', x, z); felled.push([dx, dz]); } }
       return FALLING.filter(f => f.kind === 'hinge').slice(-felled.length).map((f, i) => ({ off: [+felled[i][0].toFixed(1), +felled[i][1].toFixed(1)], dir: [+f.body.dirXZ[0].toFixed(2), +f.body.dirXZ[1].toFixed(2)] }));
+    },
+    // vehicle crush: probe a hull-sized box at a point → {blocked, drag, crushed} per building
+    crushAt(x, y, z, crushTier) {
+      const a = new THREE.Box3(new THREE.Vector3(x - 1.5, y - 0.7, z - 1.5), new THREE.Vector3(x + 1.5, y + 0.7, z + 1.5));
+      return destructibles.map(bd => bd.applyCrush(a, { crushTier: crushTier ?? 3 }));
+    },
+    // drive the tank forward from (x,z,ry) for N frames → how far it advanced (brick: through; bunker: stops)
+    tankDrive(x, z, ry, steps) {
+      if (!tank.grp) spawnTank();
+      tank.pos.set(x, 0, z); tank.ry = ry; tank.speed = 0;
+      const sx = tank.pos.x, sz = tank.pos.z;
+      for (let s = 0; s < (steps || 120); s++) { keys['w'] = true; driveTank(0.016); }
+      keys['w'] = false;
+      return { advanced: +Math.hypot(tank.pos.x - sx, tank.pos.z - sz).toFixed(2), endZ: +tank.pos.z.toFixed(2), speed: +tank.speed.toFixed(2) };
     }
   }
 };
