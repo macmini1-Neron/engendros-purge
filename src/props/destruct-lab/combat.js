@@ -28,7 +28,22 @@ export class Combatants {
   // { scene, destructibles: BuildingDestruct[], debris: DebrisPool }
   constructor({ scene, destructibles, debris }) {
     this.scene = scene; this.destructibles = destructibles; this.debris = debris;
-    this.soldiers = []; this._tick = 0;
+    this.soldiers = []; this._tick = 0; this.smoke = [];
+  }
+
+  // #4 dust/smoke concealment: a lingering cloud (from a breach/collapse) that BLOCKS line-of-sight
+  // both ways for a few seconds — push through it and the AI loses you. cur = current LoS radius.
+  addSmoke(x, y, z, r = 3.4, life = 4) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: 0xbcb09a, transparent: true, opacity: 0.5, depthWrite: false }));
+    y = Math.max(0.7, y); mesh.position.set(x, y, z); mesh.scale.setScalar(r * 0.45); this.scene.add(mesh);
+    const sm = { mesh, x, y, z, r, cur: r * 0.45, life, max: life }; this.smoke.push(sm); return sm;
+  }
+  _segSphere(a, b, cx, cy, cz, r) {
+    const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+    const ab2 = abx * abx + aby * aby + abz * abz || 1;
+    let t = ((cx - a.x) * abx + (cy - a.y) * aby + (cz - a.z) * abz) / ab2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = a.x + abx * t - cx, dy = a.y + aby * t - cy, dz = a.z + abz * t - cz;
+    return dx * dx + dy * dy + dz * dz <= r * r;
   }
 
   spawn(x, z, opts = {}) {
@@ -67,7 +82,9 @@ export class Combatants {
     _dir.divideScalar(dist);
     _ray.set(_from, _dir); _ray.near = 0; _ray.far = dist - 0.35;   // stop short of the target's own surface
     const targets = this.destructibles.flatMap((bd) => bd.meshes());
-    return _ray.intersectObjects(targets, false).length === 0;
+    if (_ray.intersectObjects(targets, false).length) return false;   // a wall blocks
+    for (const sm of this.smoke) if (this._segSphere(from, to, sm.x, sm.y, sm.z, sm.cur * 0.9)) return false;   // smoke blocks
+    return true;
   }
 
   // #2 destruction = cover: stand behind the nearest cover whose far side BREAKS LoS to the player.
@@ -89,6 +106,13 @@ export class Combatants {
 
   update(dt, ctx = {}) {
     this._tick++;
+    // animate smoke (grow then fade); cur drives the LoS-blocking radius
+    for (let i = this.smoke.length - 1; i >= 0; i--) {
+      const sm = this.smoke[i]; sm.life -= dt;
+      if (sm.life <= 0) { this.scene.remove(sm.mesh); sm.mesh.geometry.dispose(); sm.mesh.material.dispose(); this.smoke.splice(i, 1); continue; }
+      const k = 1 - sm.life / sm.max; sm.cur = sm.r * (0.45 + k * 0.6);
+      sm.mesh.scale.setScalar(sm.cur); sm.mesh.material.opacity = 0.5 * Math.min(1, sm.life / 0.7) * (1 - k * 0.25);
+    }
     const pp = ctx.playerPos, cover = ctx.coverAABBs || [];
     for (let i = 0; i < this.soldiers.length; i++) {
       const s = this.soldiers[i];

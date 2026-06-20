@@ -259,6 +259,7 @@ function fire() {
     const at = hits[0].point;
     debris.burst('rubble', [at.x, at.y, at.z], (Math.random() * 1e9) | 0);
     for (const bd of destructibles) bd.blast(at, CALS[cal]);  // breach every building in range (each self-limits by radius)
+    combat.addSmoke(at.x, at.y, at.z, (w.blast.r1 || 2.5) + 1.5, 4);   // #4 the breach throws up a LoS-blocking dust cloud
     const treeR = (w.blast.r2 || 6) * 1.33;                   // bigger caliber → topples trees wider (OF-152 ≈ 14.6 m)
     for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= treeR * treeR) breakTree(rec, 0, 'topple', at.x, at.z); }
     return;
@@ -469,6 +470,8 @@ window.DEMO = {
     crateStats() { return crates.map(c => c.stats()); },
     // #2 cover-seek: advance combat N frames with the player at (px,py,pz) → soldiers move to cover
     tickCombat(n, px, py, pz) { const pp = new THREE.Vector3(px, py, pz); for (let s = 0; s < (n || 16); s++) combat.update(0.016, { playerPos: pp, coverAABBs: COVER }); return combat.stats(); },
+    // #4 dust LoS: drop a smoke cloud, then check a soldier's LoS through it
+    addSmoke(x, y, z, r, life) { combat.addSmoke(x, y, z, r ?? 3.4, life ?? 4); return combat.smoke.length; },
     // bunker (reinforced concrete) — verify HE/AP can't breach it
     bunkerBlast(x, y, z, key) { return bunkerBD ? { hit: bunkerBD.blast(new THREE.Vector3(x, y, z), key || 'he152'), ...bunkerBD.stats() } : null; },
     bunkerAP(ox, oy, oz, dx, dy, dz) { return bunkerBD ? { hit: bunkerBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...bunkerBD.stats() } : null; },
