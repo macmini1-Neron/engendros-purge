@@ -497,11 +497,11 @@ export function makeTree(opts = {}) {
     const topGeometry = mb.hi.build();
     if (scl !== 1) { stumpGeometry.scale(scl, scl, scl); topGeometry.scale(scl, scl, scl); }
     // breakY (scaled) = world height of the hinge pivot above the tree's base
-    return { stumpGeometry, topGeometry, breakY: breakY * scl, material, height: effHeight * scl, species: speciesKey };
+    return { stumpGeometry, topGeometry, breakY: breakY * scl, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
   }
   const geometry = mb.build();
   if (scl !== 1) geometry.scale(scl, scl, scl);
-  return { geometry, material, height: effHeight * scl, species: speciesKey };
+  return { geometry, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
 }
 
 // ---------------------------------------------------------------------------

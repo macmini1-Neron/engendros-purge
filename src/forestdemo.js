@@ -24,7 +24,7 @@ export class ForestDemo {
   // debris = the ForestScene's shared DebrisPool (the scene steps it, so we never call debris.update)
   constructor(game, debris) {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
-    this.trees = []; this.stumps = []; this.FALLING = []; this.windy = [];
+    this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.FALLING = []; this.windy = [];
     this._t = 0; this._idc = 0; this._reserved = [];
   }
 
@@ -81,11 +81,12 @@ export class ForestDemo {
     const cls = sapling ? 1 : (SPECIES_CLS[species] || 2);
     const mat = CLS_MAT[cls];
     const id = ++this._idc;
-    const half = 0.30 * scale + 0.10;                          // trunk-hugging collision column (shoot the trunk to fell)
+    const trunkR = res.trunkRadius || (0.30 * scale);          // REAL base trunk radius (world units), per species
+    const half = trunkR + 0.12;                                // collision column HUGS the actual trunk (+ small aim margin) — fixes the fat box that let you "hit" empty air beside a thin birch
     const topY = y + Math.min(res.height, 5.0);
     const min = [x - half, y, z - half], max = [x + half, topY, z + half];
     const part = makePart(id, mat, min, max, TREE_HP[cls] / MATERIALS[mat].hp);   // dhp = the demo's TREE_HP
-    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: res.height, mesh: m, cls, part, standing: true, box: null };
+    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: res.height, trunkR, mesh: m, cls, part, standing: true, box: null };
     part.downer = rec;
     const box = { min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), downer: rec, tree: true, dmat: mat, dpart: id };
     rec.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
@@ -102,6 +103,7 @@ export class ForestDemo {
   // ([dir.x, dir.z]) so the canopy hinges DOWN away from the shooter. Rebuilds the tree split:
   // a standing stump (kept) + the canopy on a pivot that falls under makeHinge gravity.
   fellTree(rec, dirXZ = null, seed = null) {
+    if (rec && rec.fallen) { this._breakLog(rec, seed); return; }   // a hit on an ALREADY-fallen log breaks it apart
     if (!rec || !rec.standing) return;
     rec.standing = false;
     if (rec.part) rec.part.dead = true;                     // off the flammable list — a felled tree can't re-ignite
@@ -118,15 +120,59 @@ export class ForestDemo {
     const stump = new THREE.Mesh(split.stumpGeometry, split.material);
     stump.position.set(rec.x, y0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = true;
     this.scene.add(stump); this.stumps.push(stump);
+    // the STUMP keeps a solid collision box (you can't walk or shoot through the stub left behind)
+    const sh = (rec.trunkR || 0.3) + 0.12, stumpTop = y0 + Math.max(0.5, split.breakY);
+    const sb = { min: new THREE.Vector3(rec.x - sh, y0, rec.z - sh), max: new THREE.Vector3(rec.x + sh, stumpTop, rec.z + sh) };
+    this.world.boxes.push(sb); this.world.grid.addBox(sb); this.stumpBoxes.push(sb);
     const top = new THREE.Mesh(split.topGeometry, split.material); top.rotation.y = rec.yaw;
     const pivot = new THREE.Group(); pivot.position.set(rec.x, y0 + split.breakY, rec.z); pivot.add(top);
     this.scene.add(pivot);
     const length = Math.max(0.5, rec.height - split.breakY);
     const groundAt = this.world.terrain ? (gx, gz) => this.world.terrain.terrainHeightAt(gx, gz) : null;
-    const body = makeHinge({ pivot: [rec.x, y0 + split.breakY, rec.z], dirXZ: [dx, dz], length, radius: 0.22, seed: sd, obstacles: [], groundAt });
-    this.FALLING.push({ kind: 'hinge', body, pivot });
+    const body = makeHinge({ pivot: [rec.x, y0 + split.breakY, rec.z], dirXZ: [dx, dz], length, radius: Math.max(0.22, rec.trunkR || 0.22), seed: sd, obstacles: [], groundAt });
+    // logged=false → update() registers the resting-log collision box ONCE the hinge settles (see _registerFallenLog)
+    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false });
     if (this.debris) this.debris.burst('splints', [rec.x, y0 + split.breakY, rec.z], sd, undefined, [dx, 0, dz]);
   }
+
+  // Once a falling top SETTLES, give the lying log a collision box (solid + shootable) and make it a
+  // flammable "prop" so it can still be hit, can still BURN on the ground, and can be broken apart.
+  _registerFallenLog(f) {
+    const b = f.body, rec = f.rec;
+    const s = Math.sin(b.angle), c = Math.cos(b.angle), L = b.length;
+    const ax = b.pivot[0], ay = b.pivot[1], az = b.pivot[2];
+    const bx = ax + s * L * b.dirXZ[0], by = ay + c * L, bz = az + s * L * b.dirXZ[1];   // far tip of the fallen log
+    const r = Math.max(0.2, (rec && rec.trunkR) || 0.25) + 0.12;
+    const gy = this.world.terrain ? Math.min(this.world.terrain.terrainHeightAt(ax, az), this.world.terrain.terrainHeightAt(bx, bz)) : 0;
+    const minA = [Math.min(ax, bx) - r, Math.min(ay, by, gy), Math.min(az, bz) - r];
+    const maxA = [Math.max(ax, bx) + r, Math.max(ay, by, gy) + 2 * r, Math.max(az, bz) + r];
+    const matName = (rec && rec.cls === 1) ? 'wood' : 'trunk';
+    const id = 100000 + (rec ? rec.id : ++this._idc);
+    const part = makePart(id, matName, minA, maxA, (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * 0.6); // a downed log snaps a touch easier
+    const log = { fallen: true, prop: true, id, part, mesh: f.pivot, trunkR: r, cls: (rec && rec.cls) || 2,
+                  height: maxA[1] - minA[1],   // fire reads owner.height → keeps a downed log's flame low (not a 12 m tree column)
+                  fallingRef: f, burntOut: !!f.charred, consumed: false, box: null };  // charred logs already burnt → not flammable
+    part.downer = log;
+    const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id };
+    log.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
+    this.logs.push(log);
+  }
+
+  // Remove a fallen log (shot apart or burned out): drop its collision box, splinter, retire its mesh.
+  _consumeLog(log, seed, shot) {
+    if (!log || log.consumed) return;
+    log.consumed = true;
+    if (log.part) log.part.dead = true;
+    if (log.box) { this.world.grid.removeBox(log.box); const i = this.world.boxes.indexOf(log.box); if (i >= 0) this.world.boxes.splice(i, 1); log.box = null; }
+    const cx = log.part ? (log.part.min[0] + log.part.max[0]) / 2 : 0,
+          cy = log.part ? (log.part.min[1] + log.part.max[1]) / 2 : 0,
+          cz = log.part ? (log.part.min[2] + log.part.max[2]) / 2 : 0;
+    if (this.debris) this.debris.burst('splints', [cx, cy, cz], (seed >>> 0) || 1, undefined, [0, shot ? 0.6 : 0.3, 0]);
+    if (log.mesh && log.mesh.parent) this.scene.remove(log.mesh);
+    if (log.fallingRef) { const fi = this.FALLING.indexOf(log.fallingRef); if (fi >= 0) this.FALLING.splice(fi, 1); }
+  }
+  _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart
+  consumeProp(log) { this._consumeLog(log, (log.id * 2654435761) >>> 0, false); }                // FireManager burnout consumes it
 
   // HE blast: fell every standing tree within `radius` whose tier ≤ blastTier (+1 so a tier-3 rocket
   // still topples grown trunks). dir of fall = radially outward from the blast.
@@ -163,6 +209,7 @@ export class ForestDemo {
   flammableParts() {
     const out = [];
     for (const t of this.trees) if (t.standing && t.part && !t.part.dead && !t.burntOut) out.push(t.part);
+    for (const lg of this.logs) if (!lg.consumed && !lg.burntOut && lg.part && !lg.part.dead) out.push(lg.part);   // downed logs still burn on the ground
     return out;
   }
   // FIRE phase 1 — the foliage BLACKENS in place (chars, still leafy): tint the whole merged mesh dark
@@ -215,10 +262,11 @@ export class ForestDemo {
   update(dt) {
     this._t += dt; const t = this._t;
     for (const f of this.FALLING) {
-      if (f.body.settled) continue;
+      if (f.body.settled) { if (!f.logged) { f.logged = true; this._registerFallenLog(f); } continue; }   // give the rested log a hitbox once
       stepBody(f.body, dt);
       _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize();   // hinge axis ⟂ fall direction
       f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle);
+      if (f.body.settled && !f.logged) { f.logged = true; this._registerFallenLog(f); }   // settled THIS frame → register the log now
     }
     const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
     for (const w of this.windy) {
