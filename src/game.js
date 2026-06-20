@@ -74,7 +74,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-20 16:46';
+const GAME_BUILD = '2026-06-20 17:16';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -638,7 +638,7 @@ class Game {
     this.molotovPools.push(pool);
     // Register the burning puddle as a generic fire SOURCE — FireManager re-ignites flammables near
     // it without any molotov-specific knowledge (the only coupling; removed again on dispose).
-    if (this.fire) pool._emitter = this.fire.addEmitter({ pos: pool.pos, radius: pool.radius, alive: () => pool.life > 0 });
+    if (this.fire) pool._emitter = this.fire.addEmitter({ pos: pool.pos, radius: pool.radius, alive: () => pool.life > 0, startY: pos.y });
     if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
   }
   _fxBeam(from, dir) { // transient red boss-laser beam for clients (visual only — damage is host-authoritative)
