@@ -26,6 +26,7 @@ import { LAB_WEAPONS } from '../../src/props/destruct-lab/matrix.js';
 import { buildBuilding } from '../../src/buildings/interp.js';   // buildgen brick cottage (_smoke)
 import { planBuild } from '../../src/buildings/plan.js';          // per-prim source data (material + AABB) for voxelisation
 import { BuildingDestruct } from '../../src/props/destruct-lab/building-destruct.js'; // voxel-chunk building destruction
+import { Combatants } from '../../src/props/destruct-lab/combat.js'; // shootable dummies + line-of-sight (FPS mechanics)
 
 const canvas = document.getElementById('c'), hud = document.getElementById('hud'), wpnEl = document.getElementById('wpn');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -172,6 +173,12 @@ function addBunker() {
 }
 addBunker();
 
+// ── COMBATANTS — shootable dummies that prove the FPS mechanics (LoS, cover, breaching, env-kills) ──
+const combat = new Combatants({ scene, destructibles, debris });
+[[6, -4], [-6, -2], [9, -11], [-12, -6], [-9.5, -6]].forEach(([x, z]) => combat.spawn(x, z));                  // outside, in the open
+[[0, -13], [2, -14], [-2, -12.5]].forEach(([x, z]) => combat.spawn(x, z, { indoors: true, color: 0x7a3b2a })); // inside the cottage (LoS blocked until you breach)
+window.__COMBAT = combat;
+
 // ====================================================================
 // FALLING BODIES — lab fallphys (hinge for the snapped top, tumble for shatter chunks).
 // ====================================================================
@@ -236,9 +243,10 @@ function fire() {
   // bullets: a DIRECT hit on a standing tree (or its stump) fells; a house hit routes to the
   // voxel runtime (chip / carve / pane-shatter, APFSDS drills a tunnel) — ground is ignored.
   const dir = ray.ray.direction.clone();
-  const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes()], false);
+  const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes(), ...combat.meshes()], false);
   if (!hits.length) return;
   const h = hits[0];
+  if (h.object.userData.soldier) { combat.hurt(h.object.userData.soldier, w.dmg || 20, 'bullet'); return; }   // direct hit (penetration = #1)
   if (h.object.userData.house) {
     const bd = h.object.userData._bd;                         // resolve back to the building that was hit (cottage / bunker)
     if (CALS[cal] === 'apfsds' && h.object.userData.kind !== 'pane') bd.penetrate(camera.position.clone(), dir, 'apfsds');
@@ -381,6 +389,7 @@ function frame() {
   }
   debris.update(dt);
   for (const bd of destructibles) bd.update(dt);
+  combat.update(dt, { playerPos: camera.position });
   // pollen drift
   const a = pollen.geometry.attributes.position;
   for (let i = 0; i < N; i++) { let x = a.getX(i) + pv[i][0] * 0.04, y = a.getY(i) + pv[i][1] * 0.04, z = a.getZ(i) + pv[i][2] * 0.04; if (y > 17) y = 0.5; if (Math.abs(x - target.x) > 55) x = target.x + rr(-50, 50); if (Math.abs(z - target.z) > 55) z = target.z + rr(-50, 50); a.setXYZ(i, x, y, z); } a.needsUpdate = true;
@@ -398,7 +407,7 @@ window.DEMO = {
   fire, setCal(i) { cal = i; refreshWpn(); },
   setView(az, el, tx, ty, tz) { if (az != null) cam.az = az; if (el != null) cam.el = el; if (tx != null) target.set(tx, ty, tz); applyCam(); },
   snap() { resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', 0.92); },
-  state() { return { trees: trees.length, standing: treeMeshes.length, broken: trees.filter(r => r.broken).length, falling: FALLING.length, settled: FALLING.filter(f => f.body.settled).length, cal: CALS[cal], house: houseBD ? houseBD.stats() : (window.__HOUSE?.error ? 'ERR' : 'loading') }; },
+  state() { return { trees: trees.length, standing: treeMeshes.length, broken: trees.filter(r => r.broken).length, falling: FALLING.length, settled: FALLING.filter(f => f.body.settled).length, cal: CALS[cal], soldiers: combat.alive().length, house: houseBD ? houseBD.stats() : (window.__HOUSE?.error ? 'ERR' : 'loading') }; },
   perf() { const r = renderer.info.render; return { fps: _fps, drawCalls: r.calls, triangles: r.triangles }; },
   time: (m) => setTime(m),
   // deterministic test hooks (decouple verification from aim + headless FPS)
@@ -411,6 +420,11 @@ window.DEMO = {
     houseBullet(x, y, z, key) { return houseBD ? { hit: houseBD.bullet(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, -1), key || 'hmg127', null), ...houseBD.stats() } : null; },
     houseStats() { return houseBD ? houseBD.stats() : null; },
     stepHouse(n) { for (let s = 0; s < n; s++) for (const bd of destructibles) bd.update(0.016); return houseBD ? houseBD.stats() : null; },
+    // combatants (FPS mechanics) — deterministic LoS / damage hooks
+    soldierStats() { return combat.stats(); },
+    spawnSoldier(x, z, indoors) { const s = combat.spawn(x, z, { indoors }); return { id: s.id, pos: [x, z] }; },
+    los(i, px, py, pz) { const s = combat.soldiers[i]; if (!s) return null; return combat.canSee(new THREE.Vector3(s.pos.x, s.eyeY, s.pos.z), new THREE.Vector3(px, py, pz)); },
+    hitSoldier(i, dmg) { const s = combat.soldiers[i]; if (!s) return null; combat.hurt(s, dmg ?? 50, 'test'); return combat.stats()[i]; },
     // bunker (reinforced concrete) — verify HE/AP can't breach it
     bunkerBlast(x, y, z, key) { return bunkerBD ? { hit: bunkerBD.blast(new THREE.Vector3(x, y, z), key || 'he152'), ...bunkerBD.stats() } : null; },
     bunkerAP(ox, oy, oz, dx, dy, dz) { return bunkerBD ? { hit: bunkerBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...bunkerBD.stats() } : null; },
