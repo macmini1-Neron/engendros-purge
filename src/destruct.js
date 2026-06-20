@@ -85,6 +85,11 @@ export const MATERIALS = {
   steel:      { tier: 5, hp: 2000, debris: 'sparks',  sound: 'metal',   fuel: 0  },
   grass:      { tier: 0, hp: 1,    debris: 'splints', sound: 'grass',   fuel: 2  },
   stone:      { tier: 4, hp: 600,  debris: 'rubble',  sound: 'masonry', fuel: 0  },
+  // железобетон (reinforced concrete) — bunker armour ABOVE the whole caliber roster: HE blast.tier ≤4
+  // and APFSDS pen 5 both fall short of tier 6, so nothing in CALIBERS removes it (resolveHit ⇒ cosmetic,
+  // resolveBlast ⇒ skipped; APFSDS only ever HOLES a structural wall, never deletes it). To crack it,
+  // ADD a pen ≥6 / blast.tier ≥6 caliber — the scalability hook. Ported from the demo lab (matrix.js).
+  reinforcedConcrete: { tier: 6, hp: 6000, debris: 'rubble', sound: 'masonry', fuel: 0 },
 };
 
 // APFSDS classifies parts by tier: tier ≤ FRAGILE_MAX_TIER ⇒ FRAGILE (obliterated / spall target);
@@ -103,6 +108,9 @@ export const CALIBERS = {
   heRocket: { key: 'heRocket', pen: 4, dmg: 500, blast: { r1: 2.5, r2: 6, tier: 3 } },
   apfsds:   { key: 'apfsds',   pen: 5, dmg: 900, through: { maxWalls: 4, falloff: 0.6 },
               spall: { range: 6, halfAngle: 0.5 } },
+  he152:    { key: 'he152',    pen: 5, dmg: 2000, blast: { r1: 4.5, r2: 11, tier: 4 } },  // 152 mm ОФ — a
+              // heavier shell: ~3× the breach radius of heRocket and cracks CONCRETE/stone (tier 4) too,
+              // but still NOT reinforcedConcrete (tier 6). The scalability demo — bigger caliber wrecks more.
 };
 
 // ── Part-metadata contract ───────────────────────────────────────────────────
