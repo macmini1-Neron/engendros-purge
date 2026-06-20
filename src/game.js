@@ -15,6 +15,7 @@ import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
 import { ForestAtmosphere } from './forestatmos.js';
+import { ForestScene } from './forestscene.js';
 import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
@@ -73,7 +74,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-20 14:55';
+const GAME_BUILD = '2026-06-20 15:38';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -118,11 +119,20 @@ class Game {
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
-    this.forest = new Forest(this); // ?map=demo forest kit: destructible/flammable trees + groundcover (no-op on flat maps)
-    // Phase 7: destructible building (the ПРОХОДНАЯ made destroyable-ready). Constructs AFTER
-    // forest so it can clearArea() the trees on its footprint. Sets game.world.demoBuilding;
-    // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
-    this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    // ?map=forest: build the WHOLE scene from the standalone-demo's real destructible assets — demo
+    // split-fell trees (ForestDemo) + the buildgen cottage with the falling sign + crates + colonnade
+    // (ForestScene). The scene stands in as game.forest (trees) + game.world.demoBuilding (a facade that
+    // fans HE/APFSDS to every building). ?map=demo + flat maps keep the game's own forest + guard-post.
+    if (this.mapId === 'forest') {
+      this.forestScene = new ForestScene(this);
+      this.forest = this.forestScene.trees;
+      this.world.demoBuilding = this.demoBuilding = this.forestScene;
+    } else {
+      this.forest = new Forest(this); // ?map=demo forest kit: destructible/flammable trees + groundcover (no-op on flat maps)
+      // Phase 7: destructible building. Constructs AFTER forest so it can clearArea() its footprint.
+      // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
+      this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    }
     this.forestAtmos = (this.mapId === 'forest') ? new ForestAtmosphere(this.engine.scene) : null; // ?map=forest pollen + fireflies
     this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
