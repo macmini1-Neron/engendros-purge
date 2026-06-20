@@ -32,6 +32,9 @@ const MAX_FALLERS = 6;      // hard cap on live falling chunks (perf)
 const FALL_G = 4.2;         // gravity for collapsing building chunks — < 9.81 = slower, weightier fall
 const CHIP_COUNT = 3;       // a bullet chip is a light puff, not a full breach burst
 const MAX_REBAR = 40;       // cap on exposed-rebar rods (hero detail at concrete break faces)
+const WALL_BLOCK_TIER = 5;  // tier ≥ this (steel, железобетон) is IMMOVABLE — stops a vehicle dead. Below it
+                            // (incl. concrete window frames / lintels) is crushable: a tank grinds through,
+                            // just slower for harder stuff. Bump a structure to reinforcedConcrete to wall a tank out.
 const _axis = new THREE.Vector3();
 
 // buildgen material key → destruction material (matrix.js MATERIALS). Per-object overridable via
@@ -264,11 +267,12 @@ export class BuildingDestruct {
     const c = this._cellAt(this._local(worldPoint));
     if (!c) return false;
     const m = MATERIALS[c.mat], at = [worldPoint.x, worldPoint.y, worldPoint.z];
+    const back = dir ? [-dir.x, -dir.y, -dir.z] : undefined;   // chips spall BACK toward the shooter
     // F0 cosmetic chip — pen too low (e.g. HMG on brick/concrete): a LIGHT puff, not a breach burst
-    if (w.pen < m.tier) { this.debris.burst(m.tier >= 5 ? 'sparks' : m.debris, at, this._seed(), CHIP_COUNT); return true; }
+    if (w.pen < m.tier) { this.debris.burst(m.tier >= 5 ? 'sparks' : m.debris, at, this._seed(), CHIP_COUNT, back); return true; }
     c.hp -= w.dmg;
-    if (c.hp > 0) { this.debris.burst(m.debris, at, this._seed(), CHIP_COUNT); return true; }   // chewing — light chips
-    c.alive = false; this.debris.burst(m.debris, at, this._seed(), 6); this._settle(new Set([c.bucket]));
+    if (c.hp > 0) { this.debris.burst(m.debris, at, this._seed(), CHIP_COUNT, back); return true; }   // chewing — light chips
+    c.alive = false; this.debris.burst(m.debris, at, this._seed(), 6, back); this._settle(new Set([c.bucket]));
     return true;
   }
 
@@ -292,7 +296,7 @@ export class BuildingDestruct {
       if (resisted) { this.debris.burst('sparks', [worldPoint.x, worldPoint.y, worldPoint.z], this._seed()); this._dust(worldPoint, blast.r1 * 0.55); }   // the bunker held
       return false;
     }
-    for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283; this.debris.burst('rubble', [worldPoint.x + Math.cos(a) * blast.r1 * 0.5, worldPoint.y + 0.2, worldPoint.z + Math.sin(a) * blast.r1 * 0.5], this._seed()); }
+    for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283, ox = Math.cos(a), oz = Math.sin(a); this.debris.burst('rubble', [worldPoint.x + ox * blast.r1 * 0.5, worldPoint.y + 0.2, worldPoint.z + oz * blast.r1 * 0.5], this._seed(), undefined, [ox, 0, oz]); }   // each chunk flies radially OUT from the blast
     this._dust(worldPoint, blast.r1);
     this._rebarFor(removed);
     this._settle(dirty);
@@ -322,15 +326,16 @@ export class BuildingDestruct {
     const pw = new THREE.Vector3(), aw = originW.clone();
     for (const p of this.panes) if (!p.userData.dead) { p.getWorldPosition(pw); const v = pw.clone().sub(aw); const t = v.dot(dirW); if (t > 0 && t < stopT * 1.1 && v.sub(dirW.clone().multiplyScalar(t)).length() < 0.6) this._shatterPane(p); }
     const wpAt = (cell) => this.group.localToWorld(new THREE.Vector3(cell.cx, cell.cy, cell.cz));
-    if (blocked) {                                          // rod stopped on the bunker wall — sparks, no breach
+    const fwd = [dirW.x, dirW.y, dirW.z], back = [-dirW.x, -dirW.y, -dirW.z];
+    if (blocked) {                                          // rod stopped on the bunker wall — sparks splash BACK
       const bp = wpAt(blocked);
-      this.debris.burst('sparks', [bp.x, bp.y, bp.z], this._seed());
-      this.debris.burst(MATERIALS[blocked.mat].debris, [bp.x, bp.y, bp.z], this._seed(), CHIP_COUNT);
+      this.debris.burst('sparks', [bp.x, bp.y, bp.z], this._seed(), undefined, back);
+      this.debris.burst(MATERIALS[blocked.mat].debris, [bp.x, bp.y, bp.z], this._seed(), CHIP_COUNT, back);
     }
     if (!hitCells.length) return !!blocked;
     const entry = wpAt(hitCells[0].c), exit = wpAt(hitCells[hitCells.length - 1].c);
-    this.debris.burst('sparks', [entry.x, entry.y, entry.z], this._seed());      // impacts at the WALL, never at the shooter
-    this.debris.burst('rubble', [exit.x, exit.y, exit.z], this._seed());
+    this.debris.burst('sparks', [entry.x, entry.y, entry.z], this._seed(), undefined, back);   // entry spall back toward the gun
+    this.debris.burst('rubble', [exit.x, exit.y, exit.z], this._seed(), undefined, fwd);        // exit spall blown forward out the back wall
     this._rebarFor(hitCells.map((k) => k.c));
     this._settle(dirty);
     return true;
@@ -353,15 +358,25 @@ export class BuildingDestruct {
       if (c.cz + c.sz / 2 < z0 || c.cz - c.sz / 2 > z1) continue;
       hit.push(c);
     }
-    if (!hit.length) return { blocked: false, drag: 1, crushed: 0 };
-    if (hit.some((c) => MATERIALS[c.mat].tier > crushTier)) return { blocked: true, drag: 0, crushed: 0 };   // immovable → stop dead
+    // smash any glass pane / knock the sign the hull reaches FIRST — a tank doesn't leave a window
+    // (or its frame) hanging in the air, and the glass goes whether or not it gets through behind it.
+    let smashed = 0;
+    const wp = new THREE.Vector3(), inBox = (p) => p.x >= aabb.min.x && p.x <= aabb.max.x && p.y >= aabb.min.y && p.y <= aabb.max.y && p.z >= aabb.min.z && p.z <= aabb.max.z;
+    for (const p of this.panes) if (!p.userData.dead) { p.getWorldPosition(wp); if (inBox(wp)) { this._shatterPane(p); smashed++; } }
+    for (const el of (this.attached || [])) if (!el.detached && el.kind === 'sign') { el.mesh.getWorldPosition(wp); if (inBox(wp)) { this._detach(el); smashed++; } }
+    // BLOCK only on real mass of hard material: steel / железобетон stops a tank as a sliver, but plain
+    // concrete stops it only as a WALL (a stray sill/lintel is smashed through, not a wall to a tank).
+    const hard = hit.filter((c) => MATERIALS[c.mat].tier > crushTier);
+    if (hit.some((c) => MATERIALS[c.mat].tier >= WALL_BLOCK_TIER)) return { blocked: true, drag: 0, crushed: smashed, hard: hard.length };   // steel / reinforced concrete only
+    if (!hit.length) return { blocked: false, drag: smashed ? 0.92 : 1, crushed: smashed, hard: 0 };
     const dirty = new Set(); let resist = 0;
-    for (const c of hit) { c.alive = false; dirty.add(c.bucket); resist += MATERIALS[c.mat].tier + 1; }
+    for (const c of hit) { c.alive = false; dirty.add(c.bucket); resist += (MATERIALS[c.mat].tier + 1) * (MATERIALS[c.mat].tier >= 4 ? 3 : 1); }   // concrete trim resists ~3× harder
+    // rubble flies OUT in the push direction (opts.dir) — like masonry blown forward off the hull
     const cx = (aabb.min.x + aabb.max.x) / 2, cy = (aabb.min.y + aabb.max.y) / 2, cz = (aabb.min.z + aabb.max.z) / 2;
-    this.debris.burst('rubble', [cx, cy, cz], this._seed(), 5);
+    this.debris.burst('rubble', [cx, cy, cz], this._seed(), 7, opts.dir);
     this._rebarFor(hit);
     this._settle(dirty);
-    return { blocked: false, drag: Math.max(0.4, 1 - resist * 0.02), crushed: hit.length };
+    return { blocked: false, drag: Math.max(0.35, 1 - resist * 0.02), crushed: hit.length + smashed, hard: hard.length };
   }
 
   // hero glass: shard burst + a clinging jagged remnant (cosmetic)

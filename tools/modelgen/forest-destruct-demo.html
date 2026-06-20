@@ -204,8 +204,8 @@ function breakTree(rec, hitY, mode, fromX = camera.position.x, fromZ = camera.po
   const body = makeHinge({ pivot: [rec.x, breakY, rec.z], dirXZ, length, radius: 0.22, seed, obstacles: [] });
   if (mode === 'fast' && FAST_BOOST) body.angVel = FAST_BOOST; // APFSDS fell speed (0 = same natural topple as HMG)
   FALLING.push({ kind: 'hinge', body, pivot });
-  debris.burst('splints', [rec.x, breakY, rec.z], seed);
-  if (mode === 'fast') debris.burst('splints', [rec.x, breakY + 0.7, rec.z], seed + 7);
+  debris.burst('splints', [rec.x, breakY, rec.z], seed, undefined, [dirXZ[0], 0, dirXZ[1]]);   // splinters fly the way it falls
+  if (mode === 'fast') debris.burst('splints', [rec.x, breakY + 0.7, rec.z], seed + 7, undefined, [dirXZ[0], 0, dirXZ[1]]);
 }
 
 // ====================================================================
@@ -310,7 +310,7 @@ function driveTank(dt) {
     const lead = tank.pos.clone().addScaledVector(fwd, 2.6);
     const aabb = new THREE.Box3(new THREE.Vector3(lead.x - 1.5, 0.4, lead.z - 1.5), new THREE.Vector3(lead.x + 1.5, 1.85, lead.z + 1.5));
     let blocked = false, drag = 1;
-    for (const bd of destructibles) { const r = bd.applyCrush(aabb, { crushTier: 3 }); if (r.blocked) blocked = true; if (r.drag < drag) drag = r.drag; }
+    for (const bd of destructibles) { const r = bd.applyCrush(aabb, { crushTier: 3, dir: [fwd.x, fwd.y, fwd.z] }); if (r.blocked) blocked = true; if (r.drag < drag) drag = r.drag; }
     for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - lead.x, dz = rec.z - lead.z; if (dx * dx + dz * dz < 1.8 * 1.8) { if (rec.cls >= 3) blocked = true; else { breakTree(rec, 0, 'topple', tank.pos.x, tank.pos.z); if (drag > 0.7) drag = 0.7; } } }
     if (blocked) tank.speed = 0;                          // immovable wall (concrete / bunker / oak) → stop dead
     else { tank.speed *= drag; tank.pos.addScaledVector(fwd, tank.speed * dt); }

@@ -31,19 +31,25 @@ export class DebrisPool {
     this.dummy.position.set(0, -99, 0); this.dummy.scale.setScalar(0.001);
     this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix);
   }
-  // count: optional override (a small number ⇒ a light puff — e.g. a bullet chip vs a full breach)
-  burst(kind, at, seed = 1, count) {
+  // count: optional override (a small number ⇒ a light puff — e.g. a bullet chip vs a full breach).
+  // dir: optional [x,y,z] — bias chunks to fly OUT along this direction (e.g. a tank shoving masonry
+  // forward off its hull), instead of an even radial spray.
+  burst(kind, at, seed = 1, count, dir) {
     const r = RECIPES[kind]; if (!r) return;
     let s = seed >>> 0;
     const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
     const N = Math.min(r.count, count ?? r.count);
+    const dl = dir ? Math.hypot(dir[0], dir[2]) || 1 : 1, dx = dir ? dir[0] / dl : 0, dz = dir ? dir[2] / dl : 0;
     for (let n = 0; n < N; n++) {
       const i = this.head; this.head = (this.head + 1) % POOL;
       const it = this.items[i];
       it.live = true; it.life = r.life * (0.7 + rnd() * 0.6);
       it.pos = [at[0], at[1], at[2]];
-      const a = rnd() * Math.PI * 2, up = 1 + rnd() * 2;
-      it.vel = [Math.cos(a) * r.speed * rnd(), up + rnd() * r.speed * 0.5, Math.sin(a) * r.speed * rnd()];
+      const up = 1 + rnd() * 2;
+      if (dir) {                                          // directional: forward along (dx,dz) + lateral spread + up
+        const f = r.speed * (0.8 + rnd() * 1.0), lat = (rnd() - 0.5) * r.speed * 0.8;
+        it.vel = [dx * f - dz * lat, up + rnd() * r.speed * 0.4, dz * f + dx * lat];
+      } else { const a = rnd() * Math.PI * 2; it.vel = [Math.cos(a) * r.speed * rnd(), up + rnd() * r.speed * 0.5, Math.sin(a) * r.speed * rnd()]; }
       it.rot = [rnd() * 6, rnd() * 6, rnd() * 6]; it.spin = 3 + rnd() * 6;
       it.size = r.size; it.bounced = false;
       this.mesh.setColorAt(i, this.color.set(r.color));
