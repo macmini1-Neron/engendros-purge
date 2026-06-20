@@ -23,7 +23,9 @@ import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from '../../src/p
 import { makeHinge, makeTumble, stepBody } from '../../src/props/destruct-lab/fallphys.js';
 import { DebrisPool } from '../../src/props/destruct-lab/debris.js';
 import { LAB_WEAPONS } from '../../src/props/destruct-lab/matrix.js';
-import { buildBuilding } from '../../src/buildings/interp.js';   // buildgen brick cottage (_smoke) — future: building destruction
+import { buildBuilding } from '../../src/buildings/interp.js';   // buildgen brick cottage (_smoke)
+import { planBuild } from '../../src/buildings/plan.js';          // per-prim source data (material + AABB) for voxelisation
+import { BuildingDestruct } from '../../src/props/destruct-lab/building-destruct.js'; // voxel-chunk building destruction
 
 const canvas = document.getElementById('c'), hud = document.getElementById('hud'), wpnEl = document.getElementById('wpn');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -119,7 +121,8 @@ const woodMat = new THREE.MeshLambertMaterial({ color: 0x7a5d33 });
 // destruction is the next course we "cook up" (postupně). Colliders kept for that.
 // ====================================================================
 const HOUSE_POS = [0, 0, -13];                 // ahead of the spawn, door (N face = +Z) toward the player
-const houseMeshes = [];                        // leaf meshes — raycast occluders
+let houseBD = null;                            // BuildingDestruct runtime (voxel-chunk destruction)
+const houseMeshes = () => houseBD ? houseBD.meshes() : [];   // current raycast occluders (pristine → voxel on damage)
 function clearTreesUnder(cx, cz, halfX, halfZ) {   // open a clearing so the cottage isn't buried in trunks
   for (let i = trees.length - 1; i >= 0; i--) {
     const r = trees[i];
@@ -135,11 +138,13 @@ async function loadHouse() {
     const spec = await (await fetch('../../buildings/_smoke/spec.json', { cache: 'no-store' })).json();
     const built = buildBuilding(spec, {});                  // { group, colliders, stats, warns, infos }
     const g = built.group; g.position.set(HOUSE_POS[0], HOUSE_POS[1], HOUSE_POS[2]);
-    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.userData.house = true; houseMeshes.push(o); } });
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     scene.add(g);
+    // voxel-chunk destruction runtime over the per-prim source data (keeps the merged texture; lazy-split on hit)
+    houseBD = new BuildingDestruct({ group: g, prims: planBuild(spec).prims, scene, debris, seed: spec.seed ?? 7 });
     const fp = spec.footprint || { w: 8, d: 6 };
     clearTreesUnder(HOUSE_POS[0], HOUSE_POS[2], fp.w / 2 + 2.5, fp.d / 2 + 2.5);
-    window.__HOUSE = { group: g, meshes: houseMeshes, colliders: built.colliders, stats: built.stats, pos: HOUSE_POS };
+    window.__HOUSE = { group: g, bd: houseBD, colliders: built.colliders, stats: built.stats, pos: HOUSE_POS };
     if (built.warns?.length) console.warn('[house] warns:', built.warns);
   } catch (e) { console.error('[house] load failed:', e); window.__HOUSE = { error: String(e) }; }
 }
@@ -196,19 +201,25 @@ function fire() {
   ray.setFromCamera(new THREE.Vector2(0, 0), camera);
   // HE rocket: explode WHERE the ray actually lands (tree / stump / GROUND) → topple trees in radius.
   if (w.blast) {
-    const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes, ground], false);
+    const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes(), ground], false);
     if (!hits.length) return;                                // aimed at open sky → nothing
     const at = hits[0].point;
     debris.burst('rubble', [at.x, at.y, at.z], (Math.random() * 1e9) | 0);
+    if (houseBD) houseBD.blast(at, CALS[cal]);               // breach a ragged hole in the cottage (tier ≤ blast.tier cells)
     for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= HE_RADIUS * HE_RADIUS) breakTree(rec, 0, 'topple'); }
     return;
   }
-  // bullets: a DIRECT hit on a standing tree (or its stump) fells; the house is a solid occluder
-  // (stops the round, brick plink, no break YET) — ground is ignored.
-  const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes], false);
+  // bullets: a DIRECT hit on a standing tree (or its stump) fells; a house hit routes to the
+  // voxel runtime (chip / carve / pane-shatter, APFSDS drills a tunnel) — ground is ignored.
+  const dir = ray.ray.direction.clone();
+  const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes()], false);
   if (!hits.length) return;
   const h = hits[0];
-  if (h.object.userData.house) { debris.burst('rubble', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // brick wall: chips, destruction TODO
+  if (h.object.userData.house) {
+    if (CALS[cal] === 'apfsds' && h.object.userData.kind !== 'pane') houseBD.penetrate(camera.position.clone(), dir, 'apfsds');
+    else houseBD.bullet(h.point.clone(), dir, CALS[cal], h.object);
+    return;
+  }
   if (h.object.userData.stump) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // stump keeps a hit box: splinters, no re-break
   const rec = h.object.userData.tree; if (!rec || rec.broken) return;
   const dmg = CAL_DMG[CALS[cal]] || 0;
@@ -274,6 +285,7 @@ function frame() {
     else { f.mesh.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]); _axis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]); f.mesh.quaternion.setFromAxisAngle(_axis, f.body.rotAngle); }
   }
   debris.update(dt);
+  if (houseBD) houseBD.update(dt);
   // pollen drift
   const a = pollen.geometry.attributes.position;
   for (let i = 0; i < N; i++) { let x = a.getX(i) + pv[i][0] * 0.04, y = a.getY(i) + pv[i][1] * 0.04, z = a.getZ(i) + pv[i][2] * 0.04; if (y > 17) y = 0.5; if (Math.abs(x - target.x) > 55) x = target.x + rr(-50, 50); if (Math.abs(z - target.z) > 55) z = target.z + rr(-50, 50); a.setXYZ(i, x, y, z); } a.needsUpdate = true;
@@ -284,20 +296,25 @@ function frame() {
   renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 applyCam(); refreshWpn(); requestAnimationFrame(frame);
-hud.textContent = '🌲🏠💥 LES + DŮM  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-5 = ráže  ·  N = den/noc\nMíř na kmen NÍZKO → zlomí nízko · vysoko → pod korunou · APFSDS rychle skácí · RAKETA porazí od země · cihlový dům zatím PEVNÝ (destrukce budov = další krok)';
+hud.textContent = '🌲🏠💥 LES + DESTRUKCE DOMU  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-5 = ráže  ·  N = den/noc\nDŮM: kulka oďobne cihlu · HMG prožere plech/sklo · RAKETA vykrojí roztřepenou díru · APFSDS provrtá tunel skrz zdi · sklo se tříští — textura zůstává';
 { const T0 = new URLSearchParams(location.search).get('time'); const idx = ['day', 'dusk', 'night'].indexOf(T0); if (idx >= 0) { timeIdx = idx; setTime(T0); } }
 window.__READY = true;
 window.DEMO = {
   fire, setCal(i) { cal = i; refreshWpn(); },
   setView(az, el, tx, ty, tz) { if (az != null) cam.az = az; if (el != null) cam.el = el; if (tx != null) target.set(tx, ty, tz); applyCam(); },
   snap() { resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', 0.92); },
-  state() { return { trees: trees.length, standing: treeMeshes.length, broken: trees.filter(r => r.broken).length, falling: FALLING.length, settled: FALLING.filter(f => f.body.settled).length, cal: CALS[cal], house: window.__HOUSE ? (window.__HOUSE.error ? 'ERR' : houseMeshes.length + ' meshes') : 'loading' }; },
+  state() { return { trees: trees.length, standing: treeMeshes.length, broken: trees.filter(r => r.broken).length, falling: FALLING.length, settled: FALLING.filter(f => f.body.settled).length, cal: CALS[cal], house: houseBD ? houseBD.stats() : (window.__HOUSE?.error ? 'ERR' : 'loading') }; },
   perf() { const r = renderer.info.render; return { fps: _fps, drawCalls: r.calls, triangles: r.triangles }; },
   time: (m) => setTime(m),
   // deterministic test hooks (decouple verification from aim + headless FPS)
   __test: {
     breakNearest(mode) { const rec = trees.find(r => !r.broken); if (!rec) return null; breakTree(rec, rec.height * 0.4, mode); return { species: rec.species, height: +rec.height.toFixed(2), bodies: FALLING.length }; },
-    step(n) { for (let s = 0; s < n; s++) for (const f of FALLING) if (!f.body.settled) stepBody(f.body, 0.016); return FALLING.map(f => ({ k: f.kind, settled: f.body.settled, angle: f.kind === 'hinge' ? +f.body.angle.toFixed(2) : null })); }
+    step(n) { for (let s = 0; s < n; s++) for (const f of FALLING) if (!f.body.settled) stepBody(f.body, 0.016); return FALLING.map(f => ({ k: f.kind, settled: f.body.settled, angle: f.kind === 'hinge' ? +f.body.angle.toFixed(2) : null })); },
+    // deterministic house-destruction hooks (world coords; cottage centred at HOUSE_POS, N wall ≈ z −10)
+    houseBlast(x, y, z) { return houseBD ? { hit: houseBD.blast(new THREE.Vector3(x, y, z), 'heRocket'), ...houseBD.stats() } : null; },
+    houseAP(ox, oy, oz, dx, dy, dz) { return houseBD ? { hit: houseBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...houseBD.stats() } : null; },
+    houseBullet(x, y, z, key) { return houseBD ? { hit: houseBD.bullet(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, -1), key || 'hmg127', null), ...houseBD.stats() } : null; },
+    houseStats() { return houseBD ? houseBD.stats() : null; }
   }
 };
 </script>
