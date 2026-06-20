@@ -80,7 +80,7 @@ const addCover = (res, x, z, { scale = 1, wind = 0 } = {}) => {
 // ====================================================================
 const GAME_SCALE = 0.42;
 const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2 };   // crush class
-const trees = [], treeMeshes = [];
+const trees = [], treeMeshes = [], stumps = [];
 function addTree(species, x, z, varietyScale, seed, sapling) {
   const scale = GAME_SCALE * varietyScale;
   const res = makeTree({ species, seed, lod: 0, scale });   // single standing mesh
@@ -114,46 +114,32 @@ const FALLING = [];
 const _axis = new THREE.Vector3(), _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 
 function breakTree(rec, hitY, mode) {
-  rec.broken = true; rec.mesh.visible = false;
+  rec.broken = true; scene.remove(rec.mesh);                 // fully REMOVE the standing tree → no ghost model left behind
   const i = treeMeshes.indexOf(rec.mesh); if (i >= 0) treeMeshes.splice(i, 1);
   // fall direction = away from the camera (you shot it → it falls away), horizontal
   let dx = rec.x - camera.position.x, dz = rec.z - camera.position.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   const dirXZ = [dx, dz];
   const seed = (rec.seed * 2654435761) >>> 0;
-  // break height: snap at where it was hit; topple/uproot break low (whole thing goes over)
-  let breakAt;
-  if (mode === 'topple' || mode === 'uproot') breakAt = 0.05 + rnd() * 0.05;
-  else breakAt = THREE.MathUtils.clamp(hitY / rec.height, 0.12, 0.82);
-
+  // break height: snap WHERE it was hit; topple/uproot snap low so the whole tree goes over
+  const low = (mode === 'topple' || mode === 'uproot');
+  const breakAt = low ? (0.05 + rnd() * 0.05) : THREE.MathUtils.clamp(hitY / rec.height, 0.1, 0.8);
   const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt });
   const breakY = split.breakY;
-  // standing stump
+  // standing stump — KEEPS A HIT BOX (raycast target; in-game it keeps its world.boxes collider)
   const stump = new THREE.Mesh(split.stumpGeometry, split.material);
-  stump.position.set(rec.x, 0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = stump.receiveShadow = true; scene.add(stump);
-
-  if (mode === 'shatter') {
-    // APFSDS: the top is obliterated into tumbling chunks + a heavy splinter burst
-    split.topGeometry.dispose();
-    const chunks = 5 + (rnd() * 3 | 0);
-    for (let k = 0; k < chunks; k++) {
-      const s = rr(0.2, 0.5);
-      const box = new THREE.Mesh(new THREE.BoxGeometry(s, s * rr(1, 2.4), s), woodMat); box.castShadow = true; scene.add(box);
-      const up = 2 + rnd() * 4, sp = 4 + rnd() * 6;
-      const body = makeTumble({ pos: [rec.x + rr(-0.3, 0.3), breakY + k * 0.4, rec.z + rr(-0.3, 0.3)], vel: [dirXZ[0] * sp + rr(-2, 2), up, dirXZ[1] * sp + rr(-2, 2)], seed: seed + k, radius: s * 0.5 });
-      FALLING.push({ kind: 'tumble', body, mesh: box });
-    }
-    debris.burst('splints', [rec.x, breakY, rec.z], seed);
-    debris.burst('splints', [rec.x, breakY + 1, rec.z], seed + 9);
-  } else {
-    // hinge the falling top about the break point
-    const top = new THREE.Mesh(split.topGeometry, split.material);
-    top.rotation.y = rec.yaw; top.castShadow = top.receiveShadow = true;
-    const pivot = new THREE.Group(); pivot.position.set(rec.x, breakY, rec.z); pivot.add(top); scene.add(pivot);
-    const length = Math.max(0.5, rec.height - breakY);
-    const body = makeHinge({ pivot: [rec.x, breakY, rec.z], dirXZ, length, radius: 0.22, seed, obstacles: [] });
-    FALLING.push({ kind: 'hinge', body, pivot });
-    debris.burst('splints', [rec.x, breakY, rec.z], seed);
-  }
+  stump.position.set(rec.x, 0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = stump.receiveShadow = true;
+  stump.userData.stump = true; scene.add(stump); stumps.push(stump);
+  // hinge the falling TOP about the break (the FULL canopy stays attached). APFSDS just snaps it
+  // FAST (a violent quick fell) — it does NOT despawn into chunks.
+  const top = new THREE.Mesh(split.topGeometry, split.material);
+  top.rotation.y = rec.yaw; top.castShadow = top.receiveShadow = true;
+  const pivot = new THREE.Group(); pivot.position.set(rec.x, breakY, rec.z); pivot.add(top); scene.add(pivot);
+  const length = Math.max(0.5, rec.height - breakY);
+  const body = makeHinge({ pivot: [rec.x, breakY, rec.z], dirXZ, length, radius: 0.22, seed, obstacles: [] });
+  if (mode === 'fast') body.angVel = 2.8;                    // APFSDS: violent quick snap
+  FALLING.push({ kind: 'hinge', body, pivot });
+  debris.burst('splints', [rec.x, breakY, rec.z], seed);
+  if (mode === 'fast') debris.burst('splints', [rec.x, breakY + 0.7, rec.z], seed + 7);
 }
 
 // ====================================================================
@@ -170,18 +156,23 @@ function refreshWpn() {
 function fire() {
   const w = LAB_WEAPONS[CALS[cal]];
   ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-  const hits = ray.intersectObjects(treeMeshes, false);
-  // HE rocket: blast at the first hit point (or 40 m ahead) → topple every tree in radius
+  // HE rocket: explode WHERE the ray actually lands (tree / stump / GROUND) → topple trees in radius.
   if (w.blast) {
-    const at = hits.length ? hits[0].point : ray.ray.at(40, _v.clone());
+    const hits = ray.intersectObjects([...treeMeshes, ...stumps, ground], false);
+    if (!hits.length) return;                                // aimed at open sky → nothing
+    const at = hits[0].point;
     debris.burst('rubble', [at.x, at.y, at.z], (Math.random() * 1e9) | 0);
     for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= (w.blast.r1 + 2.5) ** 2) breakTree(rec, 0, 'topple'); }
     return;
   }
+  // bullets: only a DIRECT hit on a standing tree (or its stump) does anything — ground is ignored.
+  const hits = ray.intersectObjects([...treeMeshes, ...stumps], false);
   if (!hits.length) return;
-  const h = hits[0], rec = h.object.userData.tree; if (!rec || rec.broken) return;
-  if (w.pen < rec.tier) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // bark plink
-  const mode = (CALS[cal] === 'apfsds') ? 'shatter' : (rec.cls === 1 ? 'uproot' : 'snap');
+  const h = hits[0];
+  if (h.object.userData.stump) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // stump keeps a hit box: splinters, no re-break
+  const rec = h.object.userData.tree; if (!rec || rec.broken) return;
+  if (w.pen < rec.tier) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // pen<tier: bark plink only
+  const mode = (CALS[cal] === 'apfsds') ? 'fast' : (rec.cls === 1 ? 'uproot' : 'snap');
   breakTree(rec, h.point.y, mode);
 }
 
@@ -250,7 +241,7 @@ function frame() {
   renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 applyCam(); refreshWpn(); requestAnimationFrame(frame);
-hud.textContent = '🌲💥 LESNÍ DESTRUKCE  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-5 = ráže  ·  N = den/noc\nMíř na kmen NÍZKO → zlomí nízko · vysoko → vysoko · APFSDS roztříští · RAKETA porazí od země · pušku ustojí silný kmen';
+hud.textContent = '🌲💥 LESNÍ DESTRUKCE  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-5 = ráže  ·  N = den/noc\nMíř na kmen NÍZKO → zlomí nízko · vysoko → zlomí pod korunou · APFSDS rychle skácí · RAKETA porazí od země · pušku ustojí silný kmen';
 { const T0 = new URLSearchParams(location.search).get('time'); const idx = ['day', 'dusk', 'night'].indexOf(T0); if (idx >= 0) { timeIdx = idx; setTime(T0); } }
 window.__READY = true;
 window.DEMO = {

@@ -469,7 +469,12 @@ export function makeTree(opts = {}) {
   // BREAK SPLIT (opts.breakAt = 0..1 fraction of height): route geometry into a
   // standing stump (≤ breakY) + a falling top (> breakY, origin re-zeroed to the
   // break) so the caller can hinge the top. null ⇒ original single-mesh behaviour.
-  const breakAt = opts.breakAt != null ? Math.max(0.08, Math.min(0.92, opts.breakAt)) : null;
+  // The break is CLAMPED below the crown so the whole canopy stays on the falling
+  // top — splitting through the crown leaves half-clusters dangling on a short top
+  // that wobbles instead of toppling like a treetop.
+  const crownBottomFrac = 1 - (cfg.crownFrac != null ? cfg.crownFrac : 0.5);
+  const breakMax = Math.max(0.12, crownBottomFrac - 0.04);
+  const breakAt = opts.breakAt != null ? Math.max(0.08, Math.min(breakMax, opts.breakAt)) : null;
   const breakY = breakAt != null ? breakAt * effHeight : 0;
   const mb = breakAt != null ? new SplitBuilder(breakY) : new MeshBuilder();
 
