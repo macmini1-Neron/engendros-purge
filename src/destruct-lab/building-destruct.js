@@ -224,8 +224,13 @@ export class BuildingDestruct {
 
   // merge a set of cells into ONE tumbling chunk (≤1 new body per event), textured per material
   _makeFaller(cells) {
-    let ox = 0, oy = 0, oz = 0, minY = 1e9, maxY = -1e9;
-    for (const c of cells) { ox += c.cx; oy += c.cy; oz += c.cz; minY = Math.min(minY, c.cy - c.sy / 2); maxY = Math.max(maxY, c.cy + c.sy / 2); }
+    let ox = 0, oy = 0, oz = 0, minY = 1e9, maxY = -1e9, mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+    for (const c of cells) {
+      ox += c.cx; oy += c.cy; oz += c.cz;
+      minY = Math.min(minY, c.cy - c.sy / 2); maxY = Math.max(maxY, c.cy + c.sy / 2);
+      mnx = Math.min(mnx, c.cx - c.sx / 2); mxx = Math.max(mxx, c.cx + c.sx / 2);
+      mnz = Math.min(mnz, c.cz - c.sz / 2); mxz = Math.max(mxz, c.cz + c.sz / 2);
+    }
     const n = cells.length; ox /= n; oy /= n; oz /= n;
     const byMat = new Map();
     for (const c of cells) { if (!byMat.has(c.bucket)) byMat.set(c.bucket, []); byMat.get(c.bucket).push(c); }
@@ -233,6 +238,13 @@ export class BuildingDestruct {
     for (const [name, cs] of byMat) { const m = this._cellsMesh(name, cs, { x: ox, y: oy, z: oz }); if (m) grp.add(m); }
     const wc = this.group.localToWorld(new THREE.Vector3(ox, oy, oz));
     grp.position.copy(wc); this.scene.add(grp);
+    // take any rebar rods embedded in this collapsing chunk so the steel FALLS WITH the slab/roof
+    // instead of levitating where it used to be. grp.attach() keeps each rod's world pose.
+    const M = 0.4;
+    for (let i = this.rebar.children.length - 1; i >= 0; i--) {
+      const p = this.rebar.children[i].position;
+      if (p.x >= mnx - M && p.x <= mxx + M && p.y >= minY - M && p.y <= maxY + M && p.z >= mnz - M && p.z <= mxz + M) grp.attach(this.rebar.children[i]);
+    }
     const body = makeTumble({ pos: [wc.x, wc.y, wc.z], vel: [(this._rnd() - 0.5) * 0.8, 0.2, (this._rnd() - 0.5) * 0.8], seed: this._seed(), radius: Math.max(0.2, (maxY - minY) / 2), g: FALL_G, spin: 0.55 });
     this.fallers.push({ grp, body });
     while (this.fallers.length > MAX_FALLERS) { const f = this.fallers.shift(); this.scene.remove(f.grp); f.grp.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } }); }
