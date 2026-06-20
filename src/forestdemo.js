@@ -43,29 +43,32 @@ export class ForestDemo {
     return false;
   }
 
-  // scatter `n` grown trees + `nSap` saplings over a disc of `rad`, avoiding reserves, neighbours and
-  // steep ground. Call AFTER reserve()-ing the cottage footprint.
-  scatter(n = 96, nSap = 28, rad = 120) {
+  // scatter `n` grown trees + `nSap` saplings into dense STANDS (clusters) within `rad`, avoiding
+  // reserves, neighbours and steep ground. Stands matter: trees a few m apart let the FIRE ember
+  // chain jump tree→tree (spread radius 6 m), and the woods read as a forest, not a sprinkle. Call
+  // AFTER reserve()-ing the building footprints.
+  scatter(n = 116, nSap = 34, rad = 80) {
     const terr = this.world.terrain;
-    for (let i = 0; i < n; i++) {
-      for (let tries = 0; tries < 8; tries++) {
-        const a = Math.random() * Math.PI * 2, d = 14 + Math.sqrt(Math.random()) * (rad - 14);
-        const x = Math.cos(a) * d, z = Math.sin(a) * d;
-        if (Math.abs(x) > this.world.HALF - 6 || Math.abs(z) > this.world.HALF - 6) continue;
-        if (terr && !terr.isPlaceable(x, z, 1.0, 'tree')) continue;
-        if (this._blocked(x, z, 3.4)) continue;
-        this._addTree(this._pickSpecies(), x, z, rr(0.9, 1.25), i * 17 + 3, false); break;
-      }
+    const NS = 9, stands = [];
+    for (let s = 0; s < NS; s++) {
+      const a = (s / NS) * Math.PI * 2 + rr(-0.35, 0.35), d = 22 + Math.random() * (rad - 22);
+      stands.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 10 + Math.random() * 8 });
     }
-    for (let i = 0; i < nSap; i++) {
-      for (let tries = 0; tries < 8; tries++) {
-        const a = Math.random() * Math.PI * 2, d = 10 + Math.sqrt(Math.random()) * (rad * 0.6);
-        const x = Math.cos(a) * d, z = Math.sin(a) * d;
-        if (terr && !terr.isPlaceable(x, z, 0.6, 'tree')) continue;
-        if (this._blocked(x, z, 2.2)) continue;
-        this._addTree('birch', x, z, rr(0.42, 0.6), i * 31 + 700, true); break;
+    const drop = (count, scaleLo, scaleHi, minD, footR, sapling) => {
+      for (let i = 0; i < count; i++) {
+        for (let tries = 0; tries < 12; tries++) {
+          const st = stands[(Math.random() * stands.length) | 0];
+          const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * st.r;
+          const x = st.x + Math.cos(a) * d, z = st.z + Math.sin(a) * d;
+          if (Math.abs(x) > this.world.HALF - 6 || Math.abs(z) > this.world.HALF - 6) continue;
+          if (terr && !terr.isPlaceable(x, z, footR, 'tree')) continue;
+          if (this._blocked(x, z, minD)) continue;
+          this._addTree(sapling ? 'birch' : this._pickSpecies(), x, z, rr(scaleLo, scaleHi), i * 17 + (sapling ? 700 : 3), sapling); break;
+        }
       }
-    }
+    };
+    drop(n, 0.9, 1.25, 3.2, 1.0, false);     // grown trees — ~3.2 m apart inside a stand ⇒ fire chains
+    drop(nSap, 0.42, 0.6, 2.2, 0.6, true);   // birch saplings filling the understory
   }
 
   _addTree(species, x, z, scale, seed, sapling) {
@@ -101,6 +104,7 @@ export class ForestDemo {
   fellTree(rec, dirXZ = null, seed = null) {
     if (!rec || !rec.standing) return;
     rec.standing = false;
+    if (rec.part) rec.part.dead = true;                     // off the flammable list — a felled tree can't re-ignite
     if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; }
     this._dropBox(rec);
     let dx = dirXZ ? dirXZ[0] : (Math.random() - 0.5), dz = dirXZ ? dirXZ[1] : (Math.random() - 0.5);
@@ -149,6 +153,23 @@ export class ForestDemo {
   }
 
   hitProp() {}                                                // no separate props here (crates are buildings)
+
+  // ── FIRE (game FireManager) — the molotov/rocket fire path. FireManager enumerates burnables via
+  // flammableParts(), then chars (charTree → snaps easier) + fells (fellTree on burnout) by the part's
+  // owner (= the tree record we set as part.downer). trunk(fuel 10)/wood(fuel 6) burn; the ember chain
+  // spreads tree↔tree on its own. ──────────────────────────────────────────────────────────────────
+  flammableParts() {
+    const out = [];
+    for (const t of this.trees) if (t.standing && t.part && !t.part.dead) out.push(t.part);
+    return out;
+  }
+  charTree(tree) {
+    if (!tree || !tree.standing || tree.charred) return;
+    tree.charred = true;
+    if (tree.part) tree.part.dhp = Math.max(1, tree.part.dhp * 0.5);   // charred wood snaps under the next hit
+    if (tree.mesh && tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x4a4038); // scorched
+  }
+  charTreeById(id) { const t = this._treeById(id); if (t) this.charTree(t); }
 
   clearArea(cx, cz, r) {
     for (const rec of this.trees) {
