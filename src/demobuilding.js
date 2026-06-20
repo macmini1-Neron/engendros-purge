@@ -510,6 +510,7 @@ export class DemoBuilding {
   _refresh() {
     let opaqueDied = false;
     const newlyDead = [];
+    let dx = 0, dy = 0, dz = 0, dn = 0;                   // centroid of newly-dead opaque parts → dust puff
     for (const part of this.parts) {
       if (!part.dead || this._removed.has(part.dpart)) continue;
       this._removed.add(part.dpart);
@@ -517,11 +518,23 @@ export class DemoBuilding {
       const box = this._boxById.get(part.dpart);
       if (box) { this.world.grid.removeBox(box); const i = this.world.boxes.indexOf(box); if (i >= 0) this.world.boxes.splice(i, 1); this._boxById.delete(part.dpart); }
       if (part.glass && part.paneMesh) { this.group.remove(part.paneMesh); part.paneMesh.geometry.dispose(); part.paneMesh.material.dispose(); part.paneMesh = null; }
-      else opaqueDied = true;
+      else { opaqueDied = true; const c = this._partCentre(part); dx += c[0]; dy += c[1]; dz += c[2]; dn++; }
     }
-    if (opaqueDied) this.rebuild();
+    if (opaqueDied) { this.rebuild(); if (dn) this._dustPuff([dx / dn, dy / dn, dz / dn], dn); }
     else this.lastRebuildMs = 0;   // glass-only event: nothing to merge
     return newlyDead;
+  }
+
+  // A masonry dust cloud at a breach (juice). Scales with how much came down. Reuses the shared
+  // effects.js particle pool — NO second particle system (keeps the no-lag bar; owner decision D5).
+  _dustPuff(centre, n) {
+    const fx = this.game.effects; if (!fx || !fx.contrailPuff) return;
+    const puffs = Math.min(6, 1 + (n >> 1));
+    const v = this._dustV || (this._dustV = new THREE.Vector3());
+    for (let i = 0; i < puffs; i++) {
+      v.set(centre[0] + (Math.random() - 0.5) * 0.8, centre[1] + (Math.random() - 0.3) * 0.6, centre[2] + (Math.random() - 0.5) * 0.8);
+      fx.contrailPuff(v, { size: 1.1 + Math.random() * 0.8, life: 1.6 + Math.random() * 0.8, color: 0xb6a589 });
+    }
   }
 
   // ── public destruct entry points (Phase 9 / verification call these) ────────────
