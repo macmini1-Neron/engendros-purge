@@ -40,7 +40,7 @@
 
 import * as THREE from 'three';
 import { MeshBuilder, TAU, voxelMaterial } from './util.js';
-import { DestructRuntime, makePart, MATERIALS, orphanedCells, makeTumble, stepBody } from './destruct.js';
+import { DestructRuntime, makePart, MATERIALS, orphanedCells, makeTumble, stepBody, resolveCrush } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
 import { placeProp, hasModel } from './props/registry.js';
 import { getSpec } from './props/registry-core.js';
@@ -553,6 +553,33 @@ export class DemoBuilding {
     this._broadcast(dead, holes);
     return r;
   }
+
+  // ── vehicle crush (DORMANT — no drivable vehicle wires it yet; tanks/cars are on other branches) ──
+  // A vehicle pressing its world-AABB into the building. Soft parts (tier ≤ opts.crushTier) are shoved
+  // out + the wall caves; a HARD part (brick+ above crushTier — e.g. a reinforcedConcrete bunker) BLOCKS
+  // it. opts.dir biases the crushed debris the way the vehicle is moving (directional masonry spray).
+  // Returns { blocked, drag, crushed } for the vehicle controller to slow/stop on. Host-authoritative.
+  applyCrush(aabb, opts = {}) {
+    const hostSim = !this.game.mp.active || this.game.mp.isHost;
+    if (!hostSim) return { blocked: false, drag: 0, crushed: 0 };
+    const res = resolveCrush(this.parts, aabb, opts.crushTier ?? 3);
+    if (res.blocked) return { blocked: true, drag: 1, crushed: 0 };   // hard wall — vehicle stopped, nothing destroyed
+    if (!res.crushed.length) return { blocked: false, drag: 0, crushed: 0 };
+    const dir = opts.dir ? _a(opts.dir) : null;
+    for (const id of res.crushed) {
+      const part = this._partById(id);
+      if (!part || part.dead) continue;
+      part.dead = true;
+      if (part.o && part.o.cell) this._spawnFaller(part, dir);        // crushed cells tumble off the hull
+      if (this.debris) this.debris.burst(MATERIALS[part.dmat].debris, _a(this._partCentre(part)),
+        (part.dpart * 2654435761) >>> 0, this.baseY, { dir: dir || undefined });   // directional masonry spray
+    }
+    const dead = this._refresh();
+    this._collapse(dir); const fell = this._refresh();                // shoving out the base caves what's above
+    this._broadcast([...dead, ...fell], null);
+    return { blocked: false, drag: res.drag, crushed: res.crushed.length };
+  }
+  _partCentre(p) { return [(p.min[0] + p.max[0]) / 2, (p.min[1] + p.max[1]) / 2, (p.min[2] + p.max[2]) / 2]; }
 
   // ── CO-OP host→client replay (Phase 10) ─────────────────────────────────────────
   // Host broadcasts exactly the destruction DELTA (newly-dead part ids + new APFSDS holes)

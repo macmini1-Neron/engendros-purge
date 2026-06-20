@@ -14,7 +14,8 @@
 // WIRED: DestructRuntime drives the demo BUILDING destructibles — instantiated in demobuilding.js,
 // installed via game.js, and called from weapons.js combat (applyHit/applyBlast/applyPenetration).
 // Forest props deliberately call the lower-level resolve*/makePart directly (mirroring the tree
-// path) rather than going through DestructRuntime. Only applyCrush (below) remains an inert stub.
+// path) rather than going through DestructRuntime. applyCrush is now a live (but DORMANT) capability
+// — resolveCrush + DemoBuilding.applyCrush exist + are tested; no drivable vehicle wires them yet.
 
 // ───────────────────────────────────────────────────────────────────────────
 // 1. Geometry helpers (pure AABB/ray on plain [x,y,z] arrays). From geom.js.
@@ -234,6 +235,34 @@ export function resolvePenetration(parts, origin, dir, weapon) {
   return { hits, cones };
 }
 
+// AABB-vs-AABB overlap on plain [x,y,z] arrays (inclusive). Used by the vehicle-crush query.
+export function aabbOverlap(amin, amax, bmin, bmax) {
+  return amin[0] <= bmax[0] && amax[0] >= bmin[0] &&
+         amin[1] <= bmax[1] && amax[1] >= bmin[1] &&
+         amin[2] <= bmax[2] && amax[2] >= bmin[2];
+}
+
+// Vehicle crush query (pure; the runtime/owner applies the result). A vehicle pressing its world
+// AABB into a set of destructible parts, with crushTier = its crushing power:
+//   • a part of tier ≤ crushTier overlapping the AABB is CRUSHED (shoved out of the way) + adds drag;
+//   • any overlapping part of tier > crushTier is HARD → the vehicle is BLOCKED (can't shove through);
+//   • glass always shatters (free) and never blocks.
+// Returns { blocked, crushed:[dpart], hard:[dpart], drag(0..1) }. Scales by data: a T-62 (crushTier 4)
+// flattens brick (3) but stops at reinforcedConcrete (6); a car (crushTier 1) can't even crush brick.
+export function resolveCrush(parts, aabb, crushTier) {
+  const crushed = [], hard = [];
+  for (const p of parts) {
+    if (p.dead) continue;
+    if (!aabbOverlap(aabb.min, aabb.max, p.min, p.max)) continue;
+    if (p.dmat === 'glass') { crushed.push(p.dpart); continue; }      // panes shatter, never block
+    if (MATERIALS[p.dmat].tier <= crushTier) crushed.push(p.dpart);
+    else hard.push(p.dpart);
+  }
+  const blocked = hard.length > 0;
+  const drag = blocked ? 1 : Math.min(0.85, crushed.length * 0.12);   // resistance shoving through soft mass
+  return { blocked, crushed, hard, drag };
+}
+
 // Is point p inside the spall cone?
 export function coneContains(cone, p) {
   const v = [p[0] - cone.apex[0], p[1] - cone.apex[1], p[2] - cone.apex[2]];
@@ -432,11 +461,15 @@ export class DestructRuntime {
     return res;
   }
 
-  // Vehicle crush (T-62 driving over crush-class vegetation). STUB — wired when the tank lands.
-  // Intended: query parts overlapping `aabb`, fell/snap crush-class ≤ vehicleDef.crushPower
-  // over `dt` of contact, emit a 'crush' event + spawn a FallingBody for class-2/3 trunks.
-  applyCrush(aabb, vehicleDef, dt) {
-    return [];   // intentionally inert until tank mobility phase
+  // Vehicle crush at the RUNTIME (parts-only) level — pure resolveCrush + kill, no fallers/collision.
+  // The building-level path with cave-in + collision + co-op is DemoBuilding.applyCrush (the one a
+  // drivable vehicle would call). Dormant: no drivable vehicle wires either yet (tanks/cars are on
+  // other branches), but the capability is live + tested. Returns { blocked, drag, crushed:[dpart] }.
+  applyCrush(aabb, vehicleDef = {}) {
+    const res = resolveCrush(this.parts, aabb, vehicleDef.crushTier ?? 3);
+    if (!res.blocked) for (const id of res.crushed) { const p = this._byId(id); if (p && !p.dead) { p.dead = true; this._kill(p, aabbCenter(p.min, p.max)); } }
+    this.emit({ type: 'crush', aabb, ...res });
+    return { blocked: res.blocked, drag: res.drag, crushed: res.crushed };
   }
 
   _kill(part, at) {
