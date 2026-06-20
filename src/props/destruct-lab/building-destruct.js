@@ -32,9 +32,9 @@ const MAX_FALLERS = 6;      // hard cap on live falling chunks (perf)
 const FALL_G = 4.2;         // gravity for collapsing building chunks — < 9.81 = slower, weightier fall
 const CHIP_COUNT = 3;       // a bullet chip is a light puff, not a full breach burst
 const MAX_REBAR = 40;       // cap on exposed-rebar rods (hero detail at concrete break faces)
-const WALL_BLOCK_TIER = 5;  // tier ≥ this (steel, железобетон) is IMMOVABLE — stops a vehicle dead. Below it
-                            // (incl. concrete window frames / lintels) is crushable: a tank grinds through,
-                            // just slower for harder stuff. Bump a structure to reinforcedConcrete to wall a tank out.
+// Vehicle crush is gated PER-VEHICLE by opts.crushTier (the hardest material tier it can shove
+// through): anything harder STOPS it. Tank ≈ 4 (brick + concrete; walled by steel/reinforced);
+// car ≈ 1 (glass/wood only; walled by brick). One number scales the whole vehicle roster.
 const _axis = new THREE.Vector3();
 
 // buildgen material key → destruction material (matrix.js MATERIALS). Per-object overridable via
@@ -367,10 +367,10 @@ export class BuildingDestruct {
     // BLOCK only on real mass of hard material: steel / железобетон stops a tank as a sliver, but plain
     // concrete stops it only as a WALL (a stray sill/lintel is smashed through, not a wall to a tank).
     const hard = hit.filter((c) => MATERIALS[c.mat].tier > crushTier);
-    if (hit.some((c) => MATERIALS[c.mat].tier >= WALL_BLOCK_TIER)) return { blocked: true, drag: 0, crushed: smashed, hard: hard.length };   // steel / reinforced concrete only
+    if (hard.length) return { blocked: true, drag: 0, crushed: smashed, hard: hard.length };   // harder than this vehicle can crush → stop dead
     if (!hit.length) return { blocked: false, drag: smashed ? 0.92 : 1, crushed: smashed, hard: 0 };
     const dirty = new Set(); let resist = 0;
-    for (const c of hit) { c.alive = false; dirty.add(c.bucket); resist += (MATERIALS[c.mat].tier + 1) * (MATERIALS[c.mat].tier >= 4 ? 3 : 1); }   // concrete trim resists ~3× harder
+    for (const c of hit) { c.alive = false; dirty.add(c.bucket); resist += (MATERIALS[c.mat].tier + 1) * (MATERIALS[c.mat].tier >= crushTier ? 3 : 1); }   // the hardest stuff it CAN crush resists ~3×
     // rubble flies OUT in the push direction (opts.dir) — like masonry blown forward off the hull
     const cx = (aabb.min.x + aabb.max.x) / 2, cy = (aabb.min.y + aabb.max.y) / 2, cz = (aabb.min.z + aabb.max.z) / 2;
     this.debris.burst('rubble', [cx, cy, cz], this._seed(), 7, opts.dir);
