@@ -458,11 +458,21 @@ export class DemoBuilding {
     if (!this.cells.length) return [];
     const orphanIds = orphanedCells(this.cells);
     if (!orphanIds.length) return [];
+    let mnx = Infinity, mnz = Infinity, mxx = -Infinity, mxz = -Infinity, mxy = -Infinity;
     for (const id of orphanIds) {
       const part = this._partById(id);
       if (!part || part.dead) continue;
       part.dead = true;
       this._spawnFaller(part, dir);
+      if (part.min[0] < mnx) mnx = part.min[0]; if (part.min[2] < mnz) mnz = part.min[2];
+      if (part.max[0] > mxx) mxx = part.max[0]; if (part.max[2] > mxz) mxz = part.max[2];
+      if (part.max[1] > mxy) mxy = part.max[1];
+    }
+    // #5 environmental kill: bury anything standing under the cave-in footprint (host-auth in crushZone).
+    // Inflate the thin wall footprint by SPREAD so rubble also catches a mob hugging the breached wall.
+    if (mxy > -Infinity && this.game.enemies && this.game.enemies.crushZone) {
+      const SPREAD = 0.7;
+      this.game.enemies.crushZone([mnx - SPREAD, this.baseY, mnz - SPREAD], [mxx + SPREAD, mxy, mxz + SPREAD], 'collapse');
     }
     return orphanIds;
   }
