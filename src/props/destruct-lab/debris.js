@@ -31,11 +31,13 @@ export class DebrisPool {
     this.dummy.position.set(0, -99, 0); this.dummy.scale.setScalar(0.001);
     this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix);
   }
-  burst(kind, at, seed = 1) {
+  // count: optional override (a small number ⇒ a light puff — e.g. a bullet chip vs a full breach)
+  burst(kind, at, seed = 1, count) {
     const r = RECIPES[kind]; if (!r) return;
     let s = seed >>> 0;
     const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-    for (let n = 0; n < r.count; n++) {
+    const N = Math.min(r.count, count ?? r.count);
+    for (let n = 0; n < N; n++) {
       const i = this.head; this.head = (this.head + 1) % POOL;
       const it = this.items[i];
       it.live = true; it.life = r.life * (0.7 + rnd() * 0.6);

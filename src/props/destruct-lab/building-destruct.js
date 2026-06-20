@@ -29,10 +29,18 @@ const GROUND_EPS = 0.14;    // a cell whose bottom is this close to y=0 is "grou
 const ADJ_EPS = 0.06;       // cells touching within this gap are neighbours (connectivity graph)
 const SUPPORT_MIN = 0.4;    // a sign/pane keeps standing while ≥ this fraction of its backing cells live
 const MAX_FALLERS = 6;      // hard cap on live falling chunks (perf)
+const FALL_G = 4.2;         // gravity for collapsing building chunks — < 9.81 = slower, weightier fall
+const CHIP_COUNT = 3;       // a bullet chip is a light puff, not a full breach burst
+const MAX_REBAR = 40;       // cap on exposed-rebar rods (hero detail at concrete break faces)
 const _axis = new THREE.Vector3();
-// buildgen material key → destruction material (matrix.js MATERIALS)
-const MAT_MAP = { brickRed: 'brick', concrete: 'concrete', corrugatedTin: 'sheetmetal', glassPane: 'glass', signage: 'sheetmetal' };
 
+// buildgen material key → destruction material (matrix.js MATERIALS). Per-object overridable via
+// the `matMap` ctor option — e.g. a bunker passes { concrete: 'reinforcedConcrete' }.
+export const MAT_MAP = {
+  brickRed: 'brick', concrete: 'concrete', corrugatedTin: 'sheetmetal', glassPane: 'glass', signage: 'sheetmetal',
+  reinforcedConcrete: 'reinforcedConcrete', ferroConcrete: 'reinforcedConcrete',
+};
+// buildgen material key → destruction material (matrix.js MATERIALS)
 // Triplanar metric UVs — copied from interp.js so a rebuilt bucket keeps IDENTICAL tiling.
 function metricUVs(geometry, tile) {
   const p = geometry.attributes.position, n = geometry.attributes.normal, uv = geometry.attributes.uv;
@@ -46,20 +54,24 @@ function metricUVs(geometry, tile) {
 }
 
 export class BuildingDestruct {
-  // { group: buildBuilding() root, prims: planBuild(spec).prims, scene, debris: DebrisPool, seed }
-  constructor({ group, prims, scene, debris, seed = 7 }) {
+  // { group: buildBuilding() root (or a bare group for eager objects), prims: planBuild(spec).prims,
+  //   scene, debris: DebrisPool, seed, matMap?: buildgen→destruct override, eager?: render from cells now }
+  constructor({ group, prims, scene, debris, seed = 7, matMap = MAT_MAP, eager = false }) {
     this.group = group; this.scene = scene; this.debris = debris; this.seed = seed >>> 0;
+    this.matMap = matMap;
     this._sid = 1; this._rng = (this.seed || 1) >>> 0;
     this.cells = [];                 // flat list of every cell (events iterate this; n≈800, cheap)
     this.buckets = new Map();        // matName → { cells, original, mesh, voxelised }
     this.panes = [];                 // hero glass plane meshes
     this.dust = [];                  // live dust puffs (animated in update)
     this.fallers = [];               // live falling chunks (orphaned roof/walls/sign/panes)
+    this.rebar = new THREE.Group(); this.group.add(this.rebar); this._rebarN = 0;  // exposed rebar at concrete breaks
     this._captureOriginals();
     this._voxelize(prims);
     this.group.updateWorldMatrix(true, true);
     this._buildAdjacency();          // connectivity graph → "is this cell still tied to the ground?"
     this._captureSupports();         // sign + panes remember the cells that back them
+    if (eager) for (const name of this.buckets.keys()) this._commit([name]);  // no pristine mesh — render voxels now
   }
 
   _seed() { this._rng = (this._rng * 1664525 + 1013904223) >>> 0; return this._rng; }
@@ -90,7 +102,7 @@ export class BuildingDestruct {
     for (const c of prims) {
       if (c.kind !== 'box' || c.text != null) continue;     // panes handled separately; sign keeps its lettered mesh
       const name = c.mat ?? 'concrete';
-      const dmat = MAT_MAP[name] ?? 'concrete';
+      const dmat = this.matMap[name] ?? 'concrete';
       const mdef = MATERIALS[dmat] ?? MATERIALS.concrete;
       const bk = this._bucket(name);
       span(c.x - c.w / 2, c.x + c.w / 2, (ax, bx) => span(c.y - c.h / 2, c.y + c.h / 2, (ay, by) => span(c.z - c.d / 2, c.z + c.d / 2, (az, bz) => {
@@ -205,7 +217,7 @@ export class BuildingDestruct {
     for (const [name, cs] of byMat) { const m = this._cellsMesh(name, cs, { x: ox, y: oy, z: oz }); if (m) grp.add(m); }
     const wc = this.group.localToWorld(new THREE.Vector3(ox, oy, oz));
     grp.position.copy(wc); this.scene.add(grp);
-    const body = makeTumble({ pos: [wc.x, wc.y, wc.z], vel: [(this._rnd() - 0.5) * 1.4, 0.4, (this._rnd() - 0.5) * 1.4], seed: this._seed(), radius: Math.max(0.2, (maxY - minY) / 2) });
+    const body = makeTumble({ pos: [wc.x, wc.y, wc.z], vel: [(this._rnd() - 0.5) * 0.8, 0.2, (this._rnd() - 0.5) * 0.8], seed: this._seed(), radius: Math.max(0.2, (maxY - minY) / 2), g: FALL_G, spin: 0.55 });
     this.fallers.push({ grp, body });
     while (this.fallers.length > MAX_FALLERS) { const f = this.fallers.shift(); this.scene.remove(f.grp); f.grp.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } }); }
   }
@@ -225,7 +237,7 @@ export class BuildingDestruct {
     mesh.getWorldPosition(wp); mesh.getWorldQuaternion(wq);
     const fg = new THREE.Group(); fg.position.copy(wp); fg.quaternion.copy(wq); this.scene.add(fg); fg.attach(mesh);
     if (el.kind === 'pane') { mesh.userData.dead = true; this.debris.burst('shards', [wp.x, wp.y, wp.z], this._seed()); }
-    const body = makeTumble({ pos: [wp.x, wp.y, wp.z], vel: [(this._rnd() - 0.5) * 1.0, 0.2, (this._rnd() - 0.5) * 1.0], seed: this._seed(), radius: 0.3 });
+    const body = makeTumble({ pos: [wp.x, wp.y, wp.z], vel: [(this._rnd() - 0.5) * 0.7, 0.1, (this._rnd() - 0.5) * 0.7], seed: this._seed(), radius: 0.3, g: FALL_G, spin: 0.8 });
     this.fallers.push({ grp: fg, body });
     while (this.fallers.length > MAX_FALLERS) { const f = this.fallers.shift(); this.scene.remove(f.grp); f.grp.traverse((o) => { if (o.isMesh && o.userData.kind !== 'pane' && o.userData.kind !== 'other') o.geometry.dispose(); }); }
   }
@@ -252,9 +264,11 @@ export class BuildingDestruct {
     const c = this._cellAt(this._local(worldPoint));
     if (!c) return false;
     const m = MATERIALS[c.mat], at = [worldPoint.x, worldPoint.y, worldPoint.z];
-    if (w.pen < m.tier) { this.debris.burst(m.debris, at, this._seed()); return true; }   // F0 cosmetic chip
-    c.hp -= w.dmg; this.debris.burst(m.debris, at, this._seed());
-    if (c.hp <= 0) { c.alive = false; this._settle(new Set([c.bucket])); }
+    // F0 cosmetic chip — pen too low (e.g. HMG on brick/concrete): a LIGHT puff, not a breach burst
+    if (w.pen < m.tier) { this.debris.burst(m.tier >= 5 ? 'sparks' : m.debris, at, this._seed(), CHIP_COUNT); return true; }
+    c.hp -= w.dmg;
+    if (c.hp > 0) { this.debris.burst(m.debris, at, this._seed(), CHIP_COUNT); return true; }   // chewing — light chips
+    c.alive = false; this.debris.burst(m.debris, at, this._seed(), 6); this._settle(new Set([c.bucket]));
     return true;
   }
 
@@ -263,17 +277,24 @@ export class BuildingDestruct {
   blast(worldPoint, weaponKey) {
     const w = LAB_WEAPONS[weaponKey] || LAB_WEAPONS.heRocket;
     const blast = w.blast || { r1: 2.5, r2: 6, tier: 3 };
-    const lp = this._local(worldPoint), dirty = new Set();
+    const lp = this._local(worldPoint), dirty = new Set(), removed = [];
+    let resisted = false;
     for (const c of this.cells) {
       if (!c.alive) continue;
       const dx = c.cx - lp.x, dy = c.cy - lp.y, dz = c.cz - lp.z;
-      if (dx * dx + dy * dy + dz * dz <= blast.r1 * blast.r1 && MATERIALS[c.mat].tier <= blast.tier) { c.alive = false; dirty.add(c.bucket); }
+      if (dx * dx + dy * dy + dz * dz > blast.r1 * blast.r1) continue;
+      if (MATERIALS[c.mat].tier <= blast.tier) { c.alive = false; dirty.add(c.bucket); removed.push(c); }
+      else resisted = true;                                  // too hard to breach — reinforced concrete shrugs it off
     }
     const pw = new THREE.Vector3();
     for (const p of this.panes) if (!p.userData.dead) { p.getWorldPosition(pw); if (pw.distanceTo(worldPoint) <= blast.r2) this._shatterPane(p); }
-    if (!dirty.size) return false;
+    if (!dirty.size) {
+      if (resisted) { this.debris.burst('sparks', [worldPoint.x, worldPoint.y, worldPoint.z], this._seed()); this._dust(worldPoint, blast.r1 * 0.55); }   // the bunker held
+      return false;
+    }
     for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283; this.debris.burst('rubble', [worldPoint.x + Math.cos(a) * blast.r1 * 0.5, worldPoint.y + 0.2, worldPoint.z + Math.sin(a) * blast.r1 * 0.5], this._seed()); }
     this._dust(worldPoint, blast.r1);
+    this._rebarFor(removed);
     this._settle(dirty);
     return true;
   }
@@ -281,26 +302,38 @@ export class BuildingDestruct {
   // APFSDS: no explosion — carve a clean tunnel of cells along the ray (entry → through → exit),
   // glass on the path shatters for free. The long-rod "drill", not a breach.
   penetrate(originW, dirW, weaponKey) {
+    const w = LAB_WEAPONS[weaponKey] || LAB_WEAPONS.apfsds;
     const lo = this._local(originW), ld = this._local(originW.clone().add(dirW)).sub(lo).normalize();
-    const dirty = new Set(); const hitCells = [];
+    const cand = [];
     for (const c of this.cells) {
       if (!c.alive) continue;
       const ox = c.cx - lo.x, oy = c.cy - lo.y, oz = c.cz - lo.z;
       const t = ox * ld.x + oy * ld.y + oz * ld.z; if (t < 0 || t > 60) continue;
       const dx = ox - ld.x * t, dy = oy - ld.y * t, dz = oz - ld.z * t;
-      if (dx * dx + dy * dy + dz * dz <= TUNNEL_R * TUNNEL_R) { c.alive = false; dirty.add(c.bucket); hitCells.push({ c, t }); }
+      if (dx * dx + dy * dy + dz * dz <= TUNNEL_R * TUNNEL_R) cand.push({ c, t });
     }
+    cand.sort((a, b) => a.t - b.t);
+    // the rod drills cell-by-cell until it meets one too hard to penetrate (tier > pen) → it STOPS
+    // there (reinforced concrete is not a through-hole; the rod splashes off in sparks).
+    let stopT = Infinity, blocked = null;
+    for (const k of cand) if (MATERIALS[k.c.mat].tier > w.pen) { stopT = k.t; blocked = k.c; break; }
+    const dirty = new Set(), hitCells = [];
+    for (const k of cand) { if (k.t >= stopT) break; k.c.alive = false; dirty.add(k.c.bucket); hitCells.push(k); }
     const pw = new THREE.Vector3(), aw = originW.clone();
-    for (const p of this.panes) if (!p.userData.dead) { p.getWorldPosition(pw); const v = pw.clone().sub(aw); const t = v.dot(dirW); if (t > 0 && v.sub(dirW.clone().multiplyScalar(t)).length() < 0.6) this._shatterPane(p); }
-    if (!dirty.size) return false;
-    // sparks at the ENTRY wall + rubble at the EXIT wall (the impacts — never at the shooter)
-    hitCells.sort((a, b) => a.t - b.t);
+    for (const p of this.panes) if (!p.userData.dead) { p.getWorldPosition(pw); const v = pw.clone().sub(aw); const t = v.dot(dirW); if (t > 0 && t < stopT * 1.1 && v.sub(dirW.clone().multiplyScalar(t)).length() < 0.6) this._shatterPane(p); }
     const wpAt = (cell) => this.group.localToWorld(new THREE.Vector3(cell.cx, cell.cy, cell.cz));
+    if (blocked) {                                          // rod stopped on the bunker wall — sparks, no breach
+      const bp = wpAt(blocked);
+      this.debris.burst('sparks', [bp.x, bp.y, bp.z], this._seed());
+      this.debris.burst(MATERIALS[blocked.mat].debris, [bp.x, bp.y, bp.z], this._seed(), CHIP_COUNT);
+    }
+    if (!hitCells.length) return !!blocked;
     const entry = wpAt(hitCells[0].c), exit = wpAt(hitCells[hitCells.length - 1].c);
-    this.debris.burst('sparks', [entry.x, entry.y, entry.z], this._seed());
+    this.debris.burst('sparks', [entry.x, entry.y, entry.z], this._seed());      // impacts at the WALL, never at the shooter
     this.debris.burst('rubble', [exit.x, exit.y, exit.z], this._seed());
+    this._rebarFor(hitCells.map((k) => k.c));
     this._settle(dirty);
-    return hitCells.length > 0;
+    return true;
   }
 
   // hero glass: shard burst + a clinging jagged remnant (cosmetic)
@@ -311,6 +344,21 @@ export class BuildingDestruct {
     this.debris.burst('shards', [pw.x, pw.y, pw.z], this._seed());
     p.scale.y = 0.16; p.scale.x = 0.92;                       // sliver remnant left in the frame
     if (p.material) { p.material.opacity = Math.max(0.1, (p.material.opacity ?? 0.4) * 0.5); p.material.needsUpdate = true; }
+  }
+
+  // hero detail: when CONCRETE breaks, leave a few thin steel rods jutting from the break face
+  _rebarFor(cells) {
+    const reb = cells.filter((c) => c.mat === 'concrete' || c.mat === 'reinforcedConcrete');
+    if (!reb.length || this._rebarN >= MAX_REBAR) return;
+    if (!this._rebarMat) this._rebarMat = new THREE.MeshLambertMaterial({ color: 0x6b6f73 });
+    const step = Math.max(1, Math.floor(reb.length / 5));
+    for (let i = 0; i < reb.length && this._rebarN < MAX_REBAR; i += step) {
+      const c = reb[i], h = c.sy * (1.5 + this._rnd() * 0.7);
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, h, 4), this._rebarMat);
+      rod.position.set(c.cx + (this._rnd() - 0.5) * c.sx * 0.6, c.cy, c.cz + (this._rnd() - 0.5) * c.sz * 0.6);
+      rod.rotation.set((this._rnd() - 0.5) * 0.5, 0, (this._rnd() - 0.5) * 0.5);
+      rod.castShadow = true; this.rebar.add(rod); this._rebarN++;
+    }
   }
 
   // a couple of small low-opacity puffs that bloom + fade fast — dressing, never a screen-filling ball
@@ -331,11 +379,13 @@ export class BuildingDestruct {
     }
     // falling chunks (orphaned roof/walls/sign/panes) tumble to the ground and rest there as rubble
     for (const f of this.fallers) {
-      if (f.body.settled) continue;
-      stepBody(f.body, dt);
-      f.grp.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]);
-      _axis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]).normalize();
-      f.grp.quaternion.setFromAxisAngle(_axis, f.body.rotAngle);
+      if (!f.body.settled) {
+        stepBody(f.body, dt);
+        f.grp.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]);
+        _axis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]).normalize();
+        f.grp.quaternion.setFromAxisAngle(_axis, f.body.rotAngle);
+      }
+      if (f.body.settled && !f.landed) { f.landed = true; this._dust(new THREE.Vector3(f.body.pos[0], Math.max(0.25, f.body.pos[1]), f.body.pos[2]), 1.3); }
     }
   }
 

@@ -33,14 +33,15 @@ export function makeHinge({ pivot, dirXZ, length, radius, seed = 1, obstacles = 
   };
 }
 
-// Ballistic tumbling chunk (HE hero debris). pos/vel = [x,y,z].
-export function makeTumble({ pos, vel, seed = 1, radius = 0.15 }) {
+// Ballistic tumbling chunk (HE hero debris). pos/vel = [x,y,z]. `g` overrides gravity (default
+// 9.81) — pass a smaller value for a slower, weightier collapse (heavy masonry settling).
+export function makeTumble({ pos, vel, seed = 1, radius = 0.15, g = G, spin = 1 }) {
   const rng = mulberry32(seed);
   const ax = [rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1];
   const n = Math.hypot(...ax) || 1;
   return {
-    kind: 'tumble', pos: [...pos], vel: [...vel],
-    rotAxis: ax.map(v => v / n), rotAngle: 0, rotSpeed: 2 + rng() * 6,
+    kind: 'tumble', pos: [...pos], vel: [...vel], g,
+    rotAxis: ax.map(v => v / n), rotAngle: 0, rotSpeed: (2 + rng() * 6) * spin,
     bounces: 0, settled: false, acc: 0, radius,
   };
 }

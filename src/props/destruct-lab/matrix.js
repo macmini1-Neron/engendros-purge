@@ -2,24 +2,41 @@
 // PURE: no THREE, no DOM. Graduates into src/destruct.js in phase 2.
 import { rayAABBSpan, distToAABB } from './geom.js';
 
+// ── MATERIAL REGISTRY ──────────────────────────────────────────────────────────────────
+// HOW TO ADD A MATERIAL: drop one row here. `tier` = hardness 0–N (a hit/blast only bites when
+// the weapon's pen / blast.tier ≥ this); `hp` = how much damage a cell soaks before it carves;
+// `debris` = which DebrisPool recipe sprays. Then map a buildgen material key → this key in
+// building-destruct.js MAT_MAP (or pass a per-object `matMap`). Nothing else to touch — every
+// rule below keys off `tier`, so the matrix scales by data alone.
 export const MATERIALS = {
-  glass:      { tier: 0, hp: 1,    debris: 'shards'  },
-  wood:       { tier: 1, hp: 60,   debris: 'splints' },
-  sheetmetal: { tier: 2, hp: 120,  debris: 'panels'  },
-  trunk:      { tier: 2, hp: 250,  debris: 'splints' },
-  brick:      { tier: 3, hp: 400,  debris: 'rubble'  },
-  concrete:   { tier: 4, hp: 900,  debris: 'rubble'  },
-  steel:      { tier: 5, hp: 2000, debris: 'sparks'  },
+  glass:             { tier: 0, hp: 1,    debris: 'shards'  },
+  wood:              { tier: 1, hp: 60,   debris: 'splints' },
+  sheetmetal:        { tier: 2, hp: 120,  debris: 'panels'  },
+  trunk:             { tier: 2, hp: 250,  debris: 'splints' },
+  brick:             { tier: 3, hp: 400,  debris: 'rubble'  },
+  concrete:          { tier: 4, hp: 900,  debris: 'rubble'  },
+  steel:             { tier: 5, hp: 2000, debris: 'sparks'  },
+  reinforcedConcrete:{ tier: 6, hp: 6000, debris: 'rubble'  }, // железобетон — bunker: above the whole
+                                                               // roster (HE blast.tier ≤4, APFSDS pen 5)
+                                                               // ⇒ nothing here scratches it. Crack it by
+                                                               // ADDING a pen≥6 / blast.tier≥6 caliber.
 };
 
-// Pen classes per spec §5 (shotgun pellet pen 1 — breaks fences; no shotgun in the lab panel v0).
+// ── CALIBER REGISTRY ───────────────────────────────────────────────────────────────────
+// HOW TO ADD A CALIBER: drop one row here (and add its key to the demo's WEAPON_ORDER to make it
+// selectable). `pen` = penetration tier (bites material tier ≤ pen). `dmg` = hp removed per hit.
+// `blast {r1,r2,tier}` ⇒ HE: removes cells of tier ≤ blast.tier within r1, shatters glass within
+// r2 — BIGGER r1/r2/tier = destroys more. `through/spall` ⇒ APFSDS drill. Pen classes per spec §5.
 export const LAB_WEAPONS = {
   pistol:   { key: 'pistol',   pen: 0, dmg: 8 },
   rifle:    { key: 'rifle',    pen: 1, dmg: 15 },
   hmg127:   { key: 'hmg127',   pen: 2, dmg: 40 },
-  heRocket: { key: 'heRocket', pen: 4, dmg: 500, blast: { r1: 2.5, r2: 6, tier: 3 } },
-  apfsds:   { key: 'apfsds',   pen: 5, dmg: 900, through: { maxWalls: 4, falloff: 0.6 },
+  heRocket: { key: 'heRocket', pen: 4, dmg: 500,  blast: { r1: 2.5, r2: 6,  tier: 3 } },
+  apfsds:   { key: 'apfsds',   pen: 5, dmg: 900,  through: { maxWalls: 4, falloff: 0.6 },
               spall: { range: 6, halfAngle: 0.5 } },
+  he152:    { key: 'he152',    pen: 5, dmg: 2000, blast: { r1: 4.5, r2: 11, tier: 4 } }, // 152 mm ОФ — a
+              // heavier shell: ~3× the breach radius and cracks CONCRETE (tier 4) too, but still NOT
+              // reinforced concrete (tier 6). The scalability demo — bigger caliber wrecks more.
 };
 
 // A destructible part. min/max = AABB corners as [x,y,z] arrays.

@@ -121,8 +121,9 @@ const woodMat = new THREE.MeshLambertMaterial({ color: 0x7a5d33 });
 // destruction is the next course we "cook up" (postupně). Colliders kept for that.
 // ====================================================================
 const HOUSE_POS = [0, 0, -13];                 // ahead of the spawn, door (N face = +Z) toward the player
-let houseBD = null;                            // BuildingDestruct runtime (voxel-chunk destruction)
-const houseMeshes = () => houseBD ? houseBD.meshes() : [];   // current raycast occluders (pristine → voxel on damage)
+let houseBD = null, bunkerBD = null;           // BuildingDestruct runtimes
+const destructibles = [];                      // every destructible building (cottage + bunker)
+const houseMeshes = () => destructibles.flatMap(b => b.meshes());   // current raycast occluders (pristine → voxel on damage)
 function clearTreesUnder(cx, cz, halfX, halfZ) {   // open a clearing so the cottage isn't buried in trunks
   for (let i = trees.length - 1; i >= 0; i--) {
     const r = trees[i];
@@ -142,6 +143,7 @@ async function loadHouse() {
     scene.add(g);
     // voxel-chunk destruction runtime over the per-prim source data (keeps the merged texture; lazy-split on hit)
     houseBD = new BuildingDestruct({ group: g, prims: planBuild(spec).prims, scene, debris, seed: spec.seed ?? 7 });
+    destructibles.push(houseBD);
     const fp = spec.footprint || { w: 8, d: 6 };
     clearTreesUnder(HOUSE_POS[0], HOUSE_POS[2], fp.w / 2 + 2.5, fp.d / 2 + 2.5);
     window.__HOUSE = { group: g, bd: houseBD, colliders: built.colliders, stats: built.stats, pos: HOUSE_POS };
@@ -149,6 +151,26 @@ async function loadHouse() {
   } catch (e) { console.error('[house] load failed:', e); window.__HOUSE = { error: String(e) }; }
 }
 loadHouse();
+
+// ── REINFORCED-CONCRETE BUNKER (железобетон, tier 6) — the material-scalability demo: bullets do
+// nothing, HMG/rocket do nothing, even the 152 mm shell only scorches it. Hand-authored prims +
+// a per-object matMap so the SAME concrete texture renders but resolves to reinforcedConcrete. ──
+const BUNKER_POS = [-9.5, 0, -10.5];
+function addBunker() {
+  const W = 3.8, D = 3.8, H = 2.7, t = 0.55;
+  const prims = [];
+  const box = (w, h, d, x, y, z) => prims.push({ kind: 'box', w, h, d, x, y, z, mat: 'concrete', collide: true, part: 'bunker' });
+  box(W, H, t, 0, H / 2, D / 2 - t / 2); box(W, H, t, 0, H / 2, -D / 2 + t / 2);     // ±Z walls
+  box(t, H, D - 2 * t, W / 2 - t / 2, H / 2, 0); box(t, H, D - 2 * t, -W / 2 + t / 2, H / 2, 0); // ±X walls
+  box(W, t, D, 0, H - t / 2, 0);                                                      // roof slab
+  box(W, 0.3, D, 0, 0.15, 0);                                                         // foundation slab
+  const g = new THREE.Group(); g.position.set(BUNKER_POS[0], BUNKER_POS[1], BUNKER_POS[2]); scene.add(g);
+  bunkerBD = new BuildingDestruct({ group: g, prims, scene, debris, seed: 3, matMap: { concrete: 'reinforcedConcrete' }, eager: true });
+  destructibles.push(bunkerBD);
+  clearTreesUnder(BUNKER_POS[0], BUNKER_POS[2], W / 2 + 2, D / 2 + 2);
+  window.__BUNKER = bunkerBD;
+}
+addBunker();
 
 // ====================================================================
 // FALLING BODIES — lab fallphys (hinge for the snapped top, tumble for shatter chunks).
@@ -189,8 +211,8 @@ function breakTree(rec, hitY, mode) {
 // WEAPONS — pick a caliber (1-5), tap to fire a ray from screen centre.
 // pen < tier ⇒ no fell (splinter only); HE blast fells in radius; APFSDS shatters.
 // ====================================================================
-const CALS = ['pistol', 'rifle', 'hmg127', 'heRocket', 'apfsds'];
-const CAL_LABEL = { pistol: 'PISTOLE', rifle: 'PUŠKA', hmg127: 'HMG 12.7', heRocket: 'RAKETA HE', apfsds: 'APFSDS' };
+const CALS = ['pistol', 'rifle', 'hmg127', 'heRocket', 'apfsds', 'he152'];   // add a caliber here → it's selectable
+const CAL_LABEL = { pistol: 'PISTOLE', rifle: 'PUŠKA', hmg127: 'HMG 12.7', heRocket: 'RAKETA HE', apfsds: 'APFSDS', he152: 'OF-152 (těžká)' };
 let cal = 2; // default HMG so the first shot fells
 const ray = new THREE.Raycaster();
 function refreshWpn() {
@@ -205,8 +227,9 @@ function fire() {
     if (!hits.length) return;                                // aimed at open sky → nothing
     const at = hits[0].point;
     debris.burst('rubble', [at.x, at.y, at.z], (Math.random() * 1e9) | 0);
-    if (houseBD) houseBD.blast(at, CALS[cal]);               // breach a ragged hole in the cottage (tier ≤ blast.tier cells)
-    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= HE_RADIUS * HE_RADIUS) breakTree(rec, 0, 'topple'); }
+    for (const bd of destructibles) bd.blast(at, CALS[cal]);  // breach every building in range (each self-limits by radius)
+    const treeR = (w.blast.r2 || 6) * 1.33;                   // bigger caliber → topples trees wider (OF-152 ≈ 14.6 m)
+    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= treeR * treeR) breakTree(rec, 0, 'topple'); }
     return;
   }
   // bullets: a DIRECT hit on a standing tree (or its stump) fells; a house hit routes to the
@@ -216,8 +239,9 @@ function fire() {
   if (!hits.length) return;
   const h = hits[0];
   if (h.object.userData.house) {
-    if (CALS[cal] === 'apfsds' && h.object.userData.kind !== 'pane') houseBD.penetrate(camera.position.clone(), dir, 'apfsds');
-    else houseBD.bullet(h.point.clone(), dir, CALS[cal], h.object);
+    const bd = h.object.userData._bd;                         // resolve back to the building that was hit (cottage / bunker)
+    if (CALS[cal] === 'apfsds' && h.object.userData.kind !== 'pane') bd.penetrate(camera.position.clone(), dir, 'apfsds');
+    else bd.bullet(h.point.clone(), dir, CALS[cal], h.object);
     return;
   }
   if (h.object.userData.stump) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // stump keeps a hit box: splinters, no re-break
@@ -243,7 +267,7 @@ canvas.addEventListener('pointerup', () => { drag = false; if (dsum < 7 && perfo
 canvas.addEventListener('pointermove', e => { if (!drag) return; const ddx = e.clientX - lx, ddy = e.clientY - ly; dsum += Math.abs(ddx) + Math.abs(ddy); cam.az -= ddx * 0.22; cam.el = THREE.MathUtils.clamp(cam.el - ddy * 0.22, -60, 70); lx = e.clientX; ly = e.clientY; });
 addEventListener('keydown', e => { const k = e.key.toLowerCase(); keys[k] = true;
   if (k === 'n') { timeIdx = (timeIdx + 1) % 3; setTime(['day', 'dusk', 'night'][timeIdx]); }
-  if (k >= '1' && k <= '5') { cal = +k - 1; refreshWpn(); }
+  if (k >= '1' && k <= '9' && +k - 1 < CALS.length) { cal = +k - 1; refreshWpn(); }
   if (k === 'f') fire();
 });
 addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -285,7 +309,7 @@ function frame() {
     else { f.mesh.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]); _axis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]); f.mesh.quaternion.setFromAxisAngle(_axis, f.body.rotAngle); }
   }
   debris.update(dt);
-  if (houseBD) houseBD.update(dt);
+  for (const bd of destructibles) bd.update(dt);
   // pollen drift
   const a = pollen.geometry.attributes.position;
   for (let i = 0; i < N; i++) { let x = a.getX(i) + pv[i][0] * 0.04, y = a.getY(i) + pv[i][1] * 0.04, z = a.getZ(i) + pv[i][2] * 0.04; if (y > 17) y = 0.5; if (Math.abs(x - target.x) > 55) x = target.x + rr(-50, 50); if (Math.abs(z - target.z) > 55) z = target.z + rr(-50, 50); a.setXYZ(i, x, y, z); } a.needsUpdate = true;
@@ -296,7 +320,7 @@ function frame() {
   renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 applyCam(); refreshWpn(); requestAnimationFrame(frame);
-hud.textContent = '🌲🏠💥 LES + DESTRUKCE DOMU  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-5 = ráže  ·  N = den/noc\nDŮM: kulka oďobne cihlu · HMG prožere plech/sklo · RAKETA vykrojí roztřepenou díru · APFSDS provrtá tunel skrz zdi · sklo se tříští — textura zůstává';
+hud.textContent = '🌲🏠💥 LES + DESTRUKCE  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-6 = ráže  ·  N = den/noc\nDŮM: RAKETA vykrojí díru · APFSDS provrtá tunel · OF-152 (6) bere víc + drtí beton (rebar) · BUNKR vlevo = ŽELEZOBETON, ten neprorazí ani HE/APFSDS';
 { const T0 = new URLSearchParams(location.search).get('time'); const idx = ['day', 'dusk', 'night'].indexOf(T0); if (idx >= 0) { timeIdx = idx; setTime(T0); } }
 window.__READY = true;
 window.DEMO = {
@@ -315,7 +339,12 @@ window.DEMO = {
     houseAP(ox, oy, oz, dx, dy, dz) { return houseBD ? { hit: houseBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...houseBD.stats() } : null; },
     houseBullet(x, y, z, key) { return houseBD ? { hit: houseBD.bullet(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, -1), key || 'hmg127', null), ...houseBD.stats() } : null; },
     houseStats() { return houseBD ? houseBD.stats() : null; },
-    stepHouse(n) { for (let s = 0; s < n; s++) if (houseBD) houseBD.update(0.016); return houseBD ? houseBD.stats() : null; }
+    stepHouse(n) { for (let s = 0; s < n; s++) for (const bd of destructibles) bd.update(0.016); return houseBD ? houseBD.stats() : null; },
+    // bunker (reinforced concrete) — verify HE/AP can't breach it
+    bunkerBlast(x, y, z, key) { return bunkerBD ? { hit: bunkerBD.blast(new THREE.Vector3(x, y, z), key || 'he152'), ...bunkerBD.stats() } : null; },
+    bunkerAP(ox, oy, oz, dx, dy, dz) { return bunkerBD ? { hit: bunkerBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...bunkerBD.stats() } : null; },
+    bunkerStats() { return bunkerBD ? bunkerBD.stats() : null; },
+    he152(x, y, z) { return houseBD ? { hit: houseBD.blast(new THREE.Vector3(x, y, z), 'he152'), ...houseBD.stats() } : null; }
   }
 };
 </script>
