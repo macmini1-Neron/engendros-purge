@@ -202,6 +202,23 @@ function coverAABBs() {
 }
 const COVER = coverAABBs();
 
+// ── STRUCTURAL TARGETING (#6) — a slab held up ONLY by 4 brick columns. The slab reaches the ground
+// only THROUGH the columns, so the orphan-collapse pass fells it once you sever enough supports
+// (smart targeting > spray). A soldier sheltering under it gets buried (ties to #5). ──
+const COLONNADE_POS = [13, 0, -7];
+function addColonnade() {
+  const W = 3, H = 3, t = 0.5, ST = 0.5, prims = [];
+  const col = (x, z) => prims.push({ kind: 'box', w: t, h: H, d: t, x, y: H / 2, z, mat: 'brickRed', collide: true, part: 'col' });
+  col(-W / 2, -W / 2); col(W / 2, -W / 2); col(-W / 2, W / 2); col(W / 2, W / 2);
+  prims.push({ kind: 'box', w: W + t + 0.4, h: ST, d: W + t + 0.4, x: 0, y: H + ST / 2, z: 0, mat: 'brickRed', collide: true, part: 'slab' });
+  const g = new THREE.Group(); g.position.set(COLONNADE_POS[0], COLONNADE_POS[1], COLONNADE_POS[2]); scene.add(g);
+  const bd = new BuildingDestruct({ group: g, prims, scene, debris, seed: 9, eager: true });
+  destructibles.push(bd); window.__COLONNADE = bd; return bd;
+}
+addColonnade();
+clearTreesUnder(COLONNADE_POS[0], COLONNADE_POS[2], 5, 5);   // clear a line of sight to the columns
+combat.spawn(COLONNADE_POS[0], COLONNADE_POS[2], { color: 0x8a6d2a });   // sheltering UNDER the slab
+
 // #5 hazard AABBs — a soldier caught inside a collapsing chunk / falling tree top / the tank dies
 const _hzBox = new THREE.Box3();
 function hazardZones() {
@@ -479,6 +496,7 @@ window.DEMO = {
     // #1 penetration: fire a penetrating round from an explicit ray → { hit, pierced, killed }
     penShot(ox, oy, oz, dx, dy, dz, key) { return shoot(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz), key || 'rifle'); },
     crateStats() { return crates.map(c => c.stats()); },
+    blastAt(x, y, z, key) { const at = new THREE.Vector3(x, y, z); for (const bd of destructibles) bd.blast(at, key || 'heRocket'); return window.__COLONNADE ? window.__COLONNADE.stats() : null; },
     // #2 cover-seek: advance combat N frames with the player at (px,py,pz) → soldiers move to cover
     tickCombat(n, px, py, pz) { const pp = new THREE.Vector3(px, py, pz); for (let s = 0; s < (n || 16); s++) combat.update(0.016, { playerPos: pp, coverAABBs: COVER }); return combat.stats(); },
     // #4 dust LoS: drop a smoke cloud, then check a soldier's LoS through it
