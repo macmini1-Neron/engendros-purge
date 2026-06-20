@@ -179,6 +179,19 @@ const combat = new Combatants({ scene, destructibles, debris });
 [[0, -13], [2, -14], [-2, -12.5]].forEach(([x, z]) => combat.spawn(x, z, { indoors: true, color: 0x7a3b2a })); // inside the cottage (LoS blocked until you breach)
 window.__COMBAT = combat;
 
+// ── DEGRADABLE WOODEN COVER (#1) — a round PIERCES a wood crate (and chews it apart) to hit whoever
+// hides behind; the crate is a tiny eager BuildingDestruct (tier-1 wood). ──
+function addCrate(x, z, s = 1.2) {
+  const prims = [{ kind: 'box', w: s, h: s, d: s, x: 0, y: s / 2, z: 0, mat: 'wood', collide: true, part: 'crate' }];
+  const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g);
+  const bd = new BuildingDestruct({ group: g, prims, scene, debris, seed: ((x * 71 + z * 131) | 0) >>> 0, eager: true });
+  destructibles.push(bd); return bd;
+}
+const crates = [addCrate(4, 1), addCrate(-3, 0)];
+combat.spawn(4, -1, { color: 0x556b2f });   // behind crate #0 — shoot THROUGH the wood to hit him
+combat.spawn(-3, -2, { color: 0x556b2f });  // behind crate #1
+window.__CRATES = crates;
+
 // ====================================================================
 // FALLING BODIES — lab fallphys (hinge for the snapped top, tumble for shatter chunks).
 // ====================================================================
@@ -242,25 +255,41 @@ function fire() {
   }
   // bullets: a DIRECT hit on a standing tree (or its stump) fells; a house hit routes to the
   // voxel runtime (chip / carve / pane-shatter, APFSDS drills a tunnel) — ground is ignored.
-  const dir = ray.ray.direction.clone();
-  const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes(), ...combat.meshes()], false);
-  if (!hits.length) return;
-  const h = hits[0];
-  if (h.object.userData.soldier) { combat.hurt(h.object.userData.soldier, w.dmg || 20, 'bullet'); return; }   // direct hit (penetration = #1)
-  if (h.object.userData.house) {
-    const bd = h.object.userData._bd;                         // resolve back to the building that was hit (cottage / bunker)
-    if (CALS[cal] === 'apfsds' && h.object.userData.kind !== 'pane') bd.penetrate(camera.position.clone(), dir, 'apfsds');
-    else bd.bullet(h.point.clone(), dir, CALS[cal], h.object);
-    return;
+  shoot(camera.position.clone(), ray.ray.direction.clone(), CALS[cal]);   // PENETRATING hitscan (#1)
+}
+
+// PENETRATING hitscan march (#1): walk every surface along the ray in order. SOFT cover (tier ≤ 2 it
+// can damage) is pierced — the round carries on to whatever's BEHIND with damage falloff; brick+, a
+// tree trunk, or a body STOP it. Degradable cover + shoot-through-walls fall straight out of this.
+const shotRay = new THREE.Raycaster();
+function shoot(origin, dir, key) {
+  const w = LAB_WEAPONS[key];
+  dir = dir.clone().normalize(); shotRay.set(origin, dir);
+  const hits = shotRay.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes(), ...combat.meshes()], false);
+  const back = [-dir.x, -dir.y, -dir.z], result = { hit: false, pierced: 0, killed: 0 };
+  let energy = w.dmg || 20, pierced = 0;
+  for (const h of hits) {
+    const ud = h.object.userData, P = [h.point.x, h.point.y, h.point.z];
+    if (ud.soldier) { const live = ud.soldier.state !== 'dead'; combat.hurt(ud.soldier, energy, 'bullet'); result.hit = true; if (live && ud.soldier.state === 'dead') result.killed++; break; } // body stops the round
+    if (ud.house) {
+      const bd = ud._bd; result.hit = true;
+      if (key === 'apfsds' && ud.kind !== 'pane') { bd.penetrate(origin.clone(), dir, 'apfsds'); break; }
+      const res = bd.bullet(h.point.clone(), dir, key, h.object);
+      if (res && res.penetrated && pierced < 4) { pierced++; result.pierced = pierced; energy *= 0.7; continue; }   // soft cover → carry on to what's behind
+      break;                                                                                                        // brick+ stops the round
+    }
+    if (ud.stump) { debris.burst('splints', P, (Math.random() * 1e9) | 0, undefined, back); result.hit = true; break; }
+    if (ud.tree) {
+      const rec = ud.tree; if (!rec || rec.broken) break;
+      const dmg = CAL_DMG[key] || 0; result.hit = true;
+      if (w.pen < rec.tier || dmg <= 0) { debris.burst('splints', P, (Math.random() * 1e9) | 0, undefined, back); break; }
+      rec.hp -= dmg;
+      if (rec.hp > 0) { debris.burst('splints', P, (Math.random() * 1e9) | 0, undefined, back); break; }
+      breakTree(rec, h.point.y, key === 'apfsds' ? 'fast' : (rec.cls === 1 ? 'uproot' : 'snap'));
+      break;   // trunk stops the round
+    }
   }
-  if (h.object.userData.stump) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // stump keeps a hit box: splinters, no re-break
-  const rec = h.object.userData.tree; if (!rec || rec.broken) return;
-  const dmg = CAL_DMG[CALS[cal]] || 0;
-  if (w.pen < rec.tier || dmg <= 0) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // can't fell this tier → bark plink
-  rec.hp -= dmg;
-  if (rec.hp > 0) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // chewing the trunk — fells only when hp ≤ 0 (hits-to-fell = TREE_HP/CAL_DMG)
-  const mode = (CALS[cal] === 'apfsds') ? 'fast' : (rec.cls === 1 ? 'uproot' : 'snap');
-  breakTree(rec, h.point.y, mode);
+  return result;
 }
 
 // ---- POV camera: orbit-look (drag) + WASD; TAP (no drag) = fire ----
@@ -425,6 +454,9 @@ window.DEMO = {
     spawnSoldier(x, z, indoors) { const s = combat.spawn(x, z, { indoors }); return { id: s.id, pos: [x, z] }; },
     los(i, px, py, pz) { const s = combat.soldiers[i]; if (!s) return null; return combat.canSee(new THREE.Vector3(s.pos.x, s.eyeY, s.pos.z), new THREE.Vector3(px, py, pz)); },
     hitSoldier(i, dmg) { const s = combat.soldiers[i]; if (!s) return null; combat.hurt(s, dmg ?? 50, 'test'); return combat.stats()[i]; },
+    // #1 penetration: fire a penetrating round from an explicit ray → { hit, pierced, killed }
+    penShot(ox, oy, oz, dx, dy, dz, key) { return shoot(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz), key || 'rifle'); },
+    crateStats() { return crates.map(c => c.stats()); },
     // bunker (reinforced concrete) — verify HE/AP can't breach it
     bunkerBlast(x, y, z, key) { return bunkerBD ? { hit: bunkerBD.blast(new THREE.Vector3(x, y, z), key || 'he152'), ...bunkerBD.stats() } : null; },
     bunkerAP(ox, oy, oz, dx, dy, dz) { return bunkerBD ? { hit: bunkerBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...bunkerBD.stats() } : null; },

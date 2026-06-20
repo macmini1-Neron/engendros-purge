@@ -40,7 +40,8 @@ const _axis = new THREE.Vector3();
 // buildgen material key → destruction material (matrix.js MATERIALS). Per-object overridable via
 // the `matMap` ctor option — e.g. a bunker passes { concrete: 'reinforcedConcrete' }.
 export const MAT_MAP = {
-  brickRed: 'brick', concrete: 'concrete', corrugatedTin: 'sheetmetal', glassPane: 'glass', signage: 'sheetmetal',
+  brickRed: 'brick', brickGrey: 'brick', concrete: 'concrete', concretePanel: 'concrete',
+  corrugatedTin: 'sheetmetal', glassPane: 'glass', signage: 'sheetmetal', wood: 'wood', plaster: 'wood',
   reinforcedConcrete: 'reinforcedConcrete', ferroConcrete: 'reinforcedConcrete',
 };
 // buildgen material key → destruction material (matrix.js MATERIALS)
@@ -125,7 +126,11 @@ export class BuildingDestruct {
     const entry = resolveMaterial(name);
     const tone = new THREE.Color(entry.tones?.mid ?? entry.color ?? 0x888888).getHex();
     const mb = new MeshBuilder();
-    for (const c of cells) mb.box(c.sx, c.sy, c.sz, c.cx - ox, c.cy - oy, c.cz - oz, tone);
+    // INFLATE each render box by a hair so adjacent diced cells OVERLAP — otherwise a ray aimed exactly
+    // at a cell-boundary plane grazes the coplanar triangle edges and slips through (the mesh reads as
+    // un-shootable on axis-aligned shots). Cell DATA is unchanged; only the visual/raycast mesh grows ~6 mm.
+    const INF = 0.006;
+    for (const c of cells) mb.box(c.sx + INF, c.sy + INF, c.sz + INF, c.cx - ox, c.cy - oy, c.cz - oz, tone);
     const geo = mb.build();
     let mesh;
     if (entry.kind === 'tiled') {
@@ -260,20 +265,23 @@ export class BuildingDestruct {
 
   // ---- damage entry points (all take WORLD coords) ----
 
-  // small-arms: F0 chip if pen<tier, else chew the cell's hp and carve it at hp≤0
+  // small-arms: F0 chip if pen<tier, else chew the cell's hp and carve it at hp≤0. Returns
+  // { hit, penetrated, tier } — `penetrated` true for SOFT material it can damage (tier ≤ 2: glass/
+  // wood/sheetmetal) so the caller's round carries on through (degradable cover, shoot-through walls).
   bullet(worldPoint, dir, weaponKey, hitObject) {
-    if (hitObject && hitObject.userData.kind === 'pane') { this._shatterPane(hitObject); return true; }
+    if (hitObject && hitObject.userData.kind === 'pane') { this._shatterPane(hitObject); return { hit: true, penetrated: true, tier: 0 }; }
     const w = LAB_WEAPONS[weaponKey] || LAB_WEAPONS.rifle;
     const c = this._cellAt(this._local(worldPoint));
-    if (!c) return false;
+    if (!c) return { hit: false, penetrated: false };
     const m = MATERIALS[c.mat], at = [worldPoint.x, worldPoint.y, worldPoint.z];
     const back = dir ? [-dir.x, -dir.y, -dir.z] : undefined;   // chips spall BACK toward the shooter
+    const penetrated = w.pen >= m.tier && m.tier <= 2;         // soft & damageable ⇒ round passes through
     // F0 cosmetic chip — pen too low (e.g. HMG on brick/concrete): a LIGHT puff, not a breach burst
-    if (w.pen < m.tier) { this.debris.burst(m.tier >= 5 ? 'sparks' : m.debris, at, this._seed(), CHIP_COUNT, back); return true; }
+    if (w.pen < m.tier) { this.debris.burst(m.tier >= 5 ? 'sparks' : m.debris, at, this._seed(), CHIP_COUNT, back); return { hit: true, penetrated: false, tier: m.tier }; }
     c.hp -= w.dmg;
-    if (c.hp > 0) { this.debris.burst(m.debris, at, this._seed(), CHIP_COUNT, back); return true; }   // chewing — light chips
+    if (c.hp > 0) { this.debris.burst(m.debris, at, this._seed(), CHIP_COUNT, back); return { hit: true, penetrated, tier: m.tier }; }   // chewing — light chips
     c.alive = false; this.debris.burst(m.debris, at, this._seed(), 6, back); this._settle(new Set([c.bucket]));
-    return true;
+    return { hit: true, penetrated, tier: m.tier };
   }
 
   // HE: remove every cell with tier ≤ blast.tier inside r1 (sphere) → ragged breach; shatter all
