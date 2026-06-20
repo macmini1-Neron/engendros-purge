@@ -66,6 +66,13 @@ test('tumble: spin scales rotSpeed; g/spin default to the old behaviour', () => 
   assert.equal(dflt.g, 9.81, 'g defaults to physical gravity (old behaviour)');
 });
 
+test('tumble: floorY rests the chunk ON a raised base, not at world y=0', () => {
+  const onBase = makeTumble({ pos: [0, 6, 0], vel: [0, 0, 0], seed: 5, radius: 0.25, floorY: 3.0 });
+  for (let i = 0; i < 600 && !onBase.settled; i++) stepBody(onBase, 1 / 60);
+  assert.equal(onBase.settled, true);
+  assert.ok(Math.abs(onBase.pos[1] - (3.0 + 0.25)) < 1e-6, `rests at floorY+radius, got ${onBase.pos[1]}`);
+});
+
 test('tumble: same seed + g + spin ⇒ identical trajectory (MP replay determinism)', () => {
   const a = makeTumble({ pos: [0, 6, 0], vel: [1, 2, -1], seed: 11, g: 4.2, spin: 0.7 });
   const b = makeTumble({ pos: [0, 6, 0], vel: [1, 2, -1], seed: 11, g: 4.2, spin: 0.7 });

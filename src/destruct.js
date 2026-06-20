@@ -128,6 +128,33 @@ export function makePart(id, mat, min, max, hpScale = 1) {
   return { dpart: id, dmat: mat, dhp: MATERIALS[mat].hp * hpScale, min, max, downer: null, dead: false };
 }
 
+// Orphan-support flood for voxel collapse (#6). `cells` = destructible CELLS, each carrying
+//   { dpart, dead, grounded, adj:[dpart...] } — grounded cells rest on the foundation (support
+// roots); adj is the precomputed 4-neighbour id list. Floods "supported" out from every live
+// grounded cell through live neighbours, then returns the ids of still-LIVE cells with NO alive
+// path back to the ground — they've lost support and should cave. Pure + deterministic (no RNG):
+// removing them all in one pass IS the full single-event cascade (grounded is static, so killing
+// orphans can't ground anything new). Lateral links mean a single knocked-out base cell arches
+// over (no collapse); cutting a whole base row drops everything above it.
+export function orphanedCells(cells) {
+  const byId = new Map();
+  for (const c of cells) byId.set(c.dpart, c);
+  const supported = new Set();
+  const stack = [];
+  for (const c of cells) if (!c.dead && c.grounded) { supported.add(c.dpart); stack.push(c); }
+  while (stack.length) {
+    const c = stack.pop();
+    for (const nid of c.adj) {
+      if (supported.has(nid)) continue;
+      const n = byId.get(nid);
+      if (n && !n.dead) { supported.add(nid); stack.push(n); }
+    }
+  }
+  const orphans = [];
+  for (const c of cells) if (!c.dead && !supported.has(c.dpart)) orphans.push(c.dpart);
+  return orphans;
+}
+
 // Hitscan rule: pen < tier ⇒ cosmetic (decal/chip, no hp). Else damage; killed at hp ≤ 0.
 // Mutates part.dhp / part.dead when pen ≥ tier.
 export function resolveHit(part, weapon) {
@@ -256,16 +283,18 @@ export function makeHinge({ pivot, dirXZ, length, radius, seed = 1, obstacles = 
 }
 
 // Ballistic tumbling chunk (HE hero debris / collapsing masonry). pos/vel = [x,y,z].
-//   g    overrides gravity (default 9.81 = physical). Pass a smaller value (e.g. FALL_G ≈ 4.2) for a
-//        slower, weightier collapse — heavy masonry settling reads better slowed down (owner request).
-//   spin scales the tumble rate (1 = default; < 1 = a heavy, lazy roll).
-// Both default to the previous behaviour, so the lone existing caller path is byte-identical.
-export function makeTumble({ pos, vel, seed = 1, radius = 0.15, g = G, spin = 1 }) {
+//   g      overrides gravity (default 9.81 = physical). Pass a smaller value (e.g. FALL_G ≈ 4.2) for
+//          a slower, weightier collapse — heavy masonry settling reads better slowed down (owner ask).
+//   spin   scales the tumble rate (1 = default; < 1 = a heavy, lazy roll).
+//   floorY rest plane (default 0 = world ground). Pass the building's base so collapse rubble piles
+//          ON the foundation instead of sinking to world y=0 when the structure sits up on terrain.
+// All three default to the previous behaviour, so the lone existing caller path is byte-identical.
+export function makeTumble({ pos, vel, seed = 1, radius = 0.15, g = G, spin = 1, floorY = 0 }) {
   const rng = mulberry32(seed);
   const ax = [rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1];
   const n = Math.hypot(...ax) || 1;
   return {
-    kind: 'tumble', pos: [...pos], vel: [...vel], g,
+    kind: 'tumble', pos: [...pos], vel: [...vel], g, floorY,
     rotAxis: ax.map(v => v / n), rotAngle: 0, rotSpeed: (2 + rng() * 6) * spin,
     bounces: 0, settled: false, acc: 0, radius,
   };
@@ -313,8 +342,9 @@ function subTumble(b) {
   b.vel[1] -= (b.g ?? G) * SUBSTEP;   // per-body gravity (makeTumble always sets b.g; ?? guards legacy bodies)
   for (let i = 0; i < 3; i++) b.pos[i] += b.vel[i] * SUBSTEP;
   b.rotAngle += b.rotSpeed * SUBSTEP;
-  if (b.pos[1] <= b.radius) {
-    b.pos[1] = b.radius;
+  const floor = (b.floorY ?? 0) + b.radius;             // rest ON the building base, not world y=0
+  if (b.pos[1] <= floor) {
+    b.pos[1] = floor;
     if (Math.abs(b.vel[1]) < 1.0 || b.bounces >= MAX_BOUNCES) {
       b.settled = true; b.vel = [0, 0, 0]; b.rotSpeed = 0; return;
     }
