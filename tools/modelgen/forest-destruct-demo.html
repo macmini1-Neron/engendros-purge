@@ -314,7 +314,8 @@ window.DEMO = {
     houseBlast(x, y, z) { return houseBD ? { hit: houseBD.blast(new THREE.Vector3(x, y, z), 'heRocket'), ...houseBD.stats() } : null; },
     houseAP(ox, oy, oz, dx, dy, dz) { return houseBD ? { hit: houseBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...houseBD.stats() } : null; },
     houseBullet(x, y, z, key) { return houseBD ? { hit: houseBD.bullet(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, -1), key || 'hmg127', null), ...houseBD.stats() } : null; },
-    houseStats() { return houseBD ? houseBD.stats() : null; }
+    houseStats() { return houseBD ? houseBD.stats() : null; },
+    stepHouse(n) { for (let s = 0; s < n; s++) if (houseBD) houseBD.update(0.016); return houseBD ? houseBD.stats() : null; }
   }
 };
 </script>

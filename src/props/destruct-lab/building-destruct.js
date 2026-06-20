@@ -21,9 +21,15 @@ import { MeshBuilder, voxelMaterial } from '../../util.js';
 import { resolveMaterial } from '../../buildings/palette.js';
 import { makeTextureCanvas } from '../../buildings/textures.js';
 import { MATERIALS, LAB_WEAPONS } from './matrix.js';
+import { makeTumble, stepBody } from './fallphys.js';   // ballistic tumble + ground settle for orphaned pieces
 
 const CELL = 0.45;          // voxel cell size (m) — smaller = finer holes, more rebuild cost
 const TUNNEL_R = 0.42;      // APFSDS through-hole radius (m)
+const GROUND_EPS = 0.14;    // a cell whose bottom is this close to y=0 is "grounded" (support seed)
+const ADJ_EPS = 0.06;       // cells touching within this gap are neighbours (connectivity graph)
+const SUPPORT_MIN = 0.4;    // a sign/pane keeps standing while ≥ this fraction of its backing cells live
+const MAX_FALLERS = 6;      // hard cap on live falling chunks (perf)
+const _axis = new THREE.Vector3();
 // buildgen material key → destruction material (matrix.js MATERIALS)
 const MAT_MAP = { brickRed: 'brick', concrete: 'concrete', corrugatedTin: 'sheetmetal', glassPane: 'glass', signage: 'sheetmetal' };
 
@@ -48,11 +54,16 @@ export class BuildingDestruct {
     this.buckets = new Map();        // matName → { cells, original, mesh, voxelised }
     this.panes = [];                 // hero glass plane meshes
     this.dust = [];                  // live dust puffs (animated in update)
+    this.fallers = [];               // live falling chunks (orphaned roof/walls/sign/panes)
     this._captureOriginals();
     this._voxelize(prims);
+    this.group.updateWorldMatrix(true, true);
+    this._buildAdjacency();          // connectivity graph → "is this cell still tied to the ground?"
+    this._captureSupports();         // sign + panes remember the cells that back them
   }
 
   _seed() { this._rng = (this._rng * 1664525 + 1013904223) >>> 0; return this._rng; }
+  _rnd() { return this._seed() / 4294967296; }
   _bucket(name) { if (!this.buckets.has(name)) this.buckets.set(name, { cells: [], original: null, mesh: null, voxelised: false }); return this.buckets.get(name); }
 
   // tag the merged meshes + panes from buildBuilding so a raycast can resolve them back to us
@@ -92,16 +103,14 @@ export class BuildingDestruct {
     }
   }
 
-  // rebuild one bucket's mesh from its surviving cells (same texture path as interp.js)
-  _buildBucketMesh(name) {
-    const bk = this._bucket(name);
-    if (bk.mesh) { this.group.remove(bk.mesh); bk.mesh.geometry.dispose(); bk.mesh = null; }
-    const alive = bk.cells.filter((c) => c.alive);
-    if (!alive.length) return;
+  // build a textured mesh from a set of cells (offset by `off`), same triplanar path as interp.js
+  _cellsMesh(name, cells, off) {
+    if (!cells.length) return null;
+    const ox = off?.x ?? 0, oy = off?.y ?? 0, oz = off?.z ?? 0;
     const entry = resolveMaterial(name);
     const tone = new THREE.Color(entry.tones?.mid ?? entry.color ?? 0x888888).getHex();
     const mb = new MeshBuilder();
-    for (const c of alive) mb.box(c.sx, c.sy, c.sz, c.cx, c.cy, c.cz, tone);
+    for (const c of cells) mb.box(c.sx, c.sy, c.sz, c.cx - ox, c.cy - oy, c.cz - oz, tone);
     const geo = mb.build();
     let mesh;
     if (entry.kind === 'tiled') {
@@ -112,9 +121,48 @@ export class BuildingDestruct {
     } else {
       mesh = new THREE.Mesh(geo, voxelMaterial());
     }
-    mesh.castShadow = mesh.receiveShadow = true; mesh.name = `voxel:${name}`;
-    mesh.userData = { house: true, _bd: this, kind: 'cell', bucket: name };
+    mesh.castShadow = mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  // rebuild one bucket's standing mesh from its surviving, still-attached cells
+  _buildBucketMesh(name) {
+    const bk = this._bucket(name);
+    if (bk.mesh) { this.group.remove(bk.mesh); bk.mesh.geometry.dispose(); bk.mesh = null; }
+    const mesh = this._cellsMesh(name, bk.cells.filter((c) => c.alive), null);
+    if (!mesh) return;
+    mesh.name = `voxel:${name}`; mesh.userData = { house: true, _bd: this, kind: 'cell', bucket: name };
     this.group.add(mesh); bk.mesh = mesh;
+  }
+
+  // 6/26-neighbour connectivity graph (built once) — drives the "is it still supported?" flood
+  _buildAdjacency() {
+    const hash = new Map(), key = (a, b, c) => `${a},${b},${c}`;
+    const qi = (v) => Math.round(v / CELL);
+    for (const c of this.cells) { const k = key(qi(c.cx), qi(c.cy), qi(c.cz)); (hash.get(k) || hash.set(k, []).get(k)).push(c); }
+    for (const c of this.cells) {
+      c.nbrs = [];
+      const ix = qi(c.cx), iy = qi(c.cy), iz = qi(c.cz);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let d = -1; d <= 1; d++) {
+        const cell = hash.get(key(ix + a, iy + b, iz + d)); if (!cell) continue;
+        for (const o of cell) {
+          if (o === c) continue;
+          if (Math.abs(c.cx - o.cx) <= (c.sx + o.sx) / 2 + ADJ_EPS && Math.abs(c.cy - o.cy) <= (c.sy + o.sy) / 2 + ADJ_EPS && Math.abs(c.cz - o.cz) <= (c.sz + o.sz) / 2 + ADJ_EPS) c.nbrs.push(o);
+        }
+      }
+    }
+  }
+
+  // sign + panes remember the structural cells immediately behind them (local space)
+  _captureSupports() {
+    this.attached = [];
+    const add = (mesh, kind) => {
+      const p = mesh.position, R = 0.85;
+      const sup = this.cells.filter((c) => Math.abs(c.cx - p.x) < R && Math.abs(c.cy - p.y) < R && Math.abs(c.cz - p.z) < R);
+      this.attached.push({ mesh, kind, support: sup, total: sup.length, detached: false });
+    };
+    for (const p of this.panes) add(p, 'pane');
+    for (const ch of this.group.children) if (ch.isMesh && ch.userData.kind === 'other') add(ch, 'sign');
   }
 
   // apply removals: first damage to a bucket hides its pristine mesh; then rebuild from survivors
@@ -124,6 +172,62 @@ export class BuildingDestruct {
       if (!bk.voxelised) { bk.voxelised = true; if (bk.original) bk.original.visible = false; }
       this._buildBucketMesh(name);
     }
+  }
+
+  // the whole post-hit settle: anything no longer tied to the ground (roof with its wall gone,
+  // a floating brick island) detaches and FALLS; then standing meshes rebuild; then the sign and
+  // any window whose backing wall is gone drops too — nothing levitates.
+  _settle(dirty) {
+    this._orphanPass(dirty);
+    this._commit([...dirty]);
+    this._supportCheck();
+  }
+
+  // flood from grounded cells through the connectivity graph; unreached alive cells = orphans → fall
+  _orphanPass(dirty) {
+    const seen = new Set(), stack = [];
+    for (const c of this.cells) if (c.alive && c.cy - c.sy / 2 <= GROUND_EPS) { seen.add(c.id); stack.push(c); }
+    while (stack.length) { const c = stack.pop(); for (const nb of c.nbrs) if (nb.alive && !seen.has(nb.id)) { seen.add(nb.id); stack.push(nb); } }
+    const orphans = this.cells.filter((c) => c.alive && !seen.has(c.id));
+    if (!orphans.length) return;
+    for (const c of orphans) { c.alive = false; dirty.add(c.bucket); }
+    this._makeFaller(orphans);
+  }
+
+  // merge a set of cells into ONE tumbling chunk (≤1 new body per event), textured per material
+  _makeFaller(cells) {
+    let ox = 0, oy = 0, oz = 0, minY = 1e9, maxY = -1e9;
+    for (const c of cells) { ox += c.cx; oy += c.cy; oz += c.cz; minY = Math.min(minY, c.cy - c.sy / 2); maxY = Math.max(maxY, c.cy + c.sy / 2); }
+    const n = cells.length; ox /= n; oy /= n; oz /= n;
+    const byMat = new Map();
+    for (const c of cells) { if (!byMat.has(c.bucket)) byMat.set(c.bucket, []); byMat.get(c.bucket).push(c); }
+    const grp = new THREE.Group();
+    for (const [name, cs] of byMat) { const m = this._cellsMesh(name, cs, { x: ox, y: oy, z: oz }); if (m) grp.add(m); }
+    const wc = this.group.localToWorld(new THREE.Vector3(ox, oy, oz));
+    grp.position.copy(wc); this.scene.add(grp);
+    const body = makeTumble({ pos: [wc.x, wc.y, wc.z], vel: [(this._rnd() - 0.5) * 1.4, 0.4, (this._rnd() - 0.5) * 1.4], seed: this._seed(), radius: Math.max(0.2, (maxY - minY) / 2) });
+    this.fallers.push({ grp, body });
+    while (this.fallers.length > MAX_FALLERS) { const f = this.fallers.shift(); this.scene.remove(f.grp); f.grp.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } }); }
+  }
+
+  // sign / window loses its backing → detach the actual mesh and let it tumble to the ground
+  _supportCheck() {
+    for (const el of this.attached) {
+      if (el.detached) continue;
+      const live = el.support.reduce((a, c) => a + (c.alive ? 1 : 0), 0);
+      if (el.total === 0 || live / el.total < SUPPORT_MIN) this._detach(el);
+    }
+  }
+
+  _detach(el) {
+    el.detached = true;
+    const mesh = el.mesh, wp = new THREE.Vector3(), wq = new THREE.Quaternion();
+    mesh.getWorldPosition(wp); mesh.getWorldQuaternion(wq);
+    const fg = new THREE.Group(); fg.position.copy(wp); fg.quaternion.copy(wq); this.scene.add(fg); fg.attach(mesh);
+    if (el.kind === 'pane') { mesh.userData.dead = true; this.debris.burst('shards', [wp.x, wp.y, wp.z], this._seed()); }
+    const body = makeTumble({ pos: [wp.x, wp.y, wp.z], vel: [(this._rnd() - 0.5) * 1.0, 0.2, (this._rnd() - 0.5) * 1.0], seed: this._seed(), radius: 0.3 });
+    this.fallers.push({ grp: fg, body });
+    while (this.fallers.length > MAX_FALLERS) { const f = this.fallers.shift(); this.scene.remove(f.grp); f.grp.traverse((o) => { if (o.isMesh && o.userData.kind !== 'pane' && o.userData.kind !== 'other') o.geometry.dispose(); }); }
   }
 
   _local(v) { this.group.updateWorldMatrix(true, false); return this.group.worldToLocal(v.clone()); }
@@ -150,7 +254,7 @@ export class BuildingDestruct {
     const m = MATERIALS[c.mat], at = [worldPoint.x, worldPoint.y, worldPoint.z];
     if (w.pen < m.tier) { this.debris.burst(m.debris, at, this._seed()); return true; }   // F0 cosmetic chip
     c.hp -= w.dmg; this.debris.burst(m.debris, at, this._seed());
-    if (c.hp <= 0) { c.alive = false; this._commit([c.bucket]); }
+    if (c.hp <= 0) { c.alive = false; this._settle(new Set([c.bucket])); }
     return true;
   }
 
@@ -168,9 +272,9 @@ export class BuildingDestruct {
     const pw = new THREE.Vector3();
     for (const p of this.panes) if (!p.userData.dead) { p.getWorldPosition(pw); if (pw.distanceTo(worldPoint) <= blast.r2) this._shatterPane(p); }
     if (!dirty.size) return false;
-    this._commit([...dirty]);
     for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283; this.debris.burst('rubble', [worldPoint.x + Math.cos(a) * blast.r1 * 0.5, worldPoint.y + 0.2, worldPoint.z + Math.sin(a) * blast.r1 * 0.5], this._seed()); }
     this._dust(worldPoint, blast.r1);
+    this._settle(dirty);
     return true;
   }
 
@@ -178,21 +282,25 @@ export class BuildingDestruct {
   // glass on the path shatters for free. The long-rod "drill", not a breach.
   penetrate(originW, dirW, weaponKey) {
     const lo = this._local(originW), ld = this._local(originW.clone().add(dirW)).sub(lo).normalize();
-    const dirty = new Set(); let removed = 0;
+    const dirty = new Set(); const hitCells = [];
     for (const c of this.cells) {
       if (!c.alive) continue;
       const ox = c.cx - lo.x, oy = c.cy - lo.y, oz = c.cz - lo.z;
       const t = ox * ld.x + oy * ld.y + oz * ld.z; if (t < 0 || t > 60) continue;
       const dx = ox - ld.x * t, dy = oy - ld.y * t, dz = oz - ld.z * t;
-      if (dx * dx + dy * dy + dz * dz <= TUNNEL_R * TUNNEL_R) { c.alive = false; dirty.add(c.bucket); removed++; }
+      if (dx * dx + dy * dy + dz * dz <= TUNNEL_R * TUNNEL_R) { c.alive = false; dirty.add(c.bucket); hitCells.push({ c, t }); }
     }
     const pw = new THREE.Vector3(), aw = originW.clone();
     for (const p of this.panes) if (!p.userData.dead) { p.getWorldPosition(pw); const v = pw.clone().sub(aw); const t = v.dot(dirW); if (t > 0 && v.sub(dirW.clone().multiplyScalar(t)).length() < 0.6) this._shatterPane(p); }
     if (!dirty.size) return false;
-    this._commit([...dirty]);
-    this.debris.burst('sparks', [originW.x + dirW.x, originW.y + dirW.y, originW.z + dirW.z], this._seed());
-    this.debris.burst('rubble', [originW.x + dirW.x * 3, originW.y + dirW.y * 3, originW.z + dirW.z * 3], this._seed());
-    return removed > 0;
+    // sparks at the ENTRY wall + rubble at the EXIT wall (the impacts — never at the shooter)
+    hitCells.sort((a, b) => a.t - b.t);
+    const wpAt = (cell) => this.group.localToWorld(new THREE.Vector3(cell.cx, cell.cy, cell.cz));
+    const entry = wpAt(hitCells[0].c), exit = wpAt(hitCells[hitCells.length - 1].c);
+    this.debris.burst('sparks', [entry.x, entry.y, entry.z], this._seed());
+    this.debris.burst('rubble', [exit.x, exit.y, exit.z], this._seed());
+    this._settle(dirty);
+    return hitCells.length > 0;
   }
 
   // hero glass: shard burst + a clinging jagged remnant (cosmetic)
@@ -221,6 +329,14 @@ export class BuildingDestruct {
       if (d.life <= 0) { this.scene.remove(d.mesh); d.mesh.geometry.dispose(); d.mesh.material.dispose(); this.dust.splice(i, 1); continue; }
       const k = 1 - d.life / d.max; d.mesh.scale.setScalar(d.r0 * (1 + k * 2.0)); d.mesh.material.opacity = 0.22 * (1 - k);
     }
+    // falling chunks (orphaned roof/walls/sign/panes) tumble to the ground and rest there as rubble
+    for (const f of this.fallers) {
+      if (f.body.settled) continue;
+      stepBody(f.body, dt);
+      f.grp.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]);
+      _axis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]).normalize();
+      f.grp.quaternion.setFromAxisAngle(_axis, f.body.rotAngle);
+    }
   }
 
   // current raycast occluders (pristine mesh until a bucket is voxelised, then its rebuilt mesh)
@@ -234,6 +350,6 @@ export class BuildingDestruct {
 
   stats() {
     const alive = this.cells.filter((c) => c.alive).length;
-    return { cells: this.cells.length, alive, carved: this.cells.length - alive, panes: this.panes.length, paneBroken: this.panes.filter((p) => p.userData.dead).length, voxelised: [...this.buckets].filter(([, b]) => b.voxelised).map(([n]) => n) };
+    return { cells: this.cells.length, alive, carved: this.cells.length - alive, panes: this.panes.length, paneBroken: this.panes.filter((p) => p.userData.dead).length, fallers: this.fallers.length, detached: (this.attached || []).filter((a) => a.detached).length, voxelised: [...this.buckets].filter(([, b]) => b.voxelised).map(([n]) => n) };
   }
 }
