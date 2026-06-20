@@ -1551,12 +1551,16 @@ export class WeaponSystem {
   // (enemy / teammate) STOP it. Replaces the old single-first-hit resolve. Closest-first priority
   // (player → enemy → world) is preserved exactly; only the soft-cover "continue" is new.
   _marchPellet(muzzle, dir, d, mult) {
-    const SOFT_BUDGET = 3, SOFT_FALLOFF = 0.82;           // ≤3 soft layers; bullets keep most energy through them
-    let o = muzzle.clone(), range = d.range, dmg = d.dmg * mult, soft = 0;
-    for (let guard = 0; guard < 10; guard++) {            // guard: at most a handful of soft layers per pellet
-      const eHit = this.game.enemies.rayHit(o, dir, range);
-      const wHit = this.game.world.rayHit(o, dir, range);
-      const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(o, dir, range) : null;
+    const SOFT_BUDGET = 3, SOFT_FALLOFF = 0.82;           // ≤3 energy-sapping soft layers; bullets keep most energy
+    let dmg = d.dmg * mult, soft = 0;
+    const ignored = [];                                   // soft cover already carved this pellet — never re-hit it
+    // Ray ORIGIN stays at the muzzle; carved soft boxes are excluded from each pass via world.rayHit's
+    // `ignore` arg. That way a THICK soft object (a tree trunk) is hit exactly once — no crawling the
+    // ray forward 6 cm at a time (which used to re-damage a fat trunk every pass) and no per-pass alloc.
+    for (let guard = 0; guard < 12; guard++) {            // backstop: ignored[] grows each pass, so this always ends
+      const eHit = this.game.enemies.rayHit(muzzle, dir, d.range);
+      const wHit = this.game.world.rayHit(muzzle, dir, d.range, ignored.length ? ignored : null);
+      const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(muzzle, dir, d.range) : null;
       if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
         this.game.mp.claimPlayerHit(pHit.id, dmg * (pHit.head ? 2.0 : 1.0));
         this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
@@ -1574,22 +1578,21 @@ export class WeaponSystem {
         const box = wHit.box;
         if (box && box.downer && soft < SOFT_BUDGET && this._softPenetrable(box, d)) {
           this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));   // carve soft cover with the marched (decayed) energy
-          if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }   // glass is a free pass (like APFSDS)
-          const adv = Math.max(0.05, wHit.dist + 0.06);    // step the ray just past this layer
-          o = o.clone().addScaledVector(dir, adv); range -= adv;
-          if (range <= 0.2 || dmg < 2) { this.game.effects.tracer(muzzle, wHit.point, d.accent); return; }
+          ignored.push(box);                                     // exclude it from the next pass (hit each cover once)
+          if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }   // glass is a free pass (like APFSDS); wood/metal sap energy
+          if (dmg < 2) { this.game.effects.tracer(muzzle, wHit.point, d.accent); return; }   // round spent inside the cover
           continue;
         }
         // hard world hit — original handling, then STOP
         this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
         if (box && box.struct && box._ref) { this.game.build.playerDamage(box._ref, dmg); this.game.hud.hitmarker(false); }       // fortifications
         else if (box && box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(box.explodable, dmg, wHit.point); this.game.hud.hitmarker(false); } // FAB-500
-        else if (box && box.downer) { this._destructHit(wHit, dir, d, dmg / (d.dmg || 1)); }   // hard destructible (brick cell / wall) — decayed energy
+        else if (box && box.downer) { this._destructHit(wHit, dir, d, dmg / (d.dmg || 1)); }   // hard destructible (brick cell / wall)
         return;
       }
-      this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
-      return;
+      break;                                              // nothing left on the ray
     }
+    this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);   // spent / edge round → range end
   }
 
   // A world box is soft cover a round punches THROUGH (vs stops at): a destructible whose material is
