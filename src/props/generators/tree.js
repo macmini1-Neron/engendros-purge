@@ -423,6 +423,26 @@ function applyDamage(mb, r, cfg, trunkPts, baseDia) {
 //               heights in SPECIES are realistic; this brings them to a
 //               gameplay-readable size, ~6–13 m, without distorting proportions)
 // ---------------------------------------------------------------------------
+// SplitBuilder — a MeshBuilder-shaped facade that ROUTES each emitted primitive to
+// a `lo` (standing stump) or `hi` (falling top) builder by its Y centre relative to
+// a break height. The `hi` builder is offset DOWN by breakY so the top geometry's
+// LOCAL origin sits AT the hinge pivot (ready for fallphys makeHinge). This lets us
+// reuse buildTrunk/buildBranches/buildFoliage UNCHANGED and still get a clean
+// stump+top split from one seeded build (taper, branches and foliage stay aligned).
+class SplitBuilder {
+  constructor(breakY) { this.breakY = breakY; this.lo = new MeshBuilder(); this.hi = new MeshBuilder(); }
+  box(w, h, d, x, y, z, color, opts = {}) {
+    if (y <= this.breakY) this.lo.box(w, h, d, x, y, z, color, opts);
+    else this.hi.box(w, h, d, x, y - this.breakY, z, color, opts);
+    return this;
+  }
+  geo(geometry, x, y, z, color, opts = {}) {
+    if (y <= this.breakY) this.lo.geo(geometry, x, y, z, color, opts);
+    else this.hi.geo(geometry, x, y - this.breakY, z, color, opts);
+    return this;
+  }
+}
+
 const GAME_SCALE = 0.42;
 export function makeTree(opts = {}) {
   const speciesKey = opts.species || 'birch';
@@ -442,11 +462,21 @@ export function makeTree(opts = {}) {
   const height = (opts.height != null ? opts.height : rr(r, cfg.heightM[0], cfg.heightM[1]));
   const baseDia = rr(r, cfg.trunkDiaM[0], cfg.trunkDiaM[1]);
 
-  const mb = new MeshBuilder();
-
   // snapped snags lose their crown + much of their height
   const snapped = cfg.damage === 'snapped';
   const effHeight = snapped ? height * rr(r, 0.35, 0.6) : height;
+
+  // BREAK SPLIT (opts.breakAt = 0..1 fraction of height): route geometry into a
+  // standing stump (≤ breakY) + a falling top (> breakY, origin re-zeroed to the
+  // break) so the caller can hinge the top. null ⇒ original single-mesh behaviour.
+  // The break is CLAMPED below the crown so the whole canopy stays on the falling
+  // top — splitting through the crown leaves half-clusters dangling on a short top
+  // that wobbles instead of toppling like a treetop.
+  const crownBottomFrac = 1 - (cfg.crownFrac != null ? cfg.crownFrac : 0.5);
+  const breakMax = Math.max(0.12, crownBottomFrac - 0.04);
+  const breakAt = opts.breakAt != null ? Math.max(0.08, Math.min(breakMax, opts.breakAt)) : null;
+  const breakY = breakAt != null ? breakAt * effHeight : 0;
+  const mb = breakAt != null ? new SplitBuilder(breakY) : new MeshBuilder();
 
   const trunkPts = buildTrunk(mb, r, cfg, effHeight, baseDia);
 
@@ -460,10 +490,17 @@ export function makeTree(opts = {}) {
     buildFoliage(mb, r, cfg, trunkPts, tips, effHeight, opts.lod | 0);
   }
 
-  const geometry = mb.build();
   const scl = opts.scale != null ? opts.scale : GAME_SCALE;
-  if (scl !== 1) geometry.scale(scl, scl, scl);
   const material = voxelMaterial();
+  if (breakAt != null) {
+    const stumpGeometry = mb.lo.build();
+    const topGeometry = mb.hi.build();
+    if (scl !== 1) { stumpGeometry.scale(scl, scl, scl); topGeometry.scale(scl, scl, scl); }
+    // breakY (scaled) = world height of the hinge pivot above the tree's base
+    return { stumpGeometry, topGeometry, breakY: breakY * scl, material, height: effHeight * scl, species: speciesKey };
+  }
+  const geometry = mb.build();
+  if (scl !== 1) geometry.scale(scl, scl, scl);
   return { geometry, material, height: effHeight * scl, species: speciesKey };
 }
 

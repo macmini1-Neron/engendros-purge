@@ -1,0 +1,547 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>ENGENDROS — forest DESTRUCTION demo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0c1410;overflow:hidden;font:13px system-ui;color:#cfe}
+  #c{width:100vw;height:100vh;display:block;cursor:crosshair}
+  #hud{position:fixed;left:10px;top:8px;background:#0007;padding:7px 11px;border-radius:7px;pointer-events:none;white-space:pre-line;line-height:1.5}
+  #cross{position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;pointer-events:none}
+  #cross::before,#cross::after{content:'';position:absolute;background:#fff;box-shadow:0 0 2px #000}
+  #cross::before{left:6px;top:0;width:2px;height:14px}#cross::after{top:6px;left:0;height:2px;width:14px}
+  #wpn{position:fixed;right:12px;bottom:12px;background:#0008;padding:8px 12px;border-radius:7px;pointer-events:none;line-height:1.7;text-align:right}
+  #wpn b{color:#ffd24a}
+</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<div id="cross"></div>
+<div id="wpn"></div>
+<script type="module">
+import * as THREE from 'three';
+import { makeTree } from '../../src/props/generators/tree.js';
+import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from '../../src/props/generators/groundcover.js';
+import { makeHinge, makeTumble, stepBody } from '../../src/props/destruct-lab/fallphys.js';
+import { DebrisPool } from '../../src/props/destruct-lab/debris.js';
+import { LAB_WEAPONS } from '../../src/props/destruct-lab/matrix.js';
+import { buildBuilding } from '../../src/buildings/interp.js';   // buildgen brick cottage (_smoke)
+import { planBuild } from '../../src/buildings/plan.js';          // per-prim source data (material + AABB) for voxelisation
+import { BuildingDestruct } from '../../src/props/destruct-lab/building-destruct.js'; // voxel-chunk building destruction
+import { Combatants } from '../../src/props/destruct-lab/combat.js'; // shootable dummies + line-of-sight (FPS mechanics)
+
+const canvas = document.getElementById('c'), hud = document.getElementById('hud'), wpnEl = document.getElementById('wpn');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const FOG = new THREE.Color(0x9cb37a);
+scene.background = FOG.clone();
+scene.fog = new THREE.Fog(FOG, 16, 90);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 400);
+
+// ---- light ----
+const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x3a4a24, 0.6); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffe6b0, 2.0);
+sun.position.set(-46, 38, 26); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+const sc = sun.shadow.camera; sc.near = 1; sc.far = 200; sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70;
+sun.shadow.bias = -0.0008; scene.add(sun); scene.add(sun.target);
+
+// ---- ground ----
+function groundTexture() {
+  const s = 512, cv = document.createElement('canvas'); cv.width = cv.height = s; const x = cv.getContext('2d');
+  x.fillStyle = '#3f5524'; x.fillRect(0, 0, s, s);
+  const blob = (col, n, smin, smax) => { x.fillStyle = col; for (let i = 0; i < n; i++) { const r = smin + Math.random() * (smax - smin); x.globalAlpha = 0.5 + Math.random() * 0.5; x.beginPath(); x.ellipse(Math.random() * s, Math.random() * s, r, r * (0.5 + Math.random()), Math.random() * 6.28, 0, 6.28); x.fill(); } x.globalAlpha = 1; };
+  blob('#4c6a2a', 900, 4, 16); blob('#33491d', 900, 4, 16); blob('#6b8a36', 500, 2, 8); blob('#5a4326', 350, 3, 12); blob('#2a3a16', 400, 2, 7);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(26, 26); t.anisotropy = 4; t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshLambertMaterial({ map: groundTexture() }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+// ---- seeded scatter ----
+let _s = 1337; const rnd = () => { _s = (_s * 1664525 + 1013904223) >>> 0; return _s / 4294967296; };
+const rr = (a, b) => a + rnd() * (b - a);
+function scatter(n, radius, minDist, cb) {
+  const placed = []; let tries = 0;
+  while (placed.length < n && tries < n * 40) {
+    tries++; const a = rnd() * 6.28, d = Math.sqrt(rnd()) * radius;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    let ok = true; for (const p of placed) { if ((p[0] - x) ** 2 + (p[1] - z) ** 2 < minDist * minDist) { ok = false; break; } }
+    if (!ok) continue; placed.push([x, z]); cb(x, z, placed.length);
+  }
+}
+const windy = [];
+const addCover = (res, x, z, { scale = 1, wind = 0 } = {}) => {
+  if (!res) return; const m = res.isObject3D ? res : new THREE.Mesh(res.geometry, res.material);
+  const yaw = rnd() * 6.28; m.position.set(x, 0, z); m.rotation.y = yaw; if (scale !== 1) m.scale.setScalar(scale);
+  if (wind) windy.push({ m, yaw, amp: wind, ph: rnd() * 6.28, speed: 0.8 + rnd() * 1.2 });
+  scene.add(m);
+};
+
+// ====================================================================
+// BREAKABLE TREES — each keeps the recipe (species/seed/scale) so it can be
+// re-built split into a standing stump + a falling top on hit (tree.js breakAt).
+// ====================================================================
+const GAME_SCALE = 0.42;
+const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2 };   // crush class
+// ── BREAK TUNING — the ONE place to scale "by caliber" in the in-game balance pass. ──
+const TREE_HP   = { 1: 30, 2: 110, 3: 200 };          // trunk HP by crush class: sapling / grown / oak
+const CAL_DMG   = { pistol: 0, rifle: 30, hmg127: 40, heRocket: 9999, apfsds: 9999 }; // dmg/shot → hits-to-fell = ceil(hp/dmg)  (grown≈3 HMG, oak≈5)
+const HE_RADIUS = 8;                                  // rocket blast radius (m) — bigger
+const FAST_BOOST = 0;                                 // extra fell angVel for APFSDS (0 = falls the same as HMG)
+const trees = [], treeMeshes = [], stumps = [];
+function addTree(species, x, z, varietyScale, seed, sapling) {
+  const scale = GAME_SCALE * varietyScale;
+  const res = makeTree({ species, seed, lod: 0, scale });   // single standing mesh
+  const m = new THREE.Mesh(res.geometry, res.material);
+  const yaw = rnd() * 6.28; m.position.set(x, 0, z); m.rotation.y = yaw;
+  m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  const cls = sapling ? 1 : (SPECIES_CLS[species] || 2);
+  const tier = cls === 1 ? 1 : 2;                            // sapling=wood(1), grown=trunk(2)
+  const rec = { species, seed, scale, x, z, yaw, height: res.height, mesh: m, cls, tier, hp: TREE_HP[cls], broken: false };
+  m.userData.tree = rec; trees.push(rec); treeMeshes.push(m);
+}
+
+const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6]];
+function pickSpecies() { const r = rnd() * 92; let a = 0; for (const [sp, w] of TREE_MIX) { a += w; if (r < a) return sp; } return 'scotsPine'; }
+scatter(90, 52, 4.2, (x, z, i) => addTree(pickSpecies(), x, z, rr(0.9, 1.25), i * 17 + 3, false));
+scatter(22, 46, 3.0, (x, z, i) => addTree('birch', x, z, rr(0.42, 0.6), i * 31 + 700, true)); // saplings (tier 1 — rifle fells)
+// understory (decorative, sways)
+scatter(280, 56, 1.0, (x, z, i) => addCover(makeGrassTuft(i * 7 + 1), x, z, { scale: rr(0.8, 1.5), wind: 0.08 }));
+scatter(46, 54, 2.4, (x, z, i) => addCover(makeShrub(i * 13 + 2), x, z, { scale: rr(0.9, 1.6), wind: 0.05 }));
+scatter(22, 48, 2.0, (x, z, i) => addCover(makeFlowerPatch(i * 23 + 5), x, z, { wind: 0.07 }));
+scatter(10, 50, 4.0, (x, z, i) => addCover(makeBush(i * 11 + 4), x, z, { scale: rr(0.9, 1.3), wind: 0.035 }));
+
+// ---- debris + wood material for shatter chunks ----
+const debris = new DebrisPool(scene);
+const woodMat = new THREE.MeshLambertMaterial({ color: 0x7a5d33 });
+
+// ====================================================================
+// BUILDING — the buildgen «_smoke» brick cottage, dropped into a forest clearing.
+// For now it's a SOLID OCCLUDER (bullets/blasts stop on it, no break yet) — building
+// destruction is the next course we "cook up" (postupně). Colliders kept for that.
+// ====================================================================
+const HOUSE_POS = [0, 0, -13];                 // ahead of the spawn, door (N face = +Z) toward the player
+let houseBD = null, bunkerBD = null;           // BuildingDestruct runtimes
+const destructibles = [];                      // every destructible building (cottage + bunker)
+const houseMeshes = () => destructibles.flatMap(b => b.meshes());   // current raycast occluders (pristine → voxel on damage)
+function clearTreesUnder(cx, cz, halfX, halfZ) {   // open a clearing so the cottage isn't buried in trunks
+  for (let i = trees.length - 1; i >= 0; i--) {
+    const r = trees[i];
+    if (Math.abs(r.x - cx) < halfX && Math.abs(r.z - cz) < halfZ) {
+      scene.remove(r.mesh);
+      const j = treeMeshes.indexOf(r.mesh); if (j >= 0) treeMeshes.splice(j, 1);
+      trees.splice(i, 1);
+    }
+  }
+}
+async function loadHouse() {
+  try {
+    const spec = await (await fetch('../../buildings/_smoke/spec.json', { cache: 'no-store' })).json();
+    const built = buildBuilding(spec, {});                  // { group, colliders, stats, warns, infos }
+    const g = built.group; g.position.set(HOUSE_POS[0], HOUSE_POS[1], HOUSE_POS[2]);
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(g);
+    // voxel-chunk destruction runtime over the per-prim source data (keeps the merged texture; lazy-split on hit)
+    houseBD = new BuildingDestruct({ group: g, prims: planBuild(spec).prims, scene, debris, seed: spec.seed ?? 7 });
+    destructibles.push(houseBD);
+    const fp = spec.footprint || { w: 8, d: 6 };
+    clearTreesUnder(HOUSE_POS[0], HOUSE_POS[2], fp.w / 2 + 2.5, fp.d / 2 + 2.5);
+    window.__HOUSE = { group: g, bd: houseBD, colliders: built.colliders, stats: built.stats, pos: HOUSE_POS };
+    if (built.warns?.length) console.warn('[house] warns:', built.warns);
+  } catch (e) { console.error('[house] load failed:', e); window.__HOUSE = { error: String(e) }; }
+}
+loadHouse();
+
+// ── REINFORCED-CONCRETE BUNKER (железобетон, tier 6) — the material-scalability demo: bullets do
+// nothing, HMG/rocket do nothing, even the 152 mm shell only scorches it. Hand-authored prims +
+// a per-object matMap so the SAME concrete texture renders but resolves to reinforcedConcrete. ──
+const BUNKER_POS = [-9.5, 0, -10.5];
+function addBunker() {
+  const W = 3.8, D = 3.8, H = 2.7, t = 0.55;
+  const prims = [];
+  const box = (w, h, d, x, y, z) => prims.push({ kind: 'box', w, h, d, x, y, z, mat: 'concrete', collide: true, part: 'bunker' });
+  box(W, H, t, 0, H / 2, D / 2 - t / 2); box(W, H, t, 0, H / 2, -D / 2 + t / 2);     // ±Z walls
+  box(t, H, D - 2 * t, W / 2 - t / 2, H / 2, 0); box(t, H, D - 2 * t, -W / 2 + t / 2, H / 2, 0); // ±X walls
+  box(W, t, D, 0, H - t / 2, 0);                                                      // roof slab
+  box(W, 0.3, D, 0, 0.15, 0);                                                         // foundation slab
+  const g = new THREE.Group(); g.position.set(BUNKER_POS[0], BUNKER_POS[1], BUNKER_POS[2]); scene.add(g);
+  bunkerBD = new BuildingDestruct({ group: g, prims, scene, debris, seed: 3, matMap: { concrete: 'reinforcedConcrete' }, eager: true });
+  destructibles.push(bunkerBD);
+  clearTreesUnder(BUNKER_POS[0], BUNKER_POS[2], W / 2 + 2, D / 2 + 2);
+  window.__BUNKER = bunkerBD;
+}
+addBunker();
+
+// ── COMBATANTS — shootable dummies that prove the FPS mechanics (LoS, cover, breaching, env-kills) ──
+const combat = new Combatants({ scene, destructibles, debris });
+[[6, -4], [-6, -2], [9, -11], [-12, -6], [-9.5, -6]].forEach(([x, z]) => combat.spawn(x, z));                  // outside, in the open
+[[0, -13], [2, -14], [-2, -12.5]].forEach(([x, z]) => combat.spawn(x, z, { indoors: true, color: 0x7a3b2a })); // inside the cottage (LoS blocked until you breach)
+window.__COMBAT = combat;
+
+// ── DEGRADABLE WOODEN COVER (#1) — a round PIERCES a wood crate (and chews it apart) to hit whoever
+// hides behind; the crate is a tiny eager BuildingDestruct (tier-1 wood). ──
+function addCrate(x, z, s = 1.2) {
+  const prims = [{ kind: 'box', w: s, h: s, d: s, x: 0, y: s / 2, z: 0, mat: 'wood', collide: true, part: 'crate' }];
+  const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g);
+  const bd = new BuildingDestruct({ group: g, prims, scene, debris, seed: ((x * 71 + z * 131) | 0) >>> 0, eager: true });
+  destructibles.push(bd); return bd;
+}
+const crates = [addCrate(4, 1), addCrate(-3, 0)];
+combat.spawn(4, -1, { color: 0x556b2f });   // behind crate #0 — shoot THROUGH the wood to hit him
+combat.spawn(-3, -2, { color: 0x556b2f });  // behind crate #1
+window.__CRATES = crates;
+
+// static cover AABBs (buildings + crates don't move; canSee filters to REAL cover after a breach) (#2)
+function coverAABBs() {
+  const out = [], add = (cx, cz, w, h, d) => out.push({ min: [cx - w / 2, 0, cz - d / 2], max: [cx + w / 2, h, cz + d / 2] });
+  add(HOUSE_POS[0], HOUSE_POS[2], 8, 3.2, 6);
+  add(BUNKER_POS[0], BUNKER_POS[2], 3.8, 2.7, 3.8);
+  for (const c of crates) { const p = c.group.position; add(p.x, p.z, 1.4, 1.3, 1.4); }
+  return out;
+}
+const COVER = coverAABBs();
+
+// ── STRUCTURAL TARGETING (#6) — a slab held up ONLY by 4 brick columns. The slab reaches the ground
+// only THROUGH the columns, so the orphan-collapse pass fells it once you sever enough supports
+// (smart targeting > spray). A soldier sheltering under it gets buried (ties to #5). ──
+const COLONNADE_POS = [13, 0, -7];
+function addColonnade() {
+  const W = 3, H = 3, t = 0.5, ST = 0.5, prims = [];
+  const col = (x, z) => prims.push({ kind: 'box', w: t, h: H, d: t, x, y: H / 2, z, mat: 'brickRed', collide: true, part: 'col' });
+  col(-W / 2, -W / 2); col(W / 2, -W / 2); col(-W / 2, W / 2); col(W / 2, W / 2);
+  prims.push({ kind: 'box', w: W + t + 0.4, h: ST, d: W + t + 0.4, x: 0, y: H + ST / 2, z: 0, mat: 'brickRed', collide: true, part: 'slab' });
+  const g = new THREE.Group(); g.position.set(COLONNADE_POS[0], COLONNADE_POS[1], COLONNADE_POS[2]); scene.add(g);
+  const bd = new BuildingDestruct({ group: g, prims, scene, debris, seed: 9, eager: true });
+  destructibles.push(bd); window.__COLONNADE = bd; return bd;
+}
+addColonnade();
+clearTreesUnder(COLONNADE_POS[0], COLONNADE_POS[2], 5, 5);   // clear a line of sight to the columns
+combat.spawn(COLONNADE_POS[0], COLONNADE_POS[2], { color: 0x8a6d2a });   // sheltering UNDER the slab
+
+// #5 hazard AABBs — a soldier caught inside a collapsing chunk / falling tree top / the tank dies
+const _hzBox = new THREE.Box3();
+function hazardZones() {
+  const zones = [], push = (k) => { if (!_hzBox.isEmpty()) zones.push({ min: [_hzBox.min.x, _hzBox.min.y, _hzBox.min.z], max: [_hzBox.max.x, _hzBox.max.y, _hzBox.max.z], kind: k }); };
+  for (const bd of destructibles) for (const f of (bd.fallers || [])) { _hzBox.setFromObject(f.grp); push('collapse'); }   // falling/landed building chunks
+  for (const f of FALLING) { if (f.body.settled) continue; _hzBox.setFromObject(f.pivot || f.mesh); push('tree'); }        // falling tree tops
+  if (vehicleMode && veh.grp) { _hzBox.setFromObject(veh.grp); _hzBox.min.y = 0; push('tank'); }                          // the hull, run-over
+  return zones;
+}
+
+// ====================================================================
+// FALLING BODIES — lab fallphys (hinge for the snapped top, tumble for shatter chunks).
+// ====================================================================
+const FALLING = [];
+const _axis = new THREE.Vector3(), _q = new THREE.Quaternion(), _v = new THREE.Vector3();
+
+function breakTree(rec, hitY, mode, fromX = camera.position.x, fromZ = camera.position.z) {
+  rec.broken = true; scene.remove(rec.mesh);                 // fully REMOVE the standing tree → no ghost model left behind
+  const i = treeMeshes.indexOf(rec.mesh); if (i >= 0) treeMeshes.splice(i, 1);
+  // fall direction = away from the SOURCE: the shooter for a bullet (default = camera), but the
+  // BLAST POINT for an explosion → trees splay radially outward from the detonation, not toward you
+  let dx = rec.x - fromX, dz = rec.z - fromZ; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  const dirXZ = [dx, dz];
+  const seed = (rec.seed * 2654435761) >>> 0;
+  // break height: snap WHERE it was hit; topple/uproot snap low so the whole tree goes over
+  const low = (mode === 'topple' || mode === 'uproot');
+  const breakAt = low ? (0.05 + rnd() * 0.05) : THREE.MathUtils.clamp(hitY / rec.height, 0.1, 0.8);
+  const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt });
+  const breakY = split.breakY;
+  // standing stump — KEEPS A HIT BOX (raycast target; in-game it keeps its world.boxes collider)
+  const stump = new THREE.Mesh(split.stumpGeometry, split.material);
+  stump.position.set(rec.x, 0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = stump.receiveShadow = true;
+  stump.userData.stump = true; scene.add(stump); stumps.push(stump);
+  // hinge the falling TOP about the break (the FULL canopy stays attached). APFSDS just snaps it
+  // FAST (a violent quick fell) — it does NOT despawn into chunks.
+  const top = new THREE.Mesh(split.topGeometry, split.material);
+  top.rotation.y = rec.yaw; top.castShadow = top.receiveShadow = true;
+  const pivot = new THREE.Group(); pivot.position.set(rec.x, breakY, rec.z); pivot.add(top); scene.add(pivot);
+  const length = Math.max(0.5, rec.height - breakY);
+  const body = makeHinge({ pivot: [rec.x, breakY, rec.z], dirXZ, length, radius: 0.22, seed, obstacles: [] });
+  if (mode === 'fast' && FAST_BOOST) body.angVel = FAST_BOOST; // APFSDS fell speed (0 = same natural topple as HMG)
+  FALLING.push({ kind: 'hinge', body, pivot });
+  debris.burst('splints', [rec.x, breakY, rec.z], seed, undefined, [dirXZ[0], 0, dirXZ[1]]);   // splinters fly the way it falls
+  if (mode === 'fast') debris.burst('splints', [rec.x, breakY + 0.7, rec.z], seed + 7, undefined, [dirXZ[0], 0, dirXZ[1]]);
+}
+
+// ====================================================================
+// WEAPONS — pick a caliber (1-5), tap to fire a ray from screen centre.
+// pen < tier ⇒ no fell (splinter only); HE blast fells in radius; APFSDS shatters.
+// ====================================================================
+const CALS = ['pistol', 'rifle', 'hmg127', 'heRocket', 'apfsds', 'he152'];   // add a caliber here → it's selectable
+const CAL_LABEL = { pistol: 'PISTOLE', rifle: 'PUŠKA', hmg127: 'HMG 12.7', heRocket: 'RAKETA HE', apfsds: 'APFSDS', he152: 'OF-152 (těžká)' };
+let cal = 2; // default HMG so the first shot fells
+const ray = new THREE.Raycaster();
+function refreshWpn() {
+  wpnEl.innerHTML = CALS.map((k, i) => `${i === cal ? '<b>▶ ' : '<span style=opacity:.5>' + (i + 1) + ' '}${CAL_LABEL[k]} <small>pen ${LAB_WEAPONS[k].pen}</small>${i === cal ? '</b>' : '</span>'}`).join('<br>');
+}
+function fire() {
+  const w = LAB_WEAPONS[CALS[cal]];
+  ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+  // HE rocket: explode WHERE the ray actually lands (tree / stump / GROUND) → topple trees in radius.
+  if (w.blast) {
+    const hits = ray.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes(), ground], false);
+    if (!hits.length) return;                                // aimed at open sky → nothing
+    const at = hits[0].point;
+    debris.burst('rubble', [at.x, at.y, at.z], (Math.random() * 1e9) | 0);
+    for (const bd of destructibles) bd.blast(at, CALS[cal]);  // breach every building in range (each self-limits by radius)
+    combat.addSmoke(at.x, at.y, at.z, (w.blast.r1 || 2.5) + 1.5, 4);   // #4 the breach throws up a LoS-blocking dust cloud
+    const treeR = (w.blast.r2 || 6) * 1.33;                   // bigger caliber → topples trees wider (OF-152 ≈ 14.6 m)
+    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= treeR * treeR) breakTree(rec, 0, 'topple', at.x, at.z); }
+    return;
+  }
+  // bullets: a DIRECT hit on a standing tree (or its stump) fells; a house hit routes to the
+  // voxel runtime (chip / carve / pane-shatter, APFSDS drills a tunnel) — ground is ignored.
+  shoot(camera.position.clone(), ray.ray.direction.clone(), CALS[cal]);   // PENETRATING hitscan (#1)
+}
+
+// PENETRATING hitscan march (#1): walk every surface along the ray in order. SOFT cover (tier ≤ 2 it
+// can damage) is pierced — the round carries on to whatever's BEHIND with damage falloff; brick+, a
+// tree trunk, or a body STOP it. Degradable cover + shoot-through-walls fall straight out of this.
+const shotRay = new THREE.Raycaster();
+function shoot(origin, dir, key) {
+  const w = LAB_WEAPONS[key];
+  dir = dir.clone().normalize(); shotRay.set(origin, dir);
+  // NOTE: hits are precomputed once; after a pierced cell carves + rebuilds its bucket mesh, later
+  // entries still point at the (disposed) old mesh. We only read h.point/userData, so it's safe — a
+  // 2nd wall of the SAME building re-resolves via _cellAt (a carved hole → no-op). Fine for the demo.
+  const hits = shotRay.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes(), ...combat.meshes()], false);
+  const back = [-dir.x, -dir.y, -dir.z], result = { hit: false, pierced: 0, killed: 0 };
+  let energy = w.dmg || 20, pierced = 0;
+  for (const h of hits) {
+    const ud = h.object.userData, P = [h.point.x, h.point.y, h.point.z];
+    if (ud.soldier) { const live = ud.soldier.state !== 'dead'; combat.hurt(ud.soldier, energy, 'bullet'); result.hit = true; if (live && ud.soldier.state === 'dead') result.killed++; break; } // body stops the round
+    if (ud.house) {
+      const bd = ud._bd; result.hit = true;
+      if (key === 'apfsds' && ud.kind !== 'pane') { bd.penetrate(origin.clone(), dir, 'apfsds'); break; }
+      const res = bd.bullet(h.point.clone(), dir, key, h.object);
+      if (res && res.penetrated && pierced < 4) { pierced++; result.pierced = pierced; energy *= 0.7; continue; }   // soft cover → carry on to what's behind
+      break;                                                                                                        // brick+ stops the round
+    }
+    if (ud.stump) { debris.burst('splints', P, (Math.random() * 1e9) | 0, undefined, back); result.hit = true; break; }
+    if (ud.tree) {
+      const rec = ud.tree; if (!rec || rec.broken) break;
+      const dmg = CAL_DMG[key] || 0; result.hit = true;
+      if (w.pen < rec.tier || dmg <= 0) { debris.burst('splints', P, (Math.random() * 1e9) | 0, undefined, back); break; }
+      rec.hp -= dmg;
+      if (rec.hp > 0) { debris.burst('splints', P, (Math.random() * 1e9) | 0, undefined, back); break; }
+      breakTree(rec, h.point.y, key === 'apfsds' ? 'fast' : (rec.cls === 1 ? 'uproot' : 'snap'));
+      break;   // trunk stops the round
+    }
+  }
+  return result;
+}
+
+// ---- POV camera: orbit-look (drag) + WASD; TAP (no drag) = fire ----
+const target = new THREE.Vector3(0, 1.7, 6); const cam = { az: 180, el: 0 };
+function applyCam() {
+  const az = THREE.MathUtils.degToRad(cam.az), el = THREE.MathUtils.degToRad(cam.el);
+  const dir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+  camera.position.copy(target); camera.lookAt(target.x + dir.x, target.y + dir.y, target.z + dir.z);
+}
+const keys = {}; let drag = false, lx = 0, ly = 0, dsum = 0, dt0 = 0;
+canvas.addEventListener('pointerdown', e => { drag = true; lx = e.clientX; ly = e.clientY; dsum = 0; dt0 = performance.now(); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup', () => { drag = false; if (!vehicleMode && dsum < 7 && performance.now() - dt0 < 350) fire(); }); // quick tap = shoot
+canvas.addEventListener('pointermove', e => { if (!drag) return; const ddx = e.clientX - lx, ddy = e.clientY - ly; dsum += Math.abs(ddx) + Math.abs(ddy); cam.az -= ddx * 0.22; cam.el = THREE.MathUtils.clamp(cam.el - ddy * 0.22, -60, 70); lx = e.clientX; ly = e.clientY; });
+addEventListener('keydown', e => { const k = e.key.toLowerCase(); keys[k] = true;
+  if (k === 'n') { timeIdx = (timeIdx + 1) % 3; setTime(['day', 'dusk', 'night'][timeIdx]); }
+  if (k >= '1' && k <= '9' && +k - 1 < CALS.length) { cal = +k - 1; refreshWpn(); }
+  if (k === 'v') enterVehicle('tank');
+  if (k === 'c') enterVehicle('car');
+  if (k === 'f' && !vehicleMode) fire();
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+function fly() {
+  const sp = (keys['shift'] ? 0.55 : 0.2), az = THREE.MathUtils.degToRad(cam.az), fx = Math.sin(az), fz = Math.cos(az);
+  if (keys['w']) { target.x += fx * sp; target.z += fz * sp; } if (keys['s']) { target.x -= fx * sp; target.z -= fz * sp; }
+  if (keys['a']) { target.x -= fz * sp; target.z += fx * sp; } if (keys['d']) { target.x += fz * sp; target.z -= fx * sp; }
+  if (keys['e']) target.y += sp; if (keys['q']) target.y = Math.max(0.5, target.y - sp);
+}
+
+// ====================================================================
+// DRIVABLE VEHICLES — vehicle crush (spec Pillar 4) is SCALABLE per vehicle. Each carries its own
+// crush envelope: `crushTier` = hardest BUILDING material it shoves through (anything harder stops
+// it); `crushClass` = biggest TREE it flattens. A TANK (V) plows through brick + concrete and fells
+// grown trees, walled only by steel / железобетон. A CAR (C) can't even knock down a brick wall or a
+// grown tree — it bounces off. Add a vehicle = one row in VEHICLES.
+// ====================================================================
+let vehicleMode = false;
+const mkBox = (g, w, h, d, x, y, z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: c })); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+function buildTank() {
+  const g = new THREE.Group(), box = (...a) => mkBox(g, ...a);
+  box(2.6, 0.7, 4.6, 0, 0.95, 0, 0x4b5320);              // hull
+  box(0.62, 0.72, 4.8, -1.24, 0.55, 0, 0x1d2110); box(0.62, 0.72, 4.8, 1.24, 0.55, 0, 0x1d2110); // tracks
+  box(1.8, 0.62, 2.2, 0, 1.55, 0.1, 0x55602a);           // turret
+  box(0.18, 0.18, 2.8, 0, 1.6, 2.0, 0x6b6f73);           // barrel → local +Z = forward
+  box(2.5, 0.22, 0.55, 0, 1.18, -2.0, 0x3a421d);         // rear stowage
+  return g;
+}
+function buildCar() {
+  const g = new THREE.Group(), box = (...a) => mkBox(g, ...a);
+  box(1.7, 0.5, 3.6, 0, 0.55, 0, 0x9c2b2b);              // body
+  box(1.5, 0.5, 1.7, 0, 1.0, -0.1, 0x7a2020);            // cabin
+  box(1.58, 0.34, 1.5, 0, 1.02, -0.1, 0x22303f);         // glass band
+  const wheel = (x, z) => box(0.34, 0.5, 0.5, x, 0.3, z, 0x141414);
+  wheel(-0.86, 1.2); wheel(0.86, 1.2); wheel(-0.86, -1.2); wheel(0.86, -1.2);
+  box(1.5, 0.16, 0.2, 0, 0.5, 1.85, 0x2a2a2a);           // front bumper (+Z = forward)
+  return g;
+}
+const VEHICLES = {
+  tank: { label: 'TANK', crushTier: 4, crushClass: 2, accel: 9, maxF: 8, maxR: 4, turn: 1.5, half: [1.5, 1.85, 1.5], camD: 8.5, camH: 5.2, treeR: 1.8, build: buildTank },
+  car:  { label: 'AUTO', crushTier: 1, crushClass: 1, accel: 13, maxF: 12, maxR: 5, turn: 2.3, half: [0.9, 1.2, 0.9], camD: 6.5, camH: 3.2, treeR: 1.1, build: buildCar },
+};
+const veh = { grp: null, type: 'tank', def: VEHICLES.tank, pos: new THREE.Vector3(3.5, 0, 5), ry: Math.PI, speed: 0 };
+function _placeVeh() { veh.grp.position.set(veh.pos.x, 0, veh.pos.z); veh.grp.rotation.y = veh.ry; }
+function enterVehicle(type) {
+  if (vehicleMode && veh.type === type) { vehicleMode = false; return; }   // same key again → dismount
+  if (veh.grp) { scene.remove(veh.grp); veh.grp.traverse(o => { if (o.isMesh) o.geometry.dispose(); }); veh.grp = null; }
+  veh.type = type; veh.def = VEHICLES[type]; veh.speed = 0;
+  veh.grp = veh.def.build(); scene.add(veh.grp); clearTreesUnder(veh.pos.x, veh.pos.z, veh.def.half[0] + 1, veh.def.half[2] + 1.4); _placeVeh();
+  vehicleMode = true;
+}
+function driveVehicle(dt) {
+  const d = veh.def, fric = 4;
+  if (keys['w']) veh.speed = Math.min(d.maxF, veh.speed + d.accel * dt);
+  else if (keys['s']) veh.speed = Math.max(-d.maxR, veh.speed - d.accel * dt);
+  else veh.speed += (veh.speed > 0 ? -1 : 1) * Math.min(Math.abs(veh.speed), fric * dt);
+  if (keys['a']) veh.ry += d.turn * dt; if (keys['d']) veh.ry -= d.turn * dt;
+  const fwd = new THREE.Vector3(Math.sin(veh.ry), 0, Math.cos(veh.ry));
+  if (veh.speed > 0.0005) {                               // crush only while driving FORWARD into things
+    const lead = veh.pos.clone().addScaledVector(fwd, d.half[2] + 0.6);
+    const aabb = new THREE.Box3(new THREE.Vector3(lead.x - d.half[0], 0.4, lead.z - d.half[0]), new THREE.Vector3(lead.x + d.half[0], 0.4 + d.half[1], lead.z + d.half[0]));
+    let blocked = false, drag = 1;
+    for (const bd of destructibles) { const r = bd.applyCrush(aabb, { crushTier: d.crushTier, dir: [fwd.x, fwd.y, fwd.z] }); if (r.blocked) blocked = true; if (r.drag < drag) drag = r.drag; }
+    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - lead.x, dz = rec.z - lead.z; if (dx * dx + dz * dz < d.treeR * d.treeR) { if (rec.cls > d.crushClass) blocked = true; else { breakTree(rec, 0, 'topple', veh.pos.x, veh.pos.z); if (drag > 0.7) drag = 0.7; } } }
+    if (blocked) veh.speed = 0;                           // too hard for this vehicle (wall / bunker / big tree) → stop
+    else { veh.speed *= drag; veh.pos.addScaledVector(fwd, veh.speed * dt); }
+  } else veh.pos.addScaledVector(fwd, veh.speed * dt);
+  veh.pos.x = THREE.MathUtils.clamp(veh.pos.x, -60, 60); veh.pos.z = THREE.MathUtils.clamp(veh.pos.z, -60, 60);
+  _placeVeh();
+}
+function chaseCam() {
+  const d = veh.def, fwd = new THREE.Vector3(Math.sin(veh.ry), 0, Math.cos(veh.ry));
+  camera.position.set(veh.pos.x - fwd.x * d.camD, d.camH, veh.pos.z - fwd.z * d.camD);
+  camera.lookAt(veh.pos.x + fwd.x * 4, 1.3, veh.pos.z + fwd.z * 4);
+}
+
+function resize() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+
+// ---- pollen + fireflies + day/night ----
+function dotTex() { const cv = document.createElement('canvas'); cv.width = cv.height = 32; const g = cv.getContext('2d'); const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16); grd.addColorStop(0, '#fff'); grd.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = grd; g.beginPath(); g.arc(16, 16, 16, 0, 6.28); g.fill(); return new THREE.CanvasTexture(cv); }
+const N = 500, pp = new Float32Array(N * 3), pv = [];
+for (let i = 0; i < N; i++) { pp[i * 3] = rr(-50, 50); pp[i * 3 + 1] = rr(0.5, 16); pp[i * 3 + 2] = rr(-50, 50); pv.push([rr(-0.15, 0.15), rr(-0.05, 0.12), rr(-0.15, 0.15)]); }
+const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+const pollen = new THREE.Points(pg, new THREE.PointsMaterial({ map: dotTex(), size: 0.16, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xfff0c0, fog: true })); scene.add(pollen);
+const fireflies = new THREE.Group(); fireflies.visible = false; scene.add(fireflies);
+for (let i = 0; i < 40; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex(), color: 0xccff66, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true })); sp.scale.set(0.32, 0.32, 1); sp.position.set(rr(-42, 42), rr(0.4, 3.2), rr(-42, 42)); sp.userData = { ph: rr(0, 6.28), bs: 0.5 + rnd() * 1.3, vx: rr(-0.04, 0.04), vz: rr(-0.04, 0.04) }; fireflies.add(sp); }
+const SKY = { day: 0x9cb37a, dusk: 0xc08a52, night: 0x16242a };
+let timeMode = 'day', timeIdx = 0;
+function setTime(mode) {
+  timeMode = mode; const c = SKY[mode]; scene.fog.color.setHex(c); scene.background.setHex(c);
+  if (mode === 'day') { scene.fog.far = 90; sun.color.setHex(0xffe6b0); sun.intensity = 2.0; sun.position.set(-46, 38, 26); hemi.intensity = 0.6; hemi.color.setHex(0xbfe0ff); hemi.groundColor.setHex(0x3a4a24); fireflies.visible = false; }
+  else if (mode === 'dusk') { scene.fog.far = 74; sun.color.setHex(0xff8434); sun.intensity = 2.3; sun.position.set(-64, 13, 18); hemi.intensity = 0.42; hemi.color.setHex(0xffb070); hemi.groundColor.setHex(0x4a3a20); fireflies.visible = false; }
+  else { scene.fog.far = 56; sun.color.setHex(0x6a86c8); sun.intensity = 0.55; sun.position.set(-26, 44, -22); hemi.intensity = 0.16; hemi.color.setHex(0x2a3a5c); hemi.groundColor.setHex(0x0e1626); fireflies.visible = true; }
+  sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld();
+}
+
+let t = 0, _fc = 0, _ft = 0, _fps = 0;
+function frame() {
+  _fc++; const _n = performance.now(); if (_n - _ft >= 1000) { _fps = _fc; _fc = 0; _ft = _n; }
+  const dt = 0.016; t += dt; resize();
+  if (vehicleMode && veh.grp) { driveVehicle(dt); chaseCam(); } else { fly(); applyCam(); }
+  // falling-body physics
+  for (const f of FALLING) {
+    if (f.body.settled) continue;
+    stepBody(f.body, dt);
+    if (f.kind === 'hinge') { _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize(); f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle); }
+    else { f.mesh.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]); _axis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]); f.mesh.quaternion.setFromAxisAngle(_axis, f.body.rotAngle); }
+  }
+  debris.update(dt);
+  for (const bd of destructibles) bd.update(dt);
+  combat.update(dt, { playerPos: camera.position, coverAABBs: COVER });
+  { const hz = hazardZones(); if (hz.length) combat.checkHazards(hz); }   // #5 env-kills
+  // pollen drift
+  const a = pollen.geometry.attributes.position;
+  for (let i = 0; i < N; i++) { let x = a.getX(i) + pv[i][0] * 0.04, y = a.getY(i) + pv[i][1] * 0.04, z = a.getZ(i) + pv[i][2] * 0.04; if (y > 17) y = 0.5; if (Math.abs(x - target.x) > 55) x = target.x + rr(-50, 50); if (Math.abs(z - target.z) > 55) z = target.z + rr(-50, 50); a.setXYZ(i, x, y, z); } a.needsUpdate = true;
+  // wind sway (standing trees lean a little, groundcover a lot)
+  const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
+  for (const w of windy) { const sz = Math.sin(t * w.speed + w.ph) * w.amp * gust; w.m.rotation.set(Math.cos(t * w.speed * 0.7 + w.ph) * w.amp * 0.5 * gust, w.yaw, sz); }
+  if (fireflies.visible) for (const f of fireflies.children) { const u = f.userData; let x = f.position.x + u.vx, z = f.position.z + u.vz, y = f.position.y + Math.sin(t * u.bs + u.ph) * 0.012; if (Math.abs(x - target.x) > 44) x = target.x + rr(-40, 40); if (Math.abs(z - target.z) > 44) z = target.z + rr(-40, 40); f.position.set(x, Math.max(0.3, y), z); f.material.opacity = 0.12 + 0.88 * Math.max(0, Math.sin(t * (1.4 + u.bs) + u.ph)); }
+  renderer.render(scene, camera); requestAnimationFrame(frame);
+}
+applyCam(); refreshWpn(); requestAnimationFrame(frame);
+hud.textContent = '🌲🏠💥🛞 LES + DESTRUKCE + VOZIDLA  ·  táhni=rozhled · WASD=pohyb/řízení · ŤUKNI/F=výstřel · 1-6=ráže · N=den/noc · V=TANK · C=AUTO\nDŮM: RAKETA díra · APFSDS tunel · OF-152(6) drtí beton · BUNKR=železobeton (nic).  TANK: cihlu+beton prorazí, ocel/bunkr ho zastaví.  AUTO: cihlu ani vzrostlý strom NEPORAZÍ — odrazí se';
+{ const T0 = new URLSearchParams(location.search).get('time'); const idx = ['day', 'dusk', 'night'].indexOf(T0); if (idx >= 0) { timeIdx = idx; setTime(T0); } }
+window.__READY = true;
+window.DEMO = {
+  fire, setCal(i) { cal = i; refreshWpn(); },
+  setView(az, el, tx, ty, tz) { if (az != null) cam.az = az; if (el != null) cam.el = el; if (tx != null) target.set(tx, ty, tz); applyCam(); },
+  snap() { resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', 0.92); },
+  state() { return { trees: trees.length, standing: treeMeshes.length, broken: trees.filter(r => r.broken).length, falling: FALLING.length, settled: FALLING.filter(f => f.body.settled).length, cal: CALS[cal], soldiers: combat.alive().length, house: houseBD ? houseBD.stats() : (window.__HOUSE?.error ? 'ERR' : 'loading') }; },
+  perf() { const r = renderer.info.render; return { fps: _fps, drawCalls: r.calls, triangles: r.triangles }; },
+  time: (m) => setTime(m),
+  // deterministic test hooks (decouple verification from aim + headless FPS)
+  __test: {
+    breakNearest(mode) { const rec = trees.find(r => !r.broken); if (!rec) return null; breakTree(rec, rec.height * 0.4, mode); return { species: rec.species, height: +rec.height.toFixed(2), bodies: FALLING.length }; },
+    step(n) { for (let s = 0; s < n; s++) for (const f of FALLING) if (!f.body.settled) stepBody(f.body, 0.016); return FALLING.map(f => ({ k: f.kind, settled: f.body.settled, angle: f.kind === 'hinge' ? +f.body.angle.toFixed(2) : null })); },
+    // deterministic house-destruction hooks (world coords; cottage centred at HOUSE_POS, N wall ≈ z −10)
+    houseBlast(x, y, z) { return houseBD ? { hit: houseBD.blast(new THREE.Vector3(x, y, z), 'heRocket'), ...houseBD.stats() } : null; },
+    houseAP(ox, oy, oz, dx, dy, dz) { return houseBD ? { hit: houseBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...houseBD.stats() } : null; },
+    houseBullet(x, y, z, key) { return houseBD ? { hit: houseBD.bullet(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, -1), key || 'hmg127', null), ...houseBD.stats() } : null; },
+    houseStats() { return houseBD ? houseBD.stats() : null; },
+    stepHouse(n) { for (let s = 0; s < n; s++) for (const bd of destructibles) bd.update(0.016); return houseBD ? houseBD.stats() : null; },
+    // combatants (FPS mechanics) — deterministic LoS / damage hooks
+    soldierStats() { return combat.stats(); },
+    spawnSoldier(x, z, indoors) { const s = combat.spawn(x, z, { indoors }); return { id: s.id, pos: [x, z] }; },
+    los(i, px, py, pz) { const s = combat.soldiers[i]; if (!s) return null; return combat.canSee(new THREE.Vector3(s.pos.x, s.eyeY, s.pos.z), new THREE.Vector3(px, py, pz)); },
+    hitSoldier(i, dmg) { const s = combat.soldiers[i]; if (!s) return null; combat.hurt(s, dmg ?? 50, 'test'); return combat.stats()[i]; },
+    // #1 penetration: fire a penetrating round from an explicit ray → { hit, pierced, killed }
+    penShot(ox, oy, oz, dx, dy, dz, key) { return shoot(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz), key || 'rifle'); },
+    crateStats() { return crates.map(c => c.stats()); },
+    blastAt(x, y, z, key) { const at = new THREE.Vector3(x, y, z); for (const bd of destructibles) bd.blast(at, key || 'heRocket'); return window.__COLONNADE ? window.__COLONNADE.stats() : null; },
+    // #2 cover-seek: advance combat N frames with the player at (px,py,pz) → soldiers move to cover
+    tickCombat(n, px, py, pz) { const pp = new THREE.Vector3(px, py, pz); for (let s = 0; s < (n || 16); s++) combat.update(0.016, { playerPos: pp, coverAABBs: COVER }); return combat.stats(); },
+    // #4 dust LoS: drop a smoke cloud, then check a soldier's LoS through it
+    addSmoke(x, y, z, r, life) { combat.addSmoke(x, y, z, r ?? 3.4, life ?? 4); return combat.smoke.length; },
+    fellNearest(sx, sz) { let best = null, bd = 1e9; for (const r of trees) { if (r.broken) continue; const d = (r.x - sx) ** 2 + (r.z - sz) ** 2; if (d < bd) { bd = d; best = r; } } if (!best) return null; breakTree(best, 0, 'topple', 2 * best.x - sx, 2 * best.z - sz); return { tree: [+best.x.toFixed(1), +best.z.toFixed(1)], height: +best.height.toFixed(1) }; },
+    // #5 env-kills: advance collapse chunks + falling trees N frames, checking hazards each frame
+    stepEnv(n) {
+      for (let s = 0; s < (n || 80); s++) {
+        for (const bd of destructibles) bd.update(0.016);
+        for (const f of FALLING) { if (f.body.settled) continue; stepBody(f.body, 0.016); if (f.kind === 'hinge') { _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize(); f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle); } else { f.mesh.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]); } }
+        combat.checkHazards(hazardZones());
+      }
+      return combat.stats();
+    },
+    // bunker (reinforced concrete) — verify HE/AP can't breach it
+    bunkerBlast(x, y, z, key) { return bunkerBD ? { hit: bunkerBD.blast(new THREE.Vector3(x, y, z), key || 'he152'), ...bunkerBD.stats() } : null; },
+    bunkerAP(ox, oy, oz, dx, dy, dz) { return bunkerBD ? { hit: bunkerBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...bunkerBD.stats() } : null; },
+    bunkerStats() { return bunkerBD ? bunkerBD.stats() : null; },
+    he152(x, y, z) { return houseBD ? { hit: houseBD.blast(new THREE.Vector3(x, y, z), 'he152'), ...houseBD.stats() } : null; },
+    // detonate at a world point and report each felled tree's offset vs its fall dir (must be RADIAL: same sign ⇒ falls outward from the blast, not toward the camera)
+    rocketAt(x, y, z, key) {
+      const at = new THREE.Vector3(x, y, z), w = LAB_WEAPONS[key || 'heRocket'];
+      for (const bd of destructibles) bd.blast(at, key || 'heRocket');
+      const treeR = (w.blast.r2 || 6) * 1.33, felled = [];
+      for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - x, dz = rec.z - z; if (dx * dx + dz * dz <= treeR * treeR) { breakTree(rec, 0, 'topple', x, z); felled.push([dx, dz]); } }
+      return FALLING.filter(f => f.kind === 'hinge').slice(-felled.length).map((f, i) => ({ off: [+felled[i][0].toFixed(1), +felled[i][1].toFixed(1)], dir: [+f.body.dirXZ[0].toFixed(2), +f.body.dirXZ[1].toFixed(2)] }));
+    },
+    // vehicle crush: probe a hull-sized box at a point → {blocked, drag, crushed} per building
+    crushAt(x, y, z, crushTier) {
+      const a = new THREE.Box3(new THREE.Vector3(x - 1.5, y - 0.7, z - 1.5), new THREE.Vector3(x + 1.5, y + 0.7, z + 1.5));
+      return destructibles.map(bd => bd.applyCrush(a, { crushTier: crushTier ?? 3 }));
+    },
+    // drive a vehicle (type 'tank'|'car') forward from (x,z,ry) for N frames → how far it advanced
+    tankDrive(x, z, ry, steps, type) {
+      vehicleMode = false; enterVehicle(type || 'tank');
+      veh.pos.set(x, 0, z); veh.ry = ry; veh.speed = 0;
+      const sx = veh.pos.x, sz = veh.pos.z;
+      for (let s = 0; s < (steps || 120); s++) { keys['w'] = true; driveVehicle(0.016); combat.checkHazards(hazardZones()); }
+      keys['w'] = false;
+      return { vehicle: veh.type, advanced: +Math.hypot(veh.pos.x - sx, veh.pos.z - sz).toFixed(2), endZ: +veh.pos.z.toFixed(2), speed: +veh.speed.toFixed(2) };
+    }
+  }
+};
+</script>
+</body></html>
