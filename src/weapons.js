@@ -1573,7 +1573,7 @@ export class WeaponSystem {
       if (wHit) {
         const box = wHit.box;
         if (box && box.downer && soft < SOFT_BUDGET && this._softPenetrable(box, d)) {
-          this._destructHit(wHit, dir, d, mult);           // carve the soft pane/board/trunk (host-auth inside)
+          this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));   // carve soft cover with the marched (decayed) energy
           if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }   // glass is a free pass (like APFSDS)
           const adv = Math.max(0.05, wHit.dist + 0.06);    // step the ray just past this layer
           o = o.clone().addScaledVector(dir, adv); range -= adv;
@@ -1584,7 +1584,7 @@ export class WeaponSystem {
         this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
         if (box && box.struct && box._ref) { this.game.build.playerDamage(box._ref, dmg); this.game.hud.hitmarker(false); }       // fortifications
         else if (box && box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(box.explodable, dmg, wHit.point); this.game.hud.hitmarker(false); } // FAB-500
-        else if (box && box.downer) { this._destructHit(wHit, dir, d, mult); }   // hard destructible (brick cell / wall)
+        else if (box && box.downer) { this._destructHit(wHit, dir, d, dmg / (d.dmg || 1)); }   // hard destructible (brick cell / wall) — decayed energy
         return;
       }
       this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
