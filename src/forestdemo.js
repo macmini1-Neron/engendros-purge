@@ -162,17 +162,24 @@ export class ForestDemo {
   // spreads tree↔tree on its own. ──────────────────────────────────────────────────────────────────
   flammableParts() {
     const out = [];
-    for (const t of this.trees) if (t.standing && t.part && !t.part.dead) out.push(t.part);
+    for (const t of this.trees) if (t.standing && t.part && !t.part.dead && !t.burntOut) out.push(t.part);
     return out;
   }
+  // FIRE phase 1 — the foliage BLACKENS in place (chars, still leafy): tint the whole merged mesh dark
+  // so leaves + bark scorch together. dropLeaves() later strips the leaves for the bare snag.
   charTree(tree) {
     if (!tree || !tree.standing || tree.charred) return;
     tree.charred = true;
     if (tree.part) tree.part.dhp = Math.max(1, tree.part.dhp * 0.5);   // charred wood snaps under the next hit
-    if (!tree.mesh) return;
-    // Rebuild the STANDING tree as its bare, blackened CHARRED self — same species/seed/scale and the
-    // SAME height (rec.height, NOT the short burntCharred snag) so the dead snag matches its neighbours.
-    // The leaves burn off in place (the fire keeps spanning the now-bare trunk) and it later fells charred.
+    if (tree.mesh && tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x161310); // scorched black
+  }
+
+  // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self at the
+  // SAME height/species/seed (rec.height, NOT the short burntCharred snag) so the dead snag matches its
+  // neighbours. The fire keeps spanning the bare trunk; it later either fells charred or stays a burnt snag.
+  dropLeaves(tree) {
+    if (!tree || tree.bare || !tree.standing || !tree.mesh) return;
+    tree.bare = true;
     try {
       const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, height: tree.height, lod: 0, damage: 'charred' });
       const old = tree.mesh;
@@ -184,8 +191,16 @@ export class ForestDemo {
       if (old.geometry) old.geometry.dispose();
       if (old.material && old.material.dispose) old.material.dispose();
     } catch (e) {
-      if (tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x4a4038); // fallback: just scorch-tint
+      if (tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x161310); // fallback: keep the scorch tint
     }
+  }
+
+  // A fire that burned out WITHOUT toppling the tree (the ~70% that don't fall): it stays standing as a
+  // bare burnt snag, off the flammable list (won't re-ignite) but still shootable — a later hit fells it.
+  burnoutSnag(tree) {
+    if (!tree) return;
+    tree.burntOut = true;
+    if (!tree.bare) this.dropLeaves(tree);
   }
   charTreeById(id) { const t = this._treeById(id); if (t) this.charTree(t); }
 

@@ -40,8 +40,12 @@ const TICK_HZ        = 10;          // fire sim rate (fixed step)
 const OBJ_CAP        = 24;          // max concurrent burning objects (trees + building wood)
 const GRASS_CAP      = 48;          // max concurrent burning grass cells
 const SEC_PER_FUEL   = 0.9;         // burn duration = MATERIALS.fuel × this (trunk 10 → 9 s)
-const CHAR_TIME      = 2.4;         // a tree chars this long after ignition (forest.charTree)
-const FELL_ON_BURNOUT = true;       // a fully burned tree topples (forest.fellTree)
+// A tree's leaves die in two stages over the burn (gradual, not instant): first they BLACKEN in
+// place (char, still leafy), then later they DROP and the tree goes bare. On burnout only FELL_PCT%
+// topple — the rest stay up as standing burnt snags.
+const LEAF_BLACKEN_FRAC = 0.30;     // at this share of the burn the foliage chars black (forest.charTree)
+const LEAF_DROP_FRAC    = 0.72;     // at this share the blackened leaves drop → bare snag (forest.dropLeaves)
+const FELL_PCT          = 30;       // % of fire-killed trees that TOPPLE on burnout; the rest remain standing burnt
 // per-kind spread behaviour: radius (m) + per-tick ignite probability + flame visual size + how
 // many flame billboards the fire owns (a tree spans many → a climbing column; grass/wood need 2).
 const KIND = {
@@ -152,7 +156,7 @@ export class FireManager {
       part, owner: part.downer, kind, seed,
       cx, cz, baseY, midY: baseY + Math.min(1.2, (part.max[1] - baseY) * 0.5),
       age: 0, duration: mat.fuel * SEC_PER_FUEL,
-      charDone: false, slots: [],
+      blackened: false, bared: false, slots: [],
     };
     if (kind === 'tree') {
       // Full tree height: ForestDemo tree records carry .height (the collision box is a short trunk
@@ -286,9 +290,16 @@ export class FireManager {
       const f = this.fires[i];
       f.age += step;
 
-      if (f.kind === 'tree' && !f.charDone && f.age >= CHAR_TIME) {
-        f.charDone = true;
-        try { this.game.forest && this.game.forest.charTree(f.owner); } catch (e) { console.warn('[fire] charTree failed', e); }
+      if (f.kind === 'tree') {
+        const fr = this.game.forest;
+        if (!f.blackened && f.age >= f.duration * LEAF_BLACKEN_FRAC) {       // leaves char black, still on the tree
+          f.blackened = true;
+          try { fr && fr.charTree(f.owner); } catch (e) { console.warn('[fire] charTree failed', e); }
+        }
+        if (!f.bared && f.age >= f.duration * LEAF_DROP_FRAC) {              // blackened leaves drop → bare snag
+          f.bared = true;
+          try { fr && fr.dropLeaves && fr.dropLeaves(f.owner); } catch (e) { console.warn('[fire] dropLeaves failed', e); }
+        }
       }
 
       // ember chain — roll to ignite the nearest untouched flammable in range, LOS-gated.
@@ -317,9 +328,15 @@ export class FireManager {
         else if (f.part) f.part.dead = true;
       } else if (f.kind === 'tree') {
         const fr = this.game.forest;
-        if (fr) {
-          if (!f.charDone) fr.charTree(f.owner);
-          if (FELL_ON_BURNOUT && f.owner && f.owner.standing) fr.fellTree(f.owner, null, f.seed);
+        if (fr && f.owner && f.owner.standing) {
+          if (!f.blackened) fr.charTree(f.owner);
+          // ~FELL_PCT% of fire-killed trees TOPPLE (charred split); the rest stay up as bare burnt snags.
+          if ((f.seed >>> 7) % 100 < FELL_PCT) {
+            fr.fellTree(f.owner, null, f.seed);
+          } else {
+            if (!f.bared && fr.dropLeaves) fr.dropLeaves(f.owner);
+            if (fr.burnoutSnag) fr.burnoutSnag(f.owner);
+          }
         }
       } else if (f.kind === 'grass') {
         // grass is consumed — route through forest so the host broadcasts the consume (co-op).
