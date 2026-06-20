@@ -80,6 +80,11 @@ const addCover = (res, x, z, { scale = 1, wind = 0 } = {}) => {
 // ====================================================================
 const GAME_SCALE = 0.42;
 const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2 };   // crush class
+// ── BREAK TUNING — the ONE place to scale "by caliber" in the in-game balance pass. ──
+const TREE_HP   = { 1: 30, 2: 110, 3: 200 };          // trunk HP by crush class: sapling / grown / oak
+const CAL_DMG   = { pistol: 0, rifle: 30, hmg127: 40, heRocket: 9999, apfsds: 9999 }; // dmg/shot → hits-to-fell = ceil(hp/dmg)  (grown≈3 HMG, oak≈5)
+const HE_RADIUS = 8;                                  // rocket blast radius (m) — bigger
+const FAST_BOOST = 0;                                 // extra fell angVel for APFSDS (0 = falls the same as HMG)
 const trees = [], treeMeshes = [], stumps = [];
 function addTree(species, x, z, varietyScale, seed, sapling) {
   const scale = GAME_SCALE * varietyScale;
@@ -89,7 +94,7 @@ function addTree(species, x, z, varietyScale, seed, sapling) {
   m.castShadow = true; m.receiveShadow = true; scene.add(m);
   const cls = sapling ? 1 : (SPECIES_CLS[species] || 2);
   const tier = cls === 1 ? 1 : 2;                            // sapling=wood(1), grown=trunk(2)
-  const rec = { species, seed, scale, x, z, yaw, height: res.height, mesh: m, cls, tier, broken: false };
+  const rec = { species, seed, scale, x, z, yaw, height: res.height, mesh: m, cls, tier, hp: TREE_HP[cls], broken: false };
   m.userData.tree = rec; trees.push(rec); treeMeshes.push(m);
 }
 
@@ -136,7 +141,7 @@ function breakTree(rec, hitY, mode) {
   const pivot = new THREE.Group(); pivot.position.set(rec.x, breakY, rec.z); pivot.add(top); scene.add(pivot);
   const length = Math.max(0.5, rec.height - breakY);
   const body = makeHinge({ pivot: [rec.x, breakY, rec.z], dirXZ, length, radius: 0.22, seed, obstacles: [] });
-  if (mode === 'fast') body.angVel = 2.8;                    // APFSDS: violent quick snap
+  if (mode === 'fast' && FAST_BOOST) body.angVel = FAST_BOOST; // APFSDS fell speed (0 = same natural topple as HMG)
   FALLING.push({ kind: 'hinge', body, pivot });
   debris.burst('splints', [rec.x, breakY, rec.z], seed);
   if (mode === 'fast') debris.burst('splints', [rec.x, breakY + 0.7, rec.z], seed + 7);
@@ -162,7 +167,7 @@ function fire() {
     if (!hits.length) return;                                // aimed at open sky → nothing
     const at = hits[0].point;
     debris.burst('rubble', [at.x, at.y, at.z], (Math.random() * 1e9) | 0);
-    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= (w.blast.r1 + 2.5) ** 2) breakTree(rec, 0, 'topple'); }
+    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= HE_RADIUS * HE_RADIUS) breakTree(rec, 0, 'topple'); }
     return;
   }
   // bullets: only a DIRECT hit on a standing tree (or its stump) does anything — ground is ignored.
@@ -171,7 +176,10 @@ function fire() {
   const h = hits[0];
   if (h.object.userData.stump) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // stump keeps a hit box: splinters, no re-break
   const rec = h.object.userData.tree; if (!rec || rec.broken) return;
-  if (w.pen < rec.tier) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // pen<tier: bark plink only
+  const dmg = CAL_DMG[CALS[cal]] || 0;
+  if (w.pen < rec.tier || dmg <= 0) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // can't fell this tier → bark plink
+  rec.hp -= dmg;
+  if (rec.hp > 0) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // chewing the trunk — fells only when hp ≤ 0 (hits-to-fell = TREE_HP/CAL_DMG)
   const mode = (CALS[cal] === 'apfsds') ? 'fast' : (rec.cls === 1 ? 'uproot' : 'snap');
   breakTree(rec, h.point.y, mode);
 }
