@@ -103,6 +103,30 @@ function demoHeight(x, z, seed, tune) {
   return h;
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// 'forest' profile tuning — its OWN hilly heightfield (distinct from 'demo'), used by ?map=forest.
+// More relief + a list of Gaussian hills incl. a shallow DELL (negative height) for a wooded valley.
+// ───────────────────────────────────────────────────────────────────────────
+export const FOREST_TUNING = {
+  fbmAmplitude: 5.4,                                    // wooded rolling hills — a touch more relief than demo
+  fbm: { octaves: 5, freq: 1 / 50, lacunarity: 2.1, gain: 0.52 },
+  hills: [
+    { x: -54, z: 46, height: 14, sigma: 40 },          // broad walkable overlook (a sniper rise)
+    { x: 44, z: 30, height: 9, sigma: 24 },            // a second wooded hummock
+    { x: 20, z: -42, height: 9, sigma: 4.5 },          // a STEEP knoll — a wall-face you bump into
+    { x: -30, z: -34, height: -4, sigma: 18 },         // a shallow dell / hollow (negative ⇒ depression)
+  ],
+};
+
+function forestHeight(x, z, seed, tune) {
+  let h = tune.fbmAmplitude * fbm(x, z, seed, tune.fbm);
+  for (const hl of tune.hills) {
+    const dx = x - hl.x, dz = z - hl.z;
+    h += hl.height * Math.exp(-(dx * dx + dz * dz) / (2 * hl.sigma * hl.sigma));
+  }
+  return h;
+}
+
 // True when a horizontal move that raised the ground from gBefore→gAfter climbed INTO terrain steeper
 // than slopeLimit (radians). The horde slope-limit uses this; the player path (world._moveAxisTerrain)
 // inlines the same check. Pure (no THREE).
@@ -115,7 +139,7 @@ export function slopeBlocks(gBefore, gAfter, slopeAtTarget, slopeLimit, eps = 1e
 // ───────────────────────────────────────────────────────────────────────────
 /**
  * @param {object}  [opts]
- * @param {'flat'|'demo'} [opts.profile='flat']
+ * @param {'flat'|'demo'|'forest'} [opts.profile='flat']
  * @param {number}  [opts.seed=1337]            Fixed at construction — never per-call.
  * @param {number}  [opts.slopeLimit]           radians; isPlaceable & walkability gate.
  *                                               Default 35° (Math.PI*35/180).
@@ -128,13 +152,14 @@ export function makeTerrain(opts = {}) {
   const profile = opts.profile || 'flat';
   const seed = (opts.seed != null ? opts.seed : 1337) | 0;
   const slopeLimit = opts.slopeLimit != null ? opts.slopeLimit : (Math.PI * 35) / 180;
-  const tune = { ...DEMO_TUNING, ...(opts.tuning || {}) };
+  const tune = { ...(profile === 'forest' ? FOREST_TUNING : DEMO_TUNING), ...(opts.tuning || {}) };
   const reserved = opts.reserved || [];
-  const isFlat = profile !== 'demo';
+  const isFlat = profile === 'flat';                   // every non-'flat' profile ('demo' / 'forest') is hilly
 
   // height — the single source of truth. PURE.
   function terrainHeightAt(x, z) {
     if (isFlat) return 0;
+    if (profile === 'forest') return forestHeight(x, z, seed, tune);
     return demoHeight(x, z, seed, tune);
   }
 
