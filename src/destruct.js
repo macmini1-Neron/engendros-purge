@@ -255,14 +255,18 @@ export function makeHinge({ pivot, dirXZ, length, radius, seed = 1, obstacles = 
   };
 }
 
-// Ballistic tumbling chunk (HE hero debris). pos/vel = [x,y,z].
-export function makeTumble({ pos, vel, seed = 1, radius = 0.15 }) {
+// Ballistic tumbling chunk (HE hero debris / collapsing masonry). pos/vel = [x,y,z].
+//   g    overrides gravity (default 9.81 = physical). Pass a smaller value (e.g. FALL_G ≈ 4.2) for a
+//        slower, weightier collapse — heavy masonry settling reads better slowed down (owner request).
+//   spin scales the tumble rate (1 = default; < 1 = a heavy, lazy roll).
+// Both default to the previous behaviour, so the lone existing caller path is byte-identical.
+export function makeTumble({ pos, vel, seed = 1, radius = 0.15, g = G, spin = 1 }) {
   const rng = mulberry32(seed);
   const ax = [rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1];
   const n = Math.hypot(...ax) || 1;
   return {
-    kind: 'tumble', pos: [...pos], vel: [...vel],
-    rotAxis: ax.map(v => v / n), rotAngle: 0, rotSpeed: 2 + rng() * 6,
+    kind: 'tumble', pos: [...pos], vel: [...vel], g,
+    rotAxis: ax.map(v => v / n), rotAngle: 0, rotSpeed: (2 + rng() * 6) * spin,
     bounces: 0, settled: false, acc: 0, radius,
   };
 }
@@ -306,7 +310,7 @@ function subHinge(b) {
 }
 
 function subTumble(b) {
-  b.vel[1] -= G * SUBSTEP;
+  b.vel[1] -= (b.g ?? G) * SUBSTEP;   // per-body gravity (makeTumble always sets b.g; ?? guards legacy bodies)
   for (let i = 0; i < 3; i++) b.pos[i] += b.vel[i] * SUBSTEP;
   b.rotAngle += b.rotSpeed * SUBSTEP;
   if (b.pos[1] <= b.radius) {
