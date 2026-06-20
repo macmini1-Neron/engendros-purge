@@ -355,6 +355,8 @@ export class BuildingDestruct {
   // `drag` ∈ (0,1] is how much the vehicle slows this frame (more / harder cells ⇒ slower).
   applyCrush(aabb, opts = {}) {
     const crushTier = opts.crushTier ?? 3;
+    // NOTE: assumes the building group is NOT rotated (true for the demo). For a rotated building the
+    // two transformed corners would not bound an axis-aligned local box — revisit for the game port.
     const lo = this._local(new THREE.Vector3(aabb.min.x, aabb.min.y, aabb.min.z));
     const hi = this._local(new THREE.Vector3(aabb.max.x, aabb.max.y, aabb.max.z));
     const x0 = Math.min(lo.x, hi.x), x1 = Math.max(lo.x, hi.x), y0 = Math.min(lo.y, hi.y), y1 = Math.max(lo.y, hi.y), z0 = Math.min(lo.z, hi.z), z1 = Math.max(lo.z, hi.z);

@@ -28,7 +28,7 @@ export class Combatants {
   // { scene, destructibles: BuildingDestruct[], debris: DebrisPool }
   constructor({ scene, destructibles, debris }) {
     this.scene = scene; this.destructibles = destructibles; this.debris = debris;
-    this.soldiers = []; this._tick = 0; this.smoke = [];
+    this.soldiers = []; this._tick = 0; this.smoke = []; this._corpses = [];
   }
 
   // #4 dust/smoke concealment: a lingering cloud (from a breach/collapse) that BLOCKS line-of-sight
@@ -72,32 +72,34 @@ export class Combatants {
     s.mesh.rotation.z = (Math.PI / 2) * (s.id % 2 ? 1 : -1);    // topple the body
     s.mesh.position.set(s.pos.x, 0.25, s.pos.z);
     if (this.debris) this.debris.burst('rubble', [s.pos.x, 0.8, s.pos.z], (s.id * 1597) | 0, 5);
+    this._corpses.push(s.mesh);                                 // cap corpses so a long session doesn't pile up meshes
+    while (this._corpses.length > 24) { const m = this._corpses.shift(); this.scene.remove(m); m.geometry.dispose(); }
   }
 
   // segment LoS from `from` (Vector3) to `to` (Vector3): blocked if any LIVE building mesh sits
-  // between them. (Dust occlusion is layered in by mechanic #4.)
-  canSee(from, to) {
+  // between them, or any active smoke cloud does (#4). `targets` is the building-mesh list — pass the
+  // per-frame cache (update() builds it once) to avoid rebuilding it on every soldier × cover check.
+  canSee(from, to, targets) {
     _from.copy(from); _dir.copy(to).sub(_from);
     const dist = _dir.length(); if (dist < 1e-3) return true;
     _dir.divideScalar(dist);
     _ray.set(_from, _dir); _ray.near = 0; _ray.far = dist - 0.35;   // stop short of the target's own surface
-    const targets = this.destructibles.flatMap((bd) => bd.meshes());
-    if (_ray.intersectObjects(targets, false).length) return false;   // a wall blocks
-    for (const sm of this.smoke) if (this._segSphere(from, to, sm.x, sm.y, sm.z, sm.cur * 0.9)) return false;   // smoke blocks
+    if (_ray.intersectObjects(targets || this.destructibles.flatMap((bd) => bd.meshes()), false).length) return false; // wall
+    for (const sm of this.smoke) if (this._segSphere(from, to, sm.x, sm.y, sm.z, sm.cur * 0.9)) return false;   // smoke
     return true;
   }
 
   // #2 destruction = cover: stand behind the nearest cover whose far side BREAKS LoS to the player.
   // When you blow that cover away (the canSee check stops returning false there) the soldier is
   // exposed again and re-seeks. cover = world AABBs the demo passes in ctx.coverAABBs.
-  _bestCover(s, pp, cover) {
+  _bestCover(s, pp, cover, targets) {
     let best = null, bestD = Infinity;
     for (const c of cover) {
       const cx = (c.min[0] + c.max[0]) / 2, cz = (c.min[2] + c.max[2]) / 2;
       const dx = cx - pp.x, dz = cz - pp.z, dl = Math.hypot(dx, dz) || 1;
       const reach = Math.max(c.max[0] - c.min[0], c.max[2] - c.min[2]) / 2 + 0.9;
       _to.set(cx + dx / dl * reach, s.eyeY, cz + dz / dl * reach);
-      if (this.canSee(_to, pp)) continue;                  // still visible there → not real cover
+      if (this.canSee(_to, pp, targets)) continue;         // still visible there → not real cover
       const d = (_to.x - s.pos.x) ** 2 + (_to.z - s.pos.z) ** 2;
       if (d < bestD) { bestD = d; best = _to.clone(); best.y = 0; }
     }
@@ -114,14 +116,15 @@ export class Combatants {
       sm.mesh.scale.setScalar(sm.cur); sm.mesh.material.opacity = 0.5 * Math.min(1, sm.life / 0.7) * (1 - k * 0.25);
     }
     const pp = ctx.playerPos, cover = ctx.coverAABBs || [];
+    const targets = pp ? this.destructibles.flatMap((bd) => bd.meshes()) : null;   // build the LoS target list ONCE per frame
     for (let i = 0; i < this.soldiers.length; i++) {
       const s = this.soldiers[i];
       if (s.state === 'dead') continue;
       // throttled think — each soldier re-evaluates every 8 frames, staggered by index (lag-safe)
       if (pp && (this._tick + i) % 8 === 0) {
         _from.set(s.pos.x, s.eyeY, s.pos.z);
-        s.seesPlayer = this.canSee(_from, pp, ctx);
-        if (s.seesPlayer && cover.length) { const spot = this._bestCover(s, pp, cover); if (spot) { s.target = spot; s.state = 'moving'; } else s.state = 'exposed'; }
+        s.seesPlayer = this.canSee(_from, pp, targets);
+        if (s.seesPlayer && cover.length) { const spot = this._bestCover(s, pp, cover, targets); if (spot) { s.target = spot; s.state = 'moving'; } else s.state = 'exposed'; }
         else if (!s.seesPlayer && s.state !== 'moving') s.state = 'cover';
       }
       // movement toward the chosen cover (simple lerp; no pathfinding needed for the demo)

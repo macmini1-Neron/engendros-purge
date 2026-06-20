@@ -303,6 +303,9 @@ const shotRay = new THREE.Raycaster();
 function shoot(origin, dir, key) {
   const w = LAB_WEAPONS[key];
   dir = dir.clone().normalize(); shotRay.set(origin, dir);
+  // NOTE: hits are precomputed once; after a pierced cell carves + rebuilds its bucket mesh, later
+  // entries still point at the (disposed) old mesh. We only read h.point/userData, so it's safe — a
+  // 2nd wall of the SAME building re-resolves via _cellAt (a carved hole → no-op). Fine for the demo.
   const hits = shotRay.intersectObjects([...treeMeshes, ...stumps, ...houseMeshes(), ...combat.meshes()], false);
   const back = [-dir.x, -dir.y, -dir.z], result = { hit: false, pierced: 0, killed: 0 };
   let energy = w.dmg || 20, pierced = 0;
