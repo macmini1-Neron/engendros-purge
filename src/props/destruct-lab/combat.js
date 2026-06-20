@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { MeshBuilder, voxelMaterial } from '../../util.js';
 
 const _ray = new THREE.Raycaster();
-const _from = new THREE.Vector3(), _to = new THREE.Vector3(), _dir = new THREE.Vector3();
+const _from = new THREE.Vector3(), _to = new THREE.Vector3(), _dir = new THREE.Vector3(), _v = new THREE.Vector3();
 let _mat = null;
 const mat = () => (_mat || (_mat = voxelMaterial()));
 
@@ -70,16 +70,41 @@ export class Combatants {
     return _ray.intersectObjects(targets, false).length === 0;
   }
 
+  // #2 destruction = cover: stand behind the nearest cover whose far side BREAKS LoS to the player.
+  // When you blow that cover away (the canSee check stops returning false there) the soldier is
+  // exposed again and re-seeks. cover = world AABBs the demo passes in ctx.coverAABBs.
+  _bestCover(s, pp, cover) {
+    let best = null, bestD = Infinity;
+    for (const c of cover) {
+      const cx = (c.min[0] + c.max[0]) / 2, cz = (c.min[2] + c.max[2]) / 2;
+      const dx = cx - pp.x, dz = cz - pp.z, dl = Math.hypot(dx, dz) || 1;
+      const reach = Math.max(c.max[0] - c.min[0], c.max[2] - c.min[2]) / 2 + 0.9;
+      _to.set(cx + dx / dl * reach, s.eyeY, cz + dz / dl * reach);
+      if (this.canSee(_to, pp)) continue;                  // still visible there → not real cover
+      const d = (_to.x - s.pos.x) ** 2 + (_to.z - s.pos.z) ** 2;
+      if (d < bestD) { bestD = d; best = _to.clone(); best.y = 0; }
+    }
+    return best;
+  }
+
   update(dt, ctx = {}) {
     this._tick++;
-    const pp = ctx.playerPos;
+    const pp = ctx.playerPos, cover = ctx.coverAABBs || [];
     for (let i = 0; i < this.soldiers.length; i++) {
       const s = this.soldiers[i];
       if (s.state === 'dead') continue;
-      // throttled LoS — each soldier re-checks every 8 frames, staggered by index (lag-safe)
+      // throttled think — each soldier re-evaluates every 8 frames, staggered by index (lag-safe)
       if (pp && (this._tick + i) % 8 === 0) {
         _from.set(s.pos.x, s.eyeY, s.pos.z);
-        s.seesPlayer = this.canSee(_from, pp);
+        s.seesPlayer = this.canSee(_from, pp, ctx);
+        if (s.seesPlayer && cover.length) { const spot = this._bestCover(s, pp, cover); if (spot) { s.target = spot; s.state = 'moving'; } else s.state = 'exposed'; }
+        else if (!s.seesPlayer && s.state !== 'moving') s.state = 'cover';
+      }
+      // movement toward the chosen cover (simple lerp; no pathfinding needed for the demo)
+      if (s.state === 'moving' && s.target) {
+        _v.copy(s.target).sub(s.pos); _v.y = 0; const dist = _v.length();
+        if (dist > 0.08) { _v.multiplyScalar(Math.min(dist, 2.6 * dt) / dist); s.pos.add(_v); s.mesh.position.copy(s.pos); }
+        if (dist < 0.5) s.state = s.seesPlayer ? 'exposed' : 'cover';
       }
     }
   }
