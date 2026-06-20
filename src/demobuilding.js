@@ -69,6 +69,8 @@ const H  = 3.2;                  // roof underside
 const SILL = 1.05, HEAD = 2.10;  // window opening (glass occupies SILL→HEAD)
 const DOORH = 2.15;              // door head
 const SEG_TARGET = 1.7;          // target breach-segment width
+const CELL = 0.5;                // voxel cell size — destructible brick segments dice into CELL cells
+                                 // (fine holes + orphan-collapse), reusing the part/box/rebuild pipeline
 
 export class DemoBuilding {
   constructor(game) {
@@ -76,7 +78,8 @@ export class DemoBuilding {
     this.world = game.world;
     this.scene = this.world.scene;
 
-    this.parts = [];                 // destructible part-metadata (brick segs / wood door / glass panes)
+    this.parts = [];                 // destructible part-metadata (brick cells / wood door / glass panes)
+    this.cells = [];                 // brick-wall CELLS subset of parts (carry .grounded/.adj for collapse)
     this._opaque = [];               // ALL opaque geometry descriptors (static + destructible) for the lazy-split merge
     this._boxById = new Map();       // dpart → linked world collision box (for removal on death)
     this._staticBoxes = [];          // plain collision boxes that never die
@@ -89,7 +92,7 @@ export class DemoBuilding {
 
     this.debris = new DebrisPool(this.scene);
 
-    try { this._place(); this._build(); this._navTestbed(); this.rebuild(); this.placed = true; }
+    try { this._place(); this._build(); this._wireCells(); this._navTestbed(); this.rebuild(); this.placed = true; }
     catch (e) { console.warn('[demobuilding] build failed — continuing without building', e); }
 
     // NB: build the runtime AFTER _build() — DestructRuntime snapshots its parts list with
@@ -285,8 +288,8 @@ export class DemoBuilding {
         // grab the FIRST window sill as the resting spot for the «Электроника» desk clock
         if (!this._clockXf) this._clockXf = this._sillSpot(axis, fixed, ac);
       } else {
-        // BREACH SEGMENT: full-height destructible brick (HE removes → walkable hole)
-        this._destruct(axis, fixed, ac, w, bY + WB, bY + WT, 'brick', BR.mid);
+        // BREACH SEGMENT: full-height destructible brick, DICED into voxel cells (fine holes + collapse)
+        this._destructGrid(axis, fixed, ac, w, bY + WB, bY + WT, 'brick');
       }
     }
   }
@@ -321,6 +324,49 @@ export class DemoBuilding {
     this.parts.push(part);
     this._opaque.push({ kind: mat, w: dm.w, h, d: dm.d, cx: dm.cx, cy, cz: dm.cz, color, part });
     this._pushBox(dm.cx, cy, dm.cz, dm.w, h, dm.d, this, id, mat);
+  }
+
+  // Dice a destructible brick wall segment into a GRID of voxel CELLS (fine holes + orphan-collapse).
+  // Each cell is a full destruct part + linked collision box + merged-opaque descriptor — so the
+  // existing parts/box/lazy-rebuild pipeline gives finer destruction for FREE (more, smaller parts).
+  // Brick columns always alternate with windows (see _wall), so every segment is an ISOLATED column:
+  // adjacency + collapse stay WITHIN the segment (cell.seg), no cross-segment support graph needed.
+  _destructGrid(axis, fixed, ac, al, y0, y1, mat) {
+    const seg = (this._nextSeg = (this._nextSeg | 0) + 1);
+    const ncx = Math.max(1, Math.round(al / CELL));
+    const ncy = Math.max(2, Math.round((y1 - y0) / CELL));
+    const cw = al / ncx, ch = (y1 - y0) / ncy;
+    for (let gi = 0; gi < ncx; gi++) {
+      const cac = ac - al / 2 + (gi + 0.5) * cw;          // cell along-axis centre
+      for (let gj = 0; gj < ncy; gj++) {
+        const cy0 = y0 + gj * ch, cy = cy0 + ch / 2, dm = this._dims(axis, fixed, cac, cw - 0.01);
+        const id = this._id();
+        const min = [dm.cx - dm.w / 2, cy0, dm.cz - dm.d / 2];
+        const max = [dm.cx + dm.w / 2, cy0 + ch, dm.cz + dm.d / 2];
+        const part = makePart(id, mat, min, max, 0.25);   // a CELL soaks ~1/4 of a full brick segment
+        part.downer = this;
+        part.seg = seg; part.gi = gi; part.gj = gj;
+        part.grounded = (gj === 0);                       // bottom row rests on the plinth (support root)
+        part.adj = [];                                    // filled by _wireCells()
+        this.parts.push(part); this.cells.push(part);
+        const col = gj === ncy - 1 ? BR.hi : (gj === 0 ? BR.lo : BR.mid);  // layered shade by row band
+        this._opaque.push({ kind: mat, cell: true, w: dm.w, h: ch, d: dm.d, cx: dm.cx, cy, cz: dm.cz, color: col, part });
+        this._pushBox(dm.cx, cy, dm.cz, dm.w, ch, dm.d, this, id, mat);
+      }
+    }
+  }
+
+  // Wire 4-neighbour adjacency within each brick segment so orphanedCells() can flood support up
+  // from the grounded (bottom) row. Called once after _build(), before the first rebuild.
+  _wireCells() {
+    const byKey = new Map();
+    for (const c of this.cells) byKey.set(`${c.seg}:${c.gi}:${c.gj}`, c);
+    for (const c of this.cells) {
+      for (const [dgi, dgj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = byKey.get(`${c.seg}:${c.gi + dgi}:${c.gj + dgj}`);
+        if (n) c.adj.push(n.dpart);
+      }
+    }
   }
 
   // A destructible GLASS pane: its OWN transparent mesh + destruct part + linked box.
@@ -358,16 +404,17 @@ export class DemoBuilding {
     if (this.merged) { this.group.remove(this.merged); this.merged.geometry.dispose(); }
     const mb = new MeshBuilder();
     for (const o of this._opaque) {
-      if (o.part && o.part.dead) continue;               // skip destroyed brick/wood
+      if (o.part && o.part.dead) continue;               // skip destroyed cell / door
       mb.box(o.w, o.h, o.d, o.cx, o.cy, o.cz, o.color);
-      if (o.kind === 'brick' || o.kind === 'wood') {     // layered-shading accents
+      if (!o.cell && (o.kind === 'brick' || o.kind === 'wood')) {  // segment-scale layered accents (door)
         mb.box(o.w, 0.08, o.d + 0.02, o.cx, o.cy + o.h / 2 - 0.04, o.cz, o.kind === 'wood' ? WD.hi : BR.hi);
         mb.box(o.w, 0.10, o.d + 0.01, o.cx, o.cy - o.h / 2 + 0.05, o.cz, o.kind === 'wood' ? WD.lo : BR.lo);
       }
     }
-    // rubble stubs at the base of every removed brick wall segment (breach reads as a hole)
+    // rubble stubs at the base of any removed SEGMENT-scale brick (cells leave clean voxel holes +
+    // collapse fallers instead, so this only fires for non-cell brick if any is ever added back)
     for (const o of this._opaque) {
-      if (o.kind !== 'brick' || !o.part || !o.part.dead) continue;
+      if (o.cell || o.kind !== 'brick' || !o.part || !o.part.dead) continue;
       mb.box(Math.min(1.2, o.w), 0.28, Math.max(0.5, o.d), o.cx, this.baseY + 0.14, o.cz, RUBBLE_A);
       mb.box(0.6, 0.2, 0.5, o.cx + 0.3, this.baseY + 0.32, o.cz + 0.1, RUBBLE_B);
     }
