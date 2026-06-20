@@ -133,6 +133,20 @@ export class Combatants {
     }
   }
 
+  // #5 environmental kills: any LIVE soldier standing inside a hazard AABB that reaches the ground
+  // (a collapsing chunk, the tank hull, a falling tree top) is killed — crushed / buried / run over.
+  checkHazards(zones) {
+    if (!zones || !zones.length) return 0;
+    let killed = 0;
+    for (const s of this.soldiers) {
+      if (s.state === 'dead') continue;
+      for (const z of zones) {
+        if (s.pos.x >= z.min[0] && s.pos.x <= z.max[0] && s.pos.z >= z.min[2] && s.pos.z <= z.max[2] && z.min[1] <= 1.5) { this.kill(s, z.kind || 'crush'); killed++; break; }
+      }
+    }
+    return killed;
+  }
+
   stats() {
     return this.soldiers.map((s) => ({ id: s.id, state: s.state, hp: Math.max(0, Math.round(s.hp)), sees: s.seesPlayer, pos: [+s.pos.x.toFixed(1), +s.pos.z.toFixed(1)], killedBy: s.killedBy || null }));
   }

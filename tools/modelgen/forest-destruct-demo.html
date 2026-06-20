@@ -202,6 +202,16 @@ function coverAABBs() {
 }
 const COVER = coverAABBs();
 
+// #5 hazard AABBs — a soldier caught inside a collapsing chunk / falling tree top / the tank dies
+const _hzBox = new THREE.Box3();
+function hazardZones() {
+  const zones = [], push = (k) => { if (!_hzBox.isEmpty()) zones.push({ min: [_hzBox.min.x, _hzBox.min.y, _hzBox.min.z], max: [_hzBox.max.x, _hzBox.max.y, _hzBox.max.z], kind: k }); };
+  for (const bd of destructibles) for (const f of (bd.fallers || [])) { _hzBox.setFromObject(f.grp); push('collapse'); }   // falling/landed building chunks
+  for (const f of FALLING) { if (f.body.settled) continue; _hzBox.setFromObject(f.pivot || f.mesh); push('tree'); }        // falling tree tops
+  if (vehicleMode && veh.grp) { _hzBox.setFromObject(veh.grp); _hzBox.min.y = 0; push('tank'); }                          // the hull, run-over
+  return zones;
+}
+
 // ====================================================================
 // FALLING BODIES — lab fallphys (hinge for the snapped top, tumble for shatter chunks).
 // ====================================================================
@@ -430,6 +440,7 @@ function frame() {
   debris.update(dt);
   for (const bd of destructibles) bd.update(dt);
   combat.update(dt, { playerPos: camera.position, coverAABBs: COVER });
+  { const hz = hazardZones(); if (hz.length) combat.checkHazards(hz); }   // #5 env-kills
   // pollen drift
   const a = pollen.geometry.attributes.position;
   for (let i = 0; i < N; i++) { let x = a.getX(i) + pv[i][0] * 0.04, y = a.getY(i) + pv[i][1] * 0.04, z = a.getZ(i) + pv[i][2] * 0.04; if (y > 17) y = 0.5; if (Math.abs(x - target.x) > 55) x = target.x + rr(-50, 50); if (Math.abs(z - target.z) > 55) z = target.z + rr(-50, 50); a.setXYZ(i, x, y, z); } a.needsUpdate = true;
@@ -472,6 +483,16 @@ window.DEMO = {
     tickCombat(n, px, py, pz) { const pp = new THREE.Vector3(px, py, pz); for (let s = 0; s < (n || 16); s++) combat.update(0.016, { playerPos: pp, coverAABBs: COVER }); return combat.stats(); },
     // #4 dust LoS: drop a smoke cloud, then check a soldier's LoS through it
     addSmoke(x, y, z, r, life) { combat.addSmoke(x, y, z, r ?? 3.4, life ?? 4); return combat.smoke.length; },
+    fellNearest(sx, sz) { let best = null, bd = 1e9; for (const r of trees) { if (r.broken) continue; const d = (r.x - sx) ** 2 + (r.z - sz) ** 2; if (d < bd) { bd = d; best = r; } } if (!best) return null; breakTree(best, 0, 'topple', 2 * best.x - sx, 2 * best.z - sz); return { tree: [+best.x.toFixed(1), +best.z.toFixed(1)], height: +best.height.toFixed(1) }; },
+    // #5 env-kills: advance collapse chunks + falling trees N frames, checking hazards each frame
+    stepEnv(n) {
+      for (let s = 0; s < (n || 80); s++) {
+        for (const bd of destructibles) bd.update(0.016);
+        for (const f of FALLING) { if (f.body.settled) continue; stepBody(f.body, 0.016); if (f.kind === 'hinge') { _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize(); f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle); } else { f.mesh.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]); } }
+        combat.checkHazards(hazardZones());
+      }
+      return combat.stats();
+    },
     // bunker (reinforced concrete) — verify HE/AP can't breach it
     bunkerBlast(x, y, z, key) { return bunkerBD ? { hit: bunkerBD.blast(new THREE.Vector3(x, y, z), key || 'he152'), ...bunkerBD.stats() } : null; },
     bunkerAP(ox, oy, oz, dx, dy, dz) { return bunkerBD ? { hit: bunkerBD.penetrate(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), 'apfsds'), ...bunkerBD.stats() } : null; },
@@ -495,7 +516,7 @@ window.DEMO = {
       vehicleMode = false; enterVehicle(type || 'tank');
       veh.pos.set(x, 0, z); veh.ry = ry; veh.speed = 0;
       const sx = veh.pos.x, sz = veh.pos.z;
-      for (let s = 0; s < (steps || 120); s++) { keys['w'] = true; driveVehicle(0.016); }
+      for (let s = 0; s < (steps || 120); s++) { keys['w'] = true; driveVehicle(0.016); combat.checkHazards(hazardZones()); }
       keys['w'] = false;
       return { vehicle: veh.type, advanced: +Math.hypot(veh.pos.x - sx, veh.pos.z - sz).toFixed(2), endZ: +veh.pos.z.toFixed(2), speed: +veh.speed.toFixed(2) };
     }
