@@ -1,0 +1,270 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>ENGENDROS — forest DESTRUCTION demo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0c1410;overflow:hidden;font:13px system-ui;color:#cfe}
+  #c{width:100vw;height:100vh;display:block;cursor:crosshair}
+  #hud{position:fixed;left:10px;top:8px;background:#0007;padding:7px 11px;border-radius:7px;pointer-events:none;white-space:pre-line;line-height:1.5}
+  #cross{position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;pointer-events:none}
+  #cross::before,#cross::after{content:'';position:absolute;background:#fff;box-shadow:0 0 2px #000}
+  #cross::before{left:6px;top:0;width:2px;height:14px}#cross::after{top:6px;left:0;height:2px;width:14px}
+  #wpn{position:fixed;right:12px;bottom:12px;background:#0008;padding:8px 12px;border-radius:7px;pointer-events:none;line-height:1.7;text-align:right}
+  #wpn b{color:#ffd24a}
+</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<div id="cross"></div>
+<div id="wpn"></div>
+<script type="module">
+import * as THREE from 'three';
+import { makeTree } from '../../src/props/generators/tree.js';
+import { makeGrassTuft, makeShrub, makeFlowerPatch, makeBush } from '../../src/props/generators/groundcover.js';
+import { makeHinge, makeTumble, stepBody } from '../../src/props/destruct-lab/fallphys.js';
+import { DebrisPool } from '../../src/props/destruct-lab/debris.js';
+import { LAB_WEAPONS } from '../../src/props/destruct-lab/matrix.js';
+
+const canvas = document.getElementById('c'), hud = document.getElementById('hud'), wpnEl = document.getElementById('wpn');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const FOG = new THREE.Color(0x9cb37a);
+scene.background = FOG.clone();
+scene.fog = new THREE.Fog(FOG, 16, 90);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 400);
+
+// ---- light ----
+const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x3a4a24, 0.6); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffe6b0, 2.0);
+sun.position.set(-46, 38, 26); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+const sc = sun.shadow.camera; sc.near = 1; sc.far = 200; sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70;
+sun.shadow.bias = -0.0008; scene.add(sun); scene.add(sun.target);
+
+// ---- ground ----
+function groundTexture() {
+  const s = 512, cv = document.createElement('canvas'); cv.width = cv.height = s; const x = cv.getContext('2d');
+  x.fillStyle = '#3f5524'; x.fillRect(0, 0, s, s);
+  const blob = (col, n, smin, smax) => { x.fillStyle = col; for (let i = 0; i < n; i++) { const r = smin + Math.random() * (smax - smin); x.globalAlpha = 0.5 + Math.random() * 0.5; x.beginPath(); x.ellipse(Math.random() * s, Math.random() * s, r, r * (0.5 + Math.random()), Math.random() * 6.28, 0, 6.28); x.fill(); } x.globalAlpha = 1; };
+  blob('#4c6a2a', 900, 4, 16); blob('#33491d', 900, 4, 16); blob('#6b8a36', 500, 2, 8); blob('#5a4326', 350, 3, 12); blob('#2a3a16', 400, 2, 7);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(26, 26); t.anisotropy = 4; t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshLambertMaterial({ map: groundTexture() }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+// ---- seeded scatter ----
+let _s = 1337; const rnd = () => { _s = (_s * 1664525 + 1013904223) >>> 0; return _s / 4294967296; };
+const rr = (a, b) => a + rnd() * (b - a);
+function scatter(n, radius, minDist, cb) {
+  const placed = []; let tries = 0;
+  while (placed.length < n && tries < n * 40) {
+    tries++; const a = rnd() * 6.28, d = Math.sqrt(rnd()) * radius;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    let ok = true; for (const p of placed) { if ((p[0] - x) ** 2 + (p[1] - z) ** 2 < minDist * minDist) { ok = false; break; } }
+    if (!ok) continue; placed.push([x, z]); cb(x, z, placed.length);
+  }
+}
+const windy = [];
+const addCover = (res, x, z, { scale = 1, wind = 0 } = {}) => {
+  if (!res) return; const m = res.isObject3D ? res : new THREE.Mesh(res.geometry, res.material);
+  const yaw = rnd() * 6.28; m.position.set(x, 0, z); m.rotation.y = yaw; if (scale !== 1) m.scale.setScalar(scale);
+  if (wind) windy.push({ m, yaw, amp: wind, ph: rnd() * 6.28, speed: 0.8 + rnd() * 1.2 });
+  scene.add(m);
+};
+
+// ====================================================================
+// BREAKABLE TREES — each keeps the recipe (species/seed/scale) so it can be
+// re-built split into a standing stump + a falling top on hit (tree.js breakAt).
+// ====================================================================
+const GAME_SCALE = 0.42;
+const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2 };   // crush class
+const trees = [], treeMeshes = [];
+function addTree(species, x, z, varietyScale, seed, sapling) {
+  const scale = GAME_SCALE * varietyScale;
+  const res = makeTree({ species, seed, lod: 0, scale });   // single standing mesh
+  const m = new THREE.Mesh(res.geometry, res.material);
+  const yaw = rnd() * 6.28; m.position.set(x, 0, z); m.rotation.y = yaw;
+  m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  const cls = sapling ? 1 : (SPECIES_CLS[species] || 2);
+  const tier = cls === 1 ? 1 : 2;                            // sapling=wood(1), grown=trunk(2)
+  const rec = { species, seed, scale, x, z, yaw, height: res.height, mesh: m, cls, tier, broken: false };
+  m.userData.tree = rec; trees.push(rec); treeMeshes.push(m);
+}
+
+const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6]];
+function pickSpecies() { const r = rnd() * 92; let a = 0; for (const [sp, w] of TREE_MIX) { a += w; if (r < a) return sp; } return 'scotsPine'; }
+scatter(90, 52, 4.2, (x, z, i) => addTree(pickSpecies(), x, z, rr(0.9, 1.25), i * 17 + 3, false));
+scatter(22, 46, 3.0, (x, z, i) => addTree('birch', x, z, rr(0.42, 0.6), i * 31 + 700, true)); // saplings (tier 1 — rifle fells)
+// understory (decorative, sways)
+scatter(280, 56, 1.0, (x, z, i) => addCover(makeGrassTuft(i * 7 + 1), x, z, { scale: rr(0.8, 1.5), wind: 0.08 }));
+scatter(46, 54, 2.4, (x, z, i) => addCover(makeShrub(i * 13 + 2), x, z, { scale: rr(0.9, 1.6), wind: 0.05 }));
+scatter(22, 48, 2.0, (x, z, i) => addCover(makeFlowerPatch(i * 23 + 5), x, z, { wind: 0.07 }));
+scatter(10, 50, 4.0, (x, z, i) => addCover(makeBush(i * 11 + 4), x, z, { scale: rr(0.9, 1.3), wind: 0.035 }));
+
+// ---- debris + wood material for shatter chunks ----
+const debris = new DebrisPool(scene);
+const woodMat = new THREE.MeshLambertMaterial({ color: 0x7a5d33 });
+
+// ====================================================================
+// FALLING BODIES — lab fallphys (hinge for the snapped top, tumble for shatter chunks).
+// ====================================================================
+const FALLING = [];
+const _axis = new THREE.Vector3(), _q = new THREE.Quaternion(), _v = new THREE.Vector3();
+
+function breakTree(rec, hitY, mode) {
+  rec.broken = true; rec.mesh.visible = false;
+  const i = treeMeshes.indexOf(rec.mesh); if (i >= 0) treeMeshes.splice(i, 1);
+  // fall direction = away from the camera (you shot it → it falls away), horizontal
+  let dx = rec.x - camera.position.x, dz = rec.z - camera.position.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  const dirXZ = [dx, dz];
+  const seed = (rec.seed * 2654435761) >>> 0;
+  // break height: snap at where it was hit; topple/uproot break low (whole thing goes over)
+  let breakAt;
+  if (mode === 'topple' || mode === 'uproot') breakAt = 0.05 + rnd() * 0.05;
+  else breakAt = THREE.MathUtils.clamp(hitY / rec.height, 0.12, 0.82);
+
+  const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt });
+  const breakY = split.breakY;
+  // standing stump
+  const stump = new THREE.Mesh(split.stumpGeometry, split.material);
+  stump.position.set(rec.x, 0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = stump.receiveShadow = true; scene.add(stump);
+
+  if (mode === 'shatter') {
+    // APFSDS: the top is obliterated into tumbling chunks + a heavy splinter burst
+    split.topGeometry.dispose();
+    const chunks = 5 + (rnd() * 3 | 0);
+    for (let k = 0; k < chunks; k++) {
+      const s = rr(0.2, 0.5);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(s, s * rr(1, 2.4), s), woodMat); box.castShadow = true; scene.add(box);
+      const up = 2 + rnd() * 4, sp = 4 + rnd() * 6;
+      const body = makeTumble({ pos: [rec.x + rr(-0.3, 0.3), breakY + k * 0.4, rec.z + rr(-0.3, 0.3)], vel: [dirXZ[0] * sp + rr(-2, 2), up, dirXZ[1] * sp + rr(-2, 2)], seed: seed + k, radius: s * 0.5 });
+      FALLING.push({ kind: 'tumble', body, mesh: box });
+    }
+    debris.burst('splints', [rec.x, breakY, rec.z], seed);
+    debris.burst('splints', [rec.x, breakY + 1, rec.z], seed + 9);
+  } else {
+    // hinge the falling top about the break point
+    const top = new THREE.Mesh(split.topGeometry, split.material);
+    top.rotation.y = rec.yaw; top.castShadow = top.receiveShadow = true;
+    const pivot = new THREE.Group(); pivot.position.set(rec.x, breakY, rec.z); pivot.add(top); scene.add(pivot);
+    const length = Math.max(0.5, rec.height - breakY);
+    const body = makeHinge({ pivot: [rec.x, breakY, rec.z], dirXZ, length, radius: 0.22, seed, obstacles: [] });
+    FALLING.push({ kind: 'hinge', body, pivot });
+    debris.burst('splints', [rec.x, breakY, rec.z], seed);
+  }
+}
+
+// ====================================================================
+// WEAPONS — pick a caliber (1-5), tap to fire a ray from screen centre.
+// pen < tier ⇒ no fell (splinter only); HE blast fells in radius; APFSDS shatters.
+// ====================================================================
+const CALS = ['pistol', 'rifle', 'hmg127', 'heRocket', 'apfsds'];
+const CAL_LABEL = { pistol: 'PISTOLE', rifle: 'PUŠKA', hmg127: 'HMG 12.7', heRocket: 'RAKETA HE', apfsds: 'APFSDS' };
+let cal = 2; // default HMG so the first shot fells
+const ray = new THREE.Raycaster();
+function refreshWpn() {
+  wpnEl.innerHTML = CALS.map((k, i) => `${i === cal ? '<b>▶ ' : '<span style=opacity:.5>' + (i + 1) + ' '}${CAL_LABEL[k]} <small>pen ${LAB_WEAPONS[k].pen}</small>${i === cal ? '</b>' : '</span>'}`).join('<br>');
+}
+function fire() {
+  const w = LAB_WEAPONS[CALS[cal]];
+  ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const hits = ray.intersectObjects(treeMeshes, false);
+  // HE rocket: blast at the first hit point (or 40 m ahead) → topple every tree in radius
+  if (w.blast) {
+    const at = hits.length ? hits[0].point : ray.ray.at(40, _v.clone());
+    debris.burst('rubble', [at.x, at.y, at.z], (Math.random() * 1e9) | 0);
+    for (const rec of trees) { if (rec.broken) continue; const dx = rec.x - at.x, dz = rec.z - at.z; if (dx * dx + dz * dz <= (w.blast.r1 + 2.5) ** 2) breakTree(rec, 0, 'topple'); }
+    return;
+  }
+  if (!hits.length) return;
+  const h = hits[0], rec = h.object.userData.tree; if (!rec || rec.broken) return;
+  if (w.pen < rec.tier) { debris.burst('splints', [h.point.x, h.point.y, h.point.z], (Math.random() * 1e9) | 0); return; } // bark plink
+  const mode = (CALS[cal] === 'apfsds') ? 'shatter' : (rec.cls === 1 ? 'uproot' : 'snap');
+  breakTree(rec, h.point.y, mode);
+}
+
+// ---- POV camera: orbit-look (drag) + WASD; TAP (no drag) = fire ----
+const target = new THREE.Vector3(0, 1.7, 6); const cam = { az: 180, el: 0 };
+function applyCam() {
+  const az = THREE.MathUtils.degToRad(cam.az), el = THREE.MathUtils.degToRad(cam.el);
+  const dir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+  camera.position.copy(target); camera.lookAt(target.x + dir.x, target.y + dir.y, target.z + dir.z);
+}
+const keys = {}; let drag = false, lx = 0, ly = 0, dsum = 0, dt0 = 0;
+canvas.addEventListener('pointerdown', e => { drag = true; lx = e.clientX; ly = e.clientY; dsum = 0; dt0 = performance.now(); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup', () => { drag = false; if (dsum < 7 && performance.now() - dt0 < 350) fire(); }); // quick tap = shoot
+canvas.addEventListener('pointermove', e => { if (!drag) return; const ddx = e.clientX - lx, ddy = e.clientY - ly; dsum += Math.abs(ddx) + Math.abs(ddy); cam.az -= ddx * 0.22; cam.el = THREE.MathUtils.clamp(cam.el - ddy * 0.22, -60, 70); lx = e.clientX; ly = e.clientY; });
+addEventListener('keydown', e => { const k = e.key.toLowerCase(); keys[k] = true;
+  if (k === 'n') { timeIdx = (timeIdx + 1) % 3; setTime(['day', 'dusk', 'night'][timeIdx]); }
+  if (k >= '1' && k <= '5') { cal = +k - 1; refreshWpn(); }
+  if (k === 'f') fire();
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+function fly() {
+  const sp = (keys['shift'] ? 0.55 : 0.2), az = THREE.MathUtils.degToRad(cam.az), fx = Math.sin(az), fz = Math.cos(az);
+  if (keys['w']) { target.x += fx * sp; target.z += fz * sp; } if (keys['s']) { target.x -= fx * sp; target.z -= fz * sp; }
+  if (keys['a']) { target.x -= fz * sp; target.z += fx * sp; } if (keys['d']) { target.x += fz * sp; target.z -= fx * sp; }
+  if (keys['e']) target.y += sp; if (keys['q']) target.y = Math.max(0.5, target.y - sp);
+}
+function resize() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+
+// ---- pollen + fireflies + day/night ----
+function dotTex() { const cv = document.createElement('canvas'); cv.width = cv.height = 32; const g = cv.getContext('2d'); const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16); grd.addColorStop(0, '#fff'); grd.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = grd; g.beginPath(); g.arc(16, 16, 16, 0, 6.28); g.fill(); return new THREE.CanvasTexture(cv); }
+const N = 500, pp = new Float32Array(N * 3), pv = [];
+for (let i = 0; i < N; i++) { pp[i * 3] = rr(-50, 50); pp[i * 3 + 1] = rr(0.5, 16); pp[i * 3 + 2] = rr(-50, 50); pv.push([rr(-0.15, 0.15), rr(-0.05, 0.12), rr(-0.15, 0.15)]); }
+const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+const pollen = new THREE.Points(pg, new THREE.PointsMaterial({ map: dotTex(), size: 0.16, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xfff0c0, fog: true })); scene.add(pollen);
+const fireflies = new THREE.Group(); fireflies.visible = false; scene.add(fireflies);
+for (let i = 0; i < 40; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex(), color: 0xccff66, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true })); sp.scale.set(0.32, 0.32, 1); sp.position.set(rr(-42, 42), rr(0.4, 3.2), rr(-42, 42)); sp.userData = { ph: rr(0, 6.28), bs: 0.5 + rnd() * 1.3, vx: rr(-0.04, 0.04), vz: rr(-0.04, 0.04) }; fireflies.add(sp); }
+const SKY = { day: 0x9cb37a, dusk: 0xc08a52, night: 0x16242a };
+let timeMode = 'day', timeIdx = 0;
+function setTime(mode) {
+  timeMode = mode; const c = SKY[mode]; scene.fog.color.setHex(c); scene.background.setHex(c);
+  if (mode === 'day') { scene.fog.far = 90; sun.color.setHex(0xffe6b0); sun.intensity = 2.0; sun.position.set(-46, 38, 26); hemi.intensity = 0.6; hemi.color.setHex(0xbfe0ff); hemi.groundColor.setHex(0x3a4a24); fireflies.visible = false; }
+  else if (mode === 'dusk') { scene.fog.far = 74; sun.color.setHex(0xff8434); sun.intensity = 2.3; sun.position.set(-64, 13, 18); hemi.intensity = 0.42; hemi.color.setHex(0xffb070); hemi.groundColor.setHex(0x4a3a20); fireflies.visible = false; }
+  else { scene.fog.far = 56; sun.color.setHex(0x6a86c8); sun.intensity = 0.55; sun.position.set(-26, 44, -22); hemi.intensity = 0.16; hemi.color.setHex(0x2a3a5c); hemi.groundColor.setHex(0x0e1626); fireflies.visible = true; }
+  sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld();
+}
+
+let t = 0, _fc = 0, _ft = 0, _fps = 0;
+function frame() {
+  _fc++; const _n = performance.now(); if (_n - _ft >= 1000) { _fps = _fc; _fc = 0; _ft = _n; }
+  const dt = 0.016; t += dt; fly(); resize(); applyCam();
+  // falling-body physics
+  for (const f of FALLING) {
+    if (f.body.settled) continue;
+    stepBody(f.body, dt);
+    if (f.kind === 'hinge') { _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize(); f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle); }
+    else { f.mesh.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]); _axis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]); f.mesh.quaternion.setFromAxisAngle(_axis, f.body.rotAngle); }
+  }
+  debris.update(dt);
+  // pollen drift
+  const a = pollen.geometry.attributes.position;
+  for (let i = 0; i < N; i++) { let x = a.getX(i) + pv[i][0] * 0.04, y = a.getY(i) + pv[i][1] * 0.04, z = a.getZ(i) + pv[i][2] * 0.04; if (y > 17) y = 0.5; if (Math.abs(x - target.x) > 55) x = target.x + rr(-50, 50); if (Math.abs(z - target.z) > 55) z = target.z + rr(-50, 50); a.setXYZ(i, x, y, z); } a.needsUpdate = true;
+  // wind sway (standing trees lean a little, groundcover a lot)
+  const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
+  for (const w of windy) { const sz = Math.sin(t * w.speed + w.ph) * w.amp * gust; w.m.rotation.set(Math.cos(t * w.speed * 0.7 + w.ph) * w.amp * 0.5 * gust, w.yaw, sz); }
+  if (fireflies.visible) for (const f of fireflies.children) { const u = f.userData; let x = f.position.x + u.vx, z = f.position.z + u.vz, y = f.position.y + Math.sin(t * u.bs + u.ph) * 0.012; if (Math.abs(x - target.x) > 44) x = target.x + rr(-40, 40); if (Math.abs(z - target.z) > 44) z = target.z + rr(-40, 40); f.position.set(x, Math.max(0.3, y), z); f.material.opacity = 0.12 + 0.88 * Math.max(0, Math.sin(t * (1.4 + u.bs) + u.ph)); }
+  renderer.render(scene, camera); requestAnimationFrame(frame);
+}
+applyCam(); refreshWpn(); requestAnimationFrame(frame);
+hud.textContent = '🌲💥 LESNÍ DESTRUKCE  ·  táhni = rozhled  ·  WASD/QE = pohyb  ·  ŤUKNI / F = výstřel  ·  1-5 = ráže  ·  N = den/noc\nMíř na kmen NÍZKO → zlomí nízko · vysoko → vysoko · APFSDS roztříští · RAKETA porazí od země · pušku ustojí silný kmen';
+{ const T0 = new URLSearchParams(location.search).get('time'); const idx = ['day', 'dusk', 'night'].indexOf(T0); if (idx >= 0) { timeIdx = idx; setTime(T0); } }
+window.__READY = true;
+window.DEMO = {
+  fire, setCal(i) { cal = i; refreshWpn(); },
+  setView(az, el, tx, ty, tz) { if (az != null) cam.az = az; if (el != null) cam.el = el; if (tx != null) target.set(tx, ty, tz); applyCam(); },
+  snap() { resize(); applyCam(); renderer.render(scene, camera); return canvas.toDataURL('image/jpeg', 0.92); },
+  state() { return { trees: trees.length, standing: treeMeshes.length, broken: trees.filter(r => r.broken).length, falling: FALLING.length, settled: FALLING.filter(f => f.body.settled).length, cal: CALS[cal] }; },
+  perf() { const r = renderer.info.render; return { fps: _fps, drawCalls: r.calls, triangles: r.triangles }; },
+  time: (m) => setTime(m),
+  // deterministic test hooks (decouple verification from aim + headless FPS)
+  __test: {
+    breakNearest(mode) { const rec = trees.find(r => !r.broken); if (!rec) return null; breakTree(rec, rec.height * 0.4, mode); return { species: rec.species, height: +rec.height.toFixed(2), bodies: FALLING.length }; },
+    step(n) { for (let s = 0; s < n; s++) for (const f of FALLING) if (!f.body.settled) stepBody(f.body, 0.016); return FALLING.map(f => ({ k: f.kind, settled: f.body.settled, angle: f.kind === 'hinge' ? +f.body.angle.toFixed(2) : null })); }
+  }
+};
+</script>
+</body></html>
