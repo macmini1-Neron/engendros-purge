@@ -92,7 +92,7 @@ const SWITCH_LABELS = [
   ['radarOnAir', 'РАДАР'],
 ];
 
-const SHILKA_ASSET_URL = './assets/vehicles/lowpoly_zsu-23-4.glb?v=20260617-2';
+const SHILKA_ASSET_URL = './assets/vehicles/zsu-23-4-named.glb?v=20260621-1';
 const SHILKA_ASSET_TARGET_LENGTH_M = 6.7;
 const TMP_ORIGIN = new THREE.Vector3();
 const TMP_END = new THREE.Vector3();
@@ -655,6 +655,7 @@ export class ShilkaStation {
     const d = this.drive;
     d.x = t.x; d.z = t.z; d.heading = t.heading; d.pitch = t.pitch; d.roll = t.roll;
     d.gear = t.gear; d.wheelSpin = t.ws; d.trackScroll = t.ts;
+    d.wheelSpinL = d.wheelSpinR = t.ws; d.trackScrollL = d.trackScrollR = t.ts; // parked: seed both sides
     d.y = this._groundY(d.x, d.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
     if (this.rig) this._applyRig(0); else this._pendingRig = true; // rig may still be loading on a fresh joiner
   }
@@ -1105,6 +1106,8 @@ export class ShilkaStation {
       pitch: +d.pitch.toFixed(3), roll: +d.roll.toFixed(3),
       gear: d.gear, speed: +d.speed.toFixed(2),
       ws: +d.wheelSpin.toFixed(2), ts: +d.trackScroll.toFixed(2),
+      wsL: +d.wheelSpinL.toFixed(2), wsR: +d.wheelSpinR.toFixed(2),
+      tsL: +d.trackScrollL.toFixed(2), tsR: +d.trackScrollR.toFixed(2),
     });
   }
 
@@ -1122,6 +1125,8 @@ export class ShilkaStation {
     d.roll += (m.roll - d.roll) * k;
     d.gear = m.gear; d.speed = m.speed;
     d.wheelSpin = m.ws; d.trackScroll = m.ts;
+    d.wheelSpinL = m.wsL ?? m.ws; d.wheelSpinR = m.wsR ?? m.ws;   // per-side (fallback to single)
+    d.trackScrollL = m.tsL ?? m.ts; d.trackScrollR = m.tsR ?? m.ts;
     d.y = this._groundY(d.x, d.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
     this._applyRig(dt);
   }
@@ -1148,6 +1153,37 @@ export class ShilkaStation {
     return { L, R };
   }
 
+  // Scroll the belt tread textures at ground speed, per side. The tread map is shared across both belts
+  // (one cached Lambert material), and texture.offset is a property of the TEXTURE, so we clone the
+  // material + map per side on first use. Scroll by the per-frame delta of the per-side trackScroll so
+  // it tracks both local integration and 15 Hz remote snaps; %1 keeps float precision. signL/signR fix
+  // the mirrored-UV direction (one belt's UVs run opposite); k = UV repeats per metre of belt travel.
+  // Dev knobs while mounted: s._trackUVk (scale), s._trackSignL / s._trackSignR (±1).
+  _scrollTracks(d) {
+    if (this._trackMaps === undefined) {
+      this._trackMaps = null; this._trackScrollPrev = { L: 0, R: 0 };
+      const maps = { L: [], R: [] };
+      for (const m of (this.rig.tracks || [])) {
+        const side = (m.userData && m.userData.side) === 'R' ? 'R' : 'L';
+        const m0 = Array.isArray(m.material) ? m.material[0] : m.material;
+        if (!m0 || !m0.map) continue;
+        const cm = m0.clone(); cm.map = m0.map.clone(); cm.map.needsUpdate = true;
+        cm.map.wrapS = cm.map.wrapT = THREE.RepeatWrapping;
+        if (Array.isArray(m.material)) m.material[0] = cm; else m.material = cm;
+        maps[side].push(cm.map);
+      }
+      if (maps.L.length || maps.R.length) this._trackMaps = maps;
+      else console.warn(`[shilka] ${this.id}: belt meshes have no .map → UV tread scroll disabled (wheels/sprockets still spin).`);
+    }
+    if (!this._trackMaps) return;
+    const k = this._trackUVk ?? 0.6;
+    const dL = (d.trackScrollL - this._trackScrollPrev.L) * k * (this._trackSignL ?? 1);
+    const dR = (d.trackScrollR - this._trackScrollPrev.R) * k * (this._trackSignR ?? 1);
+    this._trackScrollPrev.L = d.trackScrollL; this._trackScrollPrev.R = d.trackScrollR;
+    for (const mp of this._trackMaps.L) mp.offset.x = (mp.offset.x + dL) % 1;
+    for (const mp of this._trackMaps.R) mp.offset.x = (mp.offset.x + dR) % 1;
+  }
+
   _applyRig(dt) {
     const rig = this.rig; if (!rig) return;
     const d = this.drive;
@@ -1162,9 +1198,12 @@ export class ShilkaStation {
     this.base.set(d.x, gy, d.z);
     if (this.marker) this.marker.position.set(d.x, gy + 0.05, d.z);
     const s = this._rigScale || 1;
-    for (let i = 0; i < rig.wheelsL.length; i++) { const w = rig.wheelsL[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetL[i] / s; w.rotation.x = d.wheelSpin; }
-    for (let i = 0; i < rig.wheelsR.length; i++) { const w = rig.wheelsR[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetR[i] / s; w.rotation.x = d.wheelSpin; }
-    for (const sp of rig.sprockets) sp.rotation.x = d.wheelSpin;
+    // road wheels: per-side spin (differential) + suspension offset (Phase 1 vertical slide; Phase 4 = arc)
+    for (let i = 0; i < rig.wheelsL.length; i++) { const w = rig.wheelsL[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetL[i] / s; w.rotation.x = d.wheelSpinL; }
+    for (let i = 0; i < rig.wheelsR.length; i++) { const w = rig.wheelsR[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetR[i] / s; w.rotation.x = d.wheelSpinR; }
+    for (const sp of rig.sprockets) sp.rotation.x = (sp.userData && sp.userData.side === 'R') ? d.wheelSpinR : d.wheelSpinL;
+    for (const id of (rig.idlers || [])) id.rotation.x = (id.userData && id.userData.side === 'R') ? d.wheelSpinR : d.wheelSpinL;
+    this._scrollTracks(d); // belt tread UV scroll, per side
     const sway = clamp(-d.yawRate * 0.25, -0.25, 0.25);
     for (const a of rig.antennas) a.rotation.z = damp(a.rotation.z || 0, sway, 8, dt);
   }

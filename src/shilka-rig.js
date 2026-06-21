@@ -26,82 +26,72 @@ export function classifyShilkaPart(cx, cy, cz, sx, sy, sz) {
   return 'hull';
 }
 
-// Re-parent a freshly-loaded gltf.scene into movable rig groups. THREE is injected so the
-// classifier module stays import-free. Returns a rig handle the adapter animates each frame.
+// Build a rig handle from the NAMED-NODE GLB (Blender-exported `zsu-23-4-named.glb`): turret,
+// gun_elev, radar_disk, wheel_{L,R}0-5 nested under wheelarm_{L,R}0-5, idler/sprocket_{L,R},
+// trackrig_{L,R} skinned belts, hatch_*. Walks by node NAME (no bbox classifier — classifyShilkaPart
+// is kept only for the dev viewer). Wraps the whole model in a root (π re-orient: model front -Z →
+// world +Z) + a tilting body so the adapter pitches/rolls the hull on one node. THREE is injected.
 export function buildShilkaRig(modelScene, THREE) {
   modelScene.updateMatrixWorld(true);
-  const center = new THREE.Box3().setFromObject(modelScene).getCenter(new THREE.Vector3());
 
   const root = new THREE.Group(); root.name = 'shilka rig root';
   const body = new THREE.Group(); body.name = 'shilka body (tilt)';
   root.add(body);
 
-  const buckets = { hull: [], track: [], wheel: [], sprocket: [], turret: [], gun: [], radar: [], antenna: [] };
-  const tmp = new THREE.Box3(), ctr = new THREE.Vector3(), siz = new THREE.Vector3();
-  const meshes = [];
-  modelScene.traverse((o) => { if (o.isMesh) meshes.push(o); });
-  for (const m of meshes) {
-    tmp.setFromObject(m); tmp.getCenter(ctr); tmp.getSize(siz);
-    const g = classifyShilkaPart(ctr.x, ctr.y, ctr.z, siz.x, siz.y, siz.z);
-    buckets[g].push({ mesh: m, cx: ctr.x, cy: ctr.y, cz: ctr.z });
-  }
-
-  // helper: make a pivot group at a world point and re-home a mesh under it (keep world transform)
-  const pivotAt = (px, py, pz, name) => { const grp = new THREE.Group(); grp.name = name; grp.position.set(px, py, pz); return grp; };
-  const reparentKeepWorld = (mesh, parent) => { parent.attach(mesh); }; // THREE.attach preserves world transform
-
-  // static body groups
-  const turret = new THREE.Group(); turret.name = 'turret'; body.add(turret);
-  for (const { mesh } of buckets.hull) reparentKeepWorld(mesh, body);
-  for (const { mesh } of buckets.track) reparentKeepWorld(mesh, body);
-  for (const { mesh } of [...buckets.turret, ...buckets.gun]) reparentKeepWorld(mesh, turret);
-
-  // radar "Gun Dish" antenna: one pivot at the dish cluster's vertical axis so it spins in place
-  // (RPK-2 «Тобол» scans continuously). Built BEFORE root's π re-orient like the wheel pivots, so the
-  // cluster-centre world coords map straight to the pivot's local position. Rides the turret; the
-  // adapter turns radar.rotation.y each frame.
-  let radar = null;
-  if (buckets.radar.length) {
-    const rbox = new THREE.Box3();
-    for (const { mesh } of buckets.radar) rbox.expandByObject(mesh);
-    rbox.getCenter(ctr);
-    radar = pivotAt(ctr.x, ctr.y, ctr.z, 'radar dish');
-    turret.add(radar);
-    for (const { mesh } of buckets.radar) reparentKeepWorld(mesh, radar);
-  }
-
-  const guns = buckets.gun.map(b => b.mesh);
-  const dish = buckets.radar.map(b => b.mesh);
-
-  // road wheels: split L/R by sign of X, order front→rear (front = -Z => ascending z)
-  const wheelsL = [], wheelsR = [];
-  const wheelEntries = buckets.wheel.slice().sort((a, b) => a.cz - b.cz);
-  for (const w of wheelEntries) {
-    const side = (w.cx >= center.x) ? wheelsR : wheelsL;
-    if (side.length >= 6) continue; // guard against stray extra meshes
-    const pivot = pivotAt(w.cx, w.cy, w.cz, `wheel ${side === wheelsL ? 'L' : 'R'}${side.length}`);
-    pivot.userData.restY = w.cy; // axle rest height; the adapter adds suspension offset on top
-    body.add(pivot); reparentKeepWorld(w.mesh, pivot);
-    side.push(pivot);
-  }
-
-  const sprockets = buckets.sprocket.map(b => { const p = pivotAt(b.cx, b.cy, b.cz, 'sprocket'); body.add(p); reparentKeepWorld(b.mesh, p); return p; });
-  const tracks = buckets.track.map(b => b.mesh); // mesh refs under body — not pivoted (no spin)
-
-  // antenna whips: each gets its own base pivot for sway
-  const antennas = buckets.antenna.map((b) => {
-    tmp.setFromObject(b.mesh); tmp.getCenter(ctr);
-    const baseY = (new THREE.Box3().setFromObject(b.mesh)).min.y;
-    const pivot = pivotAt(ctr.x, baseY, ctr.z, 'antenna');
-    body.add(pivot); reparentKeepWorld(b.mesh, pivot);
-    return pivot;
+  // index named nodes + collect skinned belt meshes BEFORE re-parenting (references survive the move,
+  // but modelScene.children empties out once we attach them under body, so do the traversal first).
+  const byName = new Map();
+  const tracks = [];
+  modelScene.traverse((o) => {
+    if (o.name && !byName.has(o.name)) byName.set(o.name, o);
+    if (o.isSkinnedMesh) {
+      const j0 = (o.skeleton && o.skeleton.bones[0]) ? o.skeleton.bones[0].name : '';
+      o.userData.side = j0.indexOf('_R') >= 0 ? 'R' : 'L';
+      tracks.push(o);
+    }
   });
+  const get = (n) => byName.get(n) || null;
+
+  // re-home every top-level scene node under the tilting body (THREE.attach preserves world transform)
+  for (const o of modelScene.children.slice()) body.attach(o);
+
+  const turret = get('turret');
+  const gun_elev = get('gun_elev');
+  const guns = gun_elev ? [gun_elev] : [];   // elevate the gun_elev pivot (holds the barrels + mantlet)
+  const radar = get('radar_disk');           // adapter spins this on Y each frame (RPK-2 «Тобол» scan)
+
+  // road wheels (spin pivots) nested under wheel arms (suspension arc pivots), front→rear index 0-5
+  const wheelsL = [], wheelsR = [], wheelarmL = [], wheelarmR = [];
+  for (let i = 0; i < 6; i++) {
+    const wl = get(`wheel_L${i}`), wr = get(`wheel_R${i}`);
+    if (wl) { wl.userData.restY = wl.position.y; wheelsL.push(wl); }   // local Y; adapter adds susp. offset
+    if (wr) { wr.userData.restY = wr.position.y; wheelsR.push(wr); }
+    const al = get(`wheelarm_L${i}`), ar = get(`wheelarm_R${i}`);
+    if (al) { al.userData.restRotX = al.rotation.x; wheelarmL.push(al); } // rest arm angle (Phase 4 arc)
+    if (ar) { ar.userData.restRotX = ar.rotation.x; wheelarmR.push(ar); }
+  }
+
+  const sprockets = [get('sprocket_L'), get('sprocket_R')].filter(Boolean);
+  const idlers = [get('idler_L'), get('idler_R')].filter(Boolean);
+  for (const p of [...sprockets, ...idlers]) p.userData.side = p.name.endsWith('_R') ? 'R' : 'L';
+
+  const beltL = get('trackrig_L'), beltR = get('trackrig_R'); // skinned-belt armatures (belt-bone handles)
+
+  const dish = [];
+  if (radar) radar.traverse((o) => { if (o.isMesh) dish.push(o); });
+
+  const hatches = {
+    driver: get('hatch_driver'), ammoL: get('hatch_ammo_L'),
+    ammoR: get('hatch_ammo_R'), gunner: get('hatch_gunner'),
+  };
+  const antennas = []; // no separate antenna meshes in this rig yet → sway loop is a no-op until added
 
   // orient: model front is -Z; rotate the assembly so front faces world +Z
   root.rotation.y = Math.PI;
 
   if (wheelsL.length !== 6 || wheelsR.length !== 6) {
-    console.warn(`[shilka-rig] wheel classification produced ${wheelsL.length}L/${wheelsR.length}R pivots (expected 6/side) — check classifyShilkaPart bounds against the loaded GLB.`);
+    console.warn(`[shilka-rig] named-node walk found ${wheelsL.length}L/${wheelsR.length}R wheels (expected 6/side) — check GLB node names.`);
   }
-  return { root, body, turret, wheelsL, wheelsR, sprockets, tracks, guns, dish, radar, antennas };
+  return { root, body, turret, wheelsL, wheelsR, wheelarmL, wheelarmR, sprockets, idlers,
+           tracks, guns, dish, radar, antennas, beltL, beltR, hatches };
 }

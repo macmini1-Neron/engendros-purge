@@ -31,9 +31,13 @@ export const SHILKA_DRIVE_TUNING = Object.freeze({
   stallMinSpeedFrac: 0.12,  // below this fraction of gear top + low throttle => stall
   stallThrottle: 0.15,
   synchroSpeed: 0.6,        // m/s — above this, the UNsynchronised 1st & ЗХ(reverse) clash when engaged
-  // --- lateral + suspension (used in Task 2; defined here so the frozen object is complete) ---
-  pivotYawRate: 1.1,        // rad/s, full lever at standstill
-  driveYawRateAtTop: 0.5,   // rad/s, full lever at top speed
+  // --- steering (clutch-and-brake: brakes ONE track to turn → NO neutral/pivot turn; a turn needs
+  //     forward motion and SCRUBS speed via inner-track drag → finite radius, never spins in place) ---
+  maxYawRate: 0.95,         // rad/s, full lever in the mid-speed band (peak turn authority)
+  driveYawRateAtTop: 0.45,  // rad/s, full lever at top speed (the turn widens as it goes faster)
+  minTurnSpeed: 0.4,        // m/s — below this the tracks can't turn the hull (no spin-in-place)
+  turnRampSpeed: 1.2,       // m/s of travel over which turn authority ramps 0→1 above minTurnSpeed
+  turnScrub: 0.4,           // forward-speed bleed /s at full lock (inner-track braking)
   wheelRadius: 0.32,
   rideHeight: 0.55,
   wheelbase: 4.4,
@@ -61,6 +65,8 @@ export function createDriveState(overrides = {}) {
     wheelOffsetR: [0, 0, 0, 0, 0, 0],
     wheelSpin: 0,
     trackScroll: 0,
+    wheelSpinL: 0, wheelSpinR: 0,     // per-side spin (turns drive the two belts at different rates)
+    trackScrollL: 0, trackScrollR: 0, // per-side belt scroll (metres travelled by each track surface)
     ...overrides,
   };
 }
@@ -136,13 +142,19 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
     next.engineRpm = clamp(T.idleRpm + clamp(inp.throttle, 0, 1) * (T.maxRpm - T.idleRpm), T.idleRpm, T.maxRpm);
   }
 
-  // 6a) steering: clutch-and-brake levers — pivot at standstill, wider radius at speed
-  const canSteer = engaged || Math.abs(next.speed) > 0.2;
+  // 6a) steering: clutch-and-brake — the real ГМ-575 brakes ONE track to turn, it canNOT counter-rotate
+  //     them, so there is NO neutral/pivot turn. Turn authority needs forward motion (ramps from 0 at
+  //     minTurnSpeed) and a hard turn SCRUBS speed (the inner track drags → finite radius, never spins
+  //     in place). Reverse mirrors the lever, like a car backing up.
   const topAbs = Math.abs(T.gearTopSpeed['5']) || 1;
-  const speedFrac = clamp(Math.abs(next.speed) / topAbs, 0, 1);
-  const maxYaw = T.pivotYawRate + (T.driveYawRateAtTop - T.pivotYawRate) * speedFrac;
-  next.yawRate = canSteer ? clamp(inp.steer, -1, 1) * maxYaw : 0;
+  const moving = Math.abs(next.speed);
+  const speedFrac = clamp(moving / topAbs, 0, 1);
+  const turnGain = clamp((moving - T.minTurnSpeed) / T.turnRampSpeed, 0, 1); // 0 at/below minTurnSpeed
+  const maxYaw = T.maxYawRate + (T.driveYawRateAtTop - T.maxYawRate) * speedFrac; // peak mid, narrows at top
+  const steer = clamp(inp.steer, -1, 1);
+  next.yawRate = steer * maxYaw * turnGain * (next.speed < 0 ? -1 : 1);
   next.heading = (next.heading + next.yawRate * dt) % TAU;
+  if (turnGain > 0) next.speed *= (1 - T.turnScrub * Math.abs(steer) * turnGain * dt); // turn bleeds speed
 
   // 6b) integrate heading-aligned position
   next.x += Math.sin(next.heading) * next.speed * dt;
@@ -164,7 +176,17 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
     }
   }
 
-  // 7) visuals that depend only on speed
+  // 7) visual accumulators — PER SIDE so a turn spins the two belts at different rates. Differential
+  //    drive: the track surface speed is vL = v - ω·B/2 (inner) and vR = v + ω·B/2 (outer); straight →
+  //    equal, turn → outer faster. The single wheelSpin/trackScroll stay for the low-rate parked
+  //    snapshot; the adapter drives the rig (UV scroll + wheel/sprocket spin) off the per-side ones.
+  const halfB = T.trackWidth * 0.5;
+  const vL = next.speed - next.yawRate * halfB;
+  const vR = next.speed + next.yawRate * halfB;
+  next.wheelSpinL = (next.wheelSpinL + (vL / T.wheelRadius) * dt) % TAU;
+  next.wheelSpinR = (next.wheelSpinR + (vR / T.wheelRadius) * dt) % TAU;
+  next.trackScrollL += vL * dt;
+  next.trackScrollR += vR * dt;
   next.wheelSpin = (next.wheelSpin + (next.speed / T.wheelRadius) * dt) % TAU;
   next.trackScroll += next.speed * dt;
 
