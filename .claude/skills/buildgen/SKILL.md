@@ -57,10 +57,22 @@ boxes) this harness exists to replace.
 13. **Pathing gate (WARN)** — enterable buildings: entrances connect by a clear walkable span;
     props/interior walls must not make an "enterable" building impassable in practice.
 14. **Perf guard-rails (WARN; numbers provisional)** — 1 merged mesh per material; ≤ 8
-    materials (12 landmark); ≤ 32 collider AABBs (64 large enterable); textures ≤ 512²;
-    triangles WARN > 8k / ERROR > 20k.
+    materials (12 landmark); textures ≤ 512²; triangles WARN > 8k / ERROR > 20k. Collider AABBs
+    ≤ 32 (64 large enterable), **raised 3× for a destructible building** (breach subdivision
+    multiplies AABBs ~3×).
+15. **Cladding has a phys bridge** — every destructible cladding part's material resolves to a
+    `destruct.js` MATERIALS key (`palette` `phys`); `signage` (`phys:null`) on a cladding part is
+    an ERROR (make it `role:'structural'` or use a destructible material).
+16. **Roof support** — each footprint corner needs a STRUCTURAL vertical stack from the ground to
+    the roof, so stripping **all** cladding never floats the roof. `shellBox corners:'structural'`
+    (default) satisfies it; `corners:'cladding'` must add `column` parts. A cheap quadrant
+    heuristic, NOT a statics solver (load-bearing-wall designs must tag their walls structural).
+17. **Stable destructible ids** — breach/pane part ids are deterministic + unique (`${pid}:N:seg3`,
+    `${pid}:pane:0`); duplicates/junk are an ERROR (co-op replay + late-join correctness).
+18. **`destructible` intent (WARN)** — `intent.destructible:true` (default) with no breakable part
+    is inert; set `intent.destructible:false` for a deliberately indestructible landmark.
 
-Diagnostics: **ERROR** blocks approval; **WARN** passes only with a one-line justification in
+Laws 15–18 are gated on `intent.destructible` (default-on). Diagnostics: **ERROR** blocks approval; **WARN** passes only with a one-line justification in
 `BUILD.md`; INFO is advisory. Gate everything with the pre-flight linter:
 
 ```bash
@@ -102,6 +114,55 @@ window gap — `depthWrite:false` sidesteps sorting artefacts; keep panes few an
 (цех 6–12 m) · door 2.1–2.4 h × ≥ 1.6 w (FPS-friendly) · window sill 0.8–1.0 · window 1.2–1.8 h ·
 plinth/socle 0.4–0.8 · parapet 0.6–1.0 · corridor ≥ 1.4 · enterable ceiling ≥ 2.6 · brick course
 0.075 · concrete panel ~3.0 × 2.8.
+
+## Materials & hardness — one material is BOTH a look and a destruction tier
+
+Every `palette.js` material carries a `phys` key bridging it to `destruct.js` MATERIALS (the
+single physics source, shared with forest + weapons via `src/buildings/materials.js`). So a
+building's material choice fixes its destructibility. The breach ladder comes from `CALIBERS`:
+
+| material | `phys` | tier | hp | breached by | role default |
+|---|---|---|---|---|---|
+| `glassPane` | glass | 0 | 1 | anything incl. pistol | cladding (pane) |
+| `plaster` | plaster | 1 | 40 | rifle / shotgun | cladding |
+| `wood` | wood | 1 (fuel) | 60 | rifle / shotgun (burns) | cladding |
+| `corrugatedTin` | sheetmetal | 2 | 120 | .50 HMG (pen 2) | cladding |
+| `brickRed` / `brickGrey` | brick | 3 | 400 | **HE only** (rocket/tank) | cladding |
+| `concretePanel` / `concrete` | concrete | 4 | 900 | APFSDS = a hole, not a breach | structural-capable |
+| `signage` | — (`null`) | — | — | never (cosmetic) | — |
+
+Readable rule: **bullets break glass/plaster/wood/tin; you need a rocket to breach brick; concrete
+& steel can't be removed by the arsenal → they ARE the load-bearing skeleton.** `hpScale` on a part
+toughens it within its tier (a bunker wall vs a shed). Don't invent new materials — bridge these.
+
+## Role & breach segmentation — structural skeleton vs removable cladding
+
+Each prim carries a **role**: `structural` (skeleton — never removed, holds the roof) | `cladding`
+(removable: walls/panes/doors) | `none`. Default per operator (`manifest.js`): columns / floors /
+roofs / parapets / landmarks = structural; shell walls / window panes / doors / gable-hip-sawtooth
+roofs = cladding. Precedence: **per-emit pin ?? part-level `role` ?? operator default** — so
+`shellBox` pins its base slab + corner stubs structural while its wall field stays cladding, and a
+part-level `role:'structural'` makes a whole load-bearing wall indestructible.
+
+Cladding shell walls are **breach-subdivided** into ~1.7 m pieces (`args.segW`) — HE removes one
+slice = a walkable hole + rubble. Each piece is an independent destruct part with a stable id
+`${pid}:${face}:seg${k}` (deterministic, no RNG → co-op-safe). `shellBox corners:'structural'`
+(default) keeps the corner stacks standing so the roof never floats (law 16). Subdivision is gated
+on `intent.destructible`, so an indestructible building stays lean.
+
+## Destruct runtime contract (`src/buildings/destructible.js` — generalizes `demobuilding.js`)
+
+`placeBuilding` instantiates a **`DestructibleBuilding`** unless `intent.destructible:false`, and
+registers it in `world.destructibles[]`. It wires the two-rep pattern: each cladding part → a
+`makePart` (destruct.js) + a linked `world.boxes` collider (`box.downer=this`, `box.building=bid`);
+structural parts get a plain static box (no destruct part). A hit/blast/penetration mutates the
+parts, then it re-merges **only the touched material bucket** minus its dead pieces (reusing the
+cached texture) + rubble stubs, or disposes a shattered pane. Combat reaches it generically:
+hitscan via `box.downer.applyHit`, HE/APFSDS iterate `world.destructibles`. **Co-op:** host
+broadcasts `bdestroy {bid, parts, holes}`; clients route by `bid` (`routeBdestroy`) and replay;
+late-join snapshots every destructible. World AABBs are yaw-rotated with the same `rotYSteps` as
+`placeBuilding` (else a shot kills the wrong part). The whole chain is browser-verified; **the
+first authored map building still goes through the full pipeline below.**
 
 ## Texture variation — the repeat must NEVER read (owner feedback, 2026-06-11)
 
@@ -159,9 +220,12 @@ Era + type precisely ("1950s brick zavod admin block", not "an office"). Never b
 Never start authoring before this. Standard set: enterable or façade-only? · furniture-ready
 interior? · real transparent windows? · roof access / verticality? · gameplay role
 (cover / landmark / loot-hub / hot-zone / through-route)? · entrances count + sides? ·
-destructible? · interior lighting day/night? Freeze answers into `spec.intent` (law 11
-enforces them). Question thresholds live in the player-friendly-building research doc — keep
-both in sync.
+**destructible?** · interior lighting day/night? Freeze answers into `spec.intent` (laws 11 + 15–18
+enforce them). **`destructible` is LIVE and default-on:** unless you set `intent.destructible:false`
+the building is placed as a `DestructibleBuilding` (breach-subdivided walls, two-rep colliders,
+co-op replay) and laws 15–18 apply; choose `false` only for a pure indestructible landmark
+silhouette. Material choice then fixes hardness (the Materials & hardness table). Question
+thresholds live in the player-friendly-building research doc — keep both in sync.
 
 ### Phase 2 — REFERENCE GATE (vision-confirm, mandatory)
 Owner drops reference images onto the viewer (upload endpoint saves to `buildings/<id>/ref/`)
@@ -213,6 +277,12 @@ spec · in-game day/night/interior shots · 0 console errors · ≥ 2 walkable e
 texture repeat at q34/graze and the roof is not one flat pattern** (variation rules above) ·
 every PNG actually `Read` · `BUILD.md` updated · WARNs justified.
 
+**Destructible buildings also:** rifle shatters a single pane · HE breaches a brick wall to a
+WALKABLE hole + rubble · APFSDS leaves through-holes (wall stays) · **after stripping every cladding
+part the structural skeleton + roof still stand** (law 16 in action) · co-op host→client `bdestroy`
+replay + late-join shows existing breaches · rebuild `lastRebuildMs` within budget · cache-bust
+ritual if it ships.
+
 ## Gotchas / red flags
 
 - **No building authored directly in `world.js`** — spec → lint → viewer → in-game → registry,
@@ -229,5 +299,11 @@ every PNG actually `Read` · `BUILD.md` updated · WARNs justified.
   junk-but-resolving `dossier#` keys · `collide:false` to dodge collider laws · `detail:true`
   on a structural wall · post-hoc `intent` edits · inflated `maxDim`. The validator catches the
   mechanical cases; you own the honest ones.
+- **Destruction footguns:** (1) glass **panes carry no collider** in the plan (`collide:false`) —
+  the runtime mints a thin AABB; never rely on a pane appearing in `plan.colliders`. (2) world
+  part AABBs MUST be yaw-rotated with the same `rotYSteps` as `placeBuilding`, or a shot kills the
+  wrong segment. (3) breach subdivision multiplies colliders — a long wall blows the budget; keep
+  `segW` sane and justify the (3×-raised) collider WARN. (4) `intent.destructible:false` on a
+  building you wanted breakable ships it inert (law 18 WARNs).
 - `needs[]` is a feature, not shame — an honest gap beats an invented cornice, and it aims the
   next research pass.
