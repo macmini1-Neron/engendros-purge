@@ -39,7 +39,7 @@ import { createDriveState, stepDrive, SHILKA_DRIVE_TUNING, SHILKA_GATE_SLOTS, mo
 import { SHILKA_SEATS, SHILKA_SEAT_COUNT, SHILKA_DRIVER_SEAT, SHILKA_DISMOUNT_SPEED_EPS, isDriverSeat } from './shilka-crew.js';
 import { formatUglomer } from './bearing.js';
 import { WEAPON_LAYER } from './engine.js';
-import { clamp, damp, TAU } from './util.js';
+import { clamp, damp, TAU, snoise } from './util.js';
 
 // radar "Gun Dish" (RPK-2 «Тобол») continuous scan rate, rad/s — the signature ЗСУ-23-4 animation.
 // Per-instance dev override: s._radarSpin = 0 stops it, larger spins faster.
@@ -94,6 +94,17 @@ const SWITCH_LABELS = [
 
 const SHILKA_ASSET_URL = './assets/vehicles/zsu-23-4-named.glb?v=20260621-1';
 const SHILKA_ASSET_TARGET_LENGTH_M = 6.7;
+// Body-dynamics tuning (cosmetic, CLIENT-LOCAL): the hull is faked as a sprung mass = two angular
+// spring-dampers (pitch about X, roll about Z) + layered noise, driven by impulses. Heavy + under-damped
+// for the lurch. See docs/superpowers/specs/2026-06-21-shilka-drivetrain-behavior-research.md §4.
+const SHILKA_BODY = Object.freeze({
+  pitchW: 7.0, pitchZeta: 0.28, pitchGain: 0.018, // pitch spring; gain = rad per m/s² of long. accel
+  rollW: 8.2, rollZeta: 0.40, rollGain: 0.012,    // roll spring; gain = rad per m/s² of lateral accel
+  firePitchBias: 0.012,                           // ~0.7° nose-up rock-back held while firing
+  fireAmp: 0.004, fireFreq: 25,                   // ~25 Hz fire buzz (never simulate 60 rounds/s)
+  idleAmp: 0.0020, idleFreq: 9,                   // always-on diesel shudder
+  traumaDecay: 1.2, traumaMaxAngle: 0.16,         // camera trauma shake (consumed in Phase 6)
+});
 const TMP_ORIGIN = new THREE.Vector3();
 const TMP_END = new THREE.Vector3();
 const TMP_FWD = new THREE.Vector3();
@@ -166,6 +177,9 @@ export class ShilkaStation {
     this._uiWired = false;
     this._lastPanelText = '';
     this.cursorMode = true;
+    // body dynamics (cosmetic, client-local): hull pitch/roll springs + lurch + noise + camera trauma.
+    // Summed onto the synced terrain pitch/roll at apply time; NEVER enters the drive model or broadcast.
+    this._dyn = { pitch: 0, pitchVel: 0, roll: 0, rollVel: 0, trauma: 0, prevSpeed: 0, fireWas: false, fireHold: 0, fireAmp: 0, t: 0 };
     this._buildRuntimeMeshes();
   }
 
@@ -1084,6 +1098,7 @@ export class ShilkaStation {
     };
     const ground = this._sampleWheelGround();
     this.drive = stepDrive(this.drive, dt, inp, ground);
+    this._stepBody(dt, this.drive.speed, this.drive.yawRate, this._dyn.fireHold > 0); // cosmetic hull spring
     this._applyRig(dt);
     this._frameDriverCamera(dt);
     this._renderPeriscope(); // RTT the optical periscope into _periRT, BEFORE engine.render()
@@ -1128,6 +1143,11 @@ export class ShilkaStation {
     d.wheelSpinL = m.wsL ?? m.ws; d.wheelSpinR = m.wsR ?? m.ws;   // per-side (fallback to single)
     d.trackScrollL = m.tsL ?? m.ts; d.trackScrollR = m.tsR ?? m.ts;
     d.y = this._groundY(d.x, d.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
+    // body dynamics on the remote vehicle too (each client runs its own spring): derive yaw rate from
+    // the heading delta since yawRate isn't broadcast. Cosmetic — no sync.
+    const dh = d.heading - (this._dyn.remoteH ?? d.heading);
+    this._dyn.remoteH = d.heading;
+    this._stepBody(dt, m.speed, (((dh + Math.PI) % TAU + TAU) % TAU - Math.PI) / Math.max(dt, 1e-3), false);
     this._applyRig(dt);
   }
 
@@ -1211,6 +1231,39 @@ export class ShilkaStation {
     if (B.R) for (let i = 0; i < 6; i++) B.R[i].position.y = B.R[i].userData.restY + d.wheelOffsetR[i] / s;
   }
 
+  // Advance the cosmetic hull spring (pitch + roll) + lurch impulses + noise. CLIENT-LOCAL: called with
+  // the local kinematics (or remote ones derived from the broadcast); never synced, never in the drive
+  // model. Skipped on dt=0 apply paths (parked snapshot / pending rig) — aLong would divide by zero.
+  _stepBody(dt, speed, omega, firing) {
+    if (dt <= 0) return;
+    const D = this._dyn, B = SHILKA_BODY;
+    const aLong = clamp((speed - D.prevSpeed) / dt, -14, 14); // clamp spikes (hard gear snap / net teleport)
+    // discrete lurch impulses (edge-detected). Convention: +pitch = nose UP (rig.body comment), so a
+    // hard stop pitches the nose DOWN (−), a launch snaps it UP (+).
+    if (D.prevSpeed > 2 && Math.abs(speed) < 0.4) D.pitchVel -= 0.45;        // hard stop → nose dives
+    else if (D.prevSpeed < 0.3 && speed > 1) D.pitchVel += 0.30;            // launch → nose snaps up
+    if (firing && !D.fireWas) { D.pitchVel += 0.07; D.trauma = Math.min(1, D.trauma + 0.15); } // burst onset
+    // spring targets (quasi-static lean), reached THROUGH the spring so they overshoot/settle.
+    // accel (+aLong) lifts the nose; braking (−aLong) dives it.
+    let pitchTarget = clamp(B.pitchGain * aLong, -0.08, 0.08); // cap the lean at ~4.5°
+    if (firing) pitchTarget += B.firePitchBias;
+    const rollTarget = clamp(-B.rollGain * (speed * omega), -0.06, 0.06);
+    // semi-implicit Euler (stable at dt ≤ 50 ms, which the loop guarantees)
+    D.pitchVel += (-B.pitchW * B.pitchW * (D.pitch - pitchTarget) - 2 * B.pitchZeta * B.pitchW * D.pitchVel) * dt;
+    D.pitch += D.pitchVel * dt;
+    D.rollVel += (-B.rollW * B.rollW * (D.roll - rollTarget) - 2 * B.rollZeta * B.rollW * D.rollVel) * dt;
+    D.roll += D.rollVel * dt;
+    // fire-buzz envelope + idle shudder (additive layers, NOT through the spring)
+    D.fireAmp += ((firing ? 1 : 0) - D.fireAmp) * Math.min(1, dt * (firing ? 12 : 7));
+    D.t += dt;
+    const idleA = B.idleAmp * (1 + 2 * Math.min(1, Math.abs(speed) / 13.9));
+    this._dynPitchN = idleA * snoise(D.t * B.idleFreq) + D.fireAmp * B.fireAmp * snoise(D.t * B.fireFreq);
+    this._dynRollN = idleA * 0.6 * snoise(D.t * B.idleFreq + 4.0);
+    // trauma decay (camera shake consumes it in Phase 6); plateau while firing
+    D.trauma = firing ? Math.max(D.trauma, 0.30) : Math.max(0, D.trauma - B.traumaDecay * dt);
+    D.prevSpeed = speed; D.fireWas = firing;
+  }
+
   _applyRig(dt) {
     const rig = this.rig; if (!rig) return;
     const d = this.drive;
@@ -1219,7 +1272,9 @@ export class ShilkaStation {
     // hull tilt: +pitch raises the model front (-Z) → nose up climbing forward; roll negated
     // because the rig's π re-orient flips the body-local Z axis the roll is applied about
     // (so the higher-terrain side of the hull rises). Verified headless on sloped steppe.
-    rig.body.rotation.set(d.pitch, 0, -d.roll);
+    // terrain pose (synced) + cosmetic body dynamics (local spring) + high-freq noise, summed on one node
+    rig.body.rotation.set(d.pitch + this._dyn.pitch + (this._dynPitchN || 0), 0,
+      -d.roll + this._dyn.roll + (this._dynRollN || 0));
     // keep the re-enter anchor + teal ring on the vehicle so it stays mountable after driving off
     const gy = this._groundY(d.x, d.z);
     this.base.set(d.x, gy, d.z);
