@@ -7,6 +7,15 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 // frame-rate-independent exponential smoothing toward a target
 const damp = (cur, target, lambda, dt) => target + (cur - target) * Math.exp(-lambda * dt);
 const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+// Torsion-bar bump stop: a road wheel can't travel past its mechanical limit, so the underdamped
+// suspension spring (which overshoots its target) is clamped to ±travel and any velocity driving
+// further into the stop is killed — keeps wheels within travel (no clipping) without damping the
+// in-range bounce. Mutates state[velKey][i] in place; returns the clamped position.
+function bumpStop(pos, state, velKey, i, travel) {
+  if (pos > travel) { if (state[velKey][i] > 0) state[velKey][i] = 0; return travel; }
+  if (pos < -travel) { if (state[velKey][i] < 0) state[velKey][i] = 0; return -travel; }
+  return pos;
+}
 
 export const SHILKA_GEARS = Object.freeze(['R', 'N', '1', '2', '3', '4', '5']);
 
@@ -184,10 +193,10 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
     for (let i = 0; i < 6; i++) {
       const tL = clamp(L[i] - meanG, -T.suspTravel, T.suspTravel);
       next.wheelVelL[i] += (-W * W * (next.wheelOffsetL[i] - tL) - 2 * Z[i] * W * next.wheelVelL[i]) * dt;
-      next.wheelOffsetL[i] += next.wheelVelL[i] * dt;
+      next.wheelOffsetL[i] = bumpStop(next.wheelOffsetL[i] + next.wheelVelL[i] * dt, next, 'wheelVelL', i, T.suspTravel);
       const tR = clamp(R[i] - meanG, -T.suspTravel, T.suspTravel);
       next.wheelVelR[i] += (-W * W * (next.wheelOffsetR[i] - tR) - 2 * Z[i] * W * next.wheelVelR[i]) * dt;
-      next.wheelOffsetR[i] += next.wheelVelR[i] * dt;
+      next.wheelOffsetR[i] = bumpStop(next.wheelOffsetR[i] + next.wheelVelR[i] * dt, next, 'wheelVelR', i, T.suspTravel);
     }
   }
 

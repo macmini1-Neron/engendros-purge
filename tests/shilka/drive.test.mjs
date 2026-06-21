@@ -12,7 +12,7 @@ function run(state, n, dt, input, ground = null) {
 const I = (o = {}) => ({ throttle: 0, brake: 0, steer: 0, clutch: 1, gearReq: null, starter: false, ...o });
 
 test('moves off in 1st with momentum, not an instant jump to top speed', () => {
-  let s = createDriveState();
+  let s = createDriveState({ engineOn: true }); // engine running (createDriveState now starts OFF)
   s = stepDrive(s, 1 / 60, I({ gearReq: '1', clutch: 0 })); // shift to 1 with clutch in
   s = stepDrive(s, 1 / 60, I({ gear: '1', throttle: 1 }));  // (gear already '1'); engage + throttle
   const after1s = run(s, 60, 1 / 60, I({ throttle: 1 }));
@@ -23,7 +23,7 @@ test('moves off in 1st with momentum, not an instant jump to top speed', () => {
 });
 
 test('upshift raises the speed ceiling', () => {
-  let s = createDriveState({ gear: '1', speed: T.gearTopSpeed['1'] });
+  let s = createDriveState({ gear: '1', speed: T.gearTopSpeed['1'], engineOn: true });
   s = stepDrive(s, 0.1, I({ clutch: 0, gearReq: '2' })); // declutch + shift
   assert.equal(s.gear, '2');
   const s2 = run(s, 120, 1 / 60, I({ throttle: 1 }));
@@ -31,14 +31,14 @@ test('upshift raises the speed ceiling', () => {
 });
 
 test('reverse gear drives the vehicle backward (-Z at heading 0)', () => {
-  let s = createDriveState({ gear: 'R' });
+  let s = createDriveState({ gear: 'R', engineOn: true });
   s = run(s, 120, 1 / 60, I({ gear: 'R', throttle: 1 }));
   assert.ok(s.speed < 0, 'reverse speed is negative');
   assert.ok(s.z < 0, 'position moved backward along -Z');
 });
 
 test('dumping the clutch from a standstill with no throttle stalls the engine', () => {
-  let s = createDriveState({ gear: '1' }); // in gear, clutch engaged (1), no throttle, speed 0
+  let s = createDriveState({ gear: '1', engineOn: true }); // running, in gear, clutch engaged, no throttle, speed 0
   s = stepDrive(s, 1 / 60, I({ gear: '1', clutch: 1, throttle: 0 }));
   assert.equal(s.engineOn, false);
   assert.equal(s.stalled, true);
@@ -130,7 +130,7 @@ test('starter restarts a stalled engine after the starter delay', () => {
 test('deterministic: identical inputs produce identical state (with real movement)', () => {
   // gearReq:'1' actually engages the gear (a stray `gear` field is ignored), so this exercises the
   // integrator (speed/x/z/heading), suspension (pitch/roll/wheelOffsets) and rpm — not a neutral no-op.
-  const init = createDriveState({ gear: '1' });
+  const init = createDriveState({ gear: '1', engineOn: true });
   const inp = I({ throttle: 0.4, steer: 0.3 });
   const ground = { L: [0.1, 0.05, 0, -0.05, -0.1, -0.15], R: [0.1, 0.05, 0, -0.05, -0.1, -0.15] };
   const a = run(init, 200, 1 / 60, inp, ground);
@@ -141,19 +141,24 @@ test('deterministic: identical inputs produce identical state (with real movemen
 
 const flat = () => ({ L: [0, 0, 0, 0, 0, 0], R: [0, 0, 0, 0, 0, 0] });
 
-test('steering pivots in place at a standstill (engaged) and turns the heading', () => {
-  let s = createDriveState({ gear: '1' });
-  // throttle just above stall threshold so the engine survives a standstill, full right lever
-  s = run(s, 30, 1 / 60, I({ gear: '1', throttle: 0.2, steer: 1 }), flat());
-  assert.ok(s.heading > 0, 'heading rotated to the right');
+test('no pivot-in-place: a standstill turn does not rotate the hull; a moving turn does', () => {
+  // clutch-and-brake steering can't counter-rotate the tracks → NO spin in place. Full lever, declutched
+  // at a dead stop leaves the heading untouched (the old arcade pivot was removed).
+  let s = createDriveState({ gear: '2', engineOn: true });
+  s = run(s, 30, 1 / 60, I({ gear: '2', throttle: 0, steer: 1, clutch: 0 }), flat());
+  assert.ok(Math.abs(s.heading) < 1e-6, 'no rotation at a standstill (no pivot turn)');
+  // rolling forward, the same lever yaws the hull
+  let m = createDriveState({ gear: '2', engineOn: true });
+  m = run(m, 60, 1 / 60, I({ gear: '2', throttle: 1, steer: 1 }), flat());
+  assert.ok(Math.abs(m.heading) > 0.05, 'turns once moving forward');
 });
 
-test('turn rate is wider (smaller yaw) at speed than at a standstill', () => {
-  const slow = run(createDriveState({ gear: '1' }), 5, 1 / 60, I({ gear: '1', throttle: 0.2, steer: 1 }), flat());
-  const fast = run(createDriveState({ gear: '5', speed: SHILKA_DRIVE_TUNING_TOP() }), 5, 1 / 60, I({ gear: '5', throttle: 1, steer: 1 }), flat());
-  assert.ok(Math.abs(fast.yawRate) < Math.abs(slow.yawRate), 'yaw rate shrinks with speed');
+test('turn rate widens (smaller yaw) at top speed than at mid speed', () => {
+  const mid = run(createDriveState({ gear: '2', speed: 3, engineOn: true }), 5, 1 / 60, I({ gear: '2', throttle: 1, steer: 1 }), flat());
+  const fast = run(createDriveState({ gear: '5', speed: T.gearTopSpeed['5'], engineOn: true }), 5, 1 / 60, I({ gear: '5', throttle: 1, steer: 1 }), flat());
+  assert.ok(Math.abs(mid.yawRate) > 0, 'mid-speed turn has yaw authority');
+  assert.ok(Math.abs(fast.yawRate) < Math.abs(mid.yawRate), 'yaw rate shrinks toward top speed (the turn widens)');
 });
-function SHILKA_DRIVE_TUNING_TOP() { return T.gearTopSpeed['5']; }
 
 test('flat terrain produces no tilt; a front-high ramp pitches the nose up', () => {
   let s = createDriveState();
