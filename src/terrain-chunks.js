@@ -108,6 +108,48 @@ export class TerrainChunks {
     this.visible = vis;
   }
 
+  // ── live re-mesh after a terrain dig (src/dig-manager.js) ───────────────────────────────────────
+  // Return the indices of chunks whose footprint overlaps the XZ rect (a dug crater's bounds).
+  chunksOverlapping(minx, minz, maxx, maxz) {
+    const out = [];
+    for (let i = 0; i < this.chunks.length; i++) {
+      const c = this.chunks[i].chunk;
+      if (c.maxX >= minx && c.minX <= maxx && c.maxZ >= minz && c.minZ <= maxz) out.push(i);
+    }
+    return out;
+  }
+
+  // Rebuild EVERY LOD mesh of chunk `ci` from the (now-deformed) terrain. There is no incremental
+  // vertex update — each LOD is recomputed and swapped in. Worker path streams the new arrays in
+  // (old mesh stays visible until its replacement lands); no-worker path builds synchronously.
+  remeshChunk(ci) {
+    const entry = this.chunks[ci];
+    if (!entry) return;
+    const c = entry.chunk, sw = this.simWorker;
+    for (let li = 0; li < this.resolutions.length; li++) {
+      const r = this.resolutions[li], segs = Math.max(1, Math.floor(r));
+      if (sw && sw.ok && sw.requestChunk(c, r, (arrays) => this._swap(ci, li, assembleChunkMesh(arrays, c, segs)))) continue;
+      this._swap(ci, li, buildChunkMesh(this.terrain, c, r)); // worker absent/vanished → sync
+    }
+  }
+
+  // Replace chunk ci's LOD-li mesh with a fresh one, disposing the old. update() owns visibility.
+  _swap(ci, li, mesh) {
+    const entry = this.chunks[ci];
+    if (!entry) { mesh.geometry.dispose(); mesh.material.dispose(); return; } // disposed before it landed
+    const old = entry.meshes[li];
+    mesh.visible = false;
+    entry.meshes[li] = mesh;
+    this.group.add(mesh);
+    this.meshes.push(mesh);
+    if (old) {
+      this.group.remove(old);
+      const oi = this.meshes.indexOf(old);
+      if (oi >= 0) this.meshes.splice(oi, 1);
+      old.geometry.dispose(); old.material.dispose();
+    }
+  }
+
   dispose() {
     for (const mesh of this.meshes) { mesh.geometry.dispose(); mesh.material.dispose(); }
     this.meshes.length = 0;

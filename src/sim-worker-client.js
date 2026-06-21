@@ -89,4 +89,10 @@ export class SimWorker {
     this._w.postMessage({ cmd: 'chunk', jobId, chunk, resolution });
     return true;
   }
+
+  // --- excavation: keep the worker's deform field in lock-step with the main thread -----------
+  // deformAdd MUST be posted BEFORE the requestChunk that re-meshes the affected chunk, so the
+  // worker applies the dig before rebuilding (the message queue is ordered → bit-identical result).
+  deformAdd(prim) { if (this.ok) this._w.postMessage({ cmd: 'deformAdd', prim }); }
+  deformInit(arr) { if (this.ok) this._w.postMessage({ cmd: 'deformInit', arr }); }
 }
