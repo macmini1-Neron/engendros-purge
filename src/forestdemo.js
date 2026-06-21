@@ -121,23 +121,32 @@ export class ForestDemo {
     };
     const spine = res.spine;
     if (spine && spine.length) {
-      const NB = 3;                                            // 3 bands track the lean tightly base→crown
+      // centreline (local x,z) at local height yt, LERPED along the spine polyline (sorted base→top) — so a
+      // band is sized from its exact Y edges (gap-free + tight) instead of whichever discrete spine points
+      // happen to fall inside it.
+      const cl = (yt) => {
+        if (yt <= spine[0][1]) return [spine[0][0], spine[0][2]];
+        for (let i = 0; i < spine.length - 1; i++) {
+          const a = spine[i], b = spine[i + 1];
+          if (yt <= b[1] + 1e-6) { const tt = (yt - a[1]) / ((b[1] - a[1]) || 1); return [a[0] + (b[0] - a[0]) * tt, a[2] + (b[2] - a[2]) * tt]; }
+        }
+        const e = spine[spine.length - 1]; return [e[0], e[2]];
+      };
+      const NB = 6;                                            // more, SHORTER bands → each hugs the local lean tightly (a tall band's lean drift was an invisible block beside the trunk)
       for (let s = 0; s < NB; s++) {
         const y0 = (s / NB) * H, y1 = ((s + 1) / NB) * H;
-        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity, any = false;
-        for (const p of spine) {
-          if (p[1] < y0 - 1e-3 || p[1] > y1 + 1e-3) continue;
-          const rx = p[0] * cos + p[2] * sin, rz = -p[0] * sin + p[2] * cos;   // rotate centreline by yaw → world (THREE rotation.y)
-          if (rx < mnx) mnx = rx; if (rx > mxx) mxx = rx; if (rz < mnz) mnz = rz; if (rz > mxz) mxz = rz; any = true;
-        }
-        if (!any) continue;
-        const rad = trunkR * (1 - 0.6 * (y0 / H)) + 0.12;      // taper-aware hug, thickest at the band base
+        // sample the centreline at both edges + any spine points strictly inside → full extent, no gaps
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+        const add = (lx, lz) => { const rx = lx * cos + lz * sin, rz = -lx * sin + lz * cos; if (rx < mnx) mnx = rx; if (rx > mxx) mxx = rx; if (rz < mnz) mnz = rz; if (rz > mxz) mxz = rz; };
+        const e0 = cl(y0), e1 = cl(y1); add(e0[0], e0[1]); add(e1[0], e1[1]);
+        for (const p of spine) if (p[1] > y0 && p[1] < y1) add(p[0], p[2]);
+        const rad = trunkR * (1 - 0.6 * (y0 / H)) + 0.1;       // taper-aware hug (thickest at the band base) + a small aim/clearance margin
         addBox([x + mnx - rad, y + y0, z + mnz - rad], [x + mxx + rad, y + y1, z + mxz + rad], false);
       }
-      // flared root collar (tree.js draws it ~1.8× trunk radius at the very base) — a short solid box so
-      // the base flare is shootable and you can't clip into it. Only the bottom ~0.7 m, so it doesn't fatten
-      // the bole above it.
-      const collarR = trunkR * 1.8 + 0.1, collarH = Math.min(0.7, H * 0.14);
+      // root collar — a SHORT solid box matching the visible flare. trunkR*1.25 (square) puts its CORNERS at
+      // ~1.77×trunkR ≈ the drawn flare radius (1.8×) and its flats just inside → it hugs the round flare
+      // instead of the old 1.8× square whose corners stuck out to 2.5×trunkR (a fat invisible block at foot level).
+      const collarR = trunkR * 1.25 + 0.05, collarH = Math.min(0.5, H * 0.12);
       addBox([x - collarR, y, z - collarR], [x + collarR, y + collarH, z + collarR], false);
     } else {                                                   // defensive fallback: old single column
       addBox([x - half, y, z - half], [x + half, topY, z + half], false);
