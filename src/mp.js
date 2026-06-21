@@ -741,6 +741,15 @@ export class MP {
       else if (d.k === 'char') fr.charTreeById(d.id);
       else if (d.k === 'grass') fr.consumeGrassById(d.id);
       else if (d.k === 'propdie') fr.destroyPropById(d.id); });
+    // ── terrain excavation (craters + shovel) — the dig list is the single synced source of truth;
+    //    everything else (collision, AI, molotov-Y, ghost landing, chunk mesh) is RECOMPUTED from it ──
+    n.on('deform', (d) => { if (!this.isHost && d && g.digManager) g.digManager.applyNetDeform(d); }); // host dig → client lowers terrain + re-meshes (NO support scan; outcomes arrive separately)
+    n.on('digreq', (d, from) => { // client shovel dig → host carves authoritatively, runs the scan, broadcasts 'deform'
+      if (!this.isHost || !d || !g.digManager) return;
+      const r = Math.min(Math.max(+d.r || 0, 0.1), 1.5), depth = Math.min(Math.max(+d.dp || 0, 0), 1.0); // clamp anti-grief
+      if (r > 0 && depth > 0) g.digManager.dig({ x: d.x, z: d.z }, { r, depth });
+    });
+    n.on('bcollapse', (d) => { if (!this.isHost && d) { const b = g.world.demoBuilding; if (b && typeof b.applyNetCollapse === 'function') b.applyNetCollapse(d.ids, d.seed); } }); // host-auth building-wall collapse from undermining
     n.on('kill', (d) => this._clientKill(d));
     n.on('burn', () => { this.game.player.burnT = PLAYER_BURN_DUR; });
     n.on('bleed', (d) => { if (d && typeof d.t === 'number') this._bleedT = d.t; }); // host re-syncs the downed player's bleed-out bar to the authoritative downT
@@ -1163,6 +1172,11 @@ export class MP {
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
     for (const [id, s] of this.pstate) this.net.sendTo(pid, 'pstate', this._pStatePayload(id, s)); // late-join: current down/dead/waiting states
     this.sendWorldTime(pid); // late-join: current day/night + blood-moon state
+    // terrain DIGS first — the breaches/fells replayed below must land on the already-lowered ground
+    // (and the joiner's worker re-meshes the dug chunks). The dig list is the whole synced truth.
+    if (this.game.digManager && this.game.digManager.field && this.game.digManager.field.count) {
+      this.net.sendTo(pid, 'deform', { batch: this.game.digManager.netSnapshot() });
+    }
     // ── demo (?map=demo) host-auth destruction/fire — replay everything the joiner missed ──
     const b = this.game.world.demoBuilding;
     if (b && typeof b.netSnapshot === 'function') { const snap = b.netSnapshot(); if (snap.parts.length || snap.holes.length) this.net.sendTo(pid, 'bdestroy', snap); } // existing breaches / shattered panes / APFSDS holes
