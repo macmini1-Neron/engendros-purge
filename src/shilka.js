@@ -1184,6 +1184,33 @@ export class ShilkaStation {
     for (const mp of this._trackMaps.R) mp.offset.x = (mp.offset.x + dR) % 1;
   }
 
+  // Deformable track: pose each belt's 6 road-wheel bones (belt_{L,R}_0-5) to follow that wheel's
+  // suspension lift, so the bottom run + the top run (which rests on the wheel tops — no return rollers)
+  // ripple over terrain with the wheels. The bones lift in their LOCAL +Y, which maps to world +Y
+  // (verified: 1 local unit = rigScale world units), so the lift is wheelOffset/scale, same as the wheel.
+  // idler/sprocket bones stay at rest (tensioners, not sprung).
+  _deformBelts(d, s) {
+    if (this._beltBones === undefined) {
+      this._beltBones = null;
+      const out = { L: null, R: null };
+      for (const m of (this.rig.tracks || [])) {
+        if (!m.isSkinnedMesh || !m.skeleton) continue;
+        const side = m.userData && m.userData.side === 'R' ? 'R' : 'L';
+        const bones = [];
+        for (let i = 0; i < 6; i++) {
+          const b = m.skeleton.bones.find((x) => x.name === `belt_${side}_${i}`);
+          if (b) { b.userData.restY = b.position.y; bones.push(b); }
+        }
+        if (bones.length === 6) out[side] = bones;
+      }
+      if (out.L || out.R) this._beltBones = out;
+    }
+    if (!this._beltBones) return;
+    const B = this._beltBones;
+    if (B.L) for (let i = 0; i < 6; i++) B.L[i].position.y = B.L[i].userData.restY + d.wheelOffsetL[i] / s;
+    if (B.R) for (let i = 0; i < 6; i++) B.R[i].position.y = B.R[i].userData.restY + d.wheelOffsetR[i] / s;
+  }
+
   _applyRig(dt) {
     const rig = this.rig; if (!rig) return;
     const d = this.drive;
@@ -1203,7 +1230,8 @@ export class ShilkaStation {
     for (let i = 0; i < rig.wheelsR.length; i++) { const w = rig.wheelsR[i]; w.position.y = (w.userData.restY || 0) + d.wheelOffsetR[i] / s; w.rotation.x = d.wheelSpinR; }
     for (const sp of rig.sprockets) sp.rotation.x = (sp.userData && sp.userData.side === 'R') ? d.wheelSpinR : d.wheelSpinL;
     for (const id of (rig.idlers || [])) id.rotation.x = (id.userData && id.userData.side === 'R') ? d.wheelSpinR : d.wheelSpinL;
-    this._scrollTracks(d); // belt tread UV scroll, per side
+    this._scrollTracks(d);    // belt tread UV scroll, per side
+    this._deformBelts(d, s);  // belt bones follow each road wheel's suspension lift (deformable track)
     const sway = clamp(-d.yawRate * 0.25, -0.25, 0.25);
     for (const a of rig.antennas) a.rotation.z = damp(a.rotation.z || 0, sway, 8, dt);
   }
