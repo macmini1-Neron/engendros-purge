@@ -112,11 +112,11 @@ const SHILKA_BODY = Object.freeze({
 // pitch/roll. Per-seat + zoom scaling at apply. Real ZSU-23-4 "shoots best stopped" → steadies near idle
 // when halted. (A settings "Ride Shake 0–100%" slider would just multiply these amplitudes.)
 const SHILKA_RIDE = Object.freeze({
-  vFull: 11,                                          // m/s ≈ full cross-country (top of the speed scale)
-  pitchAmp: 0.021, yawAmp: 0.0105, rollAmp: 0.0061,  // rad ≈ 1.2°/0.6°/0.35° peak (driver, full speed)
-  bobAmp: 0.06, latAmp: 0.025,                        // metres of head bob / sway (driver, full speed)
+  suspRef: 1.4,                                       // mean |wheel velocity| (m/s) that = full ride intensity
+  pitchAmp: 0.010, yawAmp: 0.005, rollAmp: 0.0026,   // rad ≈ 0.57°/0.29°/0.15° — SMALL; the hull tilt does the big motion
+  bobAmp: 0.028, latAmp: 0.012,                       // metres of head bob / sway
   fLope: 4.5, fBuzz: 13,                              // Hz: loping-over-ground band + track/engine buzz
-  idleFloor: 0.10,                                    // residual fraction when crawling (with idle shudder)
+  speedFloor: 0.4,                                    // ride comes from suspension, lightly gated by speed (0.4..1.0)
 });
 const TMP_ORIGIN = new THREE.Vector3();
 const TMP_END = new THREE.Vector3();
@@ -1279,15 +1279,19 @@ export class ShilkaStation {
     // fire-buzz envelope + idle shudder (additive layers, NOT through the spring)
     D.fireAmp += ((firing ? 1 : 0) - D.fireAmp) * Math.min(1, dt * (firing ? 12 : 7));
     D.t += dt;
-    const idleA = B.idleAmp * (1 + 2 * Math.min(1, Math.abs(speed) / 13.9));
+    const idleA = B.idleAmp; // constant engine shudder; the DRIVING motion comes from the suspension ride shake
     this._dynPitchN = idleA * snoise(D.t * B.idleFreq) + D.fireAmp * B.fireAmp * snoise(D.t * B.fireFreq);
     this._dynRollN = idleA * 0.6 * snoise(D.t * B.idleFreq + 4.0);
     // trauma decay (camera shake consumes it in Phase 6); plateau while firing
     D.trauma = firing ? Math.max(D.trauma, 0.30) : Math.max(0, D.trauma - B.traumaDecay * dt);
-    // ride shake: speed-driven camera-local jitter (the crew feels the terrain). Two noise bands, mostly
-    // pitch + a vertical bob, roll tiny; grows with speed (ease-in), near-idle when stopped.
-    const sp01 = clamp(Math.abs(speed) / SHILKA_RIDE.vFull, 0, 1);
-    const rideI = SHILKA_RIDE.idleFloor + sp01 * sp01 * (1 - SHILKA_RIDE.idleFloor);
+    // ride shake DRIVEN BY THE SUSPENSION: mean |wheel velocity| = how hard the springs are working, so
+    // it stays SYNCED to the actual terrain the wheels hit (smooth ground barely shakes, rough jolts).
+    // Small amplitude — the hull tilt (inherited by the camera via rig.body) already does the big body
+    // motion; this is just fine head jitter on top, lightly gated by speed so fast-over-rough reads worst.
+    const wvL = this.drive.wheelVelL, wvR = this.drive.wheelVelR;
+    let susp = 0; for (let i = 0; i < 6; i++) susp += Math.abs(wvL[i]) + Math.abs(wvR[i]);
+    const sp01 = clamp(Math.abs(speed) / 11, 0, 1);
+    const rideI = clamp(susp / 12 / SHILKA_RIDE.suspRef, 0, 1) * (SHILKA_RIDE.speedFloor + (1 - SHILKA_RIDE.speedFloor) * sp01);
     const tl = D.t * SHILKA_RIDE.fLope, tb = D.t * SHILKA_RIDE.fBuzz;
     D.ridePitch = rideI * SHILKA_RIDE.pitchAmp * snoise(tl);
     D.rideYaw = rideI * SHILKA_RIDE.yawAmp * snoise(tl + 5.0);
