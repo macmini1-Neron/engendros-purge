@@ -44,7 +44,11 @@ export const SHILKA_DRIVE_TUNING = Object.freeze({
   trackWidth: 2.5,
   suspTravel: 0.18,
   tiltLambda: 6,
-  wheelLambda: 9,
+  wheelLambda: 9,           // (legacy 1st-order; kept for ref) — suspension now uses the 2nd-order spring
+  suspW: 11,                // rad/s natural frequency of the per-wheel suspension spring
+  // damping ratio per station front→rear: corners damped (~critical), MIDDLE 3 underdamped — the ЗСУ
+  // only damps the end road wheels, so the undamped middles porpoise = the characteristic bouncy ride.
+  suspZeta: Object.freeze([0.85, 0.32, 0.26, 0.26, 0.32, 0.85]),
 });
 
 export function createDriveState(overrides = {}) {
@@ -63,6 +67,8 @@ export function createDriveState(overrides = {}) {
     pitch: 0, roll: 0,
     wheelOffsetL: [0, 0, 0, 0, 0, 0],
     wheelOffsetR: [0, 0, 0, 0, 0, 0],
+    wheelVelL: [0, 0, 0, 0, 0, 0],   // per-wheel suspension spring velocities (2nd-order spring)
+    wheelVelR: [0, 0, 0, 0, 0, 0],
     wheelSpin: 0,
     trackScroll: 0,
     wheelSpinL: 0, wheelSpinR: 0,     // per-side spin (turns drive the two belts at different rates)
@@ -79,7 +85,8 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
   const T = SHILKA_DRIVE_TUNING;
   const dt = Math.max(0, Number.isFinite(dtSeconds) ? dtSeconds : 0);
   const inp = defaultsIn(input);
-  const next = { ...state, wheelOffsetL: state.wheelOffsetL.slice(), wheelOffsetR: state.wheelOffsetR.slice(), grind: false };
+  const next = { ...state, wheelOffsetL: state.wheelOffsetL.slice(), wheelOffsetR: state.wheelOffsetR.slice(),
+    wheelVelL: (state.wheelVelL || [0,0,0,0,0,0]).slice(), wheelVelR: (state.wheelVelR || [0,0,0,0,0,0]).slice(), grind: false };
 
   next.clutch = clamp(inp.clutch, 0, 1);
 
@@ -170,9 +177,17 @@ export function stepDrive(state, dtSeconds, input = {}, wheelGroundY = null) {
     next.pitch = damp(next.pitch, pitchT, T.tiltLambda, dt);
     next.roll = damp(next.roll, rollT, T.tiltLambda, dt);
     next.y = damp(next.y, meanG + T.wheelRadius + T.rideHeight, T.tiltLambda, dt);
+    // per-wheel 2nd-order spring (semi-implicit Euler) toward the terrain target. ASYMMETRIC damping
+    // (suspZeta: corners ~critical, middle 3 underdamped) → the middle wheels overshoot and keep
+    // bouncing after a bump while the corners settle = the ЗСУ's loose, porpoising ride.
+    const W = T.suspW, Z = T.suspZeta;
     for (let i = 0; i < 6; i++) {
-      next.wheelOffsetL[i] = damp(next.wheelOffsetL[i], clamp(L[i] - meanG, -T.suspTravel, T.suspTravel), T.wheelLambda, dt);
-      next.wheelOffsetR[i] = damp(next.wheelOffsetR[i], clamp(R[i] - meanG, -T.suspTravel, T.suspTravel), T.wheelLambda, dt);
+      const tL = clamp(L[i] - meanG, -T.suspTravel, T.suspTravel);
+      next.wheelVelL[i] += (-W * W * (next.wheelOffsetL[i] - tL) - 2 * Z[i] * W * next.wheelVelL[i]) * dt;
+      next.wheelOffsetL[i] += next.wheelVelL[i] * dt;
+      const tR = clamp(R[i] - meanG, -T.suspTravel, T.suspTravel);
+      next.wheelVelR[i] += (-W * W * (next.wheelOffsetR[i] - tR) - 2 * Z[i] * W * next.wheelVelR[i]) * dt;
+      next.wheelOffsetR[i] += next.wheelVelR[i] * dt;
     }
   }
 
