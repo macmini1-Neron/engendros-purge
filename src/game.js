@@ -93,6 +93,11 @@ class Game {
     this.freecam = false;
     this.flyMode = false; // console /fly — same free movement as freecam, but the sim keeps running (mobs/waves stay alive)
     this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })();
+    // Shilka dev observation mode: RC the vehicle on the arrow keys + free orbit camera, watch it from
+    // outside (running gear / radar / steering) as we build each system. ?shilkadev=1 auto-enters; toggle
+    // at runtime with GAME.shilkaDev(). Holds a ShilkaStation (or null). Solo dev tool — never synced.
+    this._shilkaDev = null;
+    this._shilkaDevStart = (() => { try { return new URLSearchParams(location.search).get('shilkadev') === '1'; } catch (e) { return false; } })();
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
@@ -383,6 +388,7 @@ class Game {
           if (gun) gun.mount();
           else if (this.nearestNightPost()) { this.nearestNightPost().enter(); } // ННП-23: step up to the eyepieces
           else if (this.nearestMortar()) { this.nearestMortar().mount(); } // 82-ПМ-37: man the indirect-fire station
+          else if (this._shilkaDev) { /* dev observation mode owns the Shilka — don't auto-board on E */ }
           else if (this.nearestShilka()) { this.nearestShilka().mountNearest(this.player.pos); } // ЗСУ-23-4: board the nearest seat (driver hatch / turret)
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
@@ -422,6 +428,7 @@ class Game {
     this.state = 'playing'; this._startCountdown = 0.6;
     this.freecam = !!this._flyStart; // ?fly=1 → boot straight into the fly-cam (no enemies until you press N)
     if (this.freecam) this.hud.bigMessage('🚁 FREECAM', 'WASD fly · Space up · Ctrl/C down · Shift boost · N toggle');
+    if (this._shilkaDevStart) setTimeout(() => this.shilkaDev(), 300); // ?shilkadev=1 → external RC observation of the Shilka
     // Go real-fullscreen on this user gesture, then resize, grab the pointer & lock the keyboard.
     const root = document.documentElement;
     const after = () => { this.engine.resize(); this.input.requestLock(); this._lockKeyboard(); };
@@ -450,6 +457,19 @@ class Game {
       if (!this.waves.active && this._waveBreak <= 0 && this._startCountdown <= 0) this._waveBreak = 0.8; // kick spawns back on
       this.hud.bigMessage('FREECAM OFF', 'normal play resumed');
     }
+  }
+
+  // Dev: enter/leave the Shilka external observation mode (RC on arrows + free orbit camera). Toggle.
+  // idx selects which vehicle (default: the ?map=demo Shilka, else the first). Console: GAME.shilkaDev().
+  shilkaDev(idx = null) {
+    if (this._shilkaDev) { this._shilkaDev.devExit(); return false; } // already on → toggle off (devExit clears this._shilkaDev)
+    const list = this.shilkas || [];
+    const target = idx != null ? list[idx] : (list.find((x) => x.id === 'shilka-demo') || list[0]);
+    if (!target) { console.warn('[shilkaDev] no Shilka in this map'); return false; }
+    if (this.player.shilka) this.player.shilka.dismount(true); // can't observe from outside while seated
+    this._shilkaDev = target;
+    target.devEnter();
+    return true;
   }
 
   _mountedGunList() {
@@ -1081,7 +1101,7 @@ class Game {
 
   _updatePlaying(dt) {
     const hostSim = !this.mp.active || this.mp.isHost; // clients don't simulate enemies/waves
-    const sim = hostSim && !this.freecam;              // fly-cam = pure observation: no countdown/spawns/enemies
+    const sim = hostSim && !this.freecam && !this._shilkaDev; // fly-cam / Shilka-dev = pure observation: no countdown/spawns/enemies
     if (sim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
     if (sim && this._waveBreak > 0) { this._waveBreak -= dt; if (this._waveBreak <= 0) { this._waveBreak = 0; this.waves.startWave(this.waves.wave + 1); } } // continuous: breather → next wave (no shop, stay 'playing')
 
@@ -1099,6 +1119,8 @@ class Game {
     }
     if (this.player.shilka) {
       this.player.shilka.controlUpdate(dt); // Shilka radar/fire-control overlay, camera, lock, range gate, burst fire
+    } else if (this._shilkaDev) {
+      this._shilkaDev.devUpdate(dt); // dev observation: RC the Shilka on arrows + free orbit cam (takes the camera, freezes the player)
     } else if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
     } else if (this.player.mortar) {
@@ -1121,7 +1143,7 @@ class Game {
       this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
     }
     for (const gun of this._mountedGunList()) if (this.player.mountedGun !== gun) gun.idleCool(dt); // fixed MGs cool down even when nobody is manning them
-    this.player.survivalTick(dt); // survival timers tick in every seat (on foot, mounted MG, tank)
+    if (!this._shilkaDev) this.player.survivalTick(dt); // survival timers tick in every seat (on foot, mounted MG, tank) — frozen in Shilka-dev observation
     if (this.world.updateGate) this.world.updateGate(dt, this.player.pos); // steppe: animate the sliding works gate
     if (this.world.updateDoors) this.world.updateDoors(dt); // steppe: ease bunker гермодвери open/closed + track leaf colliders
     if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player

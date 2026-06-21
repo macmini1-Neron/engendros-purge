@@ -1374,6 +1374,102 @@ export class ShilkaStation {
     const pl = this.game.player; pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
   }
 
+  // ─── Dev observation mode ──────────────────────────────────────────────────────────────────────
+  // Watch the Shilka from OUTSIDE while remote-controlling it: a free orbit camera flies around the
+  // hull (mouse orbits, wheel zooms) while the arrow keys drive it (auto-box). Built to inspect the
+  // running gear / radar / steering as each system lands — toggle with GAME.shilkaDev() or ?shilkadev=1.
+  // Slots into game.js's seated-control if/else as a virtual seat: it takes the camera and freezes the
+  // player, exactly like a real mount. Solo dev tool — nothing here is simulated authoritatively or synced.
+  devEnter() {
+    this._dev = this._dev || { yaw: 2.3, pitch: 0.40, dist: 12 };
+    this._dev.on = true;
+    // bring the powerpack alive so the arrow keys actually move it (the realistic 2-engine model is next).
+    this.drive.engineOn = true; this.drive.stalled = false;
+    if (this.drive.engineRpm < SHILKA_DRIVE_TUNING.idleRpm) this.drive.engineRpm = SHILKA_DRIVE_TUNING.idleRpm;
+    if (this._radarSpin == null) this._radarSpin = SHILKA_RADAR_SPIN; // keep the dish scanning (R toggles)
+    // clean external view: hide the held weapon viewmodel + the gameplay HUD (the dev overlay replaces it).
+    if (this.game.weapons && this.game.weapons.group) this.game.weapons.group.visible = false;
+    if (this.game.hud) this.game.hud.show(false);
+    this._ensureDevHud();
+    if (this.game.hud) this.game.hud.bigMessage('🔭 SHILKA — DEV', '↑↓ drive · ←→ steer · mouse orbit · wheel zoom · R radar · G engine · P exit');
+  }
+
+  devExit() {
+    if (this._dev) this._dev.on = false;
+    this.game._shilkaDev = null;        // game.js stops routing devUpdate; normal play resumes next frame
+    if (this._devHud) this._devHud.style.display = 'none';
+    if (this.game.weapons && this.game.weapons.group) this.game.weapons.group.visible = true; // restore the held weapon
+    if (this.game.hud) { this.game.hud.show(true); this.game.hud.bigMessage('DEV OFF', 'normal play resumed'); }
+  }
+
+  devUpdate(dt) {
+    const input = this.game.input, cam = this.game.engine.camera, d = this.drive;
+    if (input.wasPressed('KeyP')) { this.devExit(); return; }
+    // toggles the user asked for: R = radar on/off (stop/spin the dish), G = engine on/off (no shake when off).
+    if (input.wasPressed('KeyR')) { const on = (this._radarSpin ?? SHILKA_RADAR_SPIN) === 0; this._radarSpin = on ? SHILKA_RADAR_SPIN : 0; this.setRadar(on); }
+    if (input.wasPressed('KeyG')) {
+      d.engineOn = !d.engineOn;
+      if (d.engineOn) { d.stalled = false; d.engineRpm = SHILKA_DRIVE_TUNING.idleRpm; }
+      else { d.engineRpm = 0; }
+    }
+    // RC drive (dev shortcut): set the gear directly from the arrows so it always moves without the
+    // H-gate ceremony — the proper synchro/clutch behaviour is exercised from the real driver seat.
+    const fwd = input.isDown('ArrowUp'), rev = input.isDown('ArrowDown');
+    const movingFwd = d.speed > 0.25;
+    if (d.engineOn) { if (fwd) d.gear = '2'; else if (rev && !movingFwd) d.gear = 'R'; }
+    const driving = d.engineOn && (fwd || (rev && d.gear === 'R')); // pulling in a drive gear
+    const inp = {
+      throttle: driving ? 1 : 0,
+      brake: (rev && movingFwd) ? 1 : 0,                                  // tap reverse while rolling fwd = brake first
+      steer: (input.isDown('ArrowRight') ? 1 : 0) - (input.isDown('ArrowLeft') ? 1 : 0),
+      // RC convenience: hold the clutch when coasting/braking so the engine just idles instead of stalling
+      // out at every stop (you can't feather a real clutch on the arrows). The realistic stall/restart
+      // behaviour is exercised from the proper driver seat / the engine-realism model.
+      clutch: driving ? 1 : 0,
+      gearReq: null, starter: 0,
+    };
+    this.drive = stepDrive(this.drive, dt, inp, this._sampleWheelGround());
+    this._applyRig(dt); // pose the rig (turret/wheels/tracks/suspension) from the new drive state
+
+    // free orbit camera around the hull: mouse spins yaw/pitch, wheel changes distance, target follows it.
+    this._dev.yaw -= input.mouseDX * 0.0026;
+    this._dev.pitch = clamp(this._dev.pitch - input.mouseDY * 0.0026, -1.15, 1.30);
+    this._dev.dist = clamp(this._dev.dist - input.wheel * 0.9, 3.5, 45);
+    const dd = this.drive;
+    const tx = dd.x, ty = dd.y + 1.3, tz = dd.z; // look at hull centre (lifted to roughly turret height)
+    const cp = Math.cos(this._dev.pitch), sp = Math.sin(this._dev.pitch);
+    cam.position.set(tx + Math.sin(this._dev.yaw) * cp * this._dev.dist, ty + sp * this._dev.dist, tz + Math.cos(this._dev.yaw) * cp * this._dev.dist);
+    cam.rotation.order = 'YXZ';
+    cam.lookAt(tx, ty, tz);
+    this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
+    const pl = this.game.player; pl.pos.set(dd.x, dd.y, dd.z); pl.vel.set(0, 0, 0); // park the player (no wander / auto-mount)
+    this._updateDevHud();
+  }
+
+  _ensureDevHud() {
+    if (this._devHud) { this._devHud.style.display = 'block'; return; }
+    const el = document.createElement('div');
+    el.id = 'shilkadev-hud';
+    el.style.cssText = 'position:fixed;left:12px;top:12px;z-index:9999;font:12px/1.55 Consolas,"Courier New",monospace;color:#a8e6ff;background:rgba(8,14,20,.74);padding:8px 12px;border:1px solid #2f6b4a;border-radius:6px;white-space:pre;pointer-events:none;text-shadow:0 1px 2px #000;letter-spacing:.3px';
+    document.body.appendChild(el);
+    this._devHud = el;
+  }
+
+  _updateDevHud() {
+    if (!this._devHud) return;
+    const d = this.drive;
+    const kmh = (Math.abs(d.speed) * 3.6).toFixed(1);
+    const radar = (this._radarSpin ?? SHILKA_RADAR_SPIN) > 0 ? 'ON' : 'OFF';
+    const eng = d.engineOn ? 'RUN' : (d.stalled ? 'STALL' : 'OFF');
+    this._devHud.textContent =
+      `🔭 SHILKA DEV — ${this.id}\n` +
+      `speed ${kmh} km/h   gear ${d.gear}   rpm ${Math.round(d.engineRpm)}\n` +
+      `engine ${eng}   radar ${radar}\n` +
+      `heading ${((d.heading * 180 / Math.PI) % 360).toFixed(0)}°   cam ${this._dev.dist.toFixed(1)} m\n` +
+      `↑↓ drive · ←→ steer · mouse orbit · wheel zoom\n` +
+      `R radar · G engine · P exit`;
+  }
+
   _frameDriverCamera(dt) {
     const cam = this.game.engine.camera;
     const d = this.drive;
