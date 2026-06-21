@@ -594,7 +594,7 @@ export class ShilkaStation {
   _enterDriverSeat() {
     // resync to where the vehicle physically sits; speed/gear/engine start fresh (heading kept as-is)
     this.drive.x = this.base.x; this.drive.z = this.base.z;
-    this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = true; this.drive.stalled = false;
+    this.drive.gear = 'N'; this.drive.speed = 0; this.drive.engineOn = false; this.drive.engineRpm = 0; this.drive.stalled = false; // engine starts OFF — hold Enter (starter) to fire it up
     this._lever = { ...SHILKA_GATE_SLOTS[this.drive.gear] }; // shift lever rests in the engaged gear's slot
     // driver looks THROUGH a real 3D periscope hood (hull-fixed enclosure + slit, on WEAPON_LAYER): show
     // it and hide the exterior optic so it doesn't double up / clip. The hood is the viewport now — the
@@ -1260,6 +1260,7 @@ export class ShilkaStation {
   _stepBody(dt, speed, omega, firing) {
     if (dt <= 0) return;
     const D = this._dyn, B = SHILKA_BODY;
+    const engineOn = this.drive.engineOn; // gates idle + ride shake: engine off → dead still
     const aLong = clamp((speed - D.prevSpeed) / dt, -14, 14); // clamp spikes (hard gear snap / net teleport)
     // discrete lurch impulses (edge-detected). Convention: +pitch = nose UP (rig.body comment), so a
     // hard stop pitches the nose DOWN (−), a launch snaps it UP (+).
@@ -1279,7 +1280,7 @@ export class ShilkaStation {
     // fire-buzz envelope + idle shudder (additive layers, NOT through the spring)
     D.fireAmp += ((firing ? 1 : 0) - D.fireAmp) * Math.min(1, dt * (firing ? 12 : 7));
     D.t += dt;
-    const idleA = B.idleAmp; // constant engine shudder; the DRIVING motion comes from the suspension ride shake
+    const idleA = engineOn ? B.idleAmp : 0; // engine off → dead still; on → constant idle shudder
     this._dynPitchN = idleA * snoise(D.t * B.idleFreq) + D.fireAmp * B.fireAmp * snoise(D.t * B.fireFreq);
     this._dynRollN = idleA * 0.6 * snoise(D.t * B.idleFreq + 4.0);
     // trauma decay (camera shake consumes it in Phase 6); plateau while firing
@@ -1291,7 +1292,7 @@ export class ShilkaStation {
     const wvL = this.drive.wheelVelL, wvR = this.drive.wheelVelR;
     let susp = 0; for (let i = 0; i < 6; i++) susp += Math.abs(wvL[i]) + Math.abs(wvR[i]);
     const sp01 = clamp(Math.abs(speed) / 11, 0, 1);
-    const rideI = clamp(susp / 12 / SHILKA_RIDE.suspRef, 0, 1) * (SHILKA_RIDE.speedFloor + (1 - SHILKA_RIDE.speedFloor) * sp01);
+    const rideI = engineOn ? clamp(susp / 12 / SHILKA_RIDE.suspRef, 0, 1) * (SHILKA_RIDE.speedFloor + (1 - SHILKA_RIDE.speedFloor) * sp01) : 0;
     const tl = D.t * SHILKA_RIDE.fLope, tb = D.t * SHILKA_RIDE.fBuzz;
     D.ridePitch = rideI * SHILKA_RIDE.pitchAmp * snoise(tl);
     D.rideYaw = rideI * SHILKA_RIDE.yawAmp * snoise(tl + 5.0);
@@ -1424,7 +1425,7 @@ export class ShilkaStation {
     const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     set('shilka-dh-gear', d.gear === 'R' ? 'ЗХ' : d.gear); // reverse = ЗХ (задний ход), authentic Cyrillic
     set('shilka-dh-speed', `${Math.round(Math.abs(d.speed) * 3.6)} km/h`);
-    set('shilka-dh-rpm', d.engineOn ? `${Math.round(d.engineRpm)} rpm` : 'STALL');
+    set('shilka-dh-rpm', d.engineOn ? `${Math.round(d.engineRpm)} rpm` : (d.starterT > 0 ? 'ПУСК…' : 'ПУСК ↵')); // off → hold Enter to start
     el.classList.toggle('stall', !d.engineOn);
     // H-gate lever dot: map (gx,gy) ∈ [-1,1]² to the SVG (rails at x 18/50/82, slots at y 12/60, channel 36)
     const lev = document.getElementById('shilka-gate-lever');

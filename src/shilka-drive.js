@@ -59,8 +59,8 @@ export function createDriveState(overrides = {}) {
     yawRate: 0,
     gear: 'N',
     clutch: 1,
-    engineRpm: 600,
-    engineOn: true,
+    engineRpm: 0,
+    engineOn: false,   // starts OFF — the driver must start the engine (Enter) before it'll move or shake
     stalled: false,
     starterT: 0,
     grind: false,
