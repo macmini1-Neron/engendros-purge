@@ -39,3 +39,6 @@ assets/modely/*.orig.glb
 
 # brainstorm visual-companion sessions
 .superpowers/
+
+# Blender auto-backup files (junk)
+*.blend1
