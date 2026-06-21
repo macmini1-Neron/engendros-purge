@@ -147,6 +147,7 @@ export class ForestDemo {
       const cxL = (cab.min[0] + cab.max[0]) * 0.5, czL = (cab.min[2] + cab.max[2]) * 0.5;   // crown centre (lean-offset, local)
       const cxr = cxL * cos + czL * sin, czr = -cxL * sin + czL * cos;                      // rotate by yaw → world (THREE rotation.y)
       const hw = Math.max(cab.max[0] - cab.min[0], cab.max[2] - cab.min[2]) * 0.5 + 0.1;    // square hull (rotation-safe) + small aim margin
+      rec.crownHW = hw;                                         // remembered so a FALLEN crown (M4) can size its leaf-end foliage box
       // foliage=true (shoot/conceal/walk-through) always; thicket(slow)=only saplings — the understory you
       // push through. A grown crown is overhead (you walk under it) and its wide AABB would over-slow neighbours.
       addBox([x + cxr - hw, y + cab.min[1] - 0.2, z + czr - hw], [x + cxr + hw, y + cab.max[1] + 0.2, z + czr + hw], true, !!sapling);   // ±0.2 Y catches the apex tuft / lowest fringe
@@ -205,29 +206,46 @@ export class ForestDemo {
     const b = f.body, rec = f.rec;
     const s = Math.sin(b.angle), c = Math.cos(b.angle), L = b.length;
     const ax = b.pivot[0], ay = b.pivot[1], az = b.pivot[2];
-    const bx = ax + s * L * b.dirXZ[0], by = ay + c * L, bz = az + s * L * b.dirXZ[1];   // far tip of the fallen log
+    const bx = ax + s * L * b.dirXZ[0], by = ay + c * L, bz = az + s * L * b.dirXZ[1];   // far tip of the fallen log = the CROWN/leaves
     const r = Math.max(0.2, (rec && rec.trunkR) || 0.25) + 0.12;
+    const matName = (rec && rec.cls === 1) ? 'wood' : 'trunk';
+    const id = 100000 + (rec ? rec.id : ++this._idc);
+    // FULL-log AABB only sizes the part (fire flame seat + HP); collision is TWO boxes below.
     const gy = this.world.terrain ? Math.min(this.world.terrain.terrainHeightAt(ax, az), this.world.terrain.terrainHeightAt(bx, bz)) : 0;
     const minA = [Math.min(ax, bx) - r, Math.min(ay, by, gy), Math.min(az, bz) - r];
     const maxA = [Math.max(ax, bx) + r, Math.max(ay, by, gy) + 2 * r, Math.max(az, bz) + r];
-    const matName = (rec && rec.cls === 1) ? 'wood' : 'trunk';
-    const id = 100000 + (rec ? rec.id : ++this._idc);
     const part = makePart(id, matName, minA, maxA, (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * 0.6); // a downed log snaps a touch easier
     const log = { fallen: true, prop: true, id, part, mesh: f.pivot, trunkR: r, cls: (rec && rec.cls) || 2,
                   height: maxA[1] - minA[1],   // fire reads owner.height → keeps a downed log's flame low (not a 12 m tree column)
-                  fallingRef: f, burntOut: !!f.charred, consumed: false, box: null };  // charred logs already burnt → not flammable
+                  fallingRef: f, burntOut: !!f.charred, consumed: false, boxes: [] };  // charred logs already burnt → not flammable
     part.downer = log;
-    const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id };
-    log.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
+    // helper: an axis-segment box [t0,t1] of the log, padded by `pad` in XZ and `padY` up; flags optional
+    const seg = (t0, t1, pad, padY, foliage, thicket) => {
+      const x0 = ax + (bx - ax) * t0, z0 = az + (bz - az) * t0, x1 = ax + (bx - ax) * t1, z1 = az + (bz - az) * t1;
+      const y0 = ay + (by - ay) * t0, y1 = ay + (by - ay) * t1;
+      const gg = this.world.terrain ? Math.min(this.world.terrain.terrainHeightAt(x0, z0), this.world.terrain.terrainHeightAt(x1, z1)) : 0;
+      const mn = [Math.min(x0, x1) - pad, Math.min(y0, y1, gg), Math.min(z0, z1) - pad];
+      const mx = [Math.max(x0, x1) + pad, Math.max(y0, y1, gg) + padY, Math.max(z0, z1) + pad];
+      const box = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: log, tree: true, dmat: matName, dpart: id };
+      if (foliage) box.foliage = true; if (thicket) box.thicket = true;
+      log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+    };
+    // WOOD CORE — the snapped trunk, solid: you snag on the downed bole. (No leaves → no fade; M4 stretch.)
+    seg(0, 0.62, r, 2 * r, false, false);
+    // LEAF END — the crown lying on the ground: a wide foliage+thicket volume you can WADE INTO (slowed,
+    // concealed). Sized from the remembered crown half-width (capped — a fallen crown compresses).
+    const cw = Math.min(Math.max((rec && rec.crownHW) || 1.2, 0.8), 5.0);
+    seg(0.5, 1.0, cw, Math.max(2 * r, cw * 1.4), true, true);
     this.logs.push(log);
   }
 
-  // Remove a fallen log (shot apart or burned out): drop its collision box, splinter, retire its mesh.
+  // Remove a fallen log (shot apart or burned out): drop its collision boxes, splinter, retire its mesh.
   _consumeLog(log, seed, shot) {
     if (!log || log.consumed) return;
     log.consumed = true;
     if (log.part) log.part.dead = true;
-    if (log.box) { this.world.grid.removeBox(log.box); const i = this.world.boxes.indexOf(log.box); if (i >= 0) this.world.boxes.splice(i, 1); log.box = null; }
+    for (const b of (log.boxes || [])) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
+    log.boxes = [];
     const cx = log.part ? (log.part.min[0] + log.part.max[0]) / 2 : 0,
           cy = log.part ? (log.part.min[1] + log.part.max[1]) / 2 : 0,
           cz = log.part ? (log.part.min[2] + log.part.max[2]) / 2 : 0;
