@@ -7,12 +7,20 @@ The forest map trees (`src/forestdemo.js` = `ForestDemo`, models from `src/props
 
 ## 1. Hitbox correctness ★ (owner: "hitboxes must be where you shoot")
 
-**Bug:** `_addTree` (forestdemo.js:86) caps the collision box height at `min(height, 5.0)` and hugs the trunk (`half = trunkR + 0.12`). Trees are 6–13 m tall with wide canopies → **shooting the trunk above 5 m, or anywhere in the canopy, registers no hit.** Felling feels broken because most of the visible tree has no hitbox.
+**Bug (v1):** `_addTree` capped the box height at `min(height, 5.0)` and hugged the trunk (`half = trunkR + 0.12`). Trees are **20–40 m** (forest scale, not GAME_SCALE) with wide leaning crowns → shooting above 5 m or anywhere in the canopy registered nothing.
 
-**Fix — two boxes per tree, both `box.tree` → `box.downer = rec` (a hit on either fells the tree):**
-- **Trunk box:** full height (drop the 5 m cap), narrow (`trunkR + 0.12`). Hittable end-to-end; still blocks player movement at the trunk; no false hits beside a thin birch.
-- **Canopy box (new):** upper ~55 % of the tree (`y + 0.45·height` → `y + height`), wider (`canopyHalf ≈ clamp(0.18·height, 1.0, 2.5)` m). Makes the foliage mass shootable. It sits HIGH → it does not block player/enemy movement (they walk under it), and only intercepts shots aimed up into the canopy.
-- `_dropBox` (and fell/clear) must drop BOTH boxes; `rec.box` (trunk) + `rec.canopyBox`.
+**First pass** added a guessed canopy box (`clamp(0.18·height, 1.0, 2.5)` half, centred on the BASE). Still frustrating: the cap was 2.5 m but oak/willow crowns are 10–23 m wide, and the box sat over the trunk base while the crown actually sits on the **leaning trunk TOP** (offset several m). So most of the visible canopy still had no hitbox.
+
+**Ultra-precise rebuild — boxes derived from the tree's REAL geometry, not guessed:**
+- `tree.js` `makeTree()` now returns **`spine`** (the scaled, leaning trunk centreline) and **`crownAABB`** (the MEASURED leaf-mass envelope — `buildFoliage` + `buildBranches` accumulate every emitted sub-box / limb extent into a bounds object, so the box hugs exactly what's drawn, including the bare branch ring at the crown bottom).
+- `_addTree` builds, all `box.tree` → `box.downer = rec` (a hit on any fells the tree), **rotated by the tree's yaw into world AABBs** (`x' = c·x + s·z`, `z' = −s·x + c·z` — THREE `rotation.y`; getting this sign WRONG offset the boxes to the opposite side of the lean and was the main residual miss):
+  - **3 trunk bands** that hug the leaning bole (taper-aware radius), **solid** (block movement + can't be shot through).
+  - **1 short collar box** at the base (tree.js draws a ~1.8× flared root collar), solid.
+  - **1 canopy box** = the rotated `crownAABB` square hull (rotation-safe) + small margin, flagged **`shootOnly`**.
+- **`shootOnly` flag** (new): a box the raycast hits but **all movement ignores** — guarded in player collide/headroom/move (`world.js`), the horde collision + crate-avoidance + head-clear (`enemies.js`), and fortification placement (`validateAt`). This also fixed a latent bug: the horde collision loop only checks `b.max.y`, so the old floating canopy box was a **phantom wall** across the whole crown footprint that enemies couldn't path under. A 10–20 m solid box there would be a huge wall — `shootOnly` is what makes a canopy-sized box safe.
+- `rec.boxes = [...]` (array); `_dropBox` drops every band + collar + canopy on fell/clear.
+
+**Verified (headless Chrome, `?map=forest`):** **99.3 %** of every standing tree's actual mesh vertices fall inside a hitbox (all species ≥99 %, was ~0 % above 5 m / in the wide canopy); raycast probes at canopy-centre + trunk-mid hit 16/16; felling drops all 5 boxes cleanly, 0 console errors.
 
 ## 2. Felling — easier (destructive vibe)
 

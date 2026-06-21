@@ -268,7 +268,7 @@ function buildTrunk(mb, r, cfg, height, baseDia) {
 // curves rather than being a stiff stick. Returns the limb tip points so the
 // crown foliage can be hung off the real branch ends.
 // ---------------------------------------------------------------------------
-function buildBranches(mb, r, cfg, trunkPts, height, baseDia) {
+function buildBranches(mb, r, cfg, trunkPts, height, baseDia, fb = null) {
   const bark = toneSet(cfg.bark);
   const tips = [];
   const n = ri(r, cfg.branches[0], cfg.branches[1]);
@@ -302,6 +302,12 @@ function buildBranches(mb, r, cfg, trunkPts, height, baseDia) {
         const rT = dia0 * 0.5 * (1 - 0.62 * sf) + 0.025;
         const cyl = new THREE.CylinderGeometry(rT, rB, segLen * 1.08, RS);
         mb.geo(cyl, (prev.x + cur.x) / 2, (prev.y + cur.y) / 2, (prev.z + cur.z) / 2, sf < 0.5 ? bark.mid : bark.lo, { align: dir, tint: 0.04 });
+        if (fb) {                              // fold the limb into the crown envelope: the bare branch ring
+          const pad = Math.max(rB, 0.05);      // at the crown bottom must be shootable, not a dead gap below the leaves
+          if (cur.x - pad < fb.minx) fb.minx = cur.x - pad; if (cur.x + pad > fb.maxx) fb.maxx = cur.x + pad;
+          if (cur.y - pad < fb.miny) fb.miny = cur.y - pad; if (cur.y + pad > fb.maxy) fb.maxy = cur.y + pad;
+          if (cur.z - pad < fb.minz) fb.minz = cur.z - pad; if (cur.z + pad > fb.maxz) fb.maxz = cur.z + pad;
+        }
       }
       prev = cur;
     }
@@ -316,8 +322,12 @@ function buildBranches(mb, r, cfg, trunkPts, height, baseDia) {
 // `cfg.crown`, then each cluster is itself broken into a few jittered sub-boxes
 // using the 5-tone ramp so it reads as lumpy leaf mass, not a cube.
 // ---------------------------------------------------------------------------
-function buildFoliage(mb, r, cfg, trunkPts, branchTips, height, lod = 0) {
+// Returns the ACTUAL placed-foliage AABB (local, unscaled, tree base at origin) so the caller can size
+// a canopy hitbox that hugs the real leaf mass instead of guessing — the source of the "shot the canopy,
+// nothing happened" frustration was a guessed box. `fb` accumulates every emitted sub-box's extent.
+function buildFoliage(mb, r, cfg, trunkPts, branchTips, height, lod = 0, fb = null) {
   const leaf = toneSet(cfg.foliage);
+  fb = fb || { minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity };
   const top = trunkPts[trunkPts.length - 1];
   const crownBottom = height * (1 - cfg.crownFrac);
   const crownH = top.y - crownBottom;
@@ -356,6 +366,10 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height, lod = 0) {
       // tone by height within the sub-box: lit on top, shadow underneath
       const tone = k === 0 ? leaf.mid : (jy > py ? leaf.hi : leaf.lo);
       mb.box(js, js * 0.85, js, jx, jy, jz, tone, { tint: 0.06 });
+      const hx = js * 0.5, hy = js * 0.425, hz = js * 0.5;   // record the real leaf-mass envelope
+      if (jx - hx < fb.minx) fb.minx = jx - hx; if (jx + hx > fb.maxx) fb.maxx = jx + hx;
+      if (jy - hy < fb.miny) fb.miny = jy - hy; if (jy + hy > fb.maxy) fb.maxy = jy + hy;
+      if (jz - hz < fb.minz) fb.minz = jz - hz; if (jz + hz > fb.maxz) fb.maxz = jz + hz;
     }
   };
 
@@ -387,6 +401,7 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height, lod = 0) {
   if (cfg.crown !== 'conical') {
     placeCluster(top.x, top.y - wMax * 0.10, top.z, wMax * 0.28 + 0.55);
   }
+  return fb;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,13 +501,16 @@ export function makeTree(opts = {}) {
   const trunkPts = buildTrunk(mb, r, cfg, effHeight, baseDia);
 
   const showFoliage = cfg.damage === 'none';
+  // crown/branch envelope accumulator → the canopy hitbox. Fed by BOTH the branches (so the bare ring at
+  // the crown bottom is shootable) and the leaf clusters, so the box hugs the real visible mass.
+  const fbounds = { minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity };
   if (!showFoliage) {
     // dead/bare/charred/snapped: keep bare branches, no leaves
-    buildBranches(mb, r, { ...cfg, branches: [Math.max(2, cfg.branches[0] - 1), cfg.branches[1]] }, trunkPts, effHeight, baseDia);
+    buildBranches(mb, r, { ...cfg, branches: [Math.max(2, cfg.branches[0] - 1), cfg.branches[1]] }, trunkPts, effHeight, baseDia, fbounds);
     if (snapped) applyDamage(mb, r, cfg, trunkPts, baseDia);
   } else {
-    const tips = buildBranches(mb, r, cfg, trunkPts, effHeight, baseDia);
-    buildFoliage(mb, r, cfg, trunkPts, tips, effHeight, opts.lod | 0);
+    const tips = buildBranches(mb, r, cfg, trunkPts, effHeight, baseDia, fbounds);
+    buildFoliage(mb, r, cfg, trunkPts, tips, effHeight, opts.lod | 0, fbounds);
   }
 
   const scl = opts.scale != null ? opts.scale : GAME_SCALE;
@@ -506,7 +524,15 @@ export function makeTree(opts = {}) {
   }
   const geometry = mb.build();
   if (scl !== 1) geometry.scale(scl, scl, scl);
-  return { geometry, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
+  // HITBOX METADATA (scaled, local to the tree base, BEFORE the caller's yaw): the leaning trunk
+  // centreline (`spine`) lets the caller hug the bole with a few AABBs instead of one base-centred
+  // column that misses the lean, and `crownAABB` is the MEASURED leaf-mass envelope so a shot into
+  // the canopy reliably registers. Both are null-safe (bare/charred trees carry no crownAABB).
+  const spine = trunkPts.map((p) => [p.x * scl, p.y * scl, p.z * scl]);
+  const crownAABB = (fbounds && isFinite(fbounds.minx))
+    ? { min: [fbounds.minx * scl, fbounds.miny * scl, fbounds.minz * scl], max: [fbounds.maxx * scl, fbounds.maxy * scl, fbounds.maxz * scl] }
+    : null;
+  return { geometry, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey, spine, crownAABB };
 }
 
 // ---------------------------------------------------------------------------
