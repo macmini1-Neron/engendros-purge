@@ -16,6 +16,7 @@ import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
 import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
+import { DigManager } from './dig-manager.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
@@ -72,7 +73,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-19 02:35';
+const GAME_BUILD = '2026-06-21 13:47';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -124,6 +125,10 @@ class Game {
     this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
     this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
+    // Terrain excavation: shovel pits + explosion craters, with gravity-collapse of undermined
+    // walls/trees/props. Wires its DeformField into world.terrain; harmless on maps without terrain
+    // (empty field fast-returns 0). MUST follow forest/build/demoBuilding (its SupportScan reads them).
+    this.digManager = new DigManager(this);
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
     const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
     const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
@@ -936,6 +941,7 @@ class Game {
     if (shake && this.engine.shake) this.engine.shake(shake);
     const hostSim = !this.mp.active || this.mp.isHost;
     if (hostSim) {
+      if (destroy) this._carveCrater(pos, radius);          // FIRST: lower the ground so _demoBlast's support scan + any settle read the bowl
       if (harmEnemies) this.enemies.damageInRadius(pos, radius, enemyDmg, except, source, attacker);
       if (harmPlayers) this._explodeHurt(pos, radius, dmg); // includes the FAB-500 chain
       if (clearLoot) this.loot.clearPickupsInRadius(pos.x, pos.z, radius);
@@ -957,6 +963,12 @@ class Game {
     if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
     if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, blast.r1 + 0.6, blast.tier);
     if (this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
+  }
+  // Blast → terrain crater (shared by explode() and the hand-rolled mortar detonation). Host-auth:
+  // digManager.carveCrater carves the bowl, re-meshes the chunk, drops undermined objects, and (in
+  // co-op) broadcasts the dig. Small blasts only scuff; ordnance digs a real bowl (see dig.js).
+  _carveCrater(pos, radius) {
+    if (this.digManager) this.digManager.carveCrater(pos, radius);
   }
   onWaveCleared(n) {
     this.audio.waveClear(); if (this.audio.music) this.audio.music.sting('victory', 'small'); this.player.addMoney(150 + n * 25);
@@ -1106,6 +1118,7 @@ class Game {
       this._updatePlaying(frameDt);                          // OFF / non-fixed path = unchanged
     }
 
+    if (this.digManager) this.digManager.update();          // flush dug chunks → one re-mesh each (before chunks.update picks LODs)
     if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera); // uses TRUE sim cam pos
     this.engine.updateAdaptive(this._frameMs);
     if (this._drawDist > 0) { this._cullByDistance(this._drawDist); this._culling = true; } // uses TRUE sim cam pos
