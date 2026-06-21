@@ -143,7 +143,10 @@ export const WEAPONS = {
   knife:    { name: 'Bayonet Knife', class: 'melee', shape: 'knife',   melee: true, dmg: 38,  rate: 0.32, range: 2.3, arcCos: 0.4, knock: 2,  price: 0,    color: 0x9aa0a6, accent: 0x6b4a2a },
   machete:  { name: 'Machete',       class: 'melee', shape: 'machete', melee: true, dmg: 62,  rate: 0.42, range: 2.5, arcCos: 0.45, knock: 3, price: 500,  loot: 8, color: 0xb6bcc2, accent: 0x3a2a1a },
   cleaver:  { name: 'Meat Cleaver',  class: 'melee', shape: 'cleaver', melee: true, dmg: 88,  rate: 0.52, range: 2.3, arcCos: 0.45, knock: 4, price: 800,  loot: 6, color: 0xd8dde2, accent: 0x6b3a1a },
-  shovel:   { name: 'Trench Shovel', class: 'melee', shape: 'shovel',  melee: true, dmg: 120, rate: 0.66, range: 2.7, arcCos: 0.5, knock: 9,  price: 1000, loot: 5, color: 0x8a8f95, accent: 0x5a3a1c },
+  shovel:   { name: 'Trench Shovel', class: 'melee', shape: 'shovel',  melee: true, dmg: 120, rate: 0.66, range: 2.7, arcCos: 0.5, knock: 9,  price: 1000, loot: 5, color: 0x8a8f95, accent: 0x5a3a1c,
+              // hold LMB while aiming at the ground → dig a foxhole/trench (terrain excavation). depthPerSec
+              // accrues and is emitted ~10×/s as overlapping pits that SUM into a deepening hole (dig.js).
+              dig: { r: 1.3, depthPerSec: 0.9, reach: 4.2, lip: 0 } },
   // --- pistols ---
   luger:    { name: 'Luger P08',  class: 'pistol', shape: 'pistol',  dmg: 28, rpm: 300, auto: false, mag: 8,  reserveMax: 32,       reload: 1.8, spread: 0.010, bloom: 0.012, pellets: 1, recoil: 0.7, range: 120, adsFov: 60, price: 400,  color: 0x33373d, accent: 0xd8c089 },
   revolver: { name: 'Peacemaker', class: 'pistol', shape: 'revolver',dmg: 70, rpm: 110, auto: false, mag: 6,  reserveMax: 30,       reload: 2.6, spread: 0.008, bloom: 0.010, pellets: 1, recoil: 1.5, range: 130, adsFov: 58, price: 900,  loot: 9, color: 0x4a3320, accent: 0xc9a04a },
@@ -1171,6 +1174,10 @@ export class WeaponSystem {
     this._boltT = 0; this._boltDur = 0.72; this._boltEjected = false; this._boltClickOpen = false; this._boltClickClose = false;
     this._reloadPlan = null; this._reloadMax = 0;
     this._bobT = 0; this._swing = 0;
+    // shovel digging: dig-intent set by tryFire (LMB held on ground), consumed in update(dt) where dt
+    // is known. Depth accrues and emits ~10×/s (throttled so we don't spawn 144 primitives/sec).
+    this._digWanted = false; this._digAim = { x: 0, z: 0 }; this._digLastEmit = { x: 0, z: 0 };
+    this._digAccumDepth = 0; this._digEmitCD = 0; this._digSwingCD = 0; this._digReqCD = 0; this._digReqAccum = 0;
     this.projectiles = [];
     this._tmp = new THREE.Vector3(); this._tmp2 = new THREE.Vector3();
 
@@ -1450,7 +1457,12 @@ export class WeaponSystem {
       else return;
     }
     if (this.cooldown > 0 || this._boltLock > 0) return;
-    if (d.melee) { if (edge === 'press' || d.rate) this._melee(d); return; }
+    if (d.melee) {
+      // shovel: aiming at the ground → DIG (set intent; carved in update with dt). Aiming elsewhere → swing.
+      if (d.dig) { const aim = this._digTarget(d.dig.reach); if (aim) { this._digWanted = true; this._digAim.x = aim.x; this._digAim.z = aim.z; return; } }
+      if (edge === 'press' || d.rate) this._melee(d);
+      return;
+    }
     const auto = d.auto && !this.semi[this.cur];
     if (!auto && edge !== 'press') return;
     if (this.mag[this.cur] <= 0) { if (edge === 'press') { this.game.audio.dryFire(); this.startReload(); } return; }
@@ -1487,6 +1499,47 @@ export class WeaponSystem {
       hitAny = true; this.game.build.playerDamage(s, d.dmg * mult);
     }
     if (hitAny) this.game.hud.hitmarker(killed);
+  }
+
+  // Shovel dig target: forward ray to the world; a PURE-TERRAIN hit (box null) within reach = the spot
+  // to dig. A wall/structure hit (or no ground in front) returns null so the swing melees instead.
+  _digTarget(reach) {
+    if (!this.game.digManager) return null;
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const dir = this._tmp.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    const hit = this.game.world.rayHit(cam.position, dir, reach);
+    if (hit && hit.point && !hit.box) return { x: hit.point.x, z: hit.point.z };
+    return null;
+  }
+
+  // Progressive dig: accrue depth and emit ONE pit ~10×/s (or sooner if the aim jumped to a new spot),
+  // so overlapping pits SUM into a deepening hole without spawning a primitive every frame. Host-auth:
+  // the host carves locally + broadcasts; a client sends a throttled, depth-accumulated 'digreq'.
+  _performDig(dt) {
+    const d = this.def();
+    if (!d.dig || !this.game.digManager) return;
+    this._digAccumDepth += d.dig.depthPerSec * dt;
+    const moved = Math.hypot(this._digAim.x - this._digLastEmit.x, this._digAim.z - this._digLastEmit.z) > d.dig.r * 0.6;
+    if (this._digEmitCD > 0 && !moved) return;                 // wait for the cadence unless we moved to fresh dirt
+    const depth = this._digAccumDepth;
+    if (!(depth > 0)) return;
+    this._digAccumDepth = 0; this._digEmitCD = 0.1;
+    this._digLastEmit.x = this._digAim.x; this._digLastEmit.z = this._digAim.z;
+    const mp = this.game.mp;
+    const hostSim = !mp || !mp.active || mp.isHost;
+    if (hostSim) {
+      this.game.digManager.dig({ x: this._digAim.x, z: this._digAim.z }, { r: d.dig.r, depth, lip: d.dig.lip || 0 });
+    } else {
+      this._digReqAccum += depth;                              // client: batch depth into a throttled request
+      if (this._digReqCD <= 0) {
+        mp.net.send('digreq', { x: +this._digAim.x.toFixed(2), z: +this._digAim.z.toFixed(2), r: d.dig.r, dp: +this._digReqAccum.toFixed(3) });
+        this._digReqAccum = 0; this._digReqCD = 0.08;
+      }
+    }
+    if (this._digSwingCD <= 0) {                               // rhythmic scoop anim + scrape sound
+      this._swing = 0.18; this._digSwingCD = 0.42;
+      if (this.game.audio && this.game.audio.noise) this.game.audio.noise(0.1, 0.22, 'lowpass', 360, 0.8);
+    }
   }
 
   _fire(d) {
@@ -1874,6 +1927,10 @@ export class WeaponSystem {
     if (this.lprCD > 0) { this.lprCD -= dt; if (this.lprCD <= 0 && this.cur === 'lpr1') this.game.audio.lprReady(); } // готовность beep on the relight edge
     if (this.molotovCD > 0) this.molotovCD -= dt;
     if (this._swing > 0) this._swing -= dt;
+    if (this._digEmitCD > 0) this._digEmitCD -= dt;
+    if (this._digSwingCD > 0) this._digSwingCD -= dt;
+    if (this._digReqCD > 0) this._digReqCD -= dt;
+    if (this._digWanted) { this._performDig(dt); this._digWanted = false; } // tryFire set it this frame; carve with dt
     if (this.reloading > 0) {
       this.reloading = Math.max(0, this.reloading - dt);
       if (this._reloadPlan) this._tickMosinReload(this._reloadPlan);
