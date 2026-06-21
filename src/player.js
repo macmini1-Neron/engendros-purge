@@ -202,7 +202,8 @@ export class Player {
     if (this.legBroken) survMult *= LIMP_SPEED_MULT;
     if (this.hunger < HUNGER_LOW) survMult *= HUNGER_LOW_SPEED_MULT;
     if (this._splintT > 0) survMult = 0; // immobile while binding the splint
-    const speed = (sprint ? 7.6 : 5.2) * this.moveSpeedMult * survMult;
+    const foliageSlow = this.game.world.foliageSlowAt(this.pos.x, this.pos.z, this.pos.y, this.pos.y + this.height); // pushing through leaves/bush slows you
+    const speed = (sprint ? 7.6 : 5.2) * this.moveSpeedMult * survMult * foliageSlow;
     const wish = _pMove.set(0, 0, 0);
     if (!controlsPaused) wish.addScaledVector(fwd, input.forward).addScaledVector(right, input.strafe);
     if (wish.lengthSq() > 1) wish.normalize();

@@ -496,7 +496,11 @@ export function makeTree(opts = {}) {
   const breakMax = Math.max(0.12, crownBottomFrac - 0.04);
   const breakAt = opts.breakAt != null ? Math.max(0.08, Math.min(breakMax, opts.breakAt)) : null;
   const breakY = breakAt != null ? breakAt * effHeight : 0;
+  // WOOD (trunk + branches) goes to `mb`; FOLIAGE (leaves) to `leafMB` on the non-split path, so the caller
+  // can render the leaves on the fade material while the wood stays opaque. The split (felling) path keeps
+  // everything in the SplitBuilder for now (M4 will split its falling top too).
   const mb = breakAt != null ? new SplitBuilder(breakY) : new MeshBuilder();
+  const leafMB = breakAt != null ? mb : new MeshBuilder();
 
   const trunkPts = buildTrunk(mb, r, cfg, effHeight, baseDia);
 
@@ -510,7 +514,7 @@ export function makeTree(opts = {}) {
     if (snapped) applyDamage(mb, r, cfg, trunkPts, baseDia);
   } else {
     const tips = buildBranches(mb, r, cfg, trunkPts, effHeight, baseDia, fbounds);
-    buildFoliage(mb, r, cfg, trunkPts, tips, effHeight, opts.lod | 0, fbounds);
+    buildFoliage(leafMB, r, cfg, trunkPts, tips, effHeight, opts.lod | 0, fbounds);
   }
 
   const scl = opts.scale != null ? opts.scale : GAME_SCALE;
@@ -522,8 +526,13 @@ export function makeTree(opts = {}) {
     // breakY (scaled) = world height of the hinge pivot above the tree's base
     return { stumpGeometry, topGeometry, breakY: breakY * scl, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
   }
-  const geometry = mb.build();
-  if (scl !== 1) geometry.scale(scl, scl, scl);
+  // Split build: WOOD (mb) + LEAF (leafMB) as separate geometries (so the caller can render leaves on the
+  // near-camera fade material while wood stays opaque), PLUS a legacy merged `geometry` for the ~6 callers
+  // (forest.js, dropLeaves, char/snapped rebuilds) that still want one mesh. Backward-compatible.
+  const woodGeometry = mb.build();
+  const leafGeometry = leafMB.pos.length ? leafMB.build() : null;   // null when there are no leaves (bare/charred)
+  const geometry = new MeshBuilder().merge(mb).merge(leafMB).build();
+  if (scl !== 1) { woodGeometry.scale(scl, scl, scl); if (leafGeometry) leafGeometry.scale(scl, scl, scl); geometry.scale(scl, scl, scl); }
   // HITBOX METADATA (scaled, local to the tree base, BEFORE the caller's yaw): the leaning trunk
   // centreline (`spine`) lets the caller hug the bole with a few AABBs instead of one base-centred
   // column that misses the lean, and `crownAABB` is the MEASURED leaf-mass envelope so a shot into
@@ -532,7 +541,7 @@ export function makeTree(opts = {}) {
   const crownAABB = (fbounds && isFinite(fbounds.minx))
     ? { min: [fbounds.minx * scl, fbounds.miny * scl, fbounds.minz * scl], max: [fbounds.maxx * scl, fbounds.maxy * scl, fbounds.maxz * scl] }
     : null;
-  return { geometry, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey, spine, crownAABB };
+  return { geometry, woodGeometry, leafGeometry, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey, spine, crownAABB };
 }
 
 // ---------------------------------------------------------------------------

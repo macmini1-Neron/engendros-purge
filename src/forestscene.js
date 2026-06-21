@@ -23,6 +23,7 @@ export class ForestScene {
     this._buildCrates();
     this._buildColonnade();
     this.trees.scatter(150, 45, 124);                  // denser wood; scatter AFTER reserving the building footprints
+    this.trees.scatterBushes(55);                      // head-height understorey bushes (push-through soft cover) — after the trees seed the clusters
   }
 
   _terrainMin(cx, cz, hw, hd) {
