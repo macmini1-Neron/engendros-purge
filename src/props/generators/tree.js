@@ -458,6 +458,11 @@ export function makeTree(opts = {}) {
   // clone the species cfg so per-instance overrides don't mutate the table
   const cfg = { ...base };
   if (opts.damage) cfg.damage = opts.damage;
+  // CHARRED is permanent + species-independent: a fire-killed tree blackens for good. Override the
+  // palette to charBlack so a charred birch rebuilds BLACK (not its original white bark) at every
+  // stage — standing snag, falling top, stump, resting log. (Without this, damage:'charred' only
+  // strips leaves and keeps the species bark → a charred birch reverted to white on the mesh swap.)
+  if (cfg.damage === 'charred') { cfg.bark = 'charBlack'; cfg.barkUpper = null; cfg.foliage = 'charBlack'; cfg.fissures = false; }
 
   const height = (opts.height != null ? opts.height : rr(r, cfg.heightM[0], cfg.heightM[1]));
   const baseDia = rr(r, cfg.trunkDiaM[0], cfg.trunkDiaM[1]);

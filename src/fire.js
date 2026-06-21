@@ -45,11 +45,11 @@ const SEC_PER_FUEL   = 0.9;         // burn duration = MATERIALS.fuel × this (t
 // topple — the rest stay up as standing burnt snags.
 const LEAF_BLACKEN_FRAC = 0.30;     // at this share of the burn the foliage chars black (forest.charTree)
 const LEAF_DROP_FRAC    = 0.72;     // at this share the blackened leaves drop → bare snag (forest.dropLeaves)
-const FELL_PCT          = 30;       // % of fire-killed trees that TOPPLE on burnout; the rest remain standing burnt
+const FELL_PCT          = 75;       // % of fire-killed trees that TOPPLE on burnout; the rest remain standing burnt (payoff: a fire LEVELS a stand)
 // per-kind spread behaviour: radius (m) + per-tick ignite probability + flame visual size + how
 // many flame billboards the fire owns (a tree spans many → a climbing column; grass/wood need 2).
 const KIND = {
-  tree:  { radius: 6.0, chance: 0.34, flameW: 1.0,  flameH: 3.0, slots: 5 },
+  tree:  { radius: 6.0, chance: 0.45, flameW: 1.0,  flameH: 3.0, slots: 5 },
   grass: { radius: 4.5, chance: 0.55, flameW: 0.85, flameH: 0.8, slots: 2 },
   wood:  { radius: 4.0, chance: 0.30, flameW: 0.75, flameH: 1.5, slots: 2 },
 };

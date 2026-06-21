@@ -16,7 +16,7 @@ const ri = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // crush class → ballistics: saplings are WOOD (tier 1, a rifle fells them); grown trees + oak are
 // TRUNK (tier 2, need an HMG+). HP from the demo so felling stays responsive (a few hits, not a magazine).
 const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2, willow: 2 };
-const TREE_HP = { 1: 30, 2: 110, 3: 200 };
+const TREE_HP = { 1: 20, 2: 55, 3: 100 };   // destructive vibe: rifle fells a grown tree in a burst, HMG/HE/APFSDS instantly
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -47,9 +47,9 @@ export class ForestDemo {
   // reserves, neighbours and steep ground. Stands matter: trees a few m apart let the FIRE ember
   // chain jump tree→tree (spread radius 6 m), and the woods read as a forest, not a sprinkle. Call
   // AFTER reserve()-ing the building footprints.
-  scatter(n = 116, nSap = 34, rad = 80) {
+  scatter(n = 150, nSap = 45, rad = 120) {
     const terr = this.world.terrain;
-    const NS = 9, stands = [];
+    const NS = 11, stands = [];          // denser wood: more stands + more trees + tighter spacing (see drop())
     for (let s = 0; s < NS; s++) {
       const a = (s / NS) * Math.PI * 2 + rr(-0.35, 0.35), d = 22 + Math.random() * (rad - 22);
       stands.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 10 + Math.random() * 8 });
@@ -67,8 +67,8 @@ export class ForestDemo {
         }
       }
     };
-    drop(n, 0.9, 1.25, 3.2, 1.0, false);     // grown trees — ~3.2 m apart inside a stand ⇒ fire chains
-    drop(nSap, 0.42, 0.6, 2.2, 0.6, true);   // birch saplings filling the understory
+    drop(n, 0.9, 1.25, 2.7, 1.0, false);     // grown trees — ~2.7 m apart inside a stand ⇒ denser + fire chains
+    drop(nSap, 0.42, 0.6, 2.0, 0.6, true);   // birch saplings filling the understory
   }
 
   _addTree(species, x, z, scale, seed, sapling) {
@@ -82,21 +82,30 @@ export class ForestDemo {
     const mat = CLS_MAT[cls];
     const id = ++this._idc;
     const trunkR = res.trunkRadius || (0.30 * scale);          // REAL base trunk radius (world units), per species
-    const half = trunkR + 0.12;                                // collision column HUGS the actual trunk (+ small aim margin) — fixes the fat box that let you "hit" empty air beside a thin birch
-    const topY = y + Math.min(res.height, 5.0);
+    const half = trunkR + 0.12;                                // trunk column HUGS the actual trunk (+ small aim margin) — no "hits" beside a thin birch
+    const topY = y + res.height;                               // FULL height (was capped at 5 m → the upper trunk had no hitbox)
     const min = [x - half, y, z - half], max = [x + half, topY, z + half];
     const part = makePart(id, mat, min, max, TREE_HP[cls] / MATERIALS[mat].hp);   // dhp = the demo's TREE_HP
-    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: res.height, trunkR, mesh: m, cls, part, standing: true, box: null };
+    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: res.height, trunkR, mesh: m, cls, part, standing: true, box: null, canopyBox: null };
     part.downer = rec;
     const box = { min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), downer: rec, tree: true, dmat: mat, dpart: id };
     rec.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
+    // CANOPY hitbox — the visible foliage mass is far wider than the trunk; a shot INTO the canopy must
+    // register + fell. Covers the upper ~55% of the tree, wider than the trunk, but it sits HIGH so it
+    // never blocks player/enemy movement (they walk under it) — only intercepts shots aimed up at it.
+    const cHalf = Math.max(1.0, Math.min(2.5, res.height * 0.18));
+    const cMin = [x - cHalf, y + res.height * 0.45, z - cHalf], cMax = [x + cHalf, topY, z + cHalf];
+    const cbox = { min: new THREE.Vector3(...cMin), max: new THREE.Vector3(...cMax), downer: rec, tree: true, dmat: mat, dpart: id };
+    rec.canopyBox = cbox; this.world.boxes.push(cbox); this.world.grid.addBox(cbox);
     this.trees.push(rec);
     if (!sapling) this.windy.push({ m, yaw, amp: 0.018 + rr(0, 0.022), ph: rr(0, 6.28), speed: 0.8 + rr(0, 1.2) });
   }
 
   _dropBox(rec) {
-    if (!rec.box) return;
-    this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null;
+    for (const k of ['box', 'canopyBox']) {     // drop BOTH the trunk and canopy hitboxes
+      const b = rec[k]; if (!b) continue;
+      this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); rec[k] = null;
+    }
   }
 
   // weapons.js _destructHit calls this when a tree's trunk part is killed. dirXZ = the SHOT direction

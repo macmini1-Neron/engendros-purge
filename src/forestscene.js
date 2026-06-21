@@ -22,7 +22,7 @@ export class ForestScene {
     this._placeCottage();                              // async (fetch spec) — reserves its footprint first
     this._buildCrates();
     this._buildColonnade();
-    this.trees.scatter(100, 30, 124);                  // scatter AFTER reserving the building footprints
+    this.trees.scatter(150, 45, 124);                  // denser wood; scatter AFTER reserving the building footprints
   }
 
   _terrainMin(cx, cz, hw, hd) {
