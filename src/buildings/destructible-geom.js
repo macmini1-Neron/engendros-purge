@@ -43,3 +43,12 @@ export function hpScaleFor(spec, partId) {
   const part = (spec.parts ?? []).find((p) => (p.id ?? p.op) === prefix);
   return part?.hpScale ?? 1;
 }
+
+// Route a co-op `bdestroy {bid,…}` to its building among world.destructibles (which includes the
+// demo). A bid-less message (old host) falls back to the sole building, or the demo by name.
+export function routeBdestroy(destructibles, msg) {
+  if (!msg) return null;
+  const list = destructibles || [];
+  if (msg.bid == null) return list.length === 1 ? list[0] : (list.find((b) => b.bid === 'demo') || null);
+  return list.find((b) => b.bid === msg.bid) || null;
+}

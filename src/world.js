@@ -49,6 +49,7 @@ export class World {
     this.scene = game.engine.scene;
     this.HALF = 70;
     this.boxes = [];
+    this.destructibles = [];         // live DestructibleBuilding instances (buildgen + demo); HE/APFSDS + co-op iterate this
     this.cullProps = [];             // static decorative meshes eligible for draw-distance culling (Game._cullByDistance)
     this.grid = new SpatialGrid();   // spatial index over `boxes` (built after the map, addBox on runtime adds)
     this.spawns = [];

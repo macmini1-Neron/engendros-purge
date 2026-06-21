@@ -75,6 +75,7 @@ export class DemoBuilding {
     this.game = game;
     this.world = game.world;
     this.scene = this.world.scene;
+    this.bid = 'demo';               // stable building id — lets the demo ride the generic world.destructibles dispatch + bid-routed co-op
 
     this.parts = [];                 // destructible part-metadata (brick segs / wood door / glass panes)
     this._opaque = [];               // ALL opaque geometry descriptors (static + destructible) for the lazy-split merge
@@ -373,13 +374,13 @@ export class DemoBuilding {
 
   // ── CO-OP host→client replay (Phase 10) ─────────────────────────────────────────
   // Host broadcasts exactly the destruction DELTA (newly-dead part ids + new APFSDS holes)
-  // as one 'bdestroy' event. There is a single demoBuilding per world, so its part ids are
-  // unambiguous — no owner flag needed (the 'bdestroy' type itself routes to the building).
+  // as one 'bdestroy' event, tagged with this building's `bid` so the client routes it among
+  // all world.destructibles (the demo + any buildgen buildings).
   _broadcast(deadIds, holes) {
     const mp = this.game.mp;
     if (!mp || !mp.active || !mp.isHost || !mp.net) return;
     if ((!deadIds || !deadIds.length) && (!holes || !holes.length)) return;
-    try { mp.net.send('bdestroy', { parts: deadIds || [], holes: holes || [] }); } catch (e) {}
+    try { mp.net.send('bdestroy', { bid: this.bid, parts: deadIds || [], holes: holes || [] }); } catch (e) {}
   }
 
   // Client mirror: mark the host's dead parts dead, retire them (NO re-broadcast — _refresh
@@ -394,7 +395,7 @@ export class DemoBuilding {
 
   // Late-join snapshot: every dead part id + every existing hole position, so a fresh joiner
   // sees the breaches/shattered panes/holes the host already has.
-  netSnapshot() { return { parts: [...this._removed], holes: (this._holes || []).map(m => [m.position.x, m.position.y, m.position.z]) }; }
+  netSnapshot() { return { bid: this.bid, parts: [...this._removed], holes: (this._holes || []).map(m => [m.position.x, m.position.y, m.position.z]) }; }
 
   _partById(id) { for (const p of this.parts) if (p.dpart === id) return p; return null; }
 
@@ -463,5 +464,6 @@ export function installDemoBuilding(game) {
   if (!world || !world.hasTerrain || !world.terrain) return null;
   const b = new DemoBuilding(game);
   world.demoBuilding = b;
+  (world.destructibles ??= []).push(b);   // ride the generic HE/APFSDS + per-frame + co-op dispatch (internals untouched)
   return b;
 }

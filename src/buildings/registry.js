@@ -4,17 +4,28 @@
 // angle would silently ship wrong colliders (law 12).
 import * as THREE from 'three';
 import { buildBuilding } from './interp.js';
+import { DestructibleBuilding } from './destructible.js';
 import { getBuildingSpec } from './registry-core.js';
 import { assertYaw, rotYSteps } from './operators/_math.js';
 
 const D2R = Math.PI / 180;
 
 // world: needs .boxes (AABB list) and optionally .grid (SpatialGrid — addBox per box).
-// Returns { group, boxes } or null when the id is unknown (warn, don't crash the world build).
+// Returns { group, boxes, building? } or null when the id is unknown (warn, don't crash the build).
+//
+// DESTRUCTIBLE by default: unless intent.destructible===false, the building is placed as a live
+// DestructibleBuilding (registers its own two-rep parts + colliders, joins world.destructibles so
+// HE/APFSDS + co-op reach it). intent.destructible:false keeps the lean static path below.
 export function placeBuilding(world, scene, id, x, z, yaw = 0, opts = {}) {
   const spec = getBuildingSpec(id);
   if (!spec) { console.warn(`[buildgen] placeBuilding: unknown building '${id}'`); return null; }
   const k = assertYaw(yaw);                                  // throws on non-90° — by design
+
+  if (spec.intent?.destructible !== false) {
+    const b = new DestructibleBuilding(world, scene, spec, x, z, yaw, opts);
+    (world.destructibles ??= []).push(b);
+    return { group: b.group, boxes: [...b._boxById.values()], building: b };
+  }
 
   const { group, colliders } = buildBuilding(spec, opts);
   group.position.set(x, opts.y ?? 0, z);

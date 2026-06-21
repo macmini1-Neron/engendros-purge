@@ -7,6 +7,7 @@ import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
 import { LanNet, Net, makeRoomCode } from './net.js';
+import { routeBdestroy } from './buildings/destructible-geom.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 
@@ -732,7 +733,7 @@ export class MP {
     n.on('molotov', (d) => { if (this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('firepool', (d) => { if (!this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('fireignite', (d) => { if (!this.isHost && this.game.fire && d) this.game.fire.igniteById(d.id, d.owner, d.seed); }); // host-auth fire SPREAD: mirror the exact part+seed the host lit. owner ('b' building / 't' forest) disambiguates the id (forest & building part-ids are separate counters that collide → must dispatch by owner, never a global id search)
-    n.on('bdestroy', (d) => { if (!this.isHost && d) { const b = this.game.world.demoBuilding; if (b && typeof b.applyNetDestroy === 'function') b.applyNetDestroy(d.parts, d.holes); } }); // host-auth BUILDING destruction: replay the exact dead parts (brick breach / shattered panes / burnt door) + APFSDS through-holes. Single building per world → 'bdestroy' type routes unambiguously (no owner flag needed)
+    n.on('bdestroy', (d) => { if (!this.isHost && d) { const b = routeBdestroy(this.game.world.destructibles, d); if (b && typeof b.applyNetDestroy === 'function') b.applyNetDestroy(d.parts, d.holes); } }); // host-auth BUILDING destruction: replay the exact dead parts (brick breach / shattered panes / burnt door) + APFSDS through-holes, routed by d.bid among ALL world.destructibles (demo + buildgen)
     n.on('forestfx', (d) => { if (this.isHost || !d) return; const fr = this.game.forest; if (!fr) return; // host-auth FOREST mutations: fell/char a tree, consume a grass tuft. Tree fall is replayed with the host's exact dir+seed → identical deterministic FallingBody
       if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed);
       else if (d.k === 'char') fr.charTreeById(d.id);
@@ -1160,9 +1161,12 @@ export class MP {
     this.net.sendTo(pid, 'wave', { n: this.game.waves.wave, label: 'WAVE ' + this.game.waves.wave, sub: 'co-op — hold the line' });
     for (const [id, s] of this.pstate) this.net.sendTo(pid, 'pstate', this._pStatePayload(id, s)); // late-join: current down/dead/waiting states
     this.sendWorldTime(pid); // late-join: current day/night + blood-moon state
-    // ── demo (?map=demo) host-auth destruction/fire — replay everything the joiner missed ──
-    const b = this.game.world.demoBuilding;
-    if (b && typeof b.netSnapshot === 'function') { const snap = b.netSnapshot(); if (snap.parts.length || snap.holes.length) this.net.sendTo(pid, 'bdestroy', snap); } // existing breaches / shattered panes / APFSDS holes
+    // ── host-auth destruction/fire — replay everything the joiner missed ──
+    for (const b of (this.game.world.destructibles || [])) { // every destructible building (demo + buildgen); each snapshot carries its own bid
+      if (typeof b.netSnapshot !== 'function') continue;
+      const snap = b.netSnapshot();
+      if (snap.parts.length || snap.holes.length) this.net.sendTo(pid, 'bdestroy', snap); // existing breaches / shattered panes / APFSDS holes
+    }
     if (this.game.forest && typeof this.game.forest.netSnapshot === 'function') for (const fx of this.game.forest.netSnapshot()) this.net.sendTo(pid, 'forestfx', fx); // felled / charred trees + consumed grass
     if (this.game.fire && typeof this.game.fire.netSnapshot === 'function') for (const ig of this.game.fire.netSnapshot()) this.net.sendTo(pid, 'fireignite', ig); // currently-burning parts
   }

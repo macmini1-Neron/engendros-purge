@@ -1110,7 +1110,7 @@ class Game {
     if (this.world.updateKolkhoz) this.world.updateKolkhoz(dt, this.player.pos); // steppe: sway the wreck smoke + smoulder near the player
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
-    if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
+    for (const b of (this.world.destructibles || [])) b.update?.(dt); // advance every destructible building's debris (demo self-registers here — don't tick it twice)
     if (this.arenaClocks) this.arenaClocks.update(dt); // arena: drive both spawn-side clocks from the world clock
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item

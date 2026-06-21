@@ -1608,8 +1608,11 @@ export class WeaponSystem {
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;                                   // host-authoritative destruction
     const w = CALIBERS.apfsds;
-    const b = this.game.world.demoBuilding;
-    if (b && typeof b.applyPenetration === 'function') b.applyPenetration(origin, dir, w);
+    // every destructible building (demo + buildgen). resolvePenetration is internally ray-gated —
+    // a far / off-axis building simply takes no hits, so no proximity pre-filter is needed.
+    for (const b of (this.game.world.destructibles || [])) {
+      if (typeof b.applyPenetration === 'function') b.applyPenetration(origin, dir, w);
+    }
     if (this.game.forest && typeof this.game.forest.penetrate === 'function') this.game.forest.penetrate(origin, dir, d.range, w);
   }
 
@@ -1619,9 +1622,12 @@ export class WeaponSystem {
   _demoBlast(pos, radius, isRocket) {
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;
-    const b = this.game.world.demoBuilding;
     const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
-    if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
+    // every destructible building (demo + buildgen). resolveBlast is internally distance-gated —
+    // parts beyond r2 are untouched and an untouched building's _refresh/_broadcast no-op cheaply.
+    for (const b of (this.game.world.destructibles || [])) {
+      if (typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
+    }
     if (this.game.forest && typeof this.game.forest.blast === 'function') this.game.forest.blast(pos, blast.r1 + 0.6, blast.tier);
     if (this.game.fire && typeof this.game.fire.igniteAt === 'function') this.game.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
   }
