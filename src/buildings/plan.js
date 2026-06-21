@@ -81,13 +81,17 @@ export function planBuild(spec) {
     if (!op || !m) { errors.push(`unknown operator '${p.op}'`); continue; }
     const pid = p.id ?? p.op;
     const push = (rec) => prims.push(rec);
+    // `o.role` (per-emit) wins over ctx.role (part-level / operator default); `o.pid` is a per-emit
+    // suffix so ONE operator can emit many independently-destructible parts with stable unique ids
+    // (breach segments `${pid}:N:seg3`, window panes `${pid}:pane:0`) — see shell.js / facade.js.
+    const idOf = (o) => (o.pid ? `${pid}:${o.pid}` : pid);
     const b = {
-      box: (w, h, d, x, y, z, o = {}) => push({ kind: 'box', w, h, d, x, y, z, mat: o.mat, collide: o.collide ?? false, detail: o.detail ?? false, text: o.text, part: pid }),
-      wedge: (w, h, d, x, y, z, o = {}) => push({ kind: 'wedge', w, h, d, x, y, z, mat: o.mat, axis: o.axis ?? 'x', hi: o.hi ?? 'N', collide: o.collide ?? false, part: pid }),
-      prism: (w, h, d, x, y, z, o = {}) => push({ kind: 'prism', w, h, d, x, y, z, mat: o.mat, axis: o.axis ?? 'x', collide: o.collide ?? false, part: pid }),
-      cyl: (rBot, rTop, h, x, y, z, o = {}) => push({ kind: 'cyl', rBot, rTop, h, x, y, z, mat: o.mat, collide: o.collide ?? false, seg: o.seg ?? 12, detail: o.detail ?? false, part: pid }),
-      pane: (w, h, x, y, z, o = {}) => push({ kind: 'pane', w, h, x, y, z, mat: o.mat, ry: o.ry ?? 0, lean: o.lean ?? 0, collide: false, part: pid }),
-      propRef: (model, x, y, z, yaw = 0) => push({ kind: 'propRef', model, x, y, z, yaw, part: pid }),
+      box: (w, h, d, x, y, z, o = {}) => push({ kind: 'box', w, h, d, x, y, z, mat: o.mat, collide: o.collide ?? false, detail: o.detail ?? false, text: o.text, role: o.role ?? ctx.role, part: idOf(o) }),
+      wedge: (w, h, d, x, y, z, o = {}) => push({ kind: 'wedge', w, h, d, x, y, z, mat: o.mat, axis: o.axis ?? 'x', hi: o.hi ?? 'N', collide: o.collide ?? false, role: o.role ?? ctx.role, part: idOf(o) }),
+      prism: (w, h, d, x, y, z, o = {}) => push({ kind: 'prism', w, h, d, x, y, z, mat: o.mat, axis: o.axis ?? 'x', collide: o.collide ?? false, role: o.role ?? ctx.role, part: idOf(o) }),
+      cyl: (rBot, rTop, h, x, y, z, o = {}) => push({ kind: 'cyl', rBot, rTop, h, x, y, z, mat: o.mat, collide: o.collide ?? false, seg: o.seg ?? 12, detail: o.detail ?? false, role: o.role ?? ctx.role, part: idOf(o) }),
+      pane: (w, h, x, y, z, o = {}) => push({ kind: 'pane', w, h, x, y, z, mat: o.mat, ry: o.ry ?? 0, lean: o.lean ?? 0, collide: false, role: o.role ?? ctx.role, part: idOf(o) }),
+      propRef: (model, x, y, z, yaw = 0) => push({ kind: 'propRef', model, x, y, z, yaw, role: 'none', part: pid }),
       error: (msg) => errors.push(`${pid}: ${msg}`),
     };
     const before = prims.length;
@@ -100,6 +104,8 @@ export function planBuild(spec) {
       topY, wallT,
       openings: (face) => byFace[face] ?? [],
       collide: p.collide ?? m.collide,
+      role: p.role ?? m.role,
+      destructible: spec.intent?.destructible !== false,   // default-on; false ⇒ skip breach subdivision
     };
     op(b, p.args ?? {}, ctx);
 
@@ -128,10 +134,10 @@ export function planBuild(spec) {
   for (const c of prims) {
     if (!c.collide) continue;
     if (c.kind === 'box') {
-      colliders.push({ min: [c.x - c.w / 2, c.y - c.h / 2, c.z - c.d / 2], max: [c.x + c.w / 2, c.y + c.h / 2, c.z + c.d / 2], part: c.part });
+      colliders.push({ min: [c.x - c.w / 2, c.y - c.h / 2, c.z - c.d / 2], max: [c.x + c.w / 2, c.y + c.h / 2, c.z + c.d / 2], part: c.part, role: c.role, mat: c.mat });
     } else if (c.kind === 'cyl') {
       const r = Math.max(c.rBot, c.rTop);
-      colliders.push({ min: [c.x - r, c.y - c.h / 2, c.z - r], max: [c.x + r, c.y + c.h / 2, c.z + r], part: c.part });
+      colliders.push({ min: [c.x - r, c.y - c.h / 2, c.z - r], max: [c.x + r, c.y + c.h / 2, c.z + r], part: c.part, role: c.role, mat: c.mat });
     } else {
       errors.push(`${c.part}: collide on a '${c.kind}' prim is unsupported — AABB colliders only (angled roofs are visual)`);
     }

@@ -24,28 +24,37 @@ test('faceFrame: contract is +Z=north, +X=east; corner policy N/S full w, E/W d�
   assert.deepEqual(faceToWorld(E, 0, 1).map((v) => Math.round(v * 10) / 10), [3.9, 1, -2.7]);
 });
 
-test('shellBox, doorless → 4 wall boxes + base slab = 5 prims, all collidable, no volume overlap', () => {
+test('shellBox, doorless → breach-subdivided walls + structural base slab, no volume overlap', () => {
   const b = mock();
   shellBox(b, { wall: 0.3 }, ctx());
   assert.equal(b.errors.length, 0);
-  assert.equal(b.calls.length, 5);
+  // N(8/1.7→5) + S(5) + W(5.4/1.7→3) + E(3) breach pieces + base = 17 boxes
+  assert.equal(b.calls.length, 17);
   assert.ok(b.calls.every((c) => c.kind === 'box' && c.collide === true));
-  const walls = b.calls.slice(0, 4);
-  for (let i = 0; i < walls.length; i++) for (let j = i + 1; j < walls.length; j++) {
-    assert.ok(!volOverlap(walls[i], walls[j]), `walls ${i} and ${j} overlap in volume (corner policy broken)`);
+  // breach pieces tile their wall — they share faces but never overlap in volume
+  for (let i = 0; i < b.calls.length; i++) for (let j = i + 1; j < b.calls.length; j++) {
+    assert.ok(!volOverlap(b.calls[i], b.calls[j]), `boxes ${i} and ${j} overlap in volume`);
   }
-  // base slab is INNER (w−2t × d−2t) and floor-anchored at y=0
-  const slab = b.calls[4];
+  // base slab is the LAST call: INNER (w−2t × d−2t), floor-anchored, pinned STRUCTURAL
+  const slab = b.calls[b.calls.length - 1];
   assert.ok(Math.abs(slab.w - 7.4) < 1e-9 && Math.abs(slab.d - 5.4) < 1e-9);
   assert.ok(Math.abs(slab.y - BASE_SLAB_T / 2) < 1e-9, 'slab bottom touches y=0');
+  assert.equal(slab.role, 'structural');
+  // corner-touching pieces are pinned structural; interior pieces inherit ctx.role (undefined here)
+  const n = b.calls.filter((c) => c.pid && c.pid.startsWith('N:'));
+  assert.equal(n.length, 5);
+  assert.equal(n[0].role, 'structural', 'west-end corner piece');
+  assert.equal(n[4].role, 'structural', 'east-end corner piece');
+  assert.equal(n[1].role, undefined, 'interior piece inherits (cladding)');
 });
 
-test('shellBox + N door → N wall in 3 segments (7 prims total); gap is where the door is', () => {
+test('shellBox + N door → N wall breach-subdivided (21 prims total); gap is where the door is', () => {
   const b = mock();
   const door = { u0: 3.2, u1: 4.8, v0: 0, v1: 2.2, id: 'door' };
   shellBox(b, { wall: 0.3 }, ctx({ openings: (face) => (face === 'N' ? [door] : []) }));
   assert.equal(b.errors.length, 0);
-  assert.equal(b.calls.length, 7);
+  // N: jamb[0,3.2]→2 + jamb[4.8,8]→2 + lintel[0,8]→5 = 9; +S5 +W3 +E3 +base1 = 21
+  assert.equal(b.calls.length, 21);
   // nothing solid occupies the door volume (centre of the gap, at the N wall plane)
   const f = faceFrame('N', { w: 8, d: 6 }, 0.3);
   const [gx, gy, gz] = faceToWorld(f, 4.0, 1.0);
@@ -53,6 +62,9 @@ test('shellBox + N door → N wall in 3 segments (7 prims total); gap is where t
     const inX = Math.abs(gx - c.x) < c.w / 2, inY = Math.abs(gy - c.y) < c.h / 2, inZ = Math.abs(gz - c.z) < c.d / 2;
     assert.ok(!(inX && inY && inZ), 'a wall segment fills the doorway — the gap is not real');
   }
+  // the corner stacks (jamb-bottom + lintel-top at each wall end) are fully structural ⇒ roof support
+  const nStruct = b.calls.filter((c) => c.pid && c.pid.startsWith('N:') && c.role === 'structural');
+  assert.equal(nStruct.length, 4, 'left jamb-bottom+lintel-top, right jamb-bottom+lintel-top');
 });
 
 test('shellBox surfaces cutWall errors through the recorder', () => {

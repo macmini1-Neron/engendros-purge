@@ -40,6 +40,7 @@ export function windowBays(b, a, ctx) {
   const opens = openingsOf({ op: 'windowBays', args: a }, f, { storeys: ctx.storeys });
   const matFrame = ctx.mat ?? ctx.materials?.trim;
   const FD = Math.min(0.10, ctx.wallT * 0.4);                    // frame depth into the reveal
+  let bay = 0;
   for (const o of opens) {
     const w = o.u1 - o.u0, h = o.v1 - o.v0;
     const uc = (o.u0 + o.u1) / 2, vc = (o.v0 + o.v1) / 2;
@@ -57,8 +58,9 @@ export function windowBays(b, a, ctx) {
     if (a.glass) {                                               // pane at the wall centreline, inside the frame
       const [px, , pz] = faceToWorld(f, uc, vc);
       b.pane(w - 2 * FRAME_T, h - 2 * FRAME_T, f.axis === 'x' ? px : f.fixed, vc, f.axis === 'x' ? f.fixed : pz,
-        { mat: ctx.materials?.glass, ry: f.axis === 'x' ? 0 : 90 });
+        { mat: ctx.materials?.glass, ry: f.axis === 'x' ? 0 : 90, pid: `pane:${bay}` });   // each pane breaks alone
     }
+    bay++;
   }
 }
 

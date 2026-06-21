@@ -55,7 +55,7 @@ export function sawtoothRoof(b, a, ctx) {
     const zc = -d / 2 + depth * (i + 0.5);
     b.wedge(w, a.rise, depth, 0, y + a.rise / 2, zc, { mat, axis: 'x', hi: 'N', collide: ctx.collide });
     if (a.glazed) {
-      b.pane(w - 0.2, a.rise - 0.1, 0, y + a.rise / 2, zc + depth / 2 - 0.01, { mat: ctx.materials?.glass, ry: 0 });
+      b.pane(w - 0.2, a.rise - 0.1, 0, y + a.rise / 2, zc + depth / 2 - 0.01, { mat: ctx.materials?.glass, ry: 0, pid: `glz:${i}` });
     }
   }
 }

@@ -14,29 +14,61 @@ import { cutWall } from '../wallcut.js';
 
 export const BASE_SLAB_T = 0.10;   // storey-0 floor: y ∈ [0, BASE_SLAB_T] — floor-anchored specs touch y=0
 export const SLAB_T = 0.15;        // upper floor slabs: top surface AT the storey's base elevation
+export const SEG_TARGET = 1.7;     // target breach-segment width (m) — one removable wall slice ≈ a walkable hole
+
+// Split a wall-segment u-span into ~SEG_TARGET breach pieces (deterministic; no RNG → co-op-safe).
+function breachPieces(u0, u1, segW) {
+  const n = Math.max(1, Math.round((u1 - u0) / segW));
+  const sw = (u1 - u0) / n;
+  const out = [];
+  for (let k = 0; k < n; k++) out.push([u0 + k * sw, u0 + (k + 1) * sw]);
+  return out;
+}
 
 // Closed exterior shell: 4 walls cut around the gathered openings + the storey-0 base slab.
 // Corner policy (_math.faceFrame): N/S walls run full w; E/W run d − 2·wall between them.
+//
+// DESTRUCTION: each wall is cut by wallcut, then every solid segment is sub-divided into
+// ~SEG_TARGET breach pieces (args.segW overrides) so HE removes a wall SLICE → a walkable hole,
+// mirroring demobuilding's breach segments. Each piece is an independently-destructible part with
+// a stable deterministic id `${pid}:${face}:seg${k}`. The base slab is pinned STRUCTURAL (always
+// holds the storey-0 floor). With `corners:'structural'` (default), every breach piece that
+// touches a wall END (u≈0 or u≈L) is pinned structural too — the corner stacks (jamb+lintel)
+// stay standing to hold the roof even after the whole wall field is stripped (the
+// out-of-the-box roof-support guarantee; set `corners:'cladding'` + add `column` parts to opt out).
 export function shellBox(b, a, ctx) {
   const { w, d } = ctx.footprint;
   const t = a.wall;
   const matWall = ctx.mat ?? ctx.materials?.wall;
+  // breach subdivision only earns its colliders on a destructible building; otherwise one box per
+  // wall segment (segW = ∞ ⇒ a single piece), keeping non-destructible shells lean.
+  const segW = ctx.destructible === false ? Infinity : (a.segW ?? SEG_TARGET);
+  const cornerStructural = (a.corners ?? 'structural') === 'structural';
+  const EPS = 1e-6;
   for (const face of ['N', 'S', 'W', 'E']) {
     const f = faceFrame(face, ctx.footprint, t);
     const { segments, errors } = cutWall({ L: f.L, H: ctx.topY }, ctx.openings?.(face) ?? []);
     for (const e of errors) b.error?.(`shellBox ${face}: ${e}`);
+    let k = 0;
     for (const s of segments) {
-      const [x, y, z] = faceToWorld(f, (s.u0 + s.u1) / 2, (s.v0 + s.v1) / 2);
-      const lu = s.u1 - s.u0, lv = s.v1 - s.v0;
-      if (f.axis === 'x') b.box(lu, lv, t, x, y, z, { mat: matWall, collide: ctx.collide });
-      else b.box(t, lv, lu, x, y, z, { mat: matWall, collide: ctx.collide });
+      const lv = s.v1 - s.v0;
+      for (const [pu0, pu1] of breachPieces(s.u0, s.u1, segW)) {
+        const [x, y, z] = faceToWorld(f, (pu0 + pu1) / 2, (s.v0 + s.v1) / 2);
+        const lu = pu1 - pu0;
+        const atEnd = pu0 <= EPS || pu1 >= f.L - EPS;
+        const role = cornerStructural && atEnd ? 'structural' : undefined;   // undefined → inherit ctx.role
+        const o = { mat: matWall, collide: ctx.collide, role, pid: `${face}:seg${k}` };
+        if (f.axis === 'x') b.box(lu, lv, t, x, y, z, o);
+        else b.box(t, lv, lu, x, y, z, o);
+        k++;
+      }
     }
   }
   // base slab = the storey-0 floor (law 3). INNER footprint so its bottom face never shares
   // the walls' bottom plane (same-normal coplanar = z-fight); edge↔wall contact is
-  // opposite-normal, which is safe.
+  // opposite-normal, which is safe. Pinned STRUCTURAL — the floor is never destructible.
   b.box(w - 2 * t, BASE_SLAB_T, d - 2 * t, 0, BASE_SLAB_T / 2, 0,
-    { mat: ctx.materials?.floor ?? matWall, collide: ctx.collide });
+    { mat: ctx.materials?.floor ?? matWall, collide: ctx.collide, role: 'structural', pid: 'base' });
 }
 
 // Upper-storey floor slab (storey ≥ 1; storey 0 is the shellBox base). Top surface sits AT

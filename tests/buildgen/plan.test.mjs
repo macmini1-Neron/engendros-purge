@@ -9,12 +9,12 @@ const SMOKE = JSON.parse(readFileSync(new URL('../../buildings/_smoke/spec.json'
 test('smoke spec compiles: expected prim/collider counts, zero errors', () => {
   const out = planBuild(SMOKE);
   assert.deepEqual(out.errors, []);
-  // shell: N(door→3) + S(2 windows→5) + W(1) + E(1) + base(1) = 11 boxes
-  // + threshold 1 + window frames 8 + panes 2 + roof 1 + sign 1 = 24 prims
-  assert.equal(out.stats.primCount, 24);
-  assert.equal(out.stats.colliderCount, 12, '11 shell + 1 roof slab');
+  // walls are now BREACH-SUBDIVIDED (~1.7 m): N(door→9) + S(2 windows→12) + W(3) + E(3)
+  // + base(1) = 28 shell boxes + threshold 1 + window frames 8 + panes 2 + roof 1 + sign 1 = 42 prims
+  assert.equal(out.stats.primCount, 42);
+  assert.equal(out.stats.colliderCount, 30, '29 shell boxes + 1 roof slab (panes/frames/sign/threshold are visual)');
   assert.ok(out.stats.materials.includes('brickRed') && out.stats.materials.includes('glassPane'));
-  assert.ok(out.stats.tris > 0 && out.stats.tris < 1000);
+  assert.ok(out.stats.tris > 0 && out.stats.tris < 2000);
 });
 
 test('every collider sits inside the footprint AABB (small face-detail tolerance)', () => {
@@ -31,7 +31,7 @@ test('part-level collide:false strips the colliders', () => {
   const spec = structuredClone(SMOKE);
   spec.parts.find((p) => p.id === 'roof').collide = false;
   const out = planBuild(spec);
-  assert.equal(out.stats.colliderCount, 11, 'roof slab no longer collides');
+  assert.equal(out.stats.colliderCount, 29, 'roof slab no longer collides (30 − 1)');
 });
 
 test('repeat macro expands into stepped copies', () => {
