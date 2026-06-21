@@ -42,6 +42,7 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, voxelMaterial } from './util.js';
 import { DestructRuntime, makePart, MATERIALS, orphanedCells, makeTumble, stepBody, resolveCrush } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
+import { isUndermined } from './dig.js';
 import { placeProp, hasModel } from './props/registry.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
@@ -629,6 +630,59 @@ export class DemoBuilding {
   netSnapshot() { return { parts: [...this._removed], holes: (this._holes || []).map(m => [m.position.x, m.position.y, m.position.z]) }; }
 
   _partById(id) { for (const p of this.parts) if (p.dpart === id) return p; return null; }
+
+  // ── gravity collapse: terrain dug out from under a wall (src/support.js SupportScan) ────────────
+  // Each destructible brick/door segment is a FULL-HEIGHT part (min[1]=base, max[1]=top), so killing
+  // an undermined part drops the whole vertical slice — no column-walking needed. Kills the undermined
+  // parts, rebuilds the breach (existing _refresh → merged-mesh-minus-dead + rubble stubs), throws
+  // debris that settles into the new hole, and broadcasts the delta. Host-auth (called only on the host).
+  // Glass panes sit high in the window opening → never floor-undermined, so they're left alone.
+  collapseFootprint(rect, seed) {
+    if (!this.placed || !this.world.terrain) return [];
+    const terr = this.world.terrain;
+    const hAt = (x, z) => terr.terrainHeightAt(x, z);
+    const dead = [];
+    for (const part of this.parts) {
+      if (part.dead || part.glass) continue;
+      const fp = { minx: part.min[0], minz: part.min[2], maxx: part.max[0], maxz: part.max[2] };
+      if (fp.maxx < rect.minx || fp.minx > rect.maxx || fp.maxz < rect.minz || fp.minz > rect.maxz) continue; // not over the dig
+      if (!isUndermined(hAt, fp, part.min[1])) continue;
+      part.dead = true; dead.push(part);
+    }
+    if (!dead.length) return [];
+    this._refresh();                                         // drop boxes + rebuild merged mesh (breach + rubble)
+    this._collapseDebris(dead, seed);
+    this._broadcastCollapse(dead.map((p) => p.dpart), seed);
+    return dead.map((p) => p.dpart);
+  }
+
+  // Tumbling chunks for each collapsed segment, settling on the (dug) terrain → they fall INTO the hole.
+  _collapseDebris(parts, seed) {
+    if (!this.debris) return;
+    const terr = this.world.terrain;
+    let s = (seed >>> 0) || 1;
+    for (const part of parts) {
+      const cx = (part.min[0] + part.max[0]) / 2, cy = (part.min[1] + part.max[1]) / 2, cz = (part.min[2] + part.max[2]) / 2;
+      s = (s * 1664525 + 1013904223) >>> 0;                 // per-part seed advance (host + client match)
+      this.debris.burst(part.dmat || 'brick', [cx, cy, cz], s, terr.terrainHeightAt(cx, cz));
+    }
+  }
+
+  _broadcastCollapse(deadIds, seed) {
+    const mp = this.game.mp;
+    if (!mp || !mp.active || !mp.isHost || !mp.net || !deadIds || !deadIds.length) return;
+    try { mp.net.send('bcollapse', { ids: deadIds, seed: (seed >>> 0) }); } catch (e) {}
+  }
+
+  // Client mirror: kill the same parts, rebuild the breach, replay the same seeded debris.
+  applyNetCollapse(ids, seed) {
+    if (!ids || !ids.length) return;
+    const parts = [];
+    for (const id of ids) { const p = this._partById(id); if (p && !p.dead) { p.dead = true; parts.push(p); } }
+    if (!parts.length) return;
+    this._refresh();
+    this._collapseDebris(parts, seed);
+  }
 
   // small dark recessed cube marking an APFSDS through-hole (purely visual; the wall still collides)
   _addHole(p) {
