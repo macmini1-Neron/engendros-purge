@@ -42,7 +42,6 @@ import * as THREE from 'three';
 import { MeshBuilder, TAU, voxelMaterial } from './util.js';
 import { DestructRuntime, makePart, MATERIALS, orphanedCells, makeTumble, stepBody, resolveCrush } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
-import { isUndermined } from './dig.js';
 import { placeProp, hasModel } from './props/registry.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
@@ -56,6 +55,7 @@ const WD = { hi: 0x8a6a3a, mid: 0x6a4a24, lo: 0x49321a };   // timber door
 const FLR = 0x6a5238;                                       // interior floor slab
 const RUBBLE_A = 0x6e4334, RUBBLE_B = 0x5d3a2c;
 const GLASS_COL = 0xaed4dc;
+const UNDERMINE_GAP = 0.4;       // a grounded cell loses footing once the dig drops the ground this far below baseY
 
 // coerce a THREE.Vector3 / {x,y,z} / [x,y,z] into the plain [x,y,z] the destruct core reads.
 function _a(v) { return Array.isArray(v) ? v : (v ? [v.x, v.y, v.z] : [0, 0, 0]); }
@@ -427,8 +427,11 @@ export class DemoBuilding {
     const seed = (part.dpart * 2654435761) >>> 0;
     const dl = dir ? Math.hypot(dir[0], dir[2]) || 1 : 1, dx = dir ? dir[0] / dl : 0, dz = dir ? dir[2] / dl : 0;
     const jx = (((seed >> 3) & 7) - 3.5) * 0.12, jz = (((seed >> 6) & 7) - 3.5) * 0.12;   // seeded lateral jitter
+    // settle on the foundation — but if the ground here was DUG below baseY, rubble falls INTO the hole.
+    const terr = this.world && this.world.terrain;
+    const floorY = (terr && this.world.hasTerrain) ? Math.min(this.baseY, terr.terrainHeightAt(o.cx, o.cz)) : this.baseY;
     const body = makeTumble({ pos: [o.cx, o.cy, o.cz], vel: [dx * 0.8 + jx, 0.4, dz * 0.8 + jz],
-      seed, radius: Math.max(o.w, o.h, o.d) * 0.5, g: FALL_G, spin: 0.6, floorY: this.baseY });
+      seed, radius: Math.max(o.w, o.h, o.d) * 0.5, g: FALL_G, spin: 0.6, floorY });
     this._fallerMesh.setColorAt(i, this._fallerColor.set(o.color));
     if (this._fallerMesh.instanceColor) this._fallerMesh.instanceColor.needsUpdate = true;
     this._fallers.push({ body, i, size: [o.w, o.h, o.d], linger: 0 });
@@ -631,57 +634,26 @@ export class DemoBuilding {
 
   _partById(id) { for (const p of this.parts) if (p.dpart === id) return p; return null; }
 
-  // ── gravity collapse: terrain dug out from under a wall (src/support.js SupportScan) ────────────
-  // Each destructible brick/door segment is a FULL-HEIGHT part (min[1]=base, max[1]=top), so killing
-  // an undermined part drops the whole vertical slice — no column-walking needed. Kills the undermined
-  // parts, rebuilds the breach (existing _refresh → merged-mesh-minus-dead + rubble stubs), throws
-  // debris that settles into the new hole, and broadcasts the delta. Host-auth (called only on the host).
-  // Glass panes sit high in the window opening → never floor-undermined, so they're left alone.
-  collapseFootprint(rect, seed) {
-    if (!this.placed || !this.world.terrain) return [];
+  // ── gravity collapse: terrain dug out from under the wall (src/support.js SupportScan) ───────────
+  // Brick walls are voxel CELLS with a `grounded` bottom row (rests on the plinth). When the dig drops
+  // the ground under a grounded cell more than UNDERMINE_GAP below the foundation (baseY), it loses its
+  // footing → un-ground it, then run the SAME orphan-collapse the engine already uses for blasts: cells
+  // with no remaining path to a grounded root cave in as fallers (a narrow pit arches over via lateral
+  // links; a whole undermined base row drops everything above it). Co-op rides the existing 'bdestroy'
+  // delta — no new netcode. Host-auth (SupportScan only runs on the host).
+  undermine(rect) {
+    if (!this.placed || !this.world.terrain || !this.cells.length) return [];
     const terr = this.world.terrain;
-    const hAt = (x, z) => terr.terrainHeightAt(x, z);
-    const dead = [];
-    for (const part of this.parts) {
-      if (part.dead || part.glass) continue;
-      const fp = { minx: part.min[0], minz: part.min[2], maxx: part.max[0], maxz: part.max[2] };
-      if (fp.maxx < rect.minx || fp.minx > rect.maxx || fp.maxz < rect.minz || fp.minz > rect.maxz) continue; // not over the dig
-      if (!isUndermined(hAt, fp, part.min[1])) continue;
-      part.dead = true; dead.push(part);
+    let any = false;
+    for (const c of this.cells) {
+      if (c.dead || !c.grounded || !c.o) continue;
+      if (c.o.cx < rect.minx || c.o.cx > rect.maxx || c.o.cz < rect.minz || c.o.cz > rect.maxz) continue;
+      if (terr.terrainHeightAt(c.o.cx, c.o.cz) < this.baseY - UNDERMINE_GAP) { c.grounded = false; any = true; }
     }
-    if (!dead.length) return [];
-    this._refresh();                                         // drop boxes + rebuild merged mesh (breach + rubble)
-    this._collapseDebris(dead, seed);
-    this._broadcastCollapse(dead.map((p) => p.dpart), seed);
-    return dead.map((p) => p.dpart);
-  }
-
-  // Tumbling chunks for each collapsed segment, settling on the (dug) terrain → they fall INTO the hole.
-  _collapseDebris(parts, seed) {
-    if (!this.debris) return;
-    const terr = this.world.terrain;
-    let s = (seed >>> 0) || 1;
-    for (const part of parts) {
-      const cx = (part.min[0] + part.max[0]) / 2, cy = (part.min[1] + part.max[1]) / 2, cz = (part.min[2] + part.max[2]) / 2;
-      s = (s * 1664525 + 1013904223) >>> 0;                 // per-part seed advance (host + client match)
-      this.debris.burst(part.dmat || 'brick', [cx, cy, cz], s, terr.terrainHeightAt(cx, cz));
-    }
-  }
-
-  _broadcastCollapse(deadIds, seed) {
-    const mp = this.game.mp;
-    if (!mp || !mp.active || !mp.isHost || !mp.net || !deadIds || !deadIds.length) return;
-    try { mp.net.send('bcollapse', { ids: deadIds, seed: (seed >>> 0) }); } catch (e) {}
-  }
-
-  // Client mirror: kill the same parts, rebuild the breach, replay the same seeded debris.
-  applyNetCollapse(ids, seed) {
-    if (!ids || !ids.length) return;
-    const parts = [];
-    for (const id of ids) { const p = this._partById(id); if (p && !p.dead) { p.dead = true; parts.push(p); } }
-    if (!parts.length) return;
-    this._refresh();
-    this._collapseDebris(parts, seed);
+    if (!any) return [];
+    this._collapse(null); const fell = this._refresh();      // orphan cascade caves the now-unsupported cells
+    this._broadcast(fell, null);                             // reuse the existing host→client destruction delta
+    return fell;
   }
 
   // small dark recessed cube marking an APFSDS through-hole (purely visual; the wall still collides)

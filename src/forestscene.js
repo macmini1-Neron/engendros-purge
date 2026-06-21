@@ -80,6 +80,7 @@ export class ForestScene {
   applyBlast(pos, radius, ammoDef) { for (const b of this.buildings) b.applyBlast(pos, radius, ammoDef); }
   applyPenetration(origin, dir, w) { for (const b of this.buildings) b.applyPenetration(origin, dir, w); }
   applyCrush(aabb, opts) { let blocked = false; for (const b of this.buildings) { const r = b.applyCrush(aabb, opts); if (r && r.blocked) blocked = true; } return { blocked }; }
+  undermine(rect) { for (const b of this.buildings) if (typeof b.undermine === 'function') b.undermine(rect); } // dig under a building → it caves (SupportScan)
   update(dt) { for (const b of this.buildings) b.update(dt); this.debris.update(dt); }
 
   // ── co-op (basic — 2-PC is a manual gate): route the host's bdestroy delta by building netId ──

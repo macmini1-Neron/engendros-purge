@@ -17,14 +17,12 @@ import { isUndermined } from './dig.js';
 export class SupportScan {
   constructor(game) {
     this.game = game;
-    this._seq = 0; // bumped per scan; mixed into building-collapse seeds for deterministic faller replay
   }
 
   // Host-only. rect = the dug XZ AABB {minx,minz,maxx,maxz}; prim = the carved primitive (centre).
   run(rect, prim) {
     const world = this.game.world;
     if (!world || !world.grid || !world.terrain) return;
-    this._seq++;
     const terr = world.terrain;
     const hAt = (x, z) => terr.terrainHeightAt(x, z);
     // queryAABB returns a fresh array of box refs; collapsing mutates world.boxes/grid, not this list,
@@ -36,16 +34,14 @@ export class SupportScan {
       if (!isUndermined(hAt, s.footprint, s.baseY)) continue;
       s.collapse(prim);
     }
-    // building walls: footprint-based (the merged-mesh building has no per-box faller) — M3 fills this in;
-    // until then the guard makes it a no-op.
+    // building walls: hand off to the building's own voxel-cell orphan-collapse — digging out a grounded
+    // base cell's foundation un-supports it and the engine caves what's above (demo: DemoBuilding; forest:
+    // the ForestScene facade fans to every BuildingDestruct). One call covers both maps.
     const b = world.demoBuilding;
-    if (b && typeof b.collapseFootprint === 'function') b.collapseFootprint(rect, this._seedAt(prim));
+    if (b && typeof b.undermine === 'function') b.undermine(rect);
   }
 
   _fp(box) { return { minx: box.min.x, minz: box.min.z, maxx: box.max.x, maxz: box.max.z }; }
-
-  // Deterministic seed for a collapse at this spot (host + client must derive the same faller motion).
-  _seedAt(prim) { return ((Math.round(prim.x * 7.31) ^ Math.round(prim.z * 13.17) ^ (this._seq * 2654435761)) >>> 0); }
 
   // Fall direction: from the object toward the crater centre, so it topples INTO the hole. Returns null
   // (→ a random seeded lean) when the dig is right under it.
@@ -56,19 +52,24 @@ export class SupportScan {
 
   _resolve(box) {
     const forest = this.game.forest, build = this.game.build;
-    if (box.tree && box.downer && box.downer.standing && forest) {
+    if (box.tree && box.downer && box.downer.standing && forest && typeof forest.fellTree === 'function') {
       const tree = box.downer;
+      // Forest (demo) trees carry .pos{x,y,z}; ForestDemo (forest map) trees carry .x/.z directly.
+      const tx = tree.pos ? tree.pos.x : tree.x, tz = tree.pos ? tree.pos.z : tree.z;
+      const baseY = (tree.part && tree.part.min) ? tree.part.min[1] : box.min.y;
       return {
-        footprint: this._fp(box), baseY: tree.part.min[1],
-        collapse: (prim) => forest.fellTree(tree, this._dirInto(prim, tree.pos), (tree.id * 2654435761) >>> 0),
+        footprint: this._fp(box), baseY,
+        collapse: (prim) => {
+          if (tree.part) tree.part.dead = true;             // ForestDemo expects the caller to retire the part (Forest does it itself — idempotent)
+          forest.fellTree(tree, this._dirInto(prim, { x: tx, z: tz }), (tree.id * 2654435761) >>> 0);
+        },
       };
     }
-    if (box.prop && box.downer && !box.downer.dead && forest) {
+    if (box.prop && box.downer && !box.downer.dead && forest && typeof forest.destroyProp === 'function') {
       const rec = box.downer;
-      return {
-        footprint: this._fp(box), baseY: rec.part.min[1],
-        collapse: () => forest.destroyProp(rec, [rec.pos.x, rec.pos.y, rec.pos.z]),
-      };
+      const px = rec.pos ? rec.pos.x : rec.x, py = rec.pos ? rec.pos.y : (rec.y || 0), pz = rec.pos ? rec.pos.z : rec.z;
+      const baseY = (rec.part && rec.part.min) ? rec.part.min[1] : box.min.y;
+      return { footprint: this._fp(box), baseY, collapse: () => forest.destroyProp(rec, [px, py, pz]) };
     }
     if (box.struct && box._ref && build) {
       const s = box._ref;

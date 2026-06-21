@@ -749,7 +749,8 @@ export class MP {
       const r = Math.min(Math.max(+d.r || 0, 0.1), 1.5), depth = Math.min(Math.max(+d.dp || 0, 0), 1.0); // clamp anti-grief
       if (r > 0 && depth > 0) g.digManager.dig({ x: d.x, z: d.z }, { r, depth });
     });
-    n.on('bcollapse', (d) => { if (!this.isHost && d) { const b = g.world.demoBuilding; if (b && typeof b.applyNetCollapse === 'function') b.applyNetCollapse(d.ids, d.seed); } }); // host-auth building-wall collapse from undermining
+    // (building-wall collapse from undermining needs NO new netcode — it rides the building's own
+    //  host-auth 'bdestroy' delta, exactly like a blast cave-in)
     n.on('kill', (d) => this._clientKill(d));
     n.on('burn', () => { this.game.player.burnT = PLAYER_BURN_DUR; });
     n.on('bleed', (d) => { if (d && typeof d.t === 'number') this._bleedT = d.t; }); // host re-syncs the downed player's bleed-out bar to the authoritative downT
