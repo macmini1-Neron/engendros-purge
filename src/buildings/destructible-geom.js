@@ -52,3 +52,24 @@ export function routeBdestroy(destructibles, msg) {
   if (msg.bid == null) return list.length === 1 ? list[0] : (list.find((b) => b.bid === 'demo') || null);
   return list.find((b) => b.bid === msg.bid) || null;
 }
+
+// ── dispatch pre-filters (skip a building whose bounding sphere a blast/rod can't reach) ──────────
+// bounds = { cx, cy, cz, radius } (DestructibleBuilding._bounds). Conservative: returns true when
+// in doubt so a building is never wrongly skipped. Callers also skip the filter when bounds is
+// absent (e.g. the demo building), so back-compat is preserved.
+
+// Does a blast of radius r at (px,py,pz) reach the building's bounding sphere?
+export function sphereReaches(px, py, pz, r, b) {
+  const dx = px - b.cx, dy = py - b.cy, dz = pz - b.cz;
+  const reach = r + b.radius;
+  return dx * dx + dy * dy + dz * dz <= reach * reach;
+}
+
+// Does a ray (origin o, unit dir d, capped at `range`) pass within the building's sphere?
+export function raySphere(ox, oy, oz, dx, dy, dz, b, range) {
+  const mx = ox - b.cx, my = oy - b.cy, mz = oz - b.cz;
+  let t = -(mx * dx + my * dy + mz * dz);                      // projection of −m onto the ray
+  if (t < 0) t = 0; else if (t > range) t = range;            // clamp to the segment
+  const cx = mx + dx * t, cy = my + dy * t, cz = mz + dz * t;  // closest point − centre
+  return cx * cx + cy * cy + cz * cz <= b.radius * b.radius;
+}

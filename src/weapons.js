@@ -6,6 +6,7 @@ import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R,
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
 import { CALIBERS, resolveHit } from './destruct.js';
+import { sphereReaches, raySphere } from './buildings/destructible-geom.js';
 import { isNight } from './worldclock.js';
 import { makeTextPlateTexture } from './props/operators/round.js';
 import { yawToMils } from './bearing.js';
@@ -1608,10 +1609,12 @@ export class WeaponSystem {
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;                                   // host-authoritative destruction
     const w = CALIBERS.apfsds;
-    // every destructible building (demo + buildgen). resolvePenetration is internally ray-gated —
-    // a far / off-axis building simply takes no hits, so no proximity pre-filter is needed.
+    // every destructible building (demo + buildgen); skip those whose bounding sphere the rod's ray
+    // can't reach (cheap broad-phase). Buildings without bounds (the demo) are never skipped.
     for (const b of (this.game.world.destructibles || [])) {
-      if (typeof b.applyPenetration === 'function') b.applyPenetration(origin, dir, w);
+      if (typeof b.applyPenetration !== 'function') continue;
+      if (b.bounds && !raySphere(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, b.bounds, d.range)) continue;
+      b.applyPenetration(origin, dir, w);
     }
     if (this.game.forest && typeof this.game.forest.penetrate === 'function') this.game.forest.penetrate(origin, dir, d.range, w);
   }
@@ -1623,10 +1626,12 @@ export class WeaponSystem {
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;
     const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
-    // every destructible building (demo + buildgen). resolveBlast is internally distance-gated —
-    // parts beyond r2 are untouched and an untouched building's _refresh/_broadcast no-op cheaply.
+    // every destructible building (demo + buildgen); skip those whose bounding sphere the blast
+    // can't reach (cheap broad-phase). Buildings without bounds (the demo) are never skipped.
     for (const b of (this.game.world.destructibles || [])) {
-      if (typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
+      if (typeof b.applyBlast !== 'function') continue;
+      if (b.bounds && !sphereReaches(pos.x, pos.y, pos.z, blast.r2, b.bounds)) continue;
+      b.applyBlast(pos, radius, { blast });
     }
     if (this.game.forest && typeof this.game.forest.blast === 'function') this.game.forest.blast(pos, blast.r1 + 0.6, blast.tier);
     if (this.game.fire && typeof this.game.fire.igniteAt === 'function') this.game.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);

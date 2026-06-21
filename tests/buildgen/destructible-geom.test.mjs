@@ -1,7 +1,7 @@
 // destructible-geom.test.mjs — pure geometry/id helpers for the destructible runtime.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { worldAABB, paneAABB, makeBid, hpScaleFor } from '../../src/buildings/destructible-geom.js';
+import { worldAABB, paneAABB, makeBid, hpScaleFor, sphereReaches, raySphere } from '../../src/buildings/destructible-geom.js';
 
 test('worldAABB k=0 is a pure translation', () => {
   const w = worldAABB(0, 10, 0, 20, [-1, 0, -0.5], [1, 3, 0.5]);
@@ -37,4 +37,23 @@ test('hpScaleFor resolves the source spec part by id prefix (default 1)', () => 
   assert.equal(hpScaleFor(spec, 'shell:N:seg3'), 2.5);
   assert.equal(hpScaleFor(spec, 'roof'), 1);
   assert.equal(hpScaleFor(spec, 'unknown:pane:0'), 1);
+});
+
+const B = { cx: 10, cy: 1.5, cz: 0, radius: 5 };   // building bounding sphere
+
+test('sphereReaches: a blast inside r+radius reaches, beyond does not', () => {
+  assert.equal(sphereReaches(10, 1.5, 0, 3, B), true, 'at the centre');
+  assert.equal(sphereReaches(17, 1.5, 0, 3, B), true, 'gap 7 ≤ r3+radius5');
+  assert.equal(sphereReaches(19, 1.5, 0, 3, B), false, 'gap 9 > 8');
+});
+
+test('raySphere: a ray through the sphere hits; pointing away misses; out of range misses', () => {
+  // ray from origin toward +X passes straight through the sphere at x=10
+  assert.equal(raySphere(0, 1.5, 0, 1, 0, 0, B, 100), true);
+  // same ray but capped short of the sphere
+  assert.equal(raySphere(0, 1.5, 0, 1, 0, 0, B, 4), false, 'range 4 stops before x=5 entry');
+  // ray pointing away from the sphere (−X) — closest point is the origin, far from centre
+  assert.equal(raySphere(0, 1.5, 0, -1, 0, 0, B, 100), false);
+  // parallel ray offset by more than the radius misses
+  assert.equal(raySphere(0, 1.5, 7, 1, 0, 0, B, 100), false, 'z-offset 7 > radius 5');
 });
