@@ -137,6 +137,26 @@ export function voxelMaterial(opts = {}) {
   });
 }
 
+// Foliage material that DISSOLVES near the camera: a fragment within `near` m of the lens fades to
+// transparent, fully opaque by `far` m — so leaves at your face open up while the rest of the crown (and
+// all wood, which uses a plain opaque material) stay solid voxels. Injected via onBeforeCompile using the
+// built-in `cameraPosition` uniform (auto-updated by the renderer). Used on the 0–2 leaf meshes the camera
+// is inside (forestdemo fade gating swaps to/from this shared instance) — never all trees, so the
+// transparent-queue cost stays bounded. See docs/superpowers/specs/2026-06-21-enterable-foliage-design.md.
+export function foliageFadeMaterial(near = 0.4, far = 2.2) {
+  const m = voxelMaterial({ transparent: true, depthWrite: false });
+  const N = near.toFixed(3), F = far.toFixed(3);
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFolWPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vFolWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFolWPos;')
+      .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.a *= smoothstep(' + N + ', ' + F + ', distance(vFolWPos, cameraPosition));');
+  };
+  return m;
+}
+
 // Quick color helpers
 export const hex = (h) => new THREE.Color(h);
 export function shade(color, amt) {

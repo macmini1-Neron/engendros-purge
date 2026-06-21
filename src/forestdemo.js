@@ -9,7 +9,14 @@
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makePart, MATERIALS, makeHinge, stepBody } from './destruct.js';
-import { rr } from './util.js';
+import { rr, voxelMaterial, foliageFadeMaterial } from './util.js';
+import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
+
+// Two SHARED leaf materials (one program each, compiled once): leaves render opaque by default; the
+// 0–2 trees the camera is inside get their leaf mesh swapped to the fade material so the leaves at your
+// face dissolve. Wood always uses a plain opaque material — only the LEAF mesh ever fades.
+const FOLIAGE_OPAQUE = voxelMaterial();
+const FOLIAGE_FADE = foliageFadeMaterial(FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR);
 
 const _axis = new THREE.Vector3();
 const ri = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -26,6 +33,7 @@ export class ForestDemo {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
     this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.FALLING = []; this.windy = [];
     this._t = 0; this._idc = 0; this._reserved = [];
+    this._fading = new Set();   // tree recs whose leaf mesh is currently on the near-camera fade material
   }
 
   reserve(x, z, r) { this._reserved.push({ x, z, r }); }     // keep-out (cottage / crate footprints)
@@ -73,10 +81,15 @@ export class ForestDemo {
 
   _addTree(species, x, z, scale, seed, sapling) {
     const res = makeTree({ species, seed, lod: 0, scale });
-    const m = new THREE.Mesh(res.geometry, res.material);
     const yaw = rr(0, Math.PI * 2);
     const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
-    m.position.set(x, y, z); m.rotation.y = yaw; m.castShadow = true;
+    // WOOD (opaque) + LEAF (fadeable) as two meshes under one group: wind/transform/fell all act on the
+    // group, while only the leaf mesh ever swaps to the transparent near-camera fade material.
+    const m = new THREE.Group();
+    const woodMesh = new THREE.Mesh(res.woodGeometry || res.geometry, res.material); woodMesh.castShadow = true; m.add(woodMesh);
+    let leafMesh = null;
+    if (res.leafGeometry) { leafMesh = new THREE.Mesh(res.leafGeometry, FOLIAGE_OPAQUE); leafMesh.castShadow = true; m.add(leafMesh); }
+    m.position.set(x, y, z); m.rotation.y = yaw;
     this.scene.add(m);
     const cls = sapling ? 1 : (SPECIES_CLS[species] || 2);
     const mat = CLS_MAT[cls];
@@ -88,7 +101,7 @@ export class ForestDemo {
     // must rise from the TRUNK base, not the wide lean-offset canopy — so the part stays a tight bole column
     // independent of the precise hit boxes below.
     const part = makePart(id, mat, [x - half, y, z - half], [x + half, topY, z + half], TREE_HP[cls] / MATERIALS[mat].hp);
-    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, trunkR, mesh: m, cls, part, standing: true, boxes: [] };
+    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, trunkR, mesh: m, leafMesh, cls, part, standing: true, boxes: [] };
     part.downer = rec;
     // ── PRECISE HITBOXES (the headline fix) ──────────────────────────────────────────────────────────
     // Built from the tree's REAL geometry (tree.js returns the leaning trunk centreline + the MEASURED
@@ -157,6 +170,7 @@ export class ForestDemo {
     rec.standing = false;
     if (rec.part) rec.part.dead = true;                     // off the flammable list — a felled tree can't re-ignite
     if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; }
+    this._fading.delete(rec); rec.leafMesh = null;
     this._dropBox(rec);
     let dx = dirXZ ? dirXZ[0] : (Math.random() - 0.5), dz = dirXZ ? dirXZ[1] : (Math.random() - 0.5);
     const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
@@ -278,16 +292,15 @@ export class ForestDemo {
     tree.bare = true;
     try {
       const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, height: tree.height, lod: 0, damage: 'charred' });
-      const old = tree.mesh;
+      const old = tree.mesh;                                  // a Group(wood, leaf) — the charred snag is a single merged mesh (no leaves to fade)
       const m = new THREE.Mesh(res.geometry, res.material);
       m.position.copy(old.position); m.rotation.y = tree.yaw; m.castShadow = true;
-      this.scene.add(m); tree.mesh = m;
+      this.scene.add(m); tree.mesh = m; this._fading.delete(tree); tree.leafMesh = null;
       for (const w of this.windy) if (w.m === old) { w.m = m; break; }   // keep the (barely-swaying) snag wired to wind
       this.scene.remove(old);
-      if (old.geometry) old.geometry.dispose();
-      if (old.material && old.material.dispose) old.material.dispose();
+      old.traverse && old.traverse((o) => { if (o.isMesh && o.geometry && o.geometry !== res.leafGeometry) o.geometry.dispose(); }); // free the old wood+leaf geometries (leaf material is shared — don't dispose)
     } catch (e) {
-      if (tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x161310); // fallback: keep the scorch tint
+      tree.mesh.traverse && tree.mesh.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setHex(0x161310); }); // fallback: scorch-tint in place
     }
   }
 
@@ -304,7 +317,7 @@ export class ForestDemo {
     for (const rec of this.trees) {
       if (!rec.standing) continue;
       const dx = rec.x - cx, dz = rec.z - cz;
-      if (dx * dx + dz * dz < r * r) { if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; } this._dropBox(rec); rec.standing = false; rec.cleared = true; }
+      if (dx * dx + dz * dz < r * r) { if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; } this._fading.delete(rec); rec.leafMesh = null; this._dropBox(rec); rec.standing = false; rec.cleared = true; }
     }
   }
 
@@ -323,6 +336,23 @@ export class ForestDemo {
       const sz = Math.sin(t * w.speed + w.ph) * w.amp * gust;
       w.m.rotation.set(Math.cos(t * w.speed * 0.7 + w.ph) * w.amp * 0.5 * gust, w.yaw, sz);
     }
+    this._updateLeafFade();
+  }
+
+  // Near-camera leaf fade: swap the leaf mesh of the 0–2 trees the camera is inside/near to the shared
+  // transparent fade material; revert the rest to opaque. Keeps the transparent-queue cost bounded (the
+  // fade math is per-fragment off the built-in cameraPosition uniform — no per-tree uniform push needed).
+  _updateLeafFade() {
+    const cam = this.game.engine && this.game.engine.camera; if (!cam) return;
+    const cx = cam.position.x, cy = cam.position.y, cz = cam.position.z, G = FOLIAGE_FADE_GATE, G2 = G * G;
+    const want = new Set();
+    for (const b of this.world.grid.queryAABB(cx - G, cz - G, cx + G, cz + G)) {
+      if (!b.foliage || !b.downer || !b.downer.leafMesh) continue;
+      const ddx = Math.max(b.min.x - cx, 0, cx - b.max.x), ddy = Math.max(b.min.y - cy, 0, cy - b.max.y), ddz = Math.max(b.min.z - cz, 0, cz - b.max.z);
+      if (ddx * ddx + ddy * ddy + ddz * ddz <= G2) want.add(b.downer);
+    }
+    for (const rec of want) if (!this._fading.has(rec) && rec.leafMesh) { rec.leafMesh.material = FOLIAGE_FADE; this._fading.add(rec); }
+    for (const rec of this._fading) if (!want.has(rec)) { if (rec.leafMesh) rec.leafMesh.material = FOLIAGE_OPAQUE; this._fading.delete(rec); }
   }
 
   // ── co-op (basic — manual gate): fell ids streamed by the host ──
