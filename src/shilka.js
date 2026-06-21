@@ -1082,6 +1082,7 @@ export class ShilkaStation {
 
   _driveControlUpdate(dt) {
     const input = this.game.input;
+    if (input.wasPressed('KeyC')) this._chaseCam = !this._chaseCam; // C: toggle 3rd-person chase view
     if (!this._lever) this._lever = { ...SHILKA_GATE_SLOTS[this.drive.gear] || SHILKA_GATE_SLOTS.N };
     // SHIFTING: hold Space (clutch in) and the mouse drags the lever through the ГМ-575 double-H gate;
     // the lever's slot is fed as gearReq (stepDrive's synchro logic decides if it actually engages).
@@ -1322,9 +1323,25 @@ export class ShilkaStation {
     for (const g of (rig.guns || [])) g.rotation.x = pitch;
   }
 
+  // 3rd-person chase camera (toggle C while driving) — sits behind + above the hull and looks at it, so
+  // you can WATCH the running gear: tracks scrolling, wheels bouncing over terrain, the hull lurching on
+  // accel/brake, and recoil shake when the gunner fires. The driver's real view stays the periscope.
+  _frameChaseCam(dt) {
+    const cam = this.game.engine.camera, d = this.drive;
+    const cos = Math.cos(d.heading), sin = Math.sin(d.heading);
+    const back = this._chaseBack ?? 9, up = this._chaseUp ?? 4.5; // dev: s._chaseBack / s._chaseUp
+    cam.position.set(d.x - sin * back, d.y + up, d.z - cos * back);
+    cam.rotation.order = 'YXZ';
+    cam.lookAt(d.x, d.y + 0.6, d.z);
+    this._cameraTrauma(cam);
+    this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
+    const pl = this.game.player; pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
+  }
+
   _frameDriverCamera(dt) {
     const cam = this.game.engine.camera;
     const d = this.drive;
+    if (this._chaseCam) { this._frameChaseCam(dt); return; } // C-toggled 3rd-person view of the running gear
     // Buttoned-up driver: the main camera only ever sees the black hood + the periscope SCREEN (the RTT
     // quad) in the slit, so its exact spot just needs to seat the hood sensibly at the driver station.
     const EYE = this._eye || (this._eye = { x: 0.565, y: 0.75, z: 2.4 }); // dev-tweakable: s._eye.{x,y,z}
