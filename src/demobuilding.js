@@ -643,12 +643,13 @@ export class DemoBuilding {
   // delta — no new netcode. Host-auth (SupportScan only runs on the host).
   undermine(rect) {
     if (!this.placed || !this.world.terrain || !this.cells.length) return [];
-    const terr = this.world.terrain;
+    const df = this.world.terrain.deformField; if (!df) return [];
     let any = false;
     for (const c of this.cells) {
       if (c.dead || !c.grounded || !c.o) continue;
       if (c.o.cx < rect.minx || c.o.cx > rect.maxx || c.o.cz < rect.minz || c.o.cz > rect.maxz) continue;
-      if (terr.terrainHeightAt(c.o.cx, c.o.cz) < this.baseY - UNDERMINE_GAP) { c.grounded = false; any = true; }
+      // undermined = the dig removed ≥ UNDERMINE_GAP of ground under this cell (independent of baseY).
+      if (df.deformAt(c.o.cx, c.o.cz) < -UNDERMINE_GAP) { c.grounded = false; any = true; }
     }
     if (!any) return [];
     this._collapse(null); const fell = this._refresh();      // orphan cascade caves the now-unsupported cells

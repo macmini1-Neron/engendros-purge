@@ -21,9 +21,13 @@
 // deformAt is again a pure function of (x,z). The contract is unchanged; its precondition just
 // widens from "seed fixed at construction" to "seed + host-ordered deform list".
 
-export const MAX_DIG = 6;        // metres — bedrock floor: terrain may never drop more than this at any (x,z).
+// Bedrock floor: terrain may never drop more than this at any (x,z). Kept SHALLOW on purpose — combined
+// with the wide minimum crater/pit radius below, every dug slope stays well under the 35° walk-limit, so
+// you can ALWAYS climb out (no inescapable holes). This is the master "escapability" knob.
+export const MAX_DIG = 1.0;
 export const DEFORM_CAP = 256;   // max live primitives; over this, add() evicts the oldest (deterministically).
-export const CRATER_MIN_R = 3.5; // blast radius below which an explosion only scuffs (grenades); above = real bowl.
+export const MIN_DIG_R = 1.6;    // floor on every primitive's radius → wide, gentle bowls (walkable even at MAX_DIG).
+const WALK_K = 0.7;              // per-primitive depth ≤ WALK_K·r → max wall slope ≈ atan(0.7/√e) ≈ 23° « the 35° walk-limit.
 
 const CELL = 12;                 // spatial-hash cell size (m). Each primitive is bucketed into every cell its
                                  // support disc's AABB overlaps, so deformAt reads EXACTLY one bucket (O(1)).
@@ -32,14 +36,16 @@ const GAUSS_SUPPORT = 3.8;       // support radius = 3.8*r: covers the bowl (~0 
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-// Crater geometry from a blast radius. PURE — node-testable, and identical on host+client so a
-// relayed 'boom' carves the same hole. Small blasts scuff; ordnance digs a bowl + an ejecta lip.
-// Returns null for a non-positive radius (caller skips the carve).
+// Crater geometry from a blast radius. PURE — node-testable, identical on host+client so a relayed
+// 'boom' carves the same hole. Deliberately a MILD cosmetic scuff ("you shot the ground"): the real
+// building damage is the blast hitting cells (demobuilding/BuildingDestruct.applyBlast), NOT the crater —
+// so even a bazooka only dents the dirt ~0.3 m, wide and shallow (always walkable, never undermines on
+// its own). Returns null for a non-positive radius (caller skips the carve).
 export function craterShape(radius) {
   if (!(radius > 0)) return null;
-  if (radius < CRATER_MIN_R) return { r: radius * 0.5, depth: 0.25, lip: 0 };
-  const depth = clamp(radius * 0.45, 0.8, MAX_DIG);
-  return { r: radius * 0.7, depth, lip: depth * 0.18 };
+  const depth = clamp(radius * 0.06, 0.12, 0.4);   // shallow dent, capped at 0.4 m
+  const r = Math.max(radius * 0.5, MIN_DIG_R);      // wide bowl → gentle, walkable slope
+  return { r, depth, lip: depth * 0.15 };           // tiny ejecta rim
 }
 
 // Effective support radius. Beyond 3.8*r a primitive contributes EXACTLY zero — this hard truncation
@@ -120,7 +126,11 @@ export class DeformField {
   // replaying the same ordered stream reach byte-identical fields. (Merge-nearest is a future
   // refinement; evict-oldest is simpler and the cap is rarely reached in real play.)
   add(p) {
-    const prim = { x: p.x, z: p.z, r: p.r, depth: p.depth || 0, lip: p.lip || 0, id: this._id++ };
+    // Escapability invariant: widen every primitive to MIN_DIG_R AND cap its depth to WALK_K·r, so its
+    // walls never exceed ~23° — no caller can sneak in a narrow/steep/inescapable pit. (Stacked shovel
+    // scoops still deepen, because same-r Gaussians sum to a deeper same-r Gaussian, capped at MAX_DIG.)
+    const r = Math.max(p.r || 0, MIN_DIG_R);
+    const prim = { x: p.x, z: p.z, r, depth: Math.min(p.depth || 0, WALK_K * r), lip: p.lip || 0, id: this._id++ };
     const sup = primSupport(prim);
     prim._s2 = sup * sup;                 // cached support² for the truncation gate in contrib()
     let removed = null;

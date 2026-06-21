@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DeformField, isUndermined, craterShape, MAX_DIG, DEFORM_CAP, CRATER_MIN_R } from '../../src/dig.js';
+import { DeformField, isUndermined, craterShape, MAX_DIG, DEFORM_CAP, MIN_DIG_R } from '../../src/dig.js';
 
 // small deterministic LCG so "random" sample points are reproducible (no Math.random flakiness)
 function lcg(seed) { let s = seed >>> 0; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); }
@@ -10,10 +10,11 @@ function lcg(seed) { let s = seed >>> 0; return () => ((s = (Math.imul(s, 166452
 function bruteAt(prims, x, z, maxDig = MAX_DIG) {
   let sum = 0;
   for (const p of prims) {
-    const dx = x - p.x, dz = z - p.z, d2 = dx * dx + dz * dz, s = 3.8 * p.r;
+    const r = Math.max(p.r, MIN_DIG_R), depth = Math.min(p.depth, 0.7 * r);   // mirror add()'s escapability clamps (MIN_DIG_R + WALK_K)
+    const dx = x - p.x, dz = z - p.z, d2 = dx * dx + dz * dz, s = 3.8 * r;
     if (d2 > s * s) continue;
-    let h = -p.depth * Math.exp(-d2 / (2 * p.r * p.r));
-    if (p.lip > 0) { const w = p.r * 0.5, e = (Math.sqrt(d2) - p.r * 2.2) / w; h += p.lip * Math.exp(-0.5 * e * e); }
+    let h = -depth * Math.exp(-d2 / (2 * r * r));
+    if (p.lip > 0) { const w = r * 0.5, e = (Math.sqrt(d2) - r * 2.2) / w; h += p.lip * Math.exp(-0.5 * e * e); }
     sum += h;
   }
   return sum < -maxDig ? -maxDig : sum;
@@ -28,14 +29,14 @@ test('empty field: deformAt fast-path returns exactly 0', () => {
 
 test('single crater: -depth at centre, →0 far away', () => {
   const f = new DeformField();
-  f.add({ x: 10, z: -5, r: 3, depth: 2, lip: 0 });
-  assert.ok(Math.abs(f.deformAt(10, -5) - (-2)) < 1e-9, 'hits -depth at centre');
+  f.add({ x: 10, z: -5, r: 3, depth: 0.8, lip: 0 });   // within the shallow MAX_DIG cap
+  assert.ok(Math.abs(f.deformAt(10, -5) - (-0.8)) < 1e-9, 'hits -depth at centre');
   assert.ok(Math.abs(f.deformAt(10 + 30, -5)) < 1e-6, 'negligible 30 m away');
 });
 
 test('ejecta lip raises ground at the rim (positive contribution)', () => {
   const f = new DeformField();
-  f.add({ x: 0, z: 0, r: 4, depth: 2, lip: 0.5 });
+  f.add({ x: 0, z: 0, r: 4, depth: 0.8, lip: 0.5 });
   assert.ok(f.deformAt(0, 0) < 0, 'still a pit at centre');
   // the ejecta ring peaks at ~2.2r (just outside the bowl) → ground there is raised
   assert.ok(f.deformAt(4 * 2.2, 0) > 0, `ejecta ring should be raised, got ${f.deformAt(8.8, 0)}`);
@@ -95,15 +96,23 @@ test('add reports the evicted primitive once over cap', () => {
   assert.equal(f.count, 3);
 });
 
-test('craterShape: small blast scuffs, ordnance digs a bowl with a lip', () => {
-  const scuff = craterShape(CRATER_MIN_R - 0.5);
-  assert.equal(scuff.lip, 0);
-  assert.ok(scuff.depth < 0.5, 'shallow');
-  const bowl = craterShape(10);
-  assert.ok(bowl.depth >= 0.8 && bowl.depth <= MAX_DIG, 'real depth, clamped to bedrock');
-  assert.ok(bowl.lip > 0, 'has ejecta lip');
+test('craterShape: mild cosmetic dent — shallow + wide, never inescapable', () => {
+  const bz = craterShape(6);                 // bazooka-ish blast radius
+  assert.ok(bz.depth > 0.1 && bz.depth <= 0.4, 'just dents the dirt');
+  assert.ok(bz.r >= MIN_DIG_R, 'at least the wide minimum radius');
+  assert.ok(bz.depth / bz.r < 0.3, 'depth/radius stays gentle → walkable slope');
+  const big = craterShape(14);               // mortar / FAB
+  assert.ok(big.depth <= 0.4, 'capped shallow even for heavy ordnance');
   assert.equal(craterShape(0), null);
   assert.equal(craterShape(-3), null);
+});
+
+test('escapability: a narrow deep dig is widened to MIN_DIG_R and clamped to MAX_DIG', () => {
+  const f = new DeformField();
+  const { stored } = f.add({ x: 0, z: 0, r: 0.3, depth: 5 });   // tries to be a narrow 5 m pit
+  assert.ok(stored.r >= MIN_DIG_R, 'radius widened to the minimum (no narrow shaft)');
+  assert.equal(f.deformAt(0, 0), -MAX_DIG, 'depth clamped to the shallow bedrock');
+  assert.ok(f.deformAt(MIN_DIG_R, 0) > -MAX_DIG + 0.05, 'ground recovers toward the rim — not a vertical wall');
 });
 
 test('isUndermined: fires only once enough of the footprint drops past the gap', () => {

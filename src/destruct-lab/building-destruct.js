@@ -483,14 +483,17 @@ export class BuildingDestruct {
   // cell's world XZ = group.position + (c.cx, c.cz) and its foundation height = group.position.y. Host-auth.
   undermine(rect) {
     if (!this._hostSim() || !this.world || !this.world.terrain || !this.world.hasTerrain || !this.cells.length) return;
-    const terr = this.world.terrain, gp = this.group.position;
+    const df = this.world.terrain.deformField; if (!df) return;
+    const gp = this.group.position;
     const dirty = new Set();
     let any = false;
     for (const c of this.cells) {
       if (!c.alive || c.cy - c.sy / 2 > GROUND_EPS) continue;       // only the grounded (bottom) cells lose footing
       const wx = gp.x + c.cx, wz = gp.z + c.cz;
       if (wx < rect.minx || wx > rect.maxx || wz < rect.minz || wz > rect.maxz) continue;
-      if (terr.terrainHeightAt(wx, wz) < gp.y - UNDERMINE_GAP) { c.alive = false; dirty.add(c.bucket); any = true; }
+      // undermined = the dig itself removed ≥ UNDERMINE_GAP of ground under this cell (independent of the
+      // building's base height, so it works on a slope where the foundation sits in the terrain MIN).
+      if (df.deformAt(wx, wz) < -UNDERMINE_GAP) { c.alive = false; dirty.add(c.bucket); any = true; }
     }
     if (!any) return;
     this._settle(dirty);                                            // orphan cascade caves what's above

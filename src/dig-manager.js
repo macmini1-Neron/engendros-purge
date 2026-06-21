@@ -4,7 +4,7 @@
 //
 // The deform MATH + storage is the pure, node-tested src/dig.js; this file is the THREE/game glue
 // (no THREE import needed — it only ever reads {x,z} and calls into world/chunks/worker/mp).
-import { DeformField, craterShape } from './dig.js';
+import { DeformField, craterShape, MAX_DIG } from './dig.js';
 import { SupportScan } from './support.js';
 
 export class DigManager {
@@ -31,8 +31,14 @@ export class DigManager {
     // there's no terrain mesh to re-mesh, yet groundY (read by enemies/loot) would still dip into an
     // INVISIBLE pit. Gate on hasTerrain so flat maps keep their byte-identical y=0 floor.
     if (!this.world || !this.world.hasTerrain) return null;
-    const r = opts.r, depth = opts.depth, lip = opts.lip || 0;
-    if (!(r > 0) || !(depth > 0)) return null;
+    const r = opts.r, lip = opts.lip || 0;
+    // Cap this scoop to the HEADROOM left at this spot (MAX_DIG − current pit depth). Without this,
+    // stacking shovel scoops sums into a deep, steep-walled shaft (the MAX_DIG clamp only flattens the
+    // bottom, not the walls). Filling to MAX_DIG keeps the summed bowl ≈ one MAX_DIG-deep Gaussian → a
+    // gentle, ALWAYS-walkable wall. (A fresh spot has the full headroom; craters are shallow anyway.)
+    const headroom = MAX_DIG + this.field.deformAt(pos.x, pos.z);   // deformAt ≤0, so this is MAX_DIG − depthHere
+    const depth = Math.min(opts.depth || 0, Math.max(0, headroom));
+    if (!(r > 0) || !(depth > 0)) return null;                      // bad request OR pit already at bedrock
     const res = this.field.add({ x: pos.x, z: pos.z, r, depth, lip });
     this._afterCarve(res, opts.net !== false);
     return res.stored;
