@@ -719,7 +719,10 @@ export class MP {
     n.on('mortarspot', (d, from) => { if (this.isHost && d) this._hostMortarSpot(d.p, from); });                   // spotter → host: compute the firing solution
     n.on('mortarmark', (d) => { if (!this.isHost && d) this.game._dropMortarMark(d); });                           // host → clients: shared target marker + call
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
-    n.on('splash', (d, from) => { if (this.isHost && d) { this.game._explodeHurt(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.r, d.dmg); g.loot.clearPickupsInRadius(d.p[0], d.p[2], d.r); } }); // client thrower's grenade/rocket → host applies the player splash (explosive Full-FF) + clears ground items in the blast
+    n.on('boom', (d, from) => {                                                                                    // client thrower's explosion → host authoritatively applies enemy AoE + player FF + item clearing + destruction (visual already shown via the 'proj' ghost)
+      if (!this.isHost) return;
+      if (!d || !Array.isArray(d.p) || d.p.length < 3 || !d.p.every(Number.isFinite) || !Number.isFinite(d.r)) { console.warn('mp: dropped malformed boom packet', from, d); return; } // don't no-op silently on a NaN radius / garbage payload
+      g.explode(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), { radius: Math.min(d.r, 30), dmg: +d.d || 0, enemyDmg: +d.ed || 0, source: d.s, attacker: from, harmEnemies: !!d.he, harmPlayers: !!d.hp, clearLoot: !!d.cl, destroy: !!d.ds, isRocket: !!d.rk, visual: false, net: false }); }); // radius clamped (room codes are public → untrusted peers); attacker:from credits the KILL to the real thrower, not the host
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
     n.on('wave', (d) => { g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); }); // continuous: clients just track the wave (no shop)
     n.on('wavetag', (d) => { if (!this.isHost && d) g.hud.setWaveTag(d.tags || []); });                  // host-authoritative special-wave tag (set/clear)

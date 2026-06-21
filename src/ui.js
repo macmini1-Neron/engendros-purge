@@ -291,7 +291,12 @@ export class UI {
 // ---------------------------------------------------------------------------
 // Settings — persisted (localStorage) options, applied live.
 // ---------------------------------------------------------------------------
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 1, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0 };
+// Bumped when graphics-knob DEFAULTS change in a way existing saves should pick up (see load() migration).
+const SETTINGS_VER = 1;
+// adaptiveRes + bloom default OFF: on high-refresh (144 Hz) displays the 60 fps-targeted adaptive resolution
+// churns the render-target size (stutter) and renders sub-native (blur), and bloom softens the crisp voxel look.
+// Both stay toggleable in Settings; the High/Medium presets can still switch bloom back on.
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, setVer: SETTINGS_VER };
 
 export class Settings {
   constructor(game) {
@@ -300,7 +305,7 @@ export class Settings {
     this.returnTo = 'menu';
     this.load(); this._wire(); this.apply();
   }
-  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; } catch (e) {} }
+  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } } catch (e) {} }
   save() { try { localStorage.setItem('engendros_settings', JSON.stringify(this.data)); } catch (e) {} }
   apply() {
     if (this.game.player) { this.game.player.sens = this.data.sens; this.game.player.nick = this.data.nick; }
@@ -311,6 +316,8 @@ export class Settings {
     if (e.setShadowQuality) e.setShadowQuality(this.data.shadowQ);
     if (e.setAdaptive) e.setAdaptive(!!this.data.adaptiveRes);
     if (e.setRenderScale && !this.data.adaptiveRes) e.setRenderScale(this.data.renderScale); // manual: honor preset scale
+    if (e.setBloom) e.setBloom(!!this.data.bloom);
+    if (e.setExposure) e.setExposure(this.data.exposure);
     this.game._drawDist = this.data.drawDist | 0;
     this.game._showFps = !!this.data.showFps;
     if (!this.data.showFps) { const f = document.getElementById('fps'); if (f) f.style.display = 'none'; }
@@ -324,28 +331,32 @@ export class Settings {
     txt('s-sfx-v', Math.round(this.data.sfx * 100) + '%');
     txt('s-music-v', Math.round(this.data.music * 100) + '%');
     txt('s-fov-v', this.data.fov + '°');
+    txt('s-exposure-v', this.data.exposure.toFixed(2));
     val('s-sens', this.data.sens); val('s-sfx', this.data.sfx); val('s-music', this.data.music);
     val('s-fov', this.data.fov);
+    val('s-exposure', this.data.exposure);
     val('s-nick', this.data.nick);
     const po = document.getElementById('s-pokerodds'); if (po) { po.textContent = this.data.pokerOdds ? 'ON' : 'OFF'; po.style.color = this.data.pokerOdds ? 'var(--neon, #45e0cf)' : '#888'; }
     const setTog = (id, on, onTxt, offTxt) => { const el = document.getElementById(id); if (el) { el.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); el.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
     const gpv = document.getElementById('s-gfx'); if (gpv) gpv.textContent = String(this.data.gfxPreset).toUpperCase();
     setTog('s-adapt', this.data.adaptiveRes); setTog('s-showfps', this.data.showFps); setTog('s-aa', this.data.aa, 'ON (reload)', 'OFF');
+    setTog('s-bloom', this.data.bloom);
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
-    bind('s-sens', 'sens'); bind('s-sfx', 'sfx'); bind('s-music', 'music'); bind('s-fov', 'fov');
+    bind('s-sens', 'sens'); bind('s-sfx', 'sfx'); bind('s-music', 'music'); bind('s-fov', 'fov'); bind('s-exposure', 'exposure');
     const nickEl = document.getElementById('s-nick'); if (nickEl) nickEl.addEventListener('input', () => { this.data.nick = (nickEl.value || 'Player').slice(0, 14); this.apply(); this.save(); }); // text field, not parseFloat
     const po = document.getElementById('s-pokerodds'); if (po) po.addEventListener('click', () => { this.data.pokerOdds = this.data.pokerOdds ? 0 : 1; this.save(); this._refresh(); }); // poker outs/% helper toggle
     const presets = ['Low', 'Medium', 'High'];
     const gp = document.getElementById('s-gfx'); if (gp) gp.addEventListener('click', () => {
       const i = (presets.indexOf(this.data.gfxPreset) + 1) % presets.length; this.data.gfxPreset = presets[i];
-      const c = presetConfig(this.data.gfxPreset); this.data.shadowQ = c.shadowQ; this.data.drawDist = c.drawDist; this.data.renderScale = c.renderScale; this.data.aa = c.aa;
+      const c = presetConfig(this.data.gfxPreset); this.data.shadowQ = c.shadowQ; this.data.drawDist = c.drawDist; this.data.renderScale = c.renderScale; this.data.aa = c.aa; this.data.bloom = c.bloom;
       this.apply(); this.save(); this._refresh();
     });
     const ar = document.getElementById('s-adapt'); if (ar) ar.addEventListener('click', () => { this.data.adaptiveRes = this.data.adaptiveRes ? 0 : 1; this.apply(); this.save(); this._refresh(); });
     const sfps = document.getElementById('s-showfps'); if (sfps) sfps.addEventListener('click', () => { this.data.showFps = this.data.showFps ? 0 : 1; this.apply(); this.save(); this._refresh(); });
     const aaEl = document.getElementById('s-aa'); if (aaEl) aaEl.addEventListener('click', () => { this.data.aa = this.data.aa ? 0 : 1; this.save(); this._refresh(); }); // MSAA applies on reload
+    const bl = document.getElementById('s-bloom'); if (bl) bl.addEventListener('click', () => { this.data.bloom = this.data.bloom ? 0 : 1; this.apply(); this.save(); this._refresh(); });
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }

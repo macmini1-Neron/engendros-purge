@@ -12,21 +12,16 @@
 // 8-dir with sqrt2 diagonals and NO diagonal corner-cut — the SAME DIRS rule as pathing.js A*.
 const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
 
-const cellOf = (g, x, z) => ({
-  c: Math.max(0, Math.min(g.cols - 1, Math.floor((x - g.originX) / g.cell))),
-  r: Math.max(0, Math.min(g.rows - 1, Math.floor((z - g.originZ) / g.cell))),
-});
-const isBlocked = (g, c, r) => c < 0 || r < 0 || c >= g.cols || r >= g.rows || g.blocked[r * g.cols + c] === 1;
-
-// Nearest free cell to (c,r) via an expanding ring — used when the goal (player) sits inside
-// an inflated obstacle so its own cell reads blocked. Mirrors pathing.js nearestFree.
-function nearestFree(g, c, r) {
-  if (!isBlocked(g, c, r)) return { c, r };
-  for (let rad = 1; rad < Math.max(g.cols, g.rows); rad++) {
+// Nearest free cell to window-local (c,r) via an expanding ring — used when the goal (player)
+// sits inside an inflated obstacle so its own cell reads blocked. `blockedW` is window-local
+// (out-of-window reads as a wall). Mirrors pathing.js nearestFree.
+function nearestFree(blockedW, cols, rows, c, r) {
+  if (!blockedW(c, r)) return { c, r };
+  for (let rad = 1; rad < Math.max(cols, rows); rad++) {
     for (let dc = -rad; dc <= rad; dc++) for (let dr = -rad; dr <= rad; dr++) {
       if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad) continue; // ring only
       const nc = c + dc, nr = r + dr;
-      if (!isBlocked(g, nc, nr)) return { c: nc, r: nr };
+      if (!blockedW(nc, nr)) return { c: nc, r: nr };
     }
   }
   return null;
@@ -44,16 +39,37 @@ class Heap {
 //   { cols, rows, cell, originX, originZ, dist, dirX, dirZ, goalX, goalZ }
 // where dist[i] = cost to goal (Infinity if unreached/blocked) and (dirX,dirZ)[i] = the UNIT
 // vector toward the neighbour one step closer to the goal (0,0 at the goal / unreached cells).
-export function buildFlowField(g, goalX, goalZ) {
-  const { cols, rows, cell, originX, originZ } = g;
+//
+// `bounds` (optional, world-space { minX, minZ, maxX, maxZ }) restricts the rebuild to a SUB-WINDOW
+// of the grid: the returned field describes only that window (its own cols/rows/origin), and the
+// Dijkstra + allocations are O(window cells), NOT O(map cells). The horde always clusters on the
+// player, so the goal+horde window is tiny vs a large open map — this makes the rebuild cost
+// independent of map size (the steppe-stutter fix). Out-of-window cells read as walls (the walk
+// stops at the window edge); flowDirAt returns null outside the window → the caller beelines.
+// Omit `bounds` for the legacy whole-grid field (unchanged behaviour, e.g. the small arena).
+export function buildFlowField(g, goalX, goalZ, bounds) {
+  const cell = g.cell;
+  // Window cell range in FULL-grid coords (default = whole grid → byte-identical to the old path).
+  let wc0 = 0, wr0 = 0, cols = g.cols, rows = g.rows;
+  if (bounds) {
+    const cl = (v) => Math.max(0, Math.min(g.cols - 1, Math.floor((v - g.originX) / cell)));
+    const rl = (v) => Math.max(0, Math.min(g.rows - 1, Math.floor((v - g.originZ) / cell)));
+    const c0 = cl(bounds.minX), c1 = cl(bounds.maxX), r0 = rl(bounds.minZ), r1 = rl(bounds.maxZ);
+    wc0 = c0; wr0 = r0; cols = c1 - c0 + 1; rows = r1 - r0 + 1;
+  }
+  const originX = g.originX + wc0 * cell, originZ = g.originZ + wr0 * cell; // window origin
   const N = cols * rows;
   const dist = new Float32Array(N).fill(Infinity);
   const dirX = new Float32Array(N);
   const dirZ = new Float32Array(N);
   const field = { cols, rows, cell, originX, originZ, dist, dirX, dirZ, goalX, goalZ };
 
-  const gc = cellOf(g, goalX, goalZ);
-  const goal = nearestFree(g, gc.c, gc.r);
+  // Window-local occupancy → maps to the full grid; out-of-window = wall (bounds the Dijkstra walk).
+  const blockedW = (c, r) => c < 0 || r < 0 || c >= cols || r >= rows || g.blocked[(wr0 + r) * g.cols + (wc0 + c)] === 1;
+
+  const gc = Math.max(0, Math.min(cols - 1, Math.floor((goalX - originX) / cell)));
+  const gr = Math.max(0, Math.min(rows - 1, Math.floor((goalZ - originZ) / cell)));
+  const goal = nearestFree(blockedW, cols, rows, gc, gr);
   if (!goal) return field;                       // goal fully walled off → all Infinity → flowDirAt null
 
   const idx = (c, r) => r * cols + c;
@@ -70,8 +86,8 @@ export function buildFlowField(g, goalX, goalZ) {
     const cc = cur % cols, cr = (cur / cols) | 0;
     for (const [dc, dr, cost] of DIRS) {
       const nc = cc + dc, nr = cr + dr;
-      if (isBlocked(g, nc, nr)) continue;
-      if (dc && dr && (isBlocked(g, cc + dc, cr) || isBlocked(g, cc, cr + dr))) continue; // no corner-cut
+      if (blockedW(nc, nr)) continue;
+      if (dc && dr && (blockedW(cc + dc, cr) || blockedW(cc, cr + dr))) continue; // no corner-cut
       const ni = idx(nc, nr);
       if (closed[ni]) continue;
       const nd = dist[cur] + cost;
@@ -91,14 +107,36 @@ export function buildFlowField(g, goalX, goalZ) {
   return field;
 }
 
-// Look up the cell for world (x,z); returns { x:dirX, z:dirZ } (unit) toward the goal,
-// or null if the cell is unreached/blocked or IS the goal (caller falls back to beeline).
+// Look up the steering for world (x,z): a unit { x, z } toward the goal, or null if the cell is OUTSIDE
+// the (possibly windowed) field, unreached/blocked, or IS the goal — in every null case the caller beelines.
+//
+// The direction is BILINEARLY interpolated across the 4 cells whose centres bracket (x,z), so it varies
+// CONTINUOUSLY as a mob crosses cell boundaries instead of snapping between the 8 discrete grid directions
+// (that snap is the visible horde "jitter"). Cells that are blocked / unreached / zero-dir (across a wall,
+// or the goal) drop out of the blend and the weights renormalise — near a wall this degrades gracefully to
+// the mob's own cell direction. At a cell centre the blend weights collapse to that one cell → the discrete
+// legacy direction (so the routing/window tests are unchanged).
 export function flowDirAt(field, x, z) {
-  const c = Math.max(0, Math.min(field.cols - 1, Math.floor((x - field.originX) / field.cell)));
-  const r = Math.max(0, Math.min(field.rows - 1, Math.floor((z - field.originZ) / field.cell)));
-  const i = r * field.cols + c;
-  if (!isFinite(field.dist[i])) return null;      // unreached / blocked
-  const dx = field.dirX[i], dz = field.dirZ[i];
-  if (dx === 0 && dz === 0) return null;          // goal cell — beeline the last step
-  return { x: dx, z: dz };
+  const { cols, rows, cell, originX, originZ, dirX, dirZ, dist } = field;
+  const c = Math.floor((x - originX) / cell);
+  const r = Math.floor((z - originZ) / cell);
+  if (c < 0 || r < 0 || c >= cols || r >= rows) return null; // outside the window → beeline
+  const ic = r * cols + c;
+  if (!isFinite(dist[ic])) return null;                       // the mob's own cell is unreached/blocked → beeline
+  if (dirX[ic] === 0 && dirZ[ic] === 0) return null;          // goal cell — beeline the last step
+
+  const gx = (x - originX) / cell - 0.5, gz = (z - originZ) / cell - 0.5; // cell-centre grid coords
+  const c0 = Math.floor(gx), r0 = Math.floor(gz), tx = gx - c0, tz = gz - r0;
+  let sx = 0, sz = 0, sw = 0;
+  for (let dr = 0; dr < 2; dr++) for (let dc = 0; dc < 2; dc++) {
+    const cc = c0 + dc, rr = r0 + dr;
+    if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
+    const k = rr * cols + cc;
+    if (!isFinite(dist[k]) || (dirX[k] === 0 && dirZ[k] === 0)) continue; // skip blocked / unreached / goal cells
+    const w = (dc ? tx : 1 - tx) * (dr ? tz : 1 - tz);
+    sx += dirX[k] * w; sz += dirZ[k] * w; sw += w;
+  }
+  const len = Math.hypot(sx, sz);
+  if (sw === 0 || len < 1e-6) return { x: dirX[ic], z: dirZ[ic] }; // degenerate blend → the mob's own cell dir
+  return { x: sx / len, z: sz / len };
 }

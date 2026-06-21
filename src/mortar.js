@@ -10,7 +10,9 @@
 // MountedGun fifty* pattern (mortarclaim/state/aim/firereq/fire). The host computes the impact
 // point ONCE (mortar-ballistics, seeded) and ships it; clients render the identical arc but
 // apply NO damage. Solo runs the host path locally with the net dormant. The HE detonation
-// reuses the grenade/rocket sequence (effects + damageInRadius + _demoBlast + _explodeHurt).
+// (_detonate) hand-rolls the same calls Game.explode() centralizes — explosion FX/audio,
+// enemies.damageInRadius, game._demoBlast (destruction), game._explodeHurt (player FF + FAB chain),
+// loot.clearPickupsInRadius — rather than calling explode() itself (see _detonate for why).
 import * as THREE from 'three';
 import { clamp, lerp, TAU } from './util.js';
 import { placeProp, hasModel } from './props/registry.js';
@@ -336,8 +338,10 @@ export class Mortar {
     if (shell.trace) { this.game.engine.scene.remove(shell.trace); shell.trace.geometry.dispose(); shell.trace.material.dispose(); } // drop the flight arc
     if (shell.ring) this._impactMarks.push({ ring: shell.ring, t: 4, life: 4 });   // keep the landing ring, fading (golf "where it landed")
     if (!shell.hostAuth) return;                             // clients: visual only
+    // NB: deliberately host-authoritative here, NOT game.explode() — the impact was computed + shipped
+    // once by the host and the visual already played for everyone above, so there's no client 'boom' to send.
     this.game.enemies.damageInRadius(p, BAL.HE_RADIUS, BAL.HE_DMG, null, 'explosion');
-    if (this.game.weapons._demoBlast) this.game.weapons._demoBlast(p, BAL.HE_RADIUS, true);  // HE breach / fell / ignite (self-gated)
+    this.game._demoBlast(p, BAL.HE_RADIUS, true);            // HE breach / fell / ignite (self-gated, no-op on flat maps)
     this.game._explodeHurt(p.clone(), BAL.HE_RADIUS, BAL.HE_DMG);
     this.game.loot.clearPickupsInRadius(p.x, p.z, BAL.HE_RADIUS);
   }

@@ -89,7 +89,7 @@ export class DemoBuilding {
 
     this.debris = new DebrisPool(this.scene);
 
-    try { this._place(); this._build(); this.rebuild(); this.placed = true; }
+    try { this._place(); this._build(); this._navTestbed(); this.rebuild(); this.placed = true; }
     catch (e) { console.warn('[demobuilding] build failed — continuing without building', e); }
 
     // NB: build the runtime AFTER _build() — DestructRuntime snapshots its parts list with
@@ -212,6 +212,49 @@ export class DemoBuilding {
     this._static(FW + 0.5, 0.35, FD + 0.5, cx, bY + H + 0.18, cz, CC.hi, 'roof');
     // plinth skirt that buries the downhill side so nothing floats
     this._static(FW + 0.4, 0.9, FD + 0.4, cx, bY - 0.3, cz, CC.lo, 'skirt');
+  }
+
+  // ── nav/AI testbed (2026-06-19 vertical slice, docs/.../2026-06-19-demo-nav-testbed-design.md) ──
+  // TWO registered staircases (on the wall opposite the door + a perpendicular wall) from the ground to
+  // the roof, so the layered horde nav can route mobs UP to a player on the roof (the deferred bug-E case)
+  // AND gets a route CHOICE. Steps go through _static (→ merged mesh + grid-indexed collision via _pushBox
+  // — world._solid does NOT addBox post-grid-build, so world._stairs can't be reused here); the foot→top
+  // nav LINK is registered by hand exactly as world._stairs does. Geometry + links only — no algo change.
+  // (An exterior wall LADDER was tried for the 2nd route but an outside ladder fights the wall collider /
+  // the roof overhang and the climb wouldn't engage; the ladder mechanic is already covered by the
+  // bunker/airfield interiors, so a second staircase is the robust route-choice here.)
+  _navTestbed() {
+    const cx = this.cx, cz = this.cz, bY = this.baseY;
+    const xL = cx - FW / 2, xR = cx + FW / 2, zS = cz - FD / 2, zN = cz + FD / 2;
+    const roofY = bY + H + 0.35;                          // walkable roof-slab top
+    const WALL = {
+      S: { nx: 0, nz: -1, mx: cx, mz: zS }, N: { nx: 0, nz: 1, mx: cx, mz: zN },
+      W: { nx: -1, nz: 0, mx: xL, mz: cz }, E: { nx: 1, nz: 0, mx: xR, mz: cz },
+    };
+    const OPP = { S: 'N', N: 'S', W: 'E', E: 'W' };       // primary stair: wall opposite the door
+    const PERP = { S: 'E', N: 'E', W: 'N', E: 'N' };      // secondary stair: a perpendicular wall
+    this.world._navLinks = this.world._navLinks || [];
+    this._roofStair(WALL[OPP[this._doorWall]], roofY, bY);
+    this._roofStair(WALL[PERP[this._doorWall]], roofY, bY);
+  }
+
+  // One external staircase climbing IN from the ground toward `wall`'s roof edge (solid steppable blocks),
+  // plus the registered foot→top vertical nav link the layered horde nav routes mobs up. The flight is
+  // ANCHORED to the terrain at its foot, not to the building base: the demo terrain dips away from the
+  // building, so a baseY-anchored flight FLOATS over a downhill foot and a mob can't board the first step.
+  _roofStair(wall, roofY, bY) {
+    const stepD = 0.72, sW = 3.0;
+    const n0 = Math.ceil((roofY - bY) / 0.5);                                             // rough step count to size the run
+    const topX = wall.mx + wall.nx * 0.45, topZ = wall.mz + wall.nz * 0.45;               // top tread at the wall/roof lip
+    const footX = topX + wall.nx * (n0 - 1) * stepD, footZ = topZ + wall.nz * (n0 - 1) * stepD;
+    const footY = this.world.terrain ? this.world.terrain.terrainHeightAt(footX, footZ) : bY;
+    const base = Math.min(bY, footY) - 0.05;                                              // start at the lower of base / foot terrain
+    const steps = Math.max(6, Math.ceil((roofY - base) / 0.55)), stepH = (roofY - base) / steps; // ≤ STEP_UP (0.62) per tread
+    for (let i = 0; i < steps; i++) {
+      const hY = (i + 1) * stepH, stx = footX - wall.nx * i * stepD, stz = footZ - wall.nz * i * stepD;
+      this._static(wall.nx ? stepD : sW, hY, wall.nz ? stepD : sW, stx, base + hY / 2, stz, CC.mid, 'stair');
+    }
+    this.world._navLinks.push({ x0: footX + wall.nx * 0.8, z0: footZ + wall.nz * 0.8, y0: base, x1: topX, z1: topZ, y1: roofY });
   }
 
   // Build one wall line. axis 'x' → runs along X at z=fixed (thickness in Z); axis 'z'

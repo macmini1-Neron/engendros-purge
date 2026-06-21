@@ -2,6 +2,9 @@
 import * as THREE from 'three';
 
 
+// --- movement / collision ---
+export const STEP_UP = 0.62;                // max ledge/stair rise auto-mounted by the player AND the horde (world.js + enemies.js)
+
 // --- survival mechanics tuning (fall damage + broken leg + hunger), HARDCORE ---
 export const FALL_SAFE = -8.0;              // |vy| below this on landing = no damage (a flat 7.2 jump lands ~ -7.2..-7.6, leave margin)
 const FALL_HURT = -9.5;              // at/below this the fall also BREAKS THE LEG (damage onset is FALL_SAFE) — ~a 2m drop

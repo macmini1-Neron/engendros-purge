@@ -26,6 +26,7 @@ import { PokerTable } from './poker-table.js';
 import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
 import { Engine } from './engine.js';
+import { SimWorker } from './sim-worker-client.js';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import { Effects } from './effects.js';
@@ -71,9 +72,16 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-18 16:20';
+const GAME_BUILD = '2026-06-19 02:35';
+
+const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
+const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
+
+// HE blast profile for tier-3 rockets/HE (bazooka rocket, mortar shell): tier 3 removes brick wall
+// segments within r1 (a WALKABLE breach), shatters all glass within r2, ignites + fells nearby trees.
+const DEMO_HE_BLAST = { r1: 2.6, r2: 6.0, tier: 3 };
 
 class Game {
   constructor() {
@@ -82,6 +90,7 @@ class Game {
     this.input = new Input(this.canvas);
     this.audio = new AudioManager();
     this.effects = new Effects(this);
+    this.simWorker = new SimWorker(); // background thread for pure-math sim (horde flow-field; terrain in Phase B). Falls back to sync if unavailable.
     // Map selection. World reads game.mapId in its constructor, so this MUST precede `new World`.
     // Priority: ?map= URL override (dev) -> the menu's saved pick (localStorage) -> 'arena' default.
     this.mapId = (() => { try {
@@ -155,6 +164,8 @@ class Game {
     this.state = 'menu'; this.score = 0; this.kills = 0; this.mpMenuOpen = false;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
     this._last = 0; this._bound = this._frame.bind(this);
+    this._fixedStep = (() => { try { return new URLSearchParams(location.search).get('fixed') === '1'; } catch (e) { return false; } })(); // M4 fixed-timestep: ?fixed=1 URL opt-in or F8 toggle (default OFF)
+    this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // render-time camera interpolation state
 
     // --- status effects (src/effects-status.js) ---
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
@@ -329,6 +340,7 @@ class Game {
       if (code === 'KeyT' && this.weapons.lprRaised) { this.weapons.lprMeasure(); return; }
       if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
       if (code === 'F3') { this.f3 = !this.f3; return; }
+      if (code === 'F8') { this._fixedStep = !this._fixedStep; this._acc = 0; const _fs = this._fixedStep; this.hud.bigMessage('FIXED-STEP ' + (_fs ? 'ON · 60Hz' : 'OFF')); console.log('[fixed-step] ' + (_fs ? 'ON (60 Hz sim + camera interp)' : 'OFF (variable dt)')); return; } // M4 dev toggle (mirrors ?fixed=1)
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
       // dev fly-cam toggle (solo only): N, or Ctrl+F
       if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
@@ -908,6 +920,44 @@ class Game {
     else hurt(this.player.pos.x, this.player.pos.z, 'host');
     if (this.world.igniteFABsNear) this.world.igniteFABsNear(pos, radius); // any blast sets off nearby kolkhoz FAB-500s (chain)
   }
+  // ── Centralized explosion ──────────────────────────────────────────────────────────
+  // ONE place that does "what an explosion does": visual+audio, enemy AoE, player splash
+  // (+FAB chain), ground-item clearing, and destruction (trees/props/building/fire). Per
+  // call site you only tune the params/flags. Authority + co-op are handled here: the
+  // visual runs locally for everyone, the authoritative bits run only on the host, and a
+  // client routes the whole thing to the host via one 'boom' packet (which the host
+  // replays with visual:false, since it already saw the detonation via the 'proj' ghost).
+  explode(pos, opts = {}) {
+    const { radius = 5, dmg = 0, enemyDmg = dmg, source = 'explosion', except = null,
+            harmEnemies = true, harmPlayers = true, clearLoot = true, destroy = true,
+            isRocket = false, visual = true, shake = 0, net = true, attacker = 'host' } = opts;
+    if (!pos || !Number.isFinite(radius) || radius <= 0) { console.warn('explode: bad pos/radius — skipped', pos, radius); return; } // surface a bad call instead of an audible blast that silently deals no damage
+    if (visual) this.effects.explosion(pos, radius);          // explosion() also plays audio.explosion()
+    if (shake && this.engine.shake) this.engine.shake(shake);
+    const hostSim = !this.mp.active || this.mp.isHost;
+    if (hostSim) {
+      if (harmEnemies) this.enemies.damageInRadius(pos, radius, enemyDmg, except, source, attacker);
+      if (harmPlayers) this._explodeHurt(pos, radius, dmg); // includes the FAB-500 chain
+      if (clearLoot) this.loot.clearPickupsInRadius(pos.x, pos.z, radius);
+      if (destroy) this._demoBlast(pos, radius, isRocket);  // trees/props/building/fire (no-op without a forest/demo building)
+    } else if (net && this.mp.active) {
+      // client → host: one packet carries everything the host needs to authoritatively apply.
+      this.mp.net.send('boom', { p: [+pos.x.toFixed(2), +pos.y.toFixed(2), +pos.z.toFixed(2)], r: radius, d: dmg, ed: enemyDmg, s: source,
+        he: harmEnemies ? 1 : 0, hp: harmPlayers ? 1 : 0, cl: clearLoot ? 1 : 0, ds: destroy ? 1 : 0, rk: isRocket ? 1 : 0 });
+    }
+  }
+  // HE blast routed into the demo destructibles: remove brick wall segments (a WALKABLE breach)
+  // + shatter glass via the building, fell trees + destroy props within the blast, and seed a
+  // fire at the impact (a rocket into the woods lights the stand). Host-auth.
+  _demoBlast(pos, radius, isRocket) {
+    const hostSim = !this.mp.active || this.mp.isHost;
+    if (!hostSim) return;
+    const b = this.world.demoBuilding;
+    const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
+    if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
+    if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, blast.r1 + 0.6, blast.tier);
+    if (this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
+  }
   onWaveCleared(n) {
     this.audio.waveClear(); if (this.audio.music) this.audio.music.sting('victory', 'small'); this.player.addMoney(150 + n * 25);
     if (this.mp.active && this.mp.isHost) this.mp.net.send('waveclear', { n: this.waves.wave });
@@ -1036,24 +1086,43 @@ class Game {
         this._stressName = null; this._stressTick = null;
       }
     }
-    dt = Math.min(dt, 0.05);
-    if (this.audio.music) this.audio.music.update(dt); // score smoothing runs in every state
-    if (this.state === 'playing') this._updatePlaying(dt);
-    if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera);
+    const frameDt = Math.min(dt, 0.05);
+    if (this.audio.music) this.audio.music.update(frameDt); // score smoothing runs in every state
+
+    let interp = false, alpha = 0;
+    if (this.state === 'playing' && this._fixedStep) {
+      this._acc += Math.min(dt, 0.25);                       // larger cap than the sim clamp; bounds catch-up
+      let n = 0;
+      while (this._acc >= FIXED_STEP && n < MAX_SUBSTEPS && this.state === 'playing') { // re-check state: a sub-step (death/wipe) can leave 'playing'
+        this._camPrev.copy(this.engine.camera.position);     // capture BEFORE each step → after the loop, _camPrev is exactly ONE step before _camCur (correct interp interval even when N>1)
+        this._updatePlaying(FIXED_STEP);
+        if (n === 0) this.input.endFrame();                  // consume edges + mouse delta ONCE (first sub-step only)
+        this._acc -= FIXED_STEP; n++;
+      }
+      if (this._acc >= FIXED_STEP) this._acc %= FIXED_STEP;  // loop exited on the MAX_SUBSTEPS cap (or a state change) with backlog left → SHED it: accept slow-motion, never fast-forward catch-up or alpha>1 camera overshoot (this is the actual spiral-of-death break)
+      if (n > 0) { this._camCur.copy(this.engine.camera.position); alpha = Math.min(this._acc / FIXED_STEP, 1); interp = true; } // clamp alpha so lerpVectors interpolates, never extrapolates
+      // n === 0: no sim this frame → camera unchanged; edges NOT consumed (carry to next frame)
+    } else if (this.state === 'playing') {
+      this._updatePlaying(frameDt);                          // OFF / non-fixed path = unchanged
+    }
+
+    if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera); // uses TRUE sim cam pos
     this.engine.updateAdaptive(this._frameMs);
-    if (this._drawDist > 0) { this._cullByDistance(this._drawDist); this._culling = true; }
+    if (this._drawDist > 0) { this._cullByDistance(this._drawDist); this._culling = true; } // uses TRUE sim cam pos
     else if (this._culling) { this._restoreVisibility(); this._culling = false; }
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
-    this.engine.update(dt); this.engine.render();
+    if (interp) this.engine.camera.position.lerpVectors(this._camPrev, this._camCur, alpha); // smooth between ticks
+    this.engine.update(frameDt); this.engine.render();
+    if (interp) this.engine.camera.position.copy(this._camCur); // restore TRUE pos for F3/devconsole/raycasts/next prev
     { const _ri = this.engine.renderer.info.render; this._draws = _ri.calls; this._tris = _ri.triangles; } // F3 stats — read post-render (Three.js resets info per render)
     if (this.devconsole) { const dbg = this.f3 && this.state === 'playing'; this.devconsole.updateF3(dbg); this.devconsole.updateEntityLabels(dbg); }
-    if (this.state === 'shop' && this.preview) this.preview.render(dt);
-    if (this.state === 'admin' && this.admin) this.admin.viewer.render(dt);
-    if (this.state === 'music' && this.fonoteka) this.fonoteka.render(dt);
-    if (this.state === 'crate' && this.crate) this.crate.render(dt);
+    if (this.state === 'shop' && this.preview) this.preview.render(frameDt);
+    if (this.state === 'admin' && this.admin) this.admin.viewer.render(frameDt);
+    if (this.state === 'music' && this.fonoteka) this.fonoteka.render(frameDt);
+    if (this.state === 'crate' && this.crate) this.crate.render(frameDt);
     else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
-    if (this.state === 'poker' && this.poker) { this.poker.update(dt); this.poker.render(dt); }
-    this.input.endFrame();
+    if (this.state === 'poker' && this.poker) { this.poker.update(frameDt); this.poker.render(frameDt); }
+    if (!(this._fixedStep && this.state === 'playing')) this.input.endFrame(); // fixed path clears inside the loop (or carries when n===0)
   }
 
   // One fixed effect tick: advance the player + every alive enemy by one step.

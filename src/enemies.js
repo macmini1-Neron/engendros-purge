@@ -1,12 +1,19 @@
 // enemies.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxelMaterial } from './util.js';
-import { ENEMY_BURN_SLOW } from './tuning.js';
+import { ENEMY_BURN_SLOW, STEP_UP } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { buildNavGrid, findPath, lineBlocked } from './pathing.js';
 import { buildFlowField, flowDirAt } from './flowfield.js';
+import { buildNavGraph, buildSurfaceFlow, surfaceDirAt } from './navgraph.js';
+import { buildSwarmGrid, eachNeighbor } from './swarmgrid.js';
+import { segDist2 } from './geom.js';
 import { movementSlow, contactWeaken } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
+
+const ENEMY_GRAVITY = 22;  // m/s² — pulls a mob off a ledge/roof once it walks past the edge (matches the player)
+const ENEMY_CLIMB = 3.0;   // m/s up a ladder zone toward a target above (player uses 3.7)
+const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steering snaps (flow cell-crossings, separation jostling, flow↔beeline flips) into turns instead of visible twitches
 
 
 // ---------------------------------------------------------------------------
@@ -210,6 +217,7 @@ class Enemy {
     this.headY = 1.18 * def.scale;
     this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map(); // effects map: clear on pool reuse / init on first spawn
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
+    this._climb = null; this._climbT = 0; // latched stair/ladder link traversal (layered nav) — {x,z,y} target + timeout
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.noAI = false;    // console /summon {NoAI:1} dummy flag — reset here so a recycled pooled enemy never inherits it
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
@@ -243,6 +251,12 @@ export class EnemyManager {
     this._hordeGrid = null; // HORDE flow-field occupancy grid (finer cell, slope-aware; built once, lazily)
     this._hordeFlow = null; // Dijkstra flow-field toward the host player (refreshed on _flowT timer)
     this._flowT = 0;        // seconds until the next flow-field refresh
+    this._navGraph = null;  // LAYERED surface nav graph (navgraph.js) — built lazily the first time the player is elevated
+    this._navCtr = null;    // world XZ the surface graph was built around (rebuild when the player leaves it) — reset with the graph
+    this._surfFlow = null;  // surface flow-field toward the player's actual (x,y,z) level
+    this._surfT = 0;        // seconds until the next surface-flow refresh
+    this._playerUp = false; // is the host player elevated on a structure this frame (gates the layered nav)
+    this._sentGrid = null;  // which _hordeGrid object we've shipped to the sim worker (re-send if it changes)
   }
   // Pre-pay the boss-fight's one-time costs at run-start so they don't land as a frame hitch mid-fight:
   // (1) the heavy buildTolo() geometry (MeshBuilder + BufferGeometryUtils merge — a multi-hundred-ms
@@ -329,6 +343,60 @@ export class EnemyManager {
   }
   get aliveCount() { return this.active.length; }
 
+  // Would an enemy standing at height `top` hit its head? Only a genuine OVERHANG blocks — a box whose
+  // UNDERSIDE (min.y) sits within the body column (top..top+height). A box rising from at/below `top`
+  // (a stair riser, wall, or the surface itself) is NOT a ceiling, so solid staircases stay climbable.
+  _headClearE(cands, e, top) {
+    for (const o of cands) {
+      if (o.struct) continue;
+      if (o.min.y <= top + 0.05 || o.min.y >= top + e.height) continue; // rises from below, or clears the head
+      if (e.pos.x + e.radius <= o.min.x || e.pos.x - e.radius >= o.max.x) continue;
+      if (e.pos.z + e.radius <= o.min.z || e.pos.z - e.radius >= o.max.z) continue;
+      return false;
+    }
+    return true;
+  }
+
+  // World-space window for a nav rebuild: the AABB of the player + every active mob, padded for routing
+  // room and hard-capped to ±`cap` from the player. Keeps the per-rebuild cost (Dijkstra + allocations)
+  // O(window cells) instead of O(map cells) — the horde always clusters on the player, so cells far
+  // across a large open map are never walked. THE steppe-stutter fix: on the 1000 m steppe the full grid
+  // is ~445 k cells (the ground flow froze ~166 ms / the elevated surface flow ~80 ms, every 0.3 s); the
+  // window is a few k. On the small arena the cap exceeds the map, so the window IS the whole grid →
+  // behaviour unchanged. A stray mob past `cap` falls outside → it beelines (flowDirAt/surfaceDirAt null).
+  _bounds(pp, cap) {
+    let minX = pp.x, maxX = pp.x, minZ = pp.z, maxZ = pp.z;
+    for (const e of this.active) {
+      if (!e.alive) continue;
+      if (e.pos.x < minX) minX = e.pos.x; else if (e.pos.x > maxX) maxX = e.pos.x;
+      if (e.pos.z < minZ) minZ = e.pos.z; else if (e.pos.z > maxZ) maxZ = e.pos.z;
+    }
+    // PAD = routing margin around the cluster; MIN = a floor on the half-extent AROUND THE PLAYER. The
+    // floor matters: when the player and the horde are collinear the raw bbox can be a thin sliver (e.g.
+    // both near x=0 → near-zero width in x), and a sliver window clips any detour around nearby structures
+    // — isolating the goal so the flood never reaches the mobs (they'd fall back to a wall-wedging beeline).
+    // MIN guarantees room around the player to route around a building either side. All capped at ±cap.
+    const PAD = 16, MIN = 64;
+    return {
+      minX: Math.max(pp.x - cap, Math.min(pp.x - MIN, minX - PAD)), maxX: Math.min(pp.x + cap, Math.max(pp.x + MIN, maxX + PAD)),
+      minZ: Math.max(pp.z - cap, Math.min(pp.z - MIN, minZ - PAD)), maxZ: Math.min(pp.z + cap, Math.max(pp.z + MIN, maxZ + PAD)),
+    };
+  }
+
+  // The registered up-link (world._stairs → world._navLinks foot→top segment) whose XZ line passes within
+  // ~2 m of (x,z) and whose top is above `y` — the stair this mob should commit to climbing. Cheap: a scan
+  // of the few map links, only called while the player is elevated. null when no stair is near.
+  _nearUpLink(x, z, y) {
+    const links = this.world._navLinks; if (!links || !links.length) return null;
+    let best = null, bd = 2.0 * 2.0;                 // latch within ~2 m of the stair line (covers the 3 m-wide flight + slack)
+    for (const L of links) {
+      if (y > L.y1 - 0.5) continue;                  // already at/above this link's top
+      const d = segDist2(x, z, L.x0, L.z0, L.x1, L.z1);
+      if (d < bd) { bd = d; best = L; }
+    }
+    return best;
+  }
+
   update(dt) {
     const pp = this.game.player.pos;
     // HORDE NAV: build a finer, slope-aware occupancy grid once per map, then refresh a
@@ -338,9 +406,42 @@ export class EnemyManager {
     // fine cell keep doorways passable so the horde routes THROUGH them.
     if (this.active.length) {
       if (!this._hordeGrid) this._hordeGrid = buildNavGrid(this.world, { cell: 1.5, inflate: 0.7, slopeAware: true });
+      const sw = this.game.simWorker;
+      if (sw && this._sentGrid !== this._hordeGrid) { this._sentGrid = this._hordeGrid; sw.setGrid(this._hordeGrid); } // ship the static grid once (re-send if rebuilt)
       this._flowT -= dt;
-      if (!this._hordeFlow || this._flowT <= 0) { this._flowT = 0.3; this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z); }
+      if (!this._hordeFlow || this._flowT <= 0) {
+        this._flowT = 0.3;
+        const fb = this._bounds(pp, 110); // WINDOWED flow-field bounds (steppe anti-stutter) — must travel WITH the worker request, else the offload silently reverts to a full-grid Dijkstra
+        // Offload the Dijkstra rebuild to the worker; the PREVIOUS field keeps steering the horde
+        // until the fresh one lands (≤1–2 frames later — the field is already 0.3 s stale by design).
+        if (!(sw && sw.requestFlow(pp.x, pp.z, fb, (field) => { this._hordeFlow = field; }))) {
+          this._hordeFlow = buildFlowField(this._hordeGrid, pp.x, pp.z, fb); // no worker → synchronous fallback (windowed, unchanged behaviour)
+        }
+      }
     }
+    // LAYERED NAV: only when the player is ELEVATED on a structure (roof / upper floor / bunker level) do
+    // we build the multi-surface graph + a surface flow toward the player's ACTUAL level, so the horde
+    // routes UP stairs/ladders. On the ground (the common case) this is skipped entirely → zero overhead,
+    // and the 2D flow above is unchanged. Graph built once per map (lazily); flow refreshed on a timer.
+    this._playerUp = this.active.length > 0 && Math.abs(pp.y - this.world.groundY(pp.x, pp.z)) > 1.2;
+    if (this._playerUp) {
+      // Windowed surface graph (±80 m around the player+horde): rebuild on first elevation or when the
+      // player leaves the built window's core (moved > 32 m, still well inside the ±80 m + pad window).
+      // Stationary on a roof → built once; only the surface flow refreshes on the 0.3 s timer.
+      if (!this._navGraph || !this._navCtr || Math.hypot(pp.x - this._navCtr.x, pp.z - this._navCtr.z) > 32) {
+        this._navGraph = buildNavGraph(this.world, { stepUp: STEP_UP, bounds: this._bounds(pp, 80) });
+        this._navCtr = { x: pp.x, z: pp.z }; this._surfFlow = null; // graph moved → drop the stale flow
+      }
+      this._surfT -= dt;
+      if (!this._surfFlow || this._surfT <= 0) { this._surfT = 0.3; this._surfFlow = buildSurfaceFlow(this._navGraph, pp.x, pp.y, pp.z); }
+    }
+    // Big hordes: bucket mobs into a uniform spatial hash so each agent's separation scans only its 3×3
+    // block — O(n) instead of the all-pairs O(n²) scan. Tiny hordes keep the trivial scan (no Map churn).
+    // Built once per frame from start-of-frame positions, but the distance check reads LIVE o.pos as mobs
+    // move during the loop. Cell = 2.0 (vs the √2.6≈1.61 m separation radius) leaves ≥0.39 m of slack so a
+    // neighbour that drifted up to a 50 ms-clamp frame's worth (~0.22 m at top mob speed) is still inside
+    // the queried block — i.e. the snapshot/live mismatch can't silently drop an in-range neighbour.
+    const _swarm = this.active.length > 64 ? buildSwarmGrid(this.active, 2.0) : null;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       if (!e.alive) { this.active.splice(i, 1); continue; }
@@ -356,28 +457,66 @@ export class EnemyManager {
       let dx = tgt.x - e.pos.x, dz = tgt.z - e.pos.z;
       const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;
 
+      // LINK-PROXIMITY LATCH (crowd-stair fix): a mob ON or NEAR a registered up-link (a stair), with the
+      // player above it, COMMITS to climbing that link — not only the single mob sitting in the exact
+      // link-foot cell (which is all surfaceDirAt's climb flag catches). Without this a dense wave overshoots
+      // the foot onto the lower steps, gets no climb instruction there, and slides back down — so only ~1 of
+      // N tops out (the steppe-era crowd/choke jam). Host-only (this whole update runs under `sim`).
+      if (this._playerUp && !e.def.boss && !(e._climb && e._climbT > 0) && tgt.y > e.pos.y + 1.0) {
+        const L = this._nearUpLink(e.pos.x, e.pos.z, e.pos.y);
+        if (L) { e._climb = { x: L.x1, z: L.z1, y: L.y1 }; e._climbT = 6; }
+      }
+
+      // LATCHED onto a stair/ladder link: COMMIT to physically reaching its top (head straight at the
+      // link's top XZ + let Phase-1 step-up/ladder-climb ascend), ignoring the flow's pull back to the
+      // link foot — that off-mesh-connection traversal is what gets the mob up the stairs.
+      if (e._climb && e._climbT > 0) {
+        e._climbT -= dt;
+        const cxp = e._climb.x - e.pos.x, czp = e._climb.z - e.pos.z, cl = Math.hypot(cxp, czp) || 1;
+        dx = cxp / cl; dz = czp / cl;
+        if (e.pos.y >= e._climb.y - 0.4) { e._climb = null; e._climbT = 0; } // reached the top → release
+      }
       // BOSS TOLO: grid-A* navigation — steer toward the next waypoint so the
       // giant routes AROUND buildings instead of wedging in a corner. Falls back
       // to the direct heading (below) when close or in clear line of sight.
-      if (e.def.boss) { const wp = this._bossWaypoint(e, tgt, dist, dt); if (wp) { const wxp = wp.x - e.pos.x, wzp = wp.z - e.pos.z, wlp = Math.hypot(wxp, wzp) || 1; dx = wxp / wlp; dz = wzp / wlp; } }
-      // HORDE: when the straight line to the target is blocked, steer along the flow-field
+      else if (e.def.boss) { const wp = this._bossWaypoint(e, tgt, dist, dt); if (wp) { const wxp = wp.x - e.pos.x, wzp = wp.z - e.pos.z, wlp = Math.hypot(wxp, wzp) || 1; dx = wxp / wlp; dz = wzp / wlp; } }
+      // HORDE — player UP a structure: steer along the LAYERED surface flow (routes around AND up toward
+      // the player's level). A `climb` step LATCHES the link above so the mob commits to traversing it.
+      else if (this._playerUp && this._surfFlow) {
+        const sd = surfaceDirAt(this._surfFlow, e.pos.x, e.pos.y, e.pos.z);
+        if (sd) { dx = sd.x; dz = sd.z; if (sd.climb) { e._climb = { x: sd.targetX, z: sd.targetZ, y: sd.targetY }; e._climbT = 4; } }
+      }
+      // HORDE — player on the ground: when the straight line is blocked, steer along the 2D flow-field
       // (route around cliffs/walls, funnel through doorways). Open LoS → the beeline above stands.
       else if (this._hordeFlow && this._hordeGrid && lineBlocked(this._hordeGrid, e.pos.x, e.pos.z, tgt.x, tgt.z)) {
         const fd = flowDirAt(this._hordeFlow, e.pos.x, e.pos.z);
         if (fd) { dx = fd.x; dz = fd.z; }
       }
 
-      // separation
+      // separation — neighbours within √2.6 m push the mob apart (keeps the horde from stacking)
       let sx = 0, sz = 0;
-      for (const o of this.active) {
-        if (o === e || !o.alive) continue;
-        const ox = e.pos.x - o.pos.x, oz = e.pos.z - o.pos.z, d2 = ox * ox + oz * oz;
-        if (d2 < 2.6 && d2 > 1e-4) { const inv = 1 / Math.sqrt(d2); sx += ox * inv; sz += oz * inv; }
+      if (_swarm) {
+        eachNeighbor(_swarm, e.pos.x, e.pos.z, (o) => {
+          if (o === e || !o.alive) return;
+          const ox = e.pos.x - o.pos.x, oz = e.pos.z - o.pos.z, d2 = ox * ox + oz * oz;
+          if (d2 < 2.6 && d2 > 1e-4) { const inv = 1 / Math.sqrt(d2); sx += ox * inv; sz += oz * inv; }
+        });
+      } else {
+        for (const o of this.active) {
+          if (o === e || !o.alive) continue;
+          const ox = e.pos.x - o.pos.x, oz = e.pos.z - o.pos.z, d2 = ox * ox + oz * oz;
+          if (d2 < 2.6 && d2 > 1e-4) { const inv = 1 / Math.sqrt(d2); sx += ox * inv; sz += oz * inv; }
+        }
       }
-      // crate avoidance
+      // On a raised surface (stairs/ledge/roof — feet above the terrain) the crate-avoidance turns into a
+      // lateral shove off a wide step face (it pushes radially from the box centre), sliding the mob off
+      // the side. So once climbing, drop avoidance and just beeline up toward the target. (Phase-2 routing
+      // will steer multi-level properly; here it only keeps the locomotion from self-sabotaging.)
+      const _onStruct = (e._climb && e._climbT > 0) || e.pos.y > this.world.groundY(e.pos.x, e.pos.z) + 0.4; // latched-to-a-link OR elevated → no avoidance
+      // crate avoidance — skip surfaces we can step onto (top ≤ feet+STEP_UP) so we don't back off our own stairs.
       let ax = 0, az = 0;
-      for (const b of this.world.grid.queryAABB(e.pos.x - 1.8, e.pos.z - 1.8, e.pos.x + 1.8, e.pos.z + 1.8)) {
-        if (b.max.y < 0.6) continue;
+      for (const b of (_onStruct ? [] : this.world.grid.queryAABB(e.pos.x - 1.8, e.pos.z - 1.8, e.pos.x + 1.8, e.pos.z + 1.8))) {
+        if (b.max.y < 0.6 || b.max.y <= e.pos.y + STEP_UP) continue;
         const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2;
         const rx = e.pos.x - cx, rz = e.pos.z - cz;
         const hx = (b.max.x - b.min.x) / 2 + 1.3, hz = (b.max.z - b.min.z) / 2 + 1.3;
@@ -388,7 +527,13 @@ export class EnemyManager {
       if (dist > e.radius + this.game.player.radius + 0.8 && moved < e.speed * dt * 0.35) e.stuck += dt;
       else e.stuck = Math.max(0, e.stuck - dt * 0.6);
       const beeline = e.stuck > 1.6;
-      const _sepW = e.def.boss ? 0 : 0.6; // Tolo is a giant — small mobs can't shove him off; he beelines for the nearest player
+      // Separation weight: full on open ground; CUT hard ONLY while LATCHED to a climb link, so the
+      // neighbours' repulsion (which on a narrow stair has a big LATERAL component) can't shove a latched
+      // climber off the flight — letting the strong climb heading dominate so the horde ascends as a column.
+      // Keyed on the latch, NOT _onStruct: _onStruct also fires for any mob standing on a box top (groundY
+      // ignores boxes), and those mobs should keep normal spacing instead of stacking.
+      const _sepW = e.def.boss ? 0 : ((e._climb && e._climbT > 0) ? 0.12 : 0.6); // Tolo (boss) is too big to shove → 0
+
       const wx = beeline ? dx : dx + sx * _sepW + ax, wz = beeline ? dz : dz + sz * _sepW + az, wl = Math.hypot(wx, wz) || 1;
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
       const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
@@ -399,7 +544,14 @@ export class EnemyManager {
         e._wireT = (e._wireT || 0) + dt;
         if (e._wireT >= 0.4) { e._wireT = 0; if (this.damage(e, STRUCT_DEFS.wire.dot * 0.4, 'wire')) continue; }
       }
-      e.vel.x = (wx / wl) * spd; e.vel.z = (wz / wl) * spd;
+      // Heading low-pass: damp the smoothed heading (e._hx,e._hz) toward this frame's desired direction so
+      // the residual per-frame snapping (separation jostling, flow↔beeline flips) becomes a smooth turn. The
+      // flow direction itself is already continuous (bilinear flowDirAt); this also covers the rest.
+      const _dhx = wx / wl, _dhz = wz / wl;
+      if (e._hx === undefined) { e._hx = _dhx; e._hz = _dhz; }
+      else { const _k = 1 - Math.exp(-HEADING_LAMBDA * dt); e._hx += (_dhx - e._hx) * _k; e._hz += (_dhz - e._hz) * _k; }
+      const _hl = Math.hypot(e._hx, e._hz) || 1;
+      e.vel.x = (e._hx / _hl) * spd; e.vel.z = (e._hz / _hl) * spd;
       e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
       // Horde slope-limit: don't let mobs scale cliffs (terrain steeper than slopeLimit). Revert the whole
       // step — they bunch at the cliff base and re-steer. Gated on hasTerrain so flat maps are untouched.
@@ -409,23 +561,37 @@ export class EnemyManager {
           e.pos.x = bx; e.pos.z = bz; e.vel.x = 0; e.vel.z = 0;
         }
       }
-      // terrain grounding: sample height every frame so enemies follow hills;
-      // flat maps (hasTerrain = false) keep y=0 — byte-identical to before.
-      e.pos.y = this.world.groundY(e.pos.x, e.pos.z);
       const lim = this.world.HALF - e.radius;
       e.pos.x = clamp(e.pos.x, -lim, lim); e.pos.z = clamp(e.pos.z, -lim, lim);
       e._blockStruct = null;
+      // VERTICAL + box resolution in ONE footprint pass (was: e.pos.y = groundY then horizontal push-out).
+      // A box TOP within step-up (with headroom) is a SURFACE to stand on — stairs/ledges/roofs; anything
+      // taller is a WALL to push out of. Enemies now match the player's STEP_UP; gravity drops them off edges.
+      const reach = e.pos.y + STEP_UP;
+      let supp = this.world.groundY(e.pos.x, e.pos.z); // terrain baseline under the feet
       const _cr = e.radius + 1.5; // query window (radius + slack); whole-cell results over-cover the small push-out
-      for (const b of this.world.grid.queryAABB(e.pos.x - _cr, e.pos.z - _cr, e.pos.x + _cr, e.pos.z + _cr)) {
-        if (b.max.y < 0.6) continue;
+      const _cands = this.world.grid.queryAABB(e.pos.x - _cr, e.pos.z - _cr, e.pos.x + _cr, e.pos.z + _cr);
+      for (const b of _cands) {
         if (e.pos.x + e.radius <= b.min.x || e.pos.x - e.radius >= b.max.x) continue;
         if (e.pos.z + e.radius <= b.min.z || e.pos.z - e.radius >= b.max.z) continue;
+        const top = b.max.y;
+        // SURFACE: a box top within step-up (with head clearance) is something to STAND ON — low steps,
+        // stairs, ledges, roofs. Considered even below 0.6 m so 0.45–0.6 m stairs are climbable.
+        const steppable = !b.struct && top <= reach && this._headClearE(_cands, e, top);
+        if (steppable && top > supp) supp = top;
+        // WALL: too tall to step onto and our feet are below its top → push out (ground clutter <0.6 ignored).
+        if (top < 0.6 || steppable || e.pos.y >= top - 0.05) continue;
         const px = Math.min(b.max.x + e.radius - e.pos.x, e.pos.x - (b.min.x - e.radius));
         const pz = Math.min(b.max.z + e.radius - e.pos.z, e.pos.z - (b.min.z - e.radius));
         if (px < pz) e.pos.x += (e.pos.x < (b.min.x + b.max.x) / 2 ? -px : px);
         else e.pos.z += (e.pos.z < (b.min.z + b.max.z) / 2 ? -pz : pz);
         if (b.struct) e._blockStruct = b._ref; // pushing against a player-built wall
       }
+      // ladder climb (capability — routing onto ladders is Phase 2): inside a zone with the target above → ascend.
+      const _lad = (!e.def.boss && tgt.y > e.pos.y + 0.6) ? this.world.ladderZoneAt(e.pos.x, e.pos.z, e.pos.y, e.height) : null;
+      if (_lad) { e.pos.y = Math.min(e.pos.y + ENEMY_CLIMB * dt, _lad.top); e.vel.y = 0; }
+      else if (e.pos.y <= supp + 0.02) { e.pos.y = supp; e.vel.y = 0; }                              // grounded / step up onto a surface
+      else { e.vel.y -= ENEMY_GRAVITY * dt; e.pos.y += e.vel.y * dt; if (e.pos.y < supp) { e.pos.y = supp; e.vel.y = 0; } } // fall to support
       // heavy enemies crush a blocking structure instantly (no caging the boss) — after the boxes loop so the splice is safe
       if (e._blockStruct && (e.def.boss || (e.def.scale || 1) >= 1.6)) { this.game.build.attackStructure(e._blockStruct, e._blockStruct.maxHp, e); e._blockStruct = null; }
 
@@ -460,7 +626,7 @@ export class EnemyManager {
       if (e.burnT > 0) { e.burnT -= dt; if (Math.random() < 0.16) this.game.effects.firePool(e.pos, 0.45, 0.4); }
       const sq = e.squash > 0 ? 1 - e.squash * 1.6 : 1;
       e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
-      e.mesh.rotation.y = Math.atan2(dx, dz);
+      e.mesh.rotation.y = Math.atan2(e._hx, e._hz); // face the smoothed movement heading (no twitchy snap)
       e.mesh.rotation.z = Math.sin(e.bob) * 0.08;
       e.mesh.scale.set(e.scale, e.scale * sq, e.scale);
 
@@ -900,11 +1066,12 @@ export class EnemyManager {
       this.game.effects.stuffing(top, e.col.body, e.def.boss ? 44 : (e.isElite ? 30 : 16), e.def.boss ? 9 : (e.isElite ? 8 : 6));
       this.game.audio.enemyDie();
       if (e.def.explode) {
-        this.game.effects.explosion(top, e.def.explodeRadius);
-        this.damageInRadius(e.pos, e.def.explodeRadius, e.def.explodeDmg * 1.2, e);
-        this.game.loot.clearPickupsInRadius(e.pos.x, e.pos.z, e.def.explodeRadius); // blast destroys ground items (runs before this kill's onEnemyKilled loot drop below)
-        // Only the triggering kill harms the player; chained (explosion-killed) exploders don't double-dip.
-        if (source !== 'explosion') this.game._explodeHurt(e.pos, e.def.explodeRadius, e.def.explodeDmg);
+        // enemies take 1.2× the blast, players take 1.0× (enemyDmg vs dmg). harmPlayers gated on the
+        // chain guard: only the triggering kill harms the player; chained exploders don't double-dip.
+        // explode()'s clearLoot runs synchronously here — before this kill's onEnemyKilled loot drop
+        // below — so the blast clears existing ground items but the exploder's own drop survives.
+        this.game.explode(top, { radius: e.def.explodeRadius, dmg: e.def.explodeDmg, enemyDmg: e.def.explodeDmg * 1.2,
+          except: e, source: 'explosion', harmPlayers: source !== 'explosion' });
       }
       if (e.def.boss || e.isElite) this.game.hud.hideBoss();
       if (e.def.boss && e._beam) e._beam.visible = false;
@@ -919,11 +1086,11 @@ export class EnemyManager {
     return false;
   }
 
-  damageInRadius(center, radius, dmg, except = null, source = 'explosion') {
+  damageInRadius(center, radius, dmg, except = null, source = 'explosion', attacker = 'host') {
     for (const e of [...this.active]) {
       if (!e.alive || e === except) continue;
       const d = Math.hypot(e.pos.x - center.x, e.pos.z - center.z);
-      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center);
+      if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center, attacker); // attacker forwarded so co-op AoE kills credit the real thrower, not the host
     }
   }
   clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; if (this._bossBlob) this._bossBlob.visible = false; }

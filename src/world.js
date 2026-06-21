@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
 import { SpatialGrid } from './grid.js';
-import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STRUCT_FX_COLOR } from './tuning.js';
+import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STEP_UP, STRUCT_FX_COLOR } from './tuning.js';
 import { skyPhase, isNight, keywordMinute, MINUTES_PER_DAY } from './worldclock.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
@@ -49,6 +49,7 @@ export class World {
     this.scene = game.engine.scene;
     this.HALF = 70;
     this.boxes = [];
+    this._navLinks = [];             // vertical stair links {x0,z0,y0,x1,z1,y1} for the layered horde nav (navgraph.js); _stairs registers them
     this.cullProps = [];             // static decorative meshes eligible for draw-distance culling (Game._cullByDistance)
     this.grid = new SpatialGrid();   // spatial index over `boxes` (built after the map, addBox on runtime adds)
     this.spawns = [];
@@ -81,6 +82,12 @@ export class World {
       const cx = sx + dx * i * stepD, cz = sz + dz * i * stepD, hY = (i + 1) * stepH;
       this._solid(builder, dx !== 0 ? stepD : width, hY, dz !== 0 ? stepD : width, cx, baseY + hY / 2, cz, color, { tint: 0.05 });
     }
+    // Register a vertical nav link (foot ground → last-step top) so the layered horde nav routes mobs
+    // UP the stairs regardless of grid-cell granularity. (Ladders are registered separately by skobTrap.)
+    if (this._navLinks) this._navLinks.push({
+      x0: sx - dx * 0.8, z0: sz - dz * 0.8, y0: baseY,
+      x1: sx + dx * (steps - 1) * stepD, z1: sz + dz * (steps - 1) * stepD, y1: baseY + steps * stepH,
+    });
   }
 
   // Wall along axis 'x' or 'z' centered at (cx,cz), with an optional doorway/window gap { width, height, offset }.
@@ -300,6 +307,7 @@ export class World {
       extent: this.HALF, chunkSize: 64,
       resolutions: [32, 16, 8],   // near LOD 32 = unchanged demo detail; 16/8 kick in by distance
       scene: this.scene,
+      simWorker: this.game.simWorker, // off-thread chunk build (falls back to sync if absent)
     });
     // spawn ring + a couple of loot spots, all sampled onto the terrain surface.
     for (let i = 0; i < 16; i++) {
@@ -429,7 +437,7 @@ export class World {
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
       // step-up: climb low ledges/stairs instead of blocking
       const step = b.max.y - pos.y;
-      if (step > 0.02 && step <= 0.62 && this._headClear(pos, r, h, b.max.y + 0.002, b)) { pos.y = b.max.y + 0.002; continue; }
+      if (step > 0.02 && step <= STEP_UP && this._headClear(pos, r, h, b.max.y + 0.002, b)) { pos.y = b.max.y + 0.002; continue; }
       if (ax === 'x') { if (vel.x > 0) pos.x = b.min.x - r; else if (vel.x < 0) pos.x = b.max.x + r; else pos.x = pos.x < (b.min.x + b.max.x) / 2 ? b.min.x - r : b.max.x + r; vel.x = 0; }
       else { if (vel.z > 0) pos.z = b.min.z - r; else if (vel.z < 0) pos.z = b.max.z + r; else pos.z = pos.z < (b.min.z + b.max.z) / 2 ? b.min.z - r : b.max.z + r; vel.z = 0; }
     }
@@ -439,6 +447,21 @@ export class World {
   // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
   // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
   groundY(x, z) { return this.terrain.terrainHeightAt(x, z); }
+
+  // The ladder zone (скоб-трап) containing a body at (x,z) whose feet are fy / head fy+h, else null.
+  // Mirrors player._onLadder but returns the zone (enemies clamp their climb to zone.top). Zones are
+  // registered by skobTrap() (bunker); maps without ladders leave _ladders undefined → null.
+  ladderZoneAt(x, z, fy, h) {
+    const zones = this._ladders;
+    if (!zones || !zones.length) return null;
+    const hy = fy + h;
+    for (const a of zones) {
+      if (x < a.minX || x > a.maxX || z < a.minZ || z > a.maxZ) continue;
+      if (hy < a.bottom || fy > a.top) continue;
+      return a;
+    }
+    return null;
+  }
 
   // Register a static decorative mesh for draw-distance culling (Game._cullByDistance). Precomputes the
   // mesh's world-space XZ centre ONCE: merged district meshes bake geometry in WORLD coords with
@@ -493,8 +516,13 @@ export class World {
     const terr = this.terrain;
     if ((o.y - terr.terrainHeightAt(o.x, o.z)) < 0) return 0; // origin already underground
     const lim = Math.min(maxT, 300), step = 0.5;
+    if (!(lim > 0)) return null; // guard: a NaN/≤0 maxT would never satisfy `t >= lim` → the unconditional loop below would hang
     let tPrev = 0;
-    for (let t = step; t <= lim; t += step) {
+    // March in `step`-sized samples but ALWAYS sample the endpoint `lim` (clamp each step to it). The old
+    // `for (t = step; t <= lim; …)` skipped everything when lim < step — so a short ray (e.g. a thrown
+    // molotov's `stepLen + radius` ≈ 0.47 m at 60 fps, < step) never tested the surface and tunnelled
+    // straight through hills. Clamping the march to `lim` closes both that gap and the final partial step.
+    for (let t = Math.min(step, lim); ; t = Math.min(t + step, lim)) {
       const above = (o.y + d.y * t) - terr.terrainHeightAt(o.x + d.x * t, o.z + d.z * t);
       if (above <= 0) {
         let lo = tPrev, hi = t;
@@ -505,6 +533,7 @@ export class World {
         }
         return hi;
       }
+      if (t >= lim) break;
       tPrev = t;
     }
     return null;
