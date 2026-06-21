@@ -85,6 +85,9 @@ export const MATERIALS = {
   steel:      { tier: 5, hp: 2000, debris: 'sparks',  sound: 'metal',   fuel: 0  },
   grass:      { tier: 0, hp: 1,    debris: 'splints', sound: 'grass',   fuel: 2  },
   stone:      { tier: 4, hp: 600,  debris: 'rubble',  sound: 'masonry', fuel: 0  },
+  // plaster — soft render skin over masonry (buildgen). tier 1 ⇒ a rifle round (pen 1) chips it;
+  // hp 40 ≈ a few rifle rounds / one shotgun; fuel 0 (never ignites); reuses the 'rubble' burst.
+  plaster:    { tier: 1, hp: 40,   debris: 'rubble',  sound: 'masonry', fuel: 0  },
 };
 
 // APFSDS classifies parts by tier: tier ≤ FRAGILE_MAX_TIER ⇒ FRAGILE (obliterated / spall target);
