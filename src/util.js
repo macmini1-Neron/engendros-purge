@@ -105,12 +105,14 @@ export class MeshBuilder {
     return this;
   }
 
-  // Merge another builder's data in (already in local space).
+  // Merge another builder's data in (already in local space). Uses concat, NOT push(...spread): a big
+  // tree's pos array is ~tens of thousands of floats and `push(...arr)` spreads each element as a call
+  // argument → RangeError past the engine's arg-count cap (~65k). concat takes the array whole, no cap.
   merge(other) {
-    this.pos.push(...other.pos);
-    this.nor.push(...other.nor);
-    this.uv.push(...other.uv);
-    this.col.push(...other.col);
+    this.pos = this.pos.concat(other.pos);
+    this.nor = this.nor.concat(other.nor);
+    this.uv = this.uv.concat(other.uv);
+    this.col = this.col.concat(other.col);
     return this;
   }
 
