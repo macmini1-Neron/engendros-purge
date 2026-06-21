@@ -50,6 +50,37 @@ test('tumble: ballistic chunk lands and settles on the ground', () => {
   assert.ok(t.pos[1] <= 0.3);
 });
 
+// ── Stage B port: makeTumble g (slower collapse) + spin (lazy roll), from the demo lab ──
+
+test('tumble: smaller g ⇒ slower fall — chunk is still higher after the same time', () => {
+  const heavy = makeTumble({ pos: [0, 10, 0], vel: [0, 0, 0], seed: 4 });          // g = 9.81 (default)
+  const slow  = makeTumble({ pos: [0, 10, 0], vel: [0, 0, 0], seed: 4, g: 4.2 });  // slower masonry collapse
+  for (let i = 0; i < 30; i++) { stepBody(heavy, 1 / 60); stepBody(slow, 1 / 60); }
+  assert.ok(slow.pos[1] > heavy.pos[1], `slow-g chunk higher after 0.5 s (slow=${slow.pos[1]}, heavy=${heavy.pos[1]})`);
+});
+
+test('tumble: spin scales rotSpeed; g/spin default to the old behaviour', () => {
+  const dflt = makeTumble({ pos: [0, 3, 0], vel: [1, 1, 0], seed: 8 });
+  const lazy = makeTumble({ pos: [0, 3, 0], vel: [1, 1, 0], seed: 8, spin: 0.5 });
+  assert.ok(Math.abs(lazy.rotSpeed - dflt.rotSpeed * 0.5) < 1e-9, 'spin 0.5 halves rotSpeed');
+  assert.equal(dflt.g, 9.81, 'g defaults to physical gravity (old behaviour)');
+});
+
+test('tumble: floorY rests the chunk ON a raised base, not at world y=0', () => {
+  const onBase = makeTumble({ pos: [0, 6, 0], vel: [0, 0, 0], seed: 5, radius: 0.25, floorY: 3.0 });
+  for (let i = 0; i < 600 && !onBase.settled; i++) stepBody(onBase, 1 / 60);
+  assert.equal(onBase.settled, true);
+  assert.ok(Math.abs(onBase.pos[1] - (3.0 + 0.25)) < 1e-6, `rests at floorY+radius, got ${onBase.pos[1]}`);
+});
+
+test('tumble: same seed + g + spin ⇒ identical trajectory (MP replay determinism)', () => {
+  const a = makeTumble({ pos: [0, 6, 0], vel: [1, 2, -1], seed: 11, g: 4.2, spin: 0.7 });
+  const b = makeTumble({ pos: [0, 6, 0], vel: [1, 2, -1], seed: 11, g: 4.2, spin: 0.7 });
+  for (let i = 0; i < 120; i++) { stepBody(a, 1 / 60); stepBody(b, 1 / 60); }
+  assert.deepEqual(a.pos, b.pos);
+  assert.equal(a.settled, b.settled);
+});
+
 test('hinge: angle frozen after settle (stepBody is a no-op on settled bodies)', () => {
   const h = groundHinge(3);
   for (let i = 0; i < 480; i++) stepBody(h, 1 / 60);

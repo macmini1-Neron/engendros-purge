@@ -1093,6 +1093,22 @@ export class EnemyManager {
       if (d < radius) this.damage(e, dmg * (1 - (d / radius) * 0.6), source, center.clone ? center.clone() : center, attacker); // attacker forwarded so co-op AoE kills credit the real thrower, not the host
     }
   }
+  // #5 environmental crush-kill: bury every LIVE non-boss enemy whose feet sit inside the world AABB
+  // [min,max] — x/z footprint, y reaching up to max[1] (the rubble / hull / tree-top). Reusable by a
+  // building collapse (demobuilding._collapse), a felled tree, or a later tank overrun. Host-authoritative
+  // (damage() already routes co-op, but gate so clients don't recompute); returns the kill count.
+  crushZone(min, max, source = 'crush') {
+    const _mp = this.game.mp; if (_mp && _mp.active && !_mp.isHost) return 0;
+    let n = 0;
+    for (const e of [...this.active]) {
+      if (!e.alive || e.def.boss) continue;               // a guard-post cave-in shouldn't one-shot Tolo
+      if (e.pos.x >= min[0] && e.pos.x <= max[0] && e.pos.z >= min[2] && e.pos.z <= max[2] && e.pos.y <= max[1]) {
+        if (this.damage(e, e.hp + 9999, source, e.pos.clone())) n++;
+      }
+    }
+    return n;
+  }
+
   clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; if (this._bossBlob) this._bossBlob.visible = false; }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }

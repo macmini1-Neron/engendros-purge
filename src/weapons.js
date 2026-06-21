@@ -5,7 +5,7 @@ import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weigh
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
-import { CALIBERS, resolveHit } from './destruct.js';
+import { CALIBERS, FRAGILE_MAX_TIER, MATERIALS, resolveHit } from './destruct.js';
 import { isNight } from './worldclock.js';
 import { makeTextPlateTexture } from './props/operators/round.js';
 import { yawToMils } from './bearing.js';
@@ -1531,27 +1531,7 @@ export class WeaponSystem {
       const dir = fwd.clone();
       dir.x += rr(-spread, spread); dir.y += rr(-spread, spread); dir.z += rr(-spread, spread);
       dir.normalize();
-      const eHit = this.game.enemies.rayHit(muzzle, dir, d.range);
-      const wHit = this.game.world.rayHit(muzzle, dir, d.range);
-      const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(muzzle, dir, d.range) : null;
-      if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
-        this.game.mp.claimPlayerHit(pHit.id, d.dmg * mult * (pHit.head ? 2.0 : 1.0));
-        this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
-      } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
-        const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss — head = body
-        const dmg = d.dmg * mult * (hs ? 2.0 : 1.0);
-        const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
-        this.game.effects.tracer(muzzle, eHit.point, d.accent);
-        if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
-        else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
-      } else if (wHit) {
-        this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
-        if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); } // shoot down fortifications
-        else if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(wHit.box.explodable, d.dmg * mult, wHit.point); this.game.hud.hitmarker(false); } // shoot the FAB-500 → detonate
-        else if (wHit.box && wHit.box.downer) { this._destructHit(wHit, dir, d, mult); } // ?map=demo: destructible building pane/door/brick or forest trunk
-      } else {
-        this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
-      }
+      this._marchPellet(muzzle, dir, d, mult);
     }
     // advance the feed magazine one round per shot (DP-28 pan indexes; full-auto = rapid steps)
     const sm = d.spinMag; if (sm && sm.step && this.magMeshes[this.cur]) this.magMeshes[this.cur]._targetRot += sm.step;
@@ -1562,6 +1542,67 @@ export class WeaponSystem {
     this._recoilStreak = Math.min(this._recoilStreak + 1, 30);
     if (d.boltCycle) { this._boltLock = d.boltCycle; this.game.audio.boltCycle(); }
     this.game.hud.setWeapon(this);
+  }
+
+  // ── #1 pierce-march: one pellet punches THROUGH soft cover into the target behind ──
+  // A round marches along its ray: PENETRABLE soft cover (glass / wood / sheet-metal / foliage —
+  // fragile, tier ≤ FRAGILE_MAX_TIER, and THIS weapon out-pens it) is carved and the ray CONTINUES
+  // past it losing energy per layer; HARD cover (brick+, fortifications, FAB, terrain) and any BODY
+  // (enemy / teammate) STOP it. Replaces the old single-first-hit resolve. Closest-first priority
+  // (player → enemy → world) is preserved exactly; only the soft-cover "continue" is new.
+  _marchPellet(muzzle, dir, d, mult) {
+    const SOFT_BUDGET = 3, SOFT_FALLOFF = 0.82;           // ≤3 energy-sapping soft layers; bullets keep most energy
+    let dmg = d.dmg * mult, soft = 0;
+    const ignored = [];                                   // soft cover already carved this pellet — never re-hit it
+    // Ray ORIGIN stays at the muzzle; carved soft boxes are excluded from each pass via world.rayHit's
+    // `ignore` arg. That way a THICK soft object (a tree trunk) is hit exactly once — no crawling the
+    // ray forward 6 cm at a time (which used to re-damage a fat trunk every pass) and no per-pass alloc.
+    for (let guard = 0; guard < 12; guard++) {            // backstop: ignored[] grows each pass, so this always ends
+      const eHit = this.game.enemies.rayHit(muzzle, dir, d.range);
+      const wHit = this.game.world.rayHit(muzzle, dir, d.range, ignored.length ? ignored : null);
+      const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(muzzle, dir, d.range) : null;
+      if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
+        this.game.mp.claimPlayerHit(pHit.id, dmg * (pHit.head ? 2.0 : 1.0));
+        this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
+        return;
+      }
+      if (eHit && (!wHit || eHit.dist <= wHit.dist)) {     // a body always stops the round
+        const hs = eHit.head && !eHit.enemy.def.boss;      // no headshot cheese on the boss — head = body
+        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), 'gun', eHit.point);
+        this.game.effects.tracer(muzzle, eHit.point, d.accent);
+        if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
+        else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
+        return;
+      }
+      if (wHit) {
+        const box = wHit.box;
+        if (box && box.downer && soft < SOFT_BUDGET && this._softPenetrable(box, d)) {
+          this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));   // carve soft cover with the marched (decayed) energy
+          ignored.push(box);                                     // exclude it from the next pass (hit each cover once)
+          if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }   // glass is a free pass (like APFSDS); wood/metal sap energy
+          if (dmg < 2) { this.game.effects.tracer(muzzle, wHit.point, d.accent); return; }   // round spent inside the cover
+          continue;
+        }
+        // hard world hit — original handling, then STOP
+        this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
+        if (box && box.struct && box._ref) { this.game.build.playerDamage(box._ref, dmg); this.game.hud.hitmarker(false); }       // fortifications
+        else if (box && box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(box.explodable, dmg, wHit.point); this.game.hud.hitmarker(false); } // FAB-500
+        else if (box && box.downer) { this._destructHit(wHit, dir, d, dmg / (d.dmg || 1)); }   // hard destructible (brick cell / wall)
+        return;
+      }
+      break;                                              // nothing left on the ray
+    }
+    this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);   // spent / edge round → range end
+  }
+
+  // A world box is soft cover a round punches THROUGH (vs stops at): a destructible whose material is
+  // fragile (tier ≤ FRAGILE_MAX_TIER — glass/wood/sheet-metal/foliage) AND which THIS weapon out-pens.
+  // Brick+ cells, fortifications, FABs and terrain are never soft, so they stop the round.
+  _softPenetrable(box, d) {
+    if (!box.downer || box.struct || box.explodable) return false;
+    const m = MATERIALS[box.dmat]; if (!m) return false;
+    const pen = PEN_BY_CLASS[d.class] ?? 0;
+    return m.tier <= FRAGILE_MAX_TIER && pen >= m.tier;
   }
 
   // ── ?map=demo destruction routing (Phase 9 keystone) ───────────────────────────

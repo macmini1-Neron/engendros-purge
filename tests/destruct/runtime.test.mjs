@@ -48,7 +48,20 @@ test('applyPenetration: APFSDS obliterates a fence on the ray and spalls an offs
   assert.ok(res.cones.length >= 1);
 });
 
-test('applyCrush is an inert stub for now (returns [])', () => {
+test('applyCrush is a live (but dormant) capability — crushes soft parts in its AABB, returns the verdict', () => {
   const { rt } = mkRT();
-  assert.deepEqual(rt.applyCrush({ min: [0, 0, 0], max: [1, 1, 1] }, { crushPower: 2 }, 0.016), []);
+  const fence = rt.addPart(makePart('fence', 'wood', [0, 0, 0], [1.5, 1.2, 0.1]));
+  // a tank (crushTier 4) drives its AABB into the wood fence → not blocked, fence crushed
+  const r = rt.applyCrush({ min: [-0.3, 0, -0.3], max: [1.8, 1.5, 0.4] }, { crushTier: 4 });
+  assert.equal(r.blocked, false);
+  assert.deepEqual(r.crushed, ['fence']);
+  assert.equal(fence.dead, true);
+});
+
+test('applyCrush: a hard wall above the crushTier BLOCKS the vehicle and destroys nothing', () => {
+  const { rt } = mkRT();
+  const wall = rt.addPart(makePart('wall', 'concrete', [0, 0, 0], [2, 2.5, 0.4]));   // tier 4
+  const r = rt.applyCrush({ min: [-0.3, 0, -0.3], max: [2.3, 2.5, 0.5] }, { crushTier: 2 });  // light vehicle
+  assert.equal(r.blocked, true);
+  assert.equal(wall.dead, false);
 });

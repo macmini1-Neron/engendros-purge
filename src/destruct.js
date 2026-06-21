@@ -14,7 +14,8 @@
 // WIRED: DestructRuntime drives the demo BUILDING destructibles — instantiated in demobuilding.js,
 // installed via game.js, and called from weapons.js combat (applyHit/applyBlast/applyPenetration).
 // Forest props deliberately call the lower-level resolve*/makePart directly (mirroring the tree
-// path) rather than going through DestructRuntime. Only applyCrush (below) remains an inert stub.
+// path) rather than going through DestructRuntime. applyCrush is now a live (but DORMANT) capability
+// — resolveCrush + DemoBuilding.applyCrush exist + are tested; no drivable vehicle wires them yet.
 
 // ───────────────────────────────────────────────────────────────────────────
 // 1. Geometry helpers (pure AABB/ray on plain [x,y,z] arrays). From geom.js.
@@ -85,6 +86,11 @@ export const MATERIALS = {
   steel:      { tier: 5, hp: 2000, debris: 'sparks',  sound: 'metal',   fuel: 0  },
   grass:      { tier: 0, hp: 1,    debris: 'splints', sound: 'grass',   fuel: 2  },
   stone:      { tier: 4, hp: 600,  debris: 'rubble',  sound: 'masonry', fuel: 0  },
+  // железобетон (reinforced concrete) — bunker armour ABOVE the whole caliber roster: HE blast.tier ≤4
+  // and APFSDS pen 5 both fall short of tier 6, so nothing in CALIBERS removes it (resolveHit ⇒ cosmetic,
+  // resolveBlast ⇒ skipped; APFSDS only ever HOLES a structural wall, never deletes it). To crack it,
+  // ADD a pen ≥6 / blast.tier ≥6 caliber — the scalability hook. Ported from the demo lab (matrix.js).
+  reinforcedConcrete: { tier: 6, hp: 6000, debris: 'rubble', sound: 'masonry', fuel: 0 },
 };
 
 // APFSDS classifies parts by tier: tier ≤ FRAGILE_MAX_TIER ⇒ FRAGILE (obliterated / spall target);
@@ -103,6 +109,9 @@ export const CALIBERS = {
   heRocket: { key: 'heRocket', pen: 4, dmg: 500, blast: { r1: 2.5, r2: 6, tier: 3 } },
   apfsds:   { key: 'apfsds',   pen: 5, dmg: 900, through: { maxWalls: 4, falloff: 0.6 },
               spall: { range: 6, halfAngle: 0.5 } },
+  he152:    { key: 'he152',    pen: 5, dmg: 2000, blast: { r1: 4.5, r2: 11, tier: 4 } },  // 152 mm ОФ — a
+              // heavier shell: ~3× the breach radius of heRocket and cracks CONCRETE/stone (tier 4) too,
+              // but still NOT reinforcedConcrete (tier 6). The scalability demo — bigger caliber wrecks more.
 };
 
 // ── Part-metadata contract ───────────────────────────────────────────────────
@@ -118,6 +127,33 @@ export const CALIBERS = {
 export function makePart(id, mat, min, max, hpScale = 1) {
   if (!MATERIALS[mat]) throw new Error(`unknown material: ${mat}`);
   return { dpart: id, dmat: mat, dhp: MATERIALS[mat].hp * hpScale, min, max, downer: null, dead: false };
+}
+
+// Orphan-support flood for voxel collapse (#6). `cells` = destructible CELLS, each carrying
+//   { dpart, dead, grounded, adj:[dpart...] } — grounded cells rest on the foundation (support
+// roots); adj is the precomputed 4-neighbour id list. Floods "supported" out from every live
+// grounded cell through live neighbours, then returns the ids of still-LIVE cells with NO alive
+// path back to the ground — they've lost support and should cave. Pure + deterministic (no RNG):
+// removing them all in one pass IS the full single-event cascade (grounded is static, so killing
+// orphans can't ground anything new). Lateral links mean a single knocked-out base cell arches
+// over (no collapse); cutting a whole base row drops everything above it.
+export function orphanedCells(cells) {
+  const byId = new Map();
+  for (const c of cells) byId.set(c.dpart, c);
+  const supported = new Set();
+  const stack = [];
+  for (const c of cells) if (!c.dead && c.grounded) { supported.add(c.dpart); stack.push(c); }
+  while (stack.length) {
+    const c = stack.pop();
+    for (const nid of c.adj) {
+      if (supported.has(nid)) continue;
+      const n = byId.get(nid);
+      if (n && !n.dead) { supported.add(nid); stack.push(n); }
+    }
+  }
+  const orphans = [];
+  for (const c of cells) if (!c.dead && !supported.has(c.dpart)) orphans.push(c.dpart);
+  return orphans;
 }
 
 // Hitscan rule: pen < tier ⇒ cosmetic (decal/chip, no hp). Else damage; killed at hp ≤ 0.
@@ -199,6 +235,34 @@ export function resolvePenetration(parts, origin, dir, weapon) {
   return { hits, cones };
 }
 
+// AABB-vs-AABB overlap on plain [x,y,z] arrays (inclusive). Used by the vehicle-crush query.
+export function aabbOverlap(amin, amax, bmin, bmax) {
+  return amin[0] <= bmax[0] && amax[0] >= bmin[0] &&
+         amin[1] <= bmax[1] && amax[1] >= bmin[1] &&
+         amin[2] <= bmax[2] && amax[2] >= bmin[2];
+}
+
+// Vehicle crush query (pure; the runtime/owner applies the result). A vehicle pressing its world
+// AABB into a set of destructible parts, with crushTier = its crushing power:
+//   • a part of tier ≤ crushTier overlapping the AABB is CRUSHED (shoved out of the way) + adds drag;
+//   • any overlapping part of tier > crushTier is HARD → the vehicle is BLOCKED (can't shove through);
+//   • glass always shatters (free) and never blocks.
+// Returns { blocked, crushed:[dpart], hard:[dpart], drag(0..1) }. Scales by data: a T-62 (crushTier 4)
+// flattens brick (3) but stops at reinforcedConcrete (6); a car (crushTier 1) can't even crush brick.
+export function resolveCrush(parts, aabb, crushTier) {
+  const crushed = [], hard = [];
+  for (const p of parts) {
+    if (p.dead) continue;
+    if (!aabbOverlap(aabb.min, aabb.max, p.min, p.max)) continue;
+    if (p.dmat === 'glass') { crushed.push(p.dpart); continue; }      // panes shatter, never block
+    if (MATERIALS[p.dmat].tier <= crushTier) crushed.push(p.dpart);
+    else hard.push(p.dpart);
+  }
+  const blocked = hard.length > 0;
+  const drag = blocked ? 1 : Math.min(0.85, crushed.length * 0.12);   // resistance shoving through soft mass
+  return { blocked, crushed, hard, drag };
+}
+
 // Is point p inside the spall cone?
 export function coneContains(cone, p) {
   const v = [p[0] - cone.apex[0], p[1] - cone.apex[1], p[2] - cone.apex[2]];
@@ -247,14 +311,20 @@ export function makeHinge({ pivot, dirXZ, length, radius, seed = 1, obstacles = 
   };
 }
 
-// Ballistic tumbling chunk (HE hero debris). pos/vel = [x,y,z].
-export function makeTumble({ pos, vel, seed = 1, radius = 0.15 }) {
+// Ballistic tumbling chunk (HE hero debris / collapsing masonry). pos/vel = [x,y,z].
+//   g      overrides gravity (default 9.81 = physical). Pass a smaller value (e.g. FALL_G ≈ 4.2) for
+//          a slower, weightier collapse — heavy masonry settling reads better slowed down (owner ask).
+//   spin   scales the tumble rate (1 = default; < 1 = a heavy, lazy roll).
+//   floorY rest plane (default 0 = world ground). Pass the building's base so collapse rubble piles
+//          ON the foundation instead of sinking to world y=0 when the structure sits up on terrain.
+// All three default to the previous behaviour, so the lone existing caller path is byte-identical.
+export function makeTumble({ pos, vel, seed = 1, radius = 0.15, g = G, spin = 1, floorY = 0 }) {
   const rng = mulberry32(seed);
   const ax = [rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1];
   const n = Math.hypot(...ax) || 1;
   return {
-    kind: 'tumble', pos: [...pos], vel: [...vel],
-    rotAxis: ax.map(v => v / n), rotAngle: 0, rotSpeed: 2 + rng() * 6,
+    kind: 'tumble', pos: [...pos], vel: [...vel], g, floorY,
+    rotAxis: ax.map(v => v / n), rotAngle: 0, rotSpeed: (2 + rng() * 6) * spin,
     bounces: 0, settled: false, acc: 0, radius,
   };
 }
@@ -298,11 +368,12 @@ function subHinge(b) {
 }
 
 function subTumble(b) {
-  b.vel[1] -= G * SUBSTEP;
+  b.vel[1] -= (b.g ?? G) * SUBSTEP;   // per-body gravity (makeTumble always sets b.g; ?? guards legacy bodies)
   for (let i = 0; i < 3; i++) b.pos[i] += b.vel[i] * SUBSTEP;
   b.rotAngle += b.rotSpeed * SUBSTEP;
-  if (b.pos[1] <= b.radius) {
-    b.pos[1] = b.radius;
+  const floor = (b.floorY ?? 0) + b.radius;             // rest ON the building base, not world y=0
+  if (b.pos[1] <= floor) {
+    b.pos[1] = floor;
     if (Math.abs(b.vel[1]) < 1.0 || b.bounces >= MAX_BOUNCES) {
       b.settled = true; b.vel = [0, 0, 0]; b.rotSpeed = 0; return;
     }
@@ -390,11 +461,15 @@ export class DestructRuntime {
     return res;
   }
 
-  // Vehicle crush (T-62 driving over crush-class vegetation). STUB — wired when the tank lands.
-  // Intended: query parts overlapping `aabb`, fell/snap crush-class ≤ vehicleDef.crushPower
-  // over `dt` of contact, emit a 'crush' event + spawn a FallingBody for class-2/3 trunks.
-  applyCrush(aabb, vehicleDef, dt) {
-    return [];   // intentionally inert until tank mobility phase
+  // Vehicle crush at the RUNTIME (parts-only) level — pure resolveCrush + kill, no fallers/collision.
+  // The building-level path with cave-in + collision + co-op is DemoBuilding.applyCrush (the one a
+  // drivable vehicle would call). Dormant: no drivable vehicle wires either yet (tanks/cars are on
+  // other branches), but the capability is live + tested. Returns { blocked, drag, crushed:[dpart] }.
+  applyCrush(aabb, vehicleDef = {}) {
+    const res = resolveCrush(this.parts, aabb, vehicleDef.crushTier ?? 3);
+    if (!res.blocked) for (const id of res.crushed) { const p = this._byId(id); if (p && !p.dead) { p.dead = true; this._kill(p, aabbCenter(p.min, p.max)); } }
+    this.emit({ type: 'crush', aabb, ...res });
+    return { blocked: res.blocked, drag: res.drag, crushed: res.crushed };
   }
 
   _kill(part, at) {

@@ -167,3 +167,47 @@ test('MATERIALS.sound buckets match the spec mapping', () => {
   assert.equal(MATERIALS.steel.sound, 'metal');
   assert.equal(MATERIALS.stone.sound, 'masonry');
 });
+
+// ── Stage A port: reinforcedConcrete (железобетон) + he152 (152 mm ОФ) from the demo lab ──
+
+test('reinforcedConcrete is tier 6 — above the whole caliber roster — and never ignites', () => {
+  const rc = MATERIALS.reinforcedConcrete;
+  assert.ok(rc, 'reinforcedConcrete material is defined');
+  assert.equal(rc.tier, 6);
+  assert.equal(rc.hp, 6000);
+  assert.equal(rc.debris, 'rubble');
+  assert.equal(rc.sound, 'masonry');
+  assert.equal(rc.fuel, 0);
+});
+
+test('APFSDS (pen 5) only CHIPS reinforcedConcrete on a direct hit — tier 6 > pen 5, no HP loss', () => {
+  const p = makePart('rc1', 'reinforcedConcrete', [0, 0, 0], [1, 2.5, 0.5]);
+  const r = resolveHit(p, CALIBERS.apfsds);
+  assert.equal(r.effect, 'cosmetic');
+  assert.equal(p.dead, false);
+  assert.equal(p.dhp, MATERIALS.reinforcedConcrete.hp);
+});
+
+test('no blast in the roster removes reinforcedConcrete (heRocket tier 3 + he152 tier 4 both < tier 6)', () => {
+  const p1 = makePart('rc2', 'reinforcedConcrete', [0, 0, 0], [1, 2.5, 0.5]);
+  assert.equal(resolveBlast([p1], [0.5, 1, 0.25], CALIBERS.heRocket.blast).killed.length, 0);
+  const p2 = makePart('rc3', 'reinforcedConcrete', [0, 0, 0], [1, 2.5, 0.5]);
+  assert.equal(resolveBlast([p2], [0.5, 1, 0.25], CALIBERS.he152.blast).killed.length, 0);
+  assert.equal(p1.dead, false);
+  assert.equal(p2.dead, false);
+});
+
+test('he152: heavier 152 mm shell — bigger radius than heRocket, cracks concrete (tier 4) but not железобетон', () => {
+  const w = CALIBERS.he152;
+  assert.equal(w.pen, 5);
+  assert.equal(w.dmg, 2000);
+  assert.equal(w.blast.tier, 4);
+  assert.ok(w.blast.r1 > CALIBERS.heRocket.blast.r1, 'he152 breach radius exceeds heRocket');
+  assert.ok(w.blast.r2 > CALIBERS.heRocket.blast.r2);
+  // tier-4 blast DOES remove concrete…
+  const conc = makePart('c1', 'concrete', [0, 0, 0], [1.5, 2.5, 0.3]);
+  assert.deepEqual(resolveBlast([conc], [0.7, 1, 0.15], w.blast).killed, ['c1']);
+  // …but NOT reinforcedConcrete (tier 6)
+  const rc = makePart('rc4', 'reinforcedConcrete', [0, 0, 0], [1.5, 2.5, 0.3]);
+  assert.equal(resolveBlast([rc], [0.7, 1, 0.15], w.blast).killed.length, 0);
+});

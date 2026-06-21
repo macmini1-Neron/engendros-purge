@@ -40,7 +40,7 @@
 
 import * as THREE from 'three';
 import { MeshBuilder, TAU, voxelMaterial } from './util.js';
-import { DestructRuntime, makePart, MATERIALS } from './destruct.js';
+import { DestructRuntime, makePart, MATERIALS, orphanedCells, makeTumble, stepBody, resolveCrush } from './destruct.js';
 import { DebrisPool } from './destruct-debris.js';
 import { placeProp, hasModel } from './props/registry.js';
 import { getSpec } from './props/registry-core.js';
@@ -69,6 +69,10 @@ const H  = 3.2;                  // roof underside
 const SILL = 1.05, HEAD = 2.10;  // window opening (glass occupies SILL→HEAD)
 const DOORH = 2.15;              // door head
 const SEG_TARGET = 1.7;          // target breach-segment width
+const CELL = 0.5;                // voxel cell size — destructible brick segments dice into CELL cells
+                                 // (fine holes + orphan-collapse), reusing the part/box/rebuild pipeline
+const FALL_G = 4.2;              // collapse fallers fall slower/heavier than physical 9.81 (owner: weightier feel)
+const FALLER_CAP = 64;           // max simultaneous tumbling collapse chunks (ONE InstancedMesh draw call)
 
 export class DemoBuilding {
   constructor(game) {
@@ -76,7 +80,8 @@ export class DemoBuilding {
     this.world = game.world;
     this.scene = this.world.scene;
 
-    this.parts = [];                 // destructible part-metadata (brick segs / wood door / glass panes)
+    this.parts = [];                 // destructible part-metadata (brick cells / wood door / glass panes)
+    this.cells = [];                 // brick-wall CELLS subset of parts (carry .grounded/.adj for collapse)
     this._opaque = [];               // ALL opaque geometry descriptors (static + destructible) for the lazy-split merge
     this._boxById = new Map();       // dpart → linked world collision box (for removal on death)
     this._staticBoxes = [];          // plain collision boxes that never die
@@ -89,7 +94,17 @@ export class DemoBuilding {
 
     this.debris = new DebrisPool(this.scene);
 
-    try { this._place(); this._build(); this._navTestbed(); this.rebuild(); this.placed = true; }
+    // collapse fallers: slow tumbling cell-chunks (#6) — ONE InstancedMesh draw call, capped + recycled.
+    this._fallers = []; this._fallerColor = new THREE.Color(); this._fallerDummy = new THREE.Object3D();
+    this._fallerAxis = new THREE.Vector3();
+    this._fallerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), voxelMaterial(), FALLER_CAP);
+    this._fallerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this._fallerMesh.frustumCulled = false; this._fallerMesh.castShadow = false;
+    for (let i = 0; i < FALLER_CAP; i++) { this._fallerMesh.setColorAt(i, this._fallerColor.set(0x6e4334)); this._stashFaller(i); }
+    this._fallerFree = Array.from({ length: FALLER_CAP }, (_, i) => i);
+    this.scene.add(this._fallerMesh);
+
+    try { this._place(); this._build(); this._wireCells(); this._navTestbed(); this.rebuild(); this.placed = true; }
     catch (e) { console.warn('[demobuilding] build failed — continuing without building', e); }
 
     // NB: build the runtime AFTER _build() — DestructRuntime snapshots its parts list with
@@ -285,8 +300,8 @@ export class DemoBuilding {
         // grab the FIRST window sill as the resting spot for the «Электроника» desk clock
         if (!this._clockXf) this._clockXf = this._sillSpot(axis, fixed, ac);
       } else {
-        // BREACH SEGMENT: full-height destructible brick (HE removes → walkable hole)
-        this._destruct(axis, fixed, ac, w, bY + WB, bY + WT, 'brick', BR.mid);
+        // BREACH SEGMENT: full-height destructible brick, DICED into voxel cells (fine holes + collapse)
+        this._destructGrid(axis, fixed, ac, w, bY + WB, bY + WT, 'brick');
       }
     }
   }
@@ -323,6 +338,50 @@ export class DemoBuilding {
     this._pushBox(dm.cx, cy, dm.cz, dm.w, h, dm.d, this, id, mat);
   }
 
+  // Dice a destructible brick wall segment into a GRID of voxel CELLS (fine holes + orphan-collapse).
+  // Each cell is a full destruct part + linked collision box + merged-opaque descriptor — so the
+  // existing parts/box/lazy-rebuild pipeline gives finer destruction for FREE (more, smaller parts).
+  // Brick columns always alternate with windows (see _wall), so every segment is an ISOLATED column:
+  // adjacency + collapse stay WITHIN the segment (cell.seg), no cross-segment support graph needed.
+  _destructGrid(axis, fixed, ac, al, y0, y1, mat) {
+    const seg = (this._nextSeg = (this._nextSeg | 0) + 1);
+    const ncx = Math.max(1, Math.round(al / CELL));
+    const ncy = Math.max(2, Math.round((y1 - y0) / CELL));
+    const cw = al / ncx, ch = (y1 - y0) / ncy;
+    for (let gi = 0; gi < ncx; gi++) {
+      const cac = ac - al / 2 + (gi + 0.5) * cw;          // cell along-axis centre
+      for (let gj = 0; gj < ncy; gj++) {
+        const cy0 = y0 + gj * ch, cy = cy0 + ch / 2, dm = this._dims(axis, fixed, cac, cw - 0.01);
+        const id = this._id();
+        const min = [dm.cx - dm.w / 2, cy0, dm.cz - dm.d / 2];
+        const max = [dm.cx + dm.w / 2, cy0 + ch, dm.cz + dm.d / 2];
+        const part = makePart(id, mat, min, max, 0.25);   // a CELL soaks ~1/4 of a full brick segment
+        part.downer = this;
+        part.seg = seg; part.gi = gi; part.gj = gj;
+        part.grounded = (gj === 0);                       // bottom row rests on the plinth (support root)
+        part.adj = [];                                    // filled by _wireCells()
+        this.parts.push(part); this.cells.push(part);
+        const col = gj === ncy - 1 ? BR.hi : (gj === 0 ? BR.lo : BR.mid);  // layered shade by row band
+        const o = { kind: mat, cell: true, w: dm.w, h: ch, d: dm.d, cx: dm.cx, cy, cz: dm.cz, color: col, part };
+        this._opaque.push(o); part.o = o;                 // link cell→geometry so a faller can read its size/colour
+        this._pushBox(dm.cx, cy, dm.cz, dm.w, ch, dm.d, this, id, mat);
+      }
+    }
+  }
+
+  // Wire 4-neighbour adjacency within each brick segment so orphanedCells() can flood support up
+  // from the grounded (bottom) row. Called once after _build(), before the first rebuild.
+  _wireCells() {
+    const byKey = new Map();
+    for (const c of this.cells) byKey.set(`${c.seg}:${c.gi}:${c.gj}`, c);
+    for (const c of this.cells) {
+      for (const [dgi, dgj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = byKey.get(`${c.seg}:${c.gi + dgi}:${c.gj + dgj}`);
+        if (n) c.adj.push(n.dpart);
+      }
+    }
+  }
+
   // A destructible GLASS pane: its OWN transparent mesh + destruct part + linked box.
   _pane(axis, fixed, ac, al, y0, y1) {
     const h = y1 - y0, cy = (y0 + y1) / 2;
@@ -352,22 +411,89 @@ export class DemoBuilding {
     return box;
   }
 
+  // ── collapse fallers (#6): slow tumbling cell-chunks, one InstancedMesh ─────────
+  _stashFaller(i) {
+    this._fallerDummy.position.set(0, -999, 0); this._fallerDummy.quaternion.set(0, 0, 0, 1);
+    this._fallerDummy.scale.setScalar(0.0001); this._fallerDummy.updateMatrix();
+    this._fallerMesh.setMatrixAt(i, this._fallerDummy.matrix);
+  }
+
+  // Launch a slow tumbling chunk from a collapsed cell (VISUAL only; co-op safe — see _collapse).
+  // dir (optional [x,y,z]) leans the topple that way (e.g. a blast/penetration push direction).
+  _spawnFaller(part, dir) {
+    const o = part.o; if (!o || !this._fallerFree.length) return;   // cap reached ⇒ drop silently (perf guard)
+    const i = this._fallerFree.pop();
+    const seed = (part.dpart * 2654435761) >>> 0;
+    const dl = dir ? Math.hypot(dir[0], dir[2]) || 1 : 1, dx = dir ? dir[0] / dl : 0, dz = dir ? dir[2] / dl : 0;
+    const jx = (((seed >> 3) & 7) - 3.5) * 0.12, jz = (((seed >> 6) & 7) - 3.5) * 0.12;   // seeded lateral jitter
+    const body = makeTumble({ pos: [o.cx, o.cy, o.cz], vel: [dx * 0.8 + jx, 0.4, dz * 0.8 + jz],
+      seed, radius: Math.max(o.w, o.h, o.d) * 0.5, g: FALL_G, spin: 0.6, floorY: this.baseY });
+    this._fallerMesh.setColorAt(i, this._fallerColor.set(o.color));
+    if (this._fallerMesh.instanceColor) this._fallerMesh.instanceColor.needsUpdate = true;
+    this._fallers.push({ body, i, size: [o.w, o.h, o.d], linger: 0 });
+  }
+
+  _updateFallers(dt) {
+    if (!this._fallers.length) return;
+    const D = this._fallerDummy;
+    for (let k = this._fallers.length - 1; k >= 0; k--) {
+      const f = this._fallers[k];
+      stepBody(f.body, dt);
+      if (f.body.settled && (f.linger += dt) > 5) {       // hold as rubble a few s, then recycle the slot
+        this._stashFaller(f.i); this._fallerFree.push(f.i); this._fallers.splice(k, 1); continue;
+      }
+      const p = f.body.pos;
+      D.position.set(p[0], p[1], p[2]);
+      D.quaternion.setFromAxisAngle(this._fallerAxis.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]), f.body.rotAngle);
+      D.scale.set(f.size[0], f.size[1], f.size[2]); D.updateMatrix();
+      this._fallerMesh.setMatrixAt(f.i, D.matrix);
+    }
+    this._fallerMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // Cascade: every cell that lost its support path to the ground caves in as a slow faller (#6).
+  // Marks the orphans dead (the caller's _refresh retires their boxes + rebuilds the merged mesh)
+  // and returns the collapsed ids. One orphanedCells() flood is the FULL single-event cascade.
+  _collapse(dir) {
+    if (!this.cells.length) return [];
+    const orphanIds = orphanedCells(this.cells);
+    if (!orphanIds.length) return [];
+    let mnx = Infinity, mnz = Infinity, mxx = -Infinity, mxz = -Infinity, mxy = -Infinity;
+    for (const id of orphanIds) {
+      const part = this._partById(id);
+      if (!part || part.dead) continue;
+      part.dead = true;
+      this._spawnFaller(part, dir);
+      if (part.min[0] < mnx) mnx = part.min[0]; if (part.min[2] < mnz) mnz = part.min[2];
+      if (part.max[0] > mxx) mxx = part.max[0]; if (part.max[2] > mxz) mxz = part.max[2];
+      if (part.max[1] > mxy) mxy = part.max[1];
+    }
+    // #5 environmental kill: bury anything standing under the cave-in footprint (host-auth in crushZone).
+    // Inflate the thin wall footprint by SPREAD so rubble also catches a mob hugging the breached wall.
+    if (mxy > -Infinity && this.game.enemies && this.game.enemies.crushZone) {
+      const SPREAD = 0.7;
+      this.game.enemies.crushZone([mnx - SPREAD, this.baseY, mnz - SPREAD], [mxx + SPREAD, mxy, mxz + SPREAD], 'collapse');
+    }
+    return orphanIds;
+  }
+
   // ── lazy-split rebuild: ONE merged opaque mesh minus the dead parts (+ rubble) ──
   rebuild() {
     const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     if (this.merged) { this.group.remove(this.merged); this.merged.geometry.dispose(); }
     const mb = new MeshBuilder();
     for (const o of this._opaque) {
-      if (o.part && o.part.dead) continue;               // skip destroyed brick/wood
+      if (o.part && o.part.dead) continue;               // skip destroyed cell / door
       mb.box(o.w, o.h, o.d, o.cx, o.cy, o.cz, o.color);
-      if (o.kind === 'brick' || o.kind === 'wood') {     // layered-shading accents
+      if (!o.cell && (o.kind === 'brick' || o.kind === 'wood')) {  // segment-scale layered accents (door)
         mb.box(o.w, 0.08, o.d + 0.02, o.cx, o.cy + o.h / 2 - 0.04, o.cz, o.kind === 'wood' ? WD.hi : BR.hi);
         mb.box(o.w, 0.10, o.d + 0.01, o.cx, o.cy - o.h / 2 + 0.05, o.cz, o.kind === 'wood' ? WD.lo : BR.lo);
       }
     }
-    // rubble stubs at the base of every removed brick wall segment (breach reads as a hole)
+    // rubble stubs at the base of any removed SEGMENT-scale brick (cells leave clean voxel holes +
+    // collapse fallers instead, so this only fires for non-cell brick if any is ever added back)
     for (const o of this._opaque) {
-      if (o.kind !== 'brick' || !o.part || !o.part.dead) continue;
+      if (o.cell || o.kind !== 'brick' || !o.part || !o.part.dead) continue;
       mb.box(Math.min(1.2, o.w), 0.28, Math.max(0.5, o.d), o.cx, this.baseY + 0.14, o.cz, RUBBLE_A);
       mb.box(0.6, 0.2, 0.5, o.cx + 0.3, this.baseY + 0.32, o.cz + 0.1, RUBBLE_B);
     }
@@ -384,6 +510,7 @@ export class DemoBuilding {
   _refresh() {
     let opaqueDied = false;
     const newlyDead = [];
+    let dx = 0, dy = 0, dz = 0, dn = 0;                   // centroid of newly-dead opaque parts → dust puff
     for (const part of this.parts) {
       if (!part.dead || this._removed.has(part.dpart)) continue;
       this._removed.add(part.dpart);
@@ -391,21 +518,47 @@ export class DemoBuilding {
       const box = this._boxById.get(part.dpart);
       if (box) { this.world.grid.removeBox(box); const i = this.world.boxes.indexOf(box); if (i >= 0) this.world.boxes.splice(i, 1); this._boxById.delete(part.dpart); }
       if (part.glass && part.paneMesh) { this.group.remove(part.paneMesh); part.paneMesh.geometry.dispose(); part.paneMesh.material.dispose(); part.paneMesh = null; }
-      else opaqueDied = true;
+      else { opaqueDied = true; const c = this._partCentre(part); dx += c[0]; dy += c[1]; dz += c[2]; dn++; }
     }
-    if (opaqueDied) this.rebuild();
+    if (opaqueDied) { this.rebuild(); if (dn) this._dustPuff([dx / dn, dy / dn, dz / dn], dn); }
     else this.lastRebuildMs = 0;   // glass-only event: nothing to merge
     return newlyDead;
+  }
+
+  // A masonry dust cloud at a breach (juice). Scales with how much came down. Reuses the shared
+  // effects.js particle pool — NO second particle system (keeps the no-lag bar; owner decision D5).
+  _dustPuff(centre, n) {
+    const fx = this.game.effects; if (!fx || !fx.contrailPuff) return;
+    const puffs = Math.min(6, 1 + (n >> 1));
+    const v = this._dustV || (this._dustV = new THREE.Vector3());
+    for (let i = 0; i < puffs; i++) {
+      v.set(centre[0] + (Math.random() - 0.5) * 0.8, centre[1] + (Math.random() - 0.3) * 0.6, centre[2] + (Math.random() - 0.5) * 0.8);
+      fx.contrailPuff(v, { size: 1.1 + Math.random() * 0.8, life: 1.6 + Math.random() * 0.8, color: 0xb6a589 });
+    }
   }
 
   // ── public destruct entry points (Phase 9 / verification call these) ────────────
   // The resolve* core reads PLAIN [x,y,z] arrays; accept either an array or a
   // THREE.Vector3/{x,y,z} (the live rayHit returns Vector3s) and coerce.
-  applyHit(point, normal, dir, weaponDef) { const r = this.runtime.applyHit(_a(point), _a(normal), _a(dir), weaponDef); this._broadcast(this._refresh(), null); return r; }
-  applyBlast(pos, radius, ammoDef) { const r = this.runtime.applyBlast(_a(pos), radius, ammoDef); this._broadcast(this._refresh(), null); return r; }
+  applyHit(point, normal, dir, weaponDef) {
+    const r = this.runtime.applyHit(_a(point), _a(normal), _a(dir), weaponDef);
+    const dead = this._refresh();                         // retire the directly-killed part(s)
+    this._collapse(_a(dir)); const fell = this._refresh(); // cascade: unsupported cells cave in as fallers
+    this._broadcast([...dead, ...fell], null);
+    return r;
+  }
+  applyBlast(pos, radius, ammoDef) {
+    const r = this.runtime.applyBlast(_a(pos), radius, ammoDef);
+    const dead = this._refresh();
+    this._collapse(null); const fell = this._refresh();
+    this._broadcast([...dead, ...fell], null);
+    return r;
+  }
   applyPenetration(origin, dir, weaponDef) {
     const r = this.runtime.applyPenetration(_a(origin), _a(dir), weaponDef);
     const dead = this._refresh();
+    this._collapse(_a(dir)); const fell = this._refresh(); // a rod that cuts a column's base caves it in
+    dead.push(...fell);
     // A through-hole leaves the brick part ALIVE (no merge change), so punch a visible dark
     // entry/exit hole at each structural penetration so the rod reads as having gone through.
     const holes = [];
@@ -413,6 +566,33 @@ export class DemoBuilding {
     this._broadcast(dead, holes);
     return r;
   }
+
+  // ── vehicle crush (DORMANT — no drivable vehicle wires it yet; tanks/cars are on other branches) ──
+  // A vehicle pressing its world-AABB into the building. Soft parts (tier ≤ opts.crushTier) are shoved
+  // out + the wall caves; a HARD part (brick+ above crushTier — e.g. a reinforcedConcrete bunker) BLOCKS
+  // it. opts.dir biases the crushed debris the way the vehicle is moving (directional masonry spray).
+  // Returns { blocked, drag, crushed } for the vehicle controller to slow/stop on. Host-authoritative.
+  applyCrush(aabb, opts = {}) {
+    const hostSim = !this.game.mp.active || this.game.mp.isHost;
+    if (!hostSim) return { blocked: false, drag: 0, crushed: 0 };
+    const res = resolveCrush(this.parts, aabb, opts.crushTier ?? 3);
+    if (res.blocked) return { blocked: true, drag: 1, crushed: 0 };   // hard wall — vehicle stopped, nothing destroyed
+    if (!res.crushed.length) return { blocked: false, drag: 0, crushed: 0 };
+    const dir = opts.dir ? _a(opts.dir) : null;
+    for (const id of res.crushed) {
+      const part = this._partById(id);
+      if (!part || part.dead) continue;
+      part.dead = true;
+      if (part.o && part.o.cell) this._spawnFaller(part, dir);        // crushed cells tumble off the hull
+      if (this.debris) this.debris.burst(MATERIALS[part.dmat].debris, _a(this._partCentre(part)),
+        (part.dpart * 2654435761) >>> 0, this.baseY, { dir: dir || undefined });   // directional masonry spray
+    }
+    const dead = this._refresh();
+    this._collapse(dir); const fell = this._refresh();                // shoving out the base caves what's above
+    this._broadcast([...dead, ...fell], null);
+    return { blocked: false, drag: res.drag, crushed: res.crushed.length };
+  }
+  _partCentre(p) { return [(p.min[0] + p.max[0]) / 2, (p.min[1] + p.max[1]) / 2, (p.min[2] + p.max[2]) / 2]; }
 
   // ── CO-OP host→client replay (Phase 10) ─────────────────────────────────────────
   // Host broadcasts exactly the destruction DELTA (newly-dead part ids + new APFSDS holes)
@@ -428,7 +608,16 @@ export class DemoBuilding {
   // Client mirror: mark the host's dead parts dead, retire them (NO re-broadcast — _refresh
   // alone doesn't emit), and punch the same through-holes. Idempotent (_removed dedupes).
   applyNetDestroy(deadIds, holes) {
-    if (deadIds && deadIds.length) { for (const id of deadIds) { const part = this._partById(id); if (part) part.dead = true; } this._refresh(); }
+    if (deadIds && deadIds.length) {
+      // Mirror the host's dead parts. The host's combined delta already includes the cells it
+      // collapsed, so the client does NOT re-run _collapse (no new netcode); it just spawns a
+      // visual faller for each newly-dead brick CELL so the cave-in reads the same on every peer.
+      for (const id of deadIds) {
+        const part = this._partById(id);
+        if (part && !part.dead) { part.dead = true; if (part.o && part.o.cell) this._spawnFaller(part, null); }
+      }
+      this._refresh();
+    }
     if (holes && holes.length) for (const h of holes) this._addHole(h);
   }
 
@@ -483,6 +672,7 @@ export class DemoBuilding {
   // the analog wall «ЧАСОЗБОР» (_updateClock, Fable) and the digital «Электроника» desk VFD.
   update(dt) {
     if (this.debris) this.debris.update(dt);
+    this._updateFallers(dt);
     this._updateClock();
     if (!this._deskClock && this._clockXf && hasModel('electronika-clock')) this._placeDeskClock();
     if (this._deskClock) {
