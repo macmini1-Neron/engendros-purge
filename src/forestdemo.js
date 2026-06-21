@@ -16,7 +16,7 @@ const ri = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // crush class → ballistics: saplings are WOOD (tier 1, a rifle fells them); grown trees + oak are
 // TRUNK (tier 2, need an HMG+). HP from the demo so felling stays responsive (a few hits, not a magazine).
 const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2, willow: 2 };
-const TREE_HP = { 1: 30, 2: 110, 3: 200 };
+const TREE_HP = { 1: 20, 2: 55, 3: 100 };   // destructive vibe: rifle fells a grown tree in a burst, HMG/HE/APFSDS instantly
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -47,9 +47,9 @@ export class ForestDemo {
   // reserves, neighbours and steep ground. Stands matter: trees a few m apart let the FIRE ember
   // chain jump tree→tree (spread radius 6 m), and the woods read as a forest, not a sprinkle. Call
   // AFTER reserve()-ing the building footprints.
-  scatter(n = 116, nSap = 34, rad = 80) {
+  scatter(n = 150, nSap = 45, rad = 120) {
     const terr = this.world.terrain;
-    const NS = 9, stands = [];
+    const NS = 11, stands = [];          // denser wood: more stands + more trees + tighter spacing (see drop())
     for (let s = 0; s < NS; s++) {
       const a = (s / NS) * Math.PI * 2 + rr(-0.35, 0.35), d = 22 + Math.random() * (rad - 22);
       stands.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 10 + Math.random() * 8 });
@@ -67,8 +67,8 @@ export class ForestDemo {
         }
       }
     };
-    drop(n, 0.9, 1.25, 3.2, 1.0, false);     // grown trees — ~3.2 m apart inside a stand ⇒ fire chains
-    drop(nSap, 0.42, 0.6, 2.2, 0.6, true);   // birch saplings filling the understory
+    drop(n, 0.9, 1.25, 2.7, 1.0, false);     // grown trees — ~2.7 m apart inside a stand ⇒ denser + fire chains
+    drop(nSap, 0.42, 0.6, 2.0, 0.6, true);   // birch saplings filling the understory
   }
 
   _addTree(species, x, z, scale, seed, sapling) {
@@ -82,21 +82,67 @@ export class ForestDemo {
     const mat = CLS_MAT[cls];
     const id = ++this._idc;
     const trunkR = res.trunkRadius || (0.30 * scale);          // REAL base trunk radius (world units), per species
-    const half = trunkR + 0.12;                                // collision column HUGS the actual trunk (+ small aim margin) — fixes the fat box that let you "hit" empty air beside a thin birch
-    const topY = y + Math.min(res.height, 5.0);
-    const min = [x - half, y, z - half], max = [x + half, topY, z + half];
-    const part = makePart(id, mat, min, max, TREE_HP[cls] / MATERIALS[mat].hp);   // dhp = the demo's TREE_HP
-    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: res.height, trunkR, mesh: m, cls, part, standing: true, box: null };
+    const H = res.height, topY = y + H;
+    const half = trunkR + 0.12;
+    // FIRE/record AABB: a simple trunk-centred column. fire.js reads part.min/max to seat the flame, which
+    // must rise from the TRUNK base, not the wide lean-offset canopy — so the part stays a tight bole column
+    // independent of the precise hit boxes below.
+    const part = makePart(id, mat, [x - half, y, z - half], [x + half, topY, z + half], TREE_HP[cls] / MATERIALS[mat].hp);
+    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, trunkR, mesh: m, cls, part, standing: true, boxes: [] };
     part.downer = rec;
-    const box = { min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), downer: rec, tree: true, dmat: mat, dpart: id };
-    rec.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
+    // ── PRECISE HITBOXES (the headline fix) ──────────────────────────────────────────────────────────
+    // Built from the tree's REAL geometry (tree.js returns the leaning trunk centreline + the MEASURED
+    // leaf-mass envelope), then rotated by this tree's yaw into world AABBs:
+    //   · TRUNK — a few SOLID bands that hug the leaning bole (you can't walk through or shoot past it).
+    //     One base-centred column missed the lean entirely → shots at the upper bole hit nothing.
+    //   · CANOPY — ONE box matching the actual foliage, flagged `shootOnly`: the raycast hits it but
+    //     movement (player AND horde) ignores it. The crown is 10–20 m wide; a SOLID box that size walls
+    //     the whole footprint — that floating box was also a phantom wall enemies couldn't path under.
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const addBox = (mn, mx, shootOnly) => {
+      const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id };
+      if (shootOnly) b.shootOnly = true;
+      rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b);
+    };
+    const spine = res.spine;
+    if (spine && spine.length) {
+      const NB = 3;                                            // 3 bands track the lean tightly base→crown
+      for (let s = 0; s < NB; s++) {
+        const y0 = (s / NB) * H, y1 = ((s + 1) / NB) * H;
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity, any = false;
+        for (const p of spine) {
+          if (p[1] < y0 - 1e-3 || p[1] > y1 + 1e-3) continue;
+          const rx = p[0] * cos + p[2] * sin, rz = -p[0] * sin + p[2] * cos;   // rotate centreline by yaw → world (THREE rotation.y)
+          if (rx < mnx) mnx = rx; if (rx > mxx) mxx = rx; if (rz < mnz) mnz = rz; if (rz > mxz) mxz = rz; any = true;
+        }
+        if (!any) continue;
+        const rad = trunkR * (1 - 0.6 * (y0 / H)) + 0.12;      // taper-aware hug, thickest at the band base
+        addBox([x + mnx - rad, y + y0, z + mnz - rad], [x + mxx + rad, y + y1, z + mxz + rad], false);
+      }
+      // flared root collar (tree.js draws it ~1.8× trunk radius at the very base) — a short solid box so
+      // the base flare is shootable and you can't clip into it. Only the bottom ~0.7 m, so it doesn't fatten
+      // the bole above it.
+      const collarR = trunkR * 1.8 + 0.1, collarH = Math.min(0.7, H * 0.14);
+      addBox([x - collarR, y, z - collarR], [x + collarR, y + collarH, z + collarR], false);
+    } else {                                                   // defensive fallback: old single column
+      addBox([x - half, y, z - half], [x + half, topY, z + half], false);
+    }
+    const cab = res.crownAABB;
+    if (cab) {
+      const cxL = (cab.min[0] + cab.max[0]) * 0.5, czL = (cab.min[2] + cab.max[2]) * 0.5;   // crown centre (lean-offset, local)
+      const cxr = cxL * cos + czL * sin, czr = -cxL * sin + czL * cos;                      // rotate by yaw → world (THREE rotation.y)
+      const hw = Math.max(cab.max[0] - cab.min[0], cab.max[2] - cab.min[2]) * 0.5 + 0.1;    // square hull (rotation-safe) + small aim margin
+      addBox([x + cxr - hw, y + cab.min[1] - 0.2, z + czr - hw], [x + cxr + hw, y + cab.max[1] + 0.2, z + czr + hw], true);   // ±0.2 Y to catch the apex tuft / lowest fringe
+    }
     this.trees.push(rec);
     if (!sapling) this.windy.push({ m, yaw, amp: 0.018 + rr(0, 0.022), ph: rr(0, 6.28), speed: 0.8 + rr(0, 1.2) });
   }
 
   _dropBox(rec) {
-    if (!rec.box) return;
-    this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null;
+    for (const b of (rec.boxes || [])) {         // drop every trunk band + the canopy box
+      this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1);
+    }
+    rec.boxes = [];
   }
 
   // weapons.js _destructHit calls this when a tree's trunk part is killed. dirXZ = the SHOT direction

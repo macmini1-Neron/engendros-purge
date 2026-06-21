@@ -27,6 +27,7 @@ import { MATERIALS, CALIBERS as LAB_WEAPONS, makeTumble, stepBody } from '../des
 const CELL = 0.45;          // voxel cell size (m) — smaller = finer holes, more rebuild cost
 const TUNNEL_R = 0.42;      // APFSDS through-hole radius (m)
 const GROUND_EPS = 0.14;    // a cell whose bottom is this close to y=0 is "grounded" (support seed)
+const UNDERMINE_GAP = 0.4;  // a grounded cell loses footing once a dig drops the ground this far below the base
 const ADJ_EPS = 0.06;       // cells touching within this gap are neighbours (connectivity graph)
 const SUPPORT_MIN = 0.4;    // a sign/pane keeps standing while ≥ this fraction of its backing cells live
 const MAX_FALLERS = 6;      // hard cap on live falling chunks (perf)
@@ -473,6 +474,30 @@ export class BuildingDestruct {
     const r = this.penetrate(o, d, weaponDef);
     this._broadcast(this._syncBoxes());
     return r;
+  }
+
+  // Terrain dug out from under the building (src/support.js SupportScan): kill the grounded base cells
+  // whose foundation the dig removed (ground dropped > UNDERMINE_GAP below the building's base), then run
+  // the SAME _settle cascade blasts use — orphaned cells with no path to a still-grounded root cave in as
+  // fallers ("nothing levitates"). Cells are LOCAL; the group sits at (cx, baseY, cz) on the terrain, so a
+  // cell's world XZ = group.position + (c.cx, c.cz) and its foundation height = group.position.y. Host-auth.
+  undermine(rect) {
+    if (!this._hostSim() || !this.world || !this.world.terrain || !this.world.hasTerrain || !this.cells.length) return;
+    const df = this.world.terrain.deformField; if (!df) return;
+    const gp = this.group.position;
+    const dirty = new Set();
+    let any = false;
+    for (const c of this.cells) {
+      if (!c.alive || c.cy - c.sy / 2 > GROUND_EPS) continue;       // only the grounded (bottom) cells lose footing
+      const wx = gp.x + c.cx, wz = gp.z + c.cz;
+      if (wx < rect.minx || wx > rect.maxx || wz < rect.minz || wz > rect.maxz) continue;
+      // undermined = the dig itself removed ≥ UNDERMINE_GAP of ground under this cell (independent of the
+      // building's base height, so it works on a slope where the foundation sits in the terrain MIN).
+      if (df.deformAt(wx, wz) < -UNDERMINE_GAP) { c.alive = false; dirty.add(c.bucket); any = true; }
+    }
+    if (!any) return;
+    this._settle(dirty);                                            // orphan cascade caves what's above
+    this._broadcast(this._syncBoxes());
   }
 
   // co-op (BASIC — 2-PC is a manual gate): host streams the dead-cell delta; clients mirror cells dead,

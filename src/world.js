@@ -399,6 +399,7 @@ export class World {
     let gy = terr.terrainHeightAt(pos.x, pos.z);
     if (pos.y <= gy) { pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true; }
     for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
+      if (b.shootOnly) continue;                                 // tree-canopy boxes intercept shots only, never movement
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
       const feet = pos.y, head = pos.y + h;
@@ -447,7 +448,7 @@ export class World {
   // Is the player's body column free of boxes if its feet were at feetY here?
   _headClear(pos, r, h, feetY, ignore) {
     for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
-      if (b === ignore) continue;
+      if (b === ignore || b.shootOnly) continue;                 // canopy boxes never block headroom
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
       if (feetY + h <= b.min.y || feetY >= b.max.y) continue;
@@ -463,6 +464,7 @@ export class World {
     const oldA = pos[ax] - delta, lo = Math.min(pos[ax], oldA) - r, hi = Math.max(pos[ax], oldA) + r;
     const cands = ax === 'x' ? this.grid.queryAABB(lo, pos.z - r, hi, pos.z + r) : this.grid.queryAABB(pos.x - r, lo, pos.x + r, hi);
     for (const b of cands) {
+      if (b.shootOnly) continue;                                 // canopy boxes intercept shots only, never movement
       const feet = pos.y, head = pos.y + h;
       if (head <= b.min.y + 0.02 || feet >= b.max.y - 0.02) continue;
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
@@ -620,6 +622,7 @@ export class BuildManager {
     if (!pos) return false;
     const sd = STRUCT_DEFS[kind], fp = this._footprint(kind, yaw), top = pos.y + sd.h;
     for (const bx of this.game.world.boxes) {                            // map + placed hard structures
+      if (bx.shootOnly) continue;                                        // tree canopy is shoot-through → never blocks a build
       if (pos.x + fp.hx <= bx.min.x || pos.x - fp.hx >= bx.max.x) continue;
       if (pos.z + fp.hz <= bx.min.z || pos.z - fp.hz >= bx.max.z) continue;
       if (bx.max.y <= pos.y + 0.05 || bx.min.y >= top - 0.05) continue;  // no vertical overlap (e.g. placing ON a surface)

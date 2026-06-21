@@ -11,6 +11,7 @@
 import { buildFlowField } from './flowfield.js';
 import { makeTerrain } from './terrain.js';
 import { computeChunkArrays } from './terrain-mesh-arrays.js';
+import { DeformField } from './dig.js'; // excavation layer — also THREE-free (worker-safe)
 
 // Phase A — the horde nav grid lives here so we only ship it across once; each refresh
 // then sends just the goal and gets back a fresh Dijkstra field.
@@ -38,6 +39,13 @@ self.onmessage = (e) => {
     }
     case 'terrainInit':
       _terrain = makeTerrain(m.opts); // {profile, seed, slopeLimit, tuning, reserved} → bit-identical to the main thread
+      _terrain.setDeformField(new DeformField()); // empty excavation layer; fed by deformAdd / deformInit
+      break;
+    case 'deformAdd': // one dig primitive — replayed in the SAME host order as the main thread (Option A)
+      if (_terrain && _terrain.deformField) _terrain.deformField.add(m.prim);
+      break;
+    case 'deformInit': // full deform list (late-join / map reset) replaces the worker's field
+      if (_terrain) _terrain.setDeformField(DeformField.deserialize(m.arr));
       break;
     case 'chunk': {
       if (!_terrain) return; // terrain not delivered yet — main thread builds this chunk synchronously

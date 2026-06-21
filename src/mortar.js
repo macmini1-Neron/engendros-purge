@@ -340,6 +340,7 @@ export class Mortar {
     if (!shell.hostAuth) return;                             // clients: visual only
     // NB: deliberately host-authoritative here, NOT game.explode() — the impact was computed + shipped
     // once by the host and the visual already played for everyone above, so there's no client 'boom' to send.
+    this.game._carveCrater(p, BAL.HE_RADIUS);               // crater FIRST, so the support scan reads the lowered ground
     this.game.enemies.damageInRadius(p, BAL.HE_RADIUS, BAL.HE_DMG, null, 'explosion');
     this.game._demoBlast(p, BAL.HE_RADIUS, true);            // HE breach / fell / ignite (self-gated, no-op on flat maps)
     this.game._explodeHurt(p.clone(), BAL.HE_RADIUS, BAL.HE_DMG);

@@ -156,11 +156,16 @@ export function makeTerrain(opts = {}) {
   const reserved = opts.reserved || [];
   const isFlat = profile === 'flat';                   // every non-'flat' profile ('demo' / 'forest') is hilly
 
-  // height — the single source of truth. PURE.
+  // Optional excavation layer (src/dig.js DeformField). When present, terrainHeightAt adds its
+  // signed offset (≤0 craters/pits, ≥0 ejecta lips) on top of the base field. It stays a pure
+  // function of (x,z) because the field is mutated only by the host-ordered, co-op-synced deform
+  // stream — see dig.js's CO-OP DETERMINISM note. Empty field ⇒ deformAt fast-returns 0.
+  let deform = opts.deformField || null;
+
+  // height — the single source of truth. PURE (given a fixed seed + deform-field state).
   function terrainHeightAt(x, z) {
-    if (isFlat) return 0;
-    if (profile === 'forest') return forestHeight(x, z, seed, tune);
-    return demoHeight(x, z, seed, tune);
+    const base = isFlat ? 0 : (profile === 'forest' ? forestHeight(x, z, seed, tune) : demoHeight(x, z, seed, tune));
+    return deform ? base + deform.deformAt(x, z) : base;   // + excavation offset (craters/pits), 0 when empty
   }
 
   // central-difference gradient → outward normal. epsilon small but > FP noise.
@@ -216,5 +221,9 @@ export function makeTerrain(opts = {}) {
     terrainNormalAt,
     terrainSlopeAt,
     isPlaceable,
+    get deformField() { return deform; },
+    // Wire (or replace) the excavation field after construction — used by the main thread AND by
+    // the sim-worker, which builds its own terrain then attaches a field fed by the deform stream.
+    setDeformField(df) { deform = df || null; },
   };
 }

@@ -55,6 +55,7 @@ const WD = { hi: 0x8a6a3a, mid: 0x6a4a24, lo: 0x49321a };   // timber door
 const FLR = 0x6a5238;                                       // interior floor slab
 const RUBBLE_A = 0x6e4334, RUBBLE_B = 0x5d3a2c;
 const GLASS_COL = 0xaed4dc;
+const UNDERMINE_GAP = 0.4;       // a grounded cell loses footing once the dig drops the ground this far below baseY
 
 // coerce a THREE.Vector3 / {x,y,z} / [x,y,z] into the plain [x,y,z] the destruct core reads.
 function _a(v) { return Array.isArray(v) ? v : (v ? [v.x, v.y, v.z] : [0, 0, 0]); }
@@ -426,8 +427,11 @@ export class DemoBuilding {
     const seed = (part.dpart * 2654435761) >>> 0;
     const dl = dir ? Math.hypot(dir[0], dir[2]) || 1 : 1, dx = dir ? dir[0] / dl : 0, dz = dir ? dir[2] / dl : 0;
     const jx = (((seed >> 3) & 7) - 3.5) * 0.12, jz = (((seed >> 6) & 7) - 3.5) * 0.12;   // seeded lateral jitter
+    // settle on the foundation — but if the ground here was DUG below baseY, rubble falls INTO the hole.
+    const terr = this.world && this.world.terrain;
+    const floorY = (terr && this.world.hasTerrain) ? Math.min(this.baseY, terr.terrainHeightAt(o.cx, o.cz)) : this.baseY;
     const body = makeTumble({ pos: [o.cx, o.cy, o.cz], vel: [dx * 0.8 + jx, 0.4, dz * 0.8 + jz],
-      seed, radius: Math.max(o.w, o.h, o.d) * 0.5, g: FALL_G, spin: 0.6, floorY: this.baseY });
+      seed, radius: Math.max(o.w, o.h, o.d) * 0.5, g: FALL_G, spin: 0.6, floorY });
     this._fallerMesh.setColorAt(i, this._fallerColor.set(o.color));
     if (this._fallerMesh.instanceColor) this._fallerMesh.instanceColor.needsUpdate = true;
     this._fallers.push({ body, i, size: [o.w, o.h, o.d], linger: 0 });
@@ -629,6 +633,29 @@ export class DemoBuilding {
   netSnapshot() { return { parts: [...this._removed], holes: (this._holes || []).map(m => [m.position.x, m.position.y, m.position.z]) }; }
 
   _partById(id) { for (const p of this.parts) if (p.dpart === id) return p; return null; }
+
+  // ── gravity collapse: terrain dug out from under the wall (src/support.js SupportScan) ───────────
+  // Brick walls are voxel CELLS with a `grounded` bottom row (rests on the plinth). When the dig drops
+  // the ground under a grounded cell more than UNDERMINE_GAP below the foundation (baseY), it loses its
+  // footing → un-ground it, then run the SAME orphan-collapse the engine already uses for blasts: cells
+  // with no remaining path to a grounded root cave in as fallers (a narrow pit arches over via lateral
+  // links; a whole undermined base row drops everything above it). Co-op rides the existing 'bdestroy'
+  // delta — no new netcode. Host-auth (SupportScan only runs on the host).
+  undermine(rect) {
+    if (!this.placed || !this.world.terrain || !this.cells.length) return [];
+    const df = this.world.terrain.deformField; if (!df) return [];
+    let any = false;
+    for (const c of this.cells) {
+      if (c.dead || !c.grounded || !c.o) continue;
+      if (c.o.cx < rect.minx || c.o.cx > rect.maxx || c.o.cz < rect.minz || c.o.cz > rect.maxz) continue;
+      // undermined = the dig removed ≥ UNDERMINE_GAP of ground under this cell (independent of baseY).
+      if (df.deformAt(c.o.cx, c.o.cz) < -UNDERMINE_GAP) { c.grounded = false; any = true; }
+    }
+    if (!any) return [];
+    this._collapse(null); const fell = this._refresh();      // orphan cascade caves the now-unsupported cells
+    this._broadcast(fell, null);                             // reuse the existing host→client destruction delta
+    return fell;
+  }
 
   // small dark recessed cube marking an APFSDS through-hole (purely visual; the wall still collides)
   _addHole(p) {
