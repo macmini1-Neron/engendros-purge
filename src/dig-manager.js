@@ -27,6 +27,10 @@ export class DigManager {
   // Returns the stored primitive, or null for a no-op. net:false suppresses the co-op broadcast
   // (used when REPLAYING a peer's dig, so it doesn't echo back).
   dig(pos, opts = {}) {
+    // Only maps with an elevated, chunk-meshed heightfield (the demo) dig: on flat maps (arena/steppe)
+    // there's no terrain mesh to re-mesh, yet groundY (read by enemies/loot) would still dip into an
+    // INVISIBLE pit. Gate on hasTerrain so flat maps keep their byte-identical y=0 floor.
+    if (!this.world || !this.world.hasTerrain) return null;
     const r = opts.r, depth = opts.depth, lip = opts.lip || 0;
     if (!(r > 0) || !(depth > 0)) return null;
     const res = this.field.add({ x: pos.x, z: pos.z, r, depth, lip });
@@ -90,6 +94,7 @@ export class DigManager {
   }
 
   _applyOne(p) {
+    if (!this.world || !this.world.hasTerrain) return;     // defensive: never lower a flat map's floor (host won't send these anyway)
     if (!(p.r > 0) || !(p.depth > 0)) return;
     const res = this.field.add(p);
     if (this._worker) this._worker.deformAdd({ x: res.stored.x, z: res.stored.z, r: res.stored.r, depth: res.stored.depth, lip: res.stored.lip });
