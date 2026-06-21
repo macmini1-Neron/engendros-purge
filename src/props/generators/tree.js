@@ -227,30 +227,36 @@ function buildTrunk(mb, r, cfg, height, baseDia) {
     pts.push(new THREE.Vector3(x, f * height, z));
   }
 
-  // taper: thick at the base, thinning toward the crown
+  // taper: thick at the base, thinning toward the crown — built as ROUND cylinder
+  // segments (octagonal) so the trunk reads as a tree, not a square post (matches
+  // the cylinder stumps). Each segment is aligned along its centreline direction.
+  const RS = 8;                              // radial segments — round but chunky
+  const radAt = (f) => baseDia * 0.5 * (1 - 0.6 * f);
   for (let i = 0; i < segs; i++) {
-    const f = i / segs;
+    const f = i / segs, f1 = (i + 1) / segs;
     const p0 = pts[i], p1 = pts[i + 1];
-    const dia = baseDia * (1 - 0.6 * f);
-    const cx = (p0.x + p1.x) / 2, cy = (p0.y + p1.y) / 2, cz = (p0.z + p1.z) / 2;
-    // two-tone bark for pine: lower grey-brown plates → upper copper
-    const ramp = upper && f > 0.45 ? upper : bark;
-    // body of the segment (mid tone) + a lit strip + shadow base = layered look
-    mb.box(dia, segH * 1.02, dia, cx, cy, cz, ramp.mid, { tint: 0.04 });
-    // proud lit face on +X / +Z corners
-    mb.box(dia * 0.4, segH * 0.5, dia * 0.4, cx + dia * 0.28, cy + segH * 0.2, cz + dia * 0.28, ramp.hi, { tint: 0.03 });
-    // dark recess for fissures / lenticels
-    if (cfg.fissures && (i % 2 === 0)) {
-      mb.box(dia * 0.22, segH * 0.7, dia * 0.5, cx - dia * 0.3, cy, cz, ramp.slot, { tint: 0.02 });
-    }
+    const dir = new THREE.Vector3().subVectors(p1, p0);
+    const len = dir.length() || segH;
+    const ramp = upper && f > 0.45 ? upper : bark; // pine: copper upper bark
+    const cyl = new THREE.CylinderGeometry(radAt(f1), radAt(f), len * 1.03, RS);
+    mb.geo(cyl, (p0.x + p1.x) / 2, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2, ramp.mid, { align: dir, tint: 0.05 });
   }
 
-  // rough flared root collar at the very base
-  const root = bark;
-  mb.box(baseDia * 1.45, 0.5, baseDia * 1.45, pts[0].x, 0.25, pts[0].z, root.lo, { tint: 0.05 });
-  // birch black base
+  // flared round root collar at the very base
+  mb.geo(new THREE.CylinderGeometry(baseDia * 0.62, baseDia * 0.9, 0.5, RS), pts[0].x, 0.25, pts[0].z, bark.lo, { tint: 0.05 });
+
+  // birch: the signature black lenticel dashes scattered up the white bark + sooty base
   if (cfg.bark === 'barkBirch') {
-    mb.box(baseDia * 1.2, 0.7, baseDia * 1.2, pts[0].x, 0.35, pts[0].z, '#2a2622', { tint: 0.03 });
+    mb.geo(new THREE.CylinderGeometry(baseDia * 0.54, baseDia * 0.6, 0.55, RS), pts[0].x, 0.28, pts[0].z, '#2a2622', { tint: 0.03 });
+    const marks = ri(r, 9, 16);
+    for (let m = 0; m < marks; m++) {
+      const mf = rr(r, 0.12, 0.82);
+      const pc = pts[Math.min(segs, Math.round(mf * segs))];
+      const rad = radAt(mf);
+      const a = rr(r, 0, Math.PI * 2);
+      // short horizontal dash hugging the surface (lenticel)
+      mb.box(rad * 1.5, 0.05, 0.035, pc.x + Math.cos(a) * rad * 0.85, pc.y + rr(r, -0.25, 0.25), pc.z + Math.sin(a) * rad * 0.85, '#241f1b', { ry: a + Math.PI / 2, tint: 0.015 });
+    }
   }
 
   return pts;
@@ -274,23 +280,32 @@ function buildBranches(mb, r, cfg, trunkPts, height, baseDia) {
     const anchor = trunkPts[fi];
     const heading = (b / n) * Math.PI * 2 + rr(r, -0.5, 0.5);
     const tilt = rr(r, cfg.branchTilt[0], cfg.branchTilt[1]) * DEG;
-    const len = reach * rr(r, 0.6, 1.1) * (cfg.crown === 'columnar' ? 0.4 : 1);
-    const limbSegs = Math.max(2, Math.round(len / 0.8));
-    let px = anchor.x, py = anchor.y, pz = anchor.z;
-    const dia0 = baseDia * 0.4;
+    const len = reach * rr(r, 0.6, 1.1) * (cfg.crown === 'columnar' ? 0.45 : 1);
+    const limbSegs = Math.max(2, Math.round(len / 0.55));
+    const topY = trunkPts[trunkPts.length - 1].y;
+    const dia0 = baseDia * 0.55;            // stouter than before — no 1px twigs
+    const RS = 6;
+    let prev = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
     let droop = 0;
-    for (let s = 0; s < limbSegs; s++) {
+    for (let s = 1; s <= limbSegs; s++) {
       const sf = s / limbSegs;
       const step = len / limbSegs;
-      // weeping species: tips bend downward as they extend
       if (cfg.crown === 'weeping' || cfg.crown === 'ovoid') droop += sf * step * (cfg.crown === 'weeping' ? 0.5 : 0.18);
-      px += Math.cos(heading) * Math.cos(tilt) * step;
-      pz += Math.sin(heading) * Math.cos(tilt) * step;
-      py += Math.sin(tilt) * step - droop * 0.2;
-      const dia = dia0 * (1 - 0.7 * sf) + 0.04;
-      mb.box(dia, dia, dia, px, py, pz, sf < 0.5 ? bark.mid : bark.lo, { tint: 0.04 });
+      let ny = prev.y + Math.sin(tilt) * step - droop * 0.2;
+      ny = Math.min(ny, topY * 0.99);       // never poke above the trunk top → foliage closes over it
+      const cur = new THREE.Vector3(prev.x + Math.cos(heading) * Math.cos(tilt) * step, ny, prev.z + Math.sin(heading) * Math.cos(tilt) * step);
+      const dir = new THREE.Vector3().subVectors(cur, prev);
+      const segLen = dir.length();
+      if (segLen > 1e-3) {
+        // CONNECTED round limb segment (cylinder spanning prev→cur), tapering to the tip
+        const rB = dia0 * 0.5 * (1 - 0.62 * (sf - 1 / limbSegs)) + 0.03;
+        const rT = dia0 * 0.5 * (1 - 0.62 * sf) + 0.025;
+        const cyl = new THREE.CylinderGeometry(rT, rB, segLen * 1.08, RS);
+        mb.geo(cyl, (prev.x + cur.x) / 2, (prev.y + cur.y) / 2, (prev.z + cur.z) / 2, sf < 0.5 ? bark.mid : bark.lo, { align: dir, tint: 0.04 });
+      }
+      prev = cur;
     }
-    tips.push(new THREE.Vector3(px, py, pz));
+    tips.push(prev.clone());
   }
   return tips;
 }
@@ -301,7 +316,7 @@ function buildBranches(mb, r, cfg, trunkPts, height, baseDia) {
 // `cfg.crown`, then each cluster is itself broken into a few jittered sub-boxes
 // using the 5-tone ramp so it reads as lumpy leaf mass, not a cube.
 // ---------------------------------------------------------------------------
-function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
+function buildFoliage(mb, r, cfg, trunkPts, branchTips, height, lod = 0) {
   const leaf = toneSet(cfg.foliage);
   const top = trunkPts[trunkPts.length - 1];
   const crownBottom = height * (1 - cfg.crownFrac);
@@ -322,31 +337,32 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
     }
   };
 
-  // cluster count scales with crown volume
-  const nClusters = Math.round(
-    Math.max(8, (wMax * crownH) * (cfg.crown === 'columnar' ? 2.2 : 1.4))
-  );
+  // HOLLOW crown: clusters sit on the SHELL only (the interior is never seen), and
+  // the count scales with surface, not volume, and is capped — so a broad oak no
+  // longer explodes to ~25k tris. lod thins it further for distant forest trees.
+  const lodMul = lod >= 2 ? 0.34 : lod === 1 ? 0.6 : 1;
+  const nClusters = Math.max(8, Math.round(
+    Math.min(46, (wMax + crownH * 2) * (cfg.crown === 'columnar' ? 1.9 : 1.45)) * lodMul
+  ));
 
   const placeCluster = (px, py, pz, size) => {
-    // break each cluster into 3–5 overlapping jittered sub-boxes
-    const subs = ri(r, 3, 5);
+    // break each cluster into 2–3 overlapping jittered sub-boxes (was 3–5 + flecks)
+    const subs = lod >= 1 ? 2 : ri(r, 2, 3);
     for (let k = 0; k < subs; k++) {
-      const js = size * rr(r, 0.55, 1.0);
+      const js = size * rr(r, 0.6, 1.05);
       const jx = px + rr(r, -size, size) * 0.5;
       const jy = py + rr(r, -size, size) * 0.4;
       const jz = pz + rr(r, -size, size) * 0.5;
       // tone by height within the sub-box: lit on top, shadow underneath
       const tone = k === 0 ? leaf.mid : (jy > py ? leaf.hi : leaf.lo);
       mb.box(js, js * 0.85, js, jx, jy, jz, tone, { tint: 0.06 });
-      // occasional bright fleck for sparkle
-      if (r() < 0.25) mb.box(js * 0.3, js * 0.3, js * 0.3, jx + js * 0.2, jy + js * 0.3, jz, leaf.bright, { tint: 0.04 });
     }
   };
 
   // 1) hang a cluster off each real branch tip that sits inside the crown
   for (const tip of branchTips) {
     if (tip.y < crownBottom - 1) continue;
-    placeCluster(tip.x, tip.y, tip.z, wMax * 0.16 + 0.4);
+    placeCluster(tip.x, tip.y, tip.z, wMax * 0.2 + 0.6);
   }
 
   // 2) fill the crown volume with the remaining clusters
@@ -355,8 +371,8 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
     const y = crownBottom + t * crownH;
     const rad = radiusAt(t);
     const ang = rr(r, 0, Math.PI * 2);
-    // bias toward the shell so the interior isn't packed solid
-    const rr2 = Math.sqrt(rr(r, 0.25, 1)) * rad;
+    // HOLLOW core: a THICK opaque shell (no see-through holes), only the dead centre empty
+    const rr2 = (0.5 + 0.5 * r()) * rad;
     // trunk drifts with lean; follow the centreline at this height
     const fi = Math.max(0, Math.min(trunkPts.length - 1, Math.round(t * (1 - cfg.crownFrac) * (trunkPts.length - 1) + (1 - cfg.crownFrac) * (trunkPts.length - 1))));
     const center = trunkPts[Math.min(trunkPts.length - 1, fi)] || top;
@@ -364,7 +380,12 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
     const pz = center.z + Math.sin(ang) * rr2;
     let py = y;
     if (cfg.crown === 'weeping') py -= (rr2 / Math.max(0.1, rad)) * crownH * 0.35; // skirt droops at the edges
-    placeCluster(px, py, pz, wMax * 0.14 + 0.45);
+    placeCluster(px, py, pz, wMax * 0.2 + 0.78);
+  }
+
+  // 3) close the canopy apex so no bare branch tip pokes out the top
+  if (cfg.crown !== 'conical') {
+    placeCluster(top.x, top.y - wMax * 0.10, top.z, wMax * 0.28 + 0.55);
   }
 }
 
@@ -377,15 +398,17 @@ function buildFoliage(mb, r, cfg, trunkPts, branchTips, height) {
 function applyDamage(mb, r, cfg, trunkPts, baseDia) {
   const bark = toneSet(cfg.bark);
   const top = trunkPts[trunkPts.length - 1];
-  // jagged splintered break cap: a few pale upward spikes
+  // jagged splintered break: a few pale ROUND upward spikes rooted at the trunk top
   const spikes = ri(r, 3, 6);
   for (let s = 0; s < spikes; s++) {
     const a = (s / spikes) * Math.PI * 2 + rr(r, -0.3, 0.3);
-    const rad = baseDia * 0.25 * rr(r, 0.3, 1);
+    const rad = baseDia * 0.22 * rr(r, 0.2, 1);
     const h = rr(r, 0.3, 1.1);
-    mb.box(baseDia * 0.22, h, baseDia * 0.22,
-      top.x + Math.cos(a) * rad, top.y + h * 0.5, top.z + Math.sin(a) * rad,
-      cfg.damage === 'charred' ? '#1a1614' : bark.hi, { tint: 0.05, rz: rr(r, -0.2, 0.2), rx: rr(r, -0.2, 0.2) });
+    const sx = top.x + Math.cos(a) * rad, sz = top.z + Math.sin(a) * rad;
+    const lean = rr(r, 0.08, 0.22);
+    const dir = new THREE.Vector3(Math.cos(a) * lean, 1, Math.sin(a) * lean);
+    mb.geo(new THREE.CylinderGeometry(baseDia * 0.05, baseDia * 0.16, h, 5), sx, top.y + h * 0.45, sz,
+      cfg.damage === 'charred' ? '#1a1614' : bark.hi, { align: dir, tint: 0.05 });
   }
 }
 
@@ -400,6 +423,26 @@ function applyDamage(mb, r, cfg, trunkPts, baseDia) {
 //               heights in SPECIES are realistic; this brings them to a
 //               gameplay-readable size, ~6–13 m, without distorting proportions)
 // ---------------------------------------------------------------------------
+// SplitBuilder — a MeshBuilder-shaped facade that ROUTES each emitted primitive to
+// a `lo` (standing stump) or `hi` (falling top) builder by its Y centre relative to
+// a break height. The `hi` builder is offset DOWN by breakY so the top geometry's
+// LOCAL origin sits AT the hinge pivot (ready for fallphys makeHinge). This lets us
+// reuse buildTrunk/buildBranches/buildFoliage UNCHANGED and still get a clean
+// stump+top split from one seeded build (taper, branches and foliage stay aligned).
+class SplitBuilder {
+  constructor(breakY) { this.breakY = breakY; this.lo = new MeshBuilder(); this.hi = new MeshBuilder(); }
+  box(w, h, d, x, y, z, color, opts = {}) {
+    if (y <= this.breakY) this.lo.box(w, h, d, x, y, z, color, opts);
+    else this.hi.box(w, h, d, x, y - this.breakY, z, color, opts);
+    return this;
+  }
+  geo(geometry, x, y, z, color, opts = {}) {
+    if (y <= this.breakY) this.lo.geo(geometry, x, y, z, color, opts);
+    else this.hi.geo(geometry, x, y - this.breakY, z, color, opts);
+    return this;
+  }
+}
+
 const GAME_SCALE = 0.42;
 export function makeTree(opts = {}) {
   const speciesKey = opts.species || 'birch';
@@ -419,11 +462,21 @@ export function makeTree(opts = {}) {
   const height = (opts.height != null ? opts.height : rr(r, cfg.heightM[0], cfg.heightM[1]));
   const baseDia = rr(r, cfg.trunkDiaM[0], cfg.trunkDiaM[1]);
 
-  const mb = new MeshBuilder();
-
   // snapped snags lose their crown + much of their height
   const snapped = cfg.damage === 'snapped';
   const effHeight = snapped ? height * rr(r, 0.35, 0.6) : height;
+
+  // BREAK SPLIT (opts.breakAt = 0..1 fraction of height): route geometry into a
+  // standing stump (≤ breakY) + a falling top (> breakY, origin re-zeroed to the
+  // break) so the caller can hinge the top. null ⇒ original single-mesh behaviour.
+  // The break is CLAMPED below the crown so the whole canopy stays on the falling
+  // top — splitting through the crown leaves half-clusters dangling on a short top
+  // that wobbles instead of toppling like a treetop.
+  const crownBottomFrac = 1 - (cfg.crownFrac != null ? cfg.crownFrac : 0.5);
+  const breakMax = Math.max(0.12, crownBottomFrac - 0.04);
+  const breakAt = opts.breakAt != null ? Math.max(0.08, Math.min(breakMax, opts.breakAt)) : null;
+  const breakY = breakAt != null ? breakAt * effHeight : 0;
+  const mb = breakAt != null ? new SplitBuilder(breakY) : new MeshBuilder();
 
   const trunkPts = buildTrunk(mb, r, cfg, effHeight, baseDia);
 
@@ -434,14 +487,21 @@ export function makeTree(opts = {}) {
     if (snapped) applyDamage(mb, r, cfg, trunkPts, baseDia);
   } else {
     const tips = buildBranches(mb, r, cfg, trunkPts, effHeight, baseDia);
-    buildFoliage(mb, r, cfg, trunkPts, tips, effHeight);
+    buildFoliage(mb, r, cfg, trunkPts, tips, effHeight, opts.lod | 0);
   }
 
-  const geometry = mb.build();
   const scl = opts.scale != null ? opts.scale : GAME_SCALE;
-  if (scl !== 1) geometry.scale(scl, scl, scl);
   const material = voxelMaterial();
-  return { geometry, material, height: effHeight * scl, species: speciesKey };
+  if (breakAt != null) {
+    const stumpGeometry = mb.lo.build();
+    const topGeometry = mb.hi.build();
+    if (scl !== 1) { stumpGeometry.scale(scl, scl, scl); topGeometry.scale(scl, scl, scl); }
+    // breakY (scaled) = world height of the hinge pivot above the tree's base
+    return { stumpGeometry, topGeometry, breakY: breakY * scl, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
+  }
+  const geometry = mb.build();
+  if (scl !== 1) geometry.scale(scl, scl, scl);
+  return { geometry, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
 }
 
 // ---------------------------------------------------------------------------

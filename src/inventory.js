@@ -320,8 +320,8 @@ export class Inventory {
   deployLoadout() {
     this.slots.fill(null);
     const w = this.game.weapons;
-    const lo = (this.game.mapId === 'demo')
-      ? DEMO_LOADOUT.slice()                                                            // ?map=demo: forced demo loadout (matches WeaponSystem.resetLoadout)
+    const lo = (this.game.mapId === 'demo' || this.game.mapId === 'forest')
+      ? DEMO_LOADOUT.slice()                                                            // ?map=demo + ?map=forest: forced demo loadout (matches WeaponSystem.resetLoadout)
       : ((this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : []); // flat array of equal slots
     const granted = new Set();                                                          // grant() is ammo-init (idempotent) — once per weapon kind
     for (const k of lo) {

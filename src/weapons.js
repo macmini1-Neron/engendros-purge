@@ -1236,8 +1236,8 @@ export class WeaponSystem {
     // deploy the player's saved loadout — now a flat array of EQUAL slots (any gear in any slot, duplicates OK).
     // ?map=demo FORCES a fixed loadout (gun + bazooka + molotovs + APFSDS cannon) so every
     // destruction/fire feature is reachable with no shop trip; the player's saved meta.loadout is untouched.
-    const lo = (this.game.mapId === 'demo')
-      ? DEMO_LOADOUT.slice()
+    const lo = (this.game.mapId === 'demo' || this.game.mapId === 'forest')
+      ? DEMO_LOADOUT.slice()   // demo + forest: force the testing loadout (gun + bazooka + molotovs + APFSDS)
       : ((this.game.meta && Array.isArray(this.game.meta.loadout)) ? this.game.meta.loadout : ['knife']);
     this.flares = 0;
     // choose what to hold first: first firearm, else first melee, else the bare knife

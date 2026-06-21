@@ -40,15 +40,25 @@ const TICK_HZ        = 10;          // fire sim rate (fixed step)
 const OBJ_CAP        = 24;          // max concurrent burning objects (trees + building wood)
 const GRASS_CAP      = 48;          // max concurrent burning grass cells
 const SEC_PER_FUEL   = 0.9;         // burn duration = MATERIALS.fuel × this (trunk 10 → 9 s)
-const CHAR_TIME      = 2.4;         // a tree chars this long after ignition (forest.charTree)
-const FELL_ON_BURNOUT = true;       // a fully burned tree topples (forest.fellTree)
-// per-kind spread behaviour: radius (m) + per-tick ignite probability + flame visual size.
+// A tree's leaves die in two stages over the burn (gradual, not instant): first they BLACKEN in
+// place (char, still leafy), then later they DROP and the tree goes bare. On burnout only FELL_PCT%
+// topple — the rest stay up as standing burnt snags.
+const LEAF_BLACKEN_FRAC = 0.30;     // at this share of the burn the foliage chars black (forest.charTree)
+const LEAF_DROP_FRAC    = 0.72;     // at this share the blackened leaves drop → bare snag (forest.dropLeaves)
+const FELL_PCT          = 30;       // % of fire-killed trees that TOPPLE on burnout; the rest remain standing burnt
+// per-kind spread behaviour: radius (m) + per-tick ignite probability + flame visual size + how
+// many flame billboards the fire owns (a tree spans many → a climbing column; grass/wood need 2).
 const KIND = {
-  tree:  { radius: 6.0, chance: 0.34, flameW: 1.25, flameH: 3.0 },
-  grass: { radius: 4.5, chance: 0.55, flameW: 0.85, flameH: 0.8 },
-  wood:  { radius: 4.0, chance: 0.30, flameW: 0.75, flameH: 1.5 },
+  tree:  { radius: 6.0, chance: 0.34, flameW: 1.0,  flameH: 3.0, slots: 5 },
+  grass: { radius: 4.5, chance: 0.55, flameW: 0.85, flameH: 0.8, slots: 2 },
+  wood:  { radius: 4.0, chance: 0.30, flameW: 0.75, flameH: 1.5, slots: 2 },
 };
 const EMITTER_MARGIN = 1.2;         // a persistent fire-source ignites flammables within radius + this
+// A tree fire GROWS: a thin band at the impact point climbs up AND down to engulf the whole trunk+
+// canopy over this share of the burn, then holds full. The upper TREE_CANOPY_FRAC of the tree is
+// "foliage" → flames there bloom wider into a fireball (the canopy catches).
+const TREE_GROW_FRAC   = 0.55;
+const TREE_CANOPY_FRAC = 0.55;
 
 // ── dedicated instanced flame pool (one draw call, ~no shared-pool cost) ────────────
 class FlamePool {
@@ -103,7 +113,7 @@ export class FireManager {
 
     const seed = ((this.world.terrain.seed || 1) ^ 0x1f1eba5e) >>> 0;
     this.rng = makeRNG(seed);
-    this.flames = new FlamePool(this.scene, (OBJ_CAP + GRASS_CAP) * 2 + 16);
+    this.flames = new FlamePool(this.scene, OBJ_CAP * KIND.tree.slots + GRASS_CAP * KIND.grass.slots + 16);
     this.light = new THREE.PointLight(0xff5a26, 0, 40, 1.5);
     this.light.position.set(0, -999, 0);
     this.scene.add(this.light);
@@ -116,17 +126,19 @@ export class FireManager {
   // Ignite the nearest flammable to `at` within `radius` (default 4 m). Accepts a
   // THREE.Vector3 / {x,y,z} / [x,y,z]. Returns the fire record, or null (nothing in range,
   // wall-occluded, or cap reached). This is what molotov/bazooka and the verification call.
-  igniteAt(at, radius = 4, seed = null) {
+  igniteAt(at, radius = 4, seed = null, startY = null) {
     if (!this.active) return null;
     const p = v3(at);
     const cands = this._candidates();
     const target = nearestIgnitable(p, cands, radius, (c) => this._wallBetween(p[0], p[2], c.cx, c.cz, p[1] + 0.5));
     if (!target) return null;
-    return this.ignite(target.part, seed);
+    return this.ignite(target.part, seed, startY == null ? p[1] : startY);
   }
 
-  // Ignite one specific flammable part. `seed` derives the deterministic fall/char seed.
-  ignite(part, seed = null) {
+  // Ignite one specific flammable part. `seed` derives the deterministic fall/char seed. `startY`
+  // (optional) is the WORLD height the fire starts at — molotov/shot impact Y — so a tree catches
+  // where it was hit (low trunk hit → starts low; defaults to the part base) and grows from there.
+  ignite(part, seed = null, startY = null) {
     if (!this.active || !part || part.dead || part._fire) return null;
     const mat = MATERIALS[part.dmat];
     if (!mat || mat.fuel <= 0) return null;               // fuel 0 ⇒ never ignites (stone)
@@ -144,9 +156,16 @@ export class FireManager {
       part, owner: part.downer, kind, seed,
       cx, cz, baseY, midY: baseY + Math.min(1.2, (part.max[1] - baseY) * 0.5),
       age: 0, duration: mat.fuel * SEC_PER_FUEL,
-      charDone: false, slotA: -1, slotB: -1,
+      blackened: false, bared: false, slots: [],
     };
-    rec.slotA = this.flames.acquire(); rec.slotB = this.flames.acquire();
+    if (kind === 'tree') {
+      // Full tree height: ForestDemo tree records carry .height (the collision box is a short trunk
+      // column ≤5 m, NOT the canopy) — fall back to the box height × 3 for non-ForestDemo trees.
+      const h = (rec.owner && rec.owner.height) || ((part.max[1] - baseY) * 3) || 12;
+      rec.treeTop = baseY + h;
+      rec.startY = Math.max(baseY + 0.2, Math.min(rec.treeTop - 0.4, startY == null ? baseY : startY));
+    }
+    for (let s = 0; s < k.slots; s++) rec.slots.push(this.flames.acquire());
     part._fire = rec;
     this.fires.push(rec);
     if (kind === 'grass') this._grassN++; else this._objN++;
@@ -209,7 +228,7 @@ export class FireManager {
 
   clear() {
     if (!this.active) return;
-    for (const f of this.fires) { if (f.part) f.part._fire = null; this.flames.release(f.slotA); this.flames.release(f.slotB); }
+    for (const f of this.fires) { if (f.part) f.part._fire = null; for (const s of f.slots) this.flames.release(s); }
     this.fires.length = 0; this.emitters.length = 0; this._pendingIgnite.length = 0; this._objN = 0; this._grassN = 0;
     this.light.intensity = 0; this.light.position.set(0, -999, 0);
     this.flames.flush();
@@ -241,7 +260,7 @@ export class FireManager {
       const f = this.fires[i]; f.age += dt;
       if (f.age >= f.duration) {
         if (f.part) f.part._fire = null;
-        this.flames.release(f.slotA); this.flames.release(f.slotB); f.slotA = f.slotB = -1;
+        for (const s of f.slots) this.flames.release(s); f.slots.length = 0;
         if (f.kind === 'grass') this._grassN--; else this._objN--;
         this.fires.splice(i, 1);
       }
@@ -260,7 +279,9 @@ export class FireManager {
       const p = em.pos;
       const px = Array.isArray(p) ? p[0] : p.x, py = Array.isArray(p) ? p[1] : p.y, pz = Array.isArray(p) ? p[2] : p.z;
       const seed = (em.seed != null) ? em.seed : (((px * 73856093) ^ (pz * 19349663)) >>> 0);
-      this.igniteAt([px, py, pz], (em.radius || 4) + EMITTER_MARGIN, seed);
+      // em.startY = the ORIGINAL impact height (molotov: where the bottle struck, before the puddle
+      // dropped to the floor) → a trunk hit lights the tree at that height; defaults to the puddle Y.
+      this.igniteAt([px, py, pz], (em.radius || 4) + EMITTER_MARGIN, seed, em.startY != null ? em.startY : py);
     }
 
     // 2. Advance every active fire: age, char/fell trees, spread the ember chain, burn out.
@@ -269,9 +290,16 @@ export class FireManager {
       const f = this.fires[i];
       f.age += step;
 
-      if (f.kind === 'tree' && !f.charDone && f.age >= CHAR_TIME) {
-        f.charDone = true;
-        try { this.game.forest && this.game.forest.charTree(f.owner); } catch (e) { console.warn('[fire] charTree failed', e); }
+      if (f.kind === 'tree') {
+        const fr = this.game.forest;
+        if (!f.blackened && f.age >= f.duration * LEAF_BLACKEN_FRAC) {       // leaves char black, still on the tree
+          f.blackened = true;
+          try { fr && fr.charTree(f.owner); } catch (e) { console.warn('[fire] charTree failed', e); }
+        }
+        if (!f.bared && f.age >= f.duration * LEAF_DROP_FRAC) {              // blackened leaves drop → bare snag
+          f.bared = true;
+          try { fr && fr.dropLeaves && fr.dropLeaves(f.owner); } catch (e) { console.warn('[fire] dropLeaves failed', e); }
+        }
       }
 
       // ember chain — roll to ignite the nearest untouched flammable in range, LOS-gated.
@@ -290,7 +318,7 @@ export class FireManager {
   // A fire that has consumed its fuel: char+fell the tree, consume the grass/wood, free slots.
   _burnout(f) {
     if (f.part) f.part._fire = null;
-    this.flames.release(f.slotA); this.flames.release(f.slotB); f.slotA = f.slotB = -1;
+    for (const s of f.slots) this.flames.release(s); f.slots.length = 0;
     if (f.kind === 'grass') this._grassN--; else this._objN--;
 
     try {
@@ -300,9 +328,15 @@ export class FireManager {
         else if (f.part) f.part.dead = true;
       } else if (f.kind === 'tree') {
         const fr = this.game.forest;
-        if (fr) {
-          if (!f.charDone) fr.charTree(f.owner);
-          if (FELL_ON_BURNOUT && f.owner && f.owner.standing) fr.fellTree(f.owner, null, f.seed);
+        if (fr && f.owner && f.owner.standing) {
+          if (!f.blackened) fr.charTree(f.owner);
+          // ~FELL_PCT% of fire-killed trees TOPPLE (charred split); the rest stay up as bare burnt snags.
+          if ((f.seed >>> 7) % 100 < FELL_PCT) {
+            fr.fellTree(f.owner, null, f.seed);
+          } else {
+            if (!f.bared && fr.dropLeaves) fr.dropLeaves(f.owner);
+            if (fr.burnoutSnag) fr.burnoutSnag(f.owner);
+          }
         }
       } else if (f.kind === 'grass') {
         // grass is consumed — route through forest so the host broadcasts the consume (co-op).
@@ -331,15 +365,43 @@ export class FireManager {
     for (let i = 0; i < this.fires.length; i++) {
       const f = this.fires[i], k = KIND[f.kind];
       const fade = f.age > f.duration - 1.2 ? Math.max(0.15, (f.duration - f.age) / 1.2) : 1;
-      const flick = 0.78 + Math.sin(t * 13 + i * 1.7) * 0.22;
-      const sway = Math.sin(t * 7 + i) * 0.12;
-      const w = k.flameW * (0.55 + 0.45 * fade);
-      const h = k.flameH * flick * (0.5 + 0.5 * fade);
-      // outer orange tongue
-      this.flames.set(f.slotA, f.cx + sway, f.baseY + h * 0.5, f.cz + sway * 0.5, w, h, w, 0xff6a1e);
-      // inner hotter core
-      this.flames.set(f.slotB, f.cx - sway * 0.4, f.baseY + h * 0.42, f.cz - sway * 0.3, w * 0.55, h * 0.7, w * 0.55, 0xffd24a);
-      cxs += f.cx; cys += f.baseY + h * 0.4; czs += f.cz;
+
+      if (f.kind === 'tree') {
+        // GROWING FRONT: a thin band at the impact point (startY) climbs up AND down to engulf the
+        // whole tree over TREE_GROW_FRAC of the burn, then holds full → the fire visibly grows and
+        // progressively consumes the tree from where the molotov struck.
+        const grow = Math.min(1, f.age / Math.max(0.1, f.duration * TREE_GROW_FRAC));
+        const span = grow * grow * (3 - 2 * grow);                 // smoothstep ease-in/out
+        const lo = f.startY + (f.baseY - f.startY) * span;
+        const hi = f.startY + (f.treeTop - f.startY) * span;
+        const n = f.slots.length;
+        const segH = Math.max(1.5, (hi - lo) / n * 1.8);
+        let cy = 0;
+        for (let j = 0; j < n; j++) {
+          const u = (j + 0.5) / n;                                  // 0 = front bottom … 1 = front top
+          const fy = lo + (hi - lo) * u;
+          const flick = 0.74 + Math.sin(t * 12 + i * 1.7 + j * 2.1) * 0.26;
+          const sway = Math.sin(t * 6 + i + j * 1.3) * 0.14;
+          // canopy bloom: flames in the upper TREE_CANOPY_FRAC of the tree widen into a fireball.
+          const heightFrac = (fy - f.baseY) / Math.max(1, f.treeTop - f.baseY);
+          const canopy = Math.max(0, (heightFrac - (1 - TREE_CANOPY_FRAC)) / TREE_CANOPY_FRAC);
+          const w = k.flameW * (0.7 + 1.8 * canopy) * (0.55 + 0.45 * fade) * (0.6 + 0.4 * span);
+          const hh = segH * flick * (0.55 + 0.45 * fade);
+          const col = canopy > 0.4 ? 0xff9326 : (u < 0.34 ? 0xffc24a : 0xff5a1e); // hot base · orange trunk · bright canopy
+          this.flames.set(f.slots[j], f.cx + sway, fy + hh * 0.2, f.cz + sway * 0.5, w, hh, w, col);
+          cy += fy;
+        }
+        cxs += f.cx; cys += cy / Math.max(1, n); czs += f.cz;
+      } else {
+        // grass / building wood — a small base flame (two billboards: orange tongue + hot core).
+        const flick = 0.78 + Math.sin(t * 13 + i * 1.7) * 0.22;
+        const sway = Math.sin(t * 7 + i) * 0.12;
+        const w = k.flameW * (0.55 + 0.45 * fade);
+        const h = k.flameH * flick * (0.5 + 0.5 * fade);
+        this.flames.set(f.slots[0], f.cx + sway, f.baseY + h * 0.5, f.cz + sway * 0.5, w, h, w, 0xff6a1e);
+        if (f.slots.length > 1) this.flames.set(f.slots[1], f.cx - sway * 0.4, f.baseY + h * 0.42, f.cz - sway * 0.3, w * 0.55, h * 0.7, w * 0.55, 0xffd24a);
+        cxs += f.cx; cys += f.baseY + h * 0.4; czs += f.cz;
+      }
     }
     this.flames.flush();
     // ONE aggregate light at the fire centroid; intensity grows (sub-linearly) with fire count.

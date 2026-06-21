@@ -14,6 +14,8 @@ import { BuildManager, DayNight, World } from './world.js';
 import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
+import { ForestAtmosphere } from './forestatmos.js';
+import { ForestScene } from './forestscene.js';
 import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
@@ -38,7 +40,7 @@ import { installStress } from './stress.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
-import { makeWorldClock, MINUTES_PER_DAY } from './worldclock.js';
+import { makeWorldClock, MINUTES_PER_DAY, isNight } from './worldclock.js';
 import { EFFECT_TPS, stepEffects } from './effects-status.js';
 
 // Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
@@ -72,7 +74,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-20 14:29';
+const GAME_BUILD = '2026-06-20 18:26';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -95,9 +97,9 @@ class Game {
     // Priority: ?map= URL override (dev) -> the menu's saved pick (localStorage) -> 'arena' default.
     this.mapId = (() => { try {
       const p = new URLSearchParams(location.search).get('map');
-      if (p === 'steppe' || p === 'arena' || p === 'demo') return p; // 'demo' = Phase-4+ walkable-terrain slice (?map=demo)
+      if (p === 'steppe' || p === 'arena' || p === 'demo' || p === 'forest') return p; // 'demo' = dev testbed; 'forest' = playable forest map
       const saved = localStorage.getItem('engendros_map');
-      return (saved === 'steppe' || saved === 'demo') ? saved : 'arena';
+      return (saved === 'steppe' || saved === 'demo' || saved === 'forest') ? saved : 'arena';
     } catch (e) { return 'arena'; } })();
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
     this.freecam = false;
@@ -117,11 +119,21 @@ class Game {
     this.weapons = new WeaponSystem(this);
     this.loot = new LootManager(this);
     this.build = new BuildManager(this); // fortification placement (held builders, ghost preview, structures)
-    this.forest = new Forest(this); // ?map=demo forest kit: destructible/flammable trees + groundcover (no-op on flat maps)
-    // Phase 7: destructible building (the ПРОХОДНАЯ made destroyable-ready). Constructs AFTER
-    // forest so it can clearArea() the trees on its footprint. Sets game.world.demoBuilding;
-    // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
-    this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    // ?map=forest: build the WHOLE scene from the standalone-demo's real destructible assets — demo
+    // split-fell trees (ForestDemo) + the buildgen cottage with the falling sign + crates + colonnade
+    // (ForestScene). The scene stands in as game.forest (trees) + game.world.demoBuilding (a facade that
+    // fans HE/APFSDS to every building). ?map=demo + flat maps keep the game's own forest + guard-post.
+    if (this.mapId === 'forest') {
+      this.forestScene = new ForestScene(this);
+      this.forest = this.forestScene.trees;
+      this.world.demoBuilding = this.demoBuilding = this.forestScene;
+    } else {
+      this.forest = new Forest(this); // ?map=demo forest kit: destructible/flammable trees + groundcover (no-op on flat maps)
+      // Phase 7: destructible building. Constructs AFTER forest so it can clearArea() its footprint.
+      // Phase 9 wires live fire via world.rayHit() → box.downer===building → building.apply*(...).
+      this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
+    }
+    this.forestAtmos = (this.mapId === 'forest') ? new ForestAtmosphere(this.engine.scene) : null; // ?map=forest pollen + fireflies
     this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
     const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
@@ -195,6 +207,7 @@ class Game {
       arena: 'de_dust2 arena — the classic wave-defence map.',
       steppe: 'Soviet steppe — airfield, kombinát, проходная, field base + POIs.',
       demo: 'ПОЛИГОН — destruction demo: walkable hills, forest, destructible building & spreading fire. Bazooka/molotov/APFSDS in hand. (single-player slice)',
+      forest: 'ЛЕС — wooded battleground: hilly terrain, dense forest kit, destructible building, green mist + fireflies. Full waves.',
     };
     const tabs = Array.from(document.querySelectorAll('#map-pick .tab'));
     const note = document.getElementById('map-note');
@@ -625,7 +638,7 @@ class Game {
     this.molotovPools.push(pool);
     // Register the burning puddle as a generic fire SOURCE — FireManager re-ignites flammables near
     // it without any molotov-specific knowledge (the only coupling; removed again on dispose).
-    if (this.fire) pool._emitter = this.fire.addEmitter({ pos: pool.pos, radius: pool.radius, alive: () => pool.life > 0 });
+    if (this.fire) pool._emitter = this.fire.addEmitter({ pos: pool.pos, radius: pool.radius, alive: () => pool.life > 0, startY: pos.y });
     if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
   }
   _fxBeam(from, dir) { // transient red boss-laser beam for clients (visual only — damage is host-authoritative)
@@ -1180,6 +1193,7 @@ class Game {
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
     if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
+    if (this.forestAtmos) this.forestAtmos.update(dt, this.player.pos, isNight(this._worldClock.minuteOfDay())); // ?map=forest motes
     if (this.arenaClocks) this.arenaClocks.update(dt); // arena: drive both spawn-side clocks from the world clock
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item

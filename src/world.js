@@ -54,16 +54,23 @@ export class World {
     this.grid = new SpatialGrid();   // spatial index over `boxes` (built after the map, addBox on runtime adds)
     this.spawns = [];
     this.lootSpots = [];
-    this.mapId = (game.mapId === 'steppe') ? 'steppe' : (game.mapId === 'demo' ? 'demo' : 'arena');
+    this.mapId = (game.mapId === 'steppe') ? 'steppe' : (game.mapId === 'demo') ? 'demo' : (game.mapId === 'forest') ? 'forest' : 'arena';
     // Every map has a terrain. Flat maps use the 'flat' profile (height 0 everywhere) so the unified
     // collision path degenerates to the old y=0 floor. `hasTerrain` now means "non-flat elevation".
-    this.terrain = makeTerrain({ profile: this.mapId === 'demo' ? 'demo' : 'flat', seed: 1337 });
+    // 'forest' is its own hilly profile (distinct seed) — the forest kit + destructible building auto-run
+    // on any non-flat map (they gate on hasTerrain), so ?map=forest gets trees + destruction for free.
+    this.terrain = makeTerrain({
+      profile: this.mapId === 'demo' ? 'demo' : this.mapId === 'forest' ? 'forest' : 'flat',
+      seed: this.mapId === 'forest' ? 2025 : 1337,
+    });
     this.hasTerrain = this.terrain.profile !== 'flat';
     this.chunks = null;
     if (this.mapId === 'steppe') {
       this._buildSteppe();
     } else if (this.mapId === 'demo') {
       this._buildDemo();
+    } else if (this.mapId === 'forest') {
+      this._buildForest();
     } else {
       this.scene.fog.near = 95; this.scene.fog.far = 640; // wider haze for the larger compound
       this._build();
@@ -300,6 +307,31 @@ export class World {
   // Phase 9 will flesh this into the full demo (forest + destructible building +
   // enemy spawns). Here we ONLY build terrain + its ground mesh + spawn points so
   // T2 walkable slopes can be verified. NOT a finished map.
+  // ?map=forest — a clean wooded battleground on its OWN hilly terrain. Terrain mesh + a spawn ring +
+  // loot + a little hard cover; NO dev nav-test fixtures (those belong to the demo testbed). The forest
+  // kit (forest.js) and the destructible building (demobuilding.js) auto-attach on hasTerrain, and waves
+  // run on every map — so this is a full playable map. The green fog + day/night palette live in DayNight
+  // (it rewrites fog every frame); the ambient pollen/fireflies are game.forestAtmos.
+  _buildForest() {
+    this.HALF = 158;
+    this.chunks = new TerrainChunks(this.terrain, {
+      extent: this.HALF, chunkSize: 64, resolutions: [32, 16, 8],
+      scene: this.scene, simWorker: this.game.simWorker,
+    });
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU, x = Math.cos(a) * 26, z = Math.sin(a) * 26;
+      this.spawns.push(new THREE.Vector3(x, this.terrain.terrainHeightAt(x, z), z));
+    }
+    this.lootSpots.push(
+      new THREE.Vector3(0, this.terrain.terrainHeightAt(0, 0), 0),
+      new THREE.Vector3(-54, this.terrain.terrainHeightAt(-54, 46), 46),   // atop the overlook
+    );
+    // a little seated hard cover for firefights (self-grounding on the hills) — no nav-test clutter
+    seatProp(this, 12, -14, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 0.6 });
+    seatProp(this, -14, 11, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: -0.4 });
+    seatProp(this, 22, 16, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 1.3 });
+  }
+
   _buildDemo() {
     this.scene.fog.near = 70; this.scene.fog.far = 460;
     this.HALF = 158;                                   // keep the player inside the 158 m chunk terrain
@@ -812,6 +844,14 @@ export class BuildManager {
   }
 }
 
+// Forest map sky/fog palette (ported from the forest-destruct demo). DayNight._apply re-tints over the
+// global desert SKYC when mapId === 'forest' (runs last → wins). Day = green-tan mist, night = dark green.
+const FOREST_SKY = {
+  dFog: new THREE.Color(0x9cb37a), nFog: new THREE.Color(0x141d16),
+  dHemiG: new THREE.Color(0x3a4a24), nHemiG: new THREE.Color(0x0e1610),
+  sun: new THREE.Color(0xffe6b0),
+};
+
 export class DayNight {
   constructor(game) {
     this.game = game; const e = game.engine;
@@ -940,5 +980,19 @@ export class DayNight {
     if (!day) this.moonMesh.material.color.copy(blood ? SKYC.blood : SKYC.moonCol);
     const sa = clamp((0.32 - L) / 0.32, 0, 1);
     this.stars.material.opacity = sa * 0.9; this.cstars.material.opacity = sa; this.clines.material.opacity = sa * 0.5;
+    // ── ?map=forest: re-tint the world GREEN over the desert SKYC blend (runs LAST, so it wins) ──
+    if (this.game.world && this.game.world.mapId === 'forest') {
+      const t = clamp(L, 0, 1);
+      e.scene.fog.color.copy(FOREST_SKY.nFog).lerp(FOREST_SKY.dFog, t);    // green-tan mist by day → dark green at night
+      e.scene.fog.near = 12 + t * 50; e.scene.fog.far = 50 + t * 300;      // tighter, mistier than the open maps
+      // tint the whole sky DOME green so the haze reads green EVERYWHERE (matches the demo's green bg),
+      // strongest at the horizon where it dissolves into the fog. Only by day (t), so night stays starry.
+      u.top.value.lerp(FOREST_SKY.dFog, 0.45 * t);
+      u.mid.value.lerp(FOREST_SKY.dFog, 0.72 * t);
+      u.bot.value.lerp(FOREST_SKY.dFog, 0.9 * t);
+      e.scene.background.copy(u.mid.value);
+      e.hemi.groundColor.copy(FOREST_SKY.nHemiG).lerp(FOREST_SKY.dHemiG, t); // green up-bounce off the forest floor
+      if (day) e.sun.color.copy(FOREST_SKY.sun);                           // warm sun filtered through the canopy
+    }
   }
 }
