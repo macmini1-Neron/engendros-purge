@@ -105,6 +105,19 @@ const SHILKA_BODY = Object.freeze({
   idleAmp: 0.0020, idleFreq: 9,                   // always-on diesel shudder
   traumaDecay: 1.2, traumaMaxAngle: 0.16,         // camera trauma shake (consumed in Phase 6)
 });
+// Driving "ride shake" (research 2026-06-21): a CAMERA-LOCAL jitter that grows with speed so the crew
+// feels the terrain — heaviest at the driver (low, forward, over the tracks). Speed-driven noise in two
+// bands (lope ~4.5 Hz + track buzz ~13 Hz), mostly pitch + a vertical bob; roll kept tiny (nausea). It's
+// summed AFTER the hull-spring transform (camera-local), so it doesn't double-count the body's slow
+// pitch/roll. Per-seat + zoom scaling at apply. Real ZSU-23-4 "shoots best stopped" → steadies near idle
+// when halted. (A settings "Ride Shake 0–100%" slider would just multiply these amplitudes.)
+const SHILKA_RIDE = Object.freeze({
+  vFull: 11,                                          // m/s ≈ full cross-country (top of the speed scale)
+  pitchAmp: 0.021, yawAmp: 0.0105, rollAmp: 0.0061,  // rad ≈ 1.2°/0.6°/0.35° peak (driver, full speed)
+  bobAmp: 0.06, latAmp: 0.025,                        // metres of head bob / sway (driver, full speed)
+  fLope: 4.5, fBuzz: 13,                              // Hz: loping-over-ground band + track/engine buzz
+  idleFloor: 0.10,                                    // residual fraction when crawling (with idle shudder)
+});
 const TMP_ORIGIN = new THREE.Vector3();
 const TMP_END = new THREE.Vector3();
 const TMP_FWD = new THREE.Vector3();
@@ -179,7 +192,8 @@ export class ShilkaStation {
     this.cursorMode = true;
     // body dynamics (cosmetic, client-local): hull pitch/roll springs + lurch + noise + camera trauma.
     // Summed onto the synced terrain pitch/roll at apply time; NEVER enters the drive model or broadcast.
-    this._dyn = { pitch: 0, pitchVel: 0, roll: 0, rollVel: 0, trauma: 0, prevSpeed: 0, fireWas: false, fireHold: 0, fireAmp: 0, t: 0 };
+    this._dyn = { pitch: 0, pitchVel: 0, roll: 0, rollVel: 0, trauma: 0, prevSpeed: 0, fireWas: false, fireHold: 0, fireAmp: 0, t: 0,
+      ridePitch: 0, rideYaw: 0, rideRoll: 0, rideBob: 0, rideLat: 0 }; // speed-driven ride shake (camera-local)
     this._buildRuntimeMeshes();
   }
 
@@ -743,7 +757,7 @@ export class ShilkaStation {
     cam.rotation.order = 'YXZ';
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
     cam.rotation.z = 0;
-    this._cameraTrauma(cam); // turret crew feel the recoil
+    this._cameraShake(cam, 0.65); // turret crew: ride + recoil, calmer than the driver
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
     const pl = this.game.player;
     pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
@@ -864,7 +878,7 @@ export class ShilkaStation {
     cam.position.set(d.x, d.y + 2.3, d.z); // sight head above the turret
     cam.rotation.order = 'YXZ';
     cam.lookAt(d.x + aim.x, d.y + 2.3 + aim.y, d.z + aim.z);
-    this._cameraTrauma(cam); // gunner feels the recoil buzz in the optic
+    this._cameraShake(cam, 0.5, 18 / 80); // gunner optic: ride+recoil, angular shake scaled down for the 18° zoom
     this.game.engine.setFov(18); // ~4× magnified optical sight
     const pl = this.game.player; pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
   }
@@ -1071,7 +1085,7 @@ export class ShilkaStation {
     cam.position.set(this.base.x - back.x * 1.2, this.base.y + 2.05, this.base.z - back.z * 1.2);
     cam.rotation.order = 'YXZ';
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
-    this._cameraTrauma(cam);
+    this._cameraShake(cam, 0.5); // radar overhead view
     this.game.engine.setFov(72);
     const pl = this.game.player;
     pl.pos.set(this.base.x - back.x * 1.15, this.base.y, this.base.z - back.z * 1.15);
@@ -1270,20 +1284,37 @@ export class ShilkaStation {
     this._dynRollN = idleA * 0.6 * snoise(D.t * B.idleFreq + 4.0);
     // trauma decay (camera shake consumes it in Phase 6); plateau while firing
     D.trauma = firing ? Math.max(D.trauma, 0.30) : Math.max(0, D.trauma - B.traumaDecay * dt);
+    // ride shake: speed-driven camera-local jitter (the crew feels the terrain). Two noise bands, mostly
+    // pitch + a vertical bob, roll tiny; grows with speed (ease-in), near-idle when stopped.
+    const sp01 = clamp(Math.abs(speed) / SHILKA_RIDE.vFull, 0, 1);
+    const rideI = SHILKA_RIDE.idleFloor + sp01 * sp01 * (1 - SHILKA_RIDE.idleFloor);
+    const tl = D.t * SHILKA_RIDE.fLope, tb = D.t * SHILKA_RIDE.fBuzz;
+    D.ridePitch = rideI * SHILKA_RIDE.pitchAmp * snoise(tl);
+    D.rideYaw = rideI * SHILKA_RIDE.yawAmp * snoise(tl + 5.0);
+    D.rideRoll = rideI * SHILKA_RIDE.rollAmp * snoise(tl + 9.0);
+    D.rideBob = rideI * SHILKA_RIDE.bobAmp * (snoise(tl + 2.0) + 0.4 * snoise(tb + 1.0));
+    D.rideLat = rideI * SHILKA_RIDE.latAmp * (0.5 * snoise(tl + 3.0) + snoise(tb + 6.0));
     D.prevSpeed = speed; D.fireWas = firing; D.fireHold = Math.max(0, D.fireHold - dt);
   }
 
-  // Rotational camera trauma (Eiserloh "Juicing Your Cameras"): shake the camera ANGLES only
-  // (translational shake is "super lame"), scaled by trauma² so small barely shows and big slams;
-  // self-centres → sustained fire just buzzes in place. Called after a seat's lookAt, before render.
-  // Trauma is charged by firing/impacts in _stepBody and decays there.
-  _cameraTrauma(cam) {
+  // Camera-local shake applied AFTER a seat's lookAt: the speed-driven RIDE jitter (crew feels the
+  // terrain) + the firing TRAUMA kick (Eiserloh: rotational only, trauma², self-centring). seatMul scales
+  // by seat harshness (driver 1.0, turret/gunner less); zoomScale shrinks the ANGULAR ride in a magnified
+  // sight (same angle reads bigger when zoomed) with a floor so moving-fire still visibly wobbles. Roll
+  // kept tiny (nausea); a small vertical bob reads as "bumpy" without provoking sickness like roll does.
+  _cameraShake(cam, seatMul = 1, zoomScale = 1) {
     const D = this._dyn;
-    if (D.trauma <= 0.002) return;
-    const sh = D.trauma * D.trauma, A = SHILKA_BODY.traumaMaxAngle, t = D.t * 16;
-    cam.rotation.x += A * sh * snoise(t);
-    cam.rotation.y += A * sh * snoise(t + 7.3);
-    cam.rotation.z += A * sh * snoise(t + 14.1) * 0.5;
+    const am = seatMul * zoomScale;
+    cam.rotation.x += D.ridePitch * am;
+    cam.rotation.y += D.rideYaw * am;
+    cam.rotation.z += D.rideRoll * am;
+    cam.position.y += D.rideBob * seatMul;
+    if (D.trauma > 0.002) {
+      const sh = D.trauma * D.trauma, A = SHILKA_BODY.traumaMaxAngle, t = D.t * 16;
+      cam.rotation.x += A * sh * snoise(t);
+      cam.rotation.y += A * sh * snoise(t + 7.3);
+      cam.rotation.z += A * sh * snoise(t + 14.1) * 0.5;
+    }
   }
 
   _applyRig(dt) {
@@ -1333,7 +1364,7 @@ export class ShilkaStation {
     cam.position.set(d.x - sin * back, d.y + up, d.z - cos * back);
     cam.rotation.order = 'YXZ';
     cam.lookAt(d.x, d.y + 0.6, d.z);
-    this._cameraTrauma(cam);
+    this._cameraShake(cam, 1.0); // chase: full ride shake so you can see the hull jiggle
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
     const pl = this.game.player; pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
   }
@@ -1367,7 +1398,7 @@ export class ShilkaStation {
     // periscope optic: FIXED forward at the БМО-190Б field (no traverse — a real driver's day periscope is
     // a fixed wide-angle prism). Its world pose comes entirely from the parent (rig.body → heading + tilt);
     // we just hold the fixed local axis. The mouse is free for the shift lever (see _driveControlUpdate).
-    if (this._periCam) { this._periCam.rotation.set(SHILKA_PERI_TILT, Math.PI, 0, 'YXZ'); this._cameraTrauma(this._periCam); } // driver feels recoil in the slit
+    if (this._periCam) { this._periCam.rotation.set(SHILKA_PERI_TILT, Math.PI, 0, 'YXZ'); this._cameraShake(this._periCam, 1.0); } // driver: harshest ride + recoil in the slit
     // setFov narrower than on-foot so the hood/slit fills more of the screen.
     this.game.engine.setFov(58);
     const pl = this.game.player;
