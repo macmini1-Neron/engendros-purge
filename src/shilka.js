@@ -693,6 +693,15 @@ export class ShilkaStation {
   update(dt) {
     this._updateDrones(dt);
     this._updateProjectiles(dt);
+    // cosmetic body dynamics: ONE spring step per frame for every Shilka (drives hull pitch/roll + the
+    // trauma/buzz that the driver, gunner, and external viewers all read). Local only — never synced.
+    // Runs before controlUpdate's _applyRig (game.js loop order), so the rig sums this frame's spring.
+    if (this.rig) {
+      const dh = this.drive.heading - (this._dyn.h0 ?? this.drive.heading);
+      this._dyn.h0 = this.drive.heading;
+      const omega = (((dh + Math.PI) % TAU + TAU) % TAU - Math.PI) / Math.max(dt, 1e-3);
+      this._stepBody(dt, this.drive.speed, omega, this._dyn.fireHold > 0);
+    }
     if (this._pendingRig && this.rig) { this._applyRig(0); this._pendingRig = false; } // apply a snapshot that arrived before the GLB finished loading
     // radar "Gun Dish" scans continuously — visible on the parked model from any angle (this.update
     // ticks even when unseated). Dev: s._radarSpin = 0 stops it, larger = faster (rad/s).
@@ -734,6 +743,7 @@ export class ShilkaStation {
     cam.rotation.order = 'YXZ';
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
     cam.rotation.z = 0;
+    this._cameraTrauma(cam); // turret crew feel the recoil
     this.game.engine.setFov((this.game.settings && this.game.settings.data.fov) || 80);
     const pl = this.game.player;
     pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
@@ -820,6 +830,7 @@ export class ShilkaStation {
     const grant = makeOpticalBurstGrant(this.state, this.id, muzzle, aimDir, seed, seconds);
     if (!grant) return;
     this.state = fireShilkaBurst(this.state, seconds, false); // deduct ammo/heat (no solution gate)
+    this._dyn.fireHold = 0.16; // recoil: feeds _stepBody (rock-back + 25 Hz buzz + trauma plateau)
     const enemies = (this.game.enemies && this.game.enemies.active) || [];
     const hits = sweepShilkaBurst(grant, enemies, { radiusPad: 0.4 });
     const hostSim = !this.game.mp || !this.game.mp.active || this.game.mp.isHost;
@@ -853,6 +864,7 @@ export class ShilkaStation {
     cam.position.set(d.x, d.y + 2.3, d.z); // sight head above the turret
     cam.rotation.order = 'YXZ';
     cam.lookAt(d.x + aim.x, d.y + 2.3 + aim.y, d.z + aim.z);
+    this._cameraTrauma(cam); // gunner feels the recoil buzz in the optic
     this.game.engine.setFov(18); // ~4× magnified optical sight
     const pl = this.game.player; pl.pos.set(d.x, d.y, d.z); pl.vel.set(0, 0, 0);
   }
@@ -948,6 +960,7 @@ export class ShilkaStation {
     const grant = makeShilkaBurstGrant(this.state, this.id, muzzle, seed, seconds);
     if (!grant) return;
     this.state = fireShilkaBurst(this.state, seconds);
+    this._dyn.fireHold = 0.16; // recoil: feeds _stepBody (rock-back + 25 Hz buzz + trauma plateau)
     const hits = this._resolveBurst(grant, target);
     if (hits > 0) {
       if (drone) {
@@ -1058,6 +1071,7 @@ export class ShilkaStation {
     cam.position.set(this.base.x - back.x * 1.2, this.base.y + 2.05, this.base.z - back.z * 1.2);
     cam.rotation.order = 'YXZ';
     cam.lookAt(TMP_END.copy(cam.position).add(fwd));
+    this._cameraTrauma(cam);
     this.game.engine.setFov(72);
     const pl = this.game.player;
     pl.pos.set(this.base.x - back.x * 1.15, this.base.y, this.base.z - back.z * 1.15);
@@ -1098,7 +1112,6 @@ export class ShilkaStation {
     };
     const ground = this._sampleWheelGround();
     this.drive = stepDrive(this.drive, dt, inp, ground);
-    this._stepBody(dt, this.drive.speed, this.drive.yawRate, this._dyn.fireHold > 0); // cosmetic hull spring
     this._applyRig(dt);
     this._frameDriverCamera(dt);
     this._renderPeriscope(); // RTT the optical periscope into _periRT, BEFORE engine.render()
@@ -1143,11 +1156,6 @@ export class ShilkaStation {
     d.wheelSpinL = m.wsL ?? m.ws; d.wheelSpinR = m.wsR ?? m.ws;   // per-side (fallback to single)
     d.trackScrollL = m.tsL ?? m.ts; d.trackScrollR = m.tsR ?? m.ts;
     d.y = this._groundY(d.x, d.z) + SHILKA_DRIVE_TUNING.wheelRadius + SHILKA_DRIVE_TUNING.rideHeight;
-    // body dynamics on the remote vehicle too (each client runs its own spring): derive yaw rate from
-    // the heading delta since yawRate isn't broadcast. Cosmetic — no sync.
-    const dh = d.heading - (this._dyn.remoteH ?? d.heading);
-    this._dyn.remoteH = d.heading;
-    this._stepBody(dt, m.speed, (((dh + Math.PI) % TAU + TAU) % TAU - Math.PI) / Math.max(dt, 1e-3), false);
     this._applyRig(dt);
   }
 
@@ -1261,7 +1269,20 @@ export class ShilkaStation {
     this._dynRollN = idleA * 0.6 * snoise(D.t * B.idleFreq + 4.0);
     // trauma decay (camera shake consumes it in Phase 6); plateau while firing
     D.trauma = firing ? Math.max(D.trauma, 0.30) : Math.max(0, D.trauma - B.traumaDecay * dt);
-    D.prevSpeed = speed; D.fireWas = firing;
+    D.prevSpeed = speed; D.fireWas = firing; D.fireHold = Math.max(0, D.fireHold - dt);
+  }
+
+  // Rotational camera trauma (Eiserloh "Juicing Your Cameras"): shake the camera ANGLES only
+  // (translational shake is "super lame"), scaled by trauma² so small barely shows and big slams;
+  // self-centres → sustained fire just buzzes in place. Called after a seat's lookAt, before render.
+  // Trauma is charged by firing/impacts in _stepBody and decays there.
+  _cameraTrauma(cam) {
+    const D = this._dyn;
+    if (D.trauma <= 0.002) return;
+    const sh = D.trauma * D.trauma, A = SHILKA_BODY.traumaMaxAngle, t = D.t * 16;
+    cam.rotation.x += A * sh * snoise(t);
+    cam.rotation.y += A * sh * snoise(t + 7.3);
+    cam.rotation.z += A * sh * snoise(t + 14.1) * 0.5;
   }
 
   _applyRig(dt) {
@@ -1329,7 +1350,7 @@ export class ShilkaStation {
     // periscope optic: FIXED forward at the БМО-190Б field (no traverse — a real driver's day periscope is
     // a fixed wide-angle prism). Its world pose comes entirely from the parent (rig.body → heading + tilt);
     // we just hold the fixed local axis. The mouse is free for the shift lever (see _driveControlUpdate).
-    if (this._periCam) this._periCam.rotation.set(SHILKA_PERI_TILT, Math.PI, 0, 'YXZ');
+    if (this._periCam) { this._periCam.rotation.set(SHILKA_PERI_TILT, Math.PI, 0, 'YXZ'); this._cameraTrauma(this._periCam); } // driver feels recoil in the slit
     // setFov narrower than on-foot so the hood/slit fills more of the screen.
     this.game.engine.setFov(58);
     const pl = this.game.player;
