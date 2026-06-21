@@ -12,6 +12,7 @@ import { MANIFEST } from './operators/manifest.js';
 import { boundsErrors } from './bounds.js';
 import { planBuild, zFightPairs } from './plan.js';
 import { resolveMaterial } from './palette.js';
+import { physKeyOf } from './materials.js';
 import { specTopY, faceFrame, faceToWorld } from './operators/_math.js';
 import { openingsOf } from './operators/facade.js';
 
@@ -228,9 +229,11 @@ export function validate(spec, opts = {}) {
     }
   }
 
-  // law 10 + 14 — budgets
+  // law 10 + 14 — budgets. Breach subdivision multiplies a destructible building's colliders
+  // (~3× — each wall splits into ~1.7 m pieces), so its cap is raised; the static cap is unchanged.
+  const destructible = intent.destructible !== false;
   const landmark = intent.role === 'landmark' || (f && f.w * f.d > 400);
-  const colCap = landmark ? 64 : 32;
+  const colCap = (landmark ? 64 : 32) * (destructible ? 3 : 1);
   if (plan.stats.colliderCount > colCap) W(`${plan.stats.colliderCount} colliders > ${colCap} budget — simplify (or justify in BUILD.md)`);
   for (const c of plan.colliders) {
     if (f && (c.min[0] < -f.w / 2 - 0.06 || c.max[0] > f.w / 2 + 0.06 || c.min[2] < -f.d / 2 - 0.06 || c.max[2] > f.d / 2 + 0.06)) {
@@ -242,8 +245,60 @@ export function validate(spec, opts = {}) {
   if (plan.stats.tris > 20000) E(`~${plan.stats.tris} triangles > 20k hard cap`);
   else if (plan.stats.tris > 8000) W(`~${plan.stats.tris} triangles > 8k budget (provisional — recalibrate with a real frame capture)`);
 
+  // ---- laws 15–18 — destruction (gated on intent.destructible, default-on) ----
+  if (destructible) {
+    // a registerable cladding prim becomes a destruct part: collidable wall pieces + glass panes
+    const claddable = plan.prims.filter((c) => (c.collide || c.kind === 'pane') && c.role === 'cladding');
+
+    // law 15 — every cladding material must bridge to physics (else the part can't be destroyed)
+    for (const c of claddable) {
+      if (c.mat == null) continue;                            // unresolved material is law 8's job
+      let key; try { key = physKeyOf(c.mat); } catch (e) { continue; }   // unknown name is law 8's job
+      if (key == null) E(`cladding part '${c.part}' uses '${c.mat}' which has no phys bridge — make it structural (role) or use a destructible material`);
+    }
+
+    // law 16 — roof support: each footprint corner needs a STRUCTURAL vertical stack from ground
+    // to the roof, so stripping every cladding part never leaves the roof floating. (Only meaningful
+    // with a shell + roof; a cheap heuristic, NOT a statics solver — see SKILL.md.)
+    if (shell) {
+      const struct = plan.prims.filter((c) => c.role === 'structural' && (c.kind === 'box' || c.kind === 'cyl'));
+      const NEAR = Math.max(2.0, wallT + (shell.args?.segW ?? 1.7));
+      for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+        const cxq = sx * (f.w / 2), czq = sz * (f.d / 2);
+        const spans = struct
+          .filter((c) => Math.hypot(c.x - cxq, c.z - czq) <= NEAR)
+          .map((c) => [c.y - c.h / 2, c.y + c.h / 2]);
+        if (!coversRange(spans, 0.6, topY - 0.6)) {
+          E(`roof corner (${cxq.toFixed(1)},${czq.toFixed(1)}) has no structural support to the roof — strip the cladding and the roof floats. Keep shellBox corners:'structural' or add a column there.`);
+        }
+      }
+    }
+
+    // law 17 — destructible part ids are stable + unique (co-op replay / late-join correctness)
+    const ids = claddable.map((c) => c.part);
+    const seen = new Set(), dups = new Set();
+    for (const id of ids) { if (seen.has(id)) dups.add(id); seen.add(id); }
+    for (const id of dups) E(`destructible part id '${id}' is not unique — breach/pane ids must be stable + unique (co-op replay)`);
+    for (const id of ids) if (/undefined|NaN|null/.test(String(id))) E(`destructible part id '${id}' looks malformed`);
+
+    // law 18 — declared destructible but nothing can break (WARN: inert)
+    if (!claddable.length) W('declared destructible but no part can be destroyed (every part is structural) — it is inert (set intent.destructible:false if intended)');
+  }
+
   if (spec.needs?.length) I(`needs[] (${spec.needs.length}): ${spec.needs.join(' · ')}`);
   return { errors, warns, infos };
+}
+
+// Does the union of [a,b] y-intervals cover [lo,hi] with no gap? (law 16 stack coverage)
+function coversRange(spans, lo, hi) {
+  const s = spans.filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]);
+  let reach = lo;
+  for (const [a, b] of s) {
+    if (a > reach + 1e-6) break;                              // gap before this span — uncovered
+    if (b > reach) reach = b;
+    if (reach >= hi - 1e-6) return true;
+  }
+  return reach >= hi - 1e-6;
 }
 
 // law 13 — 0.25 m occupancy grid over the interior at torso height; BFS entrance↔entrance.

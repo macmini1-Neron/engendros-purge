@@ -13,6 +13,7 @@
     "furnitureReady": false,
     "roofAccess": false,
     "role": "cover",
+    "destructible": false,
     "entrances": [
       "N"
     ]
