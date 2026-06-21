@@ -22,7 +22,7 @@ test('registry-core: register / get / has / list / reset', () => {
 // two allowed browser-side couplings (which live in interp.js/registry.js only).
 test('pure modules import neither three nor util.js nor src/props', () => {
   const root = fileURLToPath(new URL('../../src/buildings/', import.meta.url));
-  const browserOnly = new Set(['interp.js', 'registry.js', 'textures.js']);
+  const browserOnly = new Set(['interp.js', 'registry.js', 'textures.js', 'destructible.js']);
   const files = [
     ...readdirSync(root).filter((f) => f.endsWith('.js') && !browserOnly.has(f)).map((f) => root + f),
     ...readdirSync(root + 'operators').filter((f) => f.endsWith('.js')).map((f) => root + 'operators/' + f),

@@ -77,8 +77,69 @@ function rawGeometry(verts) {
   return g;
 }
 
-// Build a validated building spec → { group, colliders, stats, warns, infos }.
+// Opaque prim kinds that merge into a per-material bucket (panes/signs/propRefs are standalone).
+export const OPAQUE_KINDS = new Set(['box', 'cyl', 'prism', 'wedge']);
+
+// One opaque prim → its bucket MeshBuilder (box/cyl/prism/wedge geometry at its local transform).
+function addPrim(b, c, tone) {
+  if (c.kind === 'box') {
+    const rot = c.rot ?? [0, 0, 0];
+    b.box(c.w, c.h, c.d, c.x, c.y, c.z, tone, { rx: rot[0] * D2R, ry: rot[1] * D2R, rz: rot[2] * D2R });
+  } else if (c.kind === 'cyl') {
+    const g = new THREE.CylinderGeometry(c.rTop, c.rBot, c.h, c.seg ?? 12); b.geo(g, c.x, c.y, c.z, tone); g.dispose();
+  } else if (c.kind === 'prism') {
+    const g = prismGeometry(c.w, c.h, c.d, c.axis); b.geo(g, c.x, c.y, c.z, tone); g.dispose();
+  } else if (c.kind === 'wedge') {
+    const g = wedgeGeometry(c.w, c.h, c.d, c.axis, c.hi); b.geo(g, c.x, c.y, c.z, tone); g.dispose();
+  }
+}
+
+// Bucket the opaque prims per material into MeshBuilders, omitting any whose part id is in `skip`.
+// Returns Map<matName, MeshBuilder>. The destructible runtime calls this with the dead set to
+// rebuild one material's merged mesh minus its destroyed pieces.
+export function fillBuckets(prims, skip = null) {
+  const buckets = new Map();
+  for (const c of prims) {
+    if (!OPAQUE_KINDS.has(c.kind)) continue;
+    if (skip && skip.has(c.part)) continue;
+    const matName = c.mat ?? 'concrete';
+    const tone = new THREE.Color(resolveMaterial(matName).tones.mid).getHex();
+    if (!buckets.has(matName)) buckets.set(matName, new MeshBuilder());
+    addPrim(buckets.get(matName), c, tone);
+  }
+  return buckets;
+}
+
+// Realize one material bucket → a merged THREE.Mesh. `texCache` (a Map) caches the CanvasTexture
+// per material, so a lazy rebuild REUSES it (never regenerates the seeded canvas — law 8 pixel
+// identity; the rebuild only re-runs the geometry merge + metric UVs over the surviving prims).
+export function realizeBucket(matName, meshBuilder, spec, texCache = null) {
+  const entry = resolveMaterial(matName);
+  const geo = meshBuilder.build();
+  let mesh;
+  if (entry.kind === 'tiled') {
+    metricUVs(geo, entry.tile);
+    let tex = texCache?.get(matName);
+    if (!tex) {
+      tex = new THREE.CanvasTexture(makeTextureCanvas(matName, entry, spec.seed));
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.magFilter = THREE.NearestFilter;
+      tex.repeat.set(1, 1);                                  // tiling lives in the UVs — never here
+      texCache?.set(matName, tex);
+    }
+    mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex }));
+  } else {
+    mesh = new THREE.Mesh(geo, voxelMaterial());
+  }
+  mesh.name = `mat:${matName}`;
+  mesh.castShadow = mesh.receiveShadow = true;
+  return mesh;
+}
+
+// Build a validated building spec → { group, colliders, prims, texCache, stats, warns, infos }.
 // opts: { dossier, props } forwarded to the validator (defaults to the live prop registry).
+// `prims` + `texCache` are returned so DestructibleBuilding can lazily re-merge a material bucket
+// minus its destroyed parts without re-validating or regenerating textures.
 export function buildBuilding(spec, opts = {}) {
   const props = opts.props ?? { hasModel: hasPropModel, getSpec: getPropSpec };
   const res = validate(spec, { dossier: opts.dossier, props: opts.skipPropCheck ? undefined : props });
@@ -88,10 +149,8 @@ export function buildBuilding(spec, opts = {}) {
   const root = new THREE.Group();
   root.name = `building:${spec.id}`;
 
-  // bucket prims per material; signs and panes become standalone meshes
-  const buckets = new Map();
-  const bucket = (mat) => { if (!buckets.has(mat)) buckets.set(mat, new MeshBuilder()); return buckets.get(mat); };
-
+  // standalone meshes: propRefs (modelgen props), glass panes, signs. Panes carry their dpart so
+  // the runtime can dispose exactly one shattered pane.
   for (const c of plan.prims) {
     if (c.kind === 'propRef') {
       if (props.hasModel(c.model)) {
@@ -100,9 +159,7 @@ export function buildBuilding(spec, opts = {}) {
         obj.rotation.y = c.yaw * D2R;
         root.add(obj);
       } else console.warn(`[buildgen] propRef '${c.model}' not registered — skipped`);
-      continue;
-    }
-    if (c.kind === 'pane') {
+    } else if (c.kind === 'pane') {
       const entry = resolveMaterial(c.mat ?? 'glassPane');
       const m = new THREE.Mesh(
         new THREE.PlaneGeometry(c.w, c.h),
@@ -115,59 +172,22 @@ export function buildBuilding(spec, opts = {}) {
       m.rotation.y = (c.ry ?? 0) * D2R;
       if (c.lean) m.rotation.x = c.lean * D2R;
       m.renderOrder = 3;                                     // the airfield glass recipe
+      m.userData = { kind: 'pane', dpart: c.part };
       root.add(m);
-      continue;
-    }
-    if (c.text != null) {                                    // sign/stencil board — own canvas per text
+    } else if (c.text != null) {                             // sign/stencil board — own canvas per text
       const entry = resolveMaterial(c.mat ?? 'signage');
       const tex = new THREE.CanvasTexture(makeSignCanvas(c.text, entry));
       tex.magFilter = THREE.NearestFilter;
       const m = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h, c.d), new THREE.MeshLambertMaterial({ map: tex }));
       m.position.set(c.x, c.y, c.z);
       root.add(m);
-      continue;
-    }
-    const entry = resolveMaterial(c.mat ?? 'concrete');
-    const tone = new THREE.Color(entry.tones.mid).getHex();
-    const b = bucket(c.mat ?? 'concrete');
-    if (c.kind === 'box') {
-      const rot = c.rot ?? [0, 0, 0];
-      b.box(c.w, c.h, c.d, c.x, c.y, c.z, tone, { rx: rot[0] * D2R, ry: rot[1] * D2R, rz: rot[2] * D2R });
-    } else if (c.kind === 'cyl') {
-      const g = new THREE.CylinderGeometry(c.rTop, c.rBot, c.h, c.seg ?? 12);
-      b.geo(g, c.x, c.y, c.z, tone);
-      g.dispose();
-    } else if (c.kind === 'prism') {
-      const g = prismGeometry(c.w, c.h, c.d, c.axis);
-      b.geo(g, c.x, c.y, c.z, tone);
-      g.dispose();
-    } else if (c.kind === 'wedge') {
-      const g = wedgeGeometry(c.w, c.h, c.d, c.axis, c.hi);
-      b.geo(g, c.x, c.y, c.z, tone);
-      g.dispose();
     }
   }
 
-  // realize the buckets: tiled → CanvasTexture with metric UVs; flat → vertex-colour Lambert
-  for (const [matName, b] of buckets) {
-    const entry = resolveMaterial(matName);
-    const geo = b.build();
-    let mesh;
-    if (entry.kind === 'tiled') {
-      metricUVs(geo, entry.tile);
-      const tex = new THREE.CanvasTexture(makeTextureCanvas(matName, entry, spec.seed));
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.magFilter = THREE.NearestFilter;
-      tex.repeat.set(1, 1);                                  // tiling lives in the UVs — never here
-      mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex }));
-    } else {
-      mesh = new THREE.Mesh(geo, voxelMaterial());
-    }
-    mesh.name = `mat:${matName}`;
-    mesh.castShadow = mesh.receiveShadow = true;
-    root.add(mesh);
-  }
+  // opaque structure: merge per material (one draw call each)
+  const texCache = new Map();
+  for (const [matName, b] of fillBuckets(plan.prims)) root.add(realizeBucket(matName, b, spec, texCache));
 
   root.userData = { buildingId: spec.id, footprint: spec.footprint, stats: plan.stats };
-  return { group: root, colliders: plan.colliders, stats: plan.stats, warns: res.warns, infos: res.infos };
+  return { group: root, colliders: plan.colliders, prims: plan.prims, texCache, stats: plan.stats, warns: res.warns, infos: res.infos };
 }
