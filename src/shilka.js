@@ -1382,7 +1382,6 @@ export class ShilkaStation {
   // player, exactly like a real mount. Solo dev tool — nothing here is simulated authoritatively or synced.
   devEnter() {
     this._dev = this._dev || { yaw: 2.3, pitch: 0.40, dist: 12 };
-    this._dev.on = true;
     // bring the powerpack alive so the arrow keys actually move it (the realistic 2-engine model is next).
     this.drive.engineOn = true; this.drive.stalled = false;
     if (this.drive.engineRpm < SHILKA_DRIVE_TUNING.idleRpm) this.drive.engineRpm = SHILKA_DRIVE_TUNING.idleRpm;
@@ -1395,11 +1394,14 @@ export class ShilkaStation {
   }
 
   devExit() {
-    if (this._dev) this._dev.on = false;
     this.game._shilkaDev = null;        // game.js stops routing devUpdate; normal play resumes next frame
-    if (this._devHud) this._devHud.style.display = 'none';
+    if (this._devHud) { this._devHud.remove(); this._devHud = null; } // tear the overlay down (don't leave it in the DOM)
     if (this.game.weapons && this.game.weapons.group) this.game.weapons.group.visible = true; // restore the held weapon
     if (this.game.hud) { this.game.hud.show(true); this.game.hud.bigMessage('DEV OFF', 'normal play resumed'); }
+    // step the player off to the hull's side so we don't resume standing inside the tank
+    const d = this.drive, pl = this.game.player;
+    pl.pos.set(d.x + Math.cos(d.heading) * 4, d.y, d.z - Math.sin(d.heading) * 4);
+    pl.vel.set(0, 0, 0);
   }
 
   devUpdate(dt) {

@@ -428,7 +428,7 @@ class Game {
     this.state = 'playing'; this._startCountdown = 0.6;
     this.freecam = !!this._flyStart; // ?fly=1 → boot straight into the fly-cam (no enemies until you press N)
     if (this.freecam) this.hud.bigMessage('🚁 FREECAM', 'WASD fly · Space up · Ctrl/C down · Shift boost · N toggle');
-    if (this._shilkaDevStart) setTimeout(() => this.shilkaDev(), 300); // ?shilkadev=1 → external RC observation of the Shilka
+    if (this._shilkaDevStart) { clearTimeout(this._shilkaDevTimer); this._shilkaDevTimer = setTimeout(() => this.shilkaDev(), 300); } // ?shilkadev=1 → external RC observation of the Shilka
     // Go real-fullscreen on this user gesture, then resize, grab the pointer & lock the keyboard.
     const root = document.documentElement;
     const after = () => { this.engine.resize(); this.input.requestLock(); this._lockKeyboard(); };
@@ -546,6 +546,7 @@ class Game {
   reset() {
     if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
+    clearTimeout(this._shilkaDevTimer); if (this._shilkaDev) this._shilkaDev.devExit(); // tear down Shilka dev observation + cancel a pending auto-enter
     if (this.player && this.player.shilka) this.player.shilka.dismount(true);
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
