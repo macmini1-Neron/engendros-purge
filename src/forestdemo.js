@@ -95,14 +95,15 @@ export class ForestDemo {
     // leaf-mass envelope), then rotated by this tree's yaw into world AABBs:
     //   · TRUNK — a few SOLID bands that hug the leaning bole (you can't walk through or shoot past it).
     //     One base-centred column missed the lean entirely → shots at the upper bole hit nothing.
-    //   · CANOPY — ONE box matching the actual foliage, flagged `shootOnly`: the raycast hits it but
-    //     movement (player AND horde) ignores it. The crown is 10–20 m wide; a SOLID box that size walls
-    //     the whole footprint — that floating box was also a phantom wall enemies couldn't path under.
+    //   · CANOPY — ONE box matching the actual foliage, flagged `foliage` (soft cover): the raycast hits
+    //     it but movement passes THROUGH it (slowed — World.foliageSlowAt). The crown is 10–20 m wide; a
+    //     SOLID box that size walls the whole footprint — that floating box was also a phantom wall.
     const cos = Math.cos(yaw), sin = Math.sin(yaw);
-    const addBox = (mn, mx, shootOnly) => {
+    const addBox = (mn, mx, foliage, thicket) => {
       const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id };
-      if (shootOnly) b.shootOnly = true;
-      rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b);
+      if (foliage) b.foliage = true;   // soft cover: raycast hits it (shoot/conceal), movement passes THROUGH it
+      if (thicket) b.thicket = true;   // …and SLOWS a body inside it. Only ground-level foliage you push through
+      rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b);  // (saplings/bushes/fallen crowns) — NOT a tall tree's overhead crown (you walk under that; its wide AABB would over-slow neighbours).
     };
     const spine = res.spine;
     if (spine && spine.length) {
@@ -132,7 +133,9 @@ export class ForestDemo {
       const cxL = (cab.min[0] + cab.max[0]) * 0.5, czL = (cab.min[2] + cab.max[2]) * 0.5;   // crown centre (lean-offset, local)
       const cxr = cxL * cos + czL * sin, czr = -cxL * sin + czL * cos;                      // rotate by yaw → world (THREE rotation.y)
       const hw = Math.max(cab.max[0] - cab.min[0], cab.max[2] - cab.min[2]) * 0.5 + 0.1;    // square hull (rotation-safe) + small aim margin
-      addBox([x + cxr - hw, y + cab.min[1] - 0.2, z + czr - hw], [x + cxr + hw, y + cab.max[1] + 0.2, z + czr + hw], true);   // ±0.2 Y to catch the apex tuft / lowest fringe
+      // foliage=true (shoot/conceal/walk-through) always; thicket(slow)=only saplings — the understory you
+      // push through. A grown crown is overhead (you walk under it) and its wide AABB would over-slow neighbours.
+      addBox([x + cxr - hw, y + cab.min[1] - 0.2, z + czr - hw], [x + cxr + hw, y + cab.max[1] + 0.2, z + czr + hw], true, !!sapling);   // ±0.2 Y catches the apex tuft / lowest fringe
     }
     this.trees.push(rec);
     if (!sapling) this.windy.push({ m, yaw, amp: 0.018 + rr(0, 0.022), ph: rr(0, 6.28), speed: 0.8 + rr(0, 1.2) });

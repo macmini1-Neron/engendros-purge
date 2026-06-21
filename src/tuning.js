@@ -19,6 +19,7 @@ export const HUNGER_MAX = 100;
 export const HUNGER_DRAIN_PER_SEC = 0.15;   // 100 -> 0 in ~11 min (3x slower — food lasts ~300% longer)
 export const HUNGER_LOW = 25;               // below this: walk slowed + HP regen disabled
 export const HUNGER_LOW_SPEED_MULT = 0.7;   // walk speed while starving
+export const FOLIAGE_SLOW = 0.55;           // horizontal-speed multiplier while pushing through foliage (player AND horde) — soft cover
 export const STARVE_TICK_TIME = 2.0;        // seconds between starvation damage ticks at hunger<=0
 export const STARVE_TICK_DMG = 5;           // HP per starvation tick (bypasses armor) — never drops HP below 50% maxHp; starvation can't kill
 export const FOOD_RESTORE = 40;             // hunger restored per ration

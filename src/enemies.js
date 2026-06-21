@@ -348,7 +348,7 @@ export class EnemyManager {
   // (a stair riser, wall, or the surface itself) is NOT a ceiling, so solid staircases stay climbable.
   _headClearE(cands, e, top) {
     for (const o of cands) {
-      if (o.struct || o.shootOnly) continue;                            // canopy foliage is never a head obstruction
+      if (o.struct || o.foliage) continue;                              // foliage is never a head obstruction
       if (o.min.y <= top + 0.05 || o.min.y >= top + e.height) continue; // rises from below, or clears the head
       if (e.pos.x + e.radius <= o.min.x || e.pos.x - e.radius >= o.max.x) continue;
       if (e.pos.z + e.radius <= o.min.z || e.pos.z - e.radius >= o.max.z) continue;
@@ -516,7 +516,7 @@ export class EnemyManager {
       // crate avoidance — skip surfaces we can step onto (top ≤ feet+STEP_UP) so we don't back off our own stairs.
       let ax = 0, az = 0;
       for (const b of (_onStruct ? [] : this.world.grid.queryAABB(e.pos.x - 1.8, e.pos.z - 1.8, e.pos.x + 1.8, e.pos.z + 1.8))) {
-        if (b.shootOnly) continue;                                        // tree canopy: walk under it, don't avoid it
+        if (b.foliage) continue;                                          // foliage: walk through it, don't avoid it
         if (b.max.y < 0.6 || b.max.y <= e.pos.y + STEP_UP) continue;
         const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2;
         const rx = e.pos.x - cx, rz = e.pos.z - cz;
@@ -539,7 +539,8 @@ export class EnemyManager {
       const _wz = this.game.build.hazardAt(e.pos.x, e.pos.z); // barbed-wire hazard: slow + DoT + trample
       const _bossRooted = e.def.boss && (e.charging > 0 || e.sweepActive || e.invuln > 0 || e.shotsLeft > 0); // Tolo stands still while attacking / transitioning
       // TODO P3: when burn migrates to effects-status, drop the `e.burnT ? ENEMY_BURN_SLOW : 1` term — else a burning enemy double-slows (ENEMY_BURN_SLOW × BURN_SLOW = 0.45 × 0.45 = 0.20).
-      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1) * movementSlow(e)) * (_wz ? STRUCT_DEFS.wire.slow : 1);
+      const _fol = e.def.boss ? 1 : this.world.foliageSlowAt(e.pos.x, e.pos.z, e.pos.y, e.pos.y + e.height); // the horde wades through foliage too (boss tramples)
+      const spd = (_bossRooted ? 0 : e.speed) * (e.squash > 0 ? 0.3 : (e.burnT > 0 ? ENEMY_BURN_SLOW : 1) * movementSlow(e)) * (_wz ? STRUCT_DEFS.wire.slow : 1) * _fol;
       if (_wz) {
         _wz.hp -= STRUCT_DEFS.wire.trample * dt; if (_wz.hp <= 0) this.game.build.destroyStructure(_wz, 'trample'); // crowd tramples it down
         e._wireT = (e._wireT || 0) + dt;
@@ -573,7 +574,7 @@ export class EnemyManager {
       const _cr = e.radius + 1.5; // query window (radius + slack); whole-cell results over-cover the small push-out
       const _cands = this.world.grid.queryAABB(e.pos.x - _cr, e.pos.z - _cr, e.pos.x + _cr, e.pos.z + _cr);
       for (const b of _cands) {
-        if (b.shootOnly) continue;                                        // canopy boxes are raycast-only — never a wall/floor for the horde
+        if (b.foliage) continue;                                          // foliage is raycast-only — never a wall/floor for the horde
         if (e.pos.x + e.radius <= b.min.x || e.pos.x - e.radius >= b.max.x) continue;
         if (e.pos.z + e.radius <= b.min.z || e.pos.z - e.radius >= b.max.z) continue;
         const top = b.max.y;

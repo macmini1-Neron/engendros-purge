@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
 import { SpatialGrid } from './grid.js';
-import { CONSTELLATIONS, DAY_FRAC, NIGHT_CYCLE, SKYC, STEP_UP, STRUCT_FX_COLOR } from './tuning.js';
+import { CONSTELLATIONS, DAY_FRAC, FOLIAGE_SLOW, NIGHT_CYCLE, SKYC, STEP_UP, STRUCT_FX_COLOR } from './tuning.js';
+import { inThicket } from './foliage.js';
 import { skyPhase, isNight, keywordMinute, MINUTES_PER_DAY } from './worldclock.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
@@ -399,7 +400,7 @@ export class World {
     let gy = terr.terrainHeightAt(pos.x, pos.z);
     if (pos.y <= gy) { pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true; }
     for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
-      if (b.shootOnly) continue;                                 // tree-canopy boxes intercept shots only, never movement
+      if (b.foliage) continue;                                   // foliage (soft cover) never blocks movement — only slows (foliageSlowAt)
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
       const feet = pos.y, head = pos.y + h;
@@ -448,7 +449,7 @@ export class World {
   // Is the player's body column free of boxes if its feet were at feetY here?
   _headClear(pos, r, h, feetY, ignore) {
     for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
-      if (b === ignore || b.shootOnly) continue;                 // canopy boxes never block headroom
+      if (b === ignore || b.foliage) continue;                   // foliage never blocks headroom
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
       if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
       if (feetY + h <= b.min.y || feetY >= b.max.y) continue;
@@ -464,7 +465,7 @@ export class World {
     const oldA = pos[ax] - delta, lo = Math.min(pos[ax], oldA) - r, hi = Math.max(pos[ax], oldA) + r;
     const cands = ax === 'x' ? this.grid.queryAABB(lo, pos.z - r, hi, pos.z + r) : this.grid.queryAABB(pos.x - r, lo, pos.x + r, hi);
     for (const b of cands) {
-      if (b.shootOnly) continue;                                 // canopy boxes intercept shots only, never movement
+      if (b.foliage) continue;                                   // foliage (soft cover) never blocks movement — only slows
       const feet = pos.y, head = pos.y + h;
       if (head <= b.min.y + 0.02 || feet >= b.max.y - 0.02) continue;
       if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
@@ -481,6 +482,14 @@ export class World {
   // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
   // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
   groundY(x, z) { return this.terrain.terrainHeightAt(x, z); }
+
+  // Soft-cover slow: the horizontal-speed multiplier for a body pushing through ground-level foliage
+  // (bush / sapling / fallen crown — `thicket` boxes). 1 otherwise. A tall tree's overhead canopy is
+  // `foliage` but NOT `thicket`, so you're never slowed walking under a standing tree. Called by
+  // player.js + enemies.js every frame.
+  foliageSlowAt(x, z, feetY, headY) {
+    return inThicket(this.grid.queryAABB(x - 0.05, z - 0.05, x + 0.05, z + 0.05), x, z, feetY, headY) ? FOLIAGE_SLOW : 1;
+  }
 
   // The ladder zone (скоб-трап) containing a body at (x,z) whose feet are fy / head fy+h, else null.
   // Mirrors player._onLadder but returns the zone (enemies clamp their climb to zone.top). Zones are
@@ -622,7 +631,7 @@ export class BuildManager {
     if (!pos) return false;
     const sd = STRUCT_DEFS[kind], fp = this._footprint(kind, yaw), top = pos.y + sd.h;
     for (const bx of this.game.world.boxes) {                            // map + placed hard structures
-      if (bx.shootOnly) continue;                                        // tree canopy is shoot-through → never blocks a build
+      if (bx.foliage) continue;                                          // foliage is shoot-through → never blocks a build
       if (pos.x + fp.hx <= bx.min.x || pos.x - fp.hx >= bx.max.x) continue;
       if (pos.z + fp.hz <= bx.min.z || pos.z - fp.hz >= bx.max.z) continue;
       if (bx.max.y <= pos.y + 0.05 || bx.min.y >= top - 0.05) continue;  // no vertical overlap (e.g. placing ON a surface)
