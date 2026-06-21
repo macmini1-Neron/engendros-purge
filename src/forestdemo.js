@@ -8,7 +8,8 @@
 // we expose fellTree / blast / penetrate / clearArea / update / debris / netSnapshot — nothing else needed.
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
-import { makePart, MATERIALS, makeHinge, stepBody } from './destruct.js';
+import { makeBush, makeShrub } from './props/generators/groundcover.js';
+import { makePart, MATERIALS, makeHinge, stepBody, resolveHit } from './destruct.js';
 import { rr, voxelMaterial, foliageFadeMaterial } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
 
@@ -31,9 +32,9 @@ export class ForestDemo {
   // debris = the ForestScene's shared DebrisPool (the scene steps it, so we never call debris.update)
   constructor(game, debris) {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
-    this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.FALLING = []; this.windy = [];
+    this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.FALLING = []; this.windy = [];
     this._t = 0; this._idc = 0; this._reserved = [];
-    this._fading = new Set();   // tree recs whose leaf mesh is currently on the near-camera fade material
+    this._fading = new Set();   // tree/bush recs whose leaf mesh is currently on the near-camera fade material
   }
 
   reserve(x, z, r) { this._reserved.push({ x, z, r }); }     // keep-out (cottage / crate footprints)
@@ -235,7 +236,10 @@ export class ForestDemo {
     if (log.fallingRef) { const fi = this.FALLING.indexOf(log.fallingRef); if (fi >= 0) this.FALLING.splice(fi, 1); }
   }
   _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart
-  consumeProp(log) { this._consumeLog(log, (log.id * 2654435761) >>> 0, false); }                // FireManager burnout consumes it
+  consumeProp(rec) {                                                                              // FireManager burnout consumes a prop
+    if (rec && rec.isBush) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, false);
+    else this._consumeLog(rec, (rec.id * 2654435761) >>> 0, false);
+  }
 
   // HE blast: fell every standing tree within `radius` whose tier ≤ blastTier (+1 so a tier-3 rocket
   // still topples grown trunks). dir of fall = radially outward from the blast.
@@ -246,6 +250,11 @@ export class ForestDemo {
       if (dx * dx + dz * dz <= radius * radius && MATERIALS[rec.part.dmat].tier <= blastTier + 1) {
         rec.part.dead = true; this.fellTree(rec, [dx, dz], (rec.id * 1597) >>> 0);
       }
+    }
+    for (const b of this.bushes) {                            // an explosion flattens nearby brush
+      if (b.dead) continue;
+      const dx = b.x - pos.x, dz = b.z - pos.z;
+      if (dx * dx + dz * dz <= radius * radius) this._consumeBush(b, (b.id * 1597) >>> 0, true);
     }
   }
 
@@ -263,7 +272,74 @@ export class ForestDemo {
     }
   }
 
-  hitProp() {}                                                // no separate props here (crates are buildings)
+  // weapons.js _destructHit routes a `box.prop` hit here — for us that's a BUSH. Damage it (grass tier 0,
+  // any round out-pens) and clear it on kill; a non-fatal hit just puffs leaf debris.
+  hitProp(rec, w, point) {
+    if (!rec || rec.dead || !rec.part || rec.part.dead) return;
+    const res = resolveHit(rec.part, w);
+    if (res.killed) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, true);
+    else if (res.effect === 'damage' && this.debris && point) this.debris.burst('splints', [point[0], point[1], point[2]], (rec.id ^ 0x55) >>> 0);
+  }
+
+  // ── BUSHES (M3): head-height understorey you push THROUGH (slow) + that fades at the camera + hides
+  // you, and that a shot/blast/fire clears. A bush is a single leaf mesh + ONE foliage+thicket+prop box
+  // (no wood bands — it's all leaf) + a light 'grass' destruct part (fuel>0 → burns). ─────────────────
+  _addBush(x, z, scale, seed) {
+    const shrub = Math.random() < 0.32;                        // a few low steppe-scrub shrubs among the bushes
+    const res = shrub ? makeShrub(seed) : makeBush(seed);
+    const geo = res.geometry; if (scale !== 1) geo.scale(scale, scale, scale);
+    geo.computeBoundingBox(); const bb = geo.boundingBox;       // local AABB (post-scale), base ~at origin
+    const yaw = rr(0, Math.PI * 2);
+    const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
+    const mesh = new THREE.Mesh(geo, FOLIAGE_OPAQUE);          // leaf material → fades near the camera (the showcase)
+    mesh.position.set(x, y, z); mesh.rotation.y = yaw; mesh.castShadow = true;
+    this.scene.add(mesh);
+    const id = 200000 + (++this._idc);
+    const hw = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.5 + 0.1;   // square hull (round bush, rotation-safe)
+    const top = y + bb.max.y;
+    const min = [x - hw, y, z - hw], max = [x + hw, top, z + hw];
+    const part = makePart(id, 'grass', min, max, 10);          // grass tier 0, fuel 2 → burns; ~10 HP, a shot or two clears it
+    const rec = { id, kind: shrub ? 'shrub' : 'bush', x, z, baseY: y, height: bb.max.y, mesh, leafMesh: mesh, part, dead: false, box: null, isBush: true, prop: true };
+    part.downer = rec;
+    const box = { min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), downer: rec, foliage: true, thicket: true, prop: true, dmat: 'grass', dpart: id };
+    rec.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
+    this.bushes.push(rec);
+  }
+
+  _blockedBush(x, z) {
+    for (const r of this._reserved) { const dx = x - r.x, dz = z - r.z; if (dx * dx + dz * dz < r.r * r.r) return true; }      // off building footprints
+    for (const t of this.trees) { const dx = x - t.x, dz = z - t.z; if (dx * dx + dz * dz < 1.2 * 1.2) return true; }          // not clipping a trunk
+    for (const b of this.bushes) { const dx = x - b.x, dz = z - b.z; if (dx * dx + dz * dz < 1.3 * 1.3) return true; }         // spread the bushes out
+    return false;
+  }
+
+  // Scatter `n` bushes into the UNDERSTOREY — clustered around existing trees (1.5–6 m out) so they read
+  // as undergrowth, not a lawn. Call AFTER scatter() (needs the trees as cluster seeds).
+  scatterBushes(n = 50) {
+    const terr = this.world.terrain;
+    if (!this.trees.length) return;
+    for (let i = 0; i < n; i++) {
+      for (let tries = 0; tries < 14; tries++) {
+        const host = this.trees[(Math.random() * this.trees.length) | 0];
+        const a = Math.random() * Math.PI * 2, d = 1.5 + Math.random() * 5;
+        const x = host.x + Math.cos(a) * d, z = host.z + Math.sin(a) * d;
+        if (Math.abs(x) > this.world.HALF - 4 || Math.abs(z) > this.world.HALF - 4) continue;
+        if (terr && !terr.isPlaceable(x, z, 0.6, 'tree')) continue;
+        if (this._blockedBush(x, z)) continue;
+        this._addBush(x, z, rr(0.85, 1.3), i * 23 + 5000); break;
+      }
+    }
+  }
+
+  _consumeBush(rec, seed, shot) {
+    if (!rec || rec.dead) return;
+    rec.dead = true; if (rec.part) rec.part.dead = true;
+    this._fading.delete(rec);
+    if (rec.box) { this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null; }
+    if (this.debris) this.debris.burst('splints', [rec.x, rec.baseY + rec.height * 0.5, rec.z], (seed >>> 0) || 1, undefined, [0, shot ? 0.5 : 0.3, 0]);
+    if (rec.mesh && rec.mesh.parent) this.scene.remove(rec.mesh);
+    rec.mesh = null; rec.leafMesh = null;
+  }
 
   // ── FIRE (game FireManager) — the molotov/rocket fire path. FireManager enumerates burnables via
   // flammableParts(), then chars (charTree → snaps easier) + fells (fellTree on burnout) by the part's
@@ -273,6 +349,7 @@ export class ForestDemo {
     const out = [];
     for (const t of this.trees) if (t.standing && t.part && !t.part.dead && !t.burntOut) out.push(t.part);
     for (const lg of this.logs) if (!lg.consumed && !lg.burntOut && lg.part && !lg.part.dead) out.push(lg.part);   // downed logs still burn on the ground
+    for (const bsh of this.bushes) if (!bsh.dead && bsh.part && !bsh.part.dead) out.push(bsh.part);               // bushes burn (fuel 2) → consumeProp clears them
     return out;
   }
   // FIRE phase 1 — the foliage BLACKENS in place (chars, still leafy): tint the whole merged mesh dark
