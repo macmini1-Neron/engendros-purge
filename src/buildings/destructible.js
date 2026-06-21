@@ -24,7 +24,7 @@ import { buildBuilding, fillBuckets, realizeBucket, OPAQUE_KINDS } from './inter
 import { physKeyOf } from './materials.js';
 import { assertYaw } from './operators/_math.js';
 import { worldAABB, paneAABB, makeBid, hpScaleFor } from './destructible-geom.js';
-import { MeshBuilder } from '../util.js';
+import { MeshBuilder, voxelMaterial } from '../util.js';
 
 const D2R = Math.PI / 180;
 const RUBBLE_A = 0x6e4334, RUBBLE_B = 0x5d3a2c;
@@ -57,6 +57,9 @@ export class DestructibleBuilding {
     this.stats = built.stats;
 
     this._opaquePrims = this.prims.filter((p) => OPAQUE_KINDS.has(p.kind));
+    this._primById = new Map();                                // part id → opaque prim (O(1) rebuild lookup)
+    for (const p of this._opaquePrims) this._primById.set(p.part, p);
+    this._rubbleMesh = null;                                   // one voxel-coloured mesh for all masonry rubble
     this.group.traverse((o) => {
       if (o.userData?.kind === 'pane') this._paneMeshById.set(o.userData.dpart, o);
       else if (typeof o.name === 'string' && o.name.startsWith('mat:')) this._meshByMat.set(o.name.slice(4), o);
@@ -144,6 +147,7 @@ export class DestructibleBuilding {
   _refresh() {
     const newlyDead = [];
     const dirtyMats = new Set();
+    let masonryDied = false;
     for (const part of this.parts) {
       if (!part.dead || this._removed.has(part.dpart)) continue;
       this._removed.add(part.dpart);
@@ -158,12 +162,13 @@ export class DestructibleBuilding {
         const m = this._paneMeshById.get(part.dpart);
         if (m) { this.group.remove(m); m.geometry.dispose(); m.material.dispose(); this._paneMeshById.delete(part.dpart); }
       } else {
-        const prim = this._opaquePrims.find((p) => p.part === part.dpart);
-        if (prim) dirtyMats.add(prim.mat ?? 'concrete');
+        const prim = this._primById.get(part.dpart);                  // O(1) lookup
+        if (prim) { dirtyMats.add(prim.mat ?? 'concrete'); if (_isRubble(prim.mat)) masonryDied = true; }
       }
     }
     if (dirtyMats.size) this._rebuildBuckets(dirtyMats);
     else this.lastRebuildMs = 0;
+    if (masonryDied) this._rebuildRubble();
     return newlyDead;
   }
 
@@ -176,7 +181,6 @@ export class DestructibleBuilding {
       if (old) { this.group.remove(old); old.geometry.dispose(); }
       const survivors = this._opaquePrims.filter((p) => (p.mat ?? 'concrete') === mat && !this._removed.has(p.part));
       const mb = fillBuckets(survivors).get(mat) ?? new MeshBuilder();
-      this._addRubble(mb, mat);
       const mesh = realizeBucket(mat, mb, this.spec, this.texCache);
       this.group.add(mesh);
       this._meshByMat.set(mat, mesh);
@@ -184,14 +188,23 @@ export class DestructibleBuilding {
     this.lastRebuildMs = now() - t0;
   }
 
-  // Rubble stubs at the local base of each removed masonry piece in this material (debris==='rubble').
-  _addRubble(mb, mat) {
+  // ONE flat voxel-coloured mesh for ALL masonry rubble (debris==='rubble') — a separate mesh, not
+  // the textured bucket, so the dark RUBBLE tones actually show (a tiled bucket's map ignores
+  // vertex colour). Rebuilt from scratch each time a masonry piece dies (rare; cheap).
+  _rebuildRubble() {
+    if (this._rubbleMesh) { this.group.remove(this._rubbleMesh); this._rubbleMesh.geometry.dispose(); this._rubbleMesh = null; }
+    const mb = new MeshBuilder();
+    let any = false;
     for (const p of this._opaquePrims) {
-      if ((p.mat ?? 'concrete') !== mat || !this._removed.has(p.part)) continue;
-      if (MATERIALS[physKeyOf(p.mat)]?.debris !== 'rubble') continue;
+      if (!this._removed.has(p.part) || !_isRubble(p.mat)) continue;
+      any = true;
       mb.box(Math.min(1.2, p.w), 0.28, Math.max(0.5, p.d), p.x, 0.14, p.z, RUBBLE_A);
       mb.box(0.6, 0.2, 0.5, p.x + 0.3, 0.32, p.z + 0.1, RUBBLE_B);
     }
+    if (!any) return;
+    this._rubbleMesh = new THREE.Mesh(mb.build(), voxelMaterial());
+    this._rubbleMesh.castShadow = this._rubbleMesh.receiveShadow = false;
+    this.group.add(this._rubbleMesh);
   }
 
   // Dark recessed cube marking an APFSDS through-hole (visual; the wall still collides). World-space.
@@ -230,3 +243,10 @@ export class DestructibleBuilding {
 
 // coerce a THREE.Vector3 / {x,y,z} / [x,y,z] into the plain [x,y,z] the destruct core reads.
 function _a(v) { return Array.isArray(v) ? v : (v ? [v.x, v.y, v.z] : [0, 0, 0]); }
+
+// Does this palette material drop rubble debris (brick/concrete/plaster/stone)? Guarded so an
+// unexpected material in the rebuild hot-path can never throw (validated specs never reach it).
+function _isRubble(mat) {
+  try { const k = physKeyOf(mat); return !!k && MATERIALS[k]?.debris === 'rubble'; }
+  catch (e) { return false; }
+}
