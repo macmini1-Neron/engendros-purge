@@ -251,10 +251,14 @@ export class ForestDemo {
     };
     // WOOD CORE — the snapped trunk, solid: you snag on the downed bole. (No leaves → no fade; M4 stretch.)
     seg(0, 0.62, r, 2 * r, false, false);
-    // LEAF END — the crown lying on the ground: a wide foliage+thicket volume you can WADE INTO (slowed,
-    // concealed). Sized from the remembered crown half-width (capped — a fallen crown compresses).
-    const cw = Math.min(Math.max((rec && rec.crownHW) || 1.2, 0.8), 5.0);
-    seg(0.5, 1.0, cw, Math.max(2 * r, cw * 1.4), true, true);
+    // LEAF END — the crown lying on the ground: a wide foliage+thicket volume you WADE INTO (slowed,
+    // concealed). ONLY when the fallen crown actually carries leaves (f.topLeafMesh) — a charred/bare log
+    // has none, so skip it, else a 20×9×11 m invisible soft-cover box floats where the burnt crown is
+    // (bullets pass, movement slows, nothing rendered). The solid wood core already covers the bole.
+    if (f.topLeafMesh) {
+      const cw = Math.min(Math.max((rec && rec.crownHW) || 1.2, 0.8), 5.0);
+      seg(0.5, 1.0, cw, Math.max(2 * r, cw * 1.4), true, true);
+    }
     this.logs.push(log);
   }
 
