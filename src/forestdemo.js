@@ -205,7 +205,7 @@ export class ForestDemo {
     // so the crown lying on the ground reads as see-through wade-in cover that dissolves at the camera
     // (_updateLeafFade picks it up via log.leafMesh) — not an opaque green block.
     const top = new THREE.Group(); top.rotation.y = rec.yaw;
-    top.add(new THREE.Mesh(split.topWoodGeometry, split.material));
+    const topWoodMesh = new THREE.Mesh(split.topWoodGeometry, split.material); topWoodMesh.castShadow = true; top.add(topWoodMesh);   // the felled trunk/log casts a shadow like the standing tree did
     let topLeafMesh = null;
     if (split.topLeafGeometry) { topLeafMesh = new THREE.Mesh(split.topLeafGeometry, FOLIAGE_OPAQUE); topLeafMesh.castShadow = true; top.add(topLeafMesh); }
     const pivot = new THREE.Group(); pivot.position.set(rec.x, y0 + split.breakY, rec.z); pivot.add(top);
