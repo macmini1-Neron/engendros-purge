@@ -1640,6 +1640,12 @@ export class WeaponSystem {
   // Brick+ cells, fortifications, FABs and terrain are never soft, so they stop the round.
   _softPenetrable(box, d) {
     if (!box.downer || box.struct || box.explodable) return false;
+    // Trees decide by SHAPE, not material: you shoot THROUGH leaves (canopy/bush/fallen crown = soft cover)
+    // but a trunk STOPS the round — standing OR a fallen log's bole — for every weapon class (snipers
+    // included). Otherwise a canopy + trunk share one dmat ('trunk' t2): rifles stalled on leaves while
+    // snipers drilled clean through solid trunks.
+    if (box.foliage) return true;
+    if (box.tree) return false;
     const m = MATERIALS[box.dmat]; if (!m) return false;
     const pen = PEN_BY_CLASS[d.class] ?? 0;
     return m.tier <= FRAGILE_MAX_TIER && pen >= m.tier;
@@ -1664,7 +1670,9 @@ export class WeaponSystem {
       const tree = box.downer, part = tree.part;
       if (!part || part.dead) return;
       const r = resolveHit(part, w);
-      if (r.killed && tree.standing && this.game.forest) {
+      if (r.killed && this.game.forest && (tree.standing || tree.fallen)) {
+        // standing → topple away from the shot; a fallen LOG → fellTree routes rec.fallen to _breakLog
+        // (splinter + remove), so you can finally shoot a downed log apart, not just stop the round on it.
         this.game.forest.fellTree(tree, [dir.x, dir.z], (tree.id * 2654435761) >>> 0);
       } else if (r.effect === 'damage' && this.game.forest && this.game.forest.debris) {
         this.game.forest.debris.burst('splints', [wHit.point.x, wHit.point.y, wHit.point.z], (tree.id ^ 0x55) >>> 0);
