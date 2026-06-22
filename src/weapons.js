@@ -1995,7 +1995,7 @@ export class WeaponSystem {
       const g = this.projectiles[i];
       g.fuse -= dt;
       let boom = g.fuse <= 0;
-      let shatterAt = null;
+      let shatterAt = null, rocketAt = null;
       if (g.molotov) { // arcs with gravity + spins; raycasts EVERY frame so it can't tunnel walls
         g.vel.y -= MOLO_GRAV * dt;
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
@@ -2004,14 +2004,13 @@ export class WeaponSystem {
         if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; const rp = g.mesh.position; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + MOLO_PROJ_R && rp.y < e.pos.y + e.height + 0.4) { shatterAt = rp.clone(); boom = true; break; } }
         if (!boom) { g.mesh.position.addScaledVector(g.vel, dt); g.mesh.rotation.x += g.spin.x * dt; g.mesh.rotation.y += g.spin.y * dt; g.mesh.rotation.z += g.spin.z * dt; g.trailT -= dt; if (g.trailT <= 0) { g.trailT = 0.04; this.game.effects.firePool(g.mesh.position, 0.3, 0.6); } }
         else if (!shatterAt) shatterAt = g.mesh.position.clone();
-      } else if (g.rocket) { // straight, fast, detonates on contact
+      } else if (g.rocket) { // straight, fast, detonates on contact — raycast BEFORE moving (like the molotov) so a fast rocket can't tunnel a thin (~0.45 m) wall and overshoot
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
-        g.mesh.position.addScaledVector(g.vel, dt);
-        const rp = g.mesh.position;
-        if (rp.y < this.game.world.groundY(rp.x, rp.z) + 0.2) boom = true;   // detonate on the terrain surface (groundY≡0 on flat maps)
-        if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + 0.7 && rp.y < e.pos.y + e.height + 0.5) { boom = true; break; } }
-        if (!boom) { const wh = this.game.world.rayHit(rp, dir, stepLen + 0.5); if (wh) boom = true; }
-        this.game.effects.impact(rp, dir, 'spark'); // smoke trail
+        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + 0.5);
+        if (wh) { rocketAt = wh.point.clone().addScaledVector(wh.normal, OCCLUSION_INSET); boom = true; }   // detonate EXACTLY on the surface it strikes (wall/tree/prop), not a frame past it — so the blast is centred on what you aimed at
+        if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; const rp = g.mesh.position; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + 0.7 && rp.y < e.pos.y + e.height + 0.5) { rocketAt = rp.clone(); boom = true; break; } }
+        if (!boom) { g.mesh.position.addScaledVector(g.vel, dt); const rp = g.mesh.position; if (rp.y < this.game.world.groundY(rp.x, rp.z) + 0.2) { rocketAt = rp.clone(); boom = true; } }   // nothing in the step → advance, then detonate on the terrain surface (groundY≡0 on flat maps)
+        this.game.effects.impact(g.mesh.position, dir, 'spark'); // smoke trail
       } else { // tossed grenade: gravity + bounce
         g.vel.y -= 22 * dt; g.mesh.position.addScaledVector(g.vel, dt);
         g.mesh.rotation.x += dt * 6; g.mesh.rotation.y += dt * 4;
@@ -2026,7 +2025,9 @@ export class WeaponSystem {
         } else {
           // bazooka = near-full dmg to Tolo (rocket 0.9×), grenades chip like bullets (0.2×). explode()
           // owns visual+enemy AoE+player splash (FF)+item clearing+demo destruction and the host/client split.
-          this.game.explode(g.mesh.position.clone(), { radius: g.radius, dmg: g.dmg, source: g.rocket ? 'rocket' : 'explosion', isRocket: !!g.rocket });
+          // rocketAt = the contact point from the pre-move raycast (centres the breach on the wall); grenades fall back to their mesh position (fuse detonation).
+          const bpos = rocketAt || g.mesh.position.clone();
+          this.game.explode(bpos, { radius: g.radius, dmg: g.dmg, source: g.rocket ? 'rocket' : 'explosion', isRocket: !!g.rocket });
         }
         this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose();
         if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); }
