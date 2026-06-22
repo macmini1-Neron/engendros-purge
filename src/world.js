@@ -528,7 +528,8 @@ export class World {
 
   rayHit(origin, dir, maxDist, ignore = null) {
     const ignored = Array.isArray(ignore) ? ignore : null;
-    const filter = (ignore != null) ? (b => !(b === ignore || (ignored && ignored.includes(b)))) : null;
+    const filter = typeof ignore === 'function' ? ignore                       // predicate form: keep a box when it returns true (e.g. b => !b.foliage)
+      : (ignore != null) ? (b => !(b === ignore || (ignored && ignored.includes(b)))) : null;
     const gh = this.grid.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, filter);
     let best = gh ? gh.t : maxDist, hitBox = gh ? gh.box : null;
     if (this.hasTerrain) {
