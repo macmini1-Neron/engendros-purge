@@ -189,10 +189,9 @@ export class ForestDemo {
     const sd = ((seed ?? (rec.id * 2654435761)) >>> 0) || 1;
     const breakAt = rec.cls === 1 ? 0.1 : 0.12 + ((sd >>> 8) % 1000) / 1000 * 0.18;   // SEEDED snap height (co-op-deterministic; was Math.random → host/client desync)
     // A fire-killed tree fells as its BARE BLACKENED charred self (no leaves); a bullet/blast-felled tree
-    // keeps its foliage. Either way pass height: rec.height so the split matches the standing tree exactly.
-    // NO height override: the same seed+scale reproduces the EXACT standing tree (just split). Passing
-    // rec.height (already × scale) alongside scale double-scaled the felled tree (~scale× too big) AND
-    // shifted the RNG so the split didn't even match the standing shape.
+    // keeps its foliage. NO height override: the same seed+scale reproduces the EXACT standing tree (just
+    // split). Passing rec.height (already × scale) alongside scale double-scaled the felled tree (~scale×
+    // too big) AND shifted the RNG so the split didn't even match the standing shape.
     const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt, damage: rec.charred ? 'charred' : undefined });
     const y0 = rec.baseY;
     const stump = new THREE.Mesh(split.stumpWoodGeometry, split.material);
