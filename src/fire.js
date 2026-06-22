@@ -315,6 +315,18 @@ export class FireManager {
     }
   }
 
+  // A flammable part is destroyed by something OTHER than burnout (felled / shot apart / blasted): drop
+  // its live fire WITHOUT the burnout consume (the caller already removes the prop). Frees the flame slots
+  // + the cap unit so the fire doesn't hover where the trunk used to be and doesn't pin OBJ_CAP/GRASS_CAP.
+  retire(part) {
+    const f = part && part._fire;
+    if (!f) return;
+    part._fire = null;
+    for (const s of f.slots) this.flames.release(s); f.slots.length = 0;
+    if (f.kind === 'grass') this._grassN--; else this._objN--;
+    const i = this.fires.indexOf(f); if (i >= 0) this.fires.splice(i, 1);
+  }
+
   // A fire that has consumed its fuel: char+fell the tree, consume the grass/wood, free slots.
   _burnout(f) {
     if (f.part) f.part._fire = null;

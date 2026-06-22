@@ -643,7 +643,7 @@ class Game {
     if (!this.molotovPools) this.molotovPools = [];
     if (this.molotovPools.length >= FIRE_POOL_MAX) this._disposeMolotovPool(this.molotovPools.shift());
     this._downV = this._downV || new THREE.Vector3(0, -1, 0); // drop the burning liquid onto the floor under the impact so the fire never floats
-    const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200);
+    const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200, (b) => !b.foliage);   // skip leaves/bushes so the puddle drops to the real ground, not floating on a bush canopy
     const py = gh ? gh.point.y + 0.02 : 0.05;
     const lh = this.engine.acquireFxLight(0xff5a26, 7, 14, 1.4); lh.light.position.set(pos.x, py + 0.45, pos.z); // borrow from the fixed FX pool (no scene.add → no shader recompile)
     const pool = { pos: new THREE.Vector3(pos.x, py, pos.z), light: lh.light, lightH: lh, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 };

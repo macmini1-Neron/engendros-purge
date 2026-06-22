@@ -179,14 +179,15 @@ export class ForestDemo {
     if (rec && rec.fallen) { this._breakLog(rec, seed); return; }   // a hit on an ALREADY-fallen log breaks it apart
     if (!rec || !rec.standing) return;
     rec.standing = false;
+    if (this.game.fire) this.game.fire.retire(rec.part);    // drop any active fire so flames don't hover where the trunk was (+ free the cap slot)
     if (rec.part) rec.part.dead = true;                     // off the flammable list — a felled tree can't re-ignite
     if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; }
     this._fading.delete(rec); rec.leafMesh = null;
     this._dropBox(rec);
     let dx = dirXZ ? dirXZ[0] : (Math.random() - 0.5), dz = dirXZ ? dirXZ[1] : (Math.random() - 0.5);
-    const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    let dl = Math.hypot(dx, dz); if (dl < 1e-4) { dx = 1; dz = 0; dl = 1; } dx /= dl; dz /= dl;   // zero dir (centred blast / straight-down shot) → default topple +X, avoids a NaN fall axis
     const sd = ((seed ?? (rec.id * 2654435761)) >>> 0) || 1;
-    const breakAt = rec.cls === 1 ? 0.1 : 0.12 + Math.random() * 0.18;     // snap low; saplings near the base
+    const breakAt = rec.cls === 1 ? 0.1 : 0.12 + ((sd >>> 8) % 1000) / 1000 * 0.18;   // SEEDED snap height (co-op-deterministic; was Math.random → host/client desync)
     // A fire-killed tree fells as its BARE BLACKENED charred self (no leaves); a bullet/blast-felled tree
     // keeps its foliage. Either way pass height: rec.height so the split matches the standing tree exactly.
     // NO height override: the same seed+scale reproduces the EXACT standing tree (just split). Passing
@@ -262,6 +263,7 @@ export class ForestDemo {
     if (!log || log.consumed) return;
     log.consumed = true;
     this._fading.delete(log);                                  // drop it from the near-camera leaf-fade rotation
+    if (this.game.fire) this.game.fire.retire(log.part);      // a shot-apart / blasted burning log: retire its fire too
     if (log.part) log.part.dead = true;
     for (const b of (log.boxes || [])) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
     log.boxes = [];
@@ -370,7 +372,9 @@ export class ForestDemo {
 
   _consumeBush(rec, seed, shot) {
     if (!rec || rec.dead) return;
-    rec.dead = true; if (rec.part) rec.part.dead = true;
+    rec.dead = true;
+    if (this.game.fire) this.game.fire.retire(rec.part);      // a burning bush flattened by a blast/shot: retire its fire
+    if (rec.part) rec.part.dead = true;
     this._fading.delete(rec);
     if (rec.box) { this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null; }
     if (this.debris) this.debris.burst('splints', [rec.x, rec.baseY + rec.height * 0.5, rec.z], (seed >>> 0) || 1, undefined, [0, shot ? 0.5 : 0.3, 0]);
@@ -395,7 +399,10 @@ export class ForestDemo {
     if (!tree || !tree.standing || tree.charred) return;
     tree.charred = true;
     if (tree.part) tree.part.dhp = Math.max(1, tree.part.dhp * 0.5);   // charred wood snaps under the next hit
-    if (tree.mesh && tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x161310); // scorched black
+    // Scorch the trunk/wood IN PLACE. mesh is a Group(wood[,leaf]); tint each mesh EXCEPT the leaf mesh,
+    // whose foliage material is shared across all trees (tinting it would blacken the whole forest). The
+    // leaves blacken+drop later in dropLeaves. (Old code tinted tree.mesh.material — a Group has none → no-op.)
+    if (tree.mesh) tree.mesh.traverse((o) => { if (o.isMesh && o !== tree.leafMesh && o.material && o.material.color) o.material.color.setHex(0x161310); });
   }
 
   // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self. Same
@@ -405,6 +412,9 @@ export class ForestDemo {
   dropLeaves(tree) {
     if (!tree || tree.bare || !tree.standing || !tree.mesh) return;
     tree.bare = true;
+    // leaves gone → drop the canopy's soft-cover hitbox so it isn't a phantom shoot-through box in mid-air
+    // (the trunk bands stay — the bare snag is still solid + shootable). fellTree drops ALL boxes via _dropBox.
+    if (tree.boxes) for (let i = tree.boxes.length - 1; i >= 0; i--) { const b = tree.boxes[i]; if (b.foliage) { this.world.grid.removeBox(b); const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1); tree.boxes.splice(i, 1); } }
     try {
       const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, lod: 0, damage: 'charred' });
       const old = tree.mesh;                                  // a Group(wood, leaf) — the charred snag is a single merged mesh (no leaves to fade)

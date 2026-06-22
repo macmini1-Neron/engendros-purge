@@ -246,7 +246,8 @@ export class BuildingDestruct {
       const p = this.rebar.children[i].position;
       if (p.x >= mnx - M && p.x <= mxx + M && p.y >= minY - M && p.y <= maxY + M && p.z >= mnz - M && p.z <= mxz + M) grp.attach(this.rebar.children[i]);
     }
-    const body = makeTumble({ pos: [wc.x, wc.y, wc.z], vel: [(this._rnd() - 0.5) * 0.8, 0.2, (this._rnd() - 0.5) * 0.8], seed: this._seed(), radius: Math.max(0.2, (maxY - minY) / 2), g: FALL_G, spin: 0.55 });
+    const floorY = (this.world && this.world.terrain) ? this.world.terrain.terrainHeightAt(wc.x, wc.z) : 0;   // rest collapse debris ON the terrain, not at world y=0 (it sank through forest hills)
+    const body = makeTumble({ pos: [wc.x, wc.y, wc.z], vel: [(this._rnd() - 0.5) * 0.8, 0.2, (this._rnd() - 0.5) * 0.8], seed: this._seed(), radius: Math.max(0.2, (maxY - minY) / 2), g: FALL_G, spin: 0.55, floorY });
     this.fallers.push({ grp, body });
     while (this.fallers.length > MAX_FALLERS) { const f = this.fallers.shift(); this.scene.remove(f.grp); f.grp.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } }); }
   }
@@ -266,7 +267,8 @@ export class BuildingDestruct {
     mesh.getWorldPosition(wp); mesh.getWorldQuaternion(wq);
     const fg = new THREE.Group(); fg.position.copy(wp); fg.quaternion.copy(wq); this.scene.add(fg); fg.attach(mesh);
     if (el.kind === 'pane') { mesh.userData.dead = true; this.debris.burst('shards', [wp.x, wp.y, wp.z], this._seed()); }
-    const body = makeTumble({ pos: [wp.x, wp.y, wp.z], vel: [(this._rnd() - 0.5) * 0.7, 0.1, (this._rnd() - 0.5) * 0.7], seed: this._seed(), radius: 0.3, g: FALL_G, spin: 0.8 });
+    const floorY = (this.world && this.world.terrain) ? this.world.terrain.terrainHeightAt(wp.x, wp.z) : 0;   // detached sign/pane rests on the terrain, not at world y=0
+    const body = makeTumble({ pos: [wp.x, wp.y, wp.z], vel: [(this._rnd() - 0.5) * 0.7, 0.1, (this._rnd() - 0.5) * 0.7], seed: this._seed(), radius: 0.3, g: FALL_G, spin: 0.8, floorY });
     this.fallers.push({ grp: fg, body });
     while (this.fallers.length > MAX_FALLERS) { const f = this.fallers.shift(); this.scene.remove(f.grp); f.grp.traverse((o) => { if (o.isMesh && o.userData.kind !== 'pane' && o.userData.kind !== 'other') o.geometry.dispose(); }); }
   }
