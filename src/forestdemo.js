@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
 import { makePart, MATERIALS, makeHinge, stepBody, resolveHit } from './destruct.js';
-import { rr, voxelMaterial, foliageFadeMaterial } from './util.js';
+import { rr, voxelMaterial, foliageFadeMaterial, makeRNG } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
 
 // Two SHARED leaf materials (one program each, compiled once): leaves render opaque by default; the
@@ -33,15 +33,17 @@ export class ForestDemo {
   constructor(game, debris) {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
     this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.props = []; this.FALLING = []; this.windy = [];
+    this._frng = makeRNG(0x6f7e57);   // SEEDED layout RNG → every co-op peer builds the IDENTICAL forest (id→tree matches, so a host-synced fell/char/burn lands on the right tree)
     this._t = 0; this._idc = 0; this._reserved = [];
     this._fading = new Set();   // tree/bush recs whose leaf mesh is currently on the near-camera fade material
   }
 
   reserve(x, z, r) { this._reserved.push({ x, z, r }); }     // keep-out (cottage / crate footprints)
 
+  _rr(lo, hi) { return lo + this._frng() * (hi - lo); }   // seeded rr() over the forest layout RNG
   _pickSpecies() {
     let tot = 0; for (const [, w] of TREE_MIX) tot += w;
-    let n = Math.random() * tot;
+    let n = this._frng() * tot;
     for (const [s, w] of TREE_MIX) { if ((n -= w) <= 0) return s; }
     return 'scotsPine';
   }
@@ -60,19 +62,19 @@ export class ForestDemo {
     const terr = this.world.terrain;
     const NS = 11, stands = [];          // denser wood: more stands + more trees + tighter spacing (see drop())
     for (let s = 0; s < NS; s++) {
-      const a = (s / NS) * Math.PI * 2 + rr(-0.35, 0.35), d = 22 + Math.random() * (rad - 22);
-      stands.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 10 + Math.random() * 8 });
+      const a = (s / NS) * Math.PI * 2 + this._rr(-0.35, 0.35), d = 22 + this._frng() * (rad - 22);
+      stands.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 10 + this._frng() * 8 });
     }
     const drop = (count, scaleLo, scaleHi, minD, footR, sapling) => {
       for (let i = 0; i < count; i++) {
         for (let tries = 0; tries < 12; tries++) {
-          const st = stands[(Math.random() * stands.length) | 0];
-          const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * st.r;
+          const st = stands[(this._frng() * stands.length) | 0];
+          const a = this._frng() * Math.PI * 2, d = Math.sqrt(this._frng()) * st.r;
           const x = st.x + Math.cos(a) * d, z = st.z + Math.sin(a) * d;
           if (Math.abs(x) > this.world.HALF - 6 || Math.abs(z) > this.world.HALF - 6) continue;
           if (terr && !terr.isPlaceable(x, z, footR, 'tree')) continue;
           if (this._blocked(x, z, minD)) continue;
-          this._addTree(sapling ? 'birch' : this._pickSpecies(), x, z, rr(scaleLo, scaleHi), i * 17 + (sapling ? 700 : 3), sapling); break;
+          this._addTree(sapling ? 'birch' : this._pickSpecies(), x, z, this._rr(scaleLo, scaleHi), i * 17 + (sapling ? 700 : 3), sapling); break;
         }
       }
     };
@@ -82,7 +84,7 @@ export class ForestDemo {
 
   _addTree(species, x, z, scale, seed, sapling) {
     const res = makeTree({ species, seed, lod: 0, scale });
-    const yaw = rr(0, Math.PI * 2);
+    const yaw = this._rr(0, Math.PI * 2);
     const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
     // WOOD (opaque) + LEAF (fadeable) as two meshes under one group: wind/transform/fell all act on the
     // group, while only the leaf mesh ever swaps to the transparent near-camera fade material.
@@ -390,11 +392,11 @@ export class ForestDemo {
   // you, and that a shot/blast/fire clears. A bush is a single leaf mesh + ONE foliage+thicket+prop box
   // (no wood bands — it's all leaf) + a light 'grass' destruct part (fuel>0 → burns). ─────────────────
   _addBush(x, z, scale, seed) {
-    const shrub = Math.random() < 0.32;                        // a few low steppe-scrub shrubs among the bushes
+    const shrub = this._frng() < 0.32;                         // a few low steppe-scrub shrubs among the bushes
     const res = shrub ? makeShrub(seed) : makeBush(seed);
     const geo = res.geometry; if (scale !== 1) geo.scale(scale, scale, scale);
     geo.computeBoundingBox(); const bb = geo.boundingBox;       // local AABB (post-scale), base ~at origin
-    const yaw = rr(0, Math.PI * 2);
+    const yaw = this._rr(0, Math.PI * 2);
     const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
     const mesh = new THREE.Mesh(geo, FOLIAGE_OPAQUE);          // leaf material → fades near the camera (the showcase)
     mesh.position.set(x, y, z); mesh.rotation.y = yaw; mesh.castShadow = true;
@@ -425,13 +427,13 @@ export class ForestDemo {
     if (!this.trees.length) return;
     for (let i = 0; i < n; i++) {
       for (let tries = 0; tries < 14; tries++) {
-        const host = this.trees[(Math.random() * this.trees.length) | 0];
-        const a = Math.random() * Math.PI * 2, d = 1.5 + Math.random() * 5;
+        const host = this.trees[(this._frng() * this.trees.length) | 0];
+        const a = this._frng() * Math.PI * 2, d = 1.5 + this._frng() * 5;
         const x = host.x + Math.cos(a) * d, z = host.z + Math.sin(a) * d;
         if (Math.abs(x) > this.world.HALF - 4 || Math.abs(z) > this.world.HALF - 4) continue;
         if (terr && !terr.isPlaceable(x, z, 0.6, 'tree')) continue;
         if (this._blockedBush(x, z)) continue;
-        this._addBush(x, z, rr(0.85, 1.3), i * 23 + 5000); break;
+        this._addBush(x, z, this._rr(0.85, 1.3), i * 23 + 5000); break;
       }
     }
   }

@@ -90,12 +90,13 @@ export class ForestScene {
   // shootable-apart, flammable). Routed through ForestDemo so weapons/blast/fire reach them.
   _scatterDecor() {
     const terr = this.world.terrain, HALF = this.world.HALF || 200, R = Math.min(HALF - 10, 130);
+    const rnd = this.trees._frng;   // shared SEEDED layout rng → rocks/logs land at the same spots on every co-op peer (id→prop matches for propdie sync)
     const stoneMat = voxelMaterial(), logMat = new THREE.MeshLambertMaterial({ color: 0x5a4632 });
     const reserved = (x, z) => { for (const r of this.trees._reserved) { const dx = x - r.x, dz = z - r.z; if (dx * dx + dz * dz < (r.r + 1) * (r.r + 1)) return true; } return false; };
     const placed = [];
     const pick = (minD) => {
       for (let t = 0; t < 12; t++) {
-        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * R, x = Math.cos(a) * d, z = Math.sin(a) * d;
+        const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * R, x = Math.cos(a) * d, z = Math.sin(a) * d;
         if (Math.abs(x) > HALF - 5 || Math.abs(z) > HALF - 5) continue;
         if (terr && !terr.isPlaceable(x, z, 1.0, 'tree')) continue;
         if (reserved(x, z)) continue;
@@ -107,14 +108,14 @@ export class ForestScene {
     };
     for (let i = 0; i < 24; i++) {                      // boulders — singles + occasional buddy
       const p = pick(4); if (!p) continue; placed.push(p);
-      this.trees._addRock(this._makeBoulder((i * 733 + 17) >>> 0, 0.7 + Math.random() * 1.3), stoneMat, p.x, p.z, Math.random() * Math.PI * 2);
-      if (Math.random() < 0.45) { const bx = p.x + (Math.random() - 0.5) * 3, bz = p.z + (Math.random() - 0.5) * 3; if (!reserved(bx, bz) && (!terr || terr.isPlaceable(bx, bz, 0.6, 'tree'))) { placed.push({ x: bx, z: bz }); this.trees._addRock(this._makeBoulder((i * 941 + 53) >>> 0, 0.45 + Math.random() * 0.5), stoneMat, bx, bz, Math.random() * Math.PI * 2); } }
+      this.trees._addRock(this._makeBoulder((i * 733 + 17) >>> 0, 0.7 + rnd() * 1.3), stoneMat, p.x, p.z, rnd() * Math.PI * 2);
+      if (rnd() < 0.45) { const bx = p.x + (rnd() - 0.5) * 3, bz = p.z + (rnd() - 0.5) * 3; if (!reserved(bx, bz) && (!terr || terr.isPlaceable(bx, bz, 0.6, 'tree'))) { placed.push({ x: bx, z: bz }); this.trees._addRock(this._makeBoulder((i * 941 + 53) >>> 0, 0.45 + rnd() * 0.5), stoneMat, bx, bz, rnd() * Math.PI * 2); } }
     }
     for (let i = 0; i < 12; i++) {                      // lying deadwood logs
       const p = pick(5); if (!p) continue; placed.push(p);
-      const r = 0.22 + Math.random() * 0.18, length = 3 + Math.random() * 3;
+      const r = 0.22 + rnd() * 0.18, length = 3 + rnd() * 3;
       const geo = new THREE.CylinderGeometry(r, r * 1.05, length, 7, 1); geo.rotateX(Math.PI / 2);
-      this.trees._addDecorLog(new THREE.Mesh(geo, logMat), p.x, p.z, Math.random() * Math.PI * 2, length, r);
+      this.trees._addDecorLog(new THREE.Mesh(geo, logMat), p.x, p.z, rnd() * Math.PI * 2, length, r);
     }
   }
 
