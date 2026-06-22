@@ -32,7 +32,7 @@ export class ForestDemo {
   // debris = the ForestScene's shared DebrisPool (the scene steps it, so we never call debris.update)
   constructor(game, debris) {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
-    this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.FALLING = []; this.windy = [];
+    this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.props = []; this.FALLING = []; this.windy = [];
     this._t = 0; this._idc = 0; this._reserved = [];
     this._fading = new Set();   // tree/bush recs whose leaf mesh is currently on the near-camera fade material
   }
@@ -280,6 +280,7 @@ export class ForestDemo {
   _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart
   consumeProp(rec) {                                                                              // FireManager burnout consumes a prop
     if (rec && rec.isBush) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, false);
+    else if (rec && rec.isProp) this._destroyProp(rec, false);
     else this._consumeLog(rec, (rec.id * 2654435761) >>> 0, false);
   }
 
@@ -298,6 +299,11 @@ export class ForestDemo {
       const dx = b.x - pos.x, dz = b.z - pos.z;
       if (dx * dx + dz * dz <= radius * radius) this._consumeBush(b, (b.id * 1597) >>> 0, true);
     }
+    for (const p of this.props) {                             // shatter nearby destructible props (rock tier 4 shrugs off a tier-3 rocket)
+      if (p.dead) continue;
+      const dx = p.x - pos.x, dz = p.z - pos.z;
+      if (dx * dx + dz * dz <= radius * radius && MATERIALS[p.dmat].tier <= blastTier) this._destroyProp(p, true);
+    }
   }
 
   // APFSDS / penetrator: fell standing trees the rod passes through (tier ≤ pen).
@@ -312,6 +318,13 @@ export class ForestDemo {
         rec.part.dead = true; this.fellTree(rec, [dir.x, dir.z], (rec.id * 7919) >>> 0);
       }
     }
+    for (const p of this.props) {                             // the rod also smashes props it passes (rock needs APFSDS-tier pen)
+      if (p.dead) continue;
+      const ox = p.x - origin.x, oz = p.z - origin.z, t = ox * dir.x + oz * dir.z;
+      if (t < 0 || t > range) continue;
+      const px = ox - dir.x * t, pz = oz - dir.z * t;
+      if (px * px + pz * pz <= 0.8 * 0.8 && MATERIALS[p.dmat].tier <= pen) this._destroyProp(p, true);
+    }
   }
 
   // weapons.js _destructHit routes a `box.prop` hit here — for us that's a BUSH. Damage it (grass tier 0,
@@ -319,8 +332,54 @@ export class ForestDemo {
   hitProp(rec, w, point) {
     if (!rec || rec.dead || !rec.part || rec.part.dead) return;
     const res = resolveHit(rec.part, w);
-    if (res.killed) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, true);
-    else if (res.effect === 'damage' && this.debris && point) this.debris.burst('splints', [point[0], point[1], point[2]], (rec.id ^ 0x55) >>> 0);
+    if (res.killed) { if (rec.isBush) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, true); else this._destroyProp(rec, true); }   // bush vs rock/decor prop
+    else if (res.effect === 'damage' && this.debris && point) this.debris.burst(rec.dmat === 'stone' ? 'sparks' : 'splints', [point[0], point[1], point[2]], (rec.id ^ 0x55) >>> 0);
+  }
+
+  // ── DECOR PROPS (rocks + static fallen logs): destructible scenery placed by ForestScene._scatterDecor.
+  // A rock is a SOLID stone prop (tier 4 — bullets chip/spark, only HE-tier blast / APFSDS breaks it);
+  // routed via this.props (hitProp/blast/penetrate/consumeProp). Logs reuse the fallen-log path (this.logs).
+  _addRock(geometry, material, x, z, yaw) {
+    const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
+    const mesh = new THREE.Mesh(geometry, material); mesh.position.set(x, y, z); mesh.rotation.y = yaw;
+    mesh.castShadow = mesh.receiveShadow = true; this.scene.add(mesh);
+    geometry.computeBoundingBox(); const bb = geometry.boundingBox;
+    const hw = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.5 + 0.05, top = y + bb.max.y;
+    const id = 300000 + (++this._idc), min = [x - hw, y, z - hw], max = [x + hw, top, z + hw];
+    const part = makePart(id, 'stone', min, max, 1); part.downer = null;
+    const rec = { id, x, z, baseY: y, dmat: 'stone', mesh, part, dead: false, box: null, isProp: true, prop: true };
+    part.downer = rec;
+    const box = { min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), downer: rec, prop: true, dmat: 'stone', dpart: id };
+    rec.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
+    this.props.push(rec);
+    return rec;
+  }
+  _destroyProp(rec, shot) {
+    if (!rec || rec.dead) return;
+    rec.dead = true; if (rec.part) rec.part.dead = true;
+    if (this.game.fire) this.game.fire.retire(rec.part);
+    if (rec.box) { this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null; }
+    if (this.debris) this.debris.burst(rec.dmat === 'stone' ? 'rubble' : 'splints', [rec.x, rec.baseY + 0.4, rec.z], (rec.id * 2654435761) >>> 0, undefined, [0, shot ? 0.5 : 0.3, 0]);
+    if (rec.mesh && rec.mesh.parent) this.scene.remove(rec.mesh); rec.mesh = null;
+  }
+
+  // A static fallen-log scenery piece: reuses the live-log path (this.logs) so it's SOLID (stops rounds),
+  // shootable-apart (_destructHit → _breakLog) and FLAMMABLE — identical to a tree you felled.
+  _addDecorLog(mesh, x, z, yaw, length, r, charred = false) {
+    const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
+    mesh.position.set(x, y + r, z); mesh.rotation.y = yaw; mesh.castShadow = mesh.receiveShadow = true; this.scene.add(mesh);
+    const c = Math.cos(yaw), s = Math.sin(yaw), hl = length / 2;
+    const ax = x - s * hl, az = z - c * hl, bx = x + s * hl, bz = z + c * hl;   // the two ends along the log axis
+    const id = 100000 + (++this._idc);
+    const matName = 'trunk';
+    const minA = [Math.min(ax, bx) - r, y, Math.min(az, bz) - r], maxA = [Math.max(ax, bx) + r, y + 2 * r, Math.max(az, bz) + r];
+    const part = makePart(id, matName, minA, maxA, (TREE_HP[2] / MATERIALS[matName].hp) * 0.6);
+    const log = { fallen: true, prop: true, id, part, mesh, leafMesh: null, trunkR: r, cls: 2, height: 2 * r, burntOut: !!charred, consumed: false, boxes: [] };
+    part.downer = log;
+    const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id };
+    log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+    this.logs.push(log);
+    return log;
   }
 
   // ── BUSHES (M3): head-height understorey you push THROUGH (slow) + that fades at the camera + hides
