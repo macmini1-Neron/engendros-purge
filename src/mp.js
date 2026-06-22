@@ -739,6 +739,7 @@ export class MP {
     n.on('forestfx', (d) => { if (this.isHost || !d) return; const fr = this.game.forest; if (!fr) return; // host-auth FOREST mutations: fell/char a tree, consume a grass tuft. Tree fall is replayed with the host's exact dir+seed → identical deterministic FallingBody
       if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed);
       else if (d.k === 'char') fr.charTreeById(d.id);
+      else if (d.k === 'drop') { if (fr.dropLeavesById) fr.dropLeavesById(d.id); }   // bare charred snag (leaves dropped)
       else if (d.k === 'grass') fr.consumeGrassById(d.id);
       else if (d.k === 'propdie') fr.destroyPropById(d.id); });
     // ── terrain excavation (craters + shovel) — the dig list is the single synced source of truth;

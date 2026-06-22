@@ -216,6 +216,8 @@ export class ForestDemo {
     // logged=false → update() registers the resting-log collision box ONCE the hinge settles (see _registerFallenLog)
     this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, topLeafMesh });
     if (this.debris) this.debris.burst('splints', [rec.x, y0 + split.breakY, rec.z], sd, undefined, [dx, 0, dz]);
+    rec._fellDx = dx; rec._fellDz = dz; rec._fellSeed = sd;
+    this._emitForest('fell', rec.id, { dx, dz, seed: sd });   // host-auth: clients replay the identical fall (same dir + seed → same FallingBody)
   }
 
   // Once a falling top SETTLES, give the lying log a collision box (solid + shootable) and make it a
@@ -265,6 +267,7 @@ export class ForestDemo {
   _consumeLog(log, seed, shot) {
     if (!log || log.consumed) return;
     log.consumed = true;
+    this._emitForest('propdie', log.id);                      // host-auth: clients remove the same log
     this._fading.delete(log);                                  // drop it from the near-camera leaf-fade rotation
     if (this.game.fire) this.game.fire.retire(log.part);      // a shot-apart / blasted burning log: retire its fire too
     if (log.part) log.part.dead = true;
@@ -357,6 +360,7 @@ export class ForestDemo {
   _destroyProp(rec, shot) {
     if (!rec || rec.dead) return;
     rec.dead = true; if (rec.part) rec.part.dead = true;
+    this._emitForest('propdie', rec.id);                      // host-auth: clients remove the same rock/prop
     if (this.game.fire) this.game.fire.retire(rec.part);
     if (rec.box) { this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null; }
     if (this.debris) this.debris.burst(rec.dmat === 'stone' ? 'rubble' : 'splints', [rec.x, rec.baseY + 0.4, rec.z], (rec.id * 2654435761) >>> 0, undefined, [0, shot ? 0.5 : 0.3, 0]);
@@ -435,6 +439,7 @@ export class ForestDemo {
   _consumeBush(rec, seed, shot) {
     if (!rec || rec.dead) return;
     rec.dead = true;
+    this._emitForest('propdie', rec.id);                      // host-auth: clients remove the same bush
     if (this.game.fire) this.game.fire.retire(rec.part);      // a burning bush flattened by a blast/shot: retire its fire
     if (rec.part) rec.part.dead = true;
     this._fading.delete(rec);
@@ -465,6 +470,7 @@ export class ForestDemo {
     // whose foliage material is shared across all trees (tinting it would blacken the whole forest). The
     // leaves blacken+drop later in dropLeaves. (Old code tinted tree.mesh.material — a Group has none → no-op.)
     if (tree.mesh) tree.mesh.traverse((o) => { if (o.isMesh && o !== tree.leafMesh && o.material && o.material.color) o.material.color.setHex(0x161310); });
+    this._emitForest('char', tree.id);   // host-auth: mirror the charred snag on every peer
   }
 
   // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self. Same
@@ -489,6 +495,7 @@ export class ForestDemo {
     } catch (e) {
       tree.mesh.traverse && tree.mesh.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setHex(0x161310); }); // fallback: scorch-tint in place
     }
+    this._emitForest('drop', tree.id);   // host-auth: mirror the bare (leaves-dropped) snag on every peer
   }
 
   // A fire that burned out WITHOUT toppling the tree (the ~70% that don't fall): it stays standing as a
@@ -543,8 +550,37 @@ export class ForestDemo {
   }
 
   // ── co-op (basic — manual gate): fell ids streamed by the host ──
-  netSnapshot() { return this.trees.filter((t) => !t.standing && !t.cleared).map((t) => ({ id: t.id, dx: 0, dz: 1 })); }
+  // ── CO-OP: the host broadcasts every authoritative forest mutation (char / leaves-drop / fell / prop
+  // death); clients mirror it. Each mutation guards on its own state and _emitForest fires ONLY on the
+  // host, so a client mirror can't echo. ⚠️ Correct replay needs the forest LAYOUT identical on every
+  // peer (id→tree must match) — ForestDemo.scatter is currently UNSEEDED, so until it's made
+  // deterministic this is wired-but-positionally-approximate (known co-op-forest gap, 2-PC manual gate).
+  _emitForest(k, id, extra = null) {
+    const mp = this.game.mp;
+    if (!mp || !mp.active || !mp.isHost || !mp.net) return;
+    try { mp.net.send('forestfx', Object.assign({ k, id }, extra || {})); } catch (e) {}
+  }
   _treeById(id) { return this.trees.find((t) => t.id === id); }
   fellTreeById(id, dx, dz, seed) { const t = this._treeById(id); if (t && t.standing) { t.part.dead = true; this.fellTree(t, [dx, dz], seed); } }
+  dropLeavesById(id) { const t = this._treeById(id); if (t) this.dropLeaves(t); }
+  destroyPropById(id) {                                       // a fallen log / bush / rock removed on the host
+    let r = this.logs.find((l) => l.id === id); if (r) { this._consumeLog(r, (id * 2654435761) >>> 0, false); return; }
+    r = this.bushes.find((b) => b.id === id); if (r) { this._consumeBush(r, (id * 2654435761) >>> 0, false); return; }
+    r = this.props.find((p) => p.id === id); if (r) this._destroyProp(r, false);
+  }
+  consumeGrassById() {}                                       // groundcover here is non-destructible visual InstancedMeshes — nothing to consume (kept so the host 'grass' handler can't crash)
+  // Late-join: replay every authoritative mutation a fresh joiner missed, as .k-tagged 'forestfx' records.
+  netSnapshot() {
+    const out = [];
+    for (const t of this.trees) {
+      if (!t.standing && !t.cleared) out.push({ k: 'fell', id: t.id, dx: t._fellDx || 0, dz: t._fellDz || 1, seed: t._fellSeed || ((t.id * 2654435761) >>> 0) });
+      else if (t.bare) out.push({ k: 'drop', id: t.id });
+      else if (t.charred) out.push({ k: 'char', id: t.id });
+    }
+    for (const lg of this.logs) if (lg.consumed) out.push({ k: 'propdie', id: lg.id });
+    for (const b of this.bushes) if (b.dead) out.push({ k: 'propdie', id: b.id });
+    for (const p of this.props) if (p.dead) out.push({ k: 'propdie', id: p.id });
+    return out;
+  }
   stats() { return { trees: this.trees.length, standing: this.trees.filter((t) => t.standing).length, falling: this.FALLING.length }; }
 }
