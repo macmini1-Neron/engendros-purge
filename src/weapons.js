@@ -2006,7 +2006,7 @@ export class WeaponSystem {
         else if (!shatterAt) shatterAt = g.mesh.position.clone();
       } else if (g.rocket) { // straight, fast, detonates on contact — raycast BEFORE moving (like the molotov) so a fast rocket can't tunnel a thin (~0.45 m) wall and overshoot
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
-        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + 0.5);
+        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + 0.5, (b) => !b.foliage);   // fly THROUGH soft foliage (leaves/bushes/canopy) — detonate on the solid trunk/wall/ground behind, not on a leaf mid-air
         if (wh) { rocketAt = wh.point.clone().addScaledVector(wh.normal, OCCLUSION_INSET); boom = true; }   // detonate EXACTLY on the surface it strikes (wall/tree/prop), not a frame past it — so the blast is centred on what you aimed at
         if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; const rp = g.mesh.position; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + 0.7 && rp.y < e.pos.y + e.height + 0.5) { rocketAt = rp.clone(); boom = true; break; } }
         if (!boom) { g.mesh.position.addScaledVector(g.vel, dt); const rp = g.mesh.position; if (rp.y < this.game.world.groundY(rp.x, rp.z) + 0.2) { rocketAt = rp.clone(); boom = true; } }   // nothing in the step → advance, then detonate on the terrain surface (groundY≡0 on flat maps)

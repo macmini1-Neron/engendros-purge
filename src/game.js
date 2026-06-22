@@ -991,7 +991,11 @@ class Game {
     const b = this.world.demoBuilding;
     const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
     if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
-    if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, blast.r1 + 0.6, blast.tier);
+    // Trees fall across the FULL explosion radius (matches the visible blast) for rockets/HE; a thrown
+    // grenade keeps the tight ring. forest.blast() uses horizontal distance, so this radius alone decides
+    // how much of the surrounding stand comes down — the small building r1 stays the building's breach size.
+    const fellR = isRocket ? Math.max(radius, blast.r1 + 0.6) : (blast.r1 + 0.6);
+    if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, fellR, blast.tier);
     if (this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
   }
   // Blast → terrain crater (shared by explode() and the hand-rolled mortar detonation). Host-auth:
