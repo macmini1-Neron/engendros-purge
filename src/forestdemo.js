@@ -189,23 +189,32 @@ export class ForestDemo {
     const breakAt = rec.cls === 1 ? 0.1 : 0.12 + Math.random() * 0.18;     // snap low; saplings near the base
     // A fire-killed tree fells as its BARE BLACKENED charred self (no leaves); a bullet/blast-felled tree
     // keeps its foliage. Either way pass height: rec.height so the split matches the standing tree exactly.
-    const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, height: rec.height, breakAt, damage: rec.charred ? 'charred' : undefined });
+    // NO height override: the same seed+scale reproduces the EXACT standing tree (just split). Passing
+    // rec.height (already × scale) alongside scale double-scaled the felled tree (~scale× too big) AND
+    // shifted the RNG so the split didn't even match the standing shape.
+    const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt, damage: rec.charred ? 'charred' : undefined });
     const y0 = rec.baseY;
-    const stump = new THREE.Mesh(split.stumpGeometry, split.material);
+    const stump = new THREE.Mesh(split.stumpWoodGeometry, split.material);
     stump.position.set(rec.x, y0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = true;
     this.scene.add(stump); this.stumps.push(stump);
     // the STUMP keeps a solid collision box (you can't walk or shoot through the stub left behind)
     const sh = (rec.trunkR || 0.3) + 0.12, stumpTop = y0 + Math.max(0.5, split.breakY);
     const sb = { min: new THREE.Vector3(rec.x - sh, y0, rec.z - sh), max: new THREE.Vector3(rec.x + sh, stumpTop, rec.z + sh) };
     this.world.boxes.push(sb); this.world.grid.addBox(sb); this.stumpBoxes.push(sb);
-    const top = new THREE.Mesh(split.topGeometry, split.material); top.rotation.y = rec.yaw;
+    // falling TOP = opaque bole + (when the fell keeps foliage) a SEPARATE leaf mesh on the foliage material,
+    // so the crown lying on the ground reads as see-through wade-in cover that dissolves at the camera
+    // (_updateLeafFade picks it up via log.leafMesh) — not an opaque green block.
+    const top = new THREE.Group(); top.rotation.y = rec.yaw;
+    top.add(new THREE.Mesh(split.topWoodGeometry, split.material));
+    let topLeafMesh = null;
+    if (split.topLeafGeometry) { topLeafMesh = new THREE.Mesh(split.topLeafGeometry, FOLIAGE_OPAQUE); topLeafMesh.castShadow = true; top.add(topLeafMesh); }
     const pivot = new THREE.Group(); pivot.position.set(rec.x, y0 + split.breakY, rec.z); pivot.add(top);
     this.scene.add(pivot);
     const length = Math.max(0.5, rec.height - split.breakY);
     const groundAt = this.world.terrain ? (gx, gz) => this.world.terrain.terrainHeightAt(gx, gz) : null;
     const body = makeHinge({ pivot: [rec.x, y0 + split.breakY, rec.z], dirXZ: [dx, dz], length, radius: Math.max(0.22, rec.trunkR || 0.22), seed: sd, obstacles: [], groundAt });
     // logged=false → update() registers the resting-log collision box ONCE the hinge settles (see _registerFallenLog)
-    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false });
+    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, topLeafMesh });
     if (this.debris) this.debris.burst('splints', [rec.x, y0 + split.breakY, rec.z], sd, undefined, [dx, 0, dz]);
   }
 
@@ -224,7 +233,7 @@ export class ForestDemo {
     const minA = [Math.min(ax, bx) - r, Math.min(ay, by, gy), Math.min(az, bz) - r];
     const maxA = [Math.max(ax, bx) + r, Math.max(ay, by, gy) + 2 * r, Math.max(az, bz) + r];
     const part = makePart(id, matName, minA, maxA, (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * 0.6); // a downed log snaps a touch easier
-    const log = { fallen: true, prop: true, id, part, mesh: f.pivot, trunkR: r, cls: (rec && rec.cls) || 2,
+    const log = { fallen: true, prop: true, id, part, mesh: f.pivot, leafMesh: f.topLeafMesh || null, trunkR: r, cls: (rec && rec.cls) || 2,
                   height: maxA[1] - minA[1],   // fire reads owner.height → keeps a downed log's flame low (not a 12 m tree column)
                   fallingRef: f, burntOut: !!f.charred, consumed: false, boxes: [] };  // charred logs already burnt → not flammable
     part.downer = log;
@@ -252,6 +261,7 @@ export class ForestDemo {
   _consumeLog(log, seed, shot) {
     if (!log || log.consumed) return;
     log.consumed = true;
+    this._fading.delete(log);                                  // drop it from the near-camera leaf-fade rotation
     if (log.part) log.part.dead = true;
     for (const b of (log.boxes || [])) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
     log.boxes = [];
@@ -388,14 +398,15 @@ export class ForestDemo {
     if (tree.mesh && tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x161310); // scorched black
   }
 
-  // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self at the
-  // SAME height/species/seed (rec.height, NOT the short burntCharred snag) so the dead snag matches its
-  // neighbours. The fire keeps spanning the bare trunk; it later either fells charred or stays a burnt snag.
+  // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self. Same
+  // species+seed+scale (NO height override) reproduces the EXACT standing tree, now bare + blackened, so the
+  // dead snag matches its neighbours. (Passing tree.height double-scaled the snag — it stood scale× too tall.)
+  // The fire keeps spanning the bare trunk; it later either fells charred or stays a burnt snag.
   dropLeaves(tree) {
     if (!tree || tree.bare || !tree.standing || !tree.mesh) return;
     tree.bare = true;
     try {
-      const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, height: tree.height, lod: 0, damage: 'charred' });
+      const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, lod: 0, damage: 'charred' });
       const old = tree.mesh;                                  // a Group(wood, leaf) — the charred snag is a single merged mesh (no leaves to fade)
       const m = new THREE.Mesh(res.geometry, res.material);
       m.position.copy(old.position); m.rotation.y = tree.yaw; m.castShadow = true;
