@@ -101,6 +101,8 @@ const CSS = `
 .pk-btn.raise { background:linear-gradient(180deg,#cf9c41,#7c5a22); border-color:var(--brass-hi,#f3d999); color:#1c1206; text-shadow:0 1px 0 rgba(255,255,255,.25); }
 .pk-btn.allin { background:linear-gradient(180deg,#b23a2a,#6a160e); border-color:var(--red-2,#f5604c); color:#ffe2d8; }
 .pk-btn.allin.armed { background:linear-gradient(180deg,#ff7a4f,#a01c0c); color:#fff; border-color:var(--brass-hi,#f3d999); }
+.pk-btn.muted { opacity:.5; filter:grayscale(.45); }
+.pk-btn.armed { background:linear-gradient(180deg,#b23a2a,#6a160e); border-color:var(--red-2,#f5604c); color:#ffe2d8; opacity:1; filter:none; }
 .pk-btn.go { background:linear-gradient(180deg,var(--go,#5cae8c),#2c6b4f); color:#fff; border-color:var(--brass,#d8b066); }
 .pk-raise { display:flex; flex-direction:column; align-items:center; gap:6px; }
 .pk-presets { display:flex; gap:6px; }
@@ -355,11 +357,14 @@ export class PokerDomRenderer {
     const meSeat = v.seats.find((s) => s.id === p.youId);
     // header live-drains to the would-be REMAINING stack while you're SIZING a raise (the 3D stack columns
     // drain in lockstep via _updateBetPreview), so the number you watch always reconciles with the table and
-    // with the "leaves $" readout; at rest (slider at the minimum) it shows your full behind-stack.
+    // with the "leaves $" readout — INCLUDING at the resting min-raise (a min-raise still has a cost, so the
+    // old "drain only above the minimum" gate left the header showing the full stack while the readout showed
+    // less). Clamp a possibly-stale _raiseTo into THIS turn's legal range so the first frame can't flicker.
     let myStack = meSeat ? meSeat.stack : 0;
     const Lh = p.legal;
-    if (meSeat && p.yourTurn && Lh && Lh.canRaise && (this._raiseTo | 0) > (Lh.minRaiseTo | 0)) {
-      myStack = raiseBreakdown(this._raiseTo, meSeat.roundBet, meSeat.stack).leaves;
+    if (meSeat && p.yourTurn && Lh && Lh.canRaise) {
+      const to = clampRaise((this._raiseTo | 0) || Lh.minRaiseTo, Lh);
+      myStack = raiseBreakdown(to, meSeat.roundBet, meSeat.stack).leaves;
     }
     this.el.mybank.textContent = '$' + myStack;
 
@@ -545,7 +550,19 @@ export class PokerDomRenderer {
         </div>
         <div class="pk-raiseleft" id="pk-raiseleft" style="font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;text-align:center;margin-top:3px">${fmtLeft(this._raiseTo)}</div>
       </div>` : ''}`;
-    a.querySelector('#pk-fold').addEventListener('click', () => this.cb.onAct({ type: 'fold' }));
+    const fold = a.querySelector('#pk-fold');
+    if (L.canCheck) {
+      // CHECK is free → guard FOLD behind a visual demote + arm→confirm so a misclick can't throw a free hand
+      fold.classList.add('muted');
+      fold.title = 'You can check for free — click again to fold anyway';
+      fold.addEventListener('click', () => {
+        if (fold.dataset.armed) { this.cb.onAct({ type: 'fold' }); return; }
+        fold.dataset.armed = '1'; fold.textContent = 'FOLD?'; fold.classList.remove('muted'); fold.classList.add('armed');
+        setTimeout(() => { if (fold.isConnected) { fold.dataset.armed = ''; fold.textContent = 'FOLD'; fold.classList.remove('armed'); fold.classList.add('muted'); } }, 2500);
+      });
+    } else {
+      fold.addEventListener('click', () => this.cb.onAct({ type: 'fold' })); // facing a bet → folding is a normal one-click action
+    }
     a.querySelector('#pk-callcheck').addEventListener('click', () => this.cb.onAct(L.canCheck ? { type: 'check' } : { type: 'call' }));
     if (L.canRaise) {
       const rng = a.querySelector('#pk-raiserng'), num = a.querySelector('#pk-raisenum'), btn = a.querySelector('#pk-raise');
@@ -556,7 +573,7 @@ export class PokerDomRenderer {
         btn.textContent = 'RAISE → ' + this._raiseTo;
         if (left) left.textContent = fmtLeft(this._raiseTo); // real-time: cost + what stays, reconciled with the header
       };
-      if (rng) rng.addEventListener('input', () => setRaise(+rng.value));
+      if (rng) rng.addEventListener('input', () => setRaise((L.maxRaiseTo - (+rng.value)) < 5 ? L.maxRaiseTo : +rng.value)); // the slider's top step lands short of an odd all-in max → snap the very top to the exact all-in
       num.addEventListener('change', () => setRaise(+num.value));
       num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } });
       a.querySelector('#pk-rminus').addEventListener('click', () => setRaise(this._raiseTo - bb));

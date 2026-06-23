@@ -367,6 +367,18 @@ export class ChipBank {
     // ledger: clamp every stack (corrective shuffle → own skin) + the float to the corrected reality
     for (const id in this.stacks) this._skClamp('stacks', id);
     this._skClampPool('float');
+    // ENGINE-PARITY backstop: verify() only proves conservation (no chips minted/lost), NOT that each
+    // physical stack reached its engine target — a starved float can leave value(stack)+dust off-target
+    // and slip past verify(). Record + warn so that physical/money desync surfaces (money is engine-truth;
+    // only the chip RENDER is wrong). Empty under the default float tuning (the integration SNG asserts it).
+    this._underfilled = [];
+    for (const id in this.stacks) {
+      const t = targets[id] | 0, got = value(this.stacks[id]) + (this.dust[id] | 0);
+      if (got !== t) this._underfilled.push({ id, physical: got, target: t });
+    }
+    if (this._underfilled.length && typeof console !== 'undefined' && console.warn) {
+      console.warn('[poker] chip reconcile off engine parity (float can\'t dimension it; money is engine-truth, chip render is off):', this._underfilled);
+    }
   }
 
   // Re-mint the cosmetic ledger to the CURRENT chip state for a fresh per-seat skin map — provenance only,
