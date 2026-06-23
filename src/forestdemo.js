@@ -26,6 +26,12 @@ const ri = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2, willow: 2 };
 const TREE_HP = { 1: 20, 2: 55, 3: 100 };   // destructive vibe: rifle fells a grown tree in a burst, HMG/HE/APFSDS instantly
 const LOG_HP_MUL = 2.0;   // a FALLEN log is durable scenery (×2 the standing trunk) → a deliberate burst shoots it apart, a stray bullet leaves it lying; it NEVER despawns on a timer
+// FELLING BY CALIBER × TREE SIZE: a tree/log carries a "fell tier" = the min weapon pen that can chop
+// it, derived from TRUNK THICKNESS (not species) so a slim trunk falls to an SMG/rifle (pen 1) while a
+// thick bole needs an MG/sniper/HE (pen 2+). Only the caliber GATE scales with size — fire + HP still
+// come from the material. (Pen by class: pistol0 smg1 rifle1 shotgun1 sniper2 hmg2 launcher4 cannon5.)
+const FELL_TIER_R = 0.5;                        // scaled trunk radius ≥ this ⇒ "thick" (MG/sniper/HE only); below ⇒ a rifle/SMG burst fells it. The slender majority (birch/willow/smaller pine+poplar) fall to the rifle; only big boles (oak, the largest pines) need a heavy weapon.
+const felTierFor = (r) => (r >= FELL_TIER_R ? 2 : 1);
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -106,7 +112,8 @@ export class ForestDemo {
     // must rise from the TRUNK base, not the wide lean-offset canopy — so the part stays a tight bole column
     // independent of the precise hit boxes below.
     const part = makePart(id, mat, [x - half, y, z - half], [x + half, topY, z + half], TREE_HP[cls] / MATERIALS[mat].hp);
-    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, trunkR, mesh: m, leafMesh, cls, part, standing: true, boxes: [] };
+    const felTier = felTierFor(trunkR);          // caliber needed to fell THIS trunk (by its thickness)
+    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, trunkR, mesh: m, leafMesh, cls, part, felTier, standing: true, boxes: [] };
     part.downer = rec;
     // ── PRECISE HITBOXES (the headline fix) ──────────────────────────────────────────────────────────
     // Built from the tree's REAL geometry (tree.js returns the leaning trunk centreline + the MEASURED
@@ -118,7 +125,7 @@ export class ForestDemo {
     //     SOLID box that size walls the whole footprint — that floating box was also a phantom wall.
     const cos = Math.cos(yaw), sin = Math.sin(yaw);
     const addBox = (mn, mx, foliage, thicket) => {
-      const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id };
+      const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id, felTier };
       if (foliage) b.foliage = true;   // soft cover: raycast hits it (shoot/conceal), movement passes THROUGH it
       if (thicket) b.thicket = true;   // …and SLOWS a body inside it. Only ground-level foliage you push through
       rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b);  // (saplings/bushes/fallen crowns) — NOT a tall tree's overhead crown (you walk under that; its wide AABB would over-slow neighbours).
@@ -248,6 +255,7 @@ export class ForestDemo {
     // rise ONLY where wood/branches are — so you walk UNDER a raised crown and step OVER the bole. This
     // replaces the old two FAT seg() boxes (one spanned the whole diagonal as an axis-aligned block; the
     // crown one was a 5 m cube), which neither hugged the log nor let you pass between the branches.
+    const logFelTier = felTierFor((rec && rec.trunkR) || 0.25);  // caliber to chop this downed log apart (by its bole thickness)
     f.pivot.updateWorldMatrix(true, true);                       // settle pose is baked → world verts are final
     const axis2 = [b.dirXZ[0], b.dirXZ[1]], org2 = [ax, az];
     const addBinned = (mesh, foliage, thicket, binLen, maxBins, crossBins) => {
@@ -257,7 +265,7 @@ export class ForestDemo {
         // small aim/clearance margin; NOT clamped to ground → a branch-propped crown keeps the gap beneath it
         const box = { min: new THREE.Vector3(bb.min[0] - 0.06, bb.min[1] - 0.06, bb.min[2] - 0.06),
                       max: new THREE.Vector3(bb.max[0] + 0.06, bb.max[1] + 0.06, bb.max[2] + 0.06),
-                      downer: log, tree: true, dmat: matName, dpart: id };
+                      downer: log, tree: true, dmat: matName, dpart: id, felTier: logFelTier };
         if (foliage) box.foliage = true; if (thicket) box.thicket = true;
         log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
       }
@@ -393,7 +401,7 @@ export class ForestDemo {
     const part = makePart(id, matName, minA, maxA, (TREE_HP[2] / MATERIALS[matName].hp) * LOG_HP_MUL);
     const log = { fallen: true, prop: true, id, part, mesh, leafMesh: null, trunkR: r, cls: 2, height: 2 * r, burntOut: !!charred, consumed: false, boxes: [] };
     part.downer = log;
-    const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id };
+    const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id, felTier: felTierFor(r) };
     log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
     this.logs.push(log);
     return log;

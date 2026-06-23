@@ -1615,11 +1615,18 @@ export class WeaponSystem {
       }
       if (wHit) {
         const box = wHit.box;
-        if (box && box.downer && soft < SOFT_BUDGET && this._softPenetrable(box, d)) {
-          this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));   // carve soft cover with the marched (decayed) energy
-          if (box.foliage) { this.game.effects.impact(wHit.point, wHit.normal, 'leaf'); this.game.hud.hitmarker(false); }   // feedback when a round punches THROUGH leaves (was: silent pass)
+        if (box && box.downer && this._softPenetrable(box, d) && (box.foliage || soft < SOFT_BUDGET)) {
+          if (box.foliage) {
+            // FOLIAGE = a free, DAMAGE-FREE pass: leaves just react (green puff), never absorb the round,
+            // never fell the tree, never cost energy/budget — so the round ALWAYS reaches the solid trunk
+            // behind. No _destructHit (only the trunk/log takes damage) and NO crosshair hit-marker.
+            this.game.effects.impact(wHit.point, wHit.normal, 'leaf');
+          } else {
+            // building soft cover (glass / wood / sheet-metal): carve it, sap energy (glass is the free pass)
+            this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));
+            if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }
+          }
           ignored.push(box);                                     // exclude it from the next pass (hit each cover once)
-          if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }   // glass is a free pass (like APFSDS); wood/metal sap energy
           if (dmg < 2) { this.game.effects.tracer(muzzle, wHit.point, d.accent); return; }   // round spent inside the cover
           continue;
         }
@@ -1669,7 +1676,7 @@ export class WeaponSystem {
     } else if ((box.tree || box.dmat === 'trunk') && box.downer.part) {
       const tree = box.downer, part = tree.part;
       if (!part || part.dead) return;
-      const r = resolveHit(part, w);
+      const r = resolveHit(part, w, box.felTier);   // fell-tier scales with trunk THICKNESS (slim → SMG/rifle pen1; thick → MG/sniper/HE pen2+)
       if (r.killed && this.game.forest && (tree.standing || tree.fallen)) {
         // standing → topple away from the shot; a fallen LOG → fellTree routes rec.fallen to _breakLog
         // (splinter + remove), so you can finally shoot a downed log apart, not just stop the round on it.
@@ -2007,7 +2014,7 @@ export class WeaponSystem {
       if (g.molotov) { // arcs with gravity + spins; raycasts EVERY frame so it can't tunnel walls
         g.vel.y -= MOLO_GRAV * dt;
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
-        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + MOLO_PROJ_R);
+        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + MOLO_PROJ_R, (b) => !b.foliage);   // fly THROUGH foliage (leaves/bushes/canopy) — break on the solid trunk/wall/ground behind, not on a leaf graze (mirrors the rocket)
         if (wh) { shatterAt = wh.point.clone().addScaledVector(wh.normal, OCCLUSION_INSET); boom = true; }
         if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; const rp = g.mesh.position; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + MOLO_PROJ_R && rp.y < e.pos.y + e.height + 0.4) { shatterAt = rp.clone(); boom = true; break; } }
         if (!boom) { g.mesh.position.addScaledVector(g.vel, dt); g.mesh.rotation.x += g.spin.x * dt; g.mesh.rotation.y += g.spin.y * dt; g.mesh.rotation.z += g.spin.z * dt; g.trailT -= dt; if (g.trailT <= 0) { g.trailT = 0.04; this.game.effects.firePool(g.mesh.position, 0.3, 0.6); } }
