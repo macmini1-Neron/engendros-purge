@@ -348,6 +348,7 @@ export class ForestDemo {
     const logFelTier = felTierFor((rec && rec.trunkR) || 0.25);  // caliber to chop this downed log apart (by its bole thickness)
     f.pivot.updateWorldMatrix(true, true);                       // settle pose is baked → world verts are final
     const axis2 = [b.dirXZ[0], b.dirXZ[1]], org2 = [ax, az];
+    const a3x = s * b.dirXZ[0], a3y = c, a3z = s * b.dirXZ[1];   // log's 3-D heading (unit): butt→tip
     // helper: tight WORLD collision boxes for a mesh's verts, tagged with the given seg/flags
     const collide = (mesh, opts, binLen, maxBins, crossBins) => {
       const a = mesh.geometry && mesh.geometry.attributes, pos = a && a.position; if (!pos) return [];
@@ -357,6 +358,14 @@ export class ForestDemo {
                       max: new THREE.Vector3(bb.max[0] + 0.06, bb.max[1] + 0.06, bb.max[2] + 0.06),
                       downer: log, tree: true, dmat: matName, dpart: opts.dpart, felTier: logFelTier };
         if (opts.foliage) box.foliage = true; if (opts.thicket) box.thicket = true; if (opts.seg) box.seg = opts.seg;
+        if (!opts.foliage) {                                   // round log chunk: capsule along the log heading, inside this bin AABB
+          const cX = (box.min.x + box.max.x) / 2, cY = (box.min.y + box.max.y) / 2, cZ = (box.min.z + box.max.z) / 2;
+          const sX = box.max.x - box.min.x, sY = box.max.y - box.min.y, sZ = box.max.z - box.min.z;
+          const half = 0.5 * (sX * Math.abs(a3x) + sY * Math.abs(a3y) + sZ * Math.abs(a3z));  // bin extent along the log
+          const rad = Math.max(0.12, 0.5 * Math.min(sX, sY, sZ));                              // tight cross radius
+          const hl = Math.max(0, half - rad);                                                  // shrink so caps fit inside the bin
+          box.cap = { ax: cX - a3x * hl, ay: cY - a3y * hl, az: cZ - a3z * hl, bx: cX + a3x * hl, by: cY + a3y * hl, bz: cZ + a3z * hl, r: rad };
+        }
         made.push(box); log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
       }
       return made;
