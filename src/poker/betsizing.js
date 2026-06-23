@@ -9,8 +9,13 @@ export function snapTo(amount, step = 5) {
   return Math.round(amount / step) * step;
 }
 
-// snap to 5, then clamp into the legal raise range (min/max may not be multiples of 5 — they win)
+// snap to 5, then clamp into the legal raise range. The legal bounds (min/max) may NOT be multiples of 5
+// — e.g. an incomplete all-in makes the min-raise 333 or the all-in max 1387. Snapping FIRST would push a
+// min-raise up to 335 (illegal-feeling overshoot) or a slider-max down to 1385 (can't actually go all-in),
+// so honour the exact bound at the edges and only snap to the chip atom in the interior.
 export function clampRaise(amount, { minRaiseTo, maxRaiseTo }, step = 5) {
+  if (amount <= minRaiseTo) return minRaiseTo;   // exact min-raise (no snap-up past it)
+  if (amount >= maxRaiseTo) return maxRaiseTo;    // exact max = all-in (no snap-down short of it)
   return clamp(snapTo(amount, step), minRaiseTo, maxRaiseTo);
 }
 

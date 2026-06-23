@@ -21,6 +21,18 @@ test('clampRaise snaps to 5 then clamps into [minRaiseTo, maxRaiseTo]', () => {
   assert.equal(clampRaise(100, L), 100);
 });
 
+test('clampRaise hits the EXACT legal bound on odd (non-÷5) min/max', () => {
+  // an incomplete all-in leaves the legal bounds off the chip atom — the MIN button + slider-max must
+  // still dial them exactly (snapping first would overshoot the min to 335 and undershoot the all-in to 1385).
+  const L = { minRaiseTo: 333, maxRaiseTo: 1387 };
+  assert.equal(clampRaise(333, L), 333, 'exact min-raise (no snap-up to 335)');
+  assert.equal(clampRaise(330, L), 333, 'below the odd min → exact min');
+  assert.equal(clampRaise(1387, L), 1387, 'slider max reaches the exact all-in (no snap-down to 1385)');
+  assert.equal(clampRaise(99999, L), 1387, 'over max → exact all-in');
+  assert.equal(clampRaise(700, L), 700, 'interior value still snaps to the chip atom');
+  assert.equal(clampRaise(702, L), 700, 'interior snaps to the nearest 5');
+});
+
 test('presetRaiseTo — postflop pot-fraction = currentBet + fraction*(pot + callAmount)', () => {
   const ctx = { pot: 100, callAmount: 20, currentBet: 20, minRaiseTo: 40, maxRaiseTo: 1500 };
   assert.equal(presetRaiseTo(1, ctx), 140);     // pot raise: 20 + 1*(100+20)

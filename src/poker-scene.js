@@ -841,7 +841,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             card.position.set(pos.x, 0.013 + h * 0.0032, pos.z); // 2nd card rests physically ON the first (offset > card thickness) — overlapping, not interpenetrating/z-fighting
             card.scale.setScalar(1.05);
             if (s.hole) setCardFace(card, s.hole[h]);
-            card.rotation.z = this._holePeeked ? 0 : Math.PI; // peeked → face-up, else FACE-DOWN (back up), turned on the long axis
+            // at SHOWDOWN (the hand resolved & you're still in it) auto-flip your OWN pair face-up — don't make
+            // the player manually peek to see what they won/lost while every opponent's hand is shown for them.
+            const myShowdown = !!(winners && s.hole && !s.folded);
+            card.rotation.z = (this._holePeeked || myShowdown) ? 0 : Math.PI; // peeked / showdown → face-up, else FACE-DOWN (back up), turned on the long axis
             this._holeCards.push(card); this._myHoleCards.push(card); // click to peek
           } else if (s.hole) {
             // SHOWDOWN: an opponent's revealed pair is LIFTED off the felt, TILTED up toward the seated camera,
