@@ -157,11 +157,15 @@ export function orphanedCells(cells) {
 }
 
 // Hitscan rule: pen < tier ⇒ cosmetic (decal/chip, no hp). Else damage; killed at hp ≤ 0.
-// Mutates part.dhp / part.dead when pen ≥ tier.
-export function resolveHit(part, weapon) {
+// Mutates part.dhp / part.dead when pen ≥ tier. `tierOverride` (optional) lets a caller gate on a
+// DIFFERENT threshold than the material's own tier — used by trees/logs so the "what caliber fells
+// it" check scales with the trunk THICKNESS (a slim trunk falls to an SMG; a thick bole needs an
+// MG/HE) while the material still drives fire + HP. null ⇒ use the material tier (unchanged).
+export function resolveHit(part, weapon, tierOverride = null) {
   if (part.dead) return { effect: 'cosmetic' };
   const m = MATERIALS[part.dmat];
-  if (weapon.pen < m.tier) return { effect: 'cosmetic' };
+  const tier = tierOverride != null ? tierOverride : m.tier;
+  if (weapon.pen < tier) return { effect: 'cosmetic' };
   part.dhp -= weapon.dmg;
   if (part.dhp <= 0) part.dead = true;
   return { effect: 'damage', dmg: weapon.dmg, killed: part.dead };
