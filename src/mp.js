@@ -669,8 +669,8 @@ export class MP {
         if (pidDupe && g.poker && g.poker.coop && g.poker.role === 'host') g.poker.hostReattach(pidDupe[0], from);
         this._dropPeer(dupe[0], { silent: true });
       }
-      if (!this.roster.has(from) && this.roster.size >= 4) { this.net.sendTo(from, 'full', {}); return; }   // co-op cap = 4 (host + 3)
-      const skin = (d.skin != null) ? d.skin : this.roster.size;
+      if (!this.roster.has(from) && this.roster.size >= 6) { this.net.sendTo(from, 'full', {}); return; }   // co-op cap = 6 (host + 5) — supports 6-handed poker; remote Flopo skins + poker seat ring are N-general
+      const skin = (d.skin != null) ? d.skin : (this.roster.size % MP_SKINS.length); // auto-pick a valid palette index (4 skins → seats 5/6 reuse colours; everyone modulos anyway)
       const chipSkin = (typeof d.chipSkin === 'string') ? d.chipSkin : 'dice';
       const basket = (d.basket && d.basket.items && typeof d.basket.items === 'object') ? { items: d.basket.items } : { items: {} };
       this.roster.set(from, { name: nm, skin, chipSkin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [], pid, basket });
@@ -682,7 +682,7 @@ export class MP {
       this.net.sendTo(from, 'map', { map: this.game.mapId });               // host-only map: the whole squad plays the HOST's map
       if (this.active) { this.pstate.set(from, this._freshState(this.roster.get(from))); this._sendWorldTo(from); this._broadcastPState(from); }
     });
-    n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 4 players).'); try { this.net.close(); } catch (e) {} } });
+    n.on('full', () => { if (!this.isHost) { this._lobbyMsg('Room is full (max 6 players).'); try { this.net.close(); } catch (e) {} } });
     n.on('joinok', () => { if (!this.isHost) { this._clearJoinHandshakeTimer(); this._markDiag({ joinokReceived: true }, 'Join OK received'); this._lobbyMsg('Connected! Waiting for the host to start…'); } });
     n.on('roomClosed', () => {
       if (!this.isHost) {
