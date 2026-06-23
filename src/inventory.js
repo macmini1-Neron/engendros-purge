@@ -31,6 +31,7 @@ const SHOP_CATS = [
   { id: 'all', label: 'All' }, { id: 'rifle', label: 'Rifles' }, { id: 'smg', label: 'SMG' },
   { id: 'pistol', label: 'Pistols' }, { id: 'shotgun', label: 'Shotguns' }, { id: 'sniper', label: 'Snipers' },
   { id: 'launcher', label: 'Heavy' }, { id: 'melee', label: 'Melee' }, { id: 'gadget', label: 'Gadgets' },
+  { id: 'consumable', label: 'Supplies' }, // medkits/food/armor/ammo — account-owned items (ITEM_DEFS with a value)
   { id: 'crate', label: 'Crates' },   // «Посылка» lootbox — discoverable rail, room to grow
 ];
 
@@ -85,40 +86,48 @@ export class Shop {
     return icon(ITEM_ICON[key] || 'crate');
   }
   _crateDef() { return this.game.crate ? this.game.crate.def : null; }   // crate data read at runtime (no crate.js import here)
-  _nameOf(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.name; const g = GADGETS.find((x) => x.key === key); if (g) return g.name; return WEAPONS[key] ? WEAPONS[key].name : key; } // crate, then GADGETS (flashlight/binoculars live in both registries)
-  _descOf(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.desc; const g = GADGETS.find((x) => x.key === key); if (g) return g.desc; const w = WEAPONS[key]; return w ? (w.class + (w.melee ? ' · melee weapon' : ' · firearm')) : ''; }
-  _price(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.price; const g = GADGETS.find((x) => x.key === key); if (g) return g.price; return WEAPONS[key] ? (WEAPONS[key].price || 0) : 0; } // crate, then GADGETS (flashlight/binoculars have a price in GADGETS, none in WEAPONS)
-  _count(key) { return this._meta().loadout.filter((k) => k === key).length; }
+  _nameOf(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.name; const g = GADGETS.find((x) => x.key === key); if (g) return g.name; if (WEAPONS[key]) return WEAPONS[key].name; return ITEM_DEFS[key] ? ITEM_DEFS[key].name : key; } // crate, then GADGETS (flashlight/binoculars live in both registries), then WEAPONS, then ITEM_DEFS (consumables)
+  _descOf(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.desc; const g = GADGETS.find((x) => x.key === key); if (g) return g.desc; const w = WEAPONS[key]; if (w) return w.class + (w.melee ? ' · melee weapon' : ' · firearm'); const d = ITEM_DEFS[key]; if (!d) return ''; const eff = d.heal ? `heals ${d.heal} HP` : d.food ? `+${d.food} food` : d.armor ? `+${d.armor} armor` : d.class; return `consumable · ${eff}`; }
+  _price(key) { const cd = this._crateDef(); if (cd && key === cd.key) return cd.price; const g = GADGETS.find((x) => x.key === key); if (g) return g.price; if (WEAPONS[key]) return WEAPONS[key].price || 0; const d = ITEM_DEFS[key]; return d && d.value ? d.value : 0; } // crate, GADGETS, WEAPONS, then ITEM_DEFS `value`
+  _count(key) { return this._meta().loadout.filter((k) => k === key).length; }   // copies currently EQUIPPED (in a loadout slot)
+  _owned(key) { return this.game.items ? this.game.items.count(key) : 0; }        // copies OWNED in the account ledger (independent of loadout)
+  _loadoutable(key) { return !!(WEAPONS[key] || key === 'grenade' || key === 'molotov' || key === 'flare'); } // can sit in a loadout slot + deploy into a run (pure consumables can't, yet)
 
-  // ---- economy: unlock-once + paid duplicates ----
-  _placeFirstEmpty(key) {
+  // ---- economy: unified account ledger (game.items). Ownership is a COUNT of copies, independent of the
+  // loadout — buying acquires a copy, the loadout is a recipe of which owned copies to deploy, clearing a
+  // slot only UNEQUIPS (the copy stays owned), and SELL is the only refund. Legacy meta.unlocked is
+  // dual-written so the crate pool + a safe rollback keep working. ----
+  _placeFirstEmpty(key) { // loud place (EQUIP): toasts when the loadout is full
     const m = this._meta(); const idx = m.loadout.indexOf(null);
     if (idx < 0) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast('Loadout full — clear a slot first', 0xd23a2a); this.game.audio.noMoney(); return false; }
     m.loadout[idx] = key; return true;
   }
-  _refundSlot(idx) { const m = this._meta(); const key = m.loadout[idx]; if (!key) return; if (this._count(key) >= 2) m.bank += this._price(key); m.loadout[idx] = null; } // refund only paid duplicates
-  _clearSlot(idx) { const m = this._meta(); if (!m.loadout[idx]) return; this._refundSlot(idx); this.game.audio.uiClick(); this.game._saveMeta(); this._render(); }
-  _clearAll() { const m = this._meta(); for (let i = 0; i < m.loadout.length; i++) this._refundSlot(i); this.game.audio.uiClick(); this.game._saveMeta(); this._render(); }
-  _equipOwned(key) { if (this._placeFirstEmpty(key)) { this.game.audio.uiClick(); this.game._saveMeta(); this._render(); } } // free: placing an owned copy
-  _buy(key) { // unlock 1st copy + auto-equip — needs a free slot; only charge once placed
+  _tryPlace(key) { if (!this._loadoutable(key)) return false; const m = this._meta(); const idx = m.loadout.indexOf(null); if (idx < 0) return false; m.loadout[idx] = key; return true; } // silent best-effort auto-equip on purchase (never blocks the buy)
+  _clearSlot(idx) { const m = this._meta(); if (!m.loadout[idx]) return; m.loadout[idx] = null; this.game.audio.uiClick(); this.game._saveMeta(); this._render(); } // unequip only — the owned copy stays in your inventory (sell to refund)
+  _clearAll() { const m = this._meta(); for (let i = 0; i < m.loadout.length; i++) m.loadout[i] = null; this.game.audio.uiClick(); this.game._saveMeta(); this._render(); }
+  _equipOwned(key) { if (this._owned(key) <= this._count(key)) return; if (this._placeFirstEmpty(key)) { this.game.audio.uiClick(); this.game._saveMeta(); this._render(); } } // free: place a SPARE owned copy (owned > in-loadout)
+  _buy(key) { // acquire the 1st copy + auto-equip if there's room (buying is never blocked by a full loadout)
     const m = this._meta(), price = this._price(key);
     if (m.bank < price) { this.game.audio.noMoney(); return; }
-    if (!this._placeFirstEmpty(key)) return;                  // loadout full → no charge (feedback already shown)
-    m.bank -= price; if (!m.unlocked.includes(key)) m.unlocked.push(key);
+    m.bank -= price; this.game.items.acquire(key, 1, 'buy');
+    if (!m.unlocked.includes(key)) m.unlocked.push(key);      // dual-write legacy ownership (crate pool + rollback)
+    this._tryPlace(key);
     this.game.audio.buy(); this.game._saveMeta(); this._render();
   }
-  _buyDuplicate(key) { // paid extra copy of something already owned — needs a free slot; only charge once placed
+  _buyDuplicate(key) { // one more owned copy
     const m = this._meta(), price = this._price(key);
     if (m.bank < price) { this.game.audio.noMoney(); return; }
-    if (!this._placeFirstEmpty(key)) return;                  // loadout full → no charge
-    m.bank -= price;
+    m.bank -= price; this.game.items.acquire(key, 1, 'buy-dup');
+    this._tryPlace(key);
     this.game.audio.buy(); this.game._saveMeta(); this._render();
   }
-  _sell(key) {
+  _sell(key) { // sell ALL owned copies (consume to zero) — the only way to recover money
     if (key === 'knife') return; // bare knife is free + permanent
-    const m = this._meta(), price = this._price(key), dupes = Math.max(0, this._count(key) - 1);
-    m.bank += Math.round(price * 0.6) + dupes * price; // 60% for ownership + full price per paid duplicate
-    m.unlocked = m.unlocked.filter((k) => k !== key);
+    const n = this._owned(key); if (n <= 0) return;
+    const m = this._meta(), price = this._price(key);
+    m.bank += Math.round(price * 0.6) + Math.max(0, n - 1) * price; // 60% on the first copy + full price per extra
+    this.game.items.consume(key, n, 'sell');
+    m.unlocked = m.unlocked.filter((k) => k !== key);         // dual-write
     for (let i = 0; i < m.loadout.length; i++) if (m.loadout[i] === key) m.loadout[i] = null;
     this.game.audio.buy(); this.game._saveMeta(); this._render();
   }
@@ -126,13 +135,16 @@ export class Shop {
   // ---- confirm modal (reserved for spends + sells; free actions never confirm) ----
   _confirm(msg, onYes) { this._onConfirm = onYes; if (this.confirmMsgEl) this.confirmMsgEl.textContent = msg; if (this.confirmEl) this.confirmEl.classList.add('show'); this.game.audio.uiHover(); }
   _hideConfirm() { this._onConfirm = null; if (this.confirmEl) this.confirmEl.classList.remove('show'); }
-  _askClearAll() { const n = this._meta().loadout.filter(Boolean).length; if (!n) return; this._confirm(`Clear all ${n} loadout slot${n > 1 ? 's' : ''}? (duplicate purchases are refunded)`, () => this._clearAll()); }
+  _askClearAll() { const n = this._meta().loadout.filter(Boolean).length; if (!n) return; this._confirm(`Clear all ${n} loadout slot${n > 1 ? 's' : ''}? (items stay in your inventory — sell to refund)`, () => this._clearAll()); }
 
   // ---- catalog data ----
   _catalogItems() {
     const out = [];
     for (const k of WEAPON_ORDER) { const w = WEAPONS[k]; if (!w || w.class === 'tool') continue; out.push({ key: k, name: w.name, price: w.price || 0, cat: w.class }); }
     for (const g of GADGETS) out.push({ key: g.key, name: g.name, price: g.price, cat: 'gadget' });
+    // account-owned consumables: any ITEM_DEFS entry with a `value` that isn't already a weapon/gadget row
+    const gadgetKeys = new Set(GADGETS.map((g) => g.key));
+    for (const k in ITEM_DEFS) { const d = ITEM_DEFS[k]; if (!d.value || WEAPONS[k] || gadgetKeys.has(k)) continue; out.push({ key: k, name: d.name, price: d.value, cat: 'consumable' }); }
     const cd = this._crateDef(); if (cd) out.push({ key: cd.key, name: cd.name, price: cd.price, cat: 'crate' });
     return out;
   }
@@ -168,8 +180,8 @@ export class Shop {
     const cd = this._crateDef();
     for (const it of list) {
       const isCrate = cd && it.key === cd.key;
-      const owned = isCrate ? false : m.unlocked.includes(it.key);   // crate is consumable stock, never "owned"
-      const cnt = isCrate ? (m.crates | 0) : this._count(it.key);    // crate badge = stock you hold
+      const owned = isCrate ? false : this._owned(it.key) > 0;       // crate is consumable stock, never "owned"
+      const cnt = isCrate ? (m.crates | 0) : this._owned(it.key);    // badge = copies you OWN (crate badge = stock you hold)
       const afford = owned ? true : m.bank >= it.price;
       const el = document.createElement('div');
       el.className = 'cat-item' + (it.key === this.selected ? ' sel' : '') + (owned ? ' owned' : (afford ? '' : ' dim'));
@@ -189,7 +201,7 @@ export class Shop {
     else if (key && WEAPONS[key] && g.preview) g.preview.show(key);
     else if (g.preview && g.preview.hide) g.preview.hide();
     if (this.nameEl) this.nameEl.textContent = key ? this._nameOf(key) : '';
-    if (this.statsEl) { const w = WEAPONS[key]; const p = []; if (w) { if (w.dmg) p.push('DMG ' + w.dmg); if (w.rpm) p.push(w.rpm + ' RPM'); if (w.mag) p.push(w.mag + ' mag'); if (w.melee) p.push('melee'); } this.statsEl.textContent = isCrate ? 'supply crate · contains 1 item' : (w ? p.join('  ·  ') : (key ? 'gadget' : '')); }
+    if (this.statsEl) { const w = WEAPONS[key]; const p = []; if (w) { if (w.dmg) p.push('DMG ' + w.dmg); if (w.rpm) p.push(w.rpm + ' RPM'); if (w.mag) p.push(w.mag + ' mag'); if (w.melee) p.push('melee'); } const d = ITEM_DEFS[key]; const itemStat = d ? (d.heal ? `heals ${d.heal} HP` : d.food ? `+${d.food} food` : d.armor ? `+${d.armor} armor` : d.class) : ''; this.statsEl.textContent = isCrate ? 'supply crate · contains 1 item' : (w ? p.join('  ·  ') : (itemStat || (key ? 'gadget' : ''))); }
   }
   _renderDetail() {
     this._setPreview(this.selected);
@@ -199,33 +211,31 @@ export class Shop {
     if (!host) return;
     if (!key) { host.innerHTML = '<div class="det-hint">Pick a weapon to inspect.</div>'; return; }
     const cd = this._crateDef(); if (cd && key === cd.key) { this._renderCrateDetail(host, m, cd); return; }
-    const owned = m.unlocked.includes(key), cnt = this._count(key), price = this._price(key), afford = m.bank >= price;
-    const full = m.loadout.indexOf(null) < 0; // adding needs a free slot
+    const ownedCnt = this._owned(key), owned = ownedCnt > 0, inLo = this._count(key), price = this._price(key), afford = m.bank >= price;
+    const loadoutable = this._loadoutable(key), full = m.loadout.indexOf(null) < 0;
     let html = '';
     if (!owned) {
-      html += `<button class="det-btn buy" data-act="buy" ${(afford && !full) ? '' : 'disabled'}>UNLOCK · $${price}</button>`;
+      html += `<button class="det-btn buy" data-act="buy" ${afford ? '' : 'disabled'}>BUY · $${price}</button>`;
       if (!afford) html += `<div class="det-warn">Need $${price - m.bank} more</div>`;
-      else if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
     } else {
-      if (cnt === 0) {
+      html += `<button class="det-btn dup" data-act="dup" ${(afford || price === 0) ? '' : 'disabled'}>BUY ANOTHER · $${price}</button>`;
+      html += `<div class="det-incl">×${ownedCnt} owned${loadoutable ? ` · ×${inLo} in loadout` : ''}</div>`;
+      if (loadoutable && ownedCnt > inLo) {                    // a spare owned copy can be equipped
         html += `<button class="det-btn equip" data-act="equip" ${full ? 'disabled' : ''}>EQUIP</button>`;
         if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
-      } else {
-        html += `<button class="det-btn dup" data-act="dup" ${((afford || price === 0) && !full) ? '' : 'disabled'}>ADD ANOTHER · $${price}</button><div class="det-incl">×${cnt} in loadout</div>`;
-        if (full) html += `<div class="det-warn">Loadout full — clear a slot first</div>`;
-        else if (!afford && price > 0) html += `<div class="det-warn">Need $${price - m.bank} more</div>`;
       }
-      if (key !== 'knife') { const refund = Math.round(price * 0.6) + Math.max(0, cnt - 1) * price; html += `<button class="det-btn sell" data-act="sell">SELL · +$${refund}</button>`; }
+      if (!afford && price > 0) html += `<div class="det-warn">Need $${price - m.bank} more to add another</div>`;
+      if (key !== 'knife') { const refund = Math.round(price * 0.6) + Math.max(0, ownedCnt - 1) * price; html += `<button class="det-btn sell" data-act="sell">SELL ${ownedCnt > 1 ? `ALL ×${ownedCnt} ` : ''}· +$${refund}</button>`; }
     }
     host.innerHTML = html;
     host.querySelectorAll('.det-btn').forEach((b) => {
       b.addEventListener('mouseenter', () => this.game.audio.uiHover());
       b.addEventListener('click', () => {
         const act = b.dataset.act, nm = this._nameOf(key);
-        if (act === 'buy') this._confirm(`Unlock ${nm} for $${price}?`, () => this._buy(key));
-        else if (act === 'dup') this._confirm(`Add another ${nm} for $${price}?`, () => this._buyDuplicate(key));
+        if (act === 'buy') this._confirm(`Buy ${nm} for $${price}?`, () => this._buy(key));
+        else if (act === 'dup') this._confirm(`Buy another ${nm} for $${price}?`, () => this._buyDuplicate(key));
         else if (act === 'equip') this._equipOwned(key);
-        else if (act === 'sell') { const c = this._count(key), refund = Math.round(price * 0.6) + Math.max(0, c - 1) * price; const msg = c > 1 ? `Sell ALL ×${c} ${nm} and give up the unlock? You get $${refund} back.` : `Sell ${nm}? You get $${refund} back and it leaves your loadout.`; this._confirm(msg, () => this._sell(key)); }
+        else if (act === 'sell') { const c = this._owned(key), refund = Math.round(price * 0.6) + Math.max(0, c - 1) * price; const msg = c > 1 ? `Sell ALL ×${c} ${nm}? You get $${refund} back and they leave your inventory.` : `Sell ${nm}? You get $${refund} back and it leaves your inventory.`; this._confirm(msg, () => this._sell(key)); }
       });
     });
   }

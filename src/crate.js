@@ -125,11 +125,12 @@ export function rollCrateReward(game) {
   const e = weightedPick(LOOT_TABLE[tier].map((en) => ({ w: en.w, v: en })));
   if (e.cash) { m.bank += e.cash; return { tier, kind: 'cash', cash: e.cash, name: e.name }; }
   const price = _priceOf(e.key), name = _nameOf(e.key);
-  if (m.unlocked.includes(e.key)) {                                // already owned → liquidate to cash
+  if (m.unlocked.includes(e.key)) {                                // already owned → liquidate to cash (dup-liquidation stays cash)
     const cash = Math.round(price * DUP_RATE); m.bank += cash;
     return { tier, kind: 'dupe', key: e.key, name, cash, price };
   }
-  m.unlocked.push(e.key);                                          // fresh unlock
+  if (game.items) game.items.acquire(e.key, 1, 'crate');           // fresh unlock → one owned copy in the account ledger
+  m.unlocked.push(e.key);                                          // dual-write legacy ownership (crate pool + rollback)
   return { tier, kind: WEAPONS[e.key] ? 'weapon' : 'gadget', key: e.key, name, price };
 }
 
