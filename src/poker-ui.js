@@ -5,8 +5,7 @@
 import { describeHand } from './poker/handeval.js';
 import { equity, outs } from './poker/odds.js';
 import { clampRaise, presetRaiseTo, presetRaiseToBB, raiseBreakdown } from './poker/betsizing.js';
-import { CHIP_SKIN_LIST, CHIP_SKINS, drawChip } from './poker/chipskins.js'; // pure (no THREE) — safe for the node-tested DOM renderer
-import { CARD_BACK_LIST, CARD_BACKS, drawCardBack } from './poker/cardbacks.js'; // pure — card-back swatch picker
+import { mountChipSkinPicker, mountCardBackPicker } from './poker/skinpicker.js'; // shared cosmetic pickers (also used by the co-op ROOM lobby in mp.js)
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RCH = { 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -183,6 +182,9 @@ export class PokerDomRenderer {
 
   mount() {
     if (this._built) return;
+    // NOTE: the .pk-skinbtn/.pk-skinrow/.pk-skinhint picker rules are MIRRORED in index.html's main
+    // <style> — the co-op ROOM lobby (mp.js) mounts the shared skinpicker WITHOUT this renderer, so
+    // pk-style is absent there. Keep both copies in sync if you restyle the pickers.
     if (!document.getElementById('pk-style')) {
       const st = document.createElement('style'); st.id = 'pk-style'; st.textContent = CSS;
       document.head.appendChild(st);
@@ -318,60 +320,14 @@ export class PokerDomRenderer {
     this.el.lobby.querySelector('#pk-coopleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
   }
 
-  // Chip-skin picker: a row of canvas swatches (drawn via the pure drawChip). Local cosmetic — on click
-  // it highlights + fires onChipSkin(id); poker-table persists it to meta + applies it to the 3D chips.
-  // `available` = ids the player owns (free + unlocked); the rest render locked (🔒, not selectable).
+  // Chip-skin + card-back pickers now live in the shared ./poker/skinpicker.js module (reused by the
+  // co-op ROOM lobby in mp.js). These thin delegators keep the renderer's onChipSkin/onCardBack cb wiring.
   _chipSkinPicker(container, current, available, hintEl) {
-    if (!container) return;
-    const avail = Array.isArray(available) ? available : CHIP_SKIN_LIST; // back-compat: all available
-    let sel = (CHIP_SKINS[current] && avail.includes(current)) ? current : 'dice';
-    const draw = () => {
-      container.innerHTML = '';
-      for (const id of CHIP_SKIN_LIST) {
-        const locked = !avail.includes(id);
-        const btn = document.createElement('button');
-        btn.className = 'pk-skinbtn' + (id === sel ? ' sel' : '') + (locked ? ' locked' : '');
-        btn.title = locked ? 'Locked — unlock from the Supply Crate' : CHIP_SKINS[id].label;
-        const cv = document.createElement('canvas'); cv.width = cv.height = 44;
-        drawChip(cv.getContext('2d'), 44, 20, id);              // representative $20 (red) chip
-        const lab = document.createElement('span'); lab.textContent = (locked ? '🔒 ' : '') + CHIP_SKINS[id].label;
-        btn.appendChild(cv); btn.appendChild(lab);
-        if (locked) {
-          btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CHIP_SKINS[id].label}” is locked — unlock it from the Supply Crate.`; });
-        } else {
-          btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onChipSkin && this.cb.onChipSkin(id); });
-        }
-        container.appendChild(btn);
-      }
-    };
-    draw();
+    mountChipSkinPicker(container, { current, available, hintEl, onPick: (id) => this.cb.onChipSkin && this.cb.onChipSkin(id) });
   }
 
-  // Card-back picker — same machinery as the chip-skin picker, drawn at card aspect via drawCardBack.
   _cardBackPicker(container, current, available, hintEl) {
-    if (!container) return;
-    const avail = Array.isArray(available) ? available : CARD_BACK_LIST;
-    let sel = (CARD_BACKS[current] && avail.includes(current)) ? current : 'default';
-    const draw = () => {
-      container.innerHTML = '';
-      for (const id of CARD_BACK_LIST) {
-        const locked = !avail.includes(id);
-        const btn = document.createElement('button');
-        btn.className = 'pk-skinbtn back' + (id === sel ? ' sel' : '') + (locked ? ' locked' : '');
-        btn.title = locked ? 'Locked — unlock from the Supply Crate' : CARD_BACKS[id].label;
-        const cv = document.createElement('canvas'); cv.width = 76; cv.height = 106;   // 2× card aspect, CSS-scaled
-        drawCardBack(cv.getContext('2d'), 76, 106, id);
-        const lab = document.createElement('span'); lab.textContent = (locked ? '🔒 ' : '') + CARD_BACKS[id].label;
-        btn.appendChild(cv); btn.appendChild(lab);
-        if (locked) {
-          btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CARD_BACKS[id].label}” is locked — unlock it from the Supply Crate.`; });
-        } else {
-          btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onCardBack && this.cb.onCardBack(id); });
-        }
-        container.appendChild(btn);
-      }
-    };
-    draw();
+    mountCardBackPicker(container, { current, available, hintEl, onPick: (id) => this.cb.onCardBack && this.cb.onCardBack(id) });
   }
 
   showTable() {
