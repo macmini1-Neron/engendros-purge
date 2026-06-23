@@ -292,9 +292,10 @@ export class FireManager {
 
       if (f.kind === 'tree') {
         const fr = this.game.forest;
-        if (!f.blackened && f.age >= f.duration * LEAF_BLACKEN_FRAC) {       // leaves char black, still on the tree
+        if (!f.blackened && f.age >= f.duration * LEAF_BLACKEN_FRAC) {       // leaves char black, still on the tree/log
           f.blackened = true;
-          try { fr && fr.charTree(f.owner); } catch (e) { console.warn('[fire] charTree failed', e); }
+          // a DOWNED log blackens its lying crown (charLog); a STANDING tree chars its trunk (charTree).
+          try { if (fr) { if (f.owner && f.owner.fallen) fr.charLog(f.owner); else fr.charTree(f.owner); } } catch (e) { console.warn('[fire] char failed', e); }
         }
         if (!f.bared && f.age >= f.duration * LEAF_DROP_FRAC) {              // blackened leaves drop → bare snag
           f.bared = true;
