@@ -612,10 +612,14 @@ export class MP {
       if (!this.isHost) return;
       this._markDiag({ helloReceived: true }, 'Hello received');
       const nm = (d.name || 'Player').slice(0, 14), pid = (typeof d.pid === 'string') ? d.pid : null;
-      // same player reconnecting (reload / 2nd tab / network blip) → drop the stale entry first (by stable id, else name)
-      const dupe = [...this.roster].find(([id, r]) => id !== from && id !== 'host' && ((pid && r.pid === pid) || (r.name || '').toLowerCase() === nm.toLowerCase()));
+      // same player reconnecting (reload / 2nd tab / network blip). A STABLE pid match means it's truly the same
+      // browser; the name fallback only dedups display (it can collide between two distinct un-nicked 'Player's).
+      const pidDupe = pid ? [...this.roster].find(([id, r]) => id !== from && id !== 'host' && r.pid === pid) : null;
+      const dupe = pidDupe || [...this.roster].find(([id, r]) => id !== from && id !== 'host' && (r.name || '').toLowerCase() === nm.toLowerCase());
       if (dupe) {
-        if (g.poker && g.poker.coop && g.poker.role === 'host') g.poker.hostReattach(dupe[0], from); // poker reconnect: re-attach the seat to the new peer id (re-key next hand, no re-charge)
+        // poker reconnect TRANSFERS a seat + chip stack, so it must require the stable pid — a mere name match
+        // (two different players both named 'Player') must NOT hand one player's seat/stack to another.
+        if (pidDupe && g.poker && g.poker.coop && g.poker.role === 'host') g.poker.hostReattach(pidDupe[0], from);
         this._dropPeer(dupe[0], { silent: true });
       }
       if (!this.roster.has(from) && this.roster.size >= 4) { this.net.sendTo(from, 'full', {}); return; }   // co-op cap = 4 (host + 3)

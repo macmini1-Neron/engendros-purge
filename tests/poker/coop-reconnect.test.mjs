@@ -74,6 +74,44 @@ test('_rekeySeat re-keys a dropped seat old→new across tour/names/skins/chipba
   assert.equal(pk._dropGrace.has('c1'), false, 'grace cleared');
 });
 
+test('hostReattach REJECTS a busted seat (no re-arm for a refund it already lost)', () => {
+  const { game } = hostStub(5000);
+  const pk = new PokerTable(game);
+  pk.startCoop(500, ['host', 'c1', 'c2']); anteAll(pk);
+  pk.tour.players.find((p) => p.id === 'c1').stack = 0;       // c1 busted (lost its chips in play)
+  assert.equal(pk.hostReattach('c1', 'c1b'), false, 'a busted (stack 0) seat is not a live reattach target');
+  assert.equal(pk._reattach.length, 0, 'nothing queued');
+});
+
+test('hostReattach at "over" re-keys IMMEDIATELY and remaps the winner payout to the new id', () => {
+  const { game, sent } = hostStub(5000);
+  const pk = new PokerTable(game);
+  pk.startCoop(500, ['host', 'c1', 'c2']); anteAll(pk);
+  pk.phase = 'over';                                          // tournament finished, c1 won
+  pk.tour.result = { winner: 'c1', payouts: { c1: 1500 }, standings: ['c1', 'host', 'c2'] };
+  pk.onPeerDisconnect('c1');                                  // c1's channel drops right at the win (stack>0 → graced)
+  sent.length = 0;
+  assert.ok(pk.hostReattach('c1', 'c1b'), 'reattach accepted for the (stack>0) winner');
+  assert.equal(pk.tour.players.some((p) => p.id === 'c1'), false, 're-keyed NOW (no _beginHand will run at over)');
+  assert.equal(pk.tour.players.some((p) => p.id === 'c1b'), true);
+  assert.equal(pk.tour.result.payouts.c1b, 1500, 'payout remapped → the reconnecting winner can be credited');
+  assert.equal('c1' in pk.tour.result.payouts, false);
+  assert.equal(pk.tour.result.winner, 'c1b');
+  assert.equal(pk._reattach.length, 0, 'applied now, not queued');
+  assert.ok(sent.some((m) => m.t === 'pksnap' && m.to === 'c1b'), 'terminal snapshot streamed to the new peer');
+});
+
+test('_walkover never credits a disconnected ghost — the host takes an abandoned pool (money not destroyed)', () => {
+  const { game } = hostStub(5000);
+  const pk = new PokerTable(game);
+  pk.startCoop(500, ['host', 'c1', 'c2']); anteAll(pk);
+  pk.tour.players.find((p) => p.id === 'host').stack = 0;     // host busted out first
+  pk._dropped.add('c1'); pk._dropped.add('c2');              // the only alive seats are BOTH disconnected
+  pk._walkover();
+  assert.equal(pk.tour.result.winner, 'host', 'no connected survivor → host (always present) takes the pool');
+  assert.equal(pk.tour.result.payouts.host, pk.tour.prizePool, 'the whole pool is awarded to a collectable seat, not a ghost');
+});
+
 test('hostReattach schedules the re-key + sends pkresync, and NEVER charges the returning player', () => {
   const { game, sent, meta } = hostStub(5000);
   const pk = new PokerTable(game);

@@ -31,7 +31,7 @@ const FOLD_SECS = 2.5;      // shorter dwell when everyone folded (no combinatio
 const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar animates clientside
 const OVER_REBROADCAST_SECS = 6; // co-op: keep re-sending the terminal 'over' snapshot this long so a client's payout credit survives a dropped packet (idempotent via _credited)
 const ANTE_GATHER_SECS = 8; // co-op: ante-ack window — host waits this long for every invited client to confirm it paid before building the pool
-const DROP_GRACE_SECS = 30; // co-op: a dropped seat keeps its STACK this long (reload/blip grace); it sits out (auto-checks/folds) and only busts if it doesn't reconnect in time
+const DROP_GRACE_SECS = 30; // co-op: a dropped seat keeps its STACK this long (reload/blip grace) WHEN 2+ OTHERS stay connected — it sits out (auto-checks/folds) and busts only if it doesn't reconnect in time. HEADS-UP EXCEPTION: if a drop leaves <2 connected the game ends immediately (no one left to play on), so the grace can't save a heads-up buy-in — by design, since the alternative is freezing the lone survivor for 30s.
 // Believable dealing: hold ALL action until every hole card has been pitched in (real poker — nobody
 // acts mid-deal). Sized to the renderer's deal-in cadence (poker-scene.js DEAL_STAGGER) × cards + flight.
 const DEAL_ANIM_STAGGER = 0.15; // per-card gap (mirrors poker-scene.js DEAL_STAGGER)
@@ -320,9 +320,14 @@ export class PokerTable {
   // rejoining client to rebuild its table WITHOUT charging it again. Returns false if it wasn't seated.
   hostReattach(oldId, newId) {
     if (!this.coop || this.role !== 'host' || !this.tour || oldId === newId) return false;
-    if (!this.tour.players.some((p) => p.id === oldId)) return false;       // not a live seat (already fully busted/removed)
-    if (!this._reattach.some(([o]) => o === oldId)) this._reattach.push([oldId, newId]);
+    if (!this.tour.players.some((p) => p.id === oldId && p.stack > 0)) return false; // a LIVE seat only (stack>0) — never re-arm a BUSTED reloader (it would mint a refund for a buy-in it already lost in play)
+    if (this.phase === 'over') {
+      this._rekeySeat(oldId, newId);   // TERMINAL: no _beginHand will ever run again, so a queued re-key would never apply → re-key NOW so a winner who reloads at 'over' still maps to its payout + gets credited
+    } else {
+      if (!this._reattach.some(([o]) => o === oldId)) this._reattach.push([oldId, newId]); // playing/handresult: defer to the safe boundary (_beginHand, AFTER settleHand maps hand.seats→players by id)
+    }
     try { this.game.mp.net.sendTo(newId, 'pkresync', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins, cardBack: getCardBackSkin() }); } catch (e) {}
+    if (this.phase === 'over') this._broadcastPoker(); // stream the terminal snapshot straight to the re-keyed peer (after the ordered pkresync it sees its credit)
     return true;
   }
 
@@ -335,6 +340,12 @@ export class PokerTable {
     if (this.chipbank && this.chipbank.rekey) this.chipbank.rekey(oldId, newId);
     this._dropped.delete(oldId); this._dropGrace.delete(oldId);            // the player is back — clear its drop/grace
     if (this._confirmed && this._confirmed.has(oldId)) { this._confirmed.delete(oldId); this._confirmed.add(newId); }
+    const r = this.tour.result;                                           // re-key a FINISHED tournament's result too → a winner reconnecting at 'over' still maps to its payout (else moneyPayout=payouts[newId]=0)
+    if (r) {
+      if (r.payouts && oldId in r.payouts) { r.payouts[newId] = r.payouts[oldId]; delete r.payouts[oldId]; }
+      if (r.winner === oldId) r.winner = newId;
+      if (Array.isArray(r.standings)) r.standings = r.standings.map((x) => (x === oldId ? newId : x));
+    }
   }
 
   onAbort() { // client side, on 'pkabort' or host vanished — refund, tell the player, return to lobby
@@ -353,7 +364,7 @@ export class PokerTable {
     if (this.coop && this.role === 'host') {
       if (this._reattach.length) { for (const [oldId, newId] of this._reattach.splice(0)) this._rekeySeat(oldId, newId); } // reconnects re-key here (safe: no live hand yet)
       for (const id of this._dropped) { if (this._dropGrace.has(id)) continue; const p = this.tour.players.find((x) => x.id === id); if (p) p.stack = 0; } // bust only seats past the reconnect grace
-      if (this.tour.alivePlayers().filter((p) => !this._dropped.has(p.id)).length < 2) { this._walkover(); return; } // walk over when <2 CONNECTED seats remain (a single graced drop keeps the game going)
+      if (this.tour.alivePlayers().filter((p) => !this._dropped.has(p.id)).length < 2) { this._walkover(); return; } // <2 CONNECTED seats → end now. A single graced drop keeps a 3+-handed game going; heads-up ends on a drop (the lone survivor can't play on — grace can't protect a 2-player table, see DROP_GRACE_SECS).
       // refresh per-seat chip skins from the roster so a lobby/between-hand pick reaches THIS hand's stacks,
       // then re-stamp provenance (no value re-deal). dealStart mints once per tournament; this reskin is the
       // between-hand seam. Pot/bets are empty at the boundary, so chips already played stay frozen (mid-hand).
@@ -374,7 +385,12 @@ export class PokerTable {
 
   _walkover() { // everyone else gone — last CONNECTED player standing takes the pool
     const alive = this.tour.alivePlayers();
-    const survivor = alive.find((p) => !this._dropped.has(p.id)) || alive[0]; // prefer the connected survivor over a graced/dropped seat
+    // prefer a CONNECTED survivor; if none is connected (host busted + everyone else dropped) fall back to the
+    // host (always present) so the buy-ins aren't DESTROYED by crediting a disconnected ghost no one can collect
+    // (_payout credits only youId, and the ghost's 'over' snapshot goes to a dead channel → pool stranded).
+    const survivor = alive.find((p) => !this._dropped.has(p.id))
+      || this.tour.players.find((p) => p.id === this.youId)
+      || alive[0];
     this.tour.over = true;
     if (survivor) { survivor.place = 1; this.tour.result = { winner: survivor.id, payouts: { [survivor.id]: this.tour.prizePool }, standings: [survivor.id] }; }
     this.phase = 'over'; this._overT = 0; this._payout(); this._broadcastPoker();
