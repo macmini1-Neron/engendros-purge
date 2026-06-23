@@ -376,6 +376,13 @@
     .mp-roster { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; margin: 8px 0; }
     .mp-rosteritem { background: rgba(255,255,255,.08); border: 1px solid rgba(255,207,92,.25); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 14px; max-width: 100%; }
     .mp-chipsw { width: 18px; height: 18px; vertical-align: middle; margin-right: 5px; border-radius: 50%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+    /* poker item-stake composer (room lobby) */
+    .mp-stake-sum { font-size: 12px; color: var(--neon, #45e0cf); font-weight: 700; }
+    .mp-stake-items { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0 2px; }
+    .mp-stake-row { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--steel, #84aab2); }
+    .mp-stake-btn { width: 20px; height: 20px; line-height: 18px; text-align: center; border-radius: 5px; border: 1px solid var(--brass-deep, #9a7636); background: rgba(11,21,19,.7); color: var(--ink, #e9dcc0); cursor: pointer; font-weight: 800; padding: 0; }
+    .mp-stake-btn:disabled { opacity: .35; cursor: not-allowed; }
+    .mp-stake-n { min-width: 30px; text-align: center; font-family: var(--font-mono, monospace); color: var(--ink, #e9dcc0); }
     /* poker cosmetic pickers in the room lobby — same class names as poker-ui.js pk-style so the shared skinpicker renders identically here */
     .mp-cos-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; flex-wrap: wrap; }
     .mp-cos-row label { font-size: 12px; color: var(--ink-dim, #ad9f7e); letter-spacing: 1px; }
@@ -1385,6 +1392,11 @@
             <div class="pk-skinhint" id="mp-deck-note" style="opacity:.85">Everyone at the table plays with your deck.</div>
             <div class="pk-skinhint" id="mp-cardbackhint"></div>
           </div>
+          <div id="mp-poker-stakes" style="display:none;margin:0 0 8px;">
+            <div class="mp-cos-row"><label>Your stake:</label> <span id="mp-stake-sum" class="mp-stake-sum">Your stake: items optional — the money buy-in still applies.</span></div>
+            <div id="mp-stake-items" class="mp-stake-items"></div>
+            <div class="pk-skinhint" style="opacity:.7">Stake items from your inventory — winner takes the whole pot. Changing your stake re-opens everyone’s ACCEPT.</div>
+          </div>
           <div id="mp-status" class="mp-status">Host a room or paste a code.</div>
           <div class="mp-diagbox">
             <div class="mp-diagtitle">CONNECTION CHECK</div>
@@ -1628,6 +1640,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=328"></script>
+  <script type="module" src="./src/game.js?v=329"></script>
 </body>
 </html>
