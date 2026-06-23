@@ -44,7 +44,7 @@ export class SpatialGrid {
   }
   // Nearest box hit by the ray within maxDist. XZ-DDA cell walk + rayAABB per box, early-out.
   // Returns { box, t } or null. `filter(box)` may reject boxes (e.g. non-blocking ones).
-  raycast(ox, oy, oz, dx, dy, dz, maxDist, filter) {
+  raycast(ox, oy, oz, dx, dy, dz, maxDist, filter, refine) {
     const c = this.cell, qid = ++this._qid;
     let cx = Math.floor(ox / c), cz = Math.floor(oz / c);
     const stepX = dx >= 0 ? 1 : -1, stepZ = dz >= 0 ? 1 : -1;
@@ -56,8 +56,10 @@ export class SpatialGrid {
       const a = this.cells.get(this._k(cx, cz));
       if (a) for (let i = 0; i < a.length; i++) { const b = a[i];
         if (b._qid === qid) continue; b._qid = qid; if (filter && !filter(b)) continue;
-        const t = rayAABB(ox, oy, oz, dx, dy, dz, b.min, b.max);
-        if (t != null && t >= 0 && t < bestT) { bestT = t; best = b; } }
+        let t = rayAABB(ox, oy, oz, dx, dy, dz, b.min, b.max);
+        if (t == null || t < 0) continue;
+        if (refine) { t = refine(b, ox, oy, oz, dx, dy, dz, t); if (t == null) continue; } // exact narrowphase: null = ray missed the real shape → skip this box
+        if (t < bestT) { bestT = t; best = b; } }
       const exit = Math.min(tMaxX, tMaxZ);
       if (best && bestT <= exit) break;          // nearest hit is within an already-tested cell
       if (exit > maxDist) break;
