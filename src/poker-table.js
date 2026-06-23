@@ -87,6 +87,20 @@ export class PokerTable {
     setCardBackSkin(cardBackAvailable(want, this.game.meta && this.game.meta.cardBacksUnlocked) ? want : 'default');
   }
 
+  // Cosmetic prefs, callable WITHOUT a mounted renderer — the co-op ROOM lobby (mp.js) has a live
+  // PokerTable (game.poker) but no PokerDomRenderer yet, so its pickers route through these directly.
+  setChipSkinPref(id) { // per-player chips: apply + persist + (co-op) refresh the host roster so opponents see it
+    setChipSkin(id);
+    if (this.game.meta) this.game.meta.chipSkin = id;
+    if (this.game._saveMeta) this.game._saveMeta();
+    if (this.game.mp && this.game.mp.notifyChipSkinChanged) this.game.mp.notifyChipSkinChanged();
+  }
+  setCardBackPref(id) { // host's table-wide deck: read at deal time via getCardBackSkin() → pkstart/pksnap; no net here
+    setCardBackSkin(id);
+    if (this.game.meta) this.game.meta.cardBack = id;
+    if (this.game._saveMeta) this.game._saveMeta();
+  }
+
   _ensureRenderer() {
     if (this.renderer || typeof document === 'undefined') return; // node/headless: stay renderer-less (all calls are guarded)
     const root = document.getElementById('poker');
@@ -96,8 +110,8 @@ export class PokerTable {
       onStart: (cfg) => { if (cfg && cfg.coop) this.startCoop(cfg.buyIn | 0); else this.startTournament(cfg); },
       onAct: (a) => this.humanAct(a),
       onLeave: () => this.game.closePoker(),
-      onChipSkin: (id) => { setChipSkin(id); if (this.game.meta) this.game.meta.chipSkin = id; if (this.game._saveMeta) this.game._saveMeta(); if (this.game.mp && this.game.mp.notifyChipSkinChanged) this.game.mp.notifyChipSkinChanged(); }, // local cosmetic: apply + persist + (co-op) refresh host roster so opponents see it
-      onCardBack: (id) => { setCardBackSkin(id); if (this.game.meta) this.game.meta.cardBack = id; if (this.game._saveMeta) this.game._saveMeta(); },
+      onChipSkin: (id) => this.setChipSkinPref(id), // single source of truth — shared with the room-lobby picker
+      onCardBack: (id) => this.setCardBackPref(id),
       getShowOdds: () => !!(this.game.settings && this.game.settings.data && this.game.settings.data.pokerOdds), // local player's own preference
     });
     this.renderer.mount();
@@ -289,6 +303,13 @@ export class PokerTable {
     if (this.coop && this.role === 'host') {
       for (const id of this._dropped) { const p = this.tour.players.find((x) => x.id === id); if (p) p.stack = 0; }
       if (this.tour.alivePlayers().length < 2) { this._walkover(); return; }
+      // refresh per-seat chip skins from the roster so a lobby/between-hand pick reaches THIS hand's stacks,
+      // then re-stamp provenance (no value re-deal). dealStart mints once per tournament; this reskin is the
+      // between-hand seam. Pot/bets are empty at the boundary, so chips already played stay frozen (mid-hand).
+      if (this.game.mp && this.game.mp.roster && this.chipbank) {
+        for (const id in this.skins) { const r = this.game.mp.roster.get(id); if (r && typeof r.chipSkin === 'string') this.skins[id] = r.chipSkin; }
+        this.chipbank.reskin(this.skins);
+      }
     }
     this.hand = this.tour.startNextHand();
     this._lastCommitted = {};

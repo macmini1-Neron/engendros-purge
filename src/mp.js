@@ -8,6 +8,9 @@ import { GADGETS } from './inventory.js';
 import { buildFlopo } from './props.js';
 import { LanNet, Net, makeRoomCode } from './net.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
+import { mountChipSkinPicker, mountCardBackPicker } from './poker/skinpicker.js'; // shared cosmetic pickers (also used by poker-ui.js)
+import { drawChip, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure — roster chip swatch + lobby picker fallback
+import { CARD_BACKS_FREE } from './poker/cardbacks.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 
 
@@ -459,9 +462,11 @@ export class MP {
         const tag = (id === 'host') ? '<span style="color:#c9a84a">★ HOST</span>' : (p.ready ? `<span style="color:#6fcf4f">${okTag}</span>` : '<span style="color:#e8a23a">…</span>');
         const lo = (p.loadout || []).map((k) => this._loadoutLabel(k)).filter(Boolean).join(' · ') || 'Bayonet Knife';
         const kick = (this.isHost && id !== 'host') ? ` <button class="mp-kick" data-peer="${mpEscape(id)}" title="Kick player" style="margin-left:6px;background:#5a2024;color:#fff;border:1px solid #a3434a;border-radius:4px;cursor:pointer;font-weight:800;padding:0 7px">✕</button>` : '';
-        return `<div class="mp-rosteritem">🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
+        const sw = poker ? `<canvas class="mp-chipsw" width="22" height="22" data-skin="${mpEscape(p.chipSkin || 'dice')}"></canvas>` : ''; // each player's own poker chip skin
+        return `<div class="mp-rosteritem">${sw}🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
       });
       el.innerHTML = rows.join('');
+      if (poker) el.querySelectorAll('canvas.mp-chipsw').forEach((cv) => { try { drawChip(cv.getContext('2d'), 22, 20, cv.dataset.skin); } catch (e) {} });
       if (this.isHost) el.querySelectorAll('.mp-kick').forEach((b) => { b.onclick = () => this.hostKick(b.getAttribute('data-peer')); });
     }
     const allReady = [...this.roster].every(([id, p]) => id === 'host' || p.ready);
@@ -534,6 +539,36 @@ export class MP {
       note.textContent = base + (this._lanMode() ? ' LAN mode uses Hamachi/WebSocket.' : (this._forceRelay() ? ' Relay test forces TURN only.' : (canPick ? ' Host picks the mode for the squad.' : ' Set by the host.')));
     }
     this._renderPokerBuyIn(mode, canPick);
+    this._renderPokerCosmetics(mode, canPick);
+  }
+  // Poker cosmetics in the ROOM lobby: a per-player "Your chips:" picker (everyone) + a host-only
+  // "Table deck:" picker. Routes through game.poker (which exists in the lobby; its renderer does not),
+  // so the picks persist to meta + sync the roster exactly like the den-lobby pickers.
+  _renderPokerCosmetics(mode, canPick) {
+    const box = document.getElementById('mp-poker-cosmetics'); if (!box) return;
+    if (mode !== 'poker') { box.style.display = 'none'; return; }
+    box.style.display = '';
+    const poker = this.game.poker, meta = this.game.meta || {};
+    mountChipSkinPicker(document.getElementById('mp-chipskin'), {
+      current: meta.chipSkin || 'dice',
+      available: poker ? poker._chipSkinAvail() : CHIP_SKINS_FREE,   // free + meta.chipSkinsUnlocked
+      hintEl: document.getElementById('mp-chipskinhint'),
+      onPick: (id) => { if (poker) poker.setChipSkinPref(id); this._renderRoster(); }, // persist + sync roster + repaint own swatch
+    });
+    // Table deck is host-only (mirror the buy-in gate) — a client must not set the table-wide deck.
+    const deckRow = document.getElementById('mp-deck-row');
+    const deckNote = document.getElementById('mp-deck-note');
+    const deckHint = document.getElementById('mp-cardbackhint');
+    const show = canPick ? '' : 'none';
+    if (deckRow) deckRow.style.display = show;
+    if (deckNote) deckNote.style.display = show;
+    if (deckHint) deckHint.style.display = show;
+    if (canPick) mountCardBackPicker(document.getElementById('mp-cardback'), {
+      current: meta.cardBack || 'default',
+      available: poker ? poker._cardBackAvail() : CARD_BACKS_FREE,
+      hintEl: deckHint,
+      onPick: (id) => { if (poker) poker.setCardBackPref(id); },     // read at deal time via getCardBackSkin() → pkstart/pksnap
+    });
   }
   _renderPokerBuyIn(mode, canPick) {
     const box = document.getElementById('mp-poker-buyin'); if (!box) return;
