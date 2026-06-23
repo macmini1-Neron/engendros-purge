@@ -16,6 +16,9 @@ import { botAction } from './poker/bots.js';
 import { mulberry32 } from './poker/cards.js';
 import { ChipBank, value as chipValue } from './poker/chipbank.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
+import { ItemPot } from './poker/itempot.js';                 // item-wager escrow (asymmetric baskets → winner takes the union)
+import { canStake, normalizeBasket, basketEmpty } from './poker/wager.js';
+import { bagClone, bagUnits } from './itembank.js';
 import { setChipSkin, getChipSkin, chipSkinAvailable, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure (no THREE) — sets the shared skin state the 3D chips read
 import { setCardBackSkin, getCardBackSkin, cardBackAvailable, CARD_BACKS, CARD_BACKS_FREE } from './poker/cardbacks.js'; // pure — card-back skin state
 import { PokerDomRenderer } from './poker-ui.js';
@@ -66,11 +69,17 @@ export class PokerTable {
     this.skins = {};          // seatId → chip-skin id (co-op: per-player cosmetic; solo: empty → renderer defaults)
     this.clientSnap = null;   // client role: the latest host snapshot to render
     this.coopBuyIn = 0;
-    this._paid = 0;           // chips actually debited from this player's bank (refund only this)
+    this._paid = 0;           // money actually debited from this player's bank (refund only this)
     this._gathering = false; this._invited = new Set(); this._confirmed = new Set(); this._anteDeadline = 0; // co-op ante-ack gathering (C1)
     this._credited = false;
     this._refunded = false;
     this._aborted = false;
+    // item-wager (asymmetric baskets): each seat antes its OWN basket {items,money}; winner takes the union.
+    this.itemPot = null;      // host-only escrow ledger (ItemPot); clients credit from the snapshot's itemPayout
+    this.baskets = {};        // { seatId: {items,money} } — the table stakes (host builds from the roster; clients get it via pkstart)
+    this._lockedItems = {};   // items THIS player escrowed out of its own ItemBank at lock-in (refund only these)
+    this._itemCredited = false; // won-items credited (idempotent, mirrors _credited)
+    this._itemRefunded = false; // escrowed items returned on abort (idempotent, mirrors _refunded)
     this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = []; // co-op: dropped seats, their reconnect-grace timers, and pending reconnect re-keys
     this._lastAct = null; this._actSeq = 0; // last action type + a counter → renderer plays check/fold SFX on a new one
     this._snapSeq = 0; this._lastSnapSeq = 0; // co-op snapshot ordering: host bumps _snapSeq per broadcast (NEVER reset → monotonic across games), client drops any pksnap older than _lastSnapSeq
@@ -163,10 +172,13 @@ export class PokerTable {
     const mp = this.game.mp;
     const ids = (seatIds && seatIds.length) ? seatIds.slice() : [...mp.roster.keys()];
     if (ids.length < 2) { this._toast('Need at least 2 players', 0xd23a2a); return; }
-    if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a); return; }
-    this.names = {}; this.skins = {}; for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; this.skins[id] = (r && r.chipSkin) || 'dice'; }
+    this.coopBuyIn = buyIn | 0;
+    this.names = {}; this.skins = {}; this.baskets = {};
+    for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; this.skins[id] = (r && r.chipSkin) || 'dice'; this.baskets[id] = this._basketFor(id); }
+    // the host must be able to back its OWN basket (money + every item it staked) before inviting anyone
+    if (!canStake(this.game.items, this.game.meta.bank, this.baskets[mp.myId])) { this._toast('You can’t back your own stake', 0xd23a2a); return; }
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
-    this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = [];
+    this._credited = false; this._refunded = false; this._aborted = false; this._itemCredited = false; this._itemRefunded = false; this._lockedItems = {}; this.itemPot = null; this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = [];
     // INVITE the seated clients FIRST and seat ONLY the ones the invite actually reaches. The prize pool is
     // buyIn × entrants, so a seat that never receives pkstart (a half-open P2P channel → sendTo throws) must
     // NOT count — otherwise the winner would be paid a buy-in nobody collected. A throw drops that seat
@@ -176,7 +188,7 @@ export class PokerTable {
     const seated = [mp.myId];
     for (const id of ids) {
       if (id === mp.myId) continue;
-      try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins, cardBack: getCardBackSkin() }); seated.push(id); } // cardBack is table-wide = the host's deck (unlike the per-player chip skins)
+      try { mp.net.sendTo(id, 'pkstart', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), baskets: this.baskets }); seated.push(id); } // cardBack is table-wide = the host's deck (unlike the per-player chip skins); baskets = the full table stakes
       catch (e) { console.warn('[poker] pkstart send failed for ' + id + ' — dropping it from the table (not counted in the pool)', e); }
     }
     if (seated.length < 2) { this._toast('Could not reach enough players', 0xd23a2a); return; } // nobody charged yet → safe bail
@@ -221,10 +233,22 @@ export class PokerTable {
       if (this.game.state === 'poker') this.game.closePoker();
       return;
     }
+    // ITEM-WAGER ESCROW: lock every seated seat's declared basket, seal the union ONCE (conservation
+    // backstop), and set the money prize pool = Σ(basket.money). Money-only baskets reproduce buyIn×entrants.
+    this.itemPot = new ItemPot();
+    for (const id of seated) this.itemPot.lock(id, this.baskets[id] || { items: {}, money: this.coopBuyIn });
+    this.itemPot.seal();
+    try { this.itemPot.verify(); } catch (e) { console.warn('[poker] item pot verify failed at seal', e); }
     this.rng = mulberry32(((Date.now() >>> 0) ^ (seated.length * 2654435761)) >>> 0);
-    this.tour = new Tournament({ players: seated.map((id) => ({ id })), buyIn: this.coopBuyIn, rng: this.rng });
+    this.tour = new Tournament({ players: seated.map((id) => ({ id })), buyIn: this.coopBuyIn, prizePool: this.itemPot.totalMoney(), rng: this.rng });
     this._dealChips();
-    this._paid = this._spend(this.coopBuyIn);                     // host pays its buy-in NOW — only once the table is real
+    // host escrows its OWN basket NOW (only once the table is real): debit its items from its ItemBank +
+    // spend its money. Mirrors the client's lock-in in enterCoopClient; refunded together on abort.
+    const mine = this.baskets[this.youId] || { items: {}, money: this.coopBuyIn };
+    this._lockedItems = bagClone(mine.items || {});
+    if (this.game.items && this._lockedItemsAny()) { try { this.game.items.applyBasket(this._lockedItems, -1); } catch (e) { console.warn('[poker] host item lock failed', e); this._lockedItems = {}; } }
+    this._paid = this._spend(mine.money | 0);                     // host pays its own money NOW
+    if (this._lockedItemsAny()) this.game._saveMeta();
     if (this.renderer) this.renderer.showTable();
     this._beginHand();
     this._broadcastPoker();
@@ -241,23 +265,32 @@ export class PokerTable {
     const hostBack = d && d.cardBack;
     setCardBackSkin(CARD_BACKS[hostBack] ? hostBack : 'default');
     const buyIn = (d && d.buyIn) | 0;
-    // Affordability was enforced at accept time (mp.toggleReady ante gate); this guard only catches the
-    // unreachable race where the bank changed between accepting and the deal — bail safely, never seat broke.
-    if (!canAnte(this.game.meta.bank, buyIn)) {
+    const myId = this.game.mp.myId;
+    this.coopBuyIn = buyIn;                                        // set first so _basketFor's money-only default reads the right tier
+    const mine = (d && d.baskets && d.baskets[myId]) ? normalizeBasket(d.baskets[myId]) : { items: {}, money: buyIn };
+    // Affordability was enforced at accept time (the lobby stake gate); this guard only catches the
+    // unreachable race where the bank/inventory changed between accepting and the deal — bail safely.
+    if (!canStake(this.game.items, this.game.meta.bank, mine)) {
       try { this.game.mp.net.send('pkleave', {}); } catch (e) {}
-      this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a);
+      this._toast('Can’t back your stake any more', 0xd23a2a);
       this.game.closePoker();
       return;
     }
     this.role = 'client'; this.coop = true; this.mode = 'money';
-    this.youId = this.game.mp.myId;
+    this.youId = myId;
     this.names = d && d.names ? d.names : {};
     this.skins = (d && d.skins) || {};
-    this.coopBuyIn = buyIn; this._credited = false; this._refunded = false; this._aborted = false;
+    this.baskets = (d && d.baskets) || {};
+    this._credited = false; this._refunded = false; this._aborted = false; this._itemCredited = false; this._itemRefunded = false;
     this.active = true; this.phase = 'playing'; this.clientSnap = null;
-    this._paid = this._spend(buyIn);                               // client pays own buy-in (affordability checked above)
+    // ESCROW the client's own basket: debit its items from its ItemBank + spend its money. Mirrors the host
+    // in _finalizeDeal; refunded together on pkabort. Items are self-reported (honest-peer, like the money).
+    this._lockedItems = bagClone(mine.items || {});
+    if (this.game.items && this._lockedItemsAny()) { try { this.game.items.applyBasket(this._lockedItems, -1); } catch (e) { console.warn('[poker] client item lock failed', e); this._lockedItems = {}; } }
+    this._paid = this._spend(mine.money | 0);                      // client pays own money (affordability checked above)
+    if (this._lockedItemsAny()) this.game._saveMeta();
     this._anteWait = ANTE_GATHER_SECS * 2 + 2;                     // backstop: if no deal/pkabort arrives in time (lost on teardown), self-refund + bail
-    try { this.game.mp.net.send('pkante', {}); } catch (e) {}      // ACK to the host: I paid → count me in the pool (host deals once everyone confirms)
+    try { this.game.mp.net.send('pkante', {}); } catch (e) {}      // ACK to the host: I escrowed → count me in the pool (host deals once everyone confirms)
     if (this.renderer) this.renderer.showTable();
   }
 
@@ -274,9 +307,14 @@ export class PokerTable {
     this.youId = this.game.mp.myId;
     this.names = (d && d.names) || {};
     this.skins = (d && d.skins) || {};
+    this.baskets = (d && d.baskets) || {};
     this.coopBuyIn = (d && d.buyIn) | 0;
-    this._credited = false; this._refunded = false; this._aborted = false;
-    this._paid = this.coopBuyIn;                  // already paid pre-reload (bank debited+saved) → record it so a later host abort refunds correctly, but do NOT spend again
+    const mine = (d && d.baskets && d.baskets[this.youId]) ? normalizeBasket(d.baskets[this.youId]) : { items: {}, money: this.coopBuyIn };
+    this._credited = false; this._refunded = false; this._aborted = false; this._itemCredited = false; this._itemRefunded = false;
+    // already escrowed pre-reload (bank debited + items removed + saved) → RECORD the stake so a later host
+    // abort refunds it correctly, but do NOT spend money or debit items again (that would double-bill).
+    this._paid = mine.money | 0;
+    this._lockedItems = bagClone(mine.items || {});
     this.active = true; this.phase = 'playing'; this.clientSnap = null; this._anteWait = 0;
     if (this.renderer) this.renderer.showTable();
   }
@@ -291,6 +329,15 @@ export class PokerTable {
     if (payload.over && pay && !this._credited) {
       this.game.meta.bank = (this.game.meta.bank | 0) + pay;
       this.game._saveMeta(); this._credited = true;
+    }
+    // item winnings: the winner takes the whole staked union (nonzero only in the winner's snapshot).
+    // Idempotent via _itemCredited so a re-broadcast 'over' never double-credits. Honest-peer: we trust the
+    // host's award the same way we trust moneyPayout. WIN here and REFUND (onAbort) are mutually exclusive.
+    const won = payload.over ? payload.itemPayout : null;
+    if (won && !this._itemCredited && this.game.items) {
+      let any = false;
+      for (const k in won) { const n = won[k] | 0; if (n > 0) { this.game.items.acquire(k, n, 'poker-win'); any = true; } }
+      if (any) { this.game._saveMeta(); this._itemCredited = true; }
     }
   }
 
@@ -329,7 +376,7 @@ export class PokerTable {
     } else {
       if (!this._reattach.some(([o]) => o === oldId)) this._reattach.push([oldId, newId]); // playing/handresult: defer to the safe boundary (_beginHand, AFTER settleHand maps hand.seats→players by id)
     }
-    try { this.game.mp.net.sendTo(newId, 'pkresync', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins, cardBack: getCardBackSkin() }); } catch (e) {}
+    try { this.game.mp.net.sendTo(newId, 'pkresync', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), baskets: this.baskets }); } catch (e) {}
     if (this.phase === 'over') this._broadcastPoker(); // stream the terminal snapshot straight to the re-keyed peer (after the ordered pkresync it sees its credit)
     return true;
   }
@@ -339,7 +386,8 @@ export class PokerTable {
     const seat = this.tour.players.find((p) => p.id === oldId); if (!seat || oldId === newId) return;
     if (this.tour.players.some((p) => p.id === newId)) return;              // collision guard
     seat.id = newId;
-    for (const m of [this.names, this.skins]) { if (oldId in m) { m[newId] = m[oldId]; delete m[oldId]; } }
+    for (const m of [this.names, this.skins, this.baskets]) { if (oldId in m) { m[newId] = m[oldId]; delete m[oldId]; } }
+    if (this.itemPot && this.itemPot.baskets && oldId in this.itemPot.baskets) { this.itemPot.baskets[newId] = this.itemPot.baskets[oldId]; delete this.itemPot.baskets[oldId]; } // sealed union is unchanged (sum-invariant); re-key so verify()/itemStake stay coherent
     if (this.chipbank && this.chipbank.rekey) this.chipbank.rekey(oldId, newId);
     this._dropped.delete(oldId); this._dropGrace.delete(oldId);            // the player is back — clear its drop/grace
     if (this._confirmed && this._confirmed.has(oldId)) { this._confirmed.delete(oldId); this._confirmed.add(newId); }
@@ -549,7 +597,11 @@ export class PokerTable {
     const v = this.hand ? privateView(this.hand, id) : null;
     const legal = (this.phase === 'playing' && this.hand && !(this._hold > 0)) ? legalActions(this.hand) : null; // no controls during a presentation hold (deal/street/fold)
     const yourTurn = !!(legal && legal.seat === id);
-    const moneyPayout = (this.phase === 'over' && this.tour.result) ? (this.tour.result.payouts[id] || 0) : 0;
+    const res = (this.phase === 'over' && this.tour.result) ? this.tour.result : null;
+    const moneyPayout = res ? (res.payouts[id] || 0) : 0;
+    // item winnings: the whole sealed union goes to the winner (read _minted directly so EVERY re-broadcast
+    // carries it — the client dedups via _itemCredited; awardTo's latch is only for the host's own credit).
+    const itemPayout = (res && res.winner === id && this.itemPot && this.itemPot._minted) ? bagClone(this.itemPot._minted.items) : {};
     return {
       view: v,
       tour: this.tour.tournamentView(),
@@ -559,7 +611,7 @@ export class PokerTable {
       phase: this.phase,
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',
-      youId: id, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), moneyPayout, lastAct: this._lastAct, seq: this._snapSeq | 0,
+      youId: id, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), moneyPayout, itemPayout, itemStake: this.baskets, lastAct: this._lastAct, seq: this._snapSeq | 0,
       // live refs to the bank's chip sets — READ-ONLY contract (clients get a JSON copy via pksnap; the
       // host renderer must only read these, never mutate them, or it would break conservation).
       chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot,
@@ -590,14 +642,23 @@ export class PokerTable {
     if ((this.game.meta.bank | 0) >= n) { this.game.meta.bank -= n; this.game._saveMeta(); return n; }
     return 0;
   }
-  _payout() {
-    if (this.mode === 'practice' || this._credited) return;
-    const pay = this.tour.result && this.tour.result.payouts[this.youId];
-    if (pay) { this.game.meta.bank = (this.game.meta.bank | 0) + pay; this.game._saveMeta(); this._credited = true; }
+  _payout() { // host crediting itself when it is the winner — money + the staked item union (each idempotent)
+    if (this.mode === 'practice') return;
+    const res = this.tour && this.tour.result; if (!res) return;
+    if (!this._credited) { const pay = res.payouts[this.youId]; if (pay) { this.game.meta.bank = (this.game.meta.bank | 0) + pay; this.game._saveMeta(); this._credited = true; } }
+    if (res.winner === this.youId && this.itemPot && !this._itemCredited && this.game.items) {
+      const won = this.itemPot.awardTo(this.youId).items;        // idempotent inside ItemPot too
+      let any = false;
+      for (const k in won) { const n = won[k] | 0; if (n > 0) { this.game.items.acquire(k, n, 'poker-win'); any = true; } }
+      if (any) this.game._saveMeta();
+      this._itemCredited = true;
+    }
   }
-  _refund() {
-    if (this.mode === 'practice' || this._refunded || this._credited || !this._paid) return;
-    this.game.meta.bank = (this.game.meta.bank | 0) + this._paid; this.game._saveMeta(); this._refunded = true; // refund exactly what was paid
+  _refund() { // abort/teardown: return exactly what THIS player escrowed (money + items). Mutually exclusive with a win.
+    if (this.mode === 'practice' || this._refunded || this._credited || this._itemCredited || (!this._paid && !this._lockedItemsAny())) return;
+    if (this._paid) this.game.meta.bank = (this.game.meta.bank | 0) + this._paid; // refund exactly what was paid
+    if (this.game.items && this._lockedItemsAny()) { try { this.game.items.applyBasket(this._lockedItems, +1); } catch (e) { console.warn('[poker] item refund failed', e); } }
+    this.game._saveMeta(); this._refunded = true; this._itemRefunded = true;
   }
 
   // ---------- teardown ----------
@@ -608,7 +669,18 @@ export class PokerTable {
     this.clientSnap = null; this._netT = 0; this._overT = 0; this._anteWait = 0; this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = []; this._hold = 0; this._lastAct = null; this._actSeq = 0; this._lastSnapSeq = 0; // NB: _snapSeq is NOT reset (host counter stays monotonic across games so a client never false-drops a new game's snaps)
     this._credited = false; this._refunded = false; this._aborted = false; this.coopBuyIn = 0; this._paid = 0;
     this._gathering = false; this._invited = new Set(); this._confirmed = new Set(); this._anteDeadline = 0; // co-op ante-ack window (C1)
+    this.itemPot = null; this.baskets = {}; this._lockedItems = {}; this._itemCredited = false; this._itemRefunded = false; // item-wager escrow
   }
+
+  // The basket THIS table will stake for `id`: its lobby-composed roster basket, else a money-only basket at
+  // the headline buy-in (so a table with no item baskets reproduces today's uniform money game exactly).
+  _basketFor(id) {
+    const r = this.game.mp && this.game.mp.roster && this.game.mp.roster.get(id);
+    const b = r && r.basket;
+    if (b && (b.items || typeof b.money === 'number')) return { items: bagClone(b.items || {}), money: Math.max(0, (b.money != null ? b.money : this.coopBuyIn) | 0) };
+    return { items: {}, money: this.coopBuyIn | 0 };
+  }
+  _lockedItemsAny() { return bagUnits(this._lockedItems) > 0; }
 
   leave() { // Game.closePoker — tell the room, refund/abort as needed
     if (this.coop) {

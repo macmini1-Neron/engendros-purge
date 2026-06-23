@@ -12,7 +12,7 @@ export const DEFAULT_SCHEDULE = [
 ].map(([sb, bb]) => ({ sb, bb }));
 
 export class Tournament {
-  // cfg: { players:[{id}], buyIn, rng, startStack?, schedule?, handsPerLevel? }
+  // cfg: { players:[{id}], buyIn, rng, startStack?, schedule?, handsPerLevel?, prizePool? }
   constructor(cfg) {
     this.buyIn = cfg.buyIn || 0;
     this.startStack = cfg.startStack || DEFAULT_START_STACK;
@@ -20,7 +20,9 @@ export class Tournament {
     this.handsPerLevel = cfg.handsPerLevel || HANDS_PER_LEVEL;
     this.rng = cfg.rng;
     this.entrants = cfg.players.length;
-    this.prizePool = this.buyIn * this.entrants;
+    // Money prize pool. Default = uniform buyIn × entrants; asymmetric item-wager baskets pass an explicit
+    // prizePool = Σ(basket.money) since each seat can ante a different amount (or none, items-only).
+    this.prizePool = (cfg.prizePool != null) ? (cfg.prizePool | 0) : this.buyIn * this.entrants;
     // fixed clockwise seat ring; place stays null until busted (1 = winner)
     this.players = cfg.players.map((p) => ({ id: p.id, stack: this.startStack, place: null }));
     this.button = 0;
