@@ -816,8 +816,9 @@ export class MP {
   notifyChipSkinChanged() {
     if (!this.net || !this.myId) return;                                  // solo / not in a session → nothing to sync
     const skin = (this.game.meta && this.game.meta.chipSkin) || 'dice';
+    const me = this.roster.get(this.isHost ? 'host' : this.myId);         // optimistic local update so my OWN roster swatch repaints now (host echoes the authoritative value back)
+    if (me) me.chipSkin = skin;
     if (this.isHost) {
-      const me = this.roster.get('host'); if (me) me.chipSkin = skin;
       try { this.net.send('roster', this._rosterArr()); } catch (e) {}    // host owns the roster → re-broadcast it
     } else {
       // Targeted skin-only update — NOT a re-hello: a full hello re-handshake would reset my roster

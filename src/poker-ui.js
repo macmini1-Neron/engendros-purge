@@ -182,6 +182,9 @@ export class PokerDomRenderer {
 
   mount() {
     if (this._built) return;
+    // NOTE: the .pk-skinbtn/.pk-skinrow/.pk-skinhint picker rules are MIRRORED in index.html's main
+    // <style> — the co-op ROOM lobby (mp.js) mounts the shared skinpicker WITHOUT this renderer, so
+    // pk-style is absent there. Keep both copies in sync if you restyle the pickers.
     if (!document.getElementById('pk-style')) {
       const st = document.createElement('style'); st.id = 'pk-style'; st.textContent = CSS;
       document.head.appendChild(st);
