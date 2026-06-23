@@ -18,11 +18,11 @@ const C_STRUCT     = [0.32, 0.62, 1.00];   // blue   — player fortifications
 const C_FOLIAGE    = [0.27, 0.89, 0.35];   // green  — foliage (shoot-through / soft cover)
 const C_TREE       = [1.00, 0.62, 0.25];   // orange — solid wood (trunk band / fallen log)
 const C_WORLD      = [0.85, 0.86, 0.92];   // white  — generic world / terrain / arena colliders
-const C_CAP        = [0.25, 0.95, 1.00];   // cyan   — exact capsule narrowphase (round hitbox)
+const C_CAP        = [0.20, 1.00, 0.75];   // aqua-green — exact capsule narrowphase (round hitbox)
 
 const R         = 30;     // draw radius around the camera (m) — readable (just your surroundings) + bounds the rebuild cost
-const MAX_BOXES = 2500;   // hard cap (each box = 12 edges = 24 line vertices) — headroom so a dense stand isn't truncated within R
-const VERTS     = MAX_BOXES * 24;
+const MAX_BOXES = 2500;   // hard cap: each box = AABB (24 verts) + optional cap rings (48 verts) = 72 max — headroom so a dense stand isn't truncated within R
+const VERTS     = MAX_BOXES * 72;
 
 const EDGES = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
 

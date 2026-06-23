@@ -61,7 +61,7 @@ export class SpatialGrid {
         if (refine) { t = refine(b, ox, oy, oz, dx, dy, dz, t); if (t == null) continue; } // exact narrowphase: null = ray missed the real shape → skip this box
         if (t < bestT) { bestT = t; best = b; } }
       const exit = Math.min(tMaxX, tMaxZ);
-      if (best && bestT <= exit) break;          // nearest hit is within an already-tested cell
+      if (best && bestT <= exit) break;          // grid is XZ-only (cells infinite in Y): a capsule has no horizontal protrusion beyond its box's XZ footprint (centreline ± r ⊆ AABB XZ extent), so every cell it can be hit in is one the box is registered in — DDA nearest-cell ordering stays correct regardless of whether refine() returns a t earlier or later than the AABB entry t
       if (exit > maxDist) break;
       if (tMaxX < tMaxZ) { cx += stepX; tMaxX += tDeltaX; } else { cz += stepZ; tMaxZ += tDeltaZ; }
     }
