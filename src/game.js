@@ -20,6 +20,7 @@ import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
 import { DigManager } from './dig-manager.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
+import { migrateItemBank, itemBankFromMeta } from './itembank.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
@@ -75,7 +76,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-23 12:02';
+const GAME_BUILD = '2026-06-23 13:05';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -173,6 +174,7 @@ class Game {
     if (!/[?&]poker2d=1/.test(location.search)) this.poker.RendererClass = PokerSceneRenderer;
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov
     this.meta = this._loadMeta(); // persistent best-wave / lifetime stats
+    this.items = itemBankFromMeta(this.meta); // account item ledger (source of truth for ownership); _saveMeta serialises it back. Phase-1: attached but no reader yet.
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
     this.mp = new MP(this); // multiplayer co-op (dormant until host/join)
     this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
@@ -1066,10 +1068,11 @@ class Game {
     if (m.loadout.every((k) => !k)) m.loadout[0] = 'knife';                       // cold start / empty → knife in slot 0
     for (const k of m.loadout) { if (k && !m.unlocked.includes(k)) m.unlocked.push(k); } // anything equipped is owned (catalog ownership derives from m.unlocked)
     for (const k of ['crates', 'crateOpens', 'pityEpic', 'pityLegend']) if (typeof m[k] !== 'number' || !(m[k] >= 0)) m[k] = 0; // «Посылка» lootbox: stock + pity counters
+    migrateItemBank(m); // build the conserved account item ledger (meta.items) from legacy unlocked+loadout; idempotent, runs AFTER loadout fold-in so unlock keys are complete
     if (!m.playerId) { m.playerId = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); try { localStorage.setItem('engendros_meta', JSON.stringify(m)); } catch (e) {} } // stable per-device co-op identity — persist immediately so it survives reloads
     return m;
   }
-  _saveMeta() { try { localStorage.setItem('engendros_meta', JSON.stringify(this.meta)); } catch (e) {} }
+  _saveMeta() { try { if (this.items) this.meta.items = this.items.toJSON(); localStorage.setItem('engendros_meta', JSON.stringify(this.meta)); } catch (e) {} } // keep meta.items in sync with the live ledger before persisting
   // Deposit this run's money into the persistent bank — once per run (guarded by _banked, reset in reset()).
   _bankRunMoney() {
     if (this._banked) return; this._banked = true;
