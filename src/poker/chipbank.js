@@ -381,16 +381,27 @@ export class ChipBank {
     }
   }
 
-  // Re-mint the cosmetic ledger to the CURRENT chip state for a fresh per-seat skin map — provenance only,
-  // NO value re-deal (so it's safe mid-hand). Pot/bet provenance is reset to house (acceptable: used by the
-  // dev skin hook + as a clean re-skin). Each stack becomes its owner's single skin; the float is house.
+  // Apply a fresh per-seat skin choice WITHOUT touching values (safe mid-hand). PRESERVES won-chip
+  // provenance: only a seat's OWN-skin chips move to its newly chosen skin; chips it won from others keep
+  // the loser's skin (the КАТРАН "see how many you won from whom" look compounds across hands). A no-op
+  // for any seat whose skin didn't change — so the co-op per-hand refresh in _beginHand never wipes the
+  // multi-skin mix. Pot/bets are normally empty at the hand boundary where this runs, and chips already in
+  // play keep their skin ("mid-hand frozen"), so neither is collapsed here.
   reskin(skinsById) {
-    this.skins = { ...this.skins, ...(skinsById || {}) };
-    this.skinsAt = { stacks: {}, bets: {}, pot: {}, float: {} };
-    for (const id in this.stacks) this.skinsAt.stacks[id] = sigOf(this.stacks[id]) ? { [this.skins[id] || HOUSE_SKIN]: cloneSet(this.stacks[id]) } : {};
-    for (const id in this.bets) this.skinsAt.bets[id] = sigOf(this.bets[id]) ? { [this.skins[id] || HOUSE_SKIN]: cloneSet(this.bets[id]) } : {};
-    if (sigOf(this.pot)) this.skinsAt.pot = { [HOUSE_SKIN]: cloneSet(this.pot) };
-    if (sigOf(this.float)) this.skinsAt.float = { [HOUSE_SKIN]: cloneSet(this.float) };
+    const next = { ...this.skins, ...(skinsById || {}) };
+    for (const id in next) {
+      const oldSkin = this.skins[id] || HOUSE_SKIN, newSkin = next[id] || HOUSE_SKIN;
+      if (newSkin === oldSkin) continue;                          // unchanged → leave ALL provenance intact
+      for (const loc of ['stacks', 'bets']) {                     // move only this seat's OWN-skin chips old→new
+        const at = this.skinsAt[loc] && this.skinsAt[loc][id];
+        if (!at || !at[oldSkin]) continue;
+        at[newSkin] = at[newSkin] ? addSet(at[newSkin], at[oldSkin]) : at[oldSkin];
+        delete at[oldSkin];
+      }
+    }
+    this.skins = next;
+    for (const id in this.stacks) this._skClamp('stacks', id);    // keep the ledger reconciled to the real sets (defensive; the move above is value-neutral)
+    for (const id in this.bets) this._skClamp('bets', id);
   }
 
   // Re-key one player's per-seat ledgers from oldId → newId (co-op reconnect: a returning player gets a
