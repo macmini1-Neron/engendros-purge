@@ -212,7 +212,14 @@ export class ForestDemo {
     rec.snapN = snapN + 1;
 
     let topWoodMesh = null, topLeafMesh = null, breakY, liveStump, stumpMesh = null;
-    if (snapN === 0) {
+    if (breakAtOverride === 0) {
+      // UPROOT — the WHOLE tree topples from the base, root and all, NO stump (the ground was dug out from
+      // under it). Reuse the current standing geometry (wood + leaf) as the falling top, hinged at the base.
+      breakY = 0; liveStump = false;
+      const wm = rec._woodMesh || (rec.mesh && (rec.mesh.isMesh ? rec.mesh : rec.mesh.children.find((c) => c.isMesh && c !== rec.leafMesh)));
+      if (wm && wm.geometry) { topWoodMesh = new THREE.Mesh(wm.geometry.clone(), wm.material); topWoodMesh.castShadow = true; }
+      if (rec.leafMesh && rec.leafMesh.geometry) { topLeafMesh = new THREE.Mesh(rec.leafMesh.geometry.clone(), FOLIAGE_OPAQUE); topLeafMesh.castShadow = true; }
+    } else if (snapN === 0) {
       // FIRST snap — makeTree gives a clean stump + a coherent crowned top (canopy clamped onto the top).
       const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt, damage: rec.charred ? 'charred' : undefined });
       breakY = split.breakY;
@@ -370,6 +377,23 @@ export class ForestDemo {
     // FALLEN CROWN — leaves: one pass-through foliage volume (no HP/segments; bullets pass, you wade in slowed).
     if (f.topLeafMesh) collide(f.topLeafMesh, { dpart: id, foliage: true, thicket: true }, 1.4, 6);
     this.logs.push(log);
+    this.regroundLog(log);   // safety: never register a log floating above the terrain (it rests ON the ground)
+  }
+
+  // Drop a fallen log/chunk so its lowest point rests ON the current terrain — no levitation, whether on a
+  // slope at settle-time or after a dig removed the soil under it (grid is XZ-only, so a Y shift needs no
+  // re-bucketing). Lowers the mesh group (carrying its child chunk meshes), the collision boxes, and the parts.
+  regroundLog(log) {
+    if (!log || log.consumed || !log.boxes || !log.boxes.length) return;
+    let lowest = Infinity, lx = 0, lz = 0;
+    for (const bx of log.boxes) { if (bx.min.y < lowest) { lowest = bx.min.y; lx = (bx.min.x + bx.max.x) / 2; lz = (bx.min.z + bx.max.z) / 2; } }
+    const terr = this.world.terrain ? this.world.terrain.terrainHeightAt(lx, lz) : 0;
+    const drop = lowest - terr;
+    if (drop <= 0.1) return;                                   // already resting (or below) the ground
+    if (log.mesh) log.mesh.position.y -= drop;
+    for (const bx of log.boxes) { bx.min.y -= drop; bx.max.y -= drop; }
+    if (log.part) { log.part.min[1] -= drop; log.part.max[1] -= drop; }
+    for (const seg of (log.segs || [])) { if (seg.part) { seg.part.min[1] -= drop; seg.part.max[1] -= drop; } }
   }
 
   // Remove a fallen log (shot apart or burned out): drop its collision boxes, splinter, retire its mesh.
