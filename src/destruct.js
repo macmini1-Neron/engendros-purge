@@ -441,6 +441,48 @@ export function binFallenAABBs(positions, m, axis, originXZ, binLen = 1.0, maxBi
   return out;
 }
 
+// Partition a NON-INDEXED triangle-soup geometry into bins along ONE LOCAL axis component, by each
+// triangle's centroid. The companion to binFallenAABBs (which makes COLLISION boxes from WORLD verts);
+// this makes per-segment GEOMETRY in the mesh's own LOCAL space, so the caller builds one Mesh per bin
+// and parents them under the same node (rotation/normals handled by the engine). Used to chop a felled
+// log's wood into individually-destructible chunks. PURE & node-testable.
+//   pos = flat [x,y,z,…] non-indexed (3 verts per triangle, 9 floats); col/nor flat [r,g,b…]/[x,y,z…]
+//   (optional, pass null to skip); uv flat [u,v…] (optional); comp = 0|1|2 axis to bin along (the log
+//   length axis in local space — Y for a felled tree top); binLen = bin size; maxBins caps the count.
+// Returns [{ positions, colors, normals, uvs, min:[x,y,z], max:[x,y,z] }] per non-empty bin, ordered
+// low→high along comp (deterministic). Vertex count is conserved across the bins.
+export function binFallenGeometry(pos, col, nor, uv, comp, binLen = 1.0, maxBins = 8) {
+  const triN = (pos.length / 9) | 0;            // 3 verts × 3 floats per triangle
+  if (triN < 1) return [];
+  let lo = Infinity, hi = -Infinity;
+  const cen = new Float64Array(triN);
+  for (let t = 0; t < triN; t++) {
+    const o = t * 9;
+    const c = (pos[o + comp] + pos[o + 3 + comp] + pos[o + 6 + comp]) / 3;
+    cen[t] = c; if (c < lo) lo = c; if (c > hi) hi = c;
+  }
+  const span = Math.max(1e-6, hi - lo);
+  const nb = Math.max(1, Math.min(maxBins | 0, Math.ceil(span / binLen)));
+  const inv = nb / span;
+  const bins = new Array(nb).fill(null);
+  const ensure = (i) => bins[i] || (bins[i] = {
+    positions: [], colors: col ? [] : null, normals: nor ? [] : null, uvs: uv ? [] : null,
+    min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity],
+  });
+  for (let t = 0; t < triN; t++) {
+    let bi = Math.floor((cen[t] - lo) * inv); if (bi < 0) bi = 0; else if (bi >= nb) bi = nb - 1;
+    const bb = ensure(bi), o = t * 9;
+    for (let k = 0; k < 9; k++) bb.positions.push(pos[o + k]);
+    if (col) for (let k = 0; k < 9; k++) bb.colors.push(col[o + k]);
+    if (nor) for (let k = 0; k < 9; k++) bb.normals.push(nor[o + k]);
+    if (uv) { const ou = t * 6; for (let k = 0; k < 6; k++) bb.uvs.push(uv[ou + k]); }
+    for (let v = 0; v < 3; v++) { const p = o + v * 3; for (let a = 0; a < 3; a++) { const val = pos[p + a]; if (val < bb.min[a]) bb.min[a] = val; if (val > bb.max[a]) bb.max[a] = val; } }
+  }
+  const out = [];
+  for (const bb of bins) if (bb) out.push(bb);
+  return out;
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // 4. Runtime apply* pipeline — WIRED for the demo building (see demobuilding.js / weapons.js).
 //    DestructRuntime holds a parts collection + an `emit` event sink + an optional debris

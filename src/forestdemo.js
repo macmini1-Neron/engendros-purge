@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells } from './destruct.js';
 import { rr, voxelMaterial, foliageFadeMaterial, makeRNG } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
 
@@ -32,6 +32,11 @@ const LOG_HP_MUL = 2.0;   // a FALLEN log is durable scenery (×2 the standing t
 // come from the material. (Pen by class: pistol0 smg1 rifle1 shotgun1 sniper2 hmg2 launcher4 cannon5.)
 const FELL_TIER_R = 0.5;                        // scaled trunk radius ≥ this ⇒ "thick" (MG/sniper/HE only); below ⇒ a rifle/SMG burst fells it. The slender majority (birch/willow/smaller pine+poplar) fall to the rifle; only big boles (oak, the largest pines) need a heavy weapon.
 const felTierFor = (r) => (r >= FELL_TIER_R ? 2 : 1);
+// SECTIONAL log destruction: a felled log's wood is chopped into per-segment chunks (own mesh + HP +
+// collision), so you can shoot a log apart piece-by-piece — a gap appears where you hit, the rest stays.
+const GROUND_EPS   = 0.4;                       // a log segment whose underside is within this of the terrain is "grounded" (won't orphan-cascade)
+const WOOD_SEG_LEN = 1.1;                       // local length (m) of each destructible log segment
+const WOOD_SEG_MAX = 7;                         // cap segments per log (perf)
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -258,25 +263,62 @@ export class ForestDemo {
     const logFelTier = felTierFor((rec && rec.trunkR) || 0.25);  // caliber to chop this downed log apart (by its bole thickness)
     f.pivot.updateWorldMatrix(true, true);                       // settle pose is baked → world verts are final
     const axis2 = [b.dirXZ[0], b.dirXZ[1]], org2 = [ax, az];
-    const addBinned = (mesh, foliage, thicket, binLen, maxBins, crossBins) => {
-      const g = mesh && mesh.geometry, pos = g && g.attributes && g.attributes.position;
-      if (!pos) return;
+    // helper: tight WORLD collision boxes for a mesh's verts, tagged with the given seg/flags
+    const collide = (mesh, opts, binLen, maxBins, crossBins) => {
+      const a = mesh.geometry && mesh.geometry.attributes, pos = a && a.position; if (!pos) return [];
+      const made = [];
       for (const bb of binFallenAABBs(pos.array, mesh.matrixWorld.elements, axis2, org2, binLen, maxBins, crossBins)) {
-        // small aim/clearance margin; NOT clamped to ground → a branch-propped crown keeps the gap beneath it
         const box = { min: new THREE.Vector3(bb.min[0] - 0.06, bb.min[1] - 0.06, bb.min[2] - 0.06),
                       max: new THREE.Vector3(bb.max[0] + 0.06, bb.max[1] + 0.06, bb.max[2] + 0.06),
-                      downer: log, tree: true, dmat: matName, dpart: id, felTier: logFelTier };
-        if (foliage) box.foliage = true; if (thicket) box.thicket = true;
-        log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+                      downer: log, tree: true, dmat: matName, dpart: opts.dpart, felTier: logFelTier };
+        if (opts.foliage) box.foliage = true; if (opts.thicket) box.thicket = true; if (opts.seg) box.seg = opts.seg;
+        made.push(box); log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
       }
+      return made;
     };
-    // WOOD CORE + BRANCHES — solid. crossBins=3 splits the bole from side-branches across the axis so
-    // there's real air to walk between them (a 2-D bin in the log's own frame), not one box per slice.
-    addBinned(f.topWoodMesh, false, false, 1.0, 7, 3);
-    // FALLEN CROWN — the leaves on the ground: foliage (shoot/conceal through) + thicket (wade-in slow),
-    // hugging the real leaf clusters. ONLY when the crown actually carries leaves (charred/bare logs skip
-    // it → no phantom soft-cover box floating where a burnt crown's leaves used to be).
-    if (f.topLeafMesh) addBinned(f.topLeafMesh, true, true, 1.4, 6);
+    // ── PER-SEGMENT WOOD ───────────────────────────────────────────────────────────────────────────
+    // Chop the fallen bole+branches into chunks (LOCAL-Y bins of the top geometry → along-log after the
+    // fall). Each chunk = its own mesh (child of the settled pivot group) + part/HP + collision boxes, so
+    // a shot removes only that chunk (gap), the rest stays shootable. Leaves stay one pass-through volume.
+    log.segs = [];
+    const wood = f.topWoodMesh;
+    if (wood && wood.geometry && wood.geometry.attributes.position) {
+      const top = wood.parent, a = wood.geometry.attributes;
+      const segGeos = binFallenGeometry(a.position.array, a.color && a.color.array, a.normal && a.normal.array, a.uv && a.uv.array, 1, WOOD_SEG_LEN, WOOD_SEG_MAX);
+      const nSeg = Math.max(1, segGeos.length);
+      const segHpScale = (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * LOG_HP_MUL / nSeg;
+      if (top) top.remove(wood); wood.geometry.dispose();       // replace the single falling-top mesh with the chunks
+      segGeos.forEach((sg, idx) => {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(sg.positions, 3));
+        if (sg.normals) g.setAttribute('normal', new THREE.Float32BufferAttribute(sg.normals, 3));
+        if (sg.uvs) g.setAttribute('uv', new THREE.Float32BufferAttribute(sg.uvs, 2));
+        if (sg.colors) g.setAttribute('color', new THREE.Float32BufferAttribute(sg.colors, 3));
+        g.computeBoundingSphere();
+        const m = new THREE.Mesh(g, wood.material); m.castShadow = true; if (top) top.add(m);
+        const sid = id * 100 + idx, part = makePart(sid, matName, [0, 0, 0], [0, 0, 0], segHpScale);
+        part.downer = log;
+        log.segs.push({ sid, mesh: m, part, dead: false, grounded: true, adj: [], boxes: [] });
+      });
+      f.pivot.updateWorldMatrix(true, true);                    // bake the settle pose onto the new chunk meshes
+      for (let i = 0; i < log.segs.length; i++) {
+        const seg = log.segs[i];
+        seg.boxes = collide(seg.mesh, { dpart: seg.part.dpart, seg }, 0.9, 3, 3);   // tight, walk-through gaps
+        // seat the seg part on its real world AABB + decide grounded (for the orphan cascade)
+        let mnx = Infinity, mny = Infinity, mnz = Infinity, mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+        for (const bx of seg.boxes) { mnx = Math.min(mnx, bx.min.x); mny = Math.min(mny, bx.min.y); mnz = Math.min(mnz, bx.min.z); mxx = Math.max(mxx, bx.max.x); mxy = Math.max(mxy, bx.max.y); mxz = Math.max(mxz, bx.max.z); }
+        if (seg.boxes.length) { seg.part.min = [mnx, mny, mnz]; seg.part.max = [mxx, mxy, mxz];
+          const cgx = (mnx + mxx) / 2, cgz = (mnz + mxz) / 2, terr = this.world.terrain ? this.world.terrain.terrainHeightAt(cgx, cgz) : 0;
+          seg.grounded = mny <= terr + GROUND_EPS;
+        }
+      }
+      for (let i = 0; i < log.segs.length; i++) {                // linear chain adjacency for orphan cascade
+        const adj = []; if (i > 0) adj.push(log.segs[i - 1].sid); if (i < log.segs.length - 1) adj.push(log.segs[i + 1].sid);
+        log.segs[i].adj = adj;
+      }
+    }
+    // FALLEN CROWN — leaves: one pass-through foliage volume (no HP/segments; bullets pass, you wade in slowed).
+    if (f.topLeafMesh) collide(f.topLeafMesh, { dpart: id, foliage: true, thicket: true }, 1.4, 6);
     this.logs.push(log);
   }
 
@@ -301,7 +343,41 @@ export class ForestDemo {
     }
     if (log.fallingRef) { const fi = this.FALLING.indexOf(log.fallingRef); if (fi >= 0) this.FALLING.splice(fi, 1); }
   }
-  _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart
+  _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart (whole log — segless decor / blast)
+
+  // Shoot ONE log CHUNK apart: a gap appears where you hit, the rest of the log stays shootable. Any
+  // chunk left with no grounded support (a crown bin propped on a now-gone branch) cascades. Host-auth.
+  breakLogSeg(log, seg, seed) {
+    if (!log || !seg || seg.dead || log.consumed) return;
+    const sd = (seed >>> 0) || 1;
+    this._killSeg(log, seg, sd);
+    const extra = [];
+    try {                                                       // orphan cascade (no-op for an all-grounded log)
+      const orphans = orphanedCells(log.segs.map((s) => ({ dpart: s.sid, dead: s.dead, grounded: s.grounded, adj: s.adj })));
+      for (const o of orphans) { const os = log.segs.find((s) => s.sid === o.dpart && !s.dead); if (os) { this._killSeg(log, os, (sd ^ os.sid) >>> 0); extra.push(os.sid); } }
+    } catch (e) { console.warn('[forest] seg orphan cascade failed', e); }
+    this._emitForest('segdie', log.id, { sids: [seg.sid, ...extra] });   // host-auth: clients mirror the same chunks
+    if (log.segs.every((s) => s.dead)) this._consumeLog(log, sd, true);  // last chunk gone → tidy the empty log
+  }
+  // remove one chunk: drop its boxes, splinter, sink JUST that chunk into the ground. The chunk mesh is a
+  // child of the rotated pivot, so reparent it to the scene (keeping world transform) — then a world-Y sink works.
+  _killSeg(log, seg, seed) {
+    if (!seg || seg.dead) return;
+    seg.dead = true;
+    for (const b of seg.boxes) { this.world.grid.removeBox(b); let i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); i = log.boxes.indexOf(b); if (i >= 0) log.boxes.splice(i, 1); }
+    seg.boxes = [];
+    if (seg.part) seg.part.dead = true;
+    const c = seg.part ? [(seg.part.min[0] + seg.part.max[0]) / 2, (seg.part.min[1] + seg.part.max[1]) / 2, (seg.part.min[2] + seg.part.max[2]) / 2] : [0, 0, 0];
+    if (this.debris) this.debris.burst('splints', c, (seed >>> 0) || 1, undefined, [0, 0.5, 0]);
+    if (seg.mesh && seg.mesh.parent) { this.scene.attach(seg.mesh);   // keep world pose, reparent to scene so a world-down sink reads right
+      this._sinking.push({ mesh: seg.mesh, t: 0, dur: 0.9, y0: seg.mesh.position.y, drop: Math.max(1.5, 2 * (log.trunkR || 0.4)) }); }
+  }
+  breakLogSegById(id, sids) {                                   // co-op client mirror (host already ran the cascade)
+    const log = this.logs.find((l) => l.id === id); if (!log || !log.segs) return;
+    for (const sid of (sids || [])) { const seg = log.segs.find((s) => s.sid === sid && !s.dead); if (seg) this._killSeg(log, seg, (sid >>> 0) || 1); }
+    if (log.segs.length && log.segs.every((s) => s.dead) && !log.consumed) { log.consumed = true; this._fading.delete(log); if (log.part) log.part.dead = true; if (this.game.fire) this.game.fire.retire(log.part); }
+  }
+
   consumeProp(rec) {                                                                              // FireManager burnout consumes a prop
     if (rec && rec.isBush) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, false);
     else if (rec && rec.isProp) this._destroyProp(rec, false);
