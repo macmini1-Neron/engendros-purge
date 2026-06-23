@@ -41,6 +41,14 @@ test('rayCapsule: hemisphere cap hit above the top', () => {
   assert.ok(t !== null && Math.abs(t - 4.5) < 1e-6, `t=${t}`);   // top of cap at y=4.5
 });
 
+test('rayCapsule: hemisphere cap hit above the top — normal points up (W1-M3)', () => {
+  // Ray straight down onto the top hemisphere: the outward normal at the pole should be (0,1,0)
+  const out = {};
+  const t = rayCapsule(0,9,0, 0,-1,0, 0,0,0, 0,4,0, 0.5, out);
+  assert.ok(t !== null && Math.abs(t - 4.5) < 1e-6, `t=${t}`);
+  assert.ok(Math.abs(out.ny - 1) < 1e-6, `normal y=${out.ny} (expected 1)`);
+});
+
 test('rayCapsule: shot threads PAST a thin trunk that the AABB would have caught', () => {
   // trunk capsule r=0.2 at origin; shot offset z=0.35 → misses the round trunk
   assert.equal(rayCapsule(-5,2,0.35, 1,0,0, 0,0,0, 0,4,0, 0.2, null), null);

@@ -702,6 +702,9 @@ export class ForestDemo {
     const log = { fallen: true, prop: true, id, part, mesh, leafMesh: null, trunkR: r, cls: 2, height: 2 * r, burntOut: !!charred, consumed: false, boxes: [] };
     part.downer = log;
     const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id, felTier: felTierFor(r) };
+    // Decor log lies horizontally at y+r. Axis endpoints are the two log ends in 3-D; radius = log cross radius.
+    // Caps sit exactly at the AABB XZ boundary (AABB has ±r padding matching the hemisphere reach).
+    box.cap = { ax, ay: y + r, az, bx, by: y + r, bz, r };
     log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
     this.logs.push(log);
     return log;
