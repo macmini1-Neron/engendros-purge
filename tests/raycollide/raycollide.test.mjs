@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { raySphere, rayCapsule } from '../../src/raycollide.js';
+import { raySphere, rayCapsule, refineBoxHit } from '../../src/raycollide.js';
 
 test('raySphere: head-on hit returns near-surface t + outward normal', () => {
   const out = {};
@@ -44,4 +44,19 @@ test('rayCapsule: hemisphere cap hit above the top', () => {
 test('rayCapsule: shot threads PAST a thin trunk that the AABB would have caught', () => {
   // trunk capsule r=0.2 at origin; shot offset z=0.35 → misses the round trunk
   assert.equal(rayCapsule(-5,2,0.35, 1,0,0, 0,0,0, 0,4,0, 0.2, null), null);
+});
+
+test('refineBoxHit: no cap → returns the AABB t unchanged (building/foliage path)', () => {
+  assert.equal(refineBoxHit({}, -5,0,0, 1,0,0, 3.2, null), 3.2);
+});
+
+test('refineBoxHit: cap present, ray hits the capsule → refined t', () => {
+  const box = { cap: { ax:0,ay:0,az:0, bx:0,by:4,bz:0, r:0.5 } };
+  const t = refineBoxHit(box, -5,2,0, 1,0,0, 4.0, null);  // aabbT 4.0 is the box face; capsule at 4.5
+  assert.ok(t !== null && Math.abs(t - 4.5) < 1e-6, `t=${t}`);
+});
+
+test('refineBoxHit: cap present, ray clips AABB but MISSES the capsule → null (continues)', () => {
+  const box = { cap: { ax:0,ay:0,az:0, bx:0,by:4,bz:0, r:0.2 } };
+  assert.equal(refineBoxHit(box, -5,2,0.35, 1,0,0, 3.9, null), null);
 });

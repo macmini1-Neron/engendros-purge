@@ -81,3 +81,13 @@ export function rayCapsule(ox, oy, oz, dx, dy, dz, ax, ay, az, bx, by, bz, r, ou
   _capN(ox + dx * t, oy + dy * t, oz + dz * t, ax, ay, az, bax, bay, baz, baba, out);
   return t;
 }
+
+// Narrowphase dispatcher for a world collision box. If the box carries an exact shape
+// (box.cap = capsule), test it and return its refined t (or null = the ray missed the real
+// shape and should continue past this box). Boxes with no exact shape (buildings, foliage,
+// terrain, fortifications) return the broadphase AABB t unchanged → today's behaviour.
+export function refineBoxHit(box, ox, oy, oz, dx, dy, dz, aabbT, out) {
+  const cap = box.cap;
+  if (cap) return rayCapsule(ox, oy, oz, dx, dy, dz, cap.ax, cap.ay, cap.az, cap.bx, cap.by, cap.bz, cap.r, out);
+  return aabbT;
+}
