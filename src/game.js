@@ -75,7 +75,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-23 02:46';
+const GAME_BUILD = '2026-06-23 03:08';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -840,6 +840,16 @@ class Game {
     if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // co-op poker room: hush the lobby jukebox too
     this.ui.show('poker');
     if (this.poker) this.poker.enterCoopClient(d);
+  }
+
+  _resyncCoopPoker(d) { // client side — reconnected to a LIVE table (reload/blip); re-attach WITHOUT re-paying
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 });
+    this.ui.show('poker');
+    if (this.poker) this.poker.enterCoopResync(d);
   }
   // «Посылка» lootbox — open one owned crate. The roll is COMMITTED + saved BEFORE any
   // animation so an Esc/refresh/crash mid-ceremony can never re-roll or lose the reward.

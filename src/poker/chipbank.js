@@ -381,6 +381,16 @@ export class ChipBank {
     if (sigOf(this.float)) this.skinsAt.float = { [HOUSE_SKIN]: cloneSet(this.float) };
   }
 
+  // Re-key one player's per-seat ledgers from oldId → newId (co-op reconnect: a returning player gets a
+  // new peer id). Pure rename — moves stack/bet/dust + provenance, no value created or destroyed. No-op if
+  // oldId is absent or newId already exists (caller must apply at a safe boundary, e.g. between hands).
+  rekey(oldId, newId) {
+    if (oldId === newId || !(oldId in this.stacks) || (newId in this.stacks)) return false;
+    for (const m of [this.stacks, this.bets, this.dust, this.skins]) { if (oldId in m) { m[newId] = m[oldId]; delete m[oldId]; } }
+    for (const loc of ['stacks', 'bets']) { const m = this.skinsAt[loc]; if (m && oldId in m) { m[newId] = m[oldId]; delete m[oldId]; } }
+    return true;
+  }
+
   // test-only oracle: the cosmetic ledger sums (per location, per denom) to the real ChipSets, no negatives.
   // (NOT called in production; the separate verify() below is the value invariant and is skin-blind.)
   verifySkins() {
