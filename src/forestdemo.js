@@ -469,35 +469,27 @@ export class ForestDemo {
   }
 
   // APFSDS / penetrator: fell standing trees the rod passes through (tier ≤ pen).
+  // APFSDS / penetrator rod: MARCH the world raycast (the SAME boxes bullets hit) and pierce everything
+  // on the line — fell each standing tree at the rod's height, chop each log chunk, smash each prop —
+  // passing THROUGH foliage like a bullet. This replaces the old loose base-point distance test that
+  // missed leaning/thick trees and was inconsistent with how guns hit (trunk-band boxes).
   penetrate(origin, dir, range, w) {
     const pen = (w && w.pen != null) ? w.pen : 5;
-    for (const rec of this.trees) {
-      if (!rec.standing) continue;
-      const ox = rec.x - origin.x, oz = rec.z - origin.z, t = ox * dir.x + oz * dir.z;
-      if (t < 0 || t > range) continue;
-      const px = ox - dir.x * t, pz = oz - dir.z * t;
-      if (px * px + pz * pz <= 0.8 * 0.8 && MATERIALS[rec.part.dmat].tier <= pen) {
-        rec.part.dead = true; this.fellTree(rec, [dir.x, dir.z], (rec.id * 7919) >>> 0);
-      }
-    }
-    for (const p of this.props) {                             // the rod also smashes props it passes (rock needs APFSDS-tier pen)
-      if (p.dead) continue;
-      const ox = p.x - origin.x, oz = p.z - origin.z, t = ox * dir.x + oz * dir.z;
-      if (t < 0 || t > range) continue;
-      const px = ox - dir.x * t, pz = oz - dir.z * t;
-      if (px * px + pz * pz <= 0.8 * 0.8 && MATERIALS[p.dmat].tier <= pen) this._destroyProp(p, true);
-    }
-    for (const log of this.logs) {                            // the rod punches chunks out of any downed log on its line
-      if (log.consumed || !log.part || MATERIALS[log.part.dmat].tier > pen) continue;
-      if (log.segs && log.segs.length) {
-        for (let i = log.segs.length - 1; i >= 0; i--) { const seg = log.segs[i]; if (seg.dead || !seg.part) continue;
-          const cx = (seg.part.min[0] + seg.part.max[0]) / 2, cz = (seg.part.min[2] + seg.part.max[2]) / 2;
-          const ox = cx - origin.x, oz = cz - origin.z, t = ox * dir.x + oz * dir.z; if (t < 0 || t > range) continue;
-          const px = ox - dir.x * t, pz = oz - dir.z * t; if (px * px + pz * pz <= 0.8 * 0.8) this.breakLogSeg(log, seg, (seg.sid * 7919) >>> 0); }
-      } else {
-        const cx = (log.part.min[0] + log.part.max[0]) / 2, cz = (log.part.min[2] + log.part.max[2]) / 2;
-        const ox = cx - origin.x, oz = cz - origin.z, t = ox * dir.x + oz * dir.z; if (t < 0 || t > range) continue;
-        const px = ox - dir.x * t, pz = oz - dir.z * t; if (px * px + pz * pz <= 0.8 * 0.8) this._consumeLog(log, (log.id * 7919) >>> 0, true);
+    const ignored = [], hit = new Set();
+    for (let guard = 0; guard < 24; guard++) {                // each pierced box is added to `ignored`, so this ends
+      const wh = this.world.rayHit(origin, dir, range, ignored.length ? ignored : null);
+      if (!wh || !wh.box) break;
+      const box = wh.box, dn = box.downer; ignored.push(box);
+      if (!dn || box.foliage) continue;                       // pass straight through leaves / non-destructible cover
+      if (box.seg && dn.fallen) {                             // a sectional log chunk on the line
+        const seg = box.seg;
+        if (!seg.dead && seg.part && MATERIALS[seg.part.dmat].tier <= pen) this.breakLogSeg(dn, seg, (seg.sid * 7919) >>> 0);
+      } else if ((box.tree || box.dmat === 'trunk') && dn.standing && dn.part) {   // standing tree → SNAP at the rod's height
+        if (!hit.has(dn) && MATERIALS[dn.part.dmat].tier <= pen) { hit.add(dn); this.fellTree(dn, [dir.x, dir.z], (dn.id * 7919) >>> 0, wh.point.y); }
+      } else if (box.tree && dn.fallen && dn.part) {          // a segless (decor) downed log
+        if (!hit.has(dn) && MATERIALS[dn.part.dmat].tier <= pen) { hit.add(dn); this._consumeLog(dn, (dn.id * 7919) >>> 0, true); }
+      } else if (box.prop && dn.part) {                       // rock / decor prop (rock tier 4 needs APFSDS-tier pen)
+        if (!hit.has(dn) && MATERIALS[dn.part.dmat].tier <= pen) { hit.add(dn); this._destroyProp(dn, true); }
       }
     }
   }
@@ -671,6 +663,14 @@ export class ForestDemo {
     // leaves gone → drop the canopy's soft-cover hitbox so it isn't a phantom shoot-through box in mid-air
     // (the trunk bands stay — the bare snag is still solid + shootable). fellTree drops ALL boxes via _dropBox.
     if (tree.boxes) for (let i = tree.boxes.length - 1; i >= 0; i--) { const b = tree.boxes[i]; if (b.foliage) { this.world.grid.removeBox(b); const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1); tree.boxes.splice(i, 1); } }
+    // A SNAPPED STUMP (already shorter than the original) has no crown left to drop and must NOT be rebuilt:
+    // makeTree with no height override regrows the FULL tree (the regen bug). Just scorch the existing stump
+    // mesh in place. (Passing tree.height instead would double-scale — height is pre-scale in makeTree.)
+    if ((tree.snapN || 0) > 0 || !tree.leafMesh || (tree.fullH && tree.height < tree.fullH * 0.99)) {
+      if (tree.mesh.traverse) tree.mesh.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setHex(0x161310); });
+      this._emitForest('drop', tree.id);
+      return;
+    }
     try {
       const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, lod: 0, damage: 'charred' });
       const old = tree.mesh;                                  // a Group(wood, leaf) — the charred snag is a single merged mesh (no leaves to fade)
