@@ -585,6 +585,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     super.renderTable(p);     // header + banner + action bar + timer (felt DOM hidden by CSS)
     this._updateScene(p);
     this._stepCamera(dt || 0.016); // advance any click-to-view camera tween (PokerTable.render passes dt)
+    if (this._nameplates) for (const np of this._nameplates) np.lookAt(this.cam.position); // keep nameplates legible while the camera tweens to a close-up (board/hole/poster pose)
     this._stepAnims(dt || 0.016);  // advance card-flip animations
     this._updateBetPreview(p);     // live raise-amount chips in your bet zone (every frame — tracks the slider)
     if (this._hover) this._hover.update(); // hover outline + mini info-card (only re-raycasts when the cursor moved)
@@ -788,7 +789,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
     // chips at y=0 buried them in the cloth. FELT_Y is the green "floor" everything stands on.
     const FELT_Y = 0.013;
     for (let i = d.children.length - 1; i >= 0; i--) { const c = d.children[i]; d.remove(c); this._disposeTree(c); }
-    this._boardCards = []; this._holeCards = []; this._myHoleCards = []; this._betAnchors = {}; this._hoverTargets = []; // refreshed each rebuild — click/peek/hover targets + bet→pot slide origins
+    this._boardCards = []; this._holeCards = []; this._myHoleCards = []; this._betAnchors = {}; this._hoverTargets = []; this._nameplates = []; // refreshed each rebuild — click/peek/hover targets + bet→pot slide origins + camera-facing nameplates
     this._holeAnchors = {}; this._stackAnchors = {}; // per-seat hole-card + stack positions → fold-muck origin + pot-push target
     // local-seat heap state is re-derived below ONLY if you're seated this hand. Clear it first so a rebuild that
     // omits your seat (you busted → spectating; v.seats excludes youId) can't leave _updateBetPreview pointing at
@@ -826,6 +827,7 @@ export class PokerSceneRenderer extends PokerDomRenderer {
         const np = this._label(`${(p.names && p.names[s.id]) || s.id}  $${s.stack}${winners && winners[s.id] ? '  +' + winners[s.id] : ''}`,
           s.folded ? 0x6a6a6a : (j === v.toAct ? 0x45e0cf : 0xf3d999));
         np.position.set(sx * 1.0, 0.16, sz * 1.0); np.lookAt(this.cam.position); d.add(np);
+        this._nameplates.push(np); // re-faced each frame in renderTable so they stay legible during close-up camera tweens
       }
 
       // hole cards — folded players muck (no cards shown, real poker; hides bluffs)
@@ -858,7 +860,8 @@ export class PokerSceneRenderer extends PokerDomRenderer {
             // two cards still spread along WORLD X so they read flat + side-by-side to the fixed front camera.
             // Like a dealer turning the cards up for the table. (Folded players never reach here — their cards muck.)
             const ctr = onFelt(SHOW_R).addScaledVector(tang, SHOW_SIDE); // forward of the chips, biased clear of the stack
-            const pos = new THREE.Vector3(ctr.x + (h - 0.5) * 0.075, SHOW_Y, ctr.z); // two cards side by side (world X)
+            ctr.z = Math.min(ctr.z, BOARD_Z - 0.085); // 5-6-handed: a FRONT-adjacent seat's spoke has a big +Z, so its reveal would float over the community board — cap z just short of BOARD_Z (no-op for back/side seats, whose z is already smaller)
+            const pos = new THREE.Vector3(ctr.x + (h - 0.5) * 0.075, SHOW_Y, ctr.z); // two cards side by side (world X = the fixed front camera's screen-X)
             card.position.copy(pos);
             card.scale.setScalar(1.22);
             setCardFace(card, s.hole[h]);                            // reveal → face up
