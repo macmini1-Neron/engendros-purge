@@ -737,7 +737,7 @@ export class MP {
     n.on('fireignite', (d) => { if (!this.isHost && this.game.fire && d) this.game.fire.igniteById(d.id, d.owner, d.seed); }); // host-auth fire SPREAD: mirror the exact part+seed the host lit. owner ('b' building / 't' forest) disambiguates the id (forest & building part-ids are separate counters that collide → must dispatch by owner, never a global id search)
     n.on('bdestroy', (d) => { if (!this.isHost && d) { const b = this.game.world.demoBuilding; if (b && typeof b.applyNetDestroy === 'function') b.applyNetDestroy(d.parts, d.holes); } }); // host-auth BUILDING destruction: replay the exact dead parts (brick breach / shattered panes / burnt door) + APFSDS through-holes. Single building per world → 'bdestroy' type routes unambiguously (no owner flag needed)
     n.on('forestfx', (d) => { if (this.isHost || !d) return; const fr = this.game.forest; if (!fr) return; // host-auth FOREST mutations: fell/char a tree, consume a grass tuft. Tree fall is replayed with the host's exact dir+seed → identical deterministic FallingBody
-      if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed);
+      if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed, d.by);   // d.by = cut height fraction (snap where hit) → identical stump+top on every peer
       else if (d.k === 'char') fr.charTreeById(d.id);
       else if (d.k === 'drop') { if (fr.dropLeavesById) fr.dropLeavesById(d.id); }   // bare charred snag (leaves dropped)
       else if (d.k === 'charlog') { if (fr.charLogById) fr.charLogById(d.id); }      // a downed log blackened by fire
