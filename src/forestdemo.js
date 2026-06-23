@@ -25,6 +25,7 @@ const ri = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // TRUNK (tier 2, need an HMG+). HP from the demo so felling stays responsive (a few hits, not a magazine).
 const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2, willow: 2 };
 const TREE_HP = { 1: 20, 2: 55, 3: 100 };   // destructive vibe: rifle fells a grown tree in a burst, HMG/HE/APFSDS instantly
+const LOG_HP_MUL = 2.0;   // a FALLEN log is durable scenery (×2 the standing trunk) → a deliberate burst shoots it apart, a stray bullet leaves it lying; it NEVER despawns on a timer
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -33,6 +34,7 @@ export class ForestDemo {
   constructor(game, debris) {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
     this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.props = []; this.FALLING = []; this.windy = [];
+    this._sinking = [];   // logs being destroyed: sink-into-ground animation before the mesh is removed (no instant poof)
     this._frng = makeRNG(0x6f7e57);   // SEEDED layout RNG → every co-op peer builds the IDENTICAL forest (id→tree matches, so a host-synced fell/char/burn lands on the right tree)
     this._t = 0; this._idc = 0; this._reserved = [];
     this._fading = new Set();   // tree/bush recs whose leaf mesh is currently on the near-camera fade material
@@ -236,7 +238,7 @@ export class ForestDemo {
     const gy = this.world.terrain ? Math.min(this.world.terrain.terrainHeightAt(ax, az), this.world.terrain.terrainHeightAt(bx, bz)) : 0;
     const minA = [Math.min(ax, bx) - r, Math.min(ay, by, gy), Math.min(az, bz) - r];
     const maxA = [Math.max(ax, bx) + r, Math.max(ay, by, gy) + 2 * r, Math.max(az, bz) + r];
-    const part = makePart(id, matName, minA, maxA, (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * 0.6); // a downed log snaps a touch easier
+    const part = makePart(id, matName, minA, maxA, (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * LOG_HP_MUL); // a downed log is sturdy scenery — takes a BURST to shoot apart, not one stray bullet
     const log = { fallen: true, prop: true, id, part, mesh: f.pivot, leafMesh: f.topLeafMesh || null, trunkR: r, cls: (rec && rec.cls) || 2,
                   height: maxA[1] - minA[1],   // fire reads owner.height → keeps a downed log's flame low (not a 12 m tree column)
                   fallingRef: f, burntOut: !!f.charred, consumed: false, boxes: [] };  // charred logs already burnt → not flammable
@@ -284,7 +286,11 @@ export class ForestDemo {
           cy = log.part ? (log.part.min[1] + log.part.max[1]) / 2 : 0,
           cz = log.part ? (log.part.min[2] + log.part.max[2]) / 2 : 0;
     if (this.debris) this.debris.burst('splints', [cx, cy, cz], (seed >>> 0) || 1, undefined, [0, shot ? 0.6 : 0.3, 0]);
-    if (log.mesh && log.mesh.parent) this.scene.remove(log.mesh);
+    // sink the mesh INTO the ground (no instant poof) — collision boxes already gone, so it's inert while it sinks
+    if (log.mesh && log.mesh.parent) {
+      const h = log.part ? (log.part.max[1] - log.part.min[1]) : (2 * (log.trunkR || 0.4));
+      this._sinking.push({ mesh: log.mesh, t: 0, dur: 1.1, y0: log.mesh.position.y, drop: Math.max(2, h + 1.4) });
+    }
     if (log.fallingRef) { const fi = this.FALLING.indexOf(log.fallingRef); if (fi >= 0) this.FALLING.splice(fi, 1); }
   }
   _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart
@@ -384,7 +390,7 @@ export class ForestDemo {
     const id = 100000 + (++this._idc);
     const matName = 'trunk';
     const minA = [Math.min(ax, bx) - r, y, Math.min(az, bz) - r], maxA = [Math.max(ax, bx) + r, y + 2 * r, Math.max(az, bz) + r];
-    const part = makePart(id, matName, minA, maxA, (TREE_HP[2] / MATERIALS[matName].hp) * 0.6);
+    const part = makePart(id, matName, minA, maxA, (TREE_HP[2] / MATERIALS[matName].hp) * LOG_HP_MUL);
     const log = { fallen: true, prop: true, id, part, mesh, leafMesh: null, trunkR: r, cls: 2, height: 2 * r, burntOut: !!charred, consumed: false, boxes: [] };
     part.downer = log;
     const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id };
@@ -480,6 +486,22 @@ export class ForestDemo {
     this._emitForest('char', tree.id);   // host-auth: mirror the charred snag on every peer
   }
 
+  // FIRE on a DOWNED log: blacken the lying log INCLUDING its fallen crown leaves, then it burns out
+  // (fire._burnout → consumeProp → _consumeLog sinks it). Unlike a standing tree, here we DO scorch the
+  // leaf mesh — but its foliage material is shared, so clone it first (else the whole forest's leaves
+  // blacken). _noFade pins the tint so the near-camera leaf-fade rotation can't revert it.
+  charLog(log) {
+    if (!log || !log.fallen || log.charred || log.consumed) return;
+    log.charred = true; log._noFade = true; this._fading.delete(log);
+    if (log.mesh) log.mesh.traverse((o) => {
+      if (!o.isMesh || !o.material || !o.material.color) return;
+      if (o === log.leafMesh) o.material = o.material.clone();   // shared foliage mat → clone before tinting
+      o.material.color.setHex(0x161310);
+    });
+    this._emitForest('charlog', log.id);   // host-auth: mirror the blackened log on every peer
+  }
+  charLogById(id) { const l = this.logs.find((x) => x.id === id); if (l) this.charLog(l); }
+
   // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self. Same
   // species+seed+scale (NO height override) reproduces the EXACT standing tree, now bare + blackened, so the
   // dead snag matches its neighbours. (Passing tree.height double-scaled the snag — it stood scale× too tall.)
@@ -531,6 +553,12 @@ export class ForestDemo {
       f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle);
       if (f.body.settled && !f.logged) { f.logged = true; this._registerFallenLog(f); }   // settled THIS frame → register the log now
     }
+    // sink-into-ground animation for destroyed logs (ease-in accelerate down, then drop the mesh)
+    for (let i = this._sinking.length - 1; i >= 0; i--) {
+      const s = this._sinking[i]; s.t += dt; const u = Math.min(1, s.t / s.dur);
+      s.mesh.position.y = s.y0 - s.drop * (u * u);
+      if (u >= 1) { if (s.mesh.parent) s.mesh.parent.remove(s.mesh); this._sinking.splice(i, 1); }
+    }
     const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
     for (const w of this.windy) {
       if (!w.m.parent) continue;
@@ -548,7 +576,7 @@ export class ForestDemo {
     const cx = cam.position.x, cy = cam.position.y, cz = cam.position.z, G = FOLIAGE_FADE_GATE, G2 = G * G;
     const want = new Set();
     for (const b of this.world.grid.queryAABB(cx - G, cz - G, cx + G, cz + G)) {
-      if (!b.foliage || !b.downer || !b.downer.leafMesh) continue;
+      if (!b.foliage || !b.downer || !b.downer.leafMesh || b.downer._noFade) continue;   // _noFade = a charred log: keep its blackened tint, don't swap to the fade material
       const ddx = Math.max(b.min.x - cx, 0, cx - b.max.x), ddy = Math.max(b.min.y - cy, 0, cy - b.max.y), ddz = Math.max(b.min.z - cz, 0, cz - b.max.z);
       if (ddx * ddx + ddy * ddy + ddz * ddz <= G2) want.add(b.downer);
     }

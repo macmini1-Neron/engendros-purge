@@ -1618,6 +1618,7 @@ export class WeaponSystem {
         const box = wHit.box;
         if (box && box.downer && soft < SOFT_BUDGET && this._softPenetrable(box, d)) {
           this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));   // carve soft cover with the marched (decayed) energy
+          if (box.foliage) { this.game.effects.impact(wHit.point, wHit.normal, 'leaf'); this.game.hud.hitmarker(false); }   // feedback when a round punches THROUGH leaves (was: silent pass)
           ignored.push(box);                                     // exclude it from the next pass (hit each cover once)
           if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }   // glass is a free pass (like APFSDS); wood/metal sap energy
           if (dmg < 2) { this.game.effects.tracer(muzzle, wHit.point, d.accent); return; }   // round spent inside the cover

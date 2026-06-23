@@ -832,6 +832,7 @@ export class MP {
       if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed);
       else if (d.k === 'char') fr.charTreeById(d.id);
       else if (d.k === 'drop') { if (fr.dropLeavesById) fr.dropLeavesById(d.id); }   // bare charred snag (leaves dropped)
+      else if (d.k === 'charlog') { if (fr.charLogById) fr.charLogById(d.id); }      // a downed log blackened by fire
       else if (d.k === 'grass') fr.consumeGrassById(d.id);
       else if (d.k === 'propdie') fr.destroyPropById(d.id); });
     // ── terrain excavation (craters + shovel) — the dig list is the single synced source of truth;
