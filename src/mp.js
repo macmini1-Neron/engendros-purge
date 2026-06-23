@@ -5,9 +5,11 @@ import { ENEMY_BURN_DUR, MOLO_GRAV, MOLO_MAX_FLIGHT, PLAYER_BURN_DPS, PLAYER_BUR
 import { KILL_CASH } from './economy.js';
 import { WEAPONS, buildViewmodel } from './weapons.js';
 import { GADGETS } from './inventory.js';
+import { ITEM_DEFS } from './loot.js';                         // consumable names/icons for the poker item-stake composer
 import { buildFlopo } from './props.js';
 import { LanNet, Net, makeRoomCode } from './net.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
+import { canStake } from './poker/wager.js';                   // poker item-stake accept gate (own every item + afford the money)
 import { mountChipSkinPicker, mountCardBackPicker } from './poker/skinpicker.js'; // shared cosmetic pickers (also used by poker-ui.js)
 import { drawChip, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure — roster chip swatch + lobby picker fallback
 import { CARD_BACKS_FREE } from './poker/cardbacks.js';
@@ -146,6 +148,7 @@ export class MP {
     this.chosenSkin = 0; this._hadBoss = false; this.ready = false; this.friendlyFire = true; // co-op: teammates CAN damage each other (watch your fire)
     this._lobbyMode = 'purge'; // mode the squad will play; host picks it in the lobby, clients mirror it ('purge'|'longnight'|'poker')
     this.pokerBuyIn = 0;       // poker mode: host-authoritative buy-in (mirrored to clients); 0 = FREE practice
+    this.pokerBasket = {};     // poker mode: MY staked items { itemKey: count } from my account ItemBank (money = the uniform buy-in tier; items are the asymmetric part). Rides the roster like chipSkin; an edit re-opens all accepts.
     this._xfT = 0; this._snapT = 0; this._reviveClicks = 0; this._reviveTargetId = null; this._reviveActive = false; this._incomingRevive = null; this._reviveHostProgress = new Map(); this._lastXf = new Map(); this._toT = 0; // _lastXf: host-side per-client heartbeat for crash detection
     this._nightT = 0; this._clockT = 0; // host: periodic day/night + survive-clock/enemies-left broadcast throttles
     this._lastClockDrift = null; // client: last measured world-clock prediction error vs host (minutes), for /time check
@@ -316,7 +319,7 @@ export class MP {
     this.remotes.clear(); this.roster.clear(); this.pstate.clear(); this.ghosts.clear();
     this._reviveHostProgress.clear();
     if (this._lastXf) this._lastXf.clear();
-    this.active = false; this.isHost = false; this.ready = false; this.myId = null; this.spectateTarget = null; this._resetRevive(true);
+    this.active = false; this.isHost = false; this.ready = false; this.myId = null; this.spectateTarget = null; this.pokerBasket = {}; this._resetRevive(true);
   }
   closeRoom() {
     const old = this.net && this.net.room;
@@ -352,7 +355,7 @@ export class MP {
     this.net.onPeerOpen = () => this._lobbyMsg(this._lanMode() ? ('Connecting to LAN room ' + room + '…') : ('Connecting to ' + room + '… finding WebRTC route (can take up to 45s).'));
     this.net.onConnect = () => {
       this.myId = this.net.selfId; this.net.lastRecv = performance.now();
-      this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, chipSkin: (this.game.meta && this.game.meta.chipSkin) || 'dice', loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId });
+      this.net.send('hello', { name: this.name, skin: this.chosenSkin || 0, chipSkin: (this.game.meta && this.game.meta.chipSkin) || 'dice', loadout: this._myLoadoutKeys(), pid: this.game.meta.playerId, basket: { items: this.pokerBasket } });
       this._markDiag({ helloSent: true }, 'Hello sent');
       this._lobbyMsg('Connected… handshaking with host (waiting up to 25s).');
       this._joinHandshakeTimer = setTimeout(() => this._lobbyMsg('Connected, but the host did not answer after 25s. Ask the host to refresh/re-host.'), 25000);
@@ -446,10 +449,15 @@ export class MP {
   }
   _myLoadoutKeys() { const lo = (this.game.meta && this.game.meta.loadout) || []; return Array.isArray(lo) ? lo.filter(Boolean) : []; } // flat equal-slot loadout array (empties dropped for the roster)
   _loadoutLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); return gd ? gd.name : k; }
+  _itemLabel(k) { if (!k) return ''; if (WEAPONS[k]) return WEAPONS[k].name; const gd = GADGETS.find((x) => x.key === k); if (gd) return gd.name; return ITEM_DEFS[k] ? ITEM_DEFS[k].name : k; }
+  _basketSummary(items) { const parts = []; for (const k in (items || {})) { const n = items[k] | 0; if (n > 0) parts.push(`${n}× ${this._itemLabel(k)}`); } return parts.join(' · '); } // "2× Medkit · 1× Bazooka" or ''
   toggleReady() {
     if (this.isHost) return;
-    if (!this.ready && this._lobbyMode === 'poker' && !canAnte(this.game.meta.bank, this.pokerBuyIn)) { // poker: READY = ante the buy-in
-      this._lobbyMsg(`You need $${this.pokerBuyIn} to ante up — your bank is $${this.game.meta.bank | 0}.`); return;
+    if (!this.ready && this._lobbyMode === 'poker') {           // poker: READY = ACCEPT the stake (ante money + own every staked item)
+      const basket = { items: this.pokerBasket, money: this.pokerBuyIn };
+      if (!canStake(this.game.items, this.game.meta.bank, basket)) {
+        this._lobbyMsg(`You can’t back your stake — need $${this.pokerBuyIn} + every staked item. Your bank is $${this.game.meta.bank | 0}.`); return;
+      }
     }
     this.ready = !this.ready; this.net.send('ready', { val: this.ready }); this._renderRoster();
   }
@@ -463,7 +471,9 @@ export class MP {
         const lo = (p.loadout || []).map((k) => this._loadoutLabel(k)).filter(Boolean).join(' · ') || 'Bayonet Knife';
         const kick = (this.isHost && id !== 'host') ? ` <button class="mp-kick" data-peer="${mpEscape(id)}" title="Kick player" style="margin-left:6px;background:#5a2024;color:#fff;border:1px solid #a3434a;border-radius:4px;cursor:pointer;font-weight:800;padding:0 7px">✕</button>` : '';
         const sw = poker ? `<canvas class="mp-chipsw" width="22" height="22" data-skin="${mpEscape(p.chipSkin || 'dice')}"></canvas>` : ''; // each player's own poker chip skin
-        return `<div class="mp-rosteritem">${sw}🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small></div>`;
+        const stake = (poker && p.basket && p.basket.items) ? this._basketSummary(p.basket.items) : ''; // this player's staked items
+        const stakeLine = stake ? `<br><small style="opacity:.8;font-weight:700;color:#e7c869">🎁 ${mpEscape(stake)}</small>` : '';
+        return `<div class="mp-rosteritem">${sw}🌸 ${mpEscape(p.name)} ${tag}${kick}<br><small style="opacity:.65;font-weight:600">${mpEscape(lo)}</small>${stakeLine}</div>`;
       });
       el.innerHTML = rows.join('');
       if (poker) el.querySelectorAll('canvas.mp-chipsw').forEach((cv) => { try { drawChip(cv.getContext('2d'), 22, 20, cv.dataset.skin); } catch (e) {} });
@@ -540,6 +550,43 @@ export class MP {
     }
     this._renderPokerBuyIn(mode, canPick);
     this._renderPokerCosmetics(mode, canPick);
+    this._renderPokerStakes(mode);
+  }
+  // Poker item-stake composer in the ROOM lobby: each player picks how many of its OWNED items to put up
+  // (money stays the uniform buy-in tier; the ITEMS are the asymmetric "my bazooka vs your medkits" part).
+  // Editing the stake propagates via the roster + re-opens all accepts (the table changed).
+  _renderPokerStakes(mode) {
+    const box = document.getElementById('mp-poker-stakes'); if (!box) return;
+    if (mode !== 'poker') { box.style.display = 'none'; return; }
+    box.style.display = '';
+    const it = this.game.items, owned = it ? it.owned : {};
+    // defensive clamp: if a staked item was sold in the Armory, drop the overage (canStake also guards at accept)
+    let changed = false;
+    for (const k in this.pokerBasket) { const own = (owned[k] | 0); if ((this.pokerBasket[k] | 0) > own) { if (own > 0) this.pokerBasket[k] = own; else delete this.pokerBasket[k]; changed = true; } }
+    if (changed) this.notifyPokerBasketChanged();
+    const keys = Object.keys(owned).filter((k) => (owned[k] | 0) > 0).sort();
+    const rowEl = document.getElementById('mp-stake-items');
+    const sumEl = document.getElementById('mp-stake-sum');
+    if (rowEl) {
+      if (!keys.length) rowEl.innerHTML = '<span style="opacity:.6">No items yet — buy gear in the Armory to stake it.</span>';
+      else {
+        rowEl.innerHTML = keys.map((k) => {
+          const own = owned[k] | 0, have = this.pokerBasket[k] | 0;
+          return `<span class="mp-stake-row"><button class="mp-stake-btn" data-k="${mpEscape(k)}" data-d="-1" ${have <= 0 ? 'disabled' : ''}>−</button><span class="mp-stake-n">${have}/${own}</span><button class="mp-stake-btn" data-k="${mpEscape(k)}" data-d="1" ${have >= own ? 'disabled' : ''}>+</button> ${mpEscape(this._itemLabel(k))}</span>`;
+        }).join('');
+        rowEl.querySelectorAll('.mp-stake-btn').forEach((b) => { b.onclick = () => this._stakeAdjust(b.getAttribute('data-k'), +b.getAttribute('data-d')); });
+      }
+    }
+    if (sumEl) { const s = this._basketSummary(this.pokerBasket); sumEl.textContent = s ? ('Your stake: ' + s) : 'Your stake: items optional — the money buy-in still applies.'; }
+  }
+  _stakeAdjust(k, d) {
+    const own = this.game.items ? this.game.items.count(k) : 0;
+    const cur = this.pokerBasket[k] | 0;
+    const next = Math.max(0, Math.min(own, cur + d));
+    if (next === cur) return;
+    if (next <= 0) delete this.pokerBasket[k]; else this.pokerBasket[k] = next;
+    this.notifyPokerBasketChanged();           // propagate the new stake + re-open all accepts
+    this._renderPokerStakes('poker');          // refresh my own +/- buttons
   }
   // Poker cosmetics in the ROOM lobby: a per-player "Your chips:" picker (everyone) + a host-only
   // "Table deck:" picker. Routes through game.poker (which exists in the lobby; its renderer does not),
@@ -625,7 +672,8 @@ export class MP {
       if (!this.roster.has(from) && this.roster.size >= 4) { this.net.sendTo(from, 'full', {}); return; }   // co-op cap = 4 (host + 3)
       const skin = (d.skin != null) ? d.skin : this.roster.size;
       const chipSkin = (typeof d.chipSkin === 'string') ? d.chipSkin : 'dice';
-      this.roster.set(from, { name: nm, skin, chipSkin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [], pid });
+      const basket = (d.basket && d.basket.items && typeof d.basket.items === 'object') ? { items: d.basket.items } : { items: {} };
+      this.roster.set(from, { name: nm, skin, chipSkin, ready: false, loadout: Array.isArray(d.loadout) ? d.loadout : [], pid, basket });
       this._lastXf.set(from, performance.now());
       this.net.send('roster', this._rosterArr()); this._renderRoster();
       this.net.sendTo(from, 'joinok', {});
@@ -651,7 +699,7 @@ export class MP {
     n.on('goodbye', (d, from) => { if (this.isHost) { this._dropPeer(from); if (g.poker && g.poker.coop) g.poker.onPeerDisconnect(from); } }); // client left cleanly — also drop its poker seat (mirror onDisconnect/pkleave; latent today since poker never sets mp.active)
     n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
-    n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, chipSkin: (typeof p.chipSkin === 'string') ? p.chipSkin : 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
+    n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, chipSkin: (typeof p.chipSkin === 'string') ? p.chipSkin : 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null, basket: (p.basket && p.basket.items) ? { items: p.basket.items } : { items: {} } }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
     n.on('mode', (d) => { // host announced the squad's mode (+ poker buy-in)
       if (this.isHost || !d) return;
@@ -687,6 +735,7 @@ export class MP {
     n.on('pkabort', () => { if (!this.isHost && g.poker) g.poker.onAbort(); }); // host ended the session → onAbort refunds + returns to lobby
     n.on('pkante', (d, from) => { if (this.isHost && g.poker) g.poker.onAnte(from); }); // client confirmed it paid its buy-in → count it in the pool (C1 ante-ack)
     n.on('chipskin', (d, from) => { if (!this.isHost || !d) return; const r = this.roster.get(from); if (r && typeof d.chipSkin === 'string') { r.chipSkin = d.chipSkin; this.net.send('roster', this._rosterArr()); this._renderRoster(); } }); // cosmetic: update only the peer's poker chip skin, PRESERVING its anted/ready state
+    n.on('pkbasket', (d, from) => { if (!this.isHost || !d) return; const r = this.roster.get(from); if (r) { r.basket = { items: (d.items && typeof d.items === 'object') ? d.items : {} }; this._resetReadies(); this.net.send('roster', this._rosterArr()); this._renderRoster(); } }); // a peer changed its item STAKE → table changed → reset all accepts (mirror a buy-in change)
     n.on('structhit', (d) => { if (this.isHost) { const s = g.build.structures.find((x) => x.id === d.id); if (s) g.build.attackStructure(s, d.dmg, null); } }); // client shot/meleed a structure
     n.on('radioset', (d) => g.build.applyRadioSet(d));                          // authoritative radio on/off/station (host → clients)
     n.on('radioreq', (d, from) => { if (this.isHost) { g.build.applyRadioSet(d); n.broadcast('radioset', d); } }); // client asks host to toggle/tune a radio
@@ -818,7 +867,17 @@ export class MP {
     n.on('dropopen', (d, from) => { if (!this.isHost || !d) return; const drop = g.loot.drops.find((x) => x.id === d.id && !x.opened); if (!drop) return; drop.opened = true; g.loot._removeDrop(drop); g.loot._spillDropLoot(drop.pos, g.loot._rollGive(), from); this.net.broadcast('dropopened', { id: d.id }); }); // host-authoritative: roll the gun + spawn ONE shared pile (loot only, no cash)
     n.on('dropopened', (d) => { if (d) g.loot.removeDropById(d.id); });                                                   // someone claimed it → clear the visual crate everywhere
   }
-  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, chipSkin: p.chipSkin || 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null })); }
+  _rosterArr() { return [...this.roster].map(([id, p]) => ({ id, name: p.name, skin: p.skin, chipSkin: p.chipSkin || 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null, basket: (p.basket && p.basket.items) ? { items: p.basket.items } : { items: {} } })); }
+  // The local player edited its poker item stake. Unlike a chip-skin change, the STAKE changed → everyone
+  // must re-accept the new table (mirror a buy-in change), so this resets readies. No-op when not networked.
+  notifyPokerBasketChanged() {
+    const me = this.roster.get(this.isHost ? 'host' : this.myId);
+    if (me) me.basket = { items: { ...this.pokerBasket } };               // optimistic local update
+    if (!this.net || !this.myId) { this._renderRoster(); return; }         // solo lobby preview
+    if (this.isHost) { this._resetReadies(); try { this.net.send('roster', this._rosterArr()); } catch (e) {} }
+    else { try { this.net.send('pkbasket', { items: this.pokerBasket }); } catch (e) {} this.ready = false; } // changing my stake un-readies me; the host re-broadcasts the reset roster
+    this._renderRoster();
+  }
   // Cosmetic-only: the local player picked a new poker chip skin in the co-op lobby. Refresh the roster
   // so the host ships the right per-seat skin in the next poker snapshot. No-op when not networked.
   notifyChipSkinChanged() {
