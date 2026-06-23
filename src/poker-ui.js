@@ -575,7 +575,7 @@ export class PokerDomRenderer {
       };
       if (rng) rng.addEventListener('input', () => setRaise((L.maxRaiseTo - (+rng.value)) < 5 ? L.maxRaiseTo : +rng.value)); // the slider's top step lands short of an odd all-in max → snap the very top to the exact all-in
       num.addEventListener('change', () => setRaise(+num.value));
-      num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } });
+      num.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.repeat) { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } }); // !e.repeat: holding Enter must not auto-repeat the raise
       a.querySelector('#pk-rminus').addEventListener('click', () => setRaise(this._raiseTo - bb));
       a.querySelector('#pk-rplus').addEventListener('click', () => setRaise(this._raiseTo + bb));
       a.querySelectorAll('.pk-preset').forEach((b) => b.addEventListener('click', () => setRaise(b.dataset.min ? L.minRaiseTo : presets[+b.dataset.p][1]())));

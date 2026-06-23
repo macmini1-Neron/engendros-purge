@@ -607,7 +607,10 @@ export class PokerSceneRenderer extends PokerDomRenderer {
       // tray must rebuild on composition change, not just value change.
       cs: ch ? sigOf(ch.pot) + '|' + v.seats.map((s) => sigOf(ch.stacks[s.id] || {}) + '/' + sigOf(ch.bets[s.id] || {})).join(',') : '',
       sk: (ch && ch.skins) ? skinSig(ch.skins.pot) + ';' + v.seats.map((s) => skinSig(ch.skins.stacks[s.id]) + '/' + skinSig(ch.skins.bets[s.id])).join(',') : '', // skin MIX → rebuild trays on a recolour even at the same value
-
+      // co-op: a peer renaming / re-skinning mid-hand changes the nameplate + stack skin but not pot/seat/board
+      // → fold both into the key so the scene rebuilds (otherwise it'd lag until the next pot/seat change).
+      nm: p.names ? v.seats.map((s) => p.names[s.id] || '').join('|') : '',
+      ks: p.skins ? v.seats.map((s) => p.skins[s.id] || '').join('|') : '',
     });
     if (key === this._sceneKey) return;
     this._sceneKey = key;

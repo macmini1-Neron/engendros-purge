@@ -644,7 +644,7 @@ export class MP {
         this._renderRoster();
       }
     });
-    n.on('goodbye', (d, from) => { if (this.isHost) this._dropPeer(from); });                                  // client left cleanly
+    n.on('goodbye', (d, from) => { if (this.isHost) { this._dropPeer(from); if (g.poker && g.poker.coop) g.poker.onPeerDisconnect(from); } }); // client left cleanly — also drop its poker seat (mirror onDisconnect/pkleave; latent today since poker never sets mp.active)
     n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
     n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, chipSkin: (typeof p.chipSkin === 'string') ? p.chipSkin : 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null }); this._renderRoster(); this._syncRemoteObjs(); });
