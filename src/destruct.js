@@ -441,6 +441,18 @@ export function binFallenAABBs(positions, m, axis, originXZ, binLen = 1.0, maxBi
   return out;
 }
 
+// Where a STANDING tree snaps when shot: the break fraction = the hit height up the trunk, clamped so
+// a snap never sits at the very base (a tiny stub) or up in the crown (a half-canopy stub). remainFrac
+// (= breakAt) scales the surviving stump's HP so a tall stump still resists, a short stub dies easily.
+// PURE & node-testable. (makeTree({breakAt}) further clamps the cut below the crown, so the whole canopy
+// rides the falling top — this just maps a world hit Y to a 0..1 trunk fraction.)
+export function snapPlan(fullHeight, hitY, baseY, minFrac = 0.08, maxFrac = 0.92) {
+  const h = fullHeight > 1e-3 ? fullHeight : 1;
+  let breakAt = (hitY - baseY) / h;
+  if (breakAt < minFrac) breakAt = minFrac; else if (breakAt > maxFrac) breakAt = maxFrac;
+  return { breakAt, remainFrac: breakAt };
+}
+
 // Partition a NON-INDEXED triangle-soup geometry into bins along ONE LOCAL axis component, by each
 // triangle's centroid. The companion to binFallenAABBs (which makes COLLISION boxes from WORLD verts);
 // this makes per-segment GEOMETRY in the mesh's own LOCAL space, so the caller builds one Mesh per bin

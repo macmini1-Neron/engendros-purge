@@ -1689,8 +1689,8 @@ export class WeaponSystem {
       if (!part || part.dead) return;
       const r = resolveHit(part, w, box.felTier);   // fell-tier scales with trunk THICKNESS (slim → SMG/rifle pen1; thick → MG/sniper/HE pen2+)
       if (r.killed && this.game.forest && (tree.standing || tree.fallen)) {
-        // standing → topple away from the shot; a fallen LOG (segless decor) → fellTree routes rec.fallen to _breakLog
-        this.game.forest.fellTree(tree, [dir.x, dir.z], (tree.id * 2654435761) >>> 0);
+        // standing → SNAP at the hit height (top falls, stump stays); a fallen LOG (segless decor) → _breakLog
+        this.game.forest.fellTree(tree, [dir.x, dir.z], (tree.id * 2654435761) >>> 0, wHit.point.y);
       } else if (r.effect === 'damage' && this.game.forest && this.game.forest.debris) {
         this.game.forest.debris.burst('splints', [wHit.point.x, wHit.point.y, wHit.point.z], (tree.id ^ 0x55) >>> 0);
       }
