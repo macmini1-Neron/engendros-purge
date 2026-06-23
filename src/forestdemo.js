@@ -163,7 +163,7 @@ export class ForestDemo {
   _buildTrunkBands(rec, yHi, nb) {
     const x = rec.x, y = rec.baseY, z = rec.z, yaw = rec.yaw, trunkR = rec.trunkR, mat = rec.mat, felTier = rec.felTier, id = rec.id, spine = rec.spine, fullH = rec.fullH || rec.height;
     const cos = Math.cos(yaw), sin = Math.sin(yaw);
-    const push = (mn, mx) => { const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id, felTier }; rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b); };
+    const push = (mn, mx, cap) => { const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id, felTier }; if (cap) b.cap = cap; rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b); };
     if (spine && spine.length) {
       const cl = (yt) => {
         if (yt <= spine[0][1]) return [spine[0][0], spine[0][2]];
@@ -177,13 +177,18 @@ export class ForestDemo {
         const e0 = cl(y0), e1 = cl(y1); add(e0[0], e0[1]); add(e1[0], e1[1]);
         for (const p of spine) if (p[1] > y0 && p[1] < y1) add(p[0], p[2]);
         const rad = trunkR * (1 - 0.6 * (y0 / fullH)) + 0.1;
-        push([x + mnx - rad, y + y0, z + mnz - rad], [x + mxx + rad, y + y1, z + mxz + rad]);
+        // capsule along the leaning centreline for this band (world space) → round trunk hit
+        const cax = x + (e0[0] * cos + e0[1] * sin), caz = z + (-e0[0] * sin + e0[1] * cos);
+        const cbx = x + (e1[0] * cos + e1[1] * sin), cbz = z + (-e1[0] * sin + e1[1] * cos);
+        push([x + mnx - rad, y + y0, z + mnz - rad], [x + mxx + rad, y + y1, z + mxz + rad],
+             { ax: cax, ay: y + y0, az: caz, bx: cbx, by: y + y1, bz: cbz, r: rad });
       }
       const collarR = trunkR * 1.25 + 0.05, collarH = Math.min(0.5, fullH * 0.12);
       push([x - collarR, y, z - collarR], [x + collarR, y + collarH, z + collarR]);
     } else {
       const half = trunkR + 0.12;
-      push([x - half, y, z - half], [x + half, y + yHi, z + half]);
+      push([x - half, y, z - half], [x + half, y + yHi, z + half],
+           { ax: x, ay: y, az: z, bx: x, by: y + yHi, bz: z, r: trunkR + 0.05 });
     }
   }
 
