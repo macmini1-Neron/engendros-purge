@@ -15,6 +15,7 @@ import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
 import { ForestAtmosphere } from './forestatmos.js';
+import { HitboxDebug } from './debughitbox.js';
 import { ForestScene } from './forestscene.js';
 import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
@@ -114,6 +115,7 @@ class Game {
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
+    this.dbgHitboxes = false; // F3+B collision-hitbox overlay toggle (see debughitbox.js)
     this.hitch = new HitchLogger(); installStress(this); // dev perf stress harness (GAME.stress) — never auto-runs
     this._stressName = null;
     this._drawDist = 0; this._showFps = false; this._fpsEl = null; this._culling = false;
@@ -138,6 +140,7 @@ class Game {
     this.forestAtmos = (this.mapId === 'forest') ? new ForestAtmosphere(this.engine.scene) : null; // ?map=forest pollen + fireflies
     this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
+    this.hitboxDebug = new HitboxDebug(this.engine.scene); // F3+B collision-hitbox overlay (Minecraft-style, dev)
     // Terrain excavation: shovel pits + explosion craters, with gravity-collapse of undermined
     // walls/trees/props. Wires its DeformField into world.terrain; harmless on maps without terrain
     // (empty field fast-returns 0). MUST follow forest/build/demoBuilding (its SupportScan reads them).
@@ -367,6 +370,7 @@ class Game {
       if (code === 'F3') { this.f3 = !this.f3; return; }
       if (code === 'F8') { this._fixedStep = !this._fixedStep; this._acc = 0; const _fs = this._fixedStep; this.hud.bigMessage('FIXED-STEP ' + (_fs ? 'ON · 60Hz' : 'OFF')); console.log('[fixed-step] ' + (_fs ? 'ON (60 Hz sim + camera interp)' : 'OFF (variable dt)')); return; } // M4 dev toggle (mirrors ?fixed=1)
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
+      if (code === 'KeyB' && this.input.isDown('F3')) { this.dbgHitboxes = !this.dbgHitboxes; this.f3 = !this.f3; this.hud.bigMessage('HITBOXY ' + (this.dbgHitboxes ? 'ON' : 'OFF')); return; } // F3+B toggles the collision-hitbox overlay (Minecraft); toggle f3 back so the chord doesn't flip the text overlay (and B doesn't change fire-mode)
       // dev fly-cam toggle (solo only): N, or Ctrl+F
       if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
       if (this.mpMenuOpen) {
@@ -1160,6 +1164,7 @@ class Game {
     else if (this._culling) { this._restoreVisibility(); this._culling = false; }
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
     if (interp) this.engine.camera.position.lerpVectors(this._camPrev, this._camCur, alpha); // smooth between ticks
+    if (this.hitboxDebug) this.hitboxDebug.update(this, this.dbgHitboxes && this.state === 'playing'); // F3+B collision overlay
     this.engine.update(frameDt); this.engine.render();
     if (interp) this.engine.camera.position.copy(this._camCur); // restore TRUE pos for F3/devconsole/raycasts/next prev
     { const _ri = this.engine.renderer.info.render; this._draws = _ri.calls; this._tris = _ri.triangles; } // F3 stats — read post-render (Three.js resets info per render)
