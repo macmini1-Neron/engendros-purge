@@ -5,6 +5,7 @@
 import { describeHand } from './poker/handeval.js';
 import { equity, outs } from './poker/odds.js';
 import { clampRaise, presetRaiseTo, presetRaiseToBB, raiseBreakdown } from './poker/betsizing.js';
+import { actionButtons } from './poker/actionui.js'; // pure legality→button mapping (node-tested)
 import { mountChipSkinPicker, mountCardBackPicker } from './poker/skinpicker.js'; // shared cosmetic pickers (also used by the co-op ROOM lobby in mp.js)
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
@@ -521,7 +522,8 @@ export class PokerDomRenderer {
       a.innerHTML = `<div class="pk-wait">${p.phase === 'handresult' ? 'Next hand…' : (who ? who + ' to act…' : '…')}</div>`;
       return;
     }
-    const callLabel = L.canCheck ? 'CHECK' : ('CALL ' + L.callAmount);
+    const ab = actionButtons(L);                                   // pure legality→buttons (label / fold-confirm / raise-available)
+    const callLabel = ab.callcheck.label;
     // hybrid raise control (research-backed): preset buttons + slider(snap 5) + numeric + ± steppers + wheel/keys
     const v = p.view, bb = (v && v.bb) || (p.tour && p.tour.bb) || 20;
     const ctx = { pot: (v && v.pot) || 0, callAmount: L.callAmount, currentBet: (v && v.currentBet) || 0, minRaiseTo: L.minRaiseTo, maxRaiseTo: L.maxRaiseTo, bb };
@@ -538,7 +540,7 @@ export class PokerDomRenderer {
     a.innerHTML = `
       <button class="pk-btn" id="pk-fold">FOLD</button>
       <button class="pk-btn call" id="pk-callcheck">${callLabel}</button>
-      ${L.canRaise ? `<div class="pk-raise">
+      ${ab.raise.available ? `<div class="pk-raise">
         <div class="pk-presets">
           <button class="pk-preset" data-min="1">MIN</button>
           ${presets.map((q, i) => `<button class="pk-preset" data-p="${i}">${q[0]}</button>`).join('')}
@@ -554,7 +556,7 @@ export class PokerDomRenderer {
         <div class="pk-raiseleft" id="pk-raiseleft" style="font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;text-align:center;margin-top:3px">${fmtLeft(this._raiseTo)}</div>
       </div>` : ''}`;
     const fold = a.querySelector('#pk-fold');
-    if (L.canCheck) {
+    if (ab.fold.confirm) {
       // CHECK is free → guard FOLD behind a visual demote + arm→confirm so a misclick can't throw a free hand
       fold.classList.add('muted');
       fold.title = 'You can check for free — click again to fold anyway';
@@ -567,7 +569,7 @@ export class PokerDomRenderer {
       fold.addEventListener('click', () => this.cb.onAct({ type: 'fold' })); // facing a bet → folding is a normal one-click action
     }
     a.querySelector('#pk-callcheck').addEventListener('click', () => this.cb.onAct(L.canCheck ? { type: 'check' } : { type: 'call' }));
-    if (L.canRaise) {
+    if (ab.raise.available) {
       const rng = a.querySelector('#pk-raiserng'), num = a.querySelector('#pk-raisenum'), btn = a.querySelector('#pk-raise');
       const left = a.querySelector('#pk-raiseleft');
       const setRaise = (val) => {                                 // one shared amount; everything snaps to 5 + clamps to legal
@@ -578,7 +580,7 @@ export class PokerDomRenderer {
       };
       if (rng) rng.addEventListener('input', () => setRaise((L.maxRaiseTo - (+rng.value)) < 5 ? L.maxRaiseTo : +rng.value)); // the slider's top step lands short of an odd all-in max → snap the very top to the exact all-in
       num.addEventListener('change', () => setRaise(+num.value));
-      num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } });
+      num.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.repeat) { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } }); // !e.repeat: holding Enter must not auto-repeat the raise
       a.querySelector('#pk-rminus').addEventListener('click', () => setRaise(this._raiseTo - bb));
       a.querySelector('#pk-rplus').addEventListener('click', () => setRaise(this._raiseTo + bb));
       a.querySelectorAll('.pk-preset').forEach((b) => b.addEventListener('click', () => setRaise(b.dataset.min ? L.minRaiseTo : presets[+b.dataset.p][1]())));

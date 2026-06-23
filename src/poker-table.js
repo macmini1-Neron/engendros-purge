@@ -73,6 +73,7 @@ export class PokerTable {
     this._aborted = false;
     this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = []; // co-op: dropped seats, their reconnect-grace timers, and pending reconnect re-keys
     this._lastAct = null; this._actSeq = 0; // last action type + a counter → renderer plays check/fold SFX on a new one
+    this._snapSeq = 0; this._lastSnapSeq = 0; // co-op snapshot ordering: host bumps _snapSeq per broadcast (NEVER reset → monotonic across games), client drops any pksnap older than _lastSnapSeq
   }
 
   _toast(msg, color) { if (this.game.hud && this.game.hud.toast) this.game.hud.toast(msg, color); }
@@ -230,6 +231,7 @@ export class PokerTable {
   }
 
   enterCoopClient(d) { // client side, on 'pkstart' — by now the client already ACCEPTED (anted) in the lobby
+    if (this.coop && this.role === 'client' && this.active && this.phase !== 'over' && ((d && d.buyIn) | 0) === (this.coopBuyIn | 0)) return; // ignore a duplicate pkstart for the LIVE table we're already seated at → never _spend twice. (phase!=='over': a NEW same-buy-in rematch after a game ended must still seat us, even though active/coopBuyIn carry over until we leave.)
     this._ensureRenderer();
     this._reset();
     this._applyChipSkin();                          // chips stay PER-PLAYER: the client's own seat renders its own chip skin
@@ -281,6 +283,7 @@ export class PokerTable {
 
   onSnap(payload) { // client side, on 'pksnap'
     if (this.role !== 'client') return;
+    if (payload && payload.seq != null) { if (payload.seq < (this._lastSnapSeq | 0)) return; this._lastSnapSeq = payload.seq; } // drop a stale/out-of-order snapshot (rare on the reliable channel, but never regress phase/board)
     this.clientSnap = payload;
     if (payload.cardBack && CARD_BACKS[payload.cardBack] && payload.cardBack !== getCardBackSkin()) setCardBackSkin(payload.cardBack); // keep the table deck synced to the host (late-join / re-sync)
     this.phase = payload.phase;
@@ -292,7 +295,7 @@ export class PokerTable {
   }
 
   hostClientAct(from, action) { // host side, on 'pkact'
-    if (!this.coop || this.role !== 'host' || this.phase !== 'playing' || !this.hand) return;
+    if (!this.coop || this.role !== 'host' || this.phase !== 'playing' || !this.hand || this._hold > 0) return; // reject during the presentation hold (the client's controls are hidden then anyway)
     const legal = legalActions(this.hand);
     if (!legal || legal.seat !== from) return; // authority: only the actor, only on their turn
     this._applyAndAdvance(action);
@@ -556,7 +559,7 @@ export class PokerTable {
       phase: this.phase,
       result: (this.phase === 'handresult' || this.phase === 'over') && this.hand ? this.hand.result : null,
       over: this.phase === 'over',
-      youId: id, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), moneyPayout, lastAct: this._lastAct,
+      youId: id, names: this.names, skins: this.skins, cardBack: getCardBackSkin(), moneyPayout, lastAct: this._lastAct, seq: this._snapSeq | 0,
       // live refs to the bank's chip sets — READ-ONLY contract (clients get a JSON copy via pksnap; the
       // host renderer must only read these, never mutate them, or it would break conservation).
       chips: this.chipbank ? { stacks: this.chipbank.stacks, bets: this.chipbank.bets, pot: this.chipbank.pot,
@@ -566,6 +569,7 @@ export class PokerTable {
 
   _broadcastPoker() {
     if (!this.coop || this.role !== 'host' || !this.tour) return;
+    this._snapSeq = (this._snapSeq | 0) + 1;   // one monotonic stamp per broadcast → clients drop anything older
     const net = this.game.mp.net;
     for (const p of this.tour.players) {
       if (p.id === this.youId) continue;       // host renders its own view locally
@@ -601,7 +605,7 @@ export class PokerTable {
   _reset() {
     this.active = false; this.phase = 'lobby'; this.tour = null; this.hand = null;
     this.chipbank = null; this._lastCommitted = {};
-    this.clientSnap = null; this._netT = 0; this._overT = 0; this._anteWait = 0; this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = []; this._hold = 0; this._lastAct = null; this._actSeq = 0;
+    this.clientSnap = null; this._netT = 0; this._overT = 0; this._anteWait = 0; this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = []; this._hold = 0; this._lastAct = null; this._actSeq = 0; this._lastSnapSeq = 0; // NB: _snapSeq is NOT reset (host counter stays monotonic across games so a client never false-drops a new game's snaps)
     this._credited = false; this._refunded = false; this._aborted = false; this.coopBuyIn = 0; this._paid = 0;
     this._gathering = false; this._invited = new Set(); this._confirmed = new Set(); this._anteDeadline = 0; // co-op ante-ack window (C1)
   }

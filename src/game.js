@@ -75,7 +75,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-23 03:24';
+const GAME_BUILD = '2026-06-23 12:02';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -330,6 +330,11 @@ class Game {
       // delivered here without dropping fullscreen, so we drive BOTH pause and resume from it. Handled before
       // the state/console guards so it also works while paused — but we never steal the dev-console's own Esc.
       // (On FF/Safari Esc additionally releases pointer-lock and the 'unlock' handler pauses as a fallback.)
+      if (code === 'Escape' && !(this.devconsole && this.devconsole.open) && this.state === 'poker') {
+        if (ev) ev.preventDefault();
+        this.closePoker();                                          // Esc leaves the poker den (same path as the on-screen LEAVE button)
+        return;
+      }
       if (code === 'Escape' && !(this.devconsole && this.devconsole.open) && (this.state === 'playing' || this.state === 'paused')) {
         if (ev) ev.preventDefault();
         if (this.state === 'paused' || this.mpMenuOpen) this.resume(); else this.pause();

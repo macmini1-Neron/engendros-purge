@@ -88,3 +88,34 @@ test('busted players keep their stack at zero and are removed from the alive rin
   assert.equal(loser.stack, 0);
   assert.equal(t.alivePlayers().length, 1);
 });
+
+// settleHand's place assignment, exercised directly with a hand-crafted complete hand
+const completeHand = (seats) => ({ street: 'complete', seats });
+
+test('an exact-commit double bust SHARES the finishing place (a true chop)', () => {
+  const t = new Tournament({ players: players(4), buyIn: 100, rng: mulberry32(1) });
+  t.hand = completeHand([
+    { id: 'P0', committed: 200, stack: 3000 },
+    { id: 'P1', committed: 200, stack: 3000 },
+    { id: 'P2', committed: 500, stack: 0 },
+    { id: 'P3', committed: 500, stack: 0 },   // identical commit to P2 → tie
+  ]);
+  const { eliminated } = t.settleHand();
+  assert.deepEqual(eliminated.slice().sort(), ['P2', 'P3']);
+  assert.equal(t.players.find((p) => p.id === 'P2').place, 3, '2 alive after → tied bustouts share place 3');
+  assert.equal(t.players.find((p) => p.id === 'P3').place, 3, 'both tied players get the SAME place');
+  assert.equal(t.over, false);
+});
+
+test('an unequal double bust orders by chips committed (more-committed finishes higher)', () => {
+  const t = new Tournament({ players: players(4), buyIn: 100, rng: mulberry32(1) });
+  t.hand = completeHand([
+    { id: 'P0', committed: 200, stack: 3000 },
+    { id: 'P1', committed: 200, stack: 3000 },
+    { id: 'P2', committed: 700, stack: 0 },   // more committed → higher place
+    { id: 'P3', committed: 300, stack: 0 },
+  ]);
+  t.settleHand();
+  assert.equal(t.players.find((p) => p.id === 'P2').place, 3);
+  assert.equal(t.players.find((p) => p.id === 'P3').place, 4);
+});
