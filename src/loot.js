@@ -18,14 +18,16 @@ const SUPPLY_DROP_FALL_SPEED = 3.4; // unchanged from the old Su-24 era — the 
 // Survival inventory items — held things that are NOT weapons (consumables/throwables/materials/callables).
 // Kept PARALLEL to WEAPONS so the weapon pipe (WEAPON_ORDER / ownedOrder / refillAll) stays clean.
 // `mesh` reuses LootManager._pickupMesh(kind); the molotov/flare reuse their own builders.
+// `value` = Armory price (account item ledger). Only items WITH a value appear in the Armory catalog and
+// are buyable/sellable/wagerable; the rest stay run-scavenged (no account ownership) for now.
 export const ITEM_DEFS = {
-  medkit:  { name: 'Medkit',       class: 'consumable', icon: '🩺', mesh: 'medkit', heal: 35 },
-  food:    { name: 'Field Ration', class: 'consumable', icon: '🥫', mesh: 'food',   food: 40 },
-  armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50 },
-  ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo' },
+  medkit:  { name: 'Medkit',       class: 'consumable', icon: '🩺', mesh: 'medkit', heal: 35, value: 120 },
+  food:    { name: 'Field Ration', class: 'consumable', icon: '🥫', mesh: 'food',   food: 40, value: 60 },
+  armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50, value: 150 },
+  ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo', value: 80 },
   dshkammo: { name: 'DShK Ammo Box', class: 'consumable', icon: '🟦', mesh: 'dshkammo' },
   fiftyammo: { name: '12.7mm Ammo Can', class: 'consumable', icon: '🟩', mesh: 'fiftyammo' }, // resupplies the rooftop heavy MG — used at the gun, not on hand weapons
-  splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint' },
+  splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint', value: 50 },
   airbeacon: { name: 'Vysílačka',  class: 'callable',   icon: '📡', mesh: 'airbeacon' },
   flare:   { name: 'Signal Flare', class: 'callable',   icon: '🔆', mesh: 'flare' },
   grenade: { name: 'Frag Grenade', class: 'throwable',  icon: '💣', mesh: 'grenade', fuse: 1.6 },
