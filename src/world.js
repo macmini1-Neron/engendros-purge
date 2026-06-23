@@ -1,6 +1,7 @@
 // world.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
 import { MeshBuilder, TAU, chc, clamp, lerp, makeRNG, randRange, rayAABB, rng, shade, voxelMaterial } from './util.js';
+import { refineBoxHit } from './raycollide.js';
 import { SpatialGrid } from './grid.js';
 import { CONSTELLATIONS, DAY_FRAC, FOLIAGE_SLOW, NIGHT_CYCLE, SKYC, STEP_UP, STRUCT_FX_COLOR } from './tuning.js';
 import { inThicket } from './foliage.js';
@@ -53,6 +54,8 @@ export class World {
     this._navLinks = [];             // vertical stair links {x0,z0,y0,x1,z1,y1} for the layered horde nav (navgraph.js); _stairs registers them
     this.cullProps = [];             // static decorative meshes eligible for draw-distance culling (Game._cullByDistance)
     this.grid = new SpatialGrid();   // spatial index over `boxes` (built after the map, addBox on runtime adds)
+    this._exN = { nx: 0, ny: 0, nz: 0 };                                   // capsule-normal scratch (zero-alloc hot path)
+    this._refine = (b, ox, oy, oz, dx, dy, dz, t) => refineBoxHit(b, ox, oy, oz, dx, dy, dz, t, null); // narrowphase during the walk (no normal needed yet)
     this.spawns = [];
     this.lootSpots = [];
     this.mapId = (game.mapId === 'steppe') ? 'steppe' : (game.mapId === 'demo') ? 'demo' : (game.mapId === 'forest') ? 'forest' : 'arena';
@@ -530,7 +533,7 @@ export class World {
     const ignored = Array.isArray(ignore) ? ignore : null;
     const filter = typeof ignore === 'function' ? ignore                       // predicate form: keep a box when it returns true (e.g. b => !b.foliage)
       : (ignore != null) ? (b => !(b === ignore || (ignored && ignored.includes(b)))) : null;
-    const gh = this.grid.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, filter);
+    const gh = this.grid.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, filter, this._refine);
     let best = gh ? gh.t : maxDist, hitBox = gh ? gh.box : null;
     if (this.hasTerrain) {
       const tg = this._rayTerrain(origin, dir, best); // march vs the heightfield (feet placement / decals / aim-down)
@@ -543,12 +546,16 @@ export class World {
       const n = this.terrain.terrainNormalAt(point.x, point.z); normal.set(n.x, n.y, n.z);
     }
     if (hitBox && hitBox !== 'ground') {
-      const ex = Math.min(Math.abs(point.x - hitBox.min.x), Math.abs(point.x - hitBox.max.x));
-      const ey = Math.min(Math.abs(point.y - hitBox.min.y), Math.abs(point.y - hitBox.max.y));
-      const ez = Math.min(Math.abs(point.z - hitBox.min.z), Math.abs(point.z - hitBox.max.z));
-      if (ex <= ey && ex <= ez) normal.set(point.x < (hitBox.min.x + hitBox.max.x) / 2 ? -1 : 1, 0, 0);
-      else if (ey <= ez) normal.set(0, point.y < (hitBox.min.y + hitBox.max.y) / 2 ? -1 : 1, 0);
-      else normal.set(0, 0, point.z < (hitBox.min.z + hitBox.max.z) / 2 ? -1 : 1);
+      if (hitBox.cap && refineBoxHit(hitBox, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best, this._exN) != null) {
+        normal.set(this._exN.nx, this._exN.ny, this._exN.nz);              // exact capsule surface normal
+      } else {
+        const ex = Math.min(Math.abs(point.x - hitBox.min.x), Math.abs(point.x - hitBox.max.x));
+        const ey = Math.min(Math.abs(point.y - hitBox.min.y), Math.abs(point.y - hitBox.max.y));
+        const ez = Math.min(Math.abs(point.z - hitBox.min.z), Math.abs(point.z - hitBox.max.z));
+        if (ex <= ey && ex <= ez) normal.set(point.x < (hitBox.min.x + hitBox.max.x) / 2 ? -1 : 1, 0, 0);
+        else if (ey <= ez) normal.set(0, point.y < (hitBox.min.y + hitBox.max.y) / 2 ? -1 : 1, 0);
+        else normal.set(0, 0, point.z < (hitBox.min.z + hitBox.max.z) / 2 ? -1 : 1);
+      }
     }
     return { dist: best, point, normal, box: (hitBox && hitBox !== 'ground') ? hitBox : null };
   }
