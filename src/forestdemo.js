@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, resolveHit } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs } from './destruct.js';
 import { rr, voxelMaterial, foliageFadeMaterial, makeRNG } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
 
@@ -216,7 +216,7 @@ export class ForestDemo {
     const groundAt = this.world.terrain ? (gx, gz) => this.world.terrain.terrainHeightAt(gx, gz) : null;
     const body = makeHinge({ pivot: [rec.x, y0 + split.breakY, rec.z], dirXZ: [dx, dz], length, radius: Math.max(0.22, rec.trunkR || 0.22), seed: sd, obstacles: [], groundAt });
     // logged=false → update() registers the resting-log collision box ONCE the hinge settles (see _registerFallenLog)
-    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, topLeafMesh });
+    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, topWoodMesh, topLeafMesh });
     if (this.debris) this.debris.burst('splints', [rec.x, y0 + split.breakY, rec.z], sd, undefined, [dx, 0, dz]);
     rec._fellDx = dx; rec._fellDz = dz; rec._fellSeed = sd;
     this._emitForest('fell', rec.id, { dx, dz, seed: sd });   // host-auth: clients replay the identical fall (same dir + seed → same FallingBody)
@@ -241,27 +241,32 @@ export class ForestDemo {
                   height: maxA[1] - minA[1],   // fire reads owner.height → keeps a downed log's flame low (not a 12 m tree column)
                   fallingRef: f, burntOut: !!f.charred, consumed: false, boxes: [] };  // charred logs already burnt → not flammable
     part.downer = log;
-    // helper: an axis-segment box [t0,t1] of the log, padded by `pad` in XZ and `padY` up; flags optional
-    const seg = (t0, t1, pad, padY, foliage, thicket) => {
-      const x0 = ax + (bx - ax) * t0, z0 = az + (bz - az) * t0, x1 = ax + (bx - ax) * t1, z1 = az + (bz - az) * t1;
-      const y0 = ay + (by - ay) * t0, y1 = ay + (by - ay) * t1;
-      const gg = this.world.terrain ? Math.min(this.world.terrain.terrainHeightAt(x0, z0), this.world.terrain.terrainHeightAt(x1, z1)) : 0;
-      const mn = [Math.min(x0, x1) - pad, Math.min(y0, y1, gg), Math.min(z0, z1) - pad];
-      const mx = [Math.max(x0, x1) + pad, Math.max(y0, y1, gg) + padY, Math.max(z0, z1) + pad];
-      const box = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: log, tree: true, dmat: matName, dpart: id };
-      if (foliage) box.foliage = true; if (thicket) box.thicket = true;
-      log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+    // ── 1:1 COLLISION HULL ───────────────────────────────────────────────────────────────────────
+    // Bin the ACTUAL fallen geometry into tight per-slice AABBs that follow the log's real heading and
+    // rise ONLY where wood/branches are — so you walk UNDER a raised crown and step OVER the bole. This
+    // replaces the old two FAT seg() boxes (one spanned the whole diagonal as an axis-aligned block; the
+    // crown one was a 5 m cube), which neither hugged the log nor let you pass between the branches.
+    f.pivot.updateWorldMatrix(true, true);                       // settle pose is baked → world verts are final
+    const axis2 = [b.dirXZ[0], b.dirXZ[1]], org2 = [ax, az];
+    const addBinned = (mesh, foliage, thicket, binLen, maxBins, crossBins) => {
+      const g = mesh && mesh.geometry, pos = g && g.attributes && g.attributes.position;
+      if (!pos) return;
+      for (const bb of binFallenAABBs(pos.array, mesh.matrixWorld.elements, axis2, org2, binLen, maxBins, crossBins)) {
+        // small aim/clearance margin; NOT clamped to ground → a branch-propped crown keeps the gap beneath it
+        const box = { min: new THREE.Vector3(bb.min[0] - 0.06, bb.min[1] - 0.06, bb.min[2] - 0.06),
+                      max: new THREE.Vector3(bb.max[0] + 0.06, bb.max[1] + 0.06, bb.max[2] + 0.06),
+                      downer: log, tree: true, dmat: matName, dpart: id };
+        if (foliage) box.foliage = true; if (thicket) box.thicket = true;
+        log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+      }
     };
-    // WOOD CORE — the snapped trunk, solid: you snag on the downed bole. (No leaves → no fade; M4 stretch.)
-    seg(0, 0.62, r, 2 * r, false, false);
-    // LEAF END — the crown lying on the ground: a wide foliage+thicket volume you WADE INTO (slowed,
-    // concealed). ONLY when the fallen crown actually carries leaves (f.topLeafMesh) — a charred/bare log
-    // has none, so skip it, else a 20×9×11 m invisible soft-cover box floats where the burnt crown is
-    // (bullets pass, movement slows, nothing rendered). The solid wood core already covers the bole.
-    if (f.topLeafMesh) {
-      const cw = Math.min(Math.max((rec && rec.crownHW) || 1.2, 0.8), 5.0);
-      seg(0.5, 1.0, cw, Math.max(2 * r, cw * 1.4), true, true);
-    }
+    // WOOD CORE + BRANCHES — solid. crossBins=3 splits the bole from side-branches across the axis so
+    // there's real air to walk between them (a 2-D bin in the log's own frame), not one box per slice.
+    addBinned(f.topWoodMesh, false, false, 1.0, 7, 3);
+    // FALLEN CROWN — the leaves on the ground: foliage (shoot/conceal through) + thicket (wade-in slow),
+    // hugging the real leaf clusters. ONLY when the crown actually carries leaves (charred/bare logs skip
+    // it → no phantom soft-cover box floating where a burnt crown's leaves used to be).
+    if (f.topLeafMesh) addBinned(f.topLeafMesh, true, true, 1.4, 6);
     this.logs.push(log);
   }
 
