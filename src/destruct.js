@@ -476,6 +476,15 @@ export function snapPlan(fullHeight, hitY, baseY, minFrac = 0.08, maxFrac = 0.92
   return { breakAt, remainFrac: breakAt };
 }
 
+// Seeded flat-fall decision: once a felled top settles, does it DETACH and lie FLAT on the ground (true)
+// or stay PROPPED on its stump (false)? A high/precarious break (breakFrac > 0.38) would wobble on a thin
+// stump top, so it stays propped far less often (10 %) than a low break (30 %). Drawn from the tree's fell
+// seed so the host, every client, and late joiners reach the SAME outcome with no extra co-op event. PURE.
+export function flatFalls(seed, breakFrac) {
+  const propChance = breakFrac > 0.38 ? 0.10 : 0.30;
+  return ((((seed >>> 0) * 2654435761) >>> 0) / 4294967296) >= propChance;
+}
+
 // Partition a NON-INDEXED triangle-soup geometry into bins along ONE LOCAL axis component, by each
 // triangle's centroid. The companion to binFallenAABBs (which makes COLLISION boxes from WORLD verts);
 // this makes per-segment GEOMETRY in the mesh's own LOCAL space, so the caller builds one Mesh per bin

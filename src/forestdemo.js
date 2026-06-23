@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells, snapPlan, splitGeomAtY } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells, snapPlan, splitGeomAtY, flatFalls } from './destruct.js';
 import { rr, voxelMaterial, foliageFadeMaterial, makeRNG } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
 
@@ -20,6 +20,10 @@ const FOLIAGE_OPAQUE = voxelMaterial();
 const FOLIAGE_FADE = foliageFadeMaterial(FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR);
 
 const _axis = new THREE.Vector3();
+const _v = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _m = new THREE.Matrix4();
+const _my = new THREE.Matrix4();
 const ri = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // crush class → ballistics: saplings are WOOD (tier 1, a rifle fells them); grown trees + oak are
 // TRUNK (tier 2, need an HMG+). HP from the demo so felling stays responsive (a few hits, not a magazine).
@@ -48,6 +52,7 @@ export class ForestDemo {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
     this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.props = []; this.FALLING = []; this.windy = [];
     this._sinking = [];   // logs being destroyed: sink-into-ground animation before the mesh is removed (no instant poof)
+    this._dropping = [];  // felled tops that detach + fall FLAT to the ground (vs stay propped on the stump)
     this._frng = makeRNG(0x6f7e57);   // SEEDED layout RNG → every co-op peer builds the IDENTICAL forest (id→tree matches, so a host-synced fell/char/burn lands on the right tree)
     this._t = 0; this._idc = 0; this._reserved = [];
     this._fading = new Set();   // tree/bush recs whose leaf mesh is currently on the near-camera fade material
@@ -269,12 +274,35 @@ export class ForestDemo {
       const pivot = new THREE.Group(); pivot.position.set(rec.x, y0 + breakY, rec.z); pivot.add(top); this.scene.add(pivot);
       const length = Math.max(0.5, prevHeight - breakY);
       const groundAt = this.world.terrain ? (gx, gz) => this.world.terrain.terrainHeightAt(gx, gz) : null;
-      const body = makeHinge({ pivot: [rec.x, y0 + breakY, rec.z], dirXZ: [dx, dz], length, radius: Math.max(0.22, rec.trunkR || 0.22), seed: sd, obstacles: [], groundAt });
-      this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, logId, topWoodMesh, topLeafMesh });
+      // collision: the falling top rests against nearby BUILDINGS + other TREES instead of clipping through —
+      // gather the solid AABBs in the fall arc (leaves excluded; not our own dropped boxes).
+      const obstacles = this._fallObstacles(rec, dx, dz, length);
+      const body = makeHinge({ pivot: [rec.x, y0 + breakY, rec.z], dirXZ: [dx, dz], length, radius: Math.max(0.22, rec.trunkR || 0.22), seed: sd, obstacles, groundAt });
+      this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, logId, breakY, fullH, seed: sd, topWoodMesh, topLeafMesh });
       if (this.debris) this.debris.burst('splints', [rec.x, y0 + breakY, rec.z], sd, undefined, [dx, 0, dz]);
     }
     rec._fellDx = dx; rec._fellDz = dz; rec._fellSeed = sd; rec._snapBy = +breakAt.toFixed(3);
     this._emitForest('fell', rec.id, { dx, dz, seed: sd, by: +breakAt.toFixed(3) });   // host-auth: clients replay the identical fall + cut height
+  }
+
+  // Gather the SOLID collision AABBs the falling top could strike — nearby buildings, props and OTHER
+  // trees' boles inside the fall arc — so the hinge rests AGAINST them instead of clipping through. Leaves
+  // (foliage) and this tree's own stump/bole bands are excluded. Pure read of the XZ grid, capped for cost.
+  // Returned ARRAY-indexed ({min:[x,y,z],max:[x,y,z]}) as makeHinge/pointInAABB expect (not THREE.Vector3).
+  _fallObstacles(rec, dx, dz, length) {
+    const grid = this.world && this.world.grid; if (!grid) return [];
+    const ex = rec.x + dx * length, ez = rec.z + dz * length, pad = 2.5;
+    const minx = Math.min(rec.x, ex) - pad, maxx = Math.max(rec.x, ex) + pad;
+    const minz = Math.min(rec.z, ez) - pad, maxz = Math.max(rec.z, ez) + pad;
+    const out = [];
+    for (const b of grid.queryAABB(minx, minz, maxx, maxz)) {
+      if (b.foliage) continue;                                 // leaves never stop a fall
+      if (b.downer === rec) continue;                          // our own stump/bole bands
+      if (!(b.tree || b.struct || b.building || b.prop)) continue;
+      out.push({ min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] });
+      if (out.length >= 40) break;
+    }
+    return out;
   }
 
   // build a BufferGeometry from a {positions, colors?, normals?, uvs?} bag (splitGeomAtY output)
@@ -394,6 +422,84 @@ export class ForestDemo {
     for (const bx of log.boxes) { bx.min.y -= drop; bx.max.y -= drop; }
     if (log.part) { log.part.min[1] -= drop; log.part.max[1] -= drop; }
     for (const seg of (log.segs || [])) { if (seg.part) { seg.part.min[1] -= drop; seg.part.max[1] -= drop; } }
+  }
+
+  // ── FLAT-FALL ──────────────────────────────────────────────────────────────────────────────────────
+  // Once a felled top has SETTLED on its stump, decide — SEEDED off the fell seed, so host + every client
+  // (and late joiners) agree without a new event — whether it stays PROPPED on the stump or DETACHES and
+  // lays FLAT on the ground. A high/precarious break would wobble on a thin stump top, so it stays propped
+  // far less often (10 %) than a low break (30 %); the rest fall flat. Returns true ⇒ falls flat.
+  _flatFalls(f) {
+    if (!this.world.terrain) return false;                     // flat arena/tests: hinge already rests on y=0
+    return flatFalls(f.seed, f.fullH > 0 ? f.breakY / f.fullH : 0);
+  }
+  // The flat rest pose, computed PHYSICALLY so the laid-flat log never buries into a slope: drop the hinge
+  // pivot (the butt) to ground level and SIMULATE a fresh fall from there with the same direction, obstacles
+  // and terrain. A rigid rod stops at its FIRST ground/obstacle contact (the 5-point groundAt sampling), so
+  // it rests ON a hillside / bump instead of forcing a straight line through it. Deterministic (fixed seed +
+  // deterministic terrain/obstacles) → host + clients + late joiners agree. Returns { pivotY, angle }.
+  _flatTarget(f) {
+    const b = f.body, terr = this.world.terrain;
+    const r = Math.max(0.2, (f.rec && f.rec.trunkR) || b.radius || 0.25);
+    const groundY = (terr ? terr.terrainHeightAt(b.pivot[0], b.pivot[2]) : 0) + r;
+    const sim = makeHinge({ pivot: [b.pivot[0], groundY, b.pivot[2]], dirXZ: b.dirXZ, length: b.length, radius: b.radius, seed: 1, obstacles: b.obstacles, groundAt: b.groundAt });
+    let g = 0; while (!sim.settled && g++ < 4000) stepBody(sim, 1 / 60);
+    return { pivotY: groundY, angle: sim.angle };
+  }
+  // Did the top come to rest on the GROUND (its own stump / the terrain) rather than leaning against an
+  // OBSTACLE (a building / a neighbouring tree)? Only a ground rest may detach + lay flat — a top resting
+  // against a solid neighbour must STAY there, or laying it flat would clip it straight through the obstacle.
+  _groundSettled(f) {
+    const b = f.body; if (!b.groundAt) return true;            // flat arena/tests: always a ground rest
+    for (const fr of [0.5, 0.75, 0.92, 1.0]) {
+      const s = b.length * fr, sin = Math.sin(b.angle), cos = Math.cos(b.angle);
+      const px = b.pivot[0] + sin * s * b.dirXZ[0], py = b.pivot[1] + cos * s, pz = b.pivot[2] + sin * s * b.dirXZ[1];
+      if (py - b.radius <= b.groundAt(px, pz) + 0.6) return true;
+    }
+    return false;                                              // no sample near the terrain ⇒ it's hung up on an obstacle
+  }
+  // Would laying this top FLAT at `tgt` drive its wood into the terrain? A wide-crowned species (thick
+  // side-boughs) can't lie flat without its down-side boughs burying metres deep — those trees must STAY
+  // propped (their elevated natural lean keeps the crown in the air). Exact per-vertex test of the wood
+  // geometry at the flat pose vs the terrain under each vertex; deterministic (geometry + terrain).
+  _flatWouldBury(f, tgt) {
+    const wm = f.topWoodMesh, terr = this.world.terrain;
+    if (!wm || !wm.geometry || !wm.geometry.attributes.position || !terr) return false;
+    const pos = wm.geometry.attributes.position.array;
+    const yaw = (f.pivot.children[0] && f.pivot.children[0].rotation.y) || 0;   // the `top` group's tree-yaw
+    _q.setFromAxisAngle(_axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize(), tgt.angle);
+    _m.makeRotationFromQuaternion(_q).multiply(_my.makeRotationY(yaw));          // fall-rotation ∘ yaw (translate added below)
+    const px = f.body.pivot[0], pz = f.body.pivot[2], py = tgt.pivotY;
+    for (let i = 0; i < pos.length; i += 3) {
+      _v.set(pos[i], pos[i + 1], pos[i + 2]).applyMatrix4(_m);
+      if (py + _v.y - terr.terrainHeightAt(px + _v.x, pz + _v.z) < -0.8) return true;   // a wood vert >0.8 m underground
+    }
+    return false;
+  }
+  // Live settle: if seeded to fall flat, it settled on the GROUND (not against an obstacle) and laying it
+  // flat won't bury its boughs, start a short detach-and-lay-flat animation (the _dropping loop eases the
+  // top off the stump, then registers the log). Returns true ⇒ started (caller must NOT register yet);
+  // false ⇒ register where it rests now (propped).
+  _resolveFlatFall(f) {
+    if (!this._flatFalls(f) || !this._groundSettled(f)) return false;
+    const tgt = this._flatTarget(f);
+    if (this._flatWouldBury(f, tgt)) return false;            // wide-bough tree → keep its natural propped lean
+    f.dropping = true; f.dropT = 0; f.dropDur = 0.5;
+    f.dropStartY = f.pivot.position.y; f.dropEndY = tgt.pivotY;
+    f.dropStartAngle = f.body.angle; f.dropEndAngle = tgt.angle;
+    this._dropping.push(f);
+    return true;
+  }
+  // Late-join snapshot: apply the same flat pose with NO animation, so the resting log exists immediately
+  // for any following segdie/propdie replay (the host's flat-vs-propped outcome reproduced from the seed).
+  _applyFlatInstant(f) {
+    if (!this._flatFalls(f) || !this._groundSettled(f)) return;
+    const tgt = this._flatTarget(f);
+    if (this._flatWouldBury(f, tgt)) return;
+    f.body.angle = tgt.angle; f.body.pivot[1] = tgt.pivotY; f.pivot.position.y = tgt.pivotY;
+    _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize();
+    f.pivot.quaternion.setFromAxisAngle(_axis, tgt.angle);
+    f.pivot.updateWorldMatrix(true, true);
   }
 
   // Remove a fallen log (shot apart or burned out): drop its collision boxes, splinter, retire its mesh.
@@ -730,11 +836,26 @@ export class ForestDemo {
   update(dt) {
     this._t += dt; const t = this._t;
     for (const f of this.FALLING) {
-      if (f.body.settled) { if (!f.logged) { f.logged = true; this._registerFallenLog(f); } continue; }   // give the rested log a hitbox once
+      if (f.dropping) continue;                                     // detaching + laying flat → handled by the _dropping loop
+      if (f.body.settled) {                                         // give the rested log a hitbox once (unless it's about to fall flat)
+        if (!f.logged && !this._resolveFlatFall(f)) { f.logged = true; this._registerFallenLog(f); }
+        continue;
+      }
       stepBody(f.body, dt);
       _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize();   // hinge axis ⟂ fall direction
       f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle);
-      if (f.body.settled && !f.logged) { f.logged = true; this._registerFallenLog(f); }   // settled THIS frame → register the log now
+      if (f.body.settled && !f.logged && !this._resolveFlatFall(f)) { f.logged = true; this._registerFallenLog(f); }   // settled THIS frame → register (or start the flat-fall)
+    }
+    // detach-and-lay-flat: ease a felled top down off its stump onto the ground (along the slope), then box it.
+    for (let i = this._dropping.length - 1; i >= 0; i--) {
+      const f = this._dropping[i]; f.dropT += dt; const u = Math.min(1, f.dropT / f.dropDur);
+      const e = u * u * (3 - 2 * u);                                // smoothstep ease
+      f.pivot.position.y = f.dropStartY + (f.dropEndY - f.dropStartY) * e;
+      const ang = f.dropStartAngle + (f.dropEndAngle - f.dropStartAngle) * e;
+      f.body.angle = ang;
+      _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize();
+      f.pivot.quaternion.setFromAxisAngle(_axis, ang);
+      if (u >= 1) { f.body.pivot[1] = f.dropEndY; f.dropping = false; f.logged = true; this._registerFallenLog(f); this._dropping.splice(i, 1); }
     }
     // sink-into-ground animation for destroyed logs (ease-in accelerate down, then drop the mesh)
     for (let i = this._sinking.length - 1; i >= 0; i--) {
@@ -787,6 +908,7 @@ export class ForestDemo {
       if (f && f.rec === t && !f.logged) {
         let g = 0; while (!f.body.settled && g++ < 4000) stepBody(f.body, 1 / 60);
         _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize(); f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle);
+        this._applyFlatInstant(f);                             // late-join: match the host's flat-vs-propped outcome with no animation
         f.logged = true; this._registerFallenLog(f);
       }
     }
