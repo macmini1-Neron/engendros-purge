@@ -57,3 +57,33 @@ test('a client refund returns exactly the buy-in once, and never after a credit'
   pk2._refund();
   assert.equal(c2.meta.bank, 6000, 'no refund after a credit (mutually exclusive)');
 });
+
+// enterCoopClient duplicate-vs-rematch guard (the pkstart idempotency fix)
+function joinStub(bank) {
+  const meta = { bank, chipSkin: 'dice', cardBack: 'default' };
+  let antes = 0;
+  const net = { send(t) { if (t === 'pkante') antes++; }, sendTo() {} };
+  const game = { mp: { isHost: false, myId: 'c1', roster: new Map(), net }, meta, _saveMeta() {}, closePoker() {}, hud: { toast() {} } };
+  return { game, meta, antes: () => antes };
+}
+const pkstart = (buyIn) => ({ buyIn, names: {}, skins: {}, cardBack: 'default' });
+
+test('a duplicate pkstart for the SAME live table is ignored (no double-spend)', () => {
+  const s = joinStub(5000); const pk = new PokerTable(s.game);
+  pk.enterCoopClient(pkstart(500));                 // joins → phase 'playing', active, paid 500
+  assert.equal(s.meta.bank, 4500); assert.equal(s.antes(), 1);
+  pk.enterCoopClient(pkstart(500));                 // duplicate while LIVE → must be dropped
+  assert.equal(s.meta.bank, 4500, 'not charged twice');
+  assert.equal(s.antes(), 1, 'no second ante');
+});
+
+test('a same-buy-in REMATCH after a game ended seats the client again (not a false duplicate)', () => {
+  const s = joinStub(5000); const pk = new PokerTable(s.game);
+  pk.enterCoopClient(pkstart(500));                 // game 1: pay 500
+  assert.equal(s.meta.bank, 4500);
+  pk.onSnap({ seq: 1, over: true, phase: 'over', moneyPayout: 0, cardBack: 'default' }); // LOST → phase 'over', still active
+  assert.equal(pk.phase, 'over'); assert.equal(pk.active, true);
+  pk.enterCoopClient(pkstart(500));                 // host re-deals a new 500 game before we left
+  assert.equal(s.meta.bank, 4000, 'the rematch buy-in WAS charged → client seated, not dropped');
+  assert.equal(s.antes(), 2, 'client ACKed the rematch ante (no bogus pkabort/refund path)');
+});

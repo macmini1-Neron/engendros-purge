@@ -231,7 +231,7 @@ export class PokerTable {
   }
 
   enterCoopClient(d) { // client side, on 'pkstart' — by now the client already ACCEPTED (anted) in the lobby
-    if (this.coop && this.role === 'client' && this.active && ((d && d.buyIn) | 0) === (this.coopBuyIn | 0)) return; // ignore a duplicate pkstart for the table we're already seated at → never _spend the buy-in twice
+    if (this.coop && this.role === 'client' && this.active && this.phase !== 'over' && ((d && d.buyIn) | 0) === (this.coopBuyIn | 0)) return; // ignore a duplicate pkstart for the LIVE table we're already seated at → never _spend twice. (phase!=='over': a NEW same-buy-in rematch after a game ended must still seat us, even though active/coopBuyIn carry over until we leave.)
     this._ensureRenderer();
     this._reset();
     this._applyChipSkin();                          // chips stay PER-PLAYER: the client's own seat renders its own chip skin
