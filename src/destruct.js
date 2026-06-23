@@ -441,6 +441,29 @@ export function binFallenAABBs(positions, m, axis, originXZ, binLen = 1.0, maxBi
   return out;
 }
 
+// 2-WAY split of a NON-INDEXED triangle-soup at a cut along one local axis component, by triangle
+// centroid. Used to RE-snap a bare stump: the lower part stays as the new (shorter) stump, the upper
+// part becomes the falling top — re-zeroed along `comp` by `cut` so its local origin sits at the break
+// (ready to hinge). PURE & node-testable. Returns { lo, hi } each { positions, colors|null, normals|null,
+// uvs|null } (hi's positions shifted down by cut along comp).
+export function splitGeomAtY(pos, col, nor, uv, comp, cut) {
+  const triN = (pos.length / 9) | 0;
+  const mk = () => ({ positions: [], colors: col ? [] : null, normals: nor ? [] : null, uvs: uv ? [] : null });
+  const lo = mk(), hi = mk();
+  for (let t = 0; t < triN; t++) {
+    const o = t * 9;
+    const cen = (pos[o + comp] + pos[o + 3 + comp] + pos[o + 6 + comp]) / 3;
+    const dst = cen <= cut ? lo : hi, shift = dst === hi ? cut : 0;
+    for (let v = 0; v < 3; v++) { const p = o + v * 3; let X = pos[p], Y = pos[p + 1], Z = pos[p + 2];
+      if (shift) { if (comp === 0) X -= shift; else if (comp === 1) Y -= shift; else Z -= shift; }
+      dst.positions.push(X, Y, Z); }
+    if (col) for (let k = 0; k < 9; k++) (dst.colors).push(col[o + k]);
+    if (nor) for (let k = 0; k < 9; k++) (dst.normals).push(nor[o + k]);
+    if (uv) { const ou = t * 6; for (let k = 0; k < 6; k++) (dst.uvs).push(uv[ou + k]); }
+  }
+  return { lo, hi };
+}
+
 // Where a STANDING tree snaps when shot: the break fraction = the hit height up the trunk, clamped so
 // a snap never sits at the very base (a tiny stub) or up in the crown (a half-canopy stub). remainFrac
 // (= breakAt) scales the surviving stump's HP so a tall stump still resists, a short stub dies easily.
