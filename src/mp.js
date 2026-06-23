@@ -614,7 +614,10 @@ export class MP {
       const nm = (d.name || 'Player').slice(0, 14), pid = (typeof d.pid === 'string') ? d.pid : null;
       // same player reconnecting (reload / 2nd tab / network blip) → drop the stale entry first (by stable id, else name)
       const dupe = [...this.roster].find(([id, r]) => id !== from && id !== 'host' && ((pid && r.pid === pid) || (r.name || '').toLowerCase() === nm.toLowerCase()));
-      if (dupe) this._dropPeer(dupe[0], { silent: true });
+      if (dupe) {
+        if (g.poker && g.poker.coop && g.poker.role === 'host') g.poker.hostReattach(dupe[0], from); // poker reconnect: re-attach the seat to the new peer id (re-key next hand, no re-charge)
+        this._dropPeer(dupe[0], { silent: true });
+      }
       if (!this.roster.has(from) && this.roster.size >= 4) { this.net.sendTo(from, 'full', {}); return; }   // co-op cap = 4 (host + 3)
       const skin = (d.skin != null) ? d.skin : this.roster.size;
       const chipSkin = (typeof d.chipSkin === 'string') ? d.chipSkin : 'dice';
@@ -673,6 +676,7 @@ export class MP {
     n.on('structdie', (d) => g.build.applyRemoteDestroy(d.id));                // a structure was destroyed
     // --- co-op poker (host-authoritative; clients are thin terminals) ---
     n.on('pkstart', (d) => { if (!this.isHost) g._enterCoopPoker(d); });                          // host invited me → pay + ante-ack, then wait for the deal (pksnap)
+    n.on('pkresync', (d) => { if (!this.isHost && g._resyncCoopPoker) g._resyncCoopPoker(d); });   // host re-attached me to a live table (reload/blip) → rebuild WITHOUT re-paying
     n.on('pksnap', (d) => { if (!this.isHost && g.poker) g.poker.onSnap(d); });                   // host → my personalised view
     n.on('pkact', (d, from) => { if (this.isHost && g.poker && d) g.poker.hostClientAct(from, d.action); }); // client action → host validates
     n.on('pkleave', (d, from) => { if (this.isHost && g.poker) g.poker.onPeerDisconnect(from); }); // client left the table → eliminate

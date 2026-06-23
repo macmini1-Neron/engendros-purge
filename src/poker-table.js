@@ -24,11 +24,14 @@ import { PokerDomRenderer } from './poker-ui.js';
 // node-unit-testable (tests/poker/coop.test.mjs imports this file directly).
 
 const ACT_SECS = 60;        // per-turn shot clock (host-ticked) — hidden; only the last 15s show a number
+const ACT_SECS_COOP = 22;   // co-op: shorter clock — poker sends no xf so the 10s heartbeat can't catch a frozen-but-connected seat; this is the only backstop that keeps the table moving
 const BOT_THINK = 1.1;      // bot pause before acting (s) — a readable beat so you SEE each bet land before the next player acts
 const SHOWDOWN_SECS = 6.5;  // dwell on a real showdown — long enough to read who won with what (newbie-friendly)
 const FOLD_SECS = 2.5;      // shorter dwell when everyone folded (no combination to read)
 const NET_SNAP = 0.4;       // co-op: re-broadcast cadence so the timer bar animates clientside
+const OVER_REBROADCAST_SECS = 6; // co-op: keep re-sending the terminal 'over' snapshot this long so a client's payout credit survives a dropped packet (idempotent via _credited)
 const ANTE_GATHER_SECS = 8; // co-op: ante-ack window — host waits this long for every invited client to confirm it paid before building the pool
+const DROP_GRACE_SECS = 30; // co-op: a dropped seat keeps its STACK this long (reload/blip grace); it sits out (auto-checks/folds) and only busts if it doesn't reconnect in time
 // Believable dealing: hold ALL action until every hole card has been pitched in (real poker — nobody
 // acts mid-deal). Sized to the renderer's deal-in cadence (poker-scene.js DEAL_STAGGER) × cards + flight.
 const DEAL_ANIM_STAGGER = 0.15; // per-card gap (mirrors poker-scene.js DEAL_STAGGER)
@@ -68,7 +71,7 @@ export class PokerTable {
     this._credited = false;
     this._refunded = false;
     this._aborted = false;
-    this._dropped = new Set();
+    this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = []; // co-op: dropped seats, their reconnect-grace timers, and pending reconnect re-keys
     this._lastAct = null; this._actSeq = 0; // last action type + a counter → renderer plays check/fold SFX on a new one
   }
 
@@ -162,7 +165,7 @@ export class PokerTable {
     if ((buyIn | 0) > 0 && (this.game.meta.bank | 0) < (buyIn | 0)) { this._toast('Not enough for the $' + buyIn + ' buy-in', 0xd23a2a); return; }
     this.names = {}; this.skins = {}; for (const id of ids) { const r = mp.roster.get(id); this.names[id] = (r && r.name) || id; this.skins[id] = (r && r.chipSkin) || 'dice'; }
     this.role = 'host'; this.coop = true; this.mode = 'money'; this.youId = mp.myId;
-    this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set();
+    this.coopBuyIn = buyIn | 0; this._credited = false; this._refunded = false; this._aborted = false; this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = [];
     // INVITE the seated clients FIRST and seat ONLY the ones the invite actually reaches. The prize pool is
     // buyIn × entrants, so a seat that never receives pkstart (a half-open P2P channel → sendTo throws) must
     // NOT count — otherwise the winner would be paid a buy-in nobody collected. A throw drops that seat
@@ -190,6 +193,9 @@ export class PokerTable {
   }
 
   // Host: a client confirmed (via 'pkante') that it actually paid its buy-in → count it toward the pool.
+  // TRUST BOUNDARY: 'pkante' is the client's SELF-REPORT — there is no server, banks are client-local
+  // localStorage, so the host cannot verify the debit actually happened. Co-op poker money therefore
+  // assumes HONEST PEERS and is not cheat-proof (see README → Multiplayer Authority Model).
   onAnte(from) {
     if (!this.coop || this.role !== 'host' || !this._gathering) return;
     if (!this._invited.has(from)) return;                         // only seats we actually invited count
@@ -248,7 +254,28 @@ export class PokerTable {
     this.coopBuyIn = buyIn; this._credited = false; this._refunded = false; this._aborted = false;
     this.active = true; this.phase = 'playing'; this.clientSnap = null;
     this._paid = this._spend(buyIn);                               // client pays own buy-in (affordability checked above)
+    this._anteWait = ANTE_GATHER_SECS * 2 + 2;                     // backstop: if no deal/pkabort arrives in time (lost on teardown), self-refund + bail
     try { this.game.mp.net.send('pkante', {}); } catch (e) {}      // ACK to the host: I paid → count me in the pool (host deals once everyone confirms)
+    if (this.renderer) this.renderer.showTable();
+  }
+
+  // client side, on 'pkresync' — a returning player (reload / blip) re-attaches to its seat. Like
+  // enterCoopClient but DOES NOT _spend or 'pkante': the buy-in was already debited+persisted before the
+  // reload, so charging again would double-bill. The host re-keys the seat at its next hand boundary and
+  // resumes pksnap; until then the renderer shows the table awaiting the next deal.
+  enterCoopResync(d) {
+    this._ensureRenderer();
+    this._reset();
+    this._applyChipSkin();
+    const hostBack = d && d.cardBack; setCardBackSkin(CARD_BACKS[hostBack] ? hostBack : 'default');
+    this.role = 'client'; this.coop = true; this.mode = 'money';
+    this.youId = this.game.mp.myId;
+    this.names = (d && d.names) || {};
+    this.skins = (d && d.skins) || {};
+    this.coopBuyIn = (d && d.buyIn) | 0;
+    this._credited = false; this._refunded = false; this._aborted = false;
+    this._paid = this.coopBuyIn;                  // already paid pre-reload (bank debited+saved) → record it so a later host abort refunds correctly, but do NOT spend again
+    this.active = true; this.phase = 'playing'; this.clientSnap = null; this._anteWait = 0;
     if (this.renderer) this.renderer.showTable();
   }
 
@@ -279,12 +306,35 @@ export class PokerTable {
     }
     if (!this.coop || this.role !== 'host' || !this.tour) return;
     this._dropped.add(id);
+    if (this.tour.players.some((p) => p.id === id && p.stack > 0)) this._dropGrace.set(id, DROP_GRACE_SECS); // keep the stack alive for a reconnect (reload/blip) instead of busting now
     if (this.hand && this.phase === 'playing') {
       forceFold(this.hand, id);
       this._syncChips();
       if (isComplete(this.hand)) this._endHand();
     }
     this._broadcastPoker();
+  }
+
+  // Host: a previously-seated player reconnected under a NEW peer id (reload / network blip). Schedule a
+  // seat re-key at the next safe boundary (between hands — no live hand references the ids) and tell the
+  // rejoining client to rebuild its table WITHOUT charging it again. Returns false if it wasn't seated.
+  hostReattach(oldId, newId) {
+    if (!this.coop || this.role !== 'host' || !this.tour || oldId === newId) return false;
+    if (!this.tour.players.some((p) => p.id === oldId)) return false;       // not a live seat (already fully busted/removed)
+    if (!this._reattach.some(([o]) => o === oldId)) this._reattach.push([oldId, newId]);
+    try { this.game.mp.net.sendTo(newId, 'pkresync', { buyIn: this.coopBuyIn, names: this.names, skins: this.skins, cardBack: getCardBackSkin() }); } catch (e) {}
+    return true;
+  }
+
+  // Pure rename of one seat across every id-keyed structure (applied at a hand boundary). No value moves.
+  _rekeySeat(oldId, newId) {
+    const seat = this.tour.players.find((p) => p.id === oldId); if (!seat || oldId === newId) return;
+    if (this.tour.players.some((p) => p.id === newId)) return;              // collision guard
+    seat.id = newId;
+    for (const m of [this.names, this.skins]) { if (oldId in m) { m[newId] = m[oldId]; delete m[oldId]; } }
+    if (this.chipbank && this.chipbank.rekey) this.chipbank.rekey(oldId, newId);
+    this._dropped.delete(oldId); this._dropGrace.delete(oldId);            // the player is back — clear its drop/grace
+    if (this._confirmed && this._confirmed.has(oldId)) { this._confirmed.delete(oldId); this._confirmed.add(newId); }
   }
 
   onAbort() { // client side, on 'pkabort' or host vanished — refund, tell the player, return to lobby
@@ -301,8 +351,9 @@ export class PokerTable {
 
   _beginHand() {
     if (this.coop && this.role === 'host') {
-      for (const id of this._dropped) { const p = this.tour.players.find((x) => x.id === id); if (p) p.stack = 0; }
-      if (this.tour.alivePlayers().length < 2) { this._walkover(); return; }
+      if (this._reattach.length) { for (const [oldId, newId] of this._reattach.splice(0)) this._rekeySeat(oldId, newId); } // reconnects re-key here (safe: no live hand yet)
+      for (const id of this._dropped) { if (this._dropGrace.has(id)) continue; const p = this.tour.players.find((x) => x.id === id); if (p) p.stack = 0; } // bust only seats past the reconnect grace
+      if (this.tour.alivePlayers().filter((p) => !this._dropped.has(p.id)).length < 2) { this._walkover(); return; } // walk over when <2 CONNECTED seats remain (a single graced drop keeps the game going)
       // refresh per-seat chip skins from the roster so a lobby/between-hand pick reaches THIS hand's stacks,
       // then re-stamp provenance (no value re-deal). dealStart mints once per tournament; this reskin is the
       // between-hand seam. Pot/bets are empty at the boundary, so chips already played stay frozen (mid-hand).
@@ -315,17 +366,18 @@ export class PokerTable {
     this._lastCommitted = {};
     this._syncChips();                          // post the blinds the engine just committed in startHand
     this.phase = 'playing';
-    this.actTimer = ACT_SECS; this.botDelay = 0;
+    this.actTimer = this.coop ? ACT_SECS_COOP : ACT_SECS; this.botDelay = 0;
     // hold action while the renderer pitches the cards in (∝ how many seats were dealt → matches the visual)
     this._hold = DEAL_ANIM_BASE + (this.hand && this.hand.seats ? this.hand.seats.length : 0) * 2 * DEAL_ANIM_STAGGER;
     if (isComplete(this.hand)) this._endHand();
   }
 
-  _walkover() { // everyone else gone — last player standing takes the pool
+  _walkover() { // everyone else gone — last CONNECTED player standing takes the pool
     const alive = this.tour.alivePlayers();
+    const survivor = alive.find((p) => !this._dropped.has(p.id)) || alive[0]; // prefer the connected survivor over a graced/dropped seat
     this.tour.over = true;
-    if (alive[0]) { alive[0].place = 1; this.tour.result = { winner: alive[0].id, payouts: { [alive[0].id]: this.tour.prizePool }, standings: [alive[0].id] }; }
-    this.phase = 'over'; this._payout(); this._broadcastPoker();
+    if (survivor) { survivor.place = 1; this.tour.result = { winner: survivor.id, payouts: { [survivor.id]: this.tour.prizePool }, standings: [survivor.id] }; }
+    this.phase = 'over'; this._overT = 0; this._payout(); this._broadcastPoker();
   }
 
   _endHand() {
@@ -349,7 +401,7 @@ export class PokerTable {
     const boardBefore = this.hand ? this.hand.board.length : 0;
     try { applyAction(this.hand, action); } catch (e) { console.warn('[poker] action rejected:', JSON.stringify(action), '-', e.message); return; }
     this._syncChips();
-    this.actTimer = ACT_SECS;
+    this.actTimer = this.coop ? ACT_SECS_COOP : ACT_SECS;
     this._lastAct = { type: action && action.type, n: (this._actSeq = (this._actSeq | 0) + 1) }; // tell the renderer the action TYPE → check/fold SFX (works for bots + co-op)
     // presentation pacing — hold action so the renderer can choreograph what just happened, in order:
     const newCards = (this.hand ? this.hand.board.length : 0) - boardBefore;
@@ -406,7 +458,21 @@ export class PokerTable {
   }
 
   update(dt) {
-    if (!this.active || this.role === 'client') return; // host/solo drive; client just renders snaps
+    if (this.role === 'client') { // client just renders snaps — but tick the ante-wait backstop so a lost deal/pkabort never eats the buy-in
+      if (this._anteWait > 0 && !this.clientSnap) {        // no host snapshot ever arrived = the host never dealt
+        this._anteWait -= dt;
+        if (this._anteWait <= 0 && !this._credited && !this._refunded && !this._aborted) {
+          this._refund(); this._toast('No deal — buy-in refunded', 0xd8b066);
+          this.coop = false; this.role = 'solo';
+          if (this.game.state === 'poker') this.game.closePoker();
+        }
+      }
+      return;
+    }
+    if (!this.active) return; // host/solo drive
+    if (this.coop && this.role === 'host' && this._dropGrace.size) { // tick reconnect grace; on expiry the seat busts at the next _beginHand
+      for (const [id, t] of this._dropGrace) { const r = t - dt; if (r <= 0) this._dropGrace.delete(id); else this._dropGrace.set(id, r); }
+    }
     if (this._gathering) { // host: ante-ack window — deal once everyone confirms, or seat-the-confirmed / cancel at the deadline
       this._anteDeadline -= dt;
       if (this._anteDeadline <= 0) this._finalizeDeal();
@@ -420,6 +486,10 @@ export class PokerTable {
       }
       const legal = legalActions(this.hand);
       if (!legal) return;
+      if (this.coop && this.role === 'host' && this._dropped.has(legal.seat)) { // disconnected seat (within grace) — don't stall: take the free check, else fold
+        this._applyAndAdvance(legal.canCheck ? { type: 'check' } : { type: 'fold' });
+        return;
+      }
       if (this.role === 'solo' && legal.seat !== this.youId) {
         this.botDelay += dt;
         if (this.botDelay >= BOT_THINK) {
@@ -443,9 +513,14 @@ export class PokerTable {
           this.chipbank.reconcile(this.tour.players);                    // backstop: chips == engine stacks
           try { this.chipbank.verify(); } catch (e) { console.warn('[poker] chip verify failed after reconcile:', e.message); }
         }
-        if (this.tour.over) { this.phase = 'over'; this._payout(); } else this._beginHand();
+        if (this.tour.over) { this.phase = 'over'; this._overT = 0; this._payout(); } else this._beginHand();
         this._broadcastPoker();
-      }
+      } else if (this.coop) { this._netT -= dt; if (this._netT <= 0) { this._netT = NET_SNAP; this._broadcastPoker(); } } // keep a lagging / re-syncing client current through the showdown linger
+    } else if (this.phase === 'over' && this.coop && this.role === 'host') {
+      // re-broadcast the terminal snapshot for a few seconds so a client's payout credit (idempotent via
+      // _credited) survives a dropped 'over' packet; a later reconnect is covered by the resync handshake.
+      this._overT = (this._overT || 0) + dt;
+      if (this._overT < OVER_REBROADCAST_SECS) { this._netT -= dt; if (this._netT <= 0) { this._netT = NET_SNAP; this._broadcastPoker(); } }
     }
   }
 
@@ -510,7 +585,7 @@ export class PokerTable {
   _reset() {
     this.active = false; this.phase = 'lobby'; this.tour = null; this.hand = null;
     this.chipbank = null; this._lastCommitted = {};
-    this.clientSnap = null; this._netT = 0; this._dropped = new Set(); this._hold = 0; this._lastAct = null; this._actSeq = 0;
+    this.clientSnap = null; this._netT = 0; this._overT = 0; this._anteWait = 0; this._dropped = new Set(); this._dropGrace = new Map(); this._reattach = []; this._hold = 0; this._lastAct = null; this._actSeq = 0;
     this._credited = false; this._refunded = false; this._aborted = false; this.coopBuyIn = 0; this._paid = 0;
     this._gathering = false; this._invited = new Set(); this._confirmed = new Set(); this._anteDeadline = 0; // co-op ante-ack window (C1)
   }

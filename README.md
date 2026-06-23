@@ -243,6 +243,14 @@ Clients own locally:
 - local personal bank/meta persistence
 - cosmetic ghost visuals for remote shots/projectiles/enemies
 
+> **⚠️ Co-op poker money assumes honest peers — it is NOT cheat-proof.**
+> There is no server: each player's bank lives in their own browser `localStorage`, and the
+> poker buy-in is **self-reported** (a client debits its own bank, then ACKs the host that it paid).
+> A modified client could decline to pay yet still play, or edit its own bank directly. The host is
+> authoritative over the *game* (deck, deal, betting, who wins) and never reveals hidden hole cards,
+> but it cannot verify another machine's wallet. **Only play co-op poker for real bank money with
+> people you trust.** Treat the bank as a friendly score, not a tamper-resistant ledger.
+
 ## Hamachi / LAN Co-op
 
 Use this when normal WebRTC or iPhone hotspot routing fails.
