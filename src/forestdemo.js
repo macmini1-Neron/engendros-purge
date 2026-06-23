@@ -37,6 +37,7 @@ const felTierFor = (r) => (r >= FELL_TIER_R ? 2 : 1);
 const GROUND_EPS   = 0.4;                       // a log segment whose underside is within this of the terrain is "grounded" (won't orphan-cascade)
 const WOOD_SEG_LEN = 1.1;                       // local length (m) of each destructible log segment
 const WOOD_SEG_MAX = 7;                         // cap segments per log (perf)
+const MAX_SEG_LOGS = 10;                        // cap concurrent per-chunk logs; beyond it logs fall back to one shared-HP hull
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -287,7 +288,10 @@ export class ForestDemo {
     // a shot removes only that chunk (gap), the rest stays shootable. Leaves stay one pass-through volume.
     log.segs = [];
     const wood = f.topWoodMesh;
-    if (wood && wood.geometry && wood.geometry.attributes.position) {
+    // perf cap: only the first MAX_SEG_LOGS downed logs get per-chunk geometry; beyond that, fall back to one
+    // shared-HP wood hull (still solid/shootable/flammable, but breaks as a whole — no per-chunk gaps).
+    const segmentize = this.logs.filter((l) => l.segs && l.segs.length && !l.consumed).length < MAX_SEG_LOGS;
+    if (wood && wood.geometry && wood.geometry.attributes.position && segmentize) {
       const top = wood.parent, a = wood.geometry.attributes;
       const segGeos = binFallenGeometry(a.position.array, a.color && a.color.array, a.normal && a.normal.array, a.uv && a.uv.array, 1, WOOD_SEG_LEN, WOOD_SEG_MAX);
       const nSeg = Math.max(1, segGeos.length);
@@ -321,6 +325,8 @@ export class ForestDemo {
         const adj = []; if (i > 0) adj.push(log.segs[i - 1].sid); if (i < log.segs.length - 1) adj.push(log.segs[i + 1].sid);
         log.segs[i].adj = adj;
       }
+    } else if (wood && wood.geometry && wood.geometry.attributes.position) {
+      collide(wood, { dpart: id }, 1.0, 7, 3);                  // perf fallback: one shared-HP wood hull (no chunks)
     }
     // FALLEN CROWN — leaves: one pass-through foliage volume (no HP/segments; bullets pass, you wade in slowed).
     if (f.topLeafMesh) collide(f.topLeafMesh, { dpart: id, foliage: true, thicket: true }, 1.4, 6);
@@ -409,6 +415,18 @@ export class ForestDemo {
       const dx = p.x - pos.x, dz = p.z - pos.z;
       if (dx * dx + dz * dz <= radius * radius && MATERIALS[p.dmat].tier <= blastTier) this._destroyProp(p, true);
     }
+    for (const log of this.logs) {                            // an explosion chews the nearby section out of a downed log
+      if (log.consumed || !log.part) continue;
+      if (MATERIALS[log.part.dmat].tier > blastTier + 1) continue;
+      if (log.segs && log.segs.length) {
+        for (let i = log.segs.length - 1; i >= 0; i--) { const seg = log.segs[i]; if (seg.dead || !seg.part) continue;
+          const cx = (seg.part.min[0] + seg.part.max[0]) / 2, cz = (seg.part.min[2] + seg.part.max[2]) / 2, dx = cx - pos.x, dz = cz - pos.z;
+          if (dx * dx + dz * dz <= radius * radius) this.breakLogSeg(log, seg, (seg.sid * 1597) >>> 0); }
+      } else {
+        const cx = (log.part.min[0] + log.part.max[0]) / 2, cz = (log.part.min[2] + log.part.max[2]) / 2, dx = cx - pos.x, dz = cz - pos.z;
+        if (dx * dx + dz * dz <= radius * radius) this._consumeLog(log, (log.id * 1597) >>> 0, true);
+      }
+    }
   }
 
   // APFSDS / penetrator: fell standing trees the rod passes through (tier ≤ pen).
@@ -429,6 +447,19 @@ export class ForestDemo {
       if (t < 0 || t > range) continue;
       const px = ox - dir.x * t, pz = oz - dir.z * t;
       if (px * px + pz * pz <= 0.8 * 0.8 && MATERIALS[p.dmat].tier <= pen) this._destroyProp(p, true);
+    }
+    for (const log of this.logs) {                            // the rod punches chunks out of any downed log on its line
+      if (log.consumed || !log.part || MATERIALS[log.part.dmat].tier > pen) continue;
+      if (log.segs && log.segs.length) {
+        for (let i = log.segs.length - 1; i >= 0; i--) { const seg = log.segs[i]; if (seg.dead || !seg.part) continue;
+          const cx = (seg.part.min[0] + seg.part.max[0]) / 2, cz = (seg.part.min[2] + seg.part.max[2]) / 2;
+          const ox = cx - origin.x, oz = cz - origin.z, t = ox * dir.x + oz * dir.z; if (t < 0 || t > range) continue;
+          const px = ox - dir.x * t, pz = oz - dir.z * t; if (px * px + pz * pz <= 0.8 * 0.8) this.breakLogSeg(log, seg, (seg.sid * 7919) >>> 0); }
+      } else {
+        const cx = (log.part.min[0] + log.part.max[0]) / 2, cz = (log.part.min[2] + log.part.max[2]) / 2;
+        const ox = cx - origin.x, oz = cz - origin.z, t = ox * dir.x + oz * dir.z; if (t < 0 || t > range) continue;
+        const px = ox - dir.x * t, pz = oz - dir.z * t; if (px * px + pz * pz <= 0.8 * 0.8) this._consumeLog(log, (log.id * 7919) >>> 0, true);
+      }
     }
   }
 
