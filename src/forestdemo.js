@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells, snapPlan, splitGeomAtY, flatFalls } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells, snapPlan, splitGeomAtY } from './destruct.js';
 import { rr, voxelMaterial, foliageFadeMaterial, makeRNG } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
 
@@ -200,6 +200,10 @@ export class ForestDemo {
   fellTree(rec, dirXZ = null, seed = null, hitY = null, breakAtOverride = null) {
     if (rec && rec.fallen) { this._breakLog(rec, seed); return; }   // a hit on an ALREADY-fallen log breaks it apart
     if (!rec || !rec.standing) return;
+    // One active fall per tree: while this tree's previous top is still in the air (not yet a resting log),
+    // ignore further fell requests. Rapid spray would otherwise stack MANY simultaneous tops all rotating
+    // around the stump ("the whole tree spins"). The stump is fell-able again once its top has settled.
+    if (this.FALLING.some((f) => f.rec === rec && !f.logged)) return;
     if (this.game.fire) this.game.fire.retire(rec.part);    // drop any active fire so flames don't hover where the trunk was
     this._fading.delete(rec);
     this._dropBox(rec);                                      // drop the standing boxes (bands + canopy)
@@ -414,7 +418,9 @@ export class ForestDemo {
     // FALLEN CROWN — leaves: one pass-through foliage volume (no HP/segments; bullets pass, you wade in slowed).
     if (f.topLeafMesh) collide(f.topLeafMesh, { dpart: id, foliage: true, thicket: true }, 1.4, 6);
     this.logs.push(log);
-    this.regroundLog(log);   // safety: never register a log floating above the terrain (it rests ON the ground)
+    // A felled top that laid FLAT on open ground gets per-chunk grounding (drape — no float, no bury). A top
+    // hung up on a building/neighbour (not laidFlat) or a non-segmented hull keeps the simple whole-log reground.
+    if (f.laidFlat && log.segs && log.segs.length) this._groundChunks(log); else this.regroundLog(log);
   }
 
   // Drop a fallen log/chunk so its lowest point rests ON the current terrain — no levitation, whether on a
@@ -434,14 +440,9 @@ export class ForestDemo {
   }
 
   // ── FLAT-FALL ──────────────────────────────────────────────────────────────────────────────────────
-  // Once a felled top has SETTLED on its stump, decide — SEEDED off the fell seed, so host + every client
-  // (and late joiners) agree without a new event — whether it stays PROPPED on the stump or DETACHES and
-  // lays FLAT on the ground. A high/precarious break would wobble on a thin stump top, so it stays propped
-  // far less often (10 %) than a low break (30 %); the rest fall flat. Returns true ⇒ falls flat.
-  _flatFalls(f) {
-    if (!this.world.terrain) return false;                     // flat arena/tests: hinge already rests on y=0
-    return flatFalls(f.seed, f.fullH > 0 ? f.breakY / f.fullH : 0);
-  }
+  // A felled top on OPEN GROUND always lays flat and is then draped per-chunk onto the terrain
+  // (_groundChunks) — nothing floats, nothing buries. Only a top hung up on a building/neighbour stays
+  // propped (see _groundSettled). The old seeded prop-roll (_flatFalls/flatFalls) was removed with that.
   // The flat rest pose, computed PHYSICALLY so the laid-flat log never buries into a slope: drop the hinge
   // pivot (the butt) to ground level and SIMULATE a fresh fall from there with the same direction, obstacles
   // and terrain. A rigid rod stops at its FIRST ground/obstacle contact (the 5-point groundAt sampling), so
@@ -453,7 +454,7 @@ export class ForestDemo {
     const groundY = (terr ? terr.terrainHeightAt(b.pivot[0], b.pivot[2]) : 0) + r;
     const sim = makeHinge({ pivot: [b.pivot[0], groundY, b.pivot[2]], dirXZ: b.dirXZ, length: b.length, radius: b.radius, seed: 1, obstacles: b.obstacles, groundAt: b.groundAt });
     let g = 0; while (!sim.settled && g++ < 4000) stepBody(sim, 1 / 60);
-    return { pivotY: groundY, angle: sim.angle };
+    return { pivotY: groundY, angle: sim.angle };   // rod laid flat; per-chunk grounding (_groundChunks) then drapes each chunk onto the terrain
   }
   // Did the top come to rest on the GROUND (its own stump / the terrain) rather than leaning against an
   // OBSTACLE (a building / a neighbouring tree)? Only a ground rest may detach + lay flat — a top resting
@@ -467,32 +468,48 @@ export class ForestDemo {
     }
     return false;                                              // no sample near the terrain ⇒ it's hung up on an obstacle
   }
-  // Would laying this top FLAT at `tgt` drive its wood into the terrain? A wide-crowned species (thick
-  // side-boughs) can't lie flat without its down-side boughs burying metres deep — those trees must STAY
-  // propped (their elevated natural lean keeps the crown in the air). Exact per-vertex test of the wood
-  // geometry at the flat pose vs the terrain under each vertex; deterministic (geometry + terrain).
-  _flatWouldBury(f, tgt) {
-    const wm = f.topWoodMesh, terr = this.world.terrain;
-    if (!wm || !wm.geometry || !wm.geometry.attributes.position || !terr) return false;
-    const pos = wm.geometry.attributes.position.array;
-    const yaw = (f.pivot.children[0] && f.pivot.children[0].rotation.y) || 0;   // the `top` group's tree-yaw
-    _q.setFromAxisAngle(_axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize(), tgt.angle);
-    _m.makeRotationFromQuaternion(_q).multiply(_my.makeRotationY(yaw));          // fall-rotation ∘ yaw (translate added below)
-    const px = f.body.pivot[0], pz = f.body.pivot[2], py = tgt.pivotY;
-    for (let i = 0; i < pos.length; i += 3) {
-      _v.set(pos[i], pos[i + 1], pos[i + 2]).applyMatrix4(_m);
-      if (py + _v.y - terr.terrainHeightAt(px + _v.x, pz + _v.z) < -0.8) return true;   // a wood vert >0.8 m underground
+  // DRAPE a felled top over the ground: rest EACH wood chunk on the terrain directly under it, so a wide
+  // crown laid flat neither floats its trunk nor buries its boughs (a rigid rod can't do both). Each chunk
+  // mesh is reparented to the scene (world pose preserved, like _killSeg) so a world-Y move is exact, then
+  // shifted so its lowest collision box sits on the terrain (up if buried, down if floating). The pass-through
+  // leaf crown rides down with the pivot. Grid is XZ-only → a Y shift needs no re-bucketing. Deterministic
+  // (terrain + the seeded fall) → host, clients and late joiners drape identically (no new co-op event).
+  _groundChunks(log) {
+    const terr = this.world.terrain;
+    for (const seg of (log.segs || [])) {
+      if (seg.dead || !seg.boxes || !seg.boxes.length) continue;
+      let lowY = Infinity, cx = 0, cz = 0;
+      for (const bx of seg.boxes) { if (bx.min.y < lowY) lowY = bx.min.y; cx += (bx.min.x + bx.max.x) / 2; cz += (bx.min.z + bx.max.z) / 2; }
+      cx /= seg.boxes.length; cz /= seg.boxes.length;
+      const gy = terr ? terr.terrainHeightAt(cx, cz) : 0;
+      const drop = lowY - gy;                                  // >0 floating (lower it), <0 buried (raise it)
+      if (Math.abs(drop) > 0.02) {
+        if (seg.mesh && seg.mesh.parent) this.scene.attach(seg.mesh);   // detach from the rotated pivot so a world-down move is exact
+        if (seg.mesh) seg.mesh.position.y -= drop;
+        for (const bx of seg.boxes) { bx.min.y -= drop; bx.max.y -= drop; }
+        if (seg.part && seg.part.min) { seg.part.min[1] -= drop; seg.part.max[1] -= drop; }
+      }
+      seg.grounded = true;                                     // every chunk now rests on the ground → orphan cascade only fires for a real shot-out gap
     }
-    return false;
+    // drop the pass-through leaf crown (still parented under the pivot) onto the ground too
+    const leafBoxes = log.boxes.filter((b) => b.foliage);
+    if (leafBoxes.length && log.mesh) {
+      let lowY = Infinity, cx = 0, cz = 0;
+      for (const bx of leafBoxes) { if (bx.min.y < lowY) lowY = bx.min.y; cx += (bx.min.x + bx.max.x) / 2; cz += (bx.min.z + bx.max.z) / 2; }
+      cx /= leafBoxes.length; cz /= leafBoxes.length;
+      const gy = terr ? terr.terrainHeightAt(cx, cz) : 0;
+      const drop = lowY - gy;
+      if (drop > 0.02) { log.mesh.position.y -= drop; for (const bx of leafBoxes) { bx.min.y -= drop; bx.max.y -= drop; } }
+    }
   }
   // Live settle: if seeded to fall flat, it settled on the GROUND (not against an obstacle) and laying it
   // flat won't bury its boughs, start a short detach-and-lay-flat animation (the _dropping loop eases the
   // top off the stump, then registers the log). Returns true ⇒ started (caller must NOT register yet);
   // false ⇒ register where it rests now (propped).
   _resolveFlatFall(f) {
-    if (!this._flatFalls(f) || !this._groundSettled(f)) return false;
+    if (!this._groundSettled(f)) return false;               // only a top hung up on a building/neighbour stays propped (laying it flat would clip through). Open-ground tops ALWAYS lie flat — nothing floats.
     const tgt = this._flatTarget(f);
-    if (this._flatWouldBury(f, tgt)) return false;            // wide-bough tree → keep its natural propped lean
+    f.laidFlat = true;                                        // → _registerFallenLog drapes each chunk on the terrain (_groundChunks)
     f.dropping = true; f.dropT = 0; f.dropDur = 0.5;
     f.dropStartY = f.pivot.position.y; f.dropEndY = tgt.pivotY;
     f.dropStartAngle = f.body.angle; f.dropEndAngle = tgt.angle;
@@ -502,9 +519,9 @@ export class ForestDemo {
   // Late-join snapshot: apply the same flat pose with NO animation, so the resting log exists immediately
   // for any following segdie/propdie replay (the host's flat-vs-propped outcome reproduced from the seed).
   _applyFlatInstant(f) {
-    if (!this._flatFalls(f) || !this._groundSettled(f)) return;
+    if (!this._groundSettled(f)) return;
     const tgt = this._flatTarget(f);
-    if (this._flatWouldBury(f, tgt)) return;
+    f.laidFlat = true;                                        // late-join: same per-chunk drape as the live path
     f.body.angle = tgt.angle; f.body.pivot[1] = tgt.pivotY; f.pivot.position.y = tgt.pivotY;
     _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize();
     f.pivot.quaternion.setFromAxisAngle(_axis, tgt.angle);
@@ -957,7 +974,7 @@ export class ForestDemo {
     ];
     const color = this._dbgPalette[(this._dbgIdx || 0) % this._dbgPalette.length];
     this._dbgIdx = ((this._dbgIdx || 0) + 1);
-    return new THREE.MeshLambertMaterial({ color, vertexColors: false });
+    return new THREE.MeshBasicMaterial({ color });   // UNLIT flat color → debug pieces stay vivid in any lighting
   }
 
   // spawnTestTree(species, scale): DEV command target — fully clear any previous test tree, then spawn ONE

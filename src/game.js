@@ -983,7 +983,8 @@ class Game {
     // how much of the surrounding stand comes down — the small building r1 stays the building's breach size.
     const fellR = isRocket ? Math.max(radius, blast.r1 + 0.6) : (blast.r1 + 0.6);
     if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, fellR, blast.tier);
-    if (this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
+    // Only an incendiary (rocket/HE) blast lights trees; a plain grenade JUST explodes — no fire (owner). Molotov ignites via its own firePool path, not here.
+    if (isRocket && this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], 4.5);
   }
   // Blast → terrain crater (shared by explode() and the hand-rolled mortar detonation). Host-auth:
   // digManager.carveCrater carves the bowl, re-meshes the chunk, drops undermined objects, and (in

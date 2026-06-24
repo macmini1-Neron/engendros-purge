@@ -28,10 +28,16 @@ These were explicitly confirmed working by the owner — the redesign must prese
 
 Severity: 🔴 critical (breaks the illusion / owner flagged as worst) · 🟠 important · 🟡 polish.
 
-> ### ⭐ SHARED ROOT CAUSE (Themes A + B + C) — confirmed by two independent investigators
-> The floating chunks, the endlessly-spinning "mezidíl", AND the inert non-reactive chunks are **all the same bug**: `binFallenGeometry()` returns **empty geometry bins** (`destruct.js:526` filters only `if (bb)`, not `bb.positions.length > 0`). An empty bin → zero-vertex mesh → `binFallenAABBs()` returns `[]` (`destruct.js:402`, guard `n < 9`) → in `_registerFallenLog` the segment's `part.min/max` is updated **only if `seg.boxes.length`** (`forestdemo.js:401-404`), so the empty segment keeps its init bounds `[0,0,0]` (`forestdemo.js:390`). A **zero-volume phantom segment** has no collider, no physics body, no settle/sink path, and the wrong (origin) position for AoE — it just hangs in the scene as a child of the pivot.
+> ### ⛔ INVESTIGATOR THEORY WAS WRONG — corrected by reading the code + live repro (2026-06-24)
+> The three read-only investigators converged on an "empty geometry bins → zero-volume phantom segment" theory. **It is false.** `binFallenGeometry` only ever creates a bin via `ensure(i)` when a triangle lands in it, and `if (bb)` already filters nulls — it never returns empty bins. And the owner can SHOOT the floating chunks, which disproves "zero-volume, can't be hit." Lesson: verify the hypothesis against the code before fixing (systematic-debugging Phase 1–3). The real causes, confirmed by live Playwright repro:
 >
-> **One fix at the source kills all three themes:** filter empty bins (`destruct.js:526` → `if (bb && bb.positions.length > 0)`) **and** always derive `part.min/max` from the mesh's own geometry AABB as a fallback, so **no segment can ever exist without a real volume, collider, and settle path.** This is the "smart solution without compromise" the owner asked for in §3.
+> ### ⭐ REAL ROOT CAUSE (Themes A + B + D) — the PROPPED resting state
+> A felled top is a single rigid hinged rod. `_resolveFlatFall` (`forestdemo.js`) kept it **propped** (butt/chunks elevated, not laid flat) whenever `_flatWouldBury` was true — which fires for **wide-bough species (oak/pine = the owner's test trees)** because laying a ~4 m crown ball flat would drive boughs underground. Live repro: a class-3 oak settled with 6 of 7 chunks floating **up to 18 m in the air** (that's the "floating chunks" #A and the "hangs on the trunk" #D). The endlessly-"spinning mezidíl" #B was a chunk of such a propped log that, on being shot, left airborne neighbours.
+>
+> ### ⭐ THE FIX (shipped) — "drape" each chunk on the terrain (the no-compromise §3 answer)
+> 1. **Always lay flat on open ground** — removed the `_flatWouldBury` veto and the seeded prop-roll (`_flatFalls`); only a top genuinely hung up on a building/neighbour (`_groundSettled` false) stays propped.
+> 2. **`_groundChunks(log)`** — after the log settles, reparent EACH wood chunk to the scene (like `_killSeg`) and shift it so its lowest collision box rests on the terrain under it (up if buried, down if floating). The pass-through leaf crown drops with the pivot. Grid is XZ-only → no re-bucket. Deterministic (terrain + seeded fall) → co-op-safe.
+> 3. Result (verified): all 7 oak chunks rest at terrain ±0.1 m, `allGrounded=true` — nothing floats, nothing buried. Breaking a middle chunk now kills only that chunk (no orphan-float, because every chunk is grounded).
 
 ### Theme A — Floating chunks have no gravity 🔴
 - **A1** *(img #16, #18, #21)* — Fallen log **chunks hover in mid-air and never fall**. Gravity simply does not apply to them — *"jsou prostě nějak odstřižené."* They **can still be shot down one by one** (weapon hitbox works on them), but they never settle to the ground on their own.
@@ -109,13 +115,19 @@ These currently fight each other (producing floating/spinning leftovers and the 
 4. Write the redesign plan (subagent-driven), implement on this branch, verify each fix **visually** via Playwright on `?map=forest` with the `/testtree` debug colors (owner co-tests + sends photos).
 5. Cache-bust + PR.
 
-## 5. Confidence summary (what's safe to fix now vs. needs repro)
-| Theme | Confidence | Safe to fix from this spec? |
-|---|---|---|
-| A floating / B phantom spin / C inert | ✅ CONFIRMED (2 investigators converge) | **Yes** — shared empty-bin fix |
-| D top hangs/sways | 🟢 strong hypothesis (cites real hinge code) | Yes, verify visually after |
-| F grenade ignites | ✅ CONFIRMED (single, concrete) | **Yes** — one-line guard |
-| E whole-tree rotate | 🔴 unconfirmed | **No** — repro first (step 2) |
+## 5. RESOLUTION (2026-06-24) — all shipped + live-verified via Playwright
+> Per-theme root-cause text in §2 reflects the original investigator pass and is **superseded** by the corrected callout at the top of §2. Final status:
+
+| Theme | Real root cause | Fix (in `feat/tree-system-redesign`) | Verified |
+|---|---|---|---|
+| A floating | propped state elevated chunks up to 18 m | always lay flat + `_groundChunks` per-chunk drape | ✅ all chunks at terrain ±0.1 m |
+| B spinning leftover | airborne chunk of a propped log | every chunk grounded → no orphan-float on break | ✅ mid-chunk break kills only that chunk |
+| C inert chunks | (could not reproduce as described — likely the elevated/propped chunks reading as unreactive; revisit if it recurs after A fix) | — | ⏳ owner to re-check |
+| D hangs/sways | propped lean on the stump | same as A (no propped on open ground) | ✅ lies flat |
+| E whole-tree rotate | spray spawned a NEW falling top per hit (6+ at once) | one active fall per tree until its top lands (`fellTree` guard) | ✅ spray → 1 top, resumes after landing |
+| F grenade ignites | `game.js:986` ignited for every blast | gate `fire.igniteAt` on `isRocket` | ✅ grenade = blast only (rocket still ignites) |
+
+**Open follow-ups:** C (re-check after A); a felled wide crown leaves one side-bough angled up from its grounded base (natural, owner to confirm acceptable); rocket/HE still ignites trees (owner's call whether to also disable).
 
 ## Dev tool reference (`/testtree`)
 - `/testtree [species] [scale]` — clears any prior test tree, spawns ONE at (8, 20), each part a distinct flat unlit debug color.
