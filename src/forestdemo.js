@@ -964,6 +964,7 @@ export class ForestDemo {
   // standing tree at a fixed open spot (8, _, 20) with a fixed seed for reproducibility. Tags the rec with
   // ._test = true so fellTree/_registerFallenLog recolor every wood piece with a distinct flat debug color.
   spawnTestTree(species = 'oak', scale = 1.0) {
+    this._testActive = true; this._testSpecies = species; this._testScale = scale;   // dev: enables R-key manual reset, which reuses this species/scale
     // ── 1. CLEAR previous test tree + ALL its artifacts ──────────────────────────────────────────────
     // FALLING entries (hinge-falling top, not yet registered as a log): remove their pivot from the scene.
     for (let i = this.FALLING.length - 1; i >= 0; i--) {

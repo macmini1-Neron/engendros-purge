@@ -381,7 +381,7 @@ class Game {
       if (this.weapons.isThrowLocked() && code !== 'KeyM') return; // committed molotov: only the LMB throw (and mute) work
       if (this.mp.active && this.mp.frozen) return; // downed/dead/waiting: no reload/melee/mount/board/loot/weapon-switch
       if (this.player.mountedGun && code !== 'KeyE' && code !== 'KeyF' && code !== 'KeyM') return; // on the mounted gun: only dismount / fullscreen / mute — no weapon or inventory switching
-      if (code === 'KeyR') this.weapons.startReload();
+      if (code === 'KeyR') { if (this.forest && this.forest._testActive) this.forest.spawnTestTree(this.forest._testSpecies, this.forest._testScale); else this.weapons.startReload(); } // dev: while /testtree mode is active, R manually resets the test tree (else normal reload)
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
         if (this.mp.active && this.mp.tryStartRevive && this.mp.tryStartRevive()) return;
