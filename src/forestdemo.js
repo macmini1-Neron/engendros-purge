@@ -250,6 +250,12 @@ export class ForestDemo {
       }
     }
 
+    // ── DEBUG coloring (test tree): each wood piece gets a distinct flat color so pieces are visually distinct ──
+    if (rec._test) {
+      if (stumpMesh) stumpMesh.material = this._dbgMat();
+      if (topWoodMesh) topWoodMesh.material = this._dbgMat();
+    }
+
     // remove the OLD standing mesh + its wind entry
     const oldMesh = rec.mesh;
     if (oldMesh) { const wi = this.windy.findIndex((w) => w.m === oldMesh); if (wi >= 0) this.windy.splice(wi, 1); if (oldMesh.parent) this.scene.remove(oldMesh); }
@@ -264,8 +270,8 @@ export class ForestDemo {
         const sh = (rec.trunkR || 0.3) + 0.12; rec.part.min = [rec.x - sh, y0, rec.z - sh]; rec.part.max = [rec.x + sh, y0 + breakY, rec.z + sh]; }
     } else {
       rec.mesh = null; rec.standing = false; rec._woodMesh = null; if (rec.part) rec.part.dead = true;   // inert stub — off the live trees
-      if (stumpMesh) { stumpMesh.position.set(rec.x, y0, rec.z); stumpMesh.rotation.y = rec.yaw; stumpMesh.castShadow = true; this.scene.add(stumpMesh); this.stumps.push(stumpMesh); }
-      if (breakY > 0.05) { const sh = (rec.trunkR || 0.3) + 0.12, sb = { min: new THREE.Vector3(rec.x - sh, y0, rec.z - sh), max: new THREE.Vector3(rec.x + sh, y0 + Math.max(0.4, breakY), rec.z + sh) }; this.world.boxes.push(sb); this.world.grid.addBox(sb); this.stumpBoxes.push(sb); }
+      if (stumpMesh) { stumpMesh.position.set(rec.x, y0, rec.z); stumpMesh.rotation.y = rec.yaw; stumpMesh.castShadow = true; this.scene.add(stumpMesh); if (rec._test) stumpMesh._test = true; this.stumps.push(stumpMesh); }
+      if (breakY > 0.05) { const sh = (rec.trunkR || 0.3) + 0.12, sb = { min: new THREE.Vector3(rec.x - sh, y0, rec.z - sh), max: new THREE.Vector3(rec.x + sh, y0 + Math.max(0.4, breakY), rec.z + sh) }; if (rec._test) sb._test = true; this.world.boxes.push(sb); this.world.grid.addBox(sb); this.stumpBoxes.push(sb); }
     }
 
     // ── the falling top ──
@@ -335,6 +341,7 @@ export class ForestDemo {
                   height: maxA[1] - minA[1],   // fire reads owner.height → keeps a downed log's flame low (not a 12 m tree column)
                   fallingRef: f, burntOut: !!f.charred, consumed: false, boxes: [] };  // charred logs already burnt → not flammable
     part.downer = log;
+    if (f.rec && f.rec._test) log._test = true;   // propagate test flag → chunk meshes get debug colors
     // ── 1:1 COLLISION HULL ───────────────────────────────────────────────────────────────────────
     // Bin the ACTUAL fallen geometry into tight per-slice AABBs that follow the log's real heading and
     // rise ONLY where wood/branches are — so you walk UNDER a raised crown and step OVER the bole. This
@@ -379,6 +386,7 @@ export class ForestDemo {
         if (sg.colors) g.setAttribute('color', new THREE.Float32BufferAttribute(sg.colors, 3));
         g.computeBoundingSphere();
         const m = new THREE.Mesh(g, wood.material); m.castShadow = true; if (top) top.add(m);
+        if (log._test) m.material = this._dbgMat();   // each chunk gets a distinct flat debug color
         const sid = id * 100 + idx, part = makePart(sid, matName, [0, 0, 0], [0, 0, 0], segHpScale);
         part.downer = log;
         log.segs.push({ sid, mesh: m, part, dead: false, grounded: true, adj: [], boxes: [] });
@@ -401,6 +409,7 @@ export class ForestDemo {
       }
     } else if (wood && wood.geometry && wood.geometry.attributes.position) {
       collide(wood, { dpart: id }, 1.0, 7, 3);                  // perf fallback: one shared-HP wood hull (no chunks)
+      if (log._test && wood) wood.material = this._dbgMat();     // debug: color the fallback hull
     }
     // FALLEN CROWN — leaves: one pass-through foliage volume (no HP/segments; bullets pass, you wade in slowed).
     if (f.topLeafMesh) collide(f.topLeafMesh, { dpart: id, foliage: true, thicket: true }, 1.4, 6);
@@ -937,5 +946,106 @@ export class ForestDemo {
     for (const p of this.props) if (p.dead) out.push({ k: 'propdie', id: p.id });
     return out;
   }
+  // ── DEV TOOLING ─────────────────────────────────────────────────────────────────────────────────────
+  // _dbgMat(): return a new flat-colored MeshLambertMaterial from a 16-color palette (no vertex colors,
+  // no texture) and advance the counter. Reset this._dbgIdx = 0 in spawnTestTree before the first call.
+  _dbgMat() {
+    if (!this._dbgPalette) this._dbgPalette = [
+      0xff4444, 0x44dd44, 0x4488ff, 0xffee22, 0xff44cc, 0x22dddd,
+      0xff8822, 0x44ffaa, 0xaa44ff, 0xffcc00, 0xff2266, 0x00ccff,
+      0xbbff88, 0xff99aa, 0x88aaff, 0xffcc88,
+    ];
+    const color = this._dbgPalette[(this._dbgIdx || 0) % this._dbgPalette.length];
+    this._dbgIdx = ((this._dbgIdx || 0) + 1);
+    return new THREE.MeshLambertMaterial({ color, vertexColors: false });
+  }
+
+  // spawnTestTree(species, scale): DEV command target — fully clear any previous test tree, then spawn ONE
+  // standing tree at a fixed open spot (8, _, 20) with a fixed seed for reproducibility. Tags the rec with
+  // ._test = true so fellTree/_registerFallenLog recolor every wood piece with a distinct flat debug color.
+  spawnTestTree(species = 'oak', scale = 1.0) {
+    // ── 1. CLEAR previous test tree + ALL its artifacts ──────────────────────────────────────────────
+    // FALLING entries (hinge-falling top, not yet registered as a log): remove their pivot from the scene.
+    for (let i = this.FALLING.length - 1; i >= 0; i--) {
+      const f = this.FALLING[i];
+      if (!f.rec || !f.rec._test) continue;
+      if (f.pivot && f.pivot.parent) this.scene.remove(f.pivot);
+      this.FALLING.splice(i, 1);
+    }
+    // _dropping entries (flat-fall detach animation in progress): same — pivot is the same object.
+    for (let i = this._dropping.length - 1; i >= 0; i--) {
+      const f = this._dropping[i];
+      if (!f.rec || !f.rec._test) continue;
+      if (f.pivot && f.pivot.parent) this.scene.remove(f.pivot);
+      this._dropping.splice(i, 1);
+    }
+    // Settled fallen logs (registered after the fall): drop collision boxes, remove pivot mesh.
+    for (let i = this.logs.length - 1; i >= 0; i--) {
+      const log = this.logs[i];
+      if (!log._test) continue;
+      for (const b of (log.boxes || [])) {
+        this.world.grid.removeBox(b);
+        const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1);
+      }
+      log.boxes = [];
+      if (log.mesh && log.mesh.parent) this.scene.remove(log.mesh);
+      this._fading.delete(log);
+      this.logs.splice(i, 1);
+    }
+    // Inert stump collision boxes (pushed to stumpBoxes when the stub is too short to re-snap).
+    for (let i = this.stumpBoxes.length - 1; i >= 0; i--) {
+      const sb = this.stumpBoxes[i];
+      if (!sb._test) continue;
+      this.world.grid.removeBox(sb);
+      const j = this.world.boxes.indexOf(sb); if (j >= 0) this.world.boxes.splice(j, 1);
+      this.stumpBoxes.splice(i, 1);
+    }
+    // Inert stub meshes (pushed to this.stumps when the stump can no longer be re-snapped).
+    for (let i = this.stumps.length - 1; i >= 0; i--) {
+      const stump = this.stumps[i];
+      if (!stump._test) continue;
+      if (stump.parent) this.scene.remove(stump);
+      this.stumps.splice(i, 1);
+    }
+    // Main tree records: drop collision boxes + wind entry + mesh.
+    for (let i = this.trees.length - 1; i >= 0; i--) {
+      const rec = this.trees[i];
+      if (!rec._test) continue;
+      this._dropBox(rec);
+      if (rec.mesh && rec.mesh.parent) this.scene.remove(rec.mesh);
+      const wi = this.windy.findIndex((w) => w.m === rec.mesh);
+      if (wi >= 0) this.windy.splice(wi, 1);
+      this._fading.delete(rec);
+      this.trees.splice(i, 1);
+    }
+    // Drop orphaned sinking entries whose mesh was already detached (chunk sinks from a destroyed test log).
+    for (let i = this._sinking.length - 1; i >= 0; i--) {
+      const s = this._sinking[i]; if (!s.mesh || !s.mesh.parent) this._sinking.splice(i, 1);
+    }
+
+    // ── 2. Reset debug color counter ──────────────────────────────────────────────────────────────────
+    this._dbgIdx = 0;
+
+    // ── 3. Spawn ONE test tree at a FIXED open spot near the player spawn ─────────────────────────────
+    // Player spawns near (0, _, 30). The spot (8, _, 20) is a short walk away, flat, open, and avoids
+    // the cottage footprint. Seed 99999 is fixed → same geometry every reset.
+    const VALID = ['scotsPine', 'birch', 'oak', 'poplar', 'willow'];
+    if (!VALID.includes(species)) species = 'oak';
+    scale = Math.max(0.4, Math.min(3, +scale || 1));
+
+    this._addTree(species, 8, 20, scale, 99999, false);
+    const rec = this.trees[this.trees.length - 1];
+    rec._test = true;
+
+    // Recolor the standing WOOD mesh with the first debug color (leaves stay unchanged).
+    if (rec.mesh) {
+      rec.mesh.traverse((o) => {
+        if (o.isMesh && o !== rec.leafMesh) o.material = this._dbgMat();
+      });
+    }
+
+    return rec;
+  }
+
   stats() { return { trees: this.trees.length, standing: this.trees.filter((t) => t.standing).length, falling: this.FALLING.length }; }
 }
