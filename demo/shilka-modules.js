@@ -214,7 +214,7 @@ export const COMMANDER_CONTROLS = [
   { ru:'АВАРИЙНАЯ СТРЕЛЬБА', cz:'havarijní palba', n:31, n70:17, kind:'toggle', px:{x:13,y:24}, set:'avariynaya', col:'red' },
   { ru:'СТРЕЛЬБА ВЕРХ.', cz:'horní pár',           n:5,  n70:14, kind:'toggle', px:{x:49,y:26}, set:'bankUpper' },
   { ru:'СТРЕЛЬБА НИЖ.', cz:'dolní pár',            n:5,  n70:15, kind:'toggle', px:{x:49,y:40}, set:'bankLower' },
-  { ru:'ЦЕПЬ СТРЕЛЬБЫ', cz:'palebný okruh',        n:26, n70:11, kind:'toggle', px:{x:13,y:53}, set:'tsepFire' },
+  { ru:'ЦЕПЬ СТРЕЛЬБЫ', cz:'palebný okruh',        n:26, n70:11, kind:'toggle', px:{x:14,y:52}, set:'tsepFire' },
   { ru:'ЛЮК ОТКРЫТ', cz:'poklop otevřen',          n:19, n70:19, kind:'lamp', px:{x:36,y:63}, col:'red', read:(s)=>!s.hatchClosed },
   // — zbraně / munice (4 automaty: ВЕРХ.ЛЕВ/ПРАВ vnitřní pár, НИЖН.ЛЕВ/ПРАВ vnější) —
   { ru:'ПЕРЕЗАРЯДКА ВЛ', cz:'pneu přebití', kind:'button', px:{x:32,y:24} },
@@ -231,17 +231,17 @@ export const COMMANDER_CONTROLS = [
   { ru:'ОСТАТОК НП', cz:'zbytek', kind:'counter', px:{x:86,y:46}, read:(s)=>String(s.ammoNP).padStart(3,'0') },
   { ru:'РОСА', cz:'hašení ППО', kind:'button', px:{x:85,y:19}, col:'red' },
   // — chlazení / hydro —
-  { ru:'УРОВЕНЬ ОЖ', cz:'hladina chladiva', kind:'lamp', px:{x:31,y:55}, col:'red', read:(s)=>s.lowCoolant },
-  { ru:'ОХЛАЖДЕНИЕ', cz:'chlazení běží', n:24, n70:123, kind:'lamp', px:{x:47,y:55}, col:'cool', read:(s)=>s.cooling },
+  { ru:'УРОВЕНЬ ОЖ', cz:'hladina chladiva', kind:'lamp', px:{x:32,y:56}, col:'red', read:(s)=>s.lowCoolant },
+  { ru:'ОХЛАЖДЕНИЕ', cz:'chlazení běží', n:24, n70:123, kind:'lamp', px:{x:49,y:57}, col:'cool', read:(s)=>s.cooling },
   { ru:'ГИДРОПРИВОД ВКЛ', cz:'pohon on', n:16, n70:25, kind:'button', px:{x:63,y:53}, set:'hydraulicOn' },
   { ru:'ГИДРОПРИВОД ВЫК', cz:'pohon off', n:14, n70:27, kind:'button', px:{x:85,y:53}, clear:'hydraulicOn', col:'red' },
-  { ru:'54В / 27В', cz:'rozsah voltmetru', n:13, n70:7, kind:'toggle', px:{x:49,y:61}, set:'dcRange' },
+  { ru:'54В / 27В', cz:'rozsah voltmetru', n:13, n70:7, kind:'toggle', px:{x:50,y:61}, set:'dcRange' },
   // — ГАГ gyro —
-  { ru:'ГАГ', cz:'gyro master', n:27, n70:35, kind:'toggle', px:{x:39,y:89}, set:'gagOn' },
-  { ru:'ОТСТОПОРЕНО', cz:'ready', kind:'lamp', px:{x:30,y:75}, col:'green', read:(s)=>s.gagReady },
-  { ru:'КОНТРОЛЬ', cz:'self-test', n:33, n70:31, kind:'button', px:{x:45,y:75} },
-  { ru:'ЗАСТОПОРЕНО', cz:'náběh ~3 min', kind:'lamp', px:{x:30,y:83}, col:'red', read:(s)=>s.gagPhase==='spinup' },
-  { ru:'НЕЙТРАЛЬНО', cz:'neutrál', kind:'lamp', px:{x:45,y:83}, col:'red', read:(s)=>s.gagPhase==='fault' },
+  { ru:'ГАГ', cz:'gyro master', n:27, n70:35, kind:'toggle', px:{x:39,y:86}, set:'gagOn' },
+  { ru:'ОТСТОПОРЕНО', cz:'ready', kind:'lamp', px:{x:30,y:72}, col:'green', read:(s)=>s.gagReady },
+  { ru:'КОНТРОЛЬ', cz:'self-test', n:33, n70:31, kind:'button', px:{x:46,y:72} },
+  { ru:'ЗАСТОПОРЕНО', cz:'náběh ~3 min', kind:'lamp', px:{x:30,y:80}, col:'red', read:(s)=>s.gagPhase==='spinup' },
+  { ru:'НЕЙТРАЛЬНО', cz:'neutrál', kind:'lamp', px:{x:46,y:80}, col:'red', read:(s)=>s.gagPhase==='fault' },
 ];
 
 
