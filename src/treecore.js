@@ -42,7 +42,7 @@ export function cellAABB(t, b, s, r) {
 export function carve(t, y, ang, { pen = 1, dmg = 1e9, spreadS = 0, spreadB = 0 } = {}) {
   const b0 = Math.max(0, Math.min(t.bands - 1, Math.floor(y / t.bandH)));
   const TAU = Math.PI * 2;
-  const s0 = Math.floor((((ang % TAU) + TAU) % TAU) / TAU * t.sectors) % t.sectors;
+  const s0 = Math.round((((ang % TAU) + TAU) % TAU) / TAU * t.sectors) % t.sectors;
   const dead = [];
   for (let db = -spreadB; db <= spreadB; db++) {
     const b = b0 + db; if (b < 0 || b >= t.bands) continue;
@@ -57,4 +57,29 @@ export function carve(t, y, ang, { pen = 1, dmg = 1e9, spreadS = 0, spreadB = 0 
     }
   }
   return dead;
+}
+
+// Flood "supported" out from the rooted base (band 0) through ALIVE face-adjacent neighbours. Returns a
+// Uint8Array (1=supported). Any alive cell with sup=0 has lost its path to the ground → it will detach.
+export function supportFlood(t) {
+  const n = t.bands * t.sectors * t.rings;
+  const sup = new Uint8Array(n);
+  const stack = [];
+  for (let s = 0; s < t.sectors; s++) for (let r = 0; r < t.rings; r++) {
+    const i = cellIndex(t, 0, s, r);
+    if (t.alive[i]) { sup[i] = 1; stack.push([0, s, r]); }
+  }
+  const tryPush = (b, s, r) => {
+    if (b < 0 || b >= t.bands || r < 0 || r >= t.rings) return;
+    s = ((s % t.sectors) + t.sectors) % t.sectors;
+    const i = cellIndex(t, b, s, r);
+    if (t.alive[i] && !sup[i]) { sup[i] = 1; stack.push([b, s, r]); }
+  };
+  while (stack.length) {
+    const [b, s, r] = stack.pop();
+    tryPush(b + 1, s, r); tryPush(b - 1, s, r);
+    tryPush(b, s + 1, r); tryPush(b, s - 1, r);
+    tryPush(b, s, r + 1); tryPush(b, s, r - 1);
+  }
+  return sup;
 }
