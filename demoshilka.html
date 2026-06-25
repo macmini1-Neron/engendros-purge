@@ -69,11 +69,13 @@
   #cpanel img{display:block;width:100%;border:1px solid var(--line);border-radius:6px}
   #cov{position:absolute;inset:0}
   .co{position:absolute;transform:translate(-50%,-50%)}
-  /* lamp = additive glow painted onto the real lamp glass (screen blend → bulb lights up) */
-  .co.lamp{width:5.8%;aspect-ratio:1;border-radius:50%;pointer-events:none;opacity:0;transition:opacity .12s;
-    mix-blend-mode:screen;background:radial-gradient(circle,currentColor 0%,currentColor 24%,transparent 68%)}
-  .co.lamp.on{opacity:1}
-  .co.lamp.red{color:#ff5038}.co.lamp.amber{color:#ffd23a}.co.lamp.green{color:#86ff4a}.co.lamp.cool{color:#5af0e8}.co.lamp.grey{color:#e8eedd}
+  /* lamp = saturated colored bulb glow over the real glass (white hotspot + colored body + halo) */
+  .co.lamp{width:5.4%;aspect-ratio:1;border-radius:50%;pointer-events:none;opacity:0;transition:opacity .12s}
+  .co.lamp.on{opacity:1;
+    background:radial-gradient(circle, rgba(255,255,255,.9) 0%, rgba(255,255,255,.35) 14%, transparent 26%),
+              radial-gradient(circle, currentColor 0%, currentColor 42%, color-mix(in srgb, currentColor 50%, transparent) 60%, transparent 74%);
+    box-shadow:0 0 12px 3px currentColor, 0 0 5px 1px currentColor}
+  .co.lamp.red{color:#ff3a2a}.co.lamp.amber{color:#ffc21e}.co.lamp.green{color:#5fe22a}.co.lamp.cool{color:#28c8f0}.co.lamp.grey{color:#dfe6d6}
   .co.hot{width:7%;aspect-ratio:1;border-radius:6px;border:1.5px dashed rgba(255,255,255,.18);cursor:pointer}
   .co.hot:hover{border-color:var(--on);background:rgba(136,210,74,.12)}
   .co.hot.on{border-color:var(--on);border-style:solid;background:rgba(136,210,74,.22);box-shadow:0 0 7px var(--on)}
