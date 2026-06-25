@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Шилка — řidič (механик-водитель): strom kompetencí</title>
+<style>
+  :root{
+    --bg:#11150f; --panel:#1b2016; --ink:#d8e0c8; --dim:#6b7560; --line:#3a4430;
+    --off:#39402f; --avail:#caa23c; --on:#7fc24a; --dead:#d8503a; --acc:#8fb04a;
+    --dc:#5fa8d8; --pneu:#c98fd8; --mech:#a89b6a; --bound:#5a6450;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Segoe UI",system-ui,sans-serif;font-size:13px}
+  #wrap{display:flex;height:100vh}
+  #stage{flex:1;position:relative;overflow:auto;padding:14px 18px 60px}
+  #side{width:330px;min-width:330px;background:var(--panel);border-left:1px solid var(--line);padding:16px;overflow:auto;font-size:12.5px}
+  h1{font-size:15px;letter-spacing:.04em;margin:0 0 2px;color:#eef2e2}
+  .sub{color:var(--dim);font-size:11.5px;margin:0 0 10px}
+  svg#edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+  #tiers{position:relative;z-index:1}
+  .tier{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:stretch;margin:0 0 26px}
+  .tier-label{width:100%;color:var(--dim);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px dashed var(--line);padding-bottom:3px;margin-bottom:8px}
+  .node{position:relative;min-width:140px;max-width:178px;background:var(--panel);border:1.5px solid var(--off);border-radius:7px;padding:7px 9px;cursor:pointer;transition:border-color .15s,box-shadow .15s,opacity .15s;z-index:1}
+  .node .ru{font-weight:600;font-size:12.5px;line-height:1.15}
+  .node .cz{color:var(--dim);font-size:10.5px;margin-top:1px;line-height:1.15}
+  .node .tag{display:inline-block;margin-top:5px;font-size:9px;letter-spacing:.06em;padding:1px 5px;border-radius:3px;background:#0d100a;color:var(--dim);border:1px solid var(--line)}
+  .node .sw{position:absolute;top:7px;right:7px;width:30px;height:16px;border-radius:9px;background:#0d100a;border:1px solid var(--line)}
+  .node .sw::after{content:"";position:absolute;top:1px;left:1px;width:12px;height:12px;border-radius:50%;background:var(--dim);transition:left .15s,background .15s}
+  .node.control{padding-right:42px}
+  .node.live{border-color:var(--on);box-shadow:0 0 0 1px var(--on) inset,0 0 12px -4px var(--on)}
+  .node.dead{border-color:var(--dead);box-shadow:0 0 0 1px var(--dead) inset}
+  .node.avail{border-color:var(--avail);box-shadow:0 0 10px -3px var(--avail)}
+  .node.avail .ru::before{content:"▸ ";color:var(--avail)}
+  .node.on .sw{background:#16210d;border-color:var(--on)}
+  .node.on .sw::after{left:15px;background:var(--on)}
+  .node.dead .sw::after{background:var(--dead)}
+  .node.derived{border-style:dashed}
+  .node.derived.live{border-style:solid}
+  .node.bound{opacity:.72;border-style:dotted;background:#15180f}
+  .node.sel{outline:2px solid var(--acc);outline-offset:2px}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 12px;font-size:11px;color:var(--dim)}
+  .legend b{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px;border:1.5px solid}
+  .lg-off b{border-color:var(--off)} .lg-av b{border-color:var(--avail)} .lg-on b{border-color:var(--on)} .lg-dead b{border-color:var(--dead)}
+  button{background:#222a1a;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 10px;cursor:pointer;font-size:11.5px}
+  button:hover{border-color:var(--acc)}
+  .bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  #det h2{font-size:14px;margin:0 0 2px;color:#eef2e2}
+  #det .k{color:var(--dim);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 3px}
+  #det .why{padding:7px 9px;border-radius:5px;background:#0d100a;border:1px solid var(--line);line-height:1.4}
+  #det .why.ok{border-color:var(--on)} #det .why.bad{border-color:var(--dead)}
+  .pill{display:inline-block;font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);margin:2px 3px 0 0}
+  .src{color:var(--dim);font-size:10.5px;font-style:italic}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <h1>Шилка — механик-водитель (řidič): strom kompetencí</h1>
+    <p class="sub">Vše, na co řidič sahá: výroba energie · pohyb · přežití podvozku. Klik na uzel = co dělá + zdroj. Páčky jen na to, co řidič ovládá; stavy (síť, generátor, tlak) se rozsvítí jako důsledek.</p>
+    <div class="bar">
+      <button onclick="reset()">⟲ Studený stroj</button>
+      <button onclick="seq()">▶ Řidičův start (sekvence)</button>
+    </div>
+    <div class="legend">
+      <span class="lg-off"><b></b>vyp / nedostupné</span>
+      <span class="lg-av"><b></b>▸ dostupné</span>
+      <span class="lg-on"><b></b>běží</span>
+      <span class="lg-dead"><b></b>zap, ale chybí prereq</span>
+      <span>tečkovaně = mimo řidičovu kompetenci</span>
+    </div>
+    <svg id="edges"></svg>
+    <div id="tiers"></div>
+  </div>
+  <div id="side"><div id="det"><h2>Klikni na uzel</h2><p class="src">Co dělá · na čem visí · kdo ovládá · zdroj v manuálu.</p></div></div>
+</div>
+
+<script>
+const NODES = [
+  // ---- T0 Napájení ----
+  {id:'pitanie', tier:0, ru:'ПИТАНИЕ ВКЛ. (7)', cz:'hlavní palubní napájení', crew:'řidič', control:true, bus:'dc',
+   desc:'Zapne hlavní palubní napětí 27,5 V. První úkon — bez něj jsou přístroje i start mrtvé. (Vypnutí: ПИТАНИЕ ОТКЛ. 8.)', src:'panel str.130 · poz. 7'},
+  {id:'pribory', tier:0, ru:'ПИТАНИЕ ПРИБОРОВ (35)', cz:'napájení přístrojů', crew:'řidič', control:true, requires:['netDC'], bus:'dc',
+   desc:'Zapne napájení přístrojů — mj. nutné pro kontrolu hladiny paliva v ZADNÍ nádrži (ukazatel 36).', src:'panel str.130 · poz. 35'},
+  {id:'netDC', tier:0, ru:'Palubní síť 27,5 V', cz:'stejnosměrná síť', crew:'—', requires:['pitanie'], bus:'dc',
+   desc:'Stejnosměrná síť 27,5 V. Napájí start motorů, čerpadla, lampy, přístroje, kompresor. Bufferují ji baterie.', src:'finding 06/08'},
+
+  // ---- T1 Start a chod motorů ----
+  {id:'horn', tier:1, ru:'СИГНАЛ — houkačka (40)', cz:'⚠ varování posádky', crew:'řidič', control:true, bus:'none',
+   desc:'Před JAKÝMKOLI startem zatroubit — turbína naskočí s okamžitým jekotem (~30 000 ot/min), posádka venku musí být varována.', src:'panel str.130 · poz. 40'},
+  {id:'coldcrank', tier:1, ru:'ХОЛОДНАЯ ПРОКР. (14)', cz:'studené protočení → klapky', crew:'řidič', control:true, requires:['netDC'], bus:'dc',
+   desc:'⚠ POVINNÉ před startem GTD: protočí turbínu bez zapálení a OTEVŘE výfukové klapky. Drž max 10 s.', src:'panel str.130 · poz. 14'},
+  {id:'flaps', tier:1, ru:'ОТКР. ЗАСЛ. (20)', cz:'výfukové klapky otevřené', crew:'—', requires:['coldcrank'], bus:'none',
+   desc:'⚠ Tvrdý zámek turbíny: bez otevřených klapek se ГТД udusí vlastními plyny. Lampa 20 to potvrdí.', src:'panel · lampa 20'},
+  {id:'gtdpusk', tier:1, ru:'ПУСК ГТД (10)', cz:'start turbíny (pod krytkou)', crew:'řidič', control:true, requires:['netDC','flaps'], bus:'dc',
+   desc:'Odklop krytku a stiskni — ostrý start plynové turbíny. Sleduj tahometr ГТД (57) a teplotu plynů ГАЗЫ (56, max 650 °C).', src:'panel str.130 · poz. 10'},
+  {id:'gtd', tier:1, ru:'Турбина ГТД běží', cz:'pomocný pohon (na místě)', crew:'—', requires:['gtdpusk'], bus:'mech',
+   desc:'Turbína běží (volnoběh 98,5–103,5 %). Roztáčí reduktor СЭП → generátor. Palivo na 1,5–2 h.', src:'finding 08/10'},
+  {id:'nasostopl', tier:1, ru:'НАСОС ТОПЛИВА (27)', cz:'palivové čerpadlo dieselu', crew:'řidič', control:true, requires:['netDC'], bus:'dc',
+   desc:'Zapne podávací palivové čerpadlo — natlakuje palivo dieselu před startem.', src:'panel str.130 · poz. 27'},
+  {id:'nasosmaslo', tier:1, ru:'НАСОС МАСЛА (46)', cz:'olejová předmazací pumpa', crew:'řidič', control:true, requires:['netDC'], bus:'dc',
+   desc:'⚠ Drž, dokud manometr neukáže tlak oleje — TEPRVE pak startér. Bez tlaku oleje zadřeš diesel nasucho.', src:'panel str.130 · poz. 46'},
+  {id:'oilpress', tier:1, ru:'Tlak oleje dieselu', cz:'olej natlakovaný', crew:'—', requires:['nasosmaslo'], bus:'none',
+   desc:'⚠ Tvrdý zámek dieselu: V-6R se nesmí protáčet startérem bez tlaku oleje. Tlak vytvoří držení pumpy 46.', src:'sov. diesel procedura'},
+  {id:'starter', tier:1, ru:'СТАРТЕР (47)', cz:'elektrický startér dieselu', crew:'řidič', control:true, requires:['nasostopl','oilpress'], bus:'dc',
+   desc:'Zatímco držíš olej (46), stiskni startér — roztočí diesel elektricky z baterií.', src:'panel str.130 · poz. 47'},
+  {id:'airstart', tier:1, ru:'Záložní vzduchový start', cz:'láhev 150 kg/cm² → V-6R', crew:'řidič', control:true, requires:['oilpress'], bus:'pneu',
+   desc:'Když jsou baterie mrtvé: vlevo dole je láhev se stlačeným vzduchem (150 kg/cm²). Otevřením záporného ventilu se motor mechanicky roztočí vzduchem.', src:'finding 06 · vzduch-start'},
+  {id:'diesel', tier:1, ru:'Дизель В-6R běží', cz:'hlavní motor (pohyb)', crew:'—', requires:['nasostopl','oilpress'], requiresAny:['starter','airstart'], bus:'mech',
+   desc:'Trakční diesel běží. Pohání pásy; přes páku reduktoru СЭП může točit generátor (≥1550 ot/min). Sleduj ВОДА (37), МАСЛО, тахометр (48), спидометр (39).', src:'finding 05/08'},
+  {id:'zaluzie', tier:1, ru:'ЖАЛЮЗИ ДИЗЕЛЯ (24)', cz:'žaluzie chlazení dieselu', crew:'řidič', control:true, bus:'mech',
+   desc:'Ručně otevírá/zavírá žaluzie přívodu vzduchu k dieselu — aby motor v boji „neuvařil". Otevřeno = chladí.', src:'panel str.130 · poz. 24'},
+
+  // ---- T2 Mechanika + generátor ----
+  {id:'seplever', tier:2, ru:'Páka reduktoru СЭП', cz:'za sedadlem — spojí diesel↔generátor', crew:'řidič', control:true, bus:'mech',
+   desc:'⚠ Mechanická páka VPRAVO ZA SEDADLEM. Připojeno = diesel točí generátor. Při max otáčkách naprázdno (testy) MUSÍŠ odpojit, jinak „roznos generátoru" (roztrhání). Manipulace JEN při vypnutém motoru.', src:'finding 05 · reduktor СЭП'},
+  {id:'dieselgen', tier:2, ru:'Diesel spřažen s gen.', cz:'odběr výkonu na СЭП', crew:'—', requires:['diesel','seplever'], bus:'mech',
+   desc:'Diesel je přes připojenou páku reduktoru СЭП mechanicky spojen s generátorem.', src:'finding 05'},
+  {id:'generator', tier:2, ru:'Генератор (27,5 V)', cz:'vyrábí proud', crew:'—', requiresAny:['gtd','dieselgen'], bus:'dc',
+   desc:'Generátor ГИСВ vyrábí ±27,5 V. Točí ho turbína (na místě) NEBO diesel přes páku СЭП (za jízdy). Plní síť a krmí věž.', src:'finding 06'},
+
+  // ---- T3 Pneumatika ----
+  {id:'compressor', tier:3, ru:'КОМПРЕССОР', cz:'plní vzduchové lahve', crew:'řidič', control:true, requiresAny:['gtd','diesel'], bus:'pneu',
+   desc:'Jakmile běží motor, řidič zapne kompresor. Plní dvě 3l tlakové lahve. (Vypne se po dosažení tlaku.)', src:'finding 03 · pneumosystém'},
+  {id:'airpress', tier:3, ru:'Tlak 60–65 kg/cm²', cz:'2×3 l lahve natlakované', crew:'—', requires:['compressor'], bus:'pneu',
+   desc:'Provozní tlak pneumosystému 60–65 kg/cm². Sleduje se manometrem. Při tlaku 0 nelze nic.', src:'finding 03'},
+  {id:'pneuload', tier:3, ru:'Pneu-přebití zbraní', cz:'(umožní řidič, dělá věž)', crew:'naváděč', requires:['airpress'], bus:'bound',
+   desc:'Bez natlakovaného vzduchu nelze kanón pneumaticky přebít. Řidič tlak DODÁ; samotné přebití dělá obsluha věže — hranice kompetence.', src:'finding 03/07'},
+
+  // ---- T4 Mobilita · výhled · přežití ----
+  {id:'rizeni', tier:4, ru:'Řízení (páky/pedály)', cz:'spojka·brzda·plyn·páky', crew:'řidič', control:true, requires:['diesel'], bus:'mech',
+   desc:'Páky řízení (natáčení pásů), pedál spojky, brzdy a plynu. Až 50 km/h silnice / 30 km/h terén. Řazení dle samostatné instrukce ГМ-575.', src:'finding 05/09'},
+  {id:'pohyb', tier:4, ru:'Pohyb stroje', cz:'30t kolos jede', crew:'—', requires:['rizeni'], bus:'mech',
+   desc:'Vozidlo se hýbe. Prudká jízda namáhá citlivou věžovou elektroniku (RPK) — řidič jede dle terénu a potřeb posádky.', src:'finding 05 · D-005/044'},
+  {id:'hatch', tier:4, ru:'Поклоп ЛЮК ВОДИТ. (65)', cz:'poklop zavřen+zajištěn', crew:'řidič', control:true, bus:'bound',
+   desc:'⚠ Při palbě MUSÍ být zavřen a zajištěn (jinak svítí lampa 65 — a střelba nad jeho hlavou by ho zabila). Zavřený = odblokuje palbu věže. Hranice: blokaci řeší věž.', src:'panel · lampa 65 · D-025'},
+  {id:'periscope', tier:4, ru:'Перископ БМО-190', cz:'denní výhled (vyhřívané sklo)', crew:'řidič', control:true, bus:'none',
+   desc:'Centrální periskopický přístroj БМО-190 s elektrickým vyhříváním skla proti zamlžení + boční přístroje. Zavřený poklop snesitelný jen díky němu.', src:'finding 05 · str.163/164'},
+  {id:'tvn', tier:4, ru:'Ночной ТВН-2', cz:'noční IR vidění', crew:'řidič', control:true, bus:'none',
+   desc:'Při nočních přesunech řidič nasadí aktivní infračervený přístroj ТВН-2.', src:'finding 05/06'},
+  {id:'nav', tier:4, ru:'Курсоуказатель У2 (ТНА-2)', cz:'ukazatel kurzu', crew:'řidič', control:false, bus:'none',
+   desc:'Ukazatel kurzu z tankové navigační aparatury ТНА-2 / 1Т34 — řidič podle něj drží přesný směr pochodu.', src:'finding 05 · Прил.2'},
+
+  // ---- T5 Hranice ----
+  {id:'toturret', tier:5, ru:'→ VĚŽ (mimo řidiče)', cz:'27,5 V + gen. jdou do věže', crew:'velitel + operátoři', requires:['generator'], bus:'bound',
+   desc:'Řidič vyrobí proud (27,5 V) a natlakuje vzduch — TÍM jeho kompetence KONČÍ. Měnič БПС (220 V), radar, gyro ГАГ, silové pohony i spoušť jsou věc VELITELE a OPERÁTORŮ, ne řidiče.', src:'crew-authority-map · finding 08'},
+];
+
+const TIER_NAMES = ['Napájení sítě','Start a chod motorů','Mechanika + generátor','Pneumatika (přebití zbraní)','Mobilita · výhled · přežití','Hranice řidičovy kompetence'];
+const byId = Object.fromEntries(NODES.map(n=>[n.id,n]));
+const intent = {}; NODES.forEach(n=>{ if(n.control) intent[n.id]=false; });
+intent.seplever = true;  // páka СЭП defaultně připojená
+intent.hatch = true;     // poklop defaultně zavřený
+let selected=null;
+
+function solve(){
+  const live={}; NODES.forEach(n=>live[n.id]=false);
+  for(let pass=0;pass<8;pass++){
+    NODES.forEach(n=>{
+      const reqOk = !n.requires || n.requires.every(r=>live[r]);
+      const anyOk = !n.requiresAny || n.requiresAny.some(r=>live[r]);
+      const prereq = reqOk && anyOk;
+      live[n.id] = n.control ? (prereq && intent[n.id]) : prereq;
+    });
+  }
+  return live;
+}
+function prereqMet(n,live){
+  const reqOk = !n.requires || n.requires.every(r=>live[r]);
+  const anyOk = !n.requiresAny || n.requiresAny.some(r=>live[r]);
+  return reqOk && anyOk;
+}
+
+const tiersEl=document.getElementById('tiers');
+function build(){
+  tiersEl.innerHTML='';
+  const maxT=Math.max(...NODES.map(n=>n.tier));
+  for(let t=0;t<=maxT;t++){
+    const row=document.createElement('div'); row.className='tier';
+    const lab=document.createElement('div'); lab.className='tier-label'; lab.textContent=(t+1)+'. '+TIER_NAMES[t]; row.appendChild(lab);
+    NODES.filter(n=>n.tier===t).forEach(n=>{
+      const el=document.createElement('div');
+      el.className='node'+(n.control?' control':' derived')+(n.bus==='bound'?' bound':'');
+      el.id='n_'+n.id;
+      const tag = n.bus==='dc'?'DC 27,5':n.bus==='mech'?'mech':n.bus==='pneu'?'pneu':n.bus==='bound'?'mimo řidiče':'—';
+      el.innerHTML='<div class="ru">'+n.ru+'</div><div class="cz">'+n.cz+'</div><span class="tag">'+tag+'</span>'+(n.control?'<div class="sw"></div>':'');
+      el.onclick=(e)=>{ if(n.control && e.target.classList.contains('sw')){ intent[n.id]=!intent[n.id]; refresh(); } select(n.id); };
+      if(n.control) el.ondblclick=()=>{ intent[n.id]=!intent[n.id]; refresh(); };
+      row.appendChild(el);
+    });
+    tiersEl.appendChild(row);
+  }
+}
+function refresh(){
+  const live=solve();
+  NODES.forEach(n=>{
+    const el=document.getElementById('n_'+n.id); el.classList.remove('live','dead','avail','on');
+    const met=prereqMet(n,live);
+    if(n.control){
+      if(intent[n.id]) el.classList.add('on');
+      if(live[n.id]) el.classList.add('live');
+      else if(intent[n.id] && !met) el.classList.add('dead');
+      else if(met) el.classList.add('avail');
+    } else if(live[n.id]) el.classList.add('live');
+  });
+  drawEdges(live);
+  if(selected) select(selected,true);
+}
+const svg=document.getElementById('edges');
+function center(id){ const el=document.getElementById('n_'+id), s=document.getElementById('stage');
+  const r=el.getBoundingClientRect(), b=s.getBoundingClientRect();
+  return {x:r.left-b.left+s.scrollLeft+r.width/2, top:r.top-b.top+s.scrollTop, bot:r.top-b.top+s.scrollTop+r.height}; }
+function drawEdges(live){
+  const s=document.getElementById('stage');
+  svg.setAttribute('width',s.scrollWidth); svg.setAttribute('height',s.scrollHeight);
+  let p='';
+  NODES.forEach(n=>{
+    [...(n.requires||[]),...(n.requiresAny||[])].forEach(d=>{
+      if(!byId[d]) return;
+      const a=center(d), b=center(n.id);
+      const col = live[d] ? (byId[d].bus==='dc'?'var(--dc)':byId[d].bus==='pneu'?'var(--pneu)':byId[d].bus==='bound'?'var(--bound)':'var(--on)') : 'var(--line)';
+      const midY=(a.bot+b.top)/2;
+      p+=`<path d="M${a.x},${a.bot} C${a.x},${midY} ${b.x},${midY} ${b.x},${b.top}" fill="none" stroke="${col}" stroke-width="${live[d]?2.4:1}" opacity="${live[d]?0.95:0.4}"/>`;
+    });
+  });
+  svg.innerHTML=p;
+}
+function select(id){
+  selected=id; const n=byId[id], live=solve();
+  document.querySelectorAll('.node').forEach(e=>e.classList.remove('sel'));
+  document.getElementById('n_'+id).classList.add('sel');
+  const met=prereqMet(n,live), on=live[id];
+  let why,cls;
+  if(on){ why='✔ JEDE'+(n.control?' (zapnuto + prereq splněn)':' (důsledek — prereq splněn)'); cls='ok'; }
+  else if(n.control&&intent[id]&&!met){ why='✘ Zapnuto, ale chybí prereq (viz níže)'; cls='bad'; }
+  else if(n.control&&met){ why='▸ Dostupné — můžeš zapnout'; cls='ok'; }
+  else { why='✘ Nedostupné — nejdřív splň prerekvizity'; cls='bad'; }
+  const reqList=(arr)=>!arr||!arr.length?'<span class="src">— žádné —</span>':
+     arr.map(r=>`<span class="pill" style="border-color:${live[r]?'var(--on)':'var(--dead)'}">${live[r]?'✔':'✘'} ${byId[r]?byId[r].ru:r}</span>`).join('');
+  const enables=NODES.filter(m=>(m.requires||[]).includes(id)||(m.requiresAny||[]).includes(id));
+  document.getElementById('det').innerHTML=
+    `<h2>${n.ru}</h2><div class="src">${n.cz}</div>`+
+    `<div class="why ${cls}">${why}</div>`+
+    `<div class="k">Co to dělá</div><div>${n.desc}</div>`+
+    `<div class="k">Ovládá</div><div>${n.crew||'—'} ${n.control?'· <b>páčka</b>':'· <i>důsledek (auto)</i>'}</div>`+
+    `<div class="k">Potřebuje (vše)</div><div>${reqList(n.requires)}</div>`+
+    (n.requiresAny?`<div class="k">Potřebuje (aspoň jedno)</div><div>${reqList(n.requiresAny)}</div>`:'')+
+    `<div class="k">Umožňuje</div><div>${enables.length?enables.map(m=>`<span class="pill">${m.ru}</span>`).join(''):'<span class="src">— koncový uzel —</span>'}</div>`+
+    `<div class="k">Zdroj</div><div class="src">${n.src}</div>`;
+}
+function reset(){ NODES.forEach(n=>{if(n.control)intent[n.id]=false;}); intent.seplever=true; intent.hatch=true; refresh(); }
+function seq(){
+  const order=['pitanie','pribory','horn','coldcrank','gtdpusk','nasostopl','nasosmaslo','starter','compressor','zaluzie','rizeni','periscope'];
+  reset(); let i=0;
+  const t=setInterval(()=>{ if(i>=order.length){clearInterval(t);return;} intent[order[i]]=true; i++; refresh(); },520);
+}
+window.addEventListener('resize',()=>refresh());
+build(); refresh();
+</script>
+</body>
+</html>

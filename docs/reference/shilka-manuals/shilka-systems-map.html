@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЗСУ-23-4 «Шилка» — mapa kauzalit systémů</title>
+<style>
+  :root{
+    --bg:#11150f; --panel:#1b2016; --ink:#d8e0c8; --dim:#6b7560; --line:#3a4430;
+    --off:#39402f; --avail:#caa23c; --on:#7fc24a; --dead:#d8503a; --acc:#8fb04a;
+    --bus-dc:#5fa8d8; --bus-ac:#e0913a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:13px}
+  #wrap{display:flex;height:100vh}
+  #stage{flex:1;position:relative;overflow:auto;padding:14px 18px 60px}
+  #side{width:330px;min-width:330px;background:var(--panel);border-left:1px solid var(--line);
+    padding:16px;overflow:auto;font-size:12.5px}
+  h1{font-size:15px;letter-spacing:.04em;margin:0 0 2px;color:#eef2e2}
+  .sub{color:var(--dim);font-size:11.5px;margin:0 0 10px}
+  svg#edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+  #tiers{position:relative;z-index:1}
+  .tier{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:stretch;margin:0 0 26px}
+  .tier-label{width:100%;color:var(--dim);font-size:10.5px;letter-spacing:.12em;
+    text-transform:uppercase;border-bottom:1px dashed var(--line);padding-bottom:3px;margin-bottom:8px}
+  .node{position:relative;min-width:138px;max-width:172px;background:var(--panel);
+    border:1.5px solid var(--off);border-radius:7px;padding:7px 9px;cursor:pointer;
+    transition:border-color .15s,box-shadow .15s,opacity .15s;z-index:1}
+  .node .ru{font-weight:600;font-size:12.5px;line-height:1.15}
+  .node .cz{color:var(--dim);font-size:10.5px;margin-top:1px;line-height:1.15}
+  .node .tag{display:inline-block;margin-top:5px;font-size:9px;letter-spacing:.06em;
+    padding:1px 5px;border-radius:3px;background:#0d100a;color:var(--dim);border:1px solid var(--line)}
+  .node .sw{position:absolute;top:7px;right:7px;width:30px;height:16px;border-radius:9px;
+    background:#0d100a;border:1px solid var(--line)}
+  .node .sw::after{content:"";position:absolute;top:1px;left:1px;width:12px;height:12px;
+    border-radius:50%;background:var(--dim);transition:left .15s,background .15s}
+  .node.control{padding-right:42px}
+  /* states */
+  .node.live{border-color:var(--on);box-shadow:0 0 0 1px var(--on) inset,0 0 12px -4px var(--on)}
+  .node.dead{border-color:var(--dead);box-shadow:0 0 0 1px var(--dead) inset}
+  .node.avail{border-color:var(--avail);box-shadow:0 0 10px -3px var(--avail)}
+  .node.avail .ru::before{content:"▸ ";color:var(--avail)}
+  .node.on .sw{background:#16210d;border-color:var(--on)}
+  .node.on .sw::after{left:15px;background:var(--on)}
+  .node.dead .sw::after{background:var(--dead)}
+  .node.derived{border-style:dashed}
+  .node.derived.live{border-style:solid}
+  .node.sel{outline:2px solid var(--acc);outline-offset:2px}
+  .node.hl{opacity:1}
+  .dimmed{opacity:.28}
+  .busline.live{stroke-width:2.4}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 12px;font-size:11px;color:var(--dim)}
+  .legend b{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px;border:1.5px solid}
+  .lg-off b{border-color:var(--off)} .lg-av b{border-color:var(--avail)}
+  .lg-on b{border-color:var(--on)} .lg-dead b{border-color:var(--dead)}
+  button{background:#222a1a;color:var(--ink);border:1px solid var(--line);border-radius:5px;
+    padding:5px 10px;cursor:pointer;font-size:11.5px}
+  button:hover{border-color:var(--acc)}
+  .bar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  .fire{font-size:14px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid}
+  .fire.no{color:var(--dead);border-color:var(--dead)} .fire.yes{color:var(--on);border-color:var(--on)}
+  #det h2{font-size:14px;margin:0 0 2px;color:#eef2e2}
+  #det .k{color:var(--dim);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 3px}
+  #det .why{padding:7px 9px;border-radius:5px;background:#0d100a;border:1px solid var(--line);line-height:1.4}
+  #det .why.ok{border-color:var(--on)} #det .why.bad{border-color:var(--dead)}
+  .pill{display:inline-block;font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);margin:2px 3px 0 0}
+  .src{color:var(--dim);font-size:10.5px;font-style:italic}
+  code{background:#0d100a;padding:1px 4px;border-radius:3px;color:var(--bus-ac)}
+  .note{color:var(--dim);font-size:10.5px;border-top:1px solid var(--line);margin-top:14px;padding-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <h1>ЗСУ-23-4 «Шилка» — mapa kauzalit systémů</h1>
+    <p class="sub">100% závislosti z manuálů · klikni na uzel = co dělá + proč (ne)jede · páčky jen na reálně ovladatelné · sběrnice/řešení se rozsvítí jako důsledek</p>
+    <div class="bar">
+      <button onclick="reset()">⟲ Vše vypnout (studený stroj)</button>
+      <button onclick="seq()">▶ Power-up sekvence</button>
+      <span style="color:var(--dim)">Palba:</span> <span id="fire" class="fire no">ОГОНЬ NELZE</span>
+    </div>
+    <div class="legend">
+      <span class="lg-off"><b></b>vypnuto / nedostupné</span>
+      <span class="lg-av"><b></b>▸ dostupné (lze zapnout)</span>
+      <span class="lg-on"><b></b>běží (napájeno)</span>
+      <span class="lg-dead"><b></b>zapnuto, ale BEZ proudu</span>
+      <span>— DC 27,5 V · — AC 220 V/400 Hz</span>
+    </div>
+    <svg id="edges"></svg>
+    <div id="tiers"></div>
+  </div>
+  <div id="side">
+    <div id="det"><h2>Klikni na uzel</h2><p class="src">Ukážu, co dělá, na čem visí, kdo ho ovládá a stranu manuálu.</p></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   NODE MODEL — every dependency traced to the Shilka manuals.
+   requires    = AND  (all must be live)
+   requiresAny = OR   (at least one live)
+   control:true= player-toggleable (real control); else DERIVED (auto-lights).
+   interlock:true = permission condition; "on" = SAFE/permissive state.
+   ============================================================ */
+const NODES = [
+  // ---- T0: power sources ----
+  {id:'battery', tier:0, ru:'Аккумуляторы 4×12СТ-70М', cz:'baterie / palubní síť (ПИТАНИЕ ВКЛ)', crew:'řidič',
+   control:true, bus:'dc', desc:'Čtyři baterie 24 V (regulováno na 27,5 V). Buffer DC sběrnice, startují turbínu, napájejí DC spotřebiče i bez generátoru (omezeně). Hlavní vypínač ПИТАНИЕ ВКЛ.', src:'finding 06/08 · 4×12СТ-70М'},
+  {id:'turbine', tier:0, ru:'ДГ4М-1 ГТД (turbína/APU)', cz:'zdroj bojové energie NA MÍSTĚ', crew:'řidič',
+   control:true, requires:['battery','flaps'], bus:'mech', desc:'Plynová turbína = APU. ⚠️ TVRDÝ ZÁMEK: startuje JEN s otevřenými výfukovými klapkami (lampa ОТКР.ЗАСЛ. 20) — bez nich se udusí vlastními plyny → poškození/požár. Sekvence: 14 protočení → klapky → 10 ПУСК → startér odpadá ve 44 % → generátor. Palivo 1,5–2 h.', src:'finding 08/10 · ДГ4М-1'},
+  {id:'diesel', tier:0, ru:'В-6М-1 дизель', cz:'pohyb + generátor za jízdy (≥1550 ot/min)', crew:'řidič',
+   control:true, requires:['fuelpump','oilpress'], bus:'mech', desc:'Trakční diesel V-6М. ⚠️ TVRDÝ ZÁMEK: NIKDY nestartovat bez tlaku oleje (předmazací pumpa 46) — zadření! Přes reduktor СЭП točí generátor při ≥1550 ot/min (jinak odpadne, vybíjí baterie).', src:'finding 05/08 · D-019'},
+  {id:'ext', tier:0, ru:'ВИН — внешнее питание', cz:'externí zásuvka (vstříkne DC i AC)', crew:'pozemní',
+   control:true, bus:'ext', desc:'Bortovoy konektor: 3-fáze 220 V/400 Hz + 27,5 V přímo do sběrnice, obejde generátor i měnič. Pro park/servis.', src:'finding 06 · pg 42'},
+  {id:'horn', tier:0, ru:'СИГНАЛ — гудок (40)', cz:'houkačka — VAROVÁNÍ posádky', crew:'řidič',
+   control:true, bus:'none', desc:'⚠️ Před JAKÝMKOLI startem: zatroubit. Turbína naskočí s okamžitým jekotem (~30 000 ot/min) — posádka kolem stroje musí být varována. Bezpečnostní krok (ne elektrická podmínka).', src:'ИЭ 1970 · poz. 40'},
+  {id:'coldcrank', tier:0, ru:'ХОЛОДНАЯ ПРОКРУТКА (14)', cz:'studené protočení → otevře klapky', crew:'řidič',
+   control:true, requires:['battery'], bus:'dc', desc:'⚠️ POVINNÉ před startem GTD. Protočí turbínu BEZ zapálení a OTEVŘE výfukové klapky. Drží se max 10 s; hlídá tlak oleje 0,15–0,2.', src:'finding 10 · poz. 14'},
+  {id:'flaps', tier:0, ru:'ОТКР. ЗАСЛ. — klapky otevřeny (20)', cz:'výfukové klapky otevřené (lampa)', crew:'—',
+   requires:['coldcrank'], bus:'none', desc:'⚠️ TVRDÝ ZÁMEK turbíny: bez otevřených klapek se ГТД udusí vlastními plyny → poškození/požár. Otevře je studené protočení (14), potvrdí zelená lampa 20.', src:'finding 10 · lampa 20'},
+  {id:'fuelpump', tier:0, ru:'НАСОС ТОПЛИВА (27)', cz:'palivové podávací čerpadlo', crew:'řidič',
+   control:true, requires:['battery'], bus:'dc', desc:'Podávací palivové čerpadlo — natlakuje palivo dieselu před startem.', src:'panel · poz. 27'},
+  {id:'oilpump', tier:0, ru:'НАСОС МАСЛА — МЗН (46)', cz:'olejová předmazací pumpa', crew:'řidič',
+   control:true, requires:['battery'], bus:'dc', desc:'⚠️ Elektrická předmazací pumpa (МЗН-2). Drž, dokud manometr neukáže tlak oleje — TEPRVE pak startér (47). Bez ní zadřeš diesel nasucho.', src:'finding 05 · МЗН-2'},
+  {id:'oilpress', tier:0, ru:'Давление масла диз.', cz:'tlak oleje dieselu OK', crew:'—',
+   requires:['oilpump'], bus:'none', desc:'⚠️ TVRDÝ ZÁMEK dieselu: V-6 se NESMÍ protáčet startérem bez tlaku oleje. Tlak vytvoří držení předmazací pumpy 46.', src:'sov. diesel procedura'},
+
+  // ---- T1: generation + DC bus ----
+  {id:'generator', tier:1, ru:'ГИСВ2-14/3000 генератор', cz:'primární generátor', crew:'—',
+   requiresAny:['turbine','diesel'], bus:'dc', desc:'Dvoukanálový generátor → ±27,5 V DC (usměrňovače 5-В1/5-В2). Reguluje automatika (РН-23 / БР-211). Točí ho turbína (na místě) NEBO diesel (za jízdy).', src:'finding 06 · pg 38'},
+  {id:'bus_dc', tier:1, ru:'Сеть ±27,5 В DC', cz:'STEJNOSMĚRNÝ okruh ①', crew:'—',
+   requiresAny:['generator','battery','ext'], bus:'dc', desc:'Stejnosměrná sběrnice. Rozpětí mezi raily = 55 V (voltmetr «27В–55В»). Drží ji generátor NEBO baterie NEBO externí. Skoro vždy živá, pokud je ПИТАНИЕ on. Napájí: spouště, rádio, lampy, noční optiku, čerpadla, řízení převodníku.', src:'finding 06 · ±27,5 V'},
+
+  // ---- T2: converter + AC bus + transformer ----
+  {id:'converter', tier:2, ru:'ПС-14А преобразователь (БПС)', cz:'měnič DC→AC — zapíná VELITEL', crew:'velitel',
+   control:true, requires:['bus_dc'], bus:'dc', desc:'Rotační měnič: DC motor (z 27,5 V) točí AC generátor → 220 V/400 Hz. ⭐ Zapíná ho VELITEL (ПУСК БПС), ne řidič — řidič jen vyrábí DC. Tohle je brána mezi „auto" a „radarem řízené dělo".', src:'finding 06/07 · ПС-14А'},
+  {id:'bus_ac', tier:2, ru:'Сеть 220 В / 400 Гц', cz:'STŘÍDAVÝ okruh ② (master-brána)', crew:'—',
+   requiresAny:['converter','ext'], bus:'ac', desc:'Třífázová bojová sběrnice. Na ní visí VŠECHNO, co dělá Shilku radarem řízeným dělem: radar, СРП počítač, stabilizace, silové míření. Padne → zbyde ruční kanón na bateriích.', src:'finding 06/08 · 220 V/400 Hz'},
+  {id:'bus115', tier:2, ru:'Б-6В → 115 В / 400 Гц', cz:'odvozený rail pro pohony', crew:'—',
+   requires:['bus_ac'], bus:'ac', desc:'Transformátor Б-6В dělá z 220 V → 110 V a 115 V. 115 V/400 Hz krmí silové pohony míření 2Э2.', src:'finding 08 · Б-6В'},
+
+  // ---- T3: consumers ----
+  {id:'radar_pwr', tier:3, ru:'РЛС: НАКАЛ→АНОД→ВЫСОКОЕ', cz:'napájecí řetěz radaru (dálkař)', crew:'dálkař',
+   control:true, requires:['bus_ac'], bus:'ac', desc:'Power-up radaru: žhavení (НАКАЛ, ~3 min) → anodové (АНОДНОЕ) → vysoké napětí (ВЫСОКОЕ). Vyžaduje běžící ventilaci RLS. Bez 220 V/400 Hz nenaběhne.', src:'finding 01/04'},
+  {id:'radar', tier:3, ru:'РПК «Тобол» поиск/сопровожд.', cz:'radar — hledání/sledování (naváděč)', crew:'naváděč',
+   control:true, requires:['radar_pwr'], bus:'ac', desc:'Radarový komplex: hledací rastr + kuželový sken sledování. Najde echo, zamkne cíl. Bez naběhnutého napájecího řetězce nejede.', src:'finding 04'},
+  {id:'srp', tier:3, ru:'СРП Б-1 (analogový počítač)', cz:'palebné předsažení / lead', crew:'—',
+   requires:['bus_ac'], bus:'ac', desc:'Analogový počítač: z úhlů β/ε + dálky D + náklonu vozidla počítá palebné předsažení (lead) βу/φ/Tу. Srdce „auto" palby. Visí na AC.', src:'finding 04/08 · СРП'},
+  {id:'stab', tier:3, ru:'Стабилизация + ГАГ гиро', cz:'stabilní mířicí linie + náklon', crew:'—',
+   requires:['bus_ac'], bus:'ac', desc:'Gyrostabilizace mířicí linie + ГАГ dává náklon vozidla (ψ/θк) do СРП. Bez AC mrtvá → míření jen z místa.', src:'finding 08 · ГАГ'},
+  {id:'drives', tier:3, ru:'2Э2 силовые приводы', cz:'silové míření věž+zbraň (velitel zap.)', crew:'velitel/naváděč',
+   control:true, requires:['bus115','bus_dc'], bus:'ac', desc:'Elektrohydraulické pohony: odměr věže + náměr zbraně. Motor ДСО-20 + čerpadla + Т-39М. Potřebují 115 V (silově) + 27,5 V (řízení). Bez nich → ruční kola.', src:'finding 06/08 · 2Э2'},
+  {id:'sears', tier:3, ru:'ЭЛСП — электроспуски', cz:'elektrické spouště kanónů', crew:'naváděč/velitel',
+   requires:['bus_dc'], bus:'dc', desc:'Elektrické spouště 4 automatů (+27,5 V přes Пр12). Fungují i na baterie — palba je možná i bez AC (ručně/opticky).', src:'finding 07 · ЭЛСП'},
+  {id:'comms', tier:3, ru:'Р-123М / Р-124', cz:'rádio + vnitřní spojení', crew:'všichni',
+   requires:['bus_dc'], bus:'dc', desc:'Rádiostanice + intercom posádky. DC spotřebiče — jedou i bez generátoru/AC.', src:'finding 08'},
+  {id:'optics', tier:3, ru:'ТВНО / ТКН — ноч. оптика', cz:'noční vidění + optické zaměřovače', crew:'velitel/naváděč/řidič',
+   requires:['bus_dc'], bus:'dc', desc:'Noční přístroje (DC). Optický zaměřovač Б-7 je pasivní → záloha míření i bez veškerého proudu.', src:'finding 08'},
+
+  // ---- T4: fire-control data chain ----
+  {id:'detect', tier:4, ru:'Обнаружение (ОП)', cz:'echo nalezeno', crew:'naváděč',
+   requires:['radar'], bus:'ac', desc:'Hledací anténa zachytí blip v šumu.', src:'finding 04'},
+  {id:'strobe', tier:4, ru:'Дальность — строб', cz:'dálková brána (dálkař)', crew:'dálkař',
+   control:true, requires:['detect'], bus:'ac', desc:'Dálkař zastrobuje cíl. ⭐ Dálková brána ZÁROVEŇ hradlí úhlový kanál → dálkař a naváděč musí spolupracovat.', src:'finding 04/01'},
+  {id:'lock', tier:4, ru:'146 АВТ. — захват', cz:'úhlový zámek (naváděč)', crew:'naváděč',
+   control:true, requires:['radar','strobe'], bus:'ac', desc:'Naváděč stiskne АВТ. → kuželový sken zamkne úhly (β/ε). Dává úhlové sledování do СРП.', src:'finding 04'},
+  {id:'optical', tier:4, ru:'Оптика — прямая наводка', cz:'optický přímý režim (alternativa)', crew:'naváděč',
+   control:true, bus:'none', desc:'Optické míření vizírem bez radaru — alternativní cesta k palbě (zem/ruční). Nepotřebuje data СРП.', src:'finding 10 · režim 5'},
+  {id:'solution', tier:4, ru:'СРП — решение (lead)', cz:'spočítané předsažení', crew:'—',
+   requires:['srp','stab','lock'], bus:'ac', desc:'СРП z úhlů + dálky + náklonu spočítá lead. ОПК převede na mířicí úhly Q/Ф pro pohony.', src:'finding 04'},
+  {id:'data', tier:4, ru:'ЕСТЬ ДАННЫЕ', cz:'platná palebná data', crew:'—',
+   requires:['solution'], bus:'ac', desc:'Lampa «ЕСТЬ ДАННЫЕ» — v auto-režimech podmínka palby. Není dekorace: bez ní velitel nepovolí auto-palbu.', src:'finding 07/10'},
+
+  // ---- T5: fire-permission interlocks (on = SAFE state) ----
+  {id:'hatch', tier:5, interlock:true, ru:'Люк водителя — ЗAVŘENO', cz:'poklop řidiče zavřen (ПС-3)', crew:'řidič',
+   control:true, bus:'none', desc:'Tvrdá blokace: otevřený poklop blokuje DSO-20 i palebný okruh. Stav čte kontakt ПС-3 (fyzická poloha ≠ kontakt → možná závada).', src:'finding 08 · D-025'},
+  {id:'stops', tier:5, interlock:true, ru:'Стопоры сняты', cz:'stopory věže+kolébky odjištěny', crew:'naváděč',
+   control:true, bus:'none', desc:'Silové pohony i palba jen při odstoporované věži a kolébce AZP.', src:'finding 03/08'},
+  {id:'collector', tier:5, interlock:true, ru:'Сборник звеньев закрыт', cz:'dvířka sběrače článků zavřena', crew:'naváděč',
+   control:true, bus:'none', desc:'Otevřená dvířka sběrače článků blokují pohon/palbu.', src:'finding 03'},
+  {id:'cooling', tier:5, interlock:true, ru:'Охлаждение работает', cz:'chlazení hlavní běží (+ОЖ)', crew:'naváděč',
+   control:true, requires:['bus_dc'], bus:'dc', desc:'Kapalinové chlazení hlavní (85 l, čerpadlo). Bez běžícího chlazení + hladiny ОЖ se nesmí pálit.', src:'finding 03 · S1'},
+  {id:'anglelim', tier:5, interlock:true, ru:'Угол ≥ ОГРАНИЧ. УГЛОВ', cz:'náměr nad omezovačem', crew:'velitel',
+   control:true, bus:'none', desc:'⭐ «ОГРАНИЧЕНИЕ УГЛОВ»: elektrické odříznutí — pod nastavený úhel (5–40°) se palebný okruh rozpojí. Velitel nastaví 30° vzduch / 0° zem a potvrdí.', src:'finding 07/10'},
+  {id:'circuit', tier:5, interlock:true, ru:'Цепь стрельбы — ВКЛ', cz:'palebný okruh zapnut', crew:'velitel',
+   control:true, requires:['bus_dc'], bus:'dc', desc:'Velitel drží palebné právo (ЦЕПЬ СТРЕЛЬБЫ). Bez něj se spouště nesepnou.', src:'finding 07'},
+
+  // ---- T6: output ----
+  {id:'canfire', tier:6, ru:'ОГОНЬ — palba možná', cz:'výsledná palebná brána (AND)', crew:'—',
+   requires:['sears','hatch','stops','collector','cooling','anglelim','circuit'], requiresAny:['data','optical'],
+   bus:'dc', desc:'Palba je možná jen když je VŠE splněno: spouště napájené · poklop zavřen · stopory sňaty · sběrač zavřen · chlazení běží · náměr nad omezovačem · palebný okruh on · A (platná data NEBO optický režim).', src:'finding 07/08 · interlock AND'},
+];
+
+const TIER_NAMES = ['Zdroje energie','Generování + DC okruh ①','Měnič + AC okruh ②','Spotřebiče','Palebně-datový řetězec','Blokace palby (musí být v bezpečném stavu)','Výsledek'];
+const byId = Object.fromEntries(NODES.map(n=>[n.id,n]));
+// default intent: everything OFF; interlocks also OFF (you must set safe state)
+const intent = {}; NODES.forEach(n=>{ if(n.control) intent[n.id]=false; });
+let selected=null;
+
+/* ---------- causal solver (fixpoint over the DAG) ---------- */
+function solve(){
+  const live={}; NODES.forEach(n=>live[n.id]=false);
+  for(let pass=0;pass<8;pass++){
+    NODES.forEach(n=>{
+      const reqOk = !n.requires || n.requires.every(r=>live[r]);
+      const anyOk = !n.requiresAny || n.requiresAny.some(r=>live[r]);
+      const prereq = reqOk && anyOk;
+      if(n.control) live[n.id] = prereq && intent[n.id];
+      else          live[n.id] = prereq;            // derived: auto if prereqs met
+    });
+  }
+  return live;
+}
+function prereqMet(n,live){
+  const reqOk = !n.requires || n.requires.every(r=>live[r]);
+  const anyOk = !n.requiresAny || n.requiresAny.some(r=>live[r]);
+  return reqOk && anyOk;
+}
+
+/* ---------- render ---------- */
+const tiersEl=document.getElementById('tiers');
+function build(){
+  tiersEl.innerHTML='';
+  const maxT=Math.max(...NODES.map(n=>n.tier));
+  for(let t=0;t<=maxT;t++){
+    const row=document.createElement('div'); row.className='tier';
+    const lab=document.createElement('div'); lab.className='tier-label'; lab.textContent=(t+1)+'. '+TIER_NAMES[t]; row.appendChild(lab);
+    NODES.filter(n=>n.tier===t).forEach(n=>{
+      const el=document.createElement('div'); el.className='node'+(n.control?' control':' derived'); el.id='n_'+n.id;
+      el.innerHTML='<div class="ru">'+n.ru+'</div><div class="cz">'+n.cz+'</div>'+
+        '<span class="tag">'+(n.bus==='ac'?'AC 220/400':n.bus==='dc'?'DC 27,5':n.bus==='mech'?'mech':n.bus==='ext'?'externí':n.interlock?'blokace':'—')+'</span>'+
+        (n.control?'<div class="sw"></div>':'');
+      el.onclick=(e)=>{ if(n.control && e.target.classList.contains('sw')){ intent[n.id]=!intent[n.id]; refresh(); } select(n.id); };
+      // make the whole control node toggle on click of body too? keep: body=select, switch=toggle
+      if(n.control) el.ondblclick=()=>{ intent[n.id]=!intent[n.id]; refresh(); };
+      row.appendChild(el);
+    });
+    tiersEl.appendChild(row);
+  }
+}
+function refresh(){
+  const live=solve();
+  NODES.forEach(n=>{
+    const el=document.getElementById('n_'+n.id); el.classList.remove('live','dead','avail','on');
+    const met=prereqMet(n,live);
+    if(n.control){
+      if(intent[n.id]) el.classList.add('on');
+      if(live[n.id]) el.classList.add('live');
+      else if(intent[n.id] && !met) el.classList.add('dead');  // switched on but lost prereq
+      else if(met) el.classList.add('avail');                   // can be switched on now
+    } else {
+      if(live[n.id]) el.classList.add('live');
+    }
+  });
+  // fire output
+  const f=document.getElementById('fire'); const ok=live['canfire'];
+  f.className='fire '+(ok?'yes':'no'); f.textContent=ok?'ОГОНЬ MOŽNÁ ✔':'ОГОНЬ NELZE';
+  drawEdges(live);
+  if(selected) select(selected,true);
+}
+
+/* ---------- SVG edges ---------- */
+const svg=document.getElementById('edges');
+function center(id){ const el=document.getElementById('n_'+id), s=document.getElementById('stage');
+  const r=el.getBoundingClientRect(), b=s.getBoundingClientRect();
+  return {x:r.left-b.left+s.scrollLeft+r.width/2, y:r.top-b.top+s.scrollTop+r.height/2, w:r.width, h:r.height,
+          top:r.top-b.top+s.scrollTop, bot:r.top-b.top+s.scrollTop+r.height}; }
+function drawEdges(live){
+  const s=document.getElementById('stage');
+  svg.setAttribute('width',s.scrollWidth); svg.setAttribute('height',s.scrollHeight);
+  let p='';
+  NODES.forEach(n=>{
+    const deps=[...(n.requires||[]),...(n.requiresAny||[])];
+    deps.forEach(d=>{
+      if(!byId[d]) return;
+      const a=center(d), b=center(n.id);
+      const col = live[d] ? (byId[d].bus==='ac'?'var(--bus-ac)': byId[d].bus==='dc'?'var(--bus-dc)':'var(--on)') : 'var(--line)';
+      const wdt = live[d] ? 2.4 : 1;
+      const midY=(a.bot+b.top)/2;
+      p+=`<path d="M${a.x},${a.bot} C${a.x},${midY} ${b.x},${midY} ${b.x},${b.top}" fill="none" stroke="${col}" stroke-width="${wdt}" opacity="${live[d]?0.95:0.4}"/>`;
+    });
+  });
+  svg.innerHTML=p;
+}
+
+/* ---------- detail side panel ---------- */
+function select(id,keep){
+  selected=id; const n=byId[id], live=solve();
+  document.querySelectorAll('.node').forEach(e=>e.classList.remove('sel'));
+  document.getElementById('n_'+id).classList.add('sel');
+  const met=prereqMet(n,live), on=live[id];
+  let why,cls;
+  if(on){ why='✔ JEDE'+(n.control?' (zapnuto + prereq splněn)':' (prereq splněn — derived)'); cls='ok'; }
+  else if(n.control&&intent[id]&&!met){ why='✘ Zapnuto, ale BEZ proudu — chybí prereq (viz níže)'; cls='bad'; }
+  else if(n.control&&met){ why='▸ Dostupné — můžeš zapnout (páčka)'; cls='ok'; }
+  else { why='✘ Nedostupné — nejdřív splň prerekvizity'; cls='bad'; }
+  const reqList=(arr,join)=>!arr||!arr.length?'<span class="src">— žádné —</span>':
+     arr.map(r=>`<span class="pill" style="border-color:${live[r]?'var(--on)':'var(--dead)'}">${live[r]?'✔':'✘'} ${byId[r]?byId[r].ru:r}</span>`).join('');
+  const enables=NODES.filter(m=>(m.requires||[]).includes(id)||(m.requiresAny||[]).includes(id));
+  document.getElementById('det').innerHTML=
+    `<h2>${n.ru}</h2><div class="src">${n.cz}</div>`+
+    `<div class="why ${cls}">${why}</div>`+
+    `<div class="k">Co to dělá</div><div>${n.desc}</div>`+
+    `<div class="k">Ovládá</div><div>${n.crew||'—'} ${n.control?'· <b>páčka</b> (klik na přepínač / dvojklik)':'· <i>derived (auto)</i>'}</div>`+
+    `<div class="k">Potřebuje (VŠE)</div><div>${reqList(n.requires)}</div>`+
+    (n.requiresAny?`<div class="k">Potřebuje (aspoň jedno)</div><div>${reqList(n.requiresAny)}</div>`:'')+
+    `<div class="k">Umožňuje</div><div>${enables.length?enables.map(m=>`<span class="pill">${m.ru}</span>`).join(''):'<span class="src">— koncový uzel —</span>'}</div>`+
+    `<div class="k">Zdroj</div><div class="src">${n.src}</div>`;
+}
+
+/* ---------- controls ---------- */
+function reset(){ NODES.forEach(n=>{if(n.control)intent[n.id]=false;}); refresh(); }
+function seq(){ // real power-up: net → horn → cold-crank(flaps) → turbine → converter → consumers; diesel: fuel→oil→starter
+  const order=['battery','horn','coldcrank','turbine','converter','radar_pwr','radar','drives','strobe','lock',
+               'fuelpump','oilpump','diesel','hatch','stops','collector','cooling','anglelim','circuit'];
+  reset(); let i=0;
+  const t=setInterval(()=>{ if(i>=order.length){clearInterval(t);return;} intent[order[i]]=true; i++; refresh(); },550);
+}
+window.addEventListener('resize',()=>refresh());
+build(); refresh();
+</script>
+</body>
+</html>
