@@ -35,3 +35,26 @@ export function cellAABB(t, b, s, r) {
   const ex = Math.max(hr, ha);
   return { min: [cx - ex, cy - t.bandH / 2, cz - ex], max: [cx + ex, cy + t.bandH / 2, cz + ex], c: [cx, cy, cz] };
 }
+
+// Apply a hit at LOCAL height `y` (metres up from base) and `ang` (radians around +X→+Z). `pen` = how many
+// OUTER rings the caliber reaches (1..rings). `dmg` is subtracted from each cell's hp; cells at hp≤0 die.
+// `spreadS`/`spreadB` = footprint radius in sectors/bands (0 = single column). Returns the ids that DIED.
+export function carve(t, y, ang, { pen = 1, dmg = 1e9, spreadS = 0, spreadB = 0 } = {}) {
+  const b0 = Math.max(0, Math.min(t.bands - 1, Math.floor(y / t.bandH)));
+  const TAU = Math.PI * 2;
+  const s0 = Math.floor((((ang % TAU) + TAU) % TAU) / TAU * t.sectors) % t.sectors;
+  const dead = [];
+  for (let db = -spreadB; db <= spreadB; db++) {
+    const b = b0 + db; if (b < 0 || b >= t.bands) continue;
+    for (let ds = -spreadS; ds <= spreadS; ds++) {
+      const s = (((s0 + ds) % t.sectors) + t.sectors) % t.sectors;
+      for (let r = 0; r < Math.min(pen, t.rings); r++) {
+        const i = cellIndex(t, b, s, r);
+        if (!t.alive[i]) continue;
+        t.hp[i] -= dmg;
+        if (t.hp[i] <= 0) { t.alive[i] = 0; dead.push(i); }
+      }
+    }
+  }
+  return dead;
+}
