@@ -381,7 +381,8 @@ class Game {
       if (this.weapons.isThrowLocked() && code !== 'KeyM') return; // committed molotov: only the LMB throw (and mute) work
       if (this.mp.active && this.mp.frozen) return; // downed/dead/waiting: no reload/melee/mount/board/loot/weapon-switch
       if (this.player.mountedGun && code !== 'KeyE' && code !== 'KeyF' && code !== 'KeyM') return; // on the mounted gun: only dismount / fullscreen / mute — no weapon or inventory switching
-      if (code === 'KeyR') { if (this.forest && this.forest._testActive) this.forest.spawnTestTree(this.forest._testSpecies, this.forest._testScale); else this.weapons.startReload(); } // dev: while /testtree mode is active, R manually resets the test tree (else normal reload)
+      if (code === 'KeyR') this.weapons.startReload();
+      else if (code === 'KeyU') { if (this.forest && this.forest._testActive) this.forest.spawnTestTree(this.forest._testSpecies, this.forest._testScale); } // dev: while /testtree mode is active, U manually resets the test tree
       else if (code === 'KeyV') this.weapons.quickMelee();
       else if (code === 'KeyE') {
         if (this.mp.active && this.mp.tryStartRevive && this.mp.tryStartRevive()) return;
@@ -405,7 +406,7 @@ class Game {
       else if (code === 'KeyF') this.toggleFullscreen();
       else if (code === 'KeyB') this.weapons.toggleFireMode();
       else if (code === 'KeyG') { const c = this.inventory.curItem(); if (c) this.inventory.dropSlot(c.slot); }
-      else if (code === 'KeyI') this.toggleInventory();
+      else if (code === 'KeyI') { if (this.forest && this.forest._testActive) this.forest.toggleTestView(); else this.toggleInventory(); } // dev: while /testtree active, I toggles texture ↔ debug-colour view
       else if (code === 'KeyC') this.tryMortarSpot(); // spotter: range+bearing call to the mortar (+ shared marker)
       else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
       else if (code.startsWith('Digit')) { const n = parseInt(code.slice(5), 10); if (n >= 1 && n <= 9) this.inventory.selectSlotN(n); }

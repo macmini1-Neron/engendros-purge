@@ -1104,6 +1104,7 @@ export class ForestDemo {
     // instead of calling _dbgMat() on every rebuild (which caused the trunk to flash different colours
     // as you carved it). Each DETACHED piece gets its own fresh _dbgMat() call → visually distinct.
     rec._trunkMat = this._dbgMat();
+    rec._showCells = false;   // /testtree default = TEXTURE view (the real smooth model); press I to toggle to the debug voxel-cell view
 
     // ── CELL TRUNK (Task 3: carveable voxel-cylinder replacing old trunk bands for the test tree) ──
     // Drop the old trunk-band boxes (_addTree just built them) so every trunk hit goes through
@@ -1114,13 +1115,9 @@ export class ForestDemo {
     rec._cellBoxes = [];
     this._buildCellTrunk(rec);   // builds cell mesh + per-alive-cell world collision boxes
 
-    // HIDE the original makeTree WOOD mesh — the carveable cell-trunk now IS the visible trunk, so the
-    // smooth original would just occlude the carved holes. Keep the leaf canopy (rec.leafMesh) visible.
-    if (rec.mesh) {
-      rec.mesh.traverse((o) => {
-        if (o.isMesh && o !== rec.leafMesh) o.visible = false;
-      });
-    }
+    // The real (smooth, good-looking) makeTree model stays VISIBLE by default — that's the TEXTURE view.
+    // The carveable voxel-cell mesh is built hidden (rec._showCells=false) and only shown when you toggle
+    // to the debug COLOUR view with I. The cell trunk is always the live collision/destruction layer.
 
     return rec;
   }
@@ -1169,8 +1166,25 @@ export class ForestDemo {
       const mat = rec._test ? (rec._trunkMat || voxelMaterial({})) : voxelMaterial({});
       const mesh = new THREE.Mesh(mb.build(), mat);
       mesh.position.set(rec.x, y0, rec.z); mesh.castShadow = true; this.scene.add(mesh);
+      mesh.visible = !!rec._showCells;   // hidden in TEXTURE view; shown in debug COLOUR view (toggle I)
       rec._cellMesh = mesh;
     }
+  }
+
+  // Dev: flip the /testtree view between TEXTURE (the real smooth model — default) and COLOUR (the debug
+  // voxel cells + detached pieces). Bound to I while a test tree is active. The collision/destruction cell
+  // trunk is always live underneath — this only changes what's DRAWN. Returns the new showCells state.
+  toggleTestView() {
+    const rec = this.trees.find((t) => t._test);
+    if (!rec) return false;
+    rec._showCells = !rec._showCells;
+    const show = rec._showCells;
+    if (rec.mesh) rec.mesh.traverse((o) => { if (o.isMesh && o !== rec.leafMesh) o.visible = !show; });   // real wood model = TEXTURE view
+    if (rec._cellMesh) rec._cellMesh.visible = show;                                                       // voxel cells = COLOUR view
+    for (const f of (this._falling2 || [])) if (f.node) f.node.visible = show;                             // falling debug pieces only in colour view
+    for (const f of (this._settled2 || [])) if (f.node) f.node.visible = show;
+    if (this.game && this.game.hud && this.game.hud.bigMessage) this.game.hud.bigMessage(show ? 'TEST: DEBUG COLOURS' : 'TEST: TEXTURE');
+    return show;
   }
 
   // Called by weapons.js _destructHit when box.cell != null (a cell-trunk box hit on the test tree).
