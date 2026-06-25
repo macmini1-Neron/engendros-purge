@@ -42,7 +42,7 @@ export function cellAABB(t, b, s, r) {
 export function carve(t, y, ang, { pen = 1, dmg = 1e9, spreadS = 0, spreadB = 0 } = {}) {
   const b0 = Math.max(0, Math.min(t.bands - 1, Math.floor(y / t.bandH)));
   const TAU = Math.PI * 2;
-  const s0 = Math.round((((ang % TAU) + TAU) % TAU) / TAU * t.sectors) % t.sectors;
+  const s0 = Math.floor((((ang % TAU) + TAU) % TAU) / TAU * t.sectors + 1e-9) % t.sectors;   // floor = the wedge that CONTAINS the angle (geometrically correct); +1e-9 so an exact sector-boundary angle maps up, not float-undershoots down
   const dead = [];
   for (let db = -spreadB; db <= spreadB; db++) {
     const b = b0 + db; if (b < 0 || b >= t.bands) continue;
