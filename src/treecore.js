@@ -83,3 +83,40 @@ export function supportFlood(t) {
   }
   return sup;
 }
+
+// Alive + unsupported cells, grouped into connected components (face-adjacency). Each group = one piece
+// that detaches together. Carries band span, cell count, and local-space centroid (for hinge/tumble spawn).
+export function orphanGroups(t, sup) {
+  const n = t.bands * t.sectors * t.rings;
+  const seen = new Uint8Array(n);
+  const groups = [];
+  for (let start = 0; start < n; start++) {
+    if (!t.alive[start] || sup[start] || seen[start]) continue;
+    const cells = [], stack = [start]; seen[start] = 1;
+    let minB = Infinity, maxB = -Infinity, cx = 0, cy = 0, cz = 0;
+    while (stack.length) {
+      const j = stack.pop(); cells.push(j);
+      const [b, s, r] = decodeCell(t, j);
+      minB = Math.min(minB, b); maxB = Math.max(maxB, b);
+      const a = cellAABB(t, b, s, r); cx += a.c[0]; cy += a.c[1]; cz += a.c[2];
+      const nb = [[b + 1, s, r], [b - 1, s, r], [b, s + 1, r], [b, s - 1, r], [b, s, r + 1], [b, s, r - 1]];
+      for (let [bb, ss, rr] of nb) {
+        if (bb < 0 || bb >= t.bands || rr < 0 || rr >= t.rings) continue;
+        ss = ((ss % t.sectors) + t.sectors) % t.sectors;
+        const k = cellIndex(t, bb, ss, rr);
+        if (t.alive[k] && !sup[k] && !seen[k]) { seen[k] = 1; stack.push(k); }
+      }
+    }
+    const c = cells.length;
+    groups.push({ cells, minB, maxB, count: c, centroid: [cx / c, cy / c, cz / c] });
+  }
+  return groups;
+}
+
+// A tall, sizeable piece (the felled top) HINGES; anything smaller TUMBLES. (INV-3 — never hinge a small
+// piece, that was the old "stuck" bug.) bandCut/countCut tunable in the wiring layer.
+export function classifyPiece(group, t, { bandCut = 2, countCut = null } = {}) {
+  const span = group.maxB - group.minB + 1;
+  const cc = countCut == null ? Math.max(4, t.sectors * t.rings) : countCut;   // ≈ one full band
+  return (span >= bandCut && group.count >= cc) ? 'hinge' : 'tumble';
+}
