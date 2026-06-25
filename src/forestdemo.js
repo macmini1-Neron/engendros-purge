@@ -1068,10 +1068,11 @@ export class ForestDemo {
     rec._cellBoxes = [];
     this._buildCellTrunk(rec);   // builds cell mesh + per-alive-cell world collision boxes
 
-    // Recolor the standing WOOD mesh with the first debug color (leaves stay unchanged).
+    // HIDE the original makeTree WOOD mesh — the carveable cell-trunk now IS the visible trunk, so the
+    // smooth original would just occlude the carved holes. Keep the leaf canopy (rec.leafMesh) visible.
     if (rec.mesh) {
       rec.mesh.traverse((o) => {
-        if (o.isMesh && o !== rec.leafMesh) o.material = this._dbgMat();
+        if (o.isMesh && o !== rec.leafMesh) o.visible = false;
       });
     }
 
