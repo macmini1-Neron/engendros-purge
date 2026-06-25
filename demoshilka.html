@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DEMOSHILKA — průhledný modulární řez «Operace-Шилка»</title>
+<style>
+  :root{
+    --bg:#0f130d; --panel:#191e13; --ink:#d8e0c8; --dim:#73805f; --line:#33402a;
+    --dc:#5fb0e8; --ac:#e89a3a; --v115:#e0d24a; --fuel:#7fc24a; --cool:#54c8c0; --mech:#a89b6a;
+    --on:#88d24a; --off:#2c331f; --warn:#e0b341; --bad:#e0563a; --fc:#ff6a4a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Segoe UI",system-ui,sans-serif;font-size:13px}
+  #wrap{display:flex;height:100vh}
+  #stage{flex:1;position:relative;overflow:auto;padding:10px 12px}
+  #ctrl{width:288px;min-width:288px;background:var(--panel);border-left:1px solid var(--line);padding:14px;overflow:auto}
+  h1{font-size:15px;margin:0 0 1px;color:#eef2e2;letter-spacing:.03em}
+  .sub{color:var(--dim);font-size:11px;margin:0 0 8px;min-height:30px}
+  .viewlbl{color:var(--dim);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;margin:8px 0 2px}
+  svg{width:100%;height:auto;background:radial-gradient(ellipse at 45% 35%,#141a0f,#0c0f08);border:1px solid var(--line);border-radius:6px}
+  .mod rect{fill:#1a2012;stroke:var(--off);stroke-width:1.5}
+  .mod text{fill:var(--dim);font-size:9.5px;font-weight:600}
+  .mod.live rect{fill:#1f3014;stroke:var(--on);stroke-width:2;filter:drop-shadow(0 0 4px var(--on))}
+  .mod.live text{fill:#dfeccb}
+  .mod.warn rect{stroke:var(--warn);filter:drop-shadow(0 0 4px var(--warn))}
+  .dot{fill:#1a2012;stroke:var(--off);stroke-width:1.5}
+  .dot.live{fill:var(--on);stroke:var(--on);filter:drop-shadow(0 0 4px var(--on))}
+  .dot.warn{fill:var(--warn);stroke:var(--warn)}
+  .wire{fill:none;stroke:var(--off);stroke-width:2;opacity:.45;stroke-linejoin:round;stroke-linecap:round}
+  .wire.hidden{display:none}
+  .wire.live.dc{stroke:var(--dc);stroke-width:3.4;opacity:1;filter:drop-shadow(0 0 3px var(--dc))}
+  .wire.live.ac{stroke:var(--ac);stroke-width:3.4;opacity:1;filter:drop-shadow(0 0 3px var(--ac))}
+  .wire.live.v115{stroke:var(--v115);stroke-width:3.2;opacity:1;filter:drop-shadow(0 0 3px var(--v115))}
+  .wire.live.fire{stroke:var(--fc);stroke-width:3.6;opacity:1;filter:drop-shadow(0 0 4px var(--fc))}
+  .hull{fill:none;stroke:#4a5838;stroke-width:2}
+  .hullfill{fill:#11160c;opacity:.55}
+  .barrel{stroke:#6a7850;stroke-width:3;stroke-linecap:round}
+  .clbl{fill:var(--dim);font-size:9.5px;letter-spacing:.1em}
+  .comp{stroke:var(--line);stroke-dasharray:4 4;stroke-width:1}
+  /* driver panel */
+  #dpanel{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  .emoleg{font-size:10.5px;color:var(--dim);margin:0 0 6px}
+  .cgrp{border:1px solid var(--line);border-radius:6px;padding:7px 8px 4px;background:#15190f}
+  .cgrp h3{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:0 0 6px}
+  .cgrp .row{display:flex;flex-wrap:wrap;gap:5px}
+  .ctl{width:96px;border:1px solid var(--line);border-radius:5px;padding:3px 5px 4px;background:#1a2012;position:relative;min-height:52px}
+  .ctl .hdr{display:flex;justify-content:space-between;align-items:center;line-height:1}
+  .ctl .ico{font-size:11px;letter-spacing:1px}
+  .ctl .num{font-size:8.5px;color:var(--dim)}
+  .ctl .lab{font-size:9.5px;font-weight:600;line-height:1.1;color:#c6d2b2;margin-top:1px}
+  .ctl .cz{font-size:8.5px;color:var(--dim)}
+  .ctl .val{font-size:10px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:2px}
+  .ctl.click{cursor:pointer}
+  .ctl.click:hover{border-color:var(--on)}
+  .ctl.on{background:#1d3011;border-color:var(--on)}
+  .ctl.on .lab{color:#dfeccb}
+  .ctl .led{position:absolute;bottom:4px;right:5px;width:8px;height:8px;border-radius:50%;background:var(--off);border:1px solid var(--line)}
+  .ctl.lamp.on .led{background:var(--on);box-shadow:0 0 6px var(--on)}
+  .ctl.lamp.warn .led{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+  .ctl.lamp.danger.on .led{background:var(--bad);box-shadow:0 0 7px var(--bad)}
+  .ctl.lamp.danger.on{border-color:var(--bad)}
+  .ctl.flash{outline:2px solid var(--warn)}
+  /* crew tabs + commander image panel */
+  .tabs{display:flex;gap:6px;margin:0 0 8px}
+  .tab{padding:5px 12px;border:1px solid var(--line);border-radius:5px;background:#1a2012;color:var(--dim);cursor:pointer;font-size:12px}
+  .tab.on{background:#1d3011;border-color:var(--on);color:#dfeccb}
+  #cpanel{position:relative;display:inline-block;width:100%;max-width:470px}
+  #cpanel img{display:block;width:100%;border:1px solid var(--line);border-radius:6px}
+  #cov{position:absolute;inset:0}
+  .co{position:absolute;transform:translate(-50%,-50%)}
+  .co.lamp{width:4.4%;aspect-ratio:1;border-radius:50%;border:1px solid rgba(0,0,0,.45);background:rgba(15,15,15,.18)}
+  .co.lamp.on{background:currentColor;box-shadow:0 0 10px 2px currentColor,inset 0 0 4px rgba(255,255,255,.7)}
+  .co.lamp.red{color:#ff4a3a}.co.lamp.amber{color:#ffcf3a}.co.lamp.green{color:#7ef04a}.co.lamp.cool{color:#54e8e0}.co.lamp.grey{color:#cfd6c4}
+  .co.hot{width:7%;aspect-ratio:1;border-radius:6px;border:1.5px dashed rgba(255,255,255,.18);cursor:pointer}
+  .co.hot:hover{border-color:var(--on);background:rgba(136,210,74,.12)}
+  .co.hot.on{border-color:var(--on);border-style:solid;background:rgba(136,210,74,.22);box-shadow:0 0 7px var(--on)}
+  .co.hot.red.on{border-color:var(--bad);background:rgba(224,86,58,.25);box-shadow:0 0 7px var(--bad)}
+  .co .tag{position:absolute;left:50%;top:106%;transform:translateX(-50%);white-space:nowrap;font-size:8px;color:#cfe0b4;background:rgba(0,0,0,.6);padding:0 3px;border-radius:3px;pointer-events:none;opacity:0}
+  .co.hot:hover .tag{opacity:1}
+  .co.sel .tag{opacity:1;background:rgba(20,30,15,.85);border:1px solid var(--on);color:#dfeccb;font-weight:700}
+  .co.cnt{font-variant-numeric:tabular-nums;font-weight:700;font-size:9px;color:#ffd23a;background:rgba(0,0,0,.6);padding:1px 3px;border-radius:3px;letter-spacing:.5px}
+  #cgrid{position:absolute;inset:0;display:none;pointer-events:none;background-image:linear-gradient(rgba(95,176,232,.4) 1px,transparent 1px),linear-gradient(90deg,rgba(95,176,232,.4) 1px,transparent 1px);background-size:10% 10%}
+  #cgrid.show{display:block}
+  #cpanel.calib{cursor:crosshair}
+  /* right column */
+  .grp{border:1px solid var(--line);border-radius:6px;padding:8px;margin:0 0 10px}
+  .grp h2{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
+  button{display:block;width:100%;text-align:left;background:#222a18;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:6px 9px;margin:0 0 5px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--on)}
+  button.on{background:#1d3011;border-color:var(--on);color:#dfeccb}
+  .seqbtn{background:#2a2414;border-color:var(--warn)}
+  .ro{font-size:11.5px;line-height:1.6}
+  .ro b{color:#eef2e2} .ro .v{float:right;font-variant-numeric:tabular-nums}
+  .chip{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;border:1px solid var(--line)}
+  .chip.ok{color:var(--on);border-color:var(--on)} .chip.no{color:var(--dim)}
+  label.lay{display:flex;align-items:center;gap:6px;font-size:11px;margin:0 0 4px;cursor:pointer}
+  label.lay b{display:inline-block;width:16px;height:3px;border-radius:2px}
+  .note{color:var(--dim);font-size:10px;border-top:1px solid var(--line);margin-top:8px;padding-top:7px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <h1>DEMOSHILKA — «Operace-Шилка»</h1>
+    <p class="sub" id="info">Boční řez + půdorys + řidičův panel · vše na reálné logice (<code>shilka-power.js</code>). Klik na modul / ovladač = info. M1: řidič.</p>
+    <div class="viewlbl">Boční řez</div>
+    <svg id="svgSide" viewBox="0 0 1000 330" xmlns="http://www.w3.org/2000/svg"><g class="static"></g><g class="wires"></g><g class="mods"></g></svg>
+    <div class="viewlbl">Půdorys</div>
+    <svg id="svgTop" viewBox="0 0 1000 250" xmlns="http://www.w3.org/2000/svg"><g class="static"></g><g class="wires"></g><g class="mods"></g></svg>
+    <div class="tabs">
+      <div class="tab on" data-tab="driver">Řidič — panel str.130</div>
+      <div class="tab" data-tab="cmd">Velitel — pult</div>
+    </div>
+    <div id="tab-driver">
+      <div class="emoleg">🔘 mačká (tlačítko) · 🕹️ přepíná (páčka) · 👁️ jen kouká (lampa/budík) · 🎛️ reguluje · 🔌 konektor · 🚀 klíčové pro START · 💀 kritické</div>
+      <div id="dpanel"></div>
+    </div>
+    <div id="tab-cmd" style="display:none">
+      <div class="emoleg">Klik na páčku/tlačítko = přepne · LEDky a počitadla svítí podle stavu (<code>canFire</code>/<code>stab</code>/<code>power</code>) · zapni „Kalibrace" vpravo pro doladění pozic.</div>
+      <div id="cpanel"><img id="cimg" alt="Пульт командира"><div id="cov"></div><div id="cgrid"></div></div>
+    </div>
+  </div>
+  <div id="ctrl">
+    <div class="grp"><h2>Velitel / věž <span style="color:var(--warn)">(M2)</span></h2>
+      <button data-k="converterOn">ПС-14А · měnič БПС (→ 220 V)</button>
+      <button data-k="cooling">Охлаждение (chlazení)</button>
+      <button data-k="hatchClosed" class="on">Поклоп řidiče (zavřeno)</button>
+    </div>
+    <div class="grp"><h2>Palebná brána (canFire)</h2>
+      <div class="ro">
+        <div><b>РАЗРЕШЕНИЕ ОГНЯ</b><span class="v" id="r_fire">—</span></div>
+        <div><b>ГАГ</b><span class="v" id="r_gag">—</span></div>
+      </div>
+      <div id="r_block" style="color:var(--bad);font-size:10px;margin-top:4px;line-height:1.4"></div>
+      <button data-k="dataPresent">ЕСТЬ ДАННЫЕ (radar má cíl)</button>
+      <button data-k="onMove">Za jízdy (onMove)</button>
+      <button id="b_station">Stanice: КОМАНДИР</button>
+      <label class="lay" style="margin-top:5px">Náměr <input id="elev" type="range" min="-4" max="85" value="20" style="flex:1"><span id="elevv" style="width:34px;text-align:right">20°</span></label>
+      <label class="lay">ГАГ ×<input id="tscale" type="range" min="1" max="120" value="60" style="flex:1"><span id="tscalev" style="width:34px;text-align:right">60</span></label>
+      <label class="lay"><input type="checkbox" id="calib"> Kalibrace (mřížka + klik = %)</label>
+    </div>
+    <div class="grp">
+      <button id="seq" class="seqbtn">▶ Auto power-up (řidič)</button>
+      <button id="reset">⟲ Studený stroj</button>
+    </div>
+    <div class="grp"><h2>Stav (živě)</h2>
+      <div class="ro">
+        <div><b>Napětí</b><span class="v" id="r_volt">—</span></div>
+        <div><b>GTD</b><span class="v" id="r_gtd">—</span></div>
+        <div><b>Diesel</b><span class="v" id="r_diesel">—</span></div>
+        <div><b>Tlak oleje</b><span class="v" id="r_oil">—</span></div>
+        <div><b>Generátor</b><span class="v" id="r_gen">—</span></div>
+        <div><b>DC 27,5</b><span class="v" id="r_dc">—</span></div>
+        <div><b>AC 220/400</b><span class="v" id="r_ac">—</span></div>
+      </div>
+    </div>
+    <div class="grp"><h2>X-ray vrstvy</h2>
+      <label class="lay"><input type="checkbox" data-layer="dc" checked><b style="background:var(--dc)"></b>DC 27,5 V</label>
+      <label class="lay"><input type="checkbox" data-layer="ac" checked><b style="background:var(--ac)"></b>AC 220/400</label>
+      <label class="lay"><input type="checkbox" data-layer="v115" checked><b style="background:var(--v115)"></b>115 V pohony</label>
+      <label class="lay"><input type="checkbox" data-layer="fire" checked><b style="background:var(--fc)"></b>Огонь / palba</label>
+    </div>
+    <p class="note">Power-up: <b>7</b> → <b>14</b> (drž, lampa 20) → <b>10</b> → ПС-14А → AC do věže. Diesel: <b>27</b> → <b>46</b> (drž) → <b>47</b>. Lampy 17/18/20 a budíky čtou reálný stav.</p>
+  </div>
+</div>
+
+<script type="module">
+import { createPowerState, stepPower, powerBuses } from './src/shilka-power.js';
+import { createFireState, canFire } from './src/shilka-interlock.js';
+import { createStabState, stepStab, gagReady } from './src/shilka-stab.js';
+import { MODULES, CIRCUITS, DRIVER_CONTROLS, DRIVER_ICONS, COMMANDER_CONTROLS, COMMANDER_PANEL } from './demo/shilka-modules.js';
+
+const SVGNS='http://www.w3.org/2000/svg';
+const el=(t,a)=>{const e=document.createElementNS(SVGNS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+function drawStatic(svg,view){
+  const g=svg.querySelector('.static');
+  if(view==='side'){
+    g.appendChild(el('path',{class:'hullfill',d:'M120,205 L760,205 L760,295 L60,295 L60,240 Z'}));
+    g.appendChild(el('path',{class:'hull',d:'M120,205 L760,205 L760,295 L60,295 L60,240 Z'}));
+    [300,540].forEach(x=>g.appendChild(el('line',{class:'comp',x1:x,y1:207,x2:x,y2:293})));
+    [['ŘÍZENÍ',150],['BOJOVÝ ODDÍL',390],['SILOVÝ ODDÍL',640]].forEach(([t,x])=>{const e=el('text',{class:'clbl',x,y:312});e.textContent=t;g.appendChild(e);});
+    g.appendChild(el('path',{class:'hullfill',d:'M330,135 L560,135 L575,205 L315,205 Z'}));
+    g.appendChild(el('path',{class:'hull',d:'M330,135 L560,135 L575,205 L315,205 Z'}));
+    for(let i=0;i<4;i++)g.appendChild(el('line',{class:'barrel',x1:330,y1:152+i*6,x2:150,y2:100+i*3}));
+    g.appendChild(el('line',{class:'hull',x1:480,y1:135,x2:480,y2:55}));
+    g.appendChild(el('ellipse',{class:'hull',cx:480,cy:48,rx:42,ry:13}));
+    for(let i=0;i<7;i++)g.appendChild(el('circle',{class:'hull',cx:130+i*100,cy:300,r:11}));
+  }else{
+    g.appendChild(el('path',{class:'hullfill',d:'M120,95 L780,95 L780,200 L120,200 L75,150 Z'}));
+    g.appendChild(el('path',{class:'hull',d:'M120,95 L780,95 L780,200 L120,200 L75,150 Z'}));
+    [300,540].forEach(x=>g.appendChild(el('line',{class:'comp',x1:x,y1:96,x2:x,y2:199})));
+    g.appendChild(el('circle',{class:'hull',cx:435,cy:150,r:72}));
+    g.appendChild(el('circle',{class:'hullfill',cx:435,cy:150,r:72}));
+    for(let i=0;i<4;i++)g.appendChild(el('line',{class:'barrel',x1:365,y1:138+i*8,x2:160,y2:138+i*8}));
+    g.appendChild(el('line',{class:'hull',x1:500,y1:150,x2:555,y2:150}));
+    g.appendChild(el('ellipse',{class:'hull',cx:560,cy:150,rx:9,ry:22}));
+    [['ŘÍZENÍ',150],['BOJOVÝ',390],['SILOVÝ',640]].forEach(([t,x])=>{const e=el('text',{class:'clbl',x,y:215});e.textContent=t;g.appendChild(e);});
+  }
+}
+const side=document.getElementById('svgSide'), top=document.getElementById('svgTop');
+[['side',side],['top',top]].forEach(([v,s])=>{
+  drawStatic(s,v);
+  CIRCUITS.forEach(c=>s.querySelector('.wires').appendChild(el('polyline',{class:'wire '+c.cls,points:c[v],'data-id':c.id})));
+  MODULES.forEach(m=>{
+    const G=s.querySelector('.mods');
+    if(v==='side'){
+      const grp=el('g',{class:'mod',style:'cursor:pointer'}); grp.dataset.id=m.id;
+      const w=Math.max(58,m.ru.length*6.0), h=20;
+      grp.appendChild(el('rect',{x:m.side.x-w/2,y:m.side.y-h/2,width:w,height:h,rx:4}));
+      const t=el('text',{x:m.side.x,y:m.side.y+3.3,'text-anchor':'middle'}); t.textContent=m.ru; grp.appendChild(t);
+      grp.addEventListener('click',()=>selMod(m)); G.appendChild(grp);
+    }else{
+      const d=el('circle',{class:'dot',cx:m.top.x,cy:m.top.y,r:8,style:'cursor:pointer'}); d.dataset.id=m.id;
+      d.addEventListener('click',()=>selMod(m)); G.appendChild(d);
+    }
+  });
+});
+function selMod(m){ info('<b style="color:#eef2e2">'+m.ru+'</b> ('+m.cz+') — '+m.does+' <span style="color:var(--dim)">· '+m.crew+' · '+m.source+'</span>'); }
+function info(h){ document.getElementById('info').innerHTML=h; }
+
+// ---- state ----
+const EXTRA = () => ({
+  cooling:false, hatchClosed:true, lowCoolant:false,
+  shuntSrp:false, hydraulicOn:false, dcRange:false, phaseSel:'1',
+  radarMode:1, elevationDeg:20, station:'cmd', dataPresent:false, onMove:false,
+  gagPhase:'off', _fireOk:false,
+  zarVL:false, zarVP:false, zarNL:false, zarNP:false,
+  ammoVL:480, ammoVP:480, ammoNL:520, ammoNP:520,
+});
+const S = Object.assign(createPowerState(), createFireState(), createStabState(), EXTRA(), { angleLimit:5 });
+const aux = {};                 // demo-only toggles for not-yet-wired controls (by control n)
+const layers = { dc:true, ac:true, v115:true, fire:true };
+let timeScale = 60;             // ГАГ spin-up demo speed-up (real module holds 180 s)
+
+// ---- driver panel ----
+const GROUPS = [['azs','Jističe АЗС'],['pwr','Napájení'],['gtd','GTD / turbína'],['dsl','Diesel'],['pre','Předehřev'],['paz','ПАЗ / ventilace'],['lt','Světla / stěrače']];
+const dpanel=document.getElementById('dpanel');
+const ctlEls={};
+GROUPS.forEach(([gid,title])=>{
+  const box=document.createElement('div'); box.className='cgrp';
+  box.innerHTML='<h3>'+title+'</h3>'; const row=document.createElement('div'); row.className='row';
+  DRIVER_CONTROLS.filter(c=>c.g===gid).forEach(c=>{
+    const w=document.createElement('div'); w.className='ctl'+(c.act==='lamp'?' lamp':'')+(c.danger?' danger':'')+((c.act==='tgl'||c.act==='hold'||c.act==='btn')?' click':'');
+    if(c.def && !c.set) aux[c.n]=true;
+    w.dataset.n=c.n;
+    const meta=DRIVER_ICONS[c.n]||{ic:''};
+    const badge=(meta.ic||'')+(meta.start?'🚀':'')+(meta.crit?'💀':'');
+    let inner='<div class="hdr"><span class="ico">'+badge+'</span><span class="num">'+c.n+'</span></div><div class="lab">'+c.ru+'<div class="cz">'+c.cz+'</div></div>';
+    if(c.act==='gauge') inner+='<div class="val" data-val>—</div>';
+    if(c.act==='lamp') inner+='<div class="led"></div>';
+    w.innerHTML=inner;
+    if(w.classList.contains('click')){
+      w.addEventListener('click',()=>{
+        if(c.act==='btn'){ if(c.clear)S[c.clear]=false; if(c.set)S[c.set]=true; w.classList.add('flash'); setTimeout(()=>w.classList.remove('flash'),150); }
+        else { if(c.set) S[c.set]=!S[c.set]; else aux[c.n]=!aux[c.n]; }
+        info('<b>'+c.n+' '+c.ru+'</b> — '+c.cz);
+      });
+    }
+    ctlEls[c.n]={el:w,c}; row.appendChild(w);
+  });
+  box.appendChild(row); dpanel.appendChild(box);
+});
+
+// ---- commander panel (image-backed overlay) ----
+document.getElementById('cimg').src = COMMANDER_PANEL.img;
+const cov = document.getElementById('cov');
+const cEls = [];
+COMMANDER_CONTROLS.forEach((c)=>{
+  const d=document.createElement('div');
+  d.style.left=c.px.x+'%'; d.style.top=c.px.y+'%';
+  const interactive = (c.kind==='toggle'||c.kind==='button'||c.kind==='selector');
+  let cls='co';
+  if(c.kind==='lamp') cls+=' lamp '+(c.col||'red');
+  else if(c.kind==='counter'||c.kind==='gauge') cls+=' cnt';
+  else { cls+=' hot'+(c.col==='red'?' red':'')+(c.kind==='selector'?' sel':''); }
+  d.className=cls;
+  if(interactive){
+    const tag=document.createElement('span'); tag.className='tag';
+    tag.textContent = c.kind==='selector' ? (c.ru+': '+S[c.set]) : c.ru;
+    d.appendChild(tag); d.__tag=tag;
+  }
+  if(c.kind==='counter'||c.kind==='gauge') d.textContent='—';
+  if(c.kind==='toggle') d.addEventListener('click',()=>{ if(c.set) S[c.set]=!S[c.set]; info('<b>'+c.ru+'</b> — '+c.cz); });
+  else if(c.kind==='button') d.addEventListener('click',()=>{ if(c.clear)S[c.clear]=false; if(c.set)S[c.set]=true; d.classList.add('on'); setTimeout(()=>d.classList.remove('on'),170); info('<b>'+c.ru+'</b> — '+c.cz); });
+  else if(c.kind==='selector') d.addEventListener('click',()=>{ const o=c.opts,cur=o.indexOf(S[c.set]); S[c.set]=o[(cur+1)%o.length]; d.__tag.textContent=c.ru+': '+S[c.set]; info('<b>'+c.ru+'</b> = '+S[c.set]); });
+  cov.appendChild(d); cEls.push({el:d,c});
+});
+
+// crew tabs
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+  const v=t.dataset.tab;
+  document.getElementById('tab-driver').style.display = v==='driver'?'':'none';
+  document.getElementById('tab-cmd').style.display = v==='cmd'?'':'none';
+}));
+
+// commander demo inputs
+const bStation=document.getElementById('b_station');
+bStation.addEventListener('click',()=>{ S.station = S.station==='cmd'?'op':'cmd'; bStation.textContent='Stanice: '+(S.station==='cmd'?'КОМАНДИР':'ОПЕРАТОР'); });
+const elev=document.getElementById('elev'); elev.addEventListener('input',()=>{ S.elevationDeg=+elev.value; document.getElementById('elevv').textContent=elev.value+'°'; });
+const tsc=document.getElementById('tscale'); tsc.addEventListener('input',()=>{ timeScale=+tsc.value; document.getElementById('tscalev').textContent=tsc.value; });
+
+// calibration (grid + click → x%/y%)
+const cpanel=document.getElementById('cpanel'), cgrid=document.getElementById('cgrid'); let calibOn=false;
+document.getElementById('calib').addEventListener('change',e=>{ calibOn=e.target.checked; cgrid.classList.toggle('show',calibOn); cpanel.classList.toggle('calib',calibOn); cov.style.pointerEvents=calibOn?'none':''; });
+cpanel.addEventListener('click',e=>{ if(!calibOn)return; const r=cpanel.getBoundingClientRect(); const x=((e.clientX-r.left)/r.width*100).toFixed(1), y=((e.clientY-r.top)/r.height*100).toFixed(1); info('Kalibrace → <b>x:'+x+'% · y:'+y+'%</b>'); });
+
+// ---- right column ----
+document.querySelectorAll('#ctrl button[data-k]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.k;S[k]=!S[k];b.classList.toggle('on',!!S[k]);}));
+document.querySelectorAll('input[data-layer]').forEach(c=>c.addEventListener('change',()=>{layers[c.dataset.layer]=c.checked;}));
+function resetAll(){
+  Object.assign(S, createPowerState(), createFireState(), createStabState(), EXTRA(), { angleLimit:5 });
+  for(const k in aux) delete aux[k];
+  DRIVER_CONTROLS.forEach(c=>{ if(c.def && !c.set) aux[c.n]=true; });
+  document.querySelectorAll('#ctrl button[data-k]').forEach(b=>b.classList.toggle('on',!!S[b.dataset.k]));
+}
+document.getElementById('reset').addEventListener('click',resetAll);
+document.getElementById('seq').addEventListener('click',()=>{
+  resetAll(); const order=['batteryMaster','horn','coldCrank','gtdStart','converterOn','fuelPump','oilPumpHeld','dieselStart','cooling'];
+  let i=0; const t=setInterval(()=>{ if(i>=order.length){clearInterval(t);return;} const k=order[i++]; S[k]=true;
+    const b=document.querySelector('#ctrl button[data-k="'+k+'"]'); if(b)b.classList.add('on'); },620);
+});
+const chip=(ok,t)=>'<span class="chip '+(ok?'ok':'no')+'">'+t+'</span>';
+
+let last=null;
+function frame(ts){
+  if(last==null)last=ts; let dt=(ts-last)/1000; last=ts; if(!(dt>0))dt=0.016; if(dt>0.1)dt=0.1;
+  stepPower(S,dt); const b=powerBuses(S);
+  stepStab(S, b, dt*timeScale); S.gagReady=gagReady(S); S.gagPhase=S.phase;
+  const fire=canFire(S); S._fireOk=fire.ok;
+  // cutaway modules + wires (both views)
+  MODULES.forEach(m=>{ const st=m.glow(S,b)||'';
+    [side,top].forEach(svg=>{const n=svg.querySelector('.mods [data-id="'+m.id+'"]');if(!n)return;n.classList.remove('live','warn');if(st)n.classList.add(st);}); });
+  CIRCUITS.forEach(c=>{ const on=c.live(b,S), show=layers[c.layer]!==false;
+    [side,top].forEach(svg=>{const p=svg.querySelector('.wires [data-id="'+c.id+'"]');if(!p)return;p.classList.toggle('hidden',!show);p.classList.toggle('live',!!on);}); });
+  // driver panel
+  for(const n in ctlEls){ const {el:w,c}=ctlEls[n];
+    if(c.act==='gauge'){ const v=w.querySelector('[data-val]'); if(v)v.textContent=c.read(S,b); }
+    else if(c.act==='lamp'){ const r=c.read(S,b); w.classList.toggle('on',!!r); }
+    else { const onv=c.set?!!S[c.set]:!!aux[c.n]; w.classList.toggle('on',onv); }
+  }
+  // commander overlays
+  for(const {el:w,c} of cEls){
+    if(c.kind==='lamp') w.classList.toggle('on', !!c.read(S,b));
+    else if(c.kind==='counter'||c.kind==='gauge') w.textContent=c.read(S,b);
+    else if(c.kind==='toggle') w.classList.toggle('on', !!S[c.set]);
+  }
+  document.getElementById('r_fire').innerHTML=chip(fire.ok, fire.ok?'POVOLENO':'blokováno');
+  document.getElementById('r_gag').textContent=S.gagPhase;
+  document.getElementById('r_block').textContent=fire.ok?'':('blok: '+fire.blockedBy.join(' · '));
+  // readout
+  document.getElementById('r_volt').textContent=S.batteryVolts.toFixed(1)+' V';
+  document.getElementById('r_gtd').textContent=S.gtdRpmPct.toFixed(0)+' %';
+  document.getElementById('r_diesel').textContent=S.dieselRpm.toFixed(0)+' ot';
+  document.getElementById('r_oil').textContent=S.oilPressure.toFixed(2)+' kg/cm²';
+  document.getElementById('r_gen').innerHTML=chip(S.generatorOnline,S.generatorOnline?'ONLINE':'off');
+  document.getElementById('r_dc').innerHTML=chip(b.dc27,b.dc27?'27,5 V':'mrtvý');
+  document.getElementById('r_ac').innerHTML=chip(b.ac220,b.ac220?'220/400':'mrtvý');
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
