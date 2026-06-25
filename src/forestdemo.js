@@ -10,8 +10,9 @@ import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
 import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells, snapPlan, splitGeomAtY } from './destruct.js';
-import { rr, voxelMaterial, foliageFadeMaterial, makeRNG } from './util.js';
+import { rr, voxelMaterial, foliageFadeMaterial, makeRNG, MeshBuilder } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
+import { makeTrunk, cellIndex, cellAABB, carve } from './treecore.js';
 
 // Two SHARED leaf materials (one program each, compiled once): leaves render opaque by default; the
 // 0–2 trees the camera is inside get their leaf mesh swapped to the fade material so the leaves at your
@@ -1030,6 +1031,9 @@ export class ForestDemo {
       const rec = this.trees[i];
       if (!rec._test) continue;
       this._dropBox(rec);
+      // drop any cell-trunk boxes + mesh (Task 3 cell trunk)
+      if (rec._cellBoxes) { for (const b of rec._cellBoxes) { this.world.grid.removeBox(b); const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1); } rec._cellBoxes = []; }
+      if (rec._cellMesh) { if (rec._cellMesh.parent) this.scene.remove(rec._cellMesh); if (rec._cellMesh.geometry) rec._cellMesh.geometry.dispose(); rec._cellMesh = null; }
       if (rec.mesh && rec.mesh.parent) this.scene.remove(rec.mesh);
       const wi = this.windy.findIndex((w) => w.m === rec.mesh);
       if (wi >= 0) this.windy.splice(wi, 1);
@@ -1055,6 +1059,15 @@ export class ForestDemo {
     const rec = this.trees[this.trees.length - 1];
     rec._test = true;
 
+    // ── CELL TRUNK (Task 3: carveable voxel-cylinder replacing old trunk bands for the test tree) ──
+    // Drop the old trunk-band boxes (_addTree just built them) so every trunk hit goes through
+    // carveTreeHit (box.cell != null) instead of the old fellTree path.
+    this._dropBox(rec);
+    const TH = rec.fullH || rec.height, TR = rec.trunkR || 0.3;
+    rec._cells = makeTrunk({ height: TH, radius: TR, bands: Math.max(4, Math.round(TH / 1.5)), sectors: 8, rings: 2, hp: 6 });
+    rec._cellBoxes = [];
+    this._buildCellTrunk(rec);   // builds cell mesh + per-alive-cell world collision boxes
+
     // Recolor the standing WOOD mesh with the first debug color (leaves stay unchanged).
     if (rec.mesh) {
       rec.mesh.traverse((o) => {
@@ -1063,6 +1076,66 @@ export class ForestDemo {
     }
 
     return rec;
+  }
+
+  // ── CELL TRUNK (Task 3: carveable voxel-cylinder for /testtree) ─────────────────────────────────
+  // (Re)build ONE merged wood mesh from alive cells + one world collision box per alive cell.
+  // Removes the previous cell mesh and cell boxes first — so calling again after a carve rebuilds cleanly.
+  _buildCellTrunk(rec) {
+    const t = rec._cells, y0 = rec.baseY;
+    // clear old cell boxes
+    for (const b of rec._cellBoxes) {
+      this.world.grid.removeBox(b);
+      const idx = this.world.boxes.indexOf(b); if (idx >= 0) this.world.boxes.splice(idx, 1);
+    }
+    rec._cellBoxes.length = 0;
+    // clear old cell mesh
+    if (rec._cellMesh) {
+      if (rec._cellMesh.parent) this.scene.remove(rec._cellMesh);
+      if (rec._cellMesh.geometry) rec._cellMesh.geometry.dispose();
+      rec._cellMesh = null;
+    }
+    // build merged geometry of alive cells (one box per cell in local space)
+    const mb = new MeshBuilder();
+    for (let b = 0; b < t.bands; b++) {
+      for (let s = 0; s < t.sectors; s++) {
+        for (let r = 0; r < t.rings; r++) {
+          const i = cellIndex(t, b, s, r); if (!t.alive[i]) continue;
+          const a = cellAABB(t, b, s, r);
+          const w = a.max[0] - a.min[0], h = a.max[1] - a.min[1], d = a.max[2] - a.min[2];
+          mb.box(w, h, d, a.c[0], a.c[1], a.c[2], 0x6b5135);  // local-space wood colour
+          // world collision box for this cell — tagged cell:i so weapons.js routes to carveTreeHit
+          const box = {
+            min: new THREE.Vector3(rec.x + a.min[0], y0 + a.min[1], rec.z + a.min[2]),
+            max: new THREE.Vector3(rec.x + a.max[0], y0 + a.max[1], rec.z + a.max[2]),
+            tree: true, downer: rec, cell: i, dmat: 'trunk',
+          };
+          rec._cellBoxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+        }
+      }
+    }
+    // only build a mesh when there are alive cells (avoids an empty BufferGeometry with no verts)
+    if (mb.vertexCount > 0) {
+      const mat = rec._test ? this._dbgMat() : voxelMaterial({});
+      const mesh = new THREE.Mesh(mb.build(), mat);
+      mesh.position.set(rec.x, y0, rec.z); mesh.castShadow = true; this.scene.add(mesh);
+      rec._cellMesh = mesh;
+    }
+  }
+
+  // Called by weapons.js _destructHit when box.cell != null (a cell-trunk box hit on the test tree).
+  // Maps the world hit point to local trunk coordinates, carves the struck cell(s), then rebuilds the mesh.
+  carveTreeHit(rec, box, point, w) {
+    const t = rec._cells;
+    if (!t) return;
+    const yLocal = point.y - rec.baseY;
+    const ang = Math.atan2(point.z - rec.z, point.x - rec.x);
+    // caliber pen → radial depth (pen=1 rifles, pen=2 HMG/sniper, pen=4+ launchers)
+    const pen = Math.max(1, Math.min(t.rings, (w && w.pen != null) ? Math.ceil(w.pen / 2) : 1));
+    const dmg = (w && w.dmg) ? w.dmg : 50;
+    carve(t, yLocal, ang, { pen, dmg, spreadS: 0, spreadB: 0 });
+    this._buildCellTrunk(rec);   // rebuild mesh + boxes — holes are now real (INV-4)
+    // Task 6 (M1) will run supportFlood + _detachOrphans here.
   }
 
   stats() { return { trees: this.trees.length, standing: this.trees.filter((t) => t.standing).length, falling: this.FALLING.length }; }
