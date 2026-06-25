@@ -1681,10 +1681,6 @@ export class WeaponSystem {
       if (r.killed && this.game.forest) this.game.forest.breakLogSeg(log, seg, (seg.sid * 2654435761) >>> 0);
       else if (r.effect === 'damage' && this.game.forest && this.game.forest.debris) this.game.forest.debris.burst('splints', [wHit.point.x, wHit.point.y, wHit.point.z], (seg.sid ^ 0x55) >>> 0);
       this.game.hud.hitmarker(false);
-    } else if (box.cell != null && box.downer._cells && this.game.forest) {
-      // cell-trunk box hit (test tree /testtree): carve the individual voxel cell instead of felling
-      this.game.forest.carveTreeHit(box.downer, box, wHit.point, w);
-      this.game.hud.hitmarker(false);
     } else if ((box.tree || box.dmat === 'trunk') && box.downer.part) {
       const tree = box.downer, part = tree.part;
       if (!part || part.dead) return;
