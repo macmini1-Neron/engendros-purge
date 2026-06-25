@@ -9,10 +9,10 @@
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells, snapPlan, splitGeomAtY } from './destruct.js';
+import { makePart, MATERIALS, makeHinge, makeTumble, stepBody, resolveHit, binFallenAABBs, binFallenGeometry, orphanedCells, snapPlan, splitGeomAtY } from './destruct.js';
 import { rr, voxelMaterial, foliageFadeMaterial, makeRNG, MeshBuilder } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
-import { makeTrunk, cellIndex, cellAABB, carve } from './treecore.js';
+import { makeTrunk, cellIndex, decodeCell, cellAABB, carve, supportFlood, orphanGroups, classifyPiece } from './treecore.js';
 
 // Two SHARED leaf materials (one program each, compiled once): leaves render opaque by default; the
 // 0–2 trees the camera is inside get their leaf mesh swapped to the fade material so the leaves at your
@@ -54,6 +54,8 @@ export class ForestDemo {
     this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.props = []; this.FALLING = []; this.windy = [];
     this._sinking = [];   // logs being destroyed: sink-into-ground animation before the mesh is removed (no instant poof)
     this._dropping = [];  // felled tops that detach + fall FLAT to the ground (vs stay propped on the stump)
+    this._falling2 = []; // M1: cell-trunk orphan pieces currently falling (hinge or tumble)
+    this._settled2 = []; // M1: cell-trunk orphan pieces that have settled (kept for cleanup)
     this._frng = makeRNG(0x6f7e57);   // SEEDED layout RNG → every co-op peer builds the IDENTICAL forest (id→tree matches, so a host-synced fell/char/burn lands on the right tree)
     this._t = 0; this._idc = 0; this._reserved = [];
     this._fading = new Set();   // tree/bush recs whose leaf mesh is currently on the near-camera fade material
@@ -890,6 +892,27 @@ export class ForestDemo {
       s.mesh.position.y = s.y0 - s.drop * (u * u);
       if (u >= 1) { if (s.mesh.parent) s.mesh.parent.remove(s.mesh); this._sinking.splice(i, 1); }
     }
+    // M1: step cell-trunk orphan pieces (hinge or tumble) until they settle on the terrain.
+    for (let i = this._falling2.length - 1; i >= 0; i--) {
+      const f = this._falling2[i];
+      stepBody(f.body, dt);
+      if (f.kind === 'hinge') {
+        // Rotate the node about its own origin (= the pivot point in world space)
+        _axis.set(f.body.dirXZ[1], 0, -f.body.dirXZ[0]).normalize();
+        f.node.quaternion.setFromAxisAngle(_axis, f.body.angle);
+      } else {
+        // Tumble: node.position tracks body.pos directly (mesh is centred on the centroid)
+        f.node.position.set(f.body.pos[0], f.body.pos[1], f.body.pos[2]);
+        _v.set(f.body.rotAxis[0], f.body.rotAxis[1], f.body.rotAxis[2]);
+        _q.setFromAxisAngle(_v, f.body.rotAngle);
+        f.node.quaternion.copy(_q);
+      }
+      if (f.body.settled) {
+        this._drapePiece(f);    // lower to terrain + add collision box (INV-2)
+        this._settled2.push(f); // track for cleanup on /testtree reset
+        this._falling2.splice(i, 1);
+      }
+    }
     const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
     for (const w of this.windy) {
       if (!w.m.parent) continue;
@@ -998,6 +1021,25 @@ export class ForestDemo {
       if (f.pivot && f.pivot.parent) this.scene.remove(f.pivot);
       this._dropping.splice(i, 1);
     }
+    // M1: cell-trunk orphan pieces still falling — remove their scene node.
+    for (let i = this._falling2.length - 1; i >= 0; i--) {
+      const f = this._falling2[i];
+      if (!f.rec || !f.rec._test) continue;
+      if (f.node && f.node.parent) this.scene.remove(f.node);
+      this._falling2.splice(i, 1);
+    }
+    // M1: cell-trunk orphan pieces already settled — remove their scene node + collision box.
+    for (let i = this._settled2.length - 1; i >= 0; i--) {
+      const f = this._settled2[i];
+      if (!f.rec || !f.rec._test) continue;
+      if (f.node && f.node.parent) this.scene.remove(f.node);
+      if (f.node && f.node._collBox) {
+        this.world.grid.removeBox(f.node._collBox);
+        const bi = this.world.boxes.indexOf(f.node._collBox); if (bi >= 0) this.world.boxes.splice(bi, 1);
+        f.node._collBox = null;
+      }
+      this._settled2.splice(i, 1);
+    }
     // Settled fallen logs (registered after the fall): drop collision boxes, remove pivot mesh.
     for (let i = this.logs.length - 1; i >= 0; i--) {
       const log = this.logs[i];
@@ -1058,6 +1100,10 @@ export class ForestDemo {
     this._addTree(species, 8, 20, scale, 99999, false);
     const rec = this.trees[this.trees.length - 1];
     rec._test = true;
+    // Stable debug colour for the STANDING trunk — stored once here so _buildCellTrunk reuses it
+    // instead of calling _dbgMat() on every rebuild (which caused the trunk to flash different colours
+    // as you carved it). Each DETACHED piece gets its own fresh _dbgMat() call → visually distinct.
+    rec._trunkMat = this._dbgMat();
 
     // ── CELL TRUNK (Task 3: carveable voxel-cylinder replacing old trunk bands for the test tree) ──
     // Drop the old trunk-band boxes (_addTree just built them) so every trunk hit goes through
@@ -1117,7 +1163,10 @@ export class ForestDemo {
     }
     // only build a mesh when there are alive cells (avoids an empty BufferGeometry with no verts)
     if (mb.vertexCount > 0) {
-      const mat = rec._test ? this._dbgMat() : voxelMaterial({});
+      // Use the STABLE per-tree debug colour (set once in spawnTestTree) so the standing trunk
+      // doesn't flash a different colour on every carve rebuild. Detached pieces get their own
+      // fresh _dbgMat() call each → visually distinct from the trunk and from each other.
+      const mat = rec._test ? (rec._trunkMat || voxelMaterial({})) : voxelMaterial({});
       const mesh = new THREE.Mesh(mb.build(), mat);
       mesh.position.set(rec.x, y0, rec.z); mesh.castShadow = true; this.scene.add(mesh);
       rec._cellMesh = mesh;
@@ -1135,8 +1184,118 @@ export class ForestDemo {
     const pen = Math.max(1, Math.min(t.rings, (w && w.pen != null) ? Math.ceil(w.pen / 2) : 1));
     const dmg = (w && w.dmg) ? w.dmg : 50;
     carve(t, yLocal, ang, { pen, dmg, spreadS: 0, spreadB: 0 });
-    this._buildCellTrunk(rec);   // rebuild mesh + boxes — holes are now real (INV-4)
-    // Task 6 (M1) will run supportFlood + _detachOrphans here.
+    this._detachOrphans(rec);    // M1: support flood → spawn falling bodies for any unsupported cell groups
+    this._buildCellTrunk(rec);   // rebuild the (now smaller) standing trunk mesh + boxes
+  }
+
+  // ── M1: SUPPORT-BASED DETACHMENT ─────────────────────────────────────────────────────────────────
+  // After each carve, flood from the rooted base to find which cells are still connected (supported).
+  // Any alive cell with no path to band 0 belongs to an "orphan group" — it detaches and falls.
+  // Large groups (the severed top) HINGE; small chips TUMBLE. INV-1: nothing stays stuck.
+  _detachOrphans(rec) {
+    const t = rec._cells, y0 = rec.baseY;
+    const sup = supportFlood(t);
+    const groups = orphanGroups(t, sup);
+    if (!groups.length) return;
+
+    for (const g of groups) {
+      const kind = classifyPiece(g, t);
+      // Kill these cells NOW — the standing trunk rebuild (_buildCellTrunk) called right after
+      // will skip them, so holes in the standing trunk appear where the piece left.
+      for (const ci of g.cells) t.alive[ci] = 0;
+
+      const mb = new MeshBuilder();
+      const [cx0, cy0, cz0] = g.centroid;   // centroid in trunk-LOCAL space (Y=0 at base)
+
+      if (kind === 'tumble') {
+        // TUMBLE convention: mesh centred on centroid → subtract centroid from every cell's position.
+        // The node sits at the WORLD centroid, so body.pos drives node.position directly.
+        let lowY = Infinity;   // most negative Y offset from centroid (for floorY calc)
+        for (const ci of g.cells) {
+          const [b, s, r] = decodeCell(t, ci);
+          const a = cellAABB(t, b, s, r);
+          const w = a.max[0] - a.min[0], h = a.max[1] - a.min[1], d = a.max[2] - a.min[2];
+          mb.box(w, h, d, a.c[0] - cx0, a.c[1] - cy0, a.c[2] - cz0, 0x6b5135);
+          lowY = Math.min(lowY, a.min[1] - cy0);   // lowest vert offset below centroid (≤ 0)
+        }
+        const mat = rec._test ? this._dbgMat() : voxelMaterial({});
+        const node = new THREE.Group();
+        node.position.set(rec.x + cx0, y0 + cy0, rec.z + cz0);
+        const mesh = new THREE.Mesh(mb.build(), mat);
+        node.add(mesh); this.scene.add(node);
+
+        // Terrain height at the centroid's starting XZ.
+        const terrY = this.world.terrain ? this.world.terrain.terrainHeightAt(rec.x + cx0, rec.z + cz0) : 0;
+        // Adjust floorY so that when body.pos[1] = floorY + radius, the mesh BOTTOM sits on terrain.
+        // mesh bottom = body.pos[1] + lowY = (terrY - lowY + radius) + lowY = terrY + radius ≈ terrY
+        const floorY = terrY - lowY;
+        // Small outward + up pop so the chunk clears the trunk before tumbling
+        const outLen = Math.hypot(cx0, cz0) || 0.01;
+        const vel = [cx0 / outLen * 1.5, 1.5, cz0 / outLen * 1.5];
+        const seed = ((rec.id ^ g.cells[0]) >>> 0) || 1;
+        const body = makeTumble({ pos: [rec.x + cx0, y0 + cy0, rec.z + cz0], vel, seed, radius: 0.2, floorY });
+        this._falling2.push({ kind: 'tumble', body, node, rec });
+
+      } else {
+        // HINGE convention: mesh in PIVOT-RELATIVE coords (subtract g.minB*bandH from Y).
+        // The node sits at the WORLD PIVOT (rec.x, y0 + minB*bandH, rec.z) and rotates about it.
+        const pivotLocalY = g.minB * t.bandH;   // Y of the cut/pivot in trunk-local space
+        for (const ci of g.cells) {
+          const [b, s, r] = decodeCell(t, ci);
+          const a = cellAABB(t, b, s, r);
+          const w = a.max[0] - a.min[0], h = a.max[1] - a.min[1], d = a.max[2] - a.min[2];
+          // Subtract pivotLocalY from Y so the PIVOT POINT is at node-local Y=0
+          mb.box(w, h, d, a.c[0], a.c[1] - pivotLocalY, a.c[2], 0x6b5135);
+        }
+        const mat = rec._test ? this._dbgMat() : voxelMaterial({});
+        const node = new THREE.Group();
+        node.position.set(rec.x, y0 + pivotLocalY, rec.z);   // at the pivot in world space
+        const mesh = new THREE.Mesh(mb.build(), mat);
+        node.add(mesh); this.scene.add(node);
+
+        // Fall direction = toward the centroid's XZ (the carved side = the "notch" direction)
+        const cxzLen = Math.hypot(cx0, cz0) || 0.01;
+        const dirXZ = [cx0 / cxzLen, cz0 / cxzLen];
+        const length = (g.maxB - g.minB + 1) * t.bandH;
+        const pivotWorldY = y0 + pivotLocalY;
+        const seed = ((rec.id ^ g.cells[0]) >>> 0) || 1;
+        const groundAt = this.world.terrain ? (gx, gz) => this.world.terrain.terrainHeightAt(gx, gz) : null;
+        const obstacles = this._fallObstacles(rec, dirXZ[0], dirXZ[1], length);
+        const body = makeHinge({ pivot: [rec.x, pivotWorldY, rec.z], dirXZ, length, radius: rec.trunkR || 0.3, seed, obstacles, groundAt });
+        this._falling2.push({ kind: 'hinge', body, node, rec });
+      }
+    }
+  }
+
+  // Once a _falling2 body settles: lower the piece so its geometry bottom rests on the terrain
+  // (INV-2 — no float), and register a simple AABB collision box so it's solid scenery.
+  // Mirrors regroundLog's approach: find the bounding box in world space, compute the gap to
+  // terrain, shift the node's Y.
+  _drapePiece(f) {
+    if (!f.node) return;
+    f.node.updateWorldMatrix(true, false);
+    // Compute the world-space AABB of the settled piece (handles arbitrary rotation)
+    const bbox = new THREE.Box3();
+    f.node.traverse((o) => { if (o.isMesh && o.geometry) bbox.expandByObject(o); });
+    if (bbox.isEmpty()) return;
+    const terr = this.world.terrain;
+    const cx = (bbox.min.x + bbox.max.x) / 2, cz = (bbox.min.z + bbox.max.z) / 2;
+    const gy = terr ? terr.terrainHeightAt(cx, cz) : 0;
+    const drop = bbox.min.y - gy;
+    if (Math.abs(drop) > 0.05) {
+      f.node.position.y -= drop;
+      // Recompute bbox after the shift
+      f.node.updateWorldMatrix(true, false);
+      bbox.min.y -= drop; bbox.max.y -= drop;
+    }
+    // Register a simple bounding-box collision so the settled piece is solid (INV-2 minimum)
+    const box = {
+      min: new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.min.z),
+      max: new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.max.z),
+      tree: true, downer: f.rec, dmat: 'trunk',
+    };
+    this.world.boxes.push(box); this.world.grid.addBox(box);
+    f.node._collBox = box;   // stash for cleanup in spawnTestTree
   }
 
   stats() { return { trees: this.trees.length, standing: this.trees.filter((t) => t.standing).length, falling: this.FALLING.length }; }
