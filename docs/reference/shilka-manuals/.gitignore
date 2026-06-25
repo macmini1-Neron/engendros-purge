@@ -1,0 +1,5 @@
+# Heavy scanned source manuals (~189 MB) — kept locally for reading, never committed.
+# docs/ is in .vercelignore so these wouldn't deploy anyway; this keeps git history lean.
+# The analysis lives in the tracked .md files (findings/, gpt-deep-rnd/, *-inventory.md).
+*.pdf
+scans/
