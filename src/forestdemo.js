@@ -53,6 +53,7 @@ export class ForestDemo {
     this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.props = []; this.FALLING = []; this.windy = [];
     this._sinking = [];   // logs being destroyed: sink-into-ground animation before the mesh is removed (no instant poof)
     this._dropping = [];  // felled tops that detach + fall FLAT to the ground (vs stay propped on the stump)
+    this._debris = [];    // M1: log chunks knocked loose → fall to the ground as independent debris (NEVER stuck to the log/root)
     this._testDebugColor = false; // /testtree: false = real (textured) model [default], true = flat debug colours (toggle I)
     this._testActive = false; this._testSpecies = 'oak'; this._testScale = 1;
     this._frng = makeRNG(0x6f7e57);   // SEEDED layout RNG → every co-op peer builds the IDENTICAL forest (id→tree matches, so a host-synced fell/char/burn lands on the right tree)
@@ -165,7 +166,7 @@ export class ForestDemo {
   _buildTrunkBands(rec, yHi, nb) {
     const x = rec.x, y = rec.baseY, z = rec.z, yaw = rec.yaw, trunkR = rec.trunkR, mat = rec.mat, felTier = rec.felTier, id = rec.id, spine = rec.spine, fullH = rec.fullH || rec.height;
     const cos = Math.cos(yaw), sin = Math.sin(yaw);
-    const push = (mn, mx, cap) => { const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id, felTier }; if (cap) b.cap = cap; rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b); };
+    const push = (mn, mx, cap) => { const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, kind: 'trunk', dmat: mat, dpart: id, felTier }; if (cap) b.cap = cap; rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b); };
     if (spine && spine.length) {
       const cl = (yt) => {
         if (yt <= spine[0][1]) return [spine[0][0], spine[0][2]];
@@ -367,6 +368,7 @@ export class ForestDemo {
                       max: new THREE.Vector3(bb.max[0] + 0.06, bb.max[1] + 0.06, bb.max[2] + 0.06),
                       downer: log, tree: true, dmat: matName, dpart: opts.dpart, felTier: logFelTier };
         if (opts.foliage) box.foliage = true; if (opts.thicket) box.thicket = true; if (opts.seg) box.seg = opts.seg;
+        box.kind = opts.foliage ? 'crown' : 'fallen';          // explicit taxonomy: a fallen-log wood section vs its pass-through leaf crown
         if (!opts.foliage) {                                   // round log chunk: capsule along the log heading, inside this bin AABB
           const cX = (box.min.x + box.max.x) / 2, cY = (box.min.y + box.max.y) / 2, cZ = (box.min.z + box.max.z) / 2;
           const sX = box.max.x - box.min.x, sY = box.max.y - box.min.y, sZ = box.max.z - box.min.z;
@@ -550,19 +552,25 @@ export class ForestDemo {
   }
   _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart (whole log — segless decor / blast)
 
-  // Shoot ONE log CHUNK apart: a gap appears where you hit, the rest of the log stays shootable. Any
-  // chunk left with no grounded support (a crown bin propped on a now-gone branch) cascades. Host-auth.
+  // Shoot ONE log CHUNK loose: it DETACHES and falls to the ground as independent debris (it must NEVER
+  // stay stuck on the log). Then any chunk left with no live support — recomputed against the CURRENT
+  // terrain, not a cached flag — cascades off the same way. Host-auth.
   breakLogSeg(log, seg, seed) {
     if (!log || !seg || seg.dead || log.consumed) return;
     const sd = (seed >>> 0) || 1;
-    this._killSeg(log, seg, sd);
+    this._detachSeg(log, seg, sd);
     const extra = [];
-    try {                                                       // orphan cascade (no-op for an all-grounded log)
-      const orphans = orphanedCells(log.segs.map((s) => ({ dpart: s.sid, dead: s.dead, grounded: s.grounded, adj: s.adj })));
-      for (const o of orphans) { const os = log.segs.find((s) => s.sid === o.dpart && !s.dead); if (os) { this._killSeg(log, os, (sd ^ os.sid) >>> 0); extra.push(os.sid); } }
-    } catch (e) { console.warn('[forest] seg orphan cascade failed', e); }
+    // NEVER-STUCK: once a chunk is knocked loose, any remaining chunk that is NOT resting on the ground
+    // right now — a propped/leaning remnant, or one undermined by a dig — falls too. Nothing ever hangs in
+    // the air or stays "held" by the rest of the log/root. Live terrain check, not a cached flag.
+    for (const s of log.segs.slice()) {
+      if (s.dead || !s.part) continue;
+      const cgx = (s.part.min[0] + s.part.max[0]) / 2, cgz = (s.part.min[2] + s.part.max[2]) / 2;
+      const terr = this.world.terrain ? this.world.terrain.terrainHeightAt(cgx, cgz) : 0;
+      if (s.part.min[1] > terr + GROUND_EPS) { this._detachSeg(log, s, (sd ^ s.sid) >>> 0); extra.push(s.sid); }
+    }
     this._emitForest('segdie', log.id, { sids: [seg.sid, ...extra] });   // host-auth: clients mirror the same chunks
-    if (log.segs.every((s) => s.dead)) this._consumeLog(log, sd, true);  // last chunk gone → tidy the empty log
+    if (log.segs.every((s) => s.dead)) this._consumeLog(log, sd, true);  // all wood gone (now debris) → tidy the empty log shell (crown)
   }
   // remove one chunk: drop its boxes, splinter, sink JUST that chunk into the ground. The chunk mesh is a
   // child of the rotated pivot, so reparent it to the scene (keeping world transform) — then a world-Y sink works.
@@ -581,6 +589,49 @@ export class ForestDemo {
     const log = this.logs.find((l) => l.id === id); if (!log || !log.segs) return;
     for (const sid of (sids || [])) { const seg = log.segs.find((s) => s.sid === sid && !s.dead); if (seg) this._killSeg(log, seg, (sid >>> 0) || 1); }
     if (log.segs.length && log.segs.every((s) => s.dead) && !log.consumed) { log.consumed = true; this._fading.delete(log); if (log.part) log.part.dead = true; if (this.game.fire) this.game.fire.retire(log.part); }
+  }
+
+  // ── M1 DEBRIS: a chunk knocked loose from a fallen log FALLS to the ground and rests there as its own
+  // independent piece — it must NEVER stay attached to / floating off the log or root. Removes the chunk's
+  // collision, reparents its mesh to the scene (world pose kept), and queues a simple gravity drop; on
+  // landing _groundDebris gives it a fresh 'debris' capsule so it stays 1:1 shootable. No splinter spray
+  // (deferred). update() steps the falling pieces.
+  _detachSeg(log, seg, seed) {
+    if (!seg || seg.dead) return;
+    seg.dead = true;
+    for (const b of seg.boxes) { this.world.grid.removeBox(b); let i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); i = log.boxes.indexOf(b); if (i >= 0) log.boxes.splice(i, 1); }
+    seg.boxes = [];
+    if (seg.part) seg.part.dead = true;
+    const mesh = seg.mesh; if (!mesh) return;
+    if (mesh.parent) this.scene.attach(mesh);                       // keep world pose, become a free scene mesh
+    mesh.updateWorldMatrix(true, false);
+    const bbox = new THREE.Box3().setFromObject(mesh);
+    if (bbox.isEmpty()) return;
+    const cx = (bbox.min.x + bbox.max.x) / 2, cz = (bbox.min.z + bbox.max.z) / 2;
+    const gy = this.world.terrain ? this.world.terrain.terrainHeightAt(cx, cz) : 0;
+    const restY = mesh.position.y - Math.max(0, bbox.min.y - gy);   // mesh.y at which the chunk's underside rests on terrain
+    this._debris.push({ id: (log.id * 131 + (seg.sid & 127)) >>> 0, mesh, vy: 0, restY, settled: false, boxes: [], _test: !!log._test });
+  }
+  // Landed debris → a fresh 1:1 capsule hitbox (kind 'debris') so it's still precisely shootable.
+  _groundDebris(d) {
+    d.settled = true;
+    if (!d.mesh) return;
+    d.mesh.updateWorldMatrix(true, false);
+    const bbox = new THREE.Box3().setFromObject(d.mesh); if (bbox.isEmpty()) return;
+    const cx = (bbox.min.x + bbox.max.x) / 2, cy = (bbox.min.y + bbox.max.y) / 2, cz = (bbox.min.z + bbox.max.z) / 2;
+    const sx = bbox.max.x - bbox.min.x, sy = bbox.max.y - bbox.min.y, sz = bbox.max.z - bbox.min.z;
+    const box = { min: new THREE.Vector3(bbox.min.x, bbox.min.y, bbox.min.z), max: new THREE.Vector3(bbox.max.x, bbox.max.y, bbox.max.z), downer: d, kind: 'debris', dmat: 'wood', felTier: 1 };
+    if (sx >= sz) { const r = Math.max(0.12, 0.5 * Math.min(sy, sz)), hl = Math.max(0, 0.5 * sx - r); box.cap = { ax: cx - hl, ay: cy, az: cz, bx: cx + hl, by: cy, bz: cz, r }; }
+    else { const r = Math.max(0.12, 0.5 * Math.min(sy, sx)), hl = Math.max(0, 0.5 * sz - r); box.cap = { ax: cx, ay: cy, az: cz - hl, bx: cx, by: cy, bz: cz + hl, r }; }
+    d.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+  }
+  // A rested debris chunk shot again → shatter (sink into the ground; no sub-splinters this pass).
+  shatterDebris(d, seed) {
+    if (!d || d._dead) return; d._dead = true;
+    for (const b of d.boxes) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
+    d.boxes = [];
+    if (d.mesh && d.mesh.parent) this._sinking.push({ mesh: d.mesh, t: 0, dur: 0.7, y0: d.mesh.position.y, drop: 1.2 });
+    const i = this._debris.indexOf(d); if (i >= 0) this._debris.splice(i, 1);
   }
 
   consumeProp(rec) {                                                                              // FireManager burnout consumes a prop
@@ -703,6 +754,7 @@ export class ForestDemo {
     // Decor log lies horizontally at y+r. Axis endpoints are the two log ends in 3-D; radius = log cross radius.
     // Caps sit exactly at the AABB XZ boundary (AABB has ±r padding matching the hemisphere reach).
     box.cap = { ax, ay: y + r, az, bx, by: y + r, bz, r };
+    box.kind = 'fallen';
     log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
     this.logs.push(log);
     return log;
@@ -891,6 +943,16 @@ export class ForestDemo {
       s.mesh.position.y = s.y0 - s.drop * (u * u);
       if (u >= 1) { if (s.mesh.parent) s.mesh.parent.remove(s.mesh); this._sinking.splice(i, 1); }
     }
+    // M1: debris chunks knocked loose from a fallen log fall to the ground (simple gravity), then get a
+    // 'debris' hitbox. A chunk already on the ground rests instantly; a propped/elevated one drops — so
+    // nothing ever stays stuck floating off the log.
+    for (let i = this._debris.length - 1; i >= 0; i--) {
+      const d = this._debris[i];
+      if (d.settled || !d.mesh) continue;
+      d.vy -= 22 * dt;
+      d.mesh.position.y += d.vy * dt;
+      if (d.mesh.position.y <= d.restY) { d.mesh.position.y = d.restY; this._groundDebris(d); }
+    }
     const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
     for (const w of this.windy) {
       if (!w.m.parent) continue;
@@ -1037,6 +1099,14 @@ export class ForestDemo {
       if (wi >= 0) this.windy.splice(wi, 1);
       this._fading.delete(rec);
       this.trees.splice(i, 1);
+    }
+    // M1 debris from a previous test tree: drop each piece's hitbox + scene mesh.
+    for (let i = this._debris.length - 1; i >= 0; i--) {
+      const d = this._debris[i];
+      if (!d._test) continue;
+      for (const b of d.boxes) { this.world.grid.removeBox(b); const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1); }
+      if (d.mesh && d.mesh.parent) this.scene.remove(d.mesh);
+      this._debris.splice(i, 1);
     }
     // Drop orphaned sinking entries whose mesh was already detached (chunk sinks from a destroyed test log).
     for (let i = this._sinking.length - 1; i >= 0; i--) {

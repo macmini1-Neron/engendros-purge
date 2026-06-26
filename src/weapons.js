@@ -1670,7 +1670,11 @@ export class WeaponSystem {
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;                                   // destruction is host-authoritative
     const w = { pen: PEN_BY_CLASS[d.class] ?? 0, dmg: (d.dmg || 0) * mult };
-    if (box.building && typeof box.downer.applyHit === 'function') {
+    if (box.kind === 'debris' && box.downer) {
+      // a knocked-loose log chunk lying on the ground → shatter it (one hit; it's already debris)
+      this.game.forest && this.game.forest.shatterDebris(box.downer, (box.downer.id >>> 0) || 1);
+      this.game.hud.hitmarker(false);
+    } else if (box.building && typeof box.downer.applyHit === 'function') {
       box.downer.applyHit(wHit.point, wHit.normal, dir, w);
       this.game.hud.hitmarker(false);
     } else if (box.seg && box.downer && box.downer.fallen) {
