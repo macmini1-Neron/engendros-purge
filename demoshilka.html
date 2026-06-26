@@ -70,7 +70,8 @@
   #cov{position:absolute;inset:0}
   .co{position:absolute;transform:translate(-50%,-50%)}
   /* lamp = saturated colored bulb glow over the real glass (white hotspot + colored body + halo) */
-  .co.lamp{width:5.4%;aspect-ratio:1;border-radius:50%;pointer-events:none;opacity:0;transition:opacity .12s}
+  .co.lamp{width:5.4%;aspect-ratio:1;border-radius:50%;pointer-events:auto;opacity:0;transition:opacity .12s}
+  .co.lamp:hover,.co.cnt:hover{outline:1px dashed rgba(136,210,74,.7);outline-offset:1px;opacity:1}
   .co.lamp.on{opacity:1;
     background:radial-gradient(circle, rgba(255,255,255,.9) 0%, rgba(255,255,255,.35) 14%, transparent 26%),
               radial-gradient(circle, currentColor 0%, currentColor 42%, color-mix(in srgb, currentColor 50%, transparent) 60%, transparent 74%);
@@ -81,11 +82,15 @@
   .co.hot.on{border-color:var(--on);border-style:solid;background:rgba(136,210,74,.22);box-shadow:0 0 7px var(--on)}
   .co.hot.red.on{border-color:var(--bad);background:rgba(224,86,58,.25);box-shadow:0 0 7px var(--bad)}
   .co .tag{position:absolute;left:50%;top:106%;transform:translateX(-50%);white-space:nowrap;font-size:8px;color:#cfe0b4;background:rgba(0,0,0,.6);padding:0 3px;border-radius:3px;pointer-events:none;opacity:0}
-  .co.hot:hover .tag{opacity:1}
+  .co:hover .tag{opacity:1;z-index:9}
   .co.sel .tag{opacity:1;background:rgba(20,30,15,.85);border:1px solid var(--on);color:#dfeccb;font-weight:700}
   .co.cnt{font-variant-numeric:tabular-nums;font-weight:700;font-size:9px;color:#ffd23a;background:rgba(0,0,0,.6);padding:1px 3px;border-radius:3px;letter-spacing:.5px}
-  #cgrid{position:absolute;inset:0;display:none;pointer-events:none;background-image:linear-gradient(rgba(95,176,232,.4) 1px,transparent 1px),linear-gradient(90deg,rgba(95,176,232,.4) 1px,transparent 1px);background-size:10% 10%}
+  .co.hot.press{background:rgba(255,200,80,.35);border-color:var(--warn);border-style:solid}
+  #cgrid{position:absolute;inset:0;display:none;pointer-events:none;
+    background-image:linear-gradient(rgba(95,176,232,.55) 1px,transparent 1px),linear-gradient(90deg,rgba(95,176,232,.55) 1px,transparent 1px),linear-gradient(rgba(95,176,232,.2) 1px,transparent 1px),linear-gradient(90deg,rgba(95,176,232,.2) 1px,transparent 1px);
+    background-size:10% 10%,10% 10%,5% 5%,5% 5%}
   #cgrid.show{display:block}
+  .gridlbl{position:absolute;font-size:9px;font-weight:700;color:#9ad8ff;transform:translate(-50%,-50%);background:rgba(0,10,20,.6);padding:0 2px;border-radius:2px;pointer-events:none}
   #cpanel.calib{cursor:crosshair}
   /* right column */
   .grp{border:1px solid var(--line);border-radius:6px;padding:8px;margin:0 0 10px}
@@ -274,21 +279,23 @@ const cEls = [];
 COMMANDER_CONTROLS.forEach((c)=>{
   const d=document.createElement('div');
   d.style.left=c.px.x+'%'; d.style.top=c.px.y+'%';
-  const interactive = (c.kind==='toggle'||c.kind==='button'||c.kind==='selector');
   let cls='co';
   if(c.kind==='lamp') cls+=' lamp '+(c.col||'red');
   else if(c.kind==='counter'||c.kind==='gauge') cls+=' cnt';
-  else { cls+=' hot'+(c.col==='red'?' red':'')+(c.kind==='selector'?' sel':''); }
+  else cls+=' hot'+(c.col==='red'?' red':'')+(c.kind==='selector'?' sel':'');
   d.className=cls;
-  if(interactive){
-    const tag=document.createElement('span'); tag.className='tag';
-    tag.textContent = c.kind==='selector' ? (c.ru+': '+S[c.set]) : c.ru;
-    d.appendChild(tag); d.__tag=tag;
-  }
-  if(c.kind==='counter'||c.kind==='gauge') d.textContent='—';
-  if(c.kind==='toggle') d.addEventListener('click',()=>{ if(c.set) S[c.set]=!S[c.set]; info('<b>'+c.ru+'</b> — '+c.cz); });
-  else if(c.kind==='button') d.addEventListener('click',()=>{ if(c.clear)S[c.clear]=false; if(c.set)S[c.set]=true; d.classList.add('on'); setTimeout(()=>d.classList.remove('on'),170); info('<b>'+c.ru+'</b> — '+c.cz); });
-  else if(c.kind==='selector') d.addEventListener('click',()=>{ const o=c.opts,cur=o.indexOf(S[c.set]); S[c.set]=o[(cur+1)%o.length]; d.__tag.textContent=c.ru+': '+S[c.set]; info('<b>'+c.ru+'</b> = '+S[c.set]); });
+  // value (counter/gauge) in its own span so the hover tag survives
+  if(c.kind==='counter'||c.kind==='gauge'){ const v=document.createElement('span'); v.className='cval'; v.textContent='—'; d.appendChild(v); d.__val=v; }
+  // hover tag on EVERY control: name + what it does
+  const tag=document.createElement('span'); tag.className='tag';
+  tag.innerHTML = c.kind==='selector' ? ('<b>'+c.ru+': '+S[c.set]+'</b>') : ('<b>'+c.ru+'</b>'+(c.cz?'<br>'+c.cz:''));
+  d.appendChild(tag); d.__tag=tag;
+  const num=c.n?(' · Альбом '+c.n+(c.n70?' / ИЭ '+c.n70:'')):'';
+  const ttl='<b>'+c.ru+'</b> — '+(c.cz||'(zatím jen popis)')+'<span style="color:var(--dim)">'+num+'</span>';
+  d.addEventListener('mouseenter',()=>info(ttl));
+  if(c.kind==='toggle') d.addEventListener('click',()=>{ if(c.set) S[c.set]=!S[c.set]; info(ttl); });
+  else if(c.kind==='button') d.addEventListener('click',()=>{ if(c.clear)S[c.clear]=false; if(c.set)S[c.set]=true; d.classList.add('press'); setTimeout(()=>d.classList.remove('press'),170); info(ttl); });
+  else if(c.kind==='selector') d.addEventListener('click',()=>{ const o=c.opts,cur=o.indexOf(S[c.set]); S[c.set]=o[(cur+1)%o.length]; d.__tag.innerHTML='<b>'+c.ru+': '+S[c.set]+'</b>'; info(ttl); });
   cov.appendChild(d); cEls.push({el:d,c});
 });
 
@@ -311,6 +318,10 @@ const tsc=document.getElementById('tscale'); tsc.addEventListener('input',()=>{ 
 const cpanel=document.getElementById('cpanel'), cgrid=document.getElementById('cgrid'); let calibOn=false;
 document.getElementById('calib').addEventListener('change',e=>{ calibOn=e.target.checked; cgrid.classList.toggle('show',calibOn); cpanel.classList.toggle('calib',calibOn); cov.style.pointerEvents=calibOn?'none':''; });
 cpanel.addEventListener('click',e=>{ if(!calibOn)return; const r=cpanel.getBoundingClientRect(); const x=((e.clientX-r.left)/r.width*100).toFixed(1), y=((e.clientY-r.top)/r.height*100).toFixed(1); info('Kalibrace → <b>x:'+x+'% · y:'+y+'%</b>'); });
+for(let i=10;i<100;i+=10){
+  const a=document.createElement('span'); a.className='gridlbl'; a.style.left=i+'%'; a.style.top='1.6%'; a.textContent=i; cgrid.appendChild(a);
+  const b2=document.createElement('span'); b2.className='gridlbl'; b2.style.top=i+'%'; b2.style.left='2.6%'; b2.textContent=i; cgrid.appendChild(b2);
+}
 
 // ---- right column ----
 document.querySelectorAll('#ctrl button[data-k]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.k;S[k]=!S[k];b.classList.toggle('on',!!S[k]);}));
@@ -349,7 +360,7 @@ function frame(ts){
   // commander overlays
   for(const {el:w,c} of cEls){
     if(c.kind==='lamp') w.classList.toggle('on', !!c.read(S,b));
-    else if(c.kind==='counter'||c.kind==='gauge') w.textContent=c.read(S,b);
+    else if((c.kind==='counter'||c.kind==='gauge') && w.__val) w.__val.textContent=c.read(S,b);
     else if(c.kind==='toggle') w.classList.toggle('on', !!S[c.set]);
   }
   document.getElementById('r_fire').innerHTML=chip(fire.ok, fire.ok?'POVOLENO':'blokováno');
