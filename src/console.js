@@ -200,6 +200,27 @@ export class DevConsole {
 
     // /fly = player fly mode (noclip free movement) with the sim STILL running — NOT the N freecam (which freezes spawns/enemies).
     this.reg.register('fly', { args: [], run: () => { g.flyMode = !g.flyMode; if (g.flyMode) g.player.onGround = false; g.hud.bigMessage(g.flyMode ? '✈ FLY' : 'FLY OFF', g.flyMode ? 'WASD fly · Space up · Ctrl/C down · world keeps running' : ''); return `fly ${g.flyMode ? 'on' : 'off'}`; } });
+
+    // /testtree [species] [scale] — DEV: spawn/reset one isolated test tree with per-piece flat debug colors.
+    // Every wood piece (standing trunk, stump, falling top, each log chunk) gets a DISTINCT flat color so you
+    // can see exactly which piece is which as the tree fells/sections. Re-running fully resets the test tree.
+    this.reg.register('testtree', {
+      args: [
+        { name: 'species', type: 'word', optional: true, suggest: ['oak', 'birch', 'scotsPine', 'pine', 'poplar', 'willow'] },
+        { name: 'scale',   type: 'word', optional: true },
+      ],
+      run: (a) => {
+        if (!g.forest || typeof g.forest.spawnTestTree !== 'function') return 'forest not active — load ?map=forest first';
+        const VALID = ['scotsPine', 'birch', 'oak', 'poplar', 'willow'];
+        let sp = a.species || 'oak';
+        if (sp === 'pine') sp = 'scotsPine';   // friendly alias
+        if (!VALID.includes(sp)) sp = 'oak';
+        const sc = parseFloat(a.scale);
+        const scale = isFinite(sc) ? Math.max(0.4, Math.min(3, sc)) : 1.0;
+        const rec = g.forest.spawnTestTree(sp, scale);
+        return `test tree spawned: ${rec.species} scale ${scale.toFixed(2)} at (${rec.x.toFixed(1)}, ${rec.z.toFixed(1)}) — /testtree again to reset`;
+      },
+    });
   }
 
   // ---- DOM ----
