@@ -43,6 +43,11 @@ const WOOD_SEG_LEN = 1.1;                       // local length (m) of each dest
 const WOOD_SEG_MAX = 7;                         // cap segments per log (perf)
 const MAX_SEG_LOGS = 10;                        // cap concurrent per-chunk logs; beyond it logs fall back to one shared-HP hull
 const STUB_FLOOR = 0.9;                         // a snap leaving a stump shorter than this makes an inert stub (not re-snappable)
+// SECTIONAL STANDING TRUNK: a standing tree's bole is split into VERTICAL sections (each its own mesh +
+// HP + collision capsule). Shooting a section knocks it loose as debris; destroying a low section topples
+// the unsupported upper run as a hinge fall. A low/through cut (fellTree) topples all sections above it.
+const TRUNK_SEG_LEN = 2.0;   // vertical slice height (m); ~4–7 sections per grown tree
+const TRUNK_SEG_MAX = 8;     // cap sections per standing trunk (perf; a sapling gets 2–3)
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -130,18 +135,12 @@ export class ForestDemo {
     const felTier = felTierFor(trunkR);          // caliber needed to fell THIS trunk (by its thickness)
     // fullH = the ORIGINAL height (taper reference, survives snaps); spine = leaning centreline (for rebuilding
     // stump bands after a snap); snapN = how many times this trunk has been snapped (→ unique fallen-log ids).
-    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, fullH: H, trunkR, mesh: m, leafMesh, cls, mat, part, felTier, spine: res.spine, snapN: 0, standing: true, boxes: [] };
+    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, fullH: H, trunkR, mesh: m, leafMesh, cls, mat, part, felTier, spine: res.spine, snapN: 0, standing: true, boxes: [], segs: [] };
     part.downer = rec;
-    // ── PRECISE HITBOXES (the headline fix) ──────────────────────────────────────────────────────────
-    // Built from the tree's REAL geometry (tree.js returns the leaning trunk centreline + the MEASURED
-    // leaf-mass envelope), then rotated by this tree's yaw into world AABBs:
-    //   · TRUNK — a few SOLID bands that hug the leaning bole (you can't walk through or shoot past it).
-    //     One base-centred column missed the lean entirely → shots at the upper bole hit nothing.
-    //   · CANOPY — ONE box matching the actual foliage, flagged `foliage` (soft cover): the raycast hits
-    //     it but movement passes THROUGH it (slowed — World.foliageSlowAt). The crown is 10–20 m wide; a
-    //     SOLID box that size walls the whole footprint — that floating box was also a phantom wall.
-    // TRUNK — solid bands hugging the leaning bole + root collar (shared with snapTree's stump rebuild).
-    this._buildTrunkBands(rec, H, 6);
+    // ── PRECISE HITBOXES ─────────────────────────────────────────────────────────────────────────────
+    // TRUNK — split into VERTICAL sections (own mesh + HP + capsule per slice). Shooting a section knocks
+    // it loose; a low-cut topples the upper run. Falls back to 6-band approach if geometry is missing.
+    this._buildTrunkSegs(rec, woodMesh);
     // CANOPY — ONE soft-cover foliage box matching the MEASURED leaf mass: the raycast hits it (shoot/conceal),
     // but movement passes THROUGH (slowed). thicket(slow)=only saplings — a grown crown is overhead.
     const cab = res.crownAABB;
@@ -195,11 +194,234 @@ export class ForestDemo {
     }
   }
 
+  // Build per-section meshes + vertical capsule collision boxes for a standing trunk.
+  // Replaces _buildTrunkBands: each section is its own Mesh child of rec.mesh (real geometry, not blocky)
+  // with its own HP part and collision capsule. Falls back to 6-band if geometry is unavailable.
+  _buildTrunkSegs(rec, woodMesh) {
+    const geo = woodMesh && woodMesh.geometry;
+    const a = geo && geo.attributes;
+    if (!a || !a.position || a.position.array.length < 9) { this._buildTrunkBands(rec, rec.height, 6); return; }
+    const pos = a.position.array, col = a.color ? a.color.array : null;
+    const nor = a.normal ? a.normal.array : null, uv = a.uv ? a.uv.array : null;
+    const segGeos = binFallenGeometry(pos, col, nor, uv, 1, TRUNK_SEG_LEN, TRUNK_SEG_MAX);
+    if (!segGeos.length) { this._buildTrunkBands(rec, rec.height, 6); return; }
+    // Replace the single woodMesh with per-section meshes (same material, real geometry slices).
+    const mat2d = woodMesh.material;
+    if (woodMesh.parent) woodMesh.parent.remove(woodMesh);
+    geo.dispose();
+    const nSeg = segGeos.length;
+    const hpPerSeg = (TREE_HP[rec.cls] / MATERIALS[rec.mat].hp) / nSeg;
+    rec.segs = [];
+    segGeos.forEach((sg, idx) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(sg.positions, 3));
+      if (sg.normals) g.setAttribute('normal', new THREE.Float32BufferAttribute(sg.normals, 3));
+      if (sg.uvs) g.setAttribute('uv', new THREE.Float32BufferAttribute(sg.uvs, 2));
+      if (sg.colors) g.setAttribute('color', new THREE.Float32BufferAttribute(sg.colors, 3));
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, mat2d); m.castShadow = true; rec.mesh.add(m);
+      const sid = rec.id * 100 + idx;
+      const part = makePart(sid, rec.mat, [0, 0, 0], [0, 0, 0], hpPerSeg);
+      part.downer = rec;
+      rec.segs.push({ sid, mesh: m, part, dead: false, adj: [], boxes: [], y0: sg.min[1], y1: sg.max[1] });
+    });
+    // Linear adjacency chain bottom→top
+    for (let i = 0; i < rec.segs.length; i++) { const adj = []; if (i > 0) adj.push(rec.segs[i-1].sid); if (i < rec.segs.length-1) adj.push(rec.segs[i+1].sid); rec.segs[i].adj = adj; }
+    // Build world-space collision capsules for each section (leaning-spine aware, same approach as _buildTrunkBands)
+    const x = rec.x, baseY = rec.baseY, z = rec.z, yaw = rec.yaw, trunkR = rec.trunkR;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw), spine = rec.spine, fullH = rec.fullH || rec.height;
+    const mat3 = rec.mat, felTier = rec.felTier, id = rec.id;
+    const cl = (spine && spine.length) ? (yt) => {
+      if (yt <= spine[0][1]) return [spine[0][0], spine[0][2]];
+      for (let i = 0; i < spine.length-1; i++) { const a2 = spine[i], b2 = spine[i+1]; if (yt <= b2[1]+1e-6) { const tt = (yt-a2[1])/((b2[1]-a2[1])||1); return [a2[0]+(b2[0]-a2[0])*tt, a2[2]+(b2[2]-a2[2])*tt]; } }
+      const e = spine[spine.length-1]; return [e[0], e[2]];
+    } : null;
+    for (const seg of rec.segs) {
+      const y0 = seg.y0, y1 = seg.y1, midY = (y0+y1)*0.5;
+      const rad = trunkR * (1 - 0.6*(midY/fullH)) + 0.1;
+      let box;
+      if (cl) {
+        const e0 = cl(y0), e1 = cl(y1);
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+        const addP = (lx, lz) => { const rx = lx*cos+lz*sin, rz = -lx*sin+lz*cos; if(rx<mnx)mnx=rx; if(rx>mxx)mxx=rx; if(rz<mnz)mnz=rz; if(rz>mxz)mxz=rz; };
+        addP(e0[0], e0[1]); addP(e1[0], e1[1]);
+        for (const p of spine) if (p[1]>y0 && p[1]<y1) addP(p[0], p[2]);
+        const cax = x+(e0[0]*cos+e0[1]*sin), caz = z+(-e0[0]*sin+e0[1]*cos);
+        const cbx = x+(e1[0]*cos+e1[1]*sin), cbz = z+(-e1[0]*sin+e1[1]*cos);
+        box = { min: new THREE.Vector3(x+mnx-rad, baseY+y0, z+mnz-rad), max: new THREE.Vector3(x+mxx+rad, baseY+y1, z+mxz+rad),
+                downer: rec, tree: true, kind: 'trunk', dmat: mat3, dpart: id, felTier, seg,
+                cap: { ax: cax, ay: baseY+y0, az: caz, bx: cbx, by: baseY+y1, bz: cbz, r: rad } };
+      } else {
+        const half = trunkR + 0.12;
+        box = { min: new THREE.Vector3(x-half, baseY+y0, z-half), max: new THREE.Vector3(x+half, baseY+y1, z+half),
+                downer: rec, tree: true, kind: 'trunk', dmat: mat3, dpart: id, felTier, seg,
+                cap: { ax: x, ay: baseY+y0, az: z, bx: x, by: baseY+y1, bz: z, r: trunkR+0.05 } };
+      }
+      seg.boxes = [box]; this.world.boxes.push(box); this.world.grid.addBox(box);
+      seg.part.min = [box.min.x, box.min.y, box.min.z]; seg.part.max = [box.max.x, box.max.y, box.max.z];
+    }
+    // Root collar: same low solid band as _buildTrunkBands (helps with steps/movement against base).
+    const collarR = trunkR * 1.25 + 0.05, collarH = Math.min(0.5, fullH * 0.12);
+    const collar = { min: new THREE.Vector3(x-collarR, baseY, z-collarR), max: new THREE.Vector3(x+collarR, baseY+collarH, z+collarR),
+                     downer: rec, tree: true, kind: 'trunk', dmat: mat3, dpart: id, felTier };
+    rec.boxes.push(collar); this.world.boxes.push(collar); this.world.grid.addBox(collar);
+  }
+
+  // Drop ALL section collision boxes (not in rec.boxes; each seg owns its own boxes array).
+  // Call before clearing/uprooting/rebuilding a sectional tree.
+  _dropSegBoxes(rec) {
+    for (const seg of (rec.segs || [])) {
+      for (const b of seg.boxes) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
+      seg.boxes = [];
+    }
+  }
+
   _dropBox(rec) {
-    for (const b of (rec.boxes || [])) {         // drop every trunk band + the canopy box
+    for (const b of (rec.boxes || [])) {         // drops canopy box + root collar (NOT seg boxes — segs own those)
       this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1);
     }
     rec.boxes = [];
+  }
+
+  // Return a Set of sids for sections that are NOT connected (via alive adj chain) to the grounded base.
+  // Linear chain: if section[i] is dead, all alive sections above index i are unsupported.
+  _trunkUnsupported(rec) {
+    const unsup = new Set(); if (!rec.segs) return unsup;
+    let connected = true;   // section 0 is grounded (y0 ≈ 0)
+    for (let i = 0; i < rec.segs.length; i++) {
+      const seg = rec.segs[i];
+      if (seg.dead) { connected = false; continue; }   // gap: everything above is cut off
+      if (!connected) unsup.add(seg.sid);
+    }
+    return unsup;
+  }
+
+  // Detach ONE trunk section as M1-style falling debris: remove its boxes, reparent mesh to scene,
+  // drop under simple gravity to the terrain, then give it a 'debris' capsule on landing.
+  _detachTrunkSeg(rec, seg, dirXZ, seed) {
+    if (!seg || seg.dead) return;
+    seg.dead = true;
+    for (const b of seg.boxes) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
+    seg.boxes = [];
+    if (seg.part) seg.part.dead = true;
+    const mesh = seg.mesh; if (!mesh) return;
+    if (mesh.parent) this.scene.attach(mesh);   // keep world pose, become a free scene object
+    mesh.updateWorldMatrix(true, false);
+    const bbox = new THREE.Box3().setFromObject(mesh);
+    if (bbox.isEmpty()) return;
+    const cx = (bbox.min.x + bbox.max.x) / 2, cz = (bbox.min.z + bbox.max.z) / 2;
+    const gy = this.world.terrain ? this.world.terrain.terrainHeightAt(cx, cz) : 0;
+    const restY = mesh.position.y - Math.max(0, bbox.min.y - gy);
+    // Tiny outward nudge so the detached chunk visibly separates from the trunk
+    if (dirXZ) { mesh.position.x += dirXZ[0] * 0.18; mesh.position.z += dirXZ[1] * 0.18; }
+    this._debris.push({ id: (rec.id * 131 + (seg.sid & 127)) >>> 0, mesh, vy: 1.5 + Math.random() * 2, restY, settled: false, boxes: [], _test: !!rec._test });
+    if (this.debris) this.debris.burst('splints', [(bbox.min.x+bbox.max.x)/2, (bbox.min.y+bbox.max.y)/2, (bbox.min.z+bbox.max.z)/2], (seed >>> 0) || 1, undefined, [dirXZ ? dirXZ[0] : 0, 0.3, dirXZ ? dirXZ[1] : 0]);
+  }
+
+  // Merge section meshes' geometry into a single THREE.BufferGeometry (all in local space of rec.mesh).
+  // Used to assemble a falling top from multiple upper sections.
+  _mergeSegGeos(segs) {
+    const posArr = [], colArr = [], norArr = [], uvArr = [];
+    let hasCol = false, hasNor = false, hasUV = false, mat2d = null;
+    for (const seg of segs) {
+      const g = seg.mesh && seg.mesh.geometry; if (!g) continue;
+      const a = g.attributes;
+      if (a.position) for (let i = 0; i < a.position.array.length; i++) posArr.push(a.position.array[i]);
+      if (a.color) { for (let i = 0; i < a.color.array.length; i++) colArr.push(a.color.array[i]); hasCol = true; }
+      if (a.normal) { for (let i = 0; i < a.normal.array.length; i++) norArr.push(a.normal.array[i]); hasNor = true; }
+      if (a.uv) { for (let i = 0; i < a.uv.array.length; i++) uvArr.push(a.uv.array[i]); hasUV = true; }
+      if (!mat2d && seg.mesh.material) mat2d = seg.mesh.material;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+    if (hasNor) g.setAttribute('normal', new THREE.Float32BufferAttribute(norArr, 3));
+    if (hasUV) g.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+    if (hasCol) g.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
+    g.computeBoundingSphere();
+    return { geometry: g, material: mat2d };
+  }
+
+  // Topple a run of connected sections as ONE hinge-falling top (used by chipTrunk + fellTree).
+  // Merges their geometry, reparents meshes under a new pivot, builds makeHinge, pushes to FALLING.
+  // Also takes the leaf mesh if the topmost section is in the run (crown falls with the top).
+  _toppleRun(rec, segs, dirXZ, seed, logId) {
+    if (!segs || !segs.length) return;
+    // Drop boxes and mark dead for all sections in the run
+    for (const seg of segs) {
+      seg.dead = true;
+      for (const b of seg.boxes) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
+      seg.boxes = []; if (seg.part) seg.part.dead = true;
+    }
+    // Merge geometry (local space of rec.mesh = local space of the tree at origin)
+    const merged = this._mergeSegGeos(segs);
+    const topWoodMesh = new THREE.Mesh(merged.geometry, merged.material); topWoodMesh.castShadow = true;
+    // Detach section meshes from rec.mesh
+    for (const seg of segs) { if (seg.mesh && seg.mesh.parent) seg.mesh.parent.remove(seg.mesh); }
+    // Pivot at the bottom of the run in world space
+    const breakYlocal = segs[0].y0;   // local Y of the bottom of the run
+    const top = new THREE.Group(); top.rotation.y = rec.yaw; top.add(topWoodMesh);
+    // Take the leaf mesh if the topmost section in the run is the last alive section of the tree
+    let topLeafMesh = null;
+    const topSegIdx = rec.segs.indexOf(segs[segs.length - 1]);
+    const isTopmost = topSegIdx >= rec.segs.filter(s => !s.dead || segs.includes(s)).length - 1 || rec.segs.slice(topSegIdx + 1).every(s => s.dead);
+    if (isTopmost && rec.leafMesh) {
+      topLeafMesh = new THREE.Mesh(rec.leafMesh.geometry, FOLIAGE_OPAQUE); topLeafMesh.castShadow = true;
+      top.add(topLeafMesh);
+      // Drop the canopy box (leaf crown falls with the top)
+      for (let i = rec.boxes.length - 1; i >= 0; i--) { const b = rec.boxes[i]; if (b.foliage) { this.world.grid.removeBox(b); const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1); rec.boxes.splice(i, 1); } }
+      if (rec.leafMesh.parent) rec.leafMesh.parent.remove(rec.leafMesh); rec.leafMesh = null;
+    }
+    const pivot = new THREE.Group(); pivot.position.set(rec.x, rec.baseY + breakYlocal, rec.z); pivot.add(top); this.scene.add(pivot);
+    let dx = dirXZ ? dirXZ[0] : 1, dz = dirXZ ? dirXZ[1] : 0;
+    const dl = Math.hypot(dx, dz); if (dl > 1e-4) { dx /= dl; dz /= dl; }
+    const topY1 = segs[segs.length - 1].y1;
+    const length = Math.max(0.5, topY1 - breakYlocal);
+    const sd = (seed >>> 0) || 1;
+    const obstacles = this._fallObstacles(rec, dx, dz, length);
+    const groundAt = this.world.terrain ? (gx, gz) => this.world.terrain.terrainHeightAt(gx, gz) : null;
+    const body = makeHinge({ pivot: [rec.x, rec.baseY + breakYlocal, rec.z], dirXZ: [dx, dz], length, radius: Math.max(0.22, rec.trunkR || 0.22), seed: sd, obstacles, groundAt });
+    const lId = logId != null ? logId : (200000 + (rec.id % 6000) * 16 + Math.min(15, rec.snapN || 0));
+    if (logId == null) rec.snapN = (rec.snapN || 0) + 1;
+    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, logId: lId, breakY: breakYlocal, fullH: rec.fullH, seed: sd, topWoodMesh, topLeafMesh });
+    if (this.debris) this.debris.burst('splints', [rec.x, rec.baseY + breakYlocal, rec.z], sd, undefined, [dx, 0, dz]);
+  }
+
+  // chipTrunk: a standing-tree section was shot and killed. Detach it as debris, cascade any now-
+  // unsupported upper sections (topple ≥2 / debris 1), drop the crown if nothing remains.
+  chipTrunk(rec, section, dirXZ, seed) {
+    if (!rec || !rec.standing || !rec.segs) return;
+    const sd = (seed >>> 0) || 1;
+    // The section is already HP-depleted; clean up its boxes and detach as debris
+    this._detachTrunkSeg(rec, section, dirXZ, sd);
+    // Support cascade: walk up the section chain — a gap (dead section) makes everything above unsupported
+    const unsup = this._trunkUnsupported(rec);
+    if (unsup.size) {
+      // Group consecutive unsupported alive sections into runs
+      const uSegs = rec.segs.filter(s => !s.dead && unsup.has(s.sid));
+      const runs = []; let cur = [];
+      for (const s of uSegs) {
+        if (!cur.length) { cur.push(s); continue; }
+        if (rec.segs.indexOf(s) === rec.segs.indexOf(cur[cur.length-1]) + 1) { cur.push(s); }
+        else { runs.push(cur); cur = [s]; }
+      }
+      if (cur.length) runs.push(cur);
+      const logId = 200000 + (rec.id % 6000) * 16 + Math.min(15, rec.snapN || 0);
+      rec.snapN = (rec.snapN || 0) + 1;
+      for (const run of runs) {
+        if (run.length >= 2) this._toppleRun(rec, run, dirXZ, (sd ^ run[0].sid) >>> 0, logId);
+        else this._detachTrunkSeg(rec, run[0], dirXZ, (sd ^ run[0].sid) >>> 0);
+      }
+    }
+    // If all sections are gone, drop the crown and mark tree not-standing
+    if (rec.segs.every(s => s.dead)) {
+      this._dropBox(rec);   // drop canopy box
+      if (rec.leafMesh && rec.leafMesh.parent) rec.leafMesh.parent.remove(rec.leafMesh); rec.leafMesh = null;
+      const oldMesh = rec.mesh;
+      if (oldMesh) { const wi = this.windy.findIndex(w => w.m === oldMesh); if (wi >= 0) this.windy.splice(wi, 1); if (oldMesh.parent) this.scene.remove(oldMesh); }
+      rec.mesh = null; rec.standing = false; this._fading.delete(rec);
+      if (rec.part) rec.part.dead = true; if (this.game.fire) this.game.fire.retire(rec.part);
+    }
+    this._emitForest('chiptrunk', rec.id, { sids: [section.sid], dx: dirXZ ? dirXZ[0] : 0, dz: dirXZ ? dirXZ[1] : 0, seed: sd });
   }
 
   // weapons.js _destructHit calls this when a tree's trunk part is killed. dirXZ = the SHOT direction
@@ -223,6 +445,41 @@ export class ForestDemo {
     const snapN = rec.snapN || 0;
     const logId = 200000 + (rec.id % 6000) * 16 + Math.min(15, snapN);   // unique fallen-log id per (tree, snap)
     rec.snapN = snapN + 1;
+
+    // ── SECTIONAL FELL (standing trunk built with _buildTrunkSegs) ─────────────────────────────────
+    // Topple all sections above the break height as one hinge; leave sections below as the stump.
+    // Uses _toppleRun/_detachTrunkSeg; does NOT rebuild stump bands (section boxes stay in place).
+    if (rec.segs && rec.segs.length > 0) {
+      // rec.boxes (canopy + collar) already dropped by _dropBox above; section boxes handled per-seg by _toppleRun/_detachTrunkSeg
+      const breakY = (breakAtOverride === 0) ? 0 : Math.max(0, breakAt * fullH);
+      const aboveSegs = [], belowSegs = [];
+      for (const seg of rec.segs) {
+        if (seg.dead) continue;
+        if (breakAtOverride === 0 || (seg.y0 + seg.y1) * 0.5 >= breakY) aboveSegs.push(seg);
+        else belowSegs.push(seg);
+      }
+      if (aboveSegs.length >= 2) {
+        this._toppleRun(rec, aboveSegs, [dx, dz], sd, logId);
+      } else if (aboveSegs.length === 1) {
+        this._detachTrunkSeg(rec, aboveSegs[0], [dx, dz], sd);
+        // Crown has no top to attach to → drop it
+        if (rec.leafMesh && rec.leafMesh.parent) { rec.leafMesh.parent.remove(rec.leafMesh); rec.leafMesh = null; }
+      }
+      if (belowSegs.length > 0) {
+        rec.standing = true; rec.height = breakY;
+        if (rec.part) { rec.part.dead = false; rec.part.dhp = Math.max(8, TREE_HP[rec.cls] * (breakY / fullH)); const sh = (rec.trunkR || 0.3) + 0.12; rec.part.min = [rec.x - sh, y0, rec.z - sh]; rec.part.max = [rec.x + sh, y0 + breakY, rec.z + sh]; }
+      } else {
+        // Nothing survives (uproot or all sections above cut) — remove the now-empty mesh group
+        const oldMesh = rec.mesh;
+        if (oldMesh) { const wi = this.windy.findIndex(w => w.m === oldMesh); if (wi >= 0) this.windy.splice(wi, 1); if (oldMesh.parent) this.scene.remove(oldMesh); }
+        if (rec.leafMesh && rec.leafMesh.parent) { rec.leafMesh.parent.remove(rec.leafMesh); rec.leafMesh = null; }
+        rec.mesh = null; rec._woodMesh = null; rec.standing = false;
+        if (rec.part) rec.part.dead = true;
+      }
+      rec._fellDx = dx; rec._fellDz = dz; rec._fellSeed = sd; rec._snapBy = +breakAt.toFixed(3);
+      this._emitForest('fell', rec.id, { dx, dz, seed: sd, by: +breakAt.toFixed(3) });
+      return;
+    }
 
     let topWoodMesh = null, topLeafMesh = null, breakY, liveStump, stumpMesh = null;
     if (breakAtOverride === 0) {
@@ -875,12 +1132,16 @@ export class ForestDemo {
     if (tree.boxes) for (let i = tree.boxes.length - 1; i >= 0; i--) { const b = tree.boxes[i]; if (b.foliage) { this.world.grid.removeBox(b); const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1); tree.boxes.splice(i, 1); } }
     // A SNAPPED STUMP (already shorter than the original) has no crown left to drop and must NOT be rebuilt:
     // makeTree with no height override regrows the FULL tree (the regen bug). Just scorch the existing stump
-    // mesh in place. (Passing tree.height instead would double-scale — height is pre-scale in makeTree.)
+    // mesh in place. Sectional trees scorch here too (section boxes remain: the charred snag is still shootable).
     if ((tree.snapN || 0) > 0 || !tree.leafMesh || (tree.fullH && tree.height < tree.fullH * 0.99)) {
+      // Remove the leaf mesh from the group (it's burned away)
+      if (tree.leafMesh && tree.leafMesh.parent) { tree.leafMesh.parent.remove(tree.leafMesh); tree.leafMesh = null; }
       if (tree.mesh.traverse) tree.mesh.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setHex(0x161310); });
       this._emitForest('drop', tree.id);
       return;
     }
+    // Full rebuild as charred single mesh: drop section boxes first (section meshes go with the old group).
+    if (tree.segs && tree.segs.length) { this._dropSegBoxes(tree); tree.segs = []; }
     try {
       const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, lod: 0, damage: 'charred' });
       const old = tree.mesh;                                  // a Group(wood, leaf) — the charred snag is a single merged mesh (no leaves to fade)
@@ -909,7 +1170,7 @@ export class ForestDemo {
     for (const rec of this.trees) {
       if (!rec.standing) continue;
       const dx = rec.x - cx, dz = rec.z - cz;
-      if (dx * dx + dz * dz < r * r) { if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; } this._fading.delete(rec); rec.leafMesh = null; this._dropBox(rec); rec.standing = false; rec.cleared = true; }
+      if (dx * dx + dz * dz < r * r) { if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; } this._fading.delete(rec); rec.leafMesh = null; this._dropBox(rec); this._dropSegBoxes(rec); rec.segs = []; rec.standing = false; rec.cleared = true; }
     }
   }
 
@@ -1089,11 +1350,13 @@ export class ForestDemo {
       if (stump.parent) this.scene.remove(stump);
       this.stumps.splice(i, 1);
     }
-    // Main tree records: drop collision boxes + wind entry + mesh.
+    // Main tree records: drop collision boxes (canopy + section) + wind entry + mesh.
     for (let i = this.trees.length - 1; i >= 0; i--) {
       const rec = this.trees[i];
       if (!rec._test) continue;
-      this._dropBox(rec);
+      this._dropBox(rec);          // canopy + root collar
+      this._dropSegBoxes(rec);     // section boxes (kind:'trunk' inside seg.boxes)
+      rec.segs = [];
       if (rec.mesh && rec.mesh.parent) this.scene.remove(rec.mesh);
       const wi = this.windy.findIndex((w) => w.m === rec.mesh);
       if (wi >= 0) this.windy.splice(wi, 1);

@@ -1677,6 +1677,15 @@ export class WeaponSystem {
     } else if (box.building && typeof box.downer.applyHit === 'function') {
       box.downer.applyHit(wHit.point, wHit.normal, dir, w);
       this.game.hud.hitmarker(false);
+    } else if (box.seg && box.downer && box.downer.standing && !box.downer.fallen) {
+      // a STANDING TRUNK SECTION (sectional tree built by _buildTrunkSegs): damage only this section.
+      // On kill: chipTrunk() detaches it as debris + cascades any unsupported upper run (topple/debris).
+      const rec = box.downer, seg = box.seg, part = seg.part;
+      if (!part || part.dead || seg.dead) return;
+      const r = resolveHit(part, w, box.felTier);
+      if (r.killed && this.game.forest) this.game.forest.chipTrunk(rec, seg, [dir.x, dir.z], (seg.sid * 2654435761) >>> 0);
+      else if (r.effect === 'damage' && this.game.forest && this.game.forest.debris) this.game.forest.debris.burst('splints', [wHit.point.x, wHit.point.y, wHit.point.z], (seg.sid ^ 0x55) >>> 0);
+      this.game.hud.hitmarker(false);
     } else if (box.seg && box.downer && box.downer.fallen) {
       // a SECTIONAL log CHUNK: damage only this segment; on kill chop just it out (gap), the rest stays.
       const log = box.downer, seg = box.seg, part = seg.part;
