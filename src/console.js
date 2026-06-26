@@ -202,6 +202,18 @@ export class DevConsole {
 
     // /fly = player fly mode (noclip free movement) with the sim STILL running — NOT the N freecam (which freezes spawns/enemies).
     this.reg.register('fly', { args: [], run: () => { g.flyMode = !g.flyMode; if (g.flyMode) g.player.onGround = false; g.hud.bigMessage(g.flyMode ? '✈ FLY' : 'FLY OFF', g.flyMode ? 'WASD fly · Space up · Ctrl/C down · world keeps running' : ''); return `fly ${g.flyMode ? 'on' : 'off'}`; } });
+
+    // /test = one-shot sandbox: god + freeze spawns + day/night, no fall damage, fly on, wipe all current Engendros.
+    this.reg.register('test', { args: [], run: () => {
+      g.rules.god = true;                   // invulnerable
+      g.rules.doMobSpawning = false;        // no new natural/wave spawns
+      g.rules.doDaylightCycle = false;      // freeze the day/night clock
+      g.rules.fallDamage = false;           // no fall trauma / leg break
+      g.flyMode = true; g.player.onGround = false;             // fly mode on (world keeps running)
+      const n = g.enemies.aliveCount; g.enemies.clearAll();    // wipe current enemies
+      g.hud.bigMessage('🧪 TEST SANDBOX', `god · no spawns · time frozen · no fall · fly · cleared ${n}`);
+      return `test sandbox ON — god · spawns off · time frozen · fall off · fly on · cleared ${n} Engendros`;
+    } });
   }
 
   // ---- DOM ----
