@@ -214,7 +214,7 @@ export const COMMANDER_CONTROLS = [
   { ru:'АВАРИЙНАЯ СТРЕЛЬБА', cz:'havarijní palba', n:31, n70:17, kind:'toggle', px:{x:13,y:24}, set:'avariynaya', col:'red' },
   { ru:'СТРЕЛЬБА ВЕРХ.', cz:'horní pár',           n:5,  n70:14, kind:'toggle', px:{x:49,y:26}, set:'bankUpper' },
   { ru:'СТРЕЛЬБА НИЖ.', cz:'dolní pár',            n:5,  n70:15, kind:'toggle', px:{x:49,y:40}, set:'bankLower' },
-  { ru:'ЦЕПЬ СТРЕЛЬБЫ', cz:'palebný okruh',        n:26, n70:11, kind:'toggle', px:{x:14,y:52}, set:'tsepFire' },
+  { ru:'ЦЕПЬ СТРЕЛЬБЫ', cz:'palebný okruh',        n:26, n70:11, kind:'toggle', px:{x:6,y:55}, set:'tsepFire', spr:'cep', sprW:4.6 },
   { ru:'ЛЮК ОТКРЫТ', cz:'poklop otevřen',          n:19, n70:19, kind:'lamp', px:{x:36,y:63}, col:'red', read:(s)=>!s.hatchClosed },
   // — zbraně / munice (4 automaty: ВЕРХ.ЛЕВ/ПРАВ vnitřní pár, НИЖН.ЛЕВ/ПРАВ vnější) —
   { ru:'ПЕРЕЗАРЯДКА ВЛ', cz:'pneu přebití', kind:'button', px:{x:32,y:24} },

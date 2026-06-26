@@ -81,6 +81,9 @@
   .co.hot:hover{border-color:var(--on);background:rgba(136,210,74,.12)}
   .co.hot.on{border-color:var(--on);border-style:solid;background:rgba(136,210,74,.22);box-shadow:0 0 7px var(--on)}
   .co.hot.red.on{border-color:var(--bad);background:rgba(224,86,58,.25);box-shadow:0 0 7px var(--bad)}
+  .co.spr{cursor:pointer}
+  .co.spr img{display:block;width:100%;border-radius:3px}
+  .co.spr:hover{outline:2px solid var(--on);outline-offset:1px;border-radius:3px}
   .co .tag{position:absolute;left:50%;top:106%;transform:translateX(-50%);white-space:nowrap;font-size:8px;color:#cfe0b4;background:rgba(0,0,0,.6);padding:0 3px;border-radius:3px;pointer-events:none;opacity:0}
   .co:hover .tag{opacity:1;z-index:9}
   .co.sel .tag{opacity:1;background:rgba(20,30,15,.85);border:1px solid var(--on);color:#dfeccb;font-weight:700}
@@ -282,8 +285,11 @@ COMMANDER_CONTROLS.forEach((c)=>{
   let cls='co';
   if(c.kind==='lamp') cls+=' lamp '+(c.col||'red');
   else if(c.kind==='counter'||c.kind==='gauge') cls+=' cnt';
+  else if(c.spr) cls+=' spr';
   else cls+=' hot'+(c.col==='red'?' red':'')+(c.kind==='selector'?' sel':'');
   d.className=cls;
+  // sprite toggle: real bezel image swapped off↔on (physical lever flip)
+  if(c.spr){ d.style.width=c.sprW+'%'; const im=document.createElement('img'); im.src='demo/assets/cmd/'+c.spr+'-off.png'; d.appendChild(im); d.__img=im; }
   // value (counter/gauge) in its own span so the hover tag survives
   if(c.kind==='counter'||c.kind==='gauge'){ const v=document.createElement('span'); v.className='cval'; v.textContent='—'; d.appendChild(v); d.__val=v; }
   // hover tag on EVERY control: name + what it does
@@ -361,7 +367,7 @@ function frame(ts){
   for(const {el:w,c} of cEls){
     if(c.kind==='lamp') w.classList.toggle('on', !!c.read(S,b));
     else if((c.kind==='counter'||c.kind==='gauge') && w.__val) w.__val.textContent=c.read(S,b);
-    else if(c.kind==='toggle') w.classList.toggle('on', !!S[c.set]);
+    else if(c.kind==='toggle'){ if(c.spr&&w.__img){ const want=S[c.set]?'on':'off'; if(w.__sprState!==want){w.__sprState=want; w.__img.src='demo/assets/cmd/'+c.spr+'-'+want+'.png';} } else w.classList.toggle('on', !!S[c.set]); }
   }
   document.getElementById('r_fire').innerHTML=chip(fire.ok, fire.ok?'POVOLENO':'blokováno');
   document.getElementById('r_gag').textContent=S.gagPhase;
