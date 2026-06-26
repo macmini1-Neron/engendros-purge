@@ -110,7 +110,7 @@ class Game {
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
-    this.rules = { god: false, doMobSpawning: true, doDaylightCycle: true, sendCommandFeedback: true };  // «ПОЛИГОН» gamerules
+    this.rules = { god: false, doMobSpawning: true, doDaylightCycle: true, infiniteAmmo: false, fallDamage: true, sendCommandFeedback: true };  // «ПОЛИГОН» gamerules
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout

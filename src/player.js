@@ -229,7 +229,7 @@ export class Player {
     const wasAir = !this.onGround;
     this.onGround = this.game.world.collide(this.pos, this.vel, this.radius, this.height, dt);
     if (!onLadder && this.onGround && wasAir && this._fallVel < -6) this.game.audio.land(this._fallVel < -12);
-    if (!onLadder && this.onGround && wasAir && this._fallVel < FALL_SAFE) {
+    if (!onLadder && this.onGround && wasAir && this._fallVel < FALL_SAFE && !(this.game.rules && this.game.rules.fallDamage === false)) { // /gamerule fallDamage false → no fall trauma / no leg break
       let dmg = ((-this._fallVel) - (-FALL_SAFE)) * FALL_DMG_PER_VY; // HP per m/s beyond the safe threshold
       if (this._fallVel <= FALL_LETHAL) dmg += FALL_DMG_BONUS_AT_LETHAL;
       if (this._fallVel <= LEG_BREAK_VY && !this.legBroken) this.breakLeg();

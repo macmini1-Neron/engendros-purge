@@ -1529,7 +1529,8 @@ export class WeaponSystem {
   }
 
   _fire(d) {
-    this.mag[this.cur]--; this.cooldown = 60 / d.rpm;
+    if (!(this.game.rules && this.game.rules.infiniteAmmo)) this.mag[this.cur]--; // /gamerule infiniteAmmo true → mag never depletes (no reload, unlimited)
+    this.cooldown = 60 / d.rpm;
     if (d.enBloc && this.mag[this.cur] <= 0) this.game.audio.garandPing(); // empty clip ejects with the iconic ping
     const _climb = 1 + this._recoilStreak * (d.recoilClimb || 0);
     this.bloom = Math.min(this.bloom + d.bloom * _climb, 0.09);

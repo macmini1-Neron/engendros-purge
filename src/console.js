@@ -187,10 +187,11 @@ export class DevConsole {
 
     // doMobSpawning = freeze natural/wave spawns (/summon still works); spawn_mobs = the 1.21.11+ MC alias.
     // doDaylightCycle = freeze the day/night clock (time of day stays put); doDayCycle = short alias.
+    // infiniteAmmo = mag never depletes (no reload, unlimited). fallDamage = take fall trauma (false = no fall damage / leg break).
     // sendCommandFeedback = show/hide the console command echo + success lines (Minecraft's chat-feedback rule).
-    const RULE_KEY = { god: 'god', doMobSpawning: 'doMobSpawning', spawn_mobs: 'doMobSpawning', doDaylightCycle: 'doDaylightCycle', doDayCycle: 'doDaylightCycle', sendCommandFeedback: 'sendCommandFeedback' };
+    const RULE_KEY = { god: 'god', doMobSpawning: 'doMobSpawning', spawn_mobs: 'doMobSpawning', doDaylightCycle: 'doDaylightCycle', doDayCycle: 'doDaylightCycle', infiniteAmmo: 'infiniteAmmo', fallDamage: 'fallDamage', sendCommandFeedback: 'sendCommandFeedback' };
     this.reg.register('gamerule', {
-      args: [{ name: 'rule', type: 'enum', choices: ['god', 'doMobSpawning', 'spawn_mobs', 'doDaylightCycle', 'doDayCycle', 'sendCommandFeedback'] }, { name: 'value', type: 'enum', choices: ['true', 'false'] }], // Minecraft uses true/false (no on/off)
+      args: [{ name: 'rule', type: 'enum', choices: ['god', 'doMobSpawning', 'spawn_mobs', 'doDaylightCycle', 'doDayCycle', 'infiniteAmmo', 'fallDamage', 'sendCommandFeedback'] }, { name: 'value', type: 'enum', choices: ['true', 'false'] }], // Minecraft uses true/false (no on/off)
       run: (a) => {
         const on = a.value === 'true';
         const key = RULE_KEY[a.rule];
@@ -358,7 +359,7 @@ export class DevConsole {
       `Azimuth: ${formatUglomer(yawToMils(p.yaw))}  (угломер 60-00 · grid-N=+Z · CW→+X)`, // authoritative world datum (bearing.js). NB: the Facing line above uses the Minecraft −Z=north frame, so +Z reads "south" there but 00-00 (north) here — intentional.
       '',
       `Map: ${g.mapId}`,
-      `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}${g.rules && !g.rules.doMobSpawning ? '  ·  NO-SPAWN' : ''}${g.rules && g.rules.doDaylightCycle === false ? '  ·  TIME FROZEN' : ''}`,
+      `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}${g.rules && !g.rules.doMobSpawning ? '  ·  NO-SPAWN' : ''}${g.rules && g.rules.doDaylightCycle === false ? '  ·  TIME FROZEN' : ''}${g.rules && g.rules.infiniteAmmo ? '  ·  ∞AMMO' : ''}${g.rules && g.rules.fallDamage === false ? '  ·  NO-FALL' : ''}`,
       `Wave ${g.waves.wave}   ·   enemies ${g.enemies.aliveCount}`,
       `Day #${di.n}  ${di.night ? 'NIGHT' : 'DAY'}${di.blood ? '  · BLOOD MOON' : ''}`,
       `HP ${Math.round(p.hp)}/${p.maxHp}   ARM ${Math.round(p.armor)}   food ${Math.round(p.hunger)}`,
