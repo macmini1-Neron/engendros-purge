@@ -298,7 +298,8 @@ export class ForestDemo {
     for (const b of grid.queryAABB(minx, minz, maxx, maxz)) {
       if (b.foliage) continue;                                 // leaves never stop a fall
       if (b.downer === rec) continue;                          // our own stump/bole bands
-      if (!(b.tree || b.struct || b.building || b.prop)) continue;
+      if (b.tree) continue;                                    // DETERMINISM: a neighbour's standing trunk is dynamic (felled in peer-varying order) → its presence in the obstacle set would diverge the settle pose between peers. Settle only against STATIC obstacles + terrain.
+      if (!(b.struct || b.building || b.prop)) continue;
       out.push({ min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] });
       if (out.length >= 40) break;
     }
@@ -411,18 +412,30 @@ export class ForestDemo {
   // Drop a fallen log/chunk so its lowest point rests ON the current terrain — no levitation, whether on a
   // slope at settle-time or after a dig removed the soil under it (grid is XZ-only, so a Y shift needs no
   // re-bucketing). Lowers the mesh group (carrying its child chunk meshes), the collision boxes, and the parts.
-  regroundLog(log) {
+  regroundLog(log, emit = false) {
     if (!log || log.consumed || !log.boxes || !log.boxes.length) return;
     let lowest = Infinity, lx = 0, lz = 0;
     for (const bx of log.boxes) { if (bx.min.y < lowest) { lowest = bx.min.y; lx = (bx.min.x + bx.max.x) / 2; lz = (bx.min.z + bx.max.z) / 2; } }
     const terr = this.world.terrain ? this.world.terrain.terrainHeightAt(lx, lz) : 0;
     const drop = lowest - terr;
     if (drop <= 0.1) return;                                   // already resting (or below) the ground
+    this._applyLogDrop(log, drop);
+    // Dig path (support.js) is host-only with NO deterministic client replay — clients lower the terrain but never
+    // re-ground the log → broadcast the exact host drop so clients drop the same log. The fall-settle caller
+    // (_registerFallenLog) leaves emit=false: clients replay the fall and re-ground locally. _emitForest is host-gated.
+    if (emit) this._emitForest('reground', log.id, { d: +drop.toFixed(3) });
+  }
+  // Lower a fallen log (mesh group + collision boxes + fire parts/segments) by `drop` so it rests on the terrain.
+  _applyLogDrop(log, drop) {
+    if (!log || !(drop > 0)) return;
     if (log.mesh) log.mesh.position.y -= drop;
-    for (const bx of log.boxes) { bx.min.y -= drop; bx.max.y -= drop; }
+    for (const bx of (log.boxes || [])) { bx.min.y -= drop; bx.max.y -= drop; }
     if (log.part) { log.part.min[1] -= drop; log.part.max[1] -= drop; }
     for (const seg of (log.segs || [])) { if (seg.part) { seg.part.min[1] -= drop; seg.part.max[1] -= drop; } }
   }
+  // Co-op client mirror of a host dig-reground: apply the host's exact drop to the matching downed log
+  // (ordering-independent vs the separate terrain `deform` message — no terrain re-query needed).
+  regroundLogById(id, drop) { const l = this.logs.find((x) => x.id === id); if (l) this._applyLogDrop(l, drop); }
 
   // ── FLAT-FALL ──────────────────────────────────────────────────────────────────────────────────────
   // Once a felled top has SETTLED on its stump, decide — SEEDED off the fell seed, so host + every client
