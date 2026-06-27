@@ -44,8 +44,8 @@ class RemotePlayer {
     this.parts = this.obj.userData.parts;
     this.gunAnchor = new THREE.Group(); this.gunAnchor.position.set(0.42, 0.95, 0.34); this.obj.add(this.gunAnchor); this._wep = null;
     // flashlight beam — a spotlight in world space, on when this player holds the flashlight (so everyone sees their cone)
-    this.flashLight = new THREE.SpotLight(0xfff0d0, 0, 60, 0.62, 0.4, 0.0); this.flashTarget = new THREE.Object3D();
-    this.flashLight.target = this.flashTarget; game.engine.scene.add(this.flashLight); game.engine.scene.add(this.flashTarget);
+    this._flashH = game.engine.acquireFlashLight();          // borrow a pooled spotlight (no runtime scene.add → no shader recompile on join)
+    this.flashLight = this._flashH.light; this.flashTarget = this._flashH.target;
     this._hasFlash = false; this._flashOn = true; this._seat = 0; this._fwd = new THREE.Vector3(); this._fe = new THREE.Euler();
     this.pos = new THREE.Vector3(0, 0, 30); this.tpos = this.pos.clone();
     this.yaw = 0; this.tyaw = 0; this.pitch = 0;
@@ -134,7 +134,7 @@ class RemotePlayer {
   dispose() {
     this.game.engine.scene.remove(this.obj);
     this.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-    this.game.engine.scene.remove(this.flashLight); this.game.engine.scene.remove(this.flashTarget);
+    if (this._flashH) this.game.engine.releaseFlashLight(this._flashH); // return the spotlight to the pool (no scene.remove → no recompile on leave)
     if (this.label) this.label.remove();
   }
 }

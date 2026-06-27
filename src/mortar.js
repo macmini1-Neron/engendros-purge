@@ -281,11 +281,13 @@ export class Mortar {
     const p0 = new THREE.Vector3(grant.o[0], grant.o[1], grant.o[2]);
     const p1 = new THREE.Vector3(grant.i[0], grant.i[1], grant.i[2]);
     const range = Math.hypot(p1.x - p0.x, p1.z - p0.z), apex = BAL.apexHeight(range);
-    const geo = new THREE.CylinderGeometry(SHELL_R * 0.6, SHELL_R, 0.16, 8);
-    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x23241f }));
+    // pooled shell mesh (shared geo+material; recycled on detonate instead of alloc/dispose per round)
+    if (!this._shellGeo) { this._shellGeo = new THREE.CylinderGeometry(SHELL_R * 0.6, SHELL_R, 0.16, 8); this._shellMat = new THREE.MeshLambertMaterial({ color: 0x23241f }); this._shellPool = []; }
+    let mesh = this._shellPool.pop();
+    if (!mesh) { mesh = new THREE.Mesh(this._shellGeo, this._shellMat); this.game.engine.scene.add(mesh); }
     mesh.visible = false;                                         // hidden during the tube slide; appears at the BOOM
-    this.game.engine.scene.add(mesh);
-    const { trace, ring } = this._buildTracer(p0, p1, apex);     // golf-style arc + landing ring (F3-gated)
+    // golf-arc + landing ring are debug-only (F3) — don't allocate them every shell in normal play
+    const { trace, ring } = this.game.f3 ? this._buildTracer(p0, p1, apex) : { trace: null, ring: null };
     if (trace) trace.visible = false;                             // no flight arc until it actually launches
     // boomIn = the drop→ignition slide; the round arcs (and the WHUMP/shake fire) only once it elapses
     this.shells.push({ mesh, t: 0, tof: grant.tof, p0, p1, apex, hostAuth, trace, ring, boomIn: DROP_DELAY, boomed: false });
@@ -334,7 +336,7 @@ export class Mortar {
     const p = shell.p1.clone();
     this.game.effects.explosion(p, BAL.HE_RADIUS);
     if (this.game.audio && this.game.audio.explosion) this.game.audio.explosion();
-    this.game.engine.scene.remove(shell.mesh); shell.mesh.geometry.dispose(); shell.mesh.material.dispose();
+    shell.mesh.visible = false; this._shellPool.push(shell.mesh);   // recycle the pooled shell mesh (no dispose)
     if (shell.trace) { this.game.engine.scene.remove(shell.trace); shell.trace.geometry.dispose(); shell.trace.material.dispose(); } // drop the flight arc
     if (shell.ring) this._impactMarks.push({ ring: shell.ring, t: 4, life: 4 });   // keep the landing ring, fading (golf "where it landed")
     if (!shell.hostAuth) return;                             // clients: visual only

@@ -666,11 +666,20 @@ class Game {
     if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
   }
   _fxBeam(from, dir) { // transient red boss-laser beam for clients (visual only — damage is host-authoritative)
-    const len = 70, end = from.clone().addScaledVector(dir, len);
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
-    beam.renderOrder = 998; beam.position.copy(from).add(end).multiplyScalar(0.5); beam.scale.set(0.4, 0.4, len); beam.lookAt(end);
-    this.engine.scene.add(beam);
-    setTimeout(() => { this.engine.scene.remove(beam); beam.geometry.dispose(); beam.material.dispose(); }, 180);
+    const len = 70;
+    if (!this._beamPool) { // pool the beam mesh: was a fresh BoxGeometry+Material per beam (alloc+dispose = GC churn during a boss laser barrage)
+      this._beamGeo = new THREE.BoxGeometry(1, 1, 1);
+      this._beamMat = new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0.95, depthWrite: false, fog: false });
+      this._beamPool = []; this._beamEnd = new THREE.Vector3();
+    }
+    const end = this._beamEnd.copy(from).addScaledVector(dir, len);
+    let beam = null;
+    for (const b of this._beamPool) if (!b.visible) { beam = b; break; }
+    if (!beam) { beam = new THREE.Mesh(this._beamGeo, this._beamMat); beam.renderOrder = 998; this.engine.scene.add(beam); this._beamPool.push(beam); }
+    beam.visible = true;
+    beam.position.copy(from).add(end).multiplyScalar(0.5); beam.scale.set(0.4, 0.4, len); beam.lookAt(end);
+    const tok = (beam.userData._tok = (beam.userData._tok || 0) + 1); // guard: a re-borrowed beam mustn't be hidden by a stale timer
+    setTimeout(() => { if (beam.userData._tok === tok) beam.visible = false; }, 180);
   }
   _disposeMolotovPool(p) { if (p) this.engine.releaseFxLight(p.lightH); if (this.fire && p && p._emitter) this.fire.removeEmitter(p._emitter); }
   _clearMolotovPools() { if (this.molotovPools) { for (const p of this.molotovPools) this._disposeMolotovPool(p); this.molotovPools.length = 0; } }

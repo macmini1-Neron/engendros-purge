@@ -1539,10 +1539,10 @@ export class WeaponSystem {
     const _climb = 1 + this._recoilStreak * (d.recoilClimb || 0);
     this.bloom = Math.min(this.bloom + d.bloom * _climb, 0.09);
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
-    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const origin = (this._sOrigin || (this._sOrigin = new THREE.Vector3())).setFromMatrixPosition(cam.matrixWorld);
     const fwd = this._tmp.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
     const right = this._tmp2.set(1, 0, 0).applyQuaternion(cam.quaternion).normalize();
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
+    const up = (this._sUp || (this._sUp = new THREE.Vector3())).set(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
     const muzzle = origin.clone().addScaledVector(fwd, 1.0).addScaledVector(right, 0.16).addScaledVector(up, -0.1);
     this.game.effects.muzzleFlash(muzzle, fwd, d.class === 'shotgun' || d.class === 'launcher' ? 1.6 : 1);
     if (d.class !== 'launcher' && !d.boltAction) this.game.effects.shell(muzzle.clone().addScaledVector(right, -0.08), right);
@@ -1572,7 +1572,7 @@ export class WeaponSystem {
     const spread = (d.spread + this.bloom) * (this.ads ? 0.4 : 1);
     const mult = this.effMult(this.cur);
     for (let p = 0; p < d.pellets; p++) {
-      const dir = fwd.clone();
+      const dir = (this._sDir || (this._sDir = new THREE.Vector3())).copy(fwd);   // scratch — consumed synchronously in _marchPellet
       dir.x += rr(-spread, spread); dir.y += rr(-spread, spread); dir.z += rr(-spread, spread);
       dir.normalize();
       this._marchPellet(muzzle, dir, d, mult);
@@ -1646,7 +1646,7 @@ export class WeaponSystem {
       }
       break;                                              // nothing left on the ray
     }
-    this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);   // spent / edge round → range end
+    this.game.effects.tracer(muzzle, (this._sEnd || (this._sEnd = new THREE.Vector3())).copy(muzzle).addScaledVector(dir, d.range), d.accent);   // spent / edge round → range end (scratch end-point; tracer copies it)
   }
 
   // A world box is soft cover a round punches THROUGH (vs stops at): a destructible whose material is

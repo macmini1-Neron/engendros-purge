@@ -7,6 +7,13 @@ const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _m = new THREE.Matrix4();
+// Reused Colors — _spawn() copies the color into the pooled particle (pt.color.copy), so a shared scratch /
+// constant is safe to pass. Kills the 2 `new THREE.Color` per stuffing/explosion call, which spike hard when
+// one AoE blast damages a whole horde at once (N damage events → 2N Color allocs in a single frame).
+const _col = new THREE.Color();
+const _COL_WHITE = new THREE.Color(0xfff6e8);
+const _COL_FIRE = new THREE.Color(0xff7a2a);
+const _COL_SMOKE = new THREE.Color(0x55504a);
 
 export class Effects {
   constructor(game) {
@@ -34,6 +41,9 @@ export class Effects {
         onBounce: null, bounces: 0, maxBounceSounds: 0, bounceSoundMinVel: 0 });
     }
     this._cursor = 0;
+    // free-list of dead slots → O(1) spawn (pop on spawn, push on death) instead of an O(capacity) ring scan
+    this._free = [];
+    for (let i = this.capacity - 1; i >= 0; i--) this._free.push(i);
 
     // --- tracers (pooled stretched boxes) ---
     this.tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9, fog: false });
@@ -55,7 +65,9 @@ export class Effects {
       this.flashes.push({ mesh: m, life: 0 });
     }
 
-    // --- explosion rings ---
+    // --- explosion/blast rings (pooled: one shared geo + per-ring material; never alloc/dispose per blast) ---
+    this.ringGeo = new THREE.RingGeometry(0.5, 0.7, 24);
+    this.ringBaseMat = new THREE.MeshBasicMaterial({ color: 0xffd28a, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, fog: false });
     this.rings = [];
 
     // --- point light for flashes/explosions ---
@@ -108,14 +120,10 @@ export class Effects {
   }
 
   _spawn(opts) {
-    // find a free slot (overwrite oldest if needed)
-    let slot = -1;
-    for (let i = 0; i < this.capacity; i++) {
-      const idx = (this._cursor + i) % this.capacity;
-      if (!this.p[idx].alive) { slot = idx; break; }
-    }
-    if (slot < 0) { slot = this._cursor; }
-    this._cursor = (slot + 1) % this.capacity;
+    // O(1) slot pick: pop a dead slot off the free-list; if the pool is saturated, overwrite the oldest (cursor)
+    let slot;
+    if (this._free.length > 0) { slot = this._free.pop(); }
+    else { slot = this._cursor; this._cursor = (slot + 1) % this.capacity; }
     const pt = this.p[slot];
     pt.alive = true;
     pt.pos.copy(opts.pos);
@@ -140,8 +148,7 @@ export class Effects {
 
   // Plush stuffing burst on hit — fluffy colored cubes.
   stuffing(pos, color, amount = 10, power = 5) {
-    const c = new THREE.Color(color);
-    const white = new THREE.Color(0xfff6e8);
+    const c = _col.set(color);                      // scratch (copied in _spawn) — was `new THREE.Color` per call
     for (let i = 0; i < amount; i++) {
       const useWhite = Math.random() < 0.5;
       this._spawn({
@@ -151,7 +158,7 @@ export class Effects {
         size: randRange(0.08, 0.2),
         grav: -12,
         drag: 2.2,
-        color: useWhite ? white : c,
+        color: useWhite ? _COL_WHITE : c,
         bounce: 0.3,
         floorY: pos.y - 0.4,
       });
@@ -335,28 +342,40 @@ export class Effects {
     this._lightLife = 0.06;
   }
 
+  // acquire a pooled ring (reuse an idle one, else grow the pool once). up=Vector3 orients it; null=flat.
+  _acquireRing(pos, color, opacity, life, radius, up) {
+    let r = this.rings.find((x) => !x.active);
+    if (!r) {
+      const mesh = new THREE.Mesh(this.ringGeo, this.ringBaseMat.clone());
+      mesh.castShadow = false; mesh.visible = false;
+      this.scene.add(mesh);
+      r = { mesh, active: false, life: 0, maxLife: 0, radius: 0, opa0: 0.8 };
+      this.rings.push(r);
+    }
+    r.active = true; r.life = life; r.maxLife = life; r.radius = radius; r.opa0 = opacity;
+    r.mesh.visible = true;
+    r.mesh.material.color.set(color);
+    r.mesh.material.opacity = opacity;
+    r.mesh.position.copy(pos);
+    if (up) { r.mesh.up.set(0, 1, 0); r.mesh.lookAt(_v.copy(pos).add(up)); }
+    else { r.mesh.rotation.set(-Math.PI / 2, 0, 0); }
+    r.mesh.scale.set(0.5, 0.5, 0.5);
+    return r;
+  }
+
   explosion(pos, radius = 6) {
-    // core particles
-    const fire = new THREE.Color(0xff7a2a);
-    const smoke = new THREE.Color(0x55504a);
+    // core particles — fire/smoke colours are constants (copied in _spawn), no per-call alloc
     for (let i = 0; i < 30; i++) {
       const isFire = Math.random() < 0.6;
       this._spawn({
         pos, vel: _v.set(randRange(-1, 1), randRange(-0.3, 1), randRange(-1, 1)).normalize().multiplyScalar(randRange(3, 10)),
         life: randRange(0.4, 1.0), size: randRange(0.2, 0.5),
         grav: isFire ? 2 : -2, drag: 1.5,
-        color: isFire ? fire : smoke, bounce: 0, floorY: -999,
+        color: isFire ? _COL_FIRE : _COL_SMOKE, bounce: 0, floorY: -999,
       });
     }
-    // shockwave ring
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.5, 0.7, 24),
-      new THREE.MeshBasicMaterial({ color: 0xffd28a, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, fog: false })
-    );
-    ring.position.copy(pos);
-    ring.rotation.x = -Math.PI / 2;
-    this.scene.add(ring);
-    this.rings.push({ mesh: ring, life: 0.4, maxLife: 0.4, radius });
+    // shockwave ring (pooled)
+    this._acquireRing(pos, 0xffd28a, 0.8, 0.4, radius, null);
     // big light
     this.flashLight.position.copy(pos);
     this.flashLight.color.set(0xff8030);
@@ -380,23 +399,17 @@ export class Effects {
         grav: -3, drag: 2.2, color: dust, bounce: 0, floorY: groundPos.y,
       });
     }
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.3, 0.45, 20),
-      new THREE.MeshBasicMaterial({ color: 0xffe6b0, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, fog: false })
-    );
-    ring.position.copy(muzzlePos); ring.lookAt(muzzlePos.clone().add(up));
-    this.scene.add(ring);
-    this.rings.push({ mesh: ring, life: 0.3, maxLife: 0.3, radius: 3 });
+    this._acquireRing(muzzlePos, 0xffe6b0, 0.5, 0.3, 3, up);
   }
 
   update(dt) {
     // particles
-    let i = 0;
+    let wrote = false;
     for (let k = 0; k < this.capacity; k++) {
       const pt = this.p[k];
       if (!pt.alive) continue;
       pt.life -= dt;
-      if (pt.life <= 0) { pt.alive = false; _m.makeScale(0, 0, 0); this.mesh.setMatrixAt(k, _m); continue; }
+      if (pt.life <= 0) { pt.alive = false; this._free.push(k); _m.makeScale(0, 0, 0); this.mesh.setMatrixAt(k, _m); wrote = true; continue; }
       pt.vel.y += pt.grav * dt;
       pt.vel.multiplyScalar(Math.max(0, 1 - pt.drag * dt));
       pt.pos.addScaledVector(pt.vel, dt);
@@ -416,10 +429,12 @@ export class Effects {
       _m.compose(pt.pos, _q, _s.set(sz, sz, sz));
       this.mesh.setMatrixAt(k, _m);
       this.mesh.setColorAt(k, pt.color);
-      i++;
+      wrote = true;
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    if (wrote) {
+      this.mesh.instanceMatrix.needsUpdate = true;
+      if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    }
 
     // mesh casings
     for (const c of this.cases) {
@@ -460,15 +475,16 @@ export class Effects {
       if (f.life <= 0) f.mesh.visible = false;
     }
 
-    // explosion rings
-    for (let r = this.rings.length - 1; r >= 0; r--) {
+    // explosion/blast rings (pooled — recycle in place, never dispose)
+    for (let r = 0; r < this.rings.length; r++) {
       const ring = this.rings[r];
+      if (!ring.active) continue;
       ring.life -= dt;
       const f = 1 - ring.life / ring.maxLife;
       const sc = 0.5 + f * ring.radius * 2;
       ring.mesh.scale.set(sc, sc, sc);
-      ring.mesh.material.opacity = (1 - f) * 0.8;
-      if (ring.life <= 0) { this.scene.remove(ring.mesh); ring.mesh.geometry.dispose(); ring.mesh.material.dispose(); this.rings.splice(r, 1); }
+      ring.mesh.material.opacity = (1 - f) * ring.opa0;
+      if (ring.life <= 0) { ring.active = false; ring.mesh.visible = false; }
     }
 
     // flash light decay
