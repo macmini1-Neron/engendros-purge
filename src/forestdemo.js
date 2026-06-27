@@ -9,8 +9,8 @@
 import * as THREE from 'three';
 import { makeTree } from './props/generators/tree.js';
 import { makeBush, makeShrub } from './props/generators/groundcover.js';
-import { makePart, MATERIALS, makeHinge, stepBody, resolveHit } from './destruct.js';
-import { rr, voxelMaterial, foliageFadeMaterial } from './util.js';
+import { makePart, MATERIALS, makeHinge, stepBody, resolveHit, binFallenAABBs } from './destruct.js';
+import { rr, voxelMaterial, foliageFadeMaterial, makeRNG } from './util.js';
 import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning.js';
 
 // Two SHARED leaf materials (one program each, compiled once): leaves render opaque by default; the
@@ -25,6 +25,13 @@ const ri = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // TRUNK (tier 2, need an HMG+). HP from the demo so felling stays responsive (a few hits, not a magazine).
 const SPECIES_CLS = { scotsPine: 2, birch: 2, oak: 3, poplar: 2, willow: 2 };
 const TREE_HP = { 1: 20, 2: 55, 3: 100 };   // destructive vibe: rifle fells a grown tree in a burst, HMG/HE/APFSDS instantly
+const LOG_HP_MUL = 2.0;   // a FALLEN log is durable scenery (×2 the standing trunk) → a deliberate burst shoots it apart, a stray bullet leaves it lying; it NEVER despawns on a timer
+// FELLING BY CALIBER × TREE SIZE: a tree/log carries a "fell tier" = the min weapon pen that can chop
+// it, derived from TRUNK THICKNESS (not species) so a slim trunk falls to an SMG/rifle (pen 1) while a
+// thick bole needs an MG/sniper/HE (pen 2+). Only the caliber GATE scales with size — fire + HP still
+// come from the material. (Pen by class: pistol0 smg1 rifle1 shotgun1 sniper2 hmg2 launcher4 cannon5.)
+const FELL_TIER_R = 0.5;                        // scaled trunk radius ≥ this ⇒ "thick" (MG/sniper/HE only); below ⇒ a rifle/SMG burst fells it. The slender majority (birch/willow/smaller pine+poplar) fall to the rifle; only big boles (oak, the largest pines) need a heavy weapon.
+const felTierFor = (r) => (r >= FELL_TIER_R ? 2 : 1);
 const CLS_MAT = { 1: 'wood', 2: 'trunk', 3: 'trunk' };
 const TREE_MIX = [['scotsPine', 60], ['birch', 18], ['oak', 8], ['poplar', 6], ['willow', 8]];
 
@@ -32,16 +39,19 @@ export class ForestDemo {
   // debris = the ForestScene's shared DebrisPool (the scene steps it, so we never call debris.update)
   constructor(game, debris) {
     this.game = game; this.world = game.world; this.scene = this.world.scene; this.debris = debris;
-    this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.FALLING = []; this.windy = [];
+    this.trees = []; this.stumps = []; this.stumpBoxes = []; this.logs = []; this.bushes = []; this.props = []; this.FALLING = []; this.windy = [];
+    this._sinking = [];   // logs being destroyed: sink-into-ground animation before the mesh is removed (no instant poof)
+    this._frng = makeRNG(0x6f7e57);   // SEEDED layout RNG → every co-op peer builds the IDENTICAL forest (id→tree matches, so a host-synced fell/char/burn lands on the right tree)
     this._t = 0; this._idc = 0; this._reserved = [];
     this._fading = new Set();   // tree/bush recs whose leaf mesh is currently on the near-camera fade material
   }
 
   reserve(x, z, r) { this._reserved.push({ x, z, r }); }     // keep-out (cottage / crate footprints)
 
+  _rr(lo, hi) { return lo + this._frng() * (hi - lo); }   // seeded rr() over the forest layout RNG
   _pickSpecies() {
     let tot = 0; for (const [, w] of TREE_MIX) tot += w;
-    let n = Math.random() * tot;
+    let n = this._frng() * tot;
     for (const [s, w] of TREE_MIX) { if ((n -= w) <= 0) return s; }
     return 'scotsPine';
   }
@@ -60,19 +70,19 @@ export class ForestDemo {
     const terr = this.world.terrain;
     const NS = 11, stands = [];          // denser wood: more stands + more trees + tighter spacing (see drop())
     for (let s = 0; s < NS; s++) {
-      const a = (s / NS) * Math.PI * 2 + rr(-0.35, 0.35), d = 22 + Math.random() * (rad - 22);
-      stands.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 10 + Math.random() * 8 });
+      const a = (s / NS) * Math.PI * 2 + this._rr(-0.35, 0.35), d = 22 + this._frng() * (rad - 22);
+      stands.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 10 + this._frng() * 8 });
     }
     const drop = (count, scaleLo, scaleHi, minD, footR, sapling) => {
       for (let i = 0; i < count; i++) {
         for (let tries = 0; tries < 12; tries++) {
-          const st = stands[(Math.random() * stands.length) | 0];
-          const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * st.r;
+          const st = stands[(this._frng() * stands.length) | 0];
+          const a = this._frng() * Math.PI * 2, d = Math.sqrt(this._frng()) * st.r;
           const x = st.x + Math.cos(a) * d, z = st.z + Math.sin(a) * d;
           if (Math.abs(x) > this.world.HALF - 6 || Math.abs(z) > this.world.HALF - 6) continue;
           if (terr && !terr.isPlaceable(x, z, footR, 'tree')) continue;
           if (this._blocked(x, z, minD)) continue;
-          this._addTree(sapling ? 'birch' : this._pickSpecies(), x, z, rr(scaleLo, scaleHi), i * 17 + (sapling ? 700 : 3), sapling); break;
+          this._addTree(sapling ? 'birch' : this._pickSpecies(), x, z, this._rr(scaleLo, scaleHi), i * 17 + (sapling ? 700 : 3), sapling); break;
         }
       }
     };
@@ -82,7 +92,7 @@ export class ForestDemo {
 
   _addTree(species, x, z, scale, seed, sapling) {
     const res = makeTree({ species, seed, lod: 0, scale });
-    const yaw = rr(0, Math.PI * 2);
+    const yaw = this._rr(0, Math.PI * 2);
     const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
     // WOOD (opaque) + LEAF (fadeable) as two meshes under one group: wind/transform/fell all act on the
     // group, while only the leaf mesh ever swaps to the transparent near-camera fade material.
@@ -102,7 +112,8 @@ export class ForestDemo {
     // must rise from the TRUNK base, not the wide lean-offset canopy — so the part stays a tight bole column
     // independent of the precise hit boxes below.
     const part = makePart(id, mat, [x - half, y, z - half], [x + half, topY, z + half], TREE_HP[cls] / MATERIALS[mat].hp);
-    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, trunkR, mesh: m, leafMesh, cls, part, standing: true, boxes: [] };
+    const felTier = felTierFor(trunkR);          // caliber needed to fell THIS trunk (by its thickness)
+    const rec = { id, species, seed, scale, x, z, yaw, baseY: y, height: H, trunkR, mesh: m, leafMesh, cls, part, felTier, standing: true, boxes: [] };
     part.downer = rec;
     // ── PRECISE HITBOXES (the headline fix) ──────────────────────────────────────────────────────────
     // Built from the tree's REAL geometry (tree.js returns the leaning trunk centreline + the MEASURED
@@ -114,7 +125,7 @@ export class ForestDemo {
     //     SOLID box that size walls the whole footprint — that floating box was also a phantom wall.
     const cos = Math.cos(yaw), sin = Math.sin(yaw);
     const addBox = (mn, mx, foliage, thicket) => {
-      const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id };
+      const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id, felTier };
       if (foliage) b.foliage = true;   // soft cover: raycast hits it (shoot/conceal), movement passes THROUGH it
       if (thicket) b.thicket = true;   // …and SLOWS a body inside it. Only ground-level foliage you push through
       rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b);  // (saplings/bushes/fallen crowns) — NOT a tall tree's overhead crown (you walk under that; its wide AABB would over-slow neighbours).
@@ -179,34 +190,45 @@ export class ForestDemo {
     if (rec && rec.fallen) { this._breakLog(rec, seed); return; }   // a hit on an ALREADY-fallen log breaks it apart
     if (!rec || !rec.standing) return;
     rec.standing = false;
+    if (this.game.fire) this.game.fire.retire(rec.part);    // drop any active fire so flames don't hover where the trunk was (+ free the cap slot)
     if (rec.part) rec.part.dead = true;                     // off the flammable list — a felled tree can't re-ignite
     if (rec.mesh) { this.scene.remove(rec.mesh); rec.mesh = null; }
     this._fading.delete(rec); rec.leafMesh = null;
     this._dropBox(rec);
     let dx = dirXZ ? dirXZ[0] : (Math.random() - 0.5), dz = dirXZ ? dirXZ[1] : (Math.random() - 0.5);
-    const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    let dl = Math.hypot(dx, dz); if (dl < 1e-4) { dx = 1; dz = 0; dl = 1; } dx /= dl; dz /= dl;   // zero dir (centred blast / straight-down shot) → default topple +X, avoids a NaN fall axis
     const sd = ((seed ?? (rec.id * 2654435761)) >>> 0) || 1;
-    const breakAt = rec.cls === 1 ? 0.1 : 0.12 + Math.random() * 0.18;     // snap low; saplings near the base
+    const breakAt = rec.cls === 1 ? 0.1 : 0.12 + ((sd >>> 8) % 1000) / 1000 * 0.18;   // SEEDED snap height (co-op-deterministic; was Math.random → host/client desync)
     // A fire-killed tree fells as its BARE BLACKENED charred self (no leaves); a bullet/blast-felled tree
-    // keeps its foliage. Either way pass height: rec.height so the split matches the standing tree exactly.
-    const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, height: rec.height, breakAt, damage: rec.charred ? 'charred' : undefined });
+    // keeps its foliage. NO height override: the same seed+scale reproduces the EXACT standing tree (just
+    // split). Passing rec.height (already × scale) alongside scale double-scaled the felled tree (~scale×
+    // too big) AND shifted the RNG so the split didn't even match the standing shape.
+    const split = makeTree({ species: rec.species, seed: rec.seed, scale: rec.scale, breakAt, damage: rec.charred ? 'charred' : undefined });
     const y0 = rec.baseY;
-    const stump = new THREE.Mesh(split.stumpGeometry, split.material);
+    const stump = new THREE.Mesh(split.stumpWoodGeometry, split.material);
     stump.position.set(rec.x, y0, rec.z); stump.rotation.y = rec.yaw; stump.castShadow = true;
     this.scene.add(stump); this.stumps.push(stump);
     // the STUMP keeps a solid collision box (you can't walk or shoot through the stub left behind)
     const sh = (rec.trunkR || 0.3) + 0.12, stumpTop = y0 + Math.max(0.5, split.breakY);
     const sb = { min: new THREE.Vector3(rec.x - sh, y0, rec.z - sh), max: new THREE.Vector3(rec.x + sh, stumpTop, rec.z + sh) };
     this.world.boxes.push(sb); this.world.grid.addBox(sb); this.stumpBoxes.push(sb);
-    const top = new THREE.Mesh(split.topGeometry, split.material); top.rotation.y = rec.yaw;
+    // falling TOP = opaque bole + (when the fell keeps foliage) a SEPARATE leaf mesh on the foliage material,
+    // so the crown lying on the ground reads as see-through wade-in cover that dissolves at the camera
+    // (_updateLeafFade picks it up via log.leafMesh) — not an opaque green block.
+    const top = new THREE.Group(); top.rotation.y = rec.yaw;
+    const topWoodMesh = new THREE.Mesh(split.topWoodGeometry, split.material); topWoodMesh.castShadow = true; top.add(topWoodMesh);   // the felled trunk/log casts a shadow like the standing tree did
+    let topLeafMesh = null;
+    if (split.topLeafGeometry) { topLeafMesh = new THREE.Mesh(split.topLeafGeometry, FOLIAGE_OPAQUE); topLeafMesh.castShadow = true; top.add(topLeafMesh); }
     const pivot = new THREE.Group(); pivot.position.set(rec.x, y0 + split.breakY, rec.z); pivot.add(top);
     this.scene.add(pivot);
     const length = Math.max(0.5, rec.height - split.breakY);
     const groundAt = this.world.terrain ? (gx, gz) => this.world.terrain.terrainHeightAt(gx, gz) : null;
     const body = makeHinge({ pivot: [rec.x, y0 + split.breakY, rec.z], dirXZ: [dx, dz], length, radius: Math.max(0.22, rec.trunkR || 0.22), seed: sd, obstacles: [], groundAt });
     // logged=false → update() registers the resting-log collision box ONCE the hinge settles (see _registerFallenLog)
-    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false });
+    this.FALLING.push({ kind: 'hinge', body, pivot, rec, charred: !!rec.charred, logged: false, topWoodMesh, topLeafMesh });
     if (this.debris) this.debris.burst('splints', [rec.x, y0 + split.breakY, rec.z], sd, undefined, [dx, 0, dz]);
+    rec._fellDx = dx; rec._fellDz = dz; rec._fellSeed = sd;
+    this._emitForest('fell', rec.id, { dx, dz, seed: sd });   // host-auth: clients replay the identical fall (same dir + seed → same FallingBody)
   }
 
   // Once a falling top SETTLES, give the lying log a collision box (solid + shootable) and make it a
@@ -223,28 +245,38 @@ export class ForestDemo {
     const gy = this.world.terrain ? Math.min(this.world.terrain.terrainHeightAt(ax, az), this.world.terrain.terrainHeightAt(bx, bz)) : 0;
     const minA = [Math.min(ax, bx) - r, Math.min(ay, by, gy), Math.min(az, bz) - r];
     const maxA = [Math.max(ax, bx) + r, Math.max(ay, by, gy) + 2 * r, Math.max(az, bz) + r];
-    const part = makePart(id, matName, minA, maxA, (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * 0.6); // a downed log snaps a touch easier
-    const log = { fallen: true, prop: true, id, part, mesh: f.pivot, trunkR: r, cls: (rec && rec.cls) || 2,
+    const part = makePart(id, matName, minA, maxA, (TREE_HP[(rec && rec.cls) || 2] / MATERIALS[matName].hp) * LOG_HP_MUL); // a downed log is sturdy scenery — takes a BURST to shoot apart, not one stray bullet
+    const log = { fallen: true, prop: true, id, part, mesh: f.pivot, leafMesh: f.topLeafMesh || null, trunkR: r, cls: (rec && rec.cls) || 2,
                   height: maxA[1] - minA[1],   // fire reads owner.height → keeps a downed log's flame low (not a 12 m tree column)
                   fallingRef: f, burntOut: !!f.charred, consumed: false, boxes: [] };  // charred logs already burnt → not flammable
     part.downer = log;
-    // helper: an axis-segment box [t0,t1] of the log, padded by `pad` in XZ and `padY` up; flags optional
-    const seg = (t0, t1, pad, padY, foliage, thicket) => {
-      const x0 = ax + (bx - ax) * t0, z0 = az + (bz - az) * t0, x1 = ax + (bx - ax) * t1, z1 = az + (bz - az) * t1;
-      const y0 = ay + (by - ay) * t0, y1 = ay + (by - ay) * t1;
-      const gg = this.world.terrain ? Math.min(this.world.terrain.terrainHeightAt(x0, z0), this.world.terrain.terrainHeightAt(x1, z1)) : 0;
-      const mn = [Math.min(x0, x1) - pad, Math.min(y0, y1, gg), Math.min(z0, z1) - pad];
-      const mx = [Math.max(x0, x1) + pad, Math.max(y0, y1, gg) + padY, Math.max(z0, z1) + pad];
-      const box = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: log, tree: true, dmat: matName, dpart: id };
-      if (foliage) box.foliage = true; if (thicket) box.thicket = true;
-      log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+    // ── 1:1 COLLISION HULL ───────────────────────────────────────────────────────────────────────
+    // Bin the ACTUAL fallen geometry into tight per-slice AABBs that follow the log's real heading and
+    // rise ONLY where wood/branches are — so you walk UNDER a raised crown and step OVER the bole. This
+    // replaces the old two FAT seg() boxes (one spanned the whole diagonal as an axis-aligned block; the
+    // crown one was a 5 m cube), which neither hugged the log nor let you pass between the branches.
+    const logFelTier = felTierFor((rec && rec.trunkR) || 0.25);  // caliber to chop this downed log apart (by its bole thickness)
+    f.pivot.updateWorldMatrix(true, true);                       // settle pose is baked → world verts are final
+    const axis2 = [b.dirXZ[0], b.dirXZ[1]], org2 = [ax, az];
+    const addBinned = (mesh, foliage, thicket, binLen, maxBins, crossBins) => {
+      const g = mesh && mesh.geometry, pos = g && g.attributes && g.attributes.position;
+      if (!pos) return;
+      for (const bb of binFallenAABBs(pos.array, mesh.matrixWorld.elements, axis2, org2, binLen, maxBins, crossBins)) {
+        // small aim/clearance margin; NOT clamped to ground → a branch-propped crown keeps the gap beneath it
+        const box = { min: new THREE.Vector3(bb.min[0] - 0.06, bb.min[1] - 0.06, bb.min[2] - 0.06),
+                      max: new THREE.Vector3(bb.max[0] + 0.06, bb.max[1] + 0.06, bb.max[2] + 0.06),
+                      downer: log, tree: true, dmat: matName, dpart: id, felTier: logFelTier };
+        if (foliage) box.foliage = true; if (thicket) box.thicket = true;
+        log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+      }
     };
-    // WOOD CORE — the snapped trunk, solid: you snag on the downed bole. (No leaves → no fade; M4 stretch.)
-    seg(0, 0.62, r, 2 * r, false, false);
-    // LEAF END — the crown lying on the ground: a wide foliage+thicket volume you can WADE INTO (slowed,
-    // concealed). Sized from the remembered crown half-width (capped — a fallen crown compresses).
-    const cw = Math.min(Math.max((rec && rec.crownHW) || 1.2, 0.8), 5.0);
-    seg(0.5, 1.0, cw, Math.max(2 * r, cw * 1.4), true, true);
+    // WOOD CORE + BRANCHES — solid. crossBins=3 splits the bole from side-branches across the axis so
+    // there's real air to walk between them (a 2-D bin in the log's own frame), not one box per slice.
+    addBinned(f.topWoodMesh, false, false, 1.0, 7, 3);
+    // FALLEN CROWN — the leaves on the ground: foliage (shoot/conceal through) + thicket (wade-in slow),
+    // hugging the real leaf clusters. ONLY when the crown actually carries leaves (charred/bare logs skip
+    // it → no phantom soft-cover box floating where a burnt crown's leaves used to be).
+    if (f.topLeafMesh) addBinned(f.topLeafMesh, true, true, 1.4, 6);
     this.logs.push(log);
   }
 
@@ -252,6 +284,9 @@ export class ForestDemo {
   _consumeLog(log, seed, shot) {
     if (!log || log.consumed) return;
     log.consumed = true;
+    this._emitForest('propdie', log.id);                      // host-auth: clients remove the same log
+    this._fading.delete(log);                                  // drop it from the near-camera leaf-fade rotation
+    if (this.game.fire) this.game.fire.retire(log.part);      // a shot-apart / blasted burning log: retire its fire too
     if (log.part) log.part.dead = true;
     for (const b of (log.boxes || [])) { this.world.grid.removeBox(b); const i = this.world.boxes.indexOf(b); if (i >= 0) this.world.boxes.splice(i, 1); }
     log.boxes = [];
@@ -259,12 +294,17 @@ export class ForestDemo {
           cy = log.part ? (log.part.min[1] + log.part.max[1]) / 2 : 0,
           cz = log.part ? (log.part.min[2] + log.part.max[2]) / 2 : 0;
     if (this.debris) this.debris.burst('splints', [cx, cy, cz], (seed >>> 0) || 1, undefined, [0, shot ? 0.6 : 0.3, 0]);
-    if (log.mesh && log.mesh.parent) this.scene.remove(log.mesh);
+    // sink the mesh INTO the ground (no instant poof) — collision boxes already gone, so it's inert while it sinks
+    if (log.mesh && log.mesh.parent) {
+      const h = log.part ? (log.part.max[1] - log.part.min[1]) : (2 * (log.trunkR || 0.4));
+      this._sinking.push({ mesh: log.mesh, t: 0, dur: 1.1, y0: log.mesh.position.y, drop: Math.max(2, h + 1.4) });
+    }
     if (log.fallingRef) { const fi = this.FALLING.indexOf(log.fallingRef); if (fi >= 0) this.FALLING.splice(fi, 1); }
   }
   _breakLog(log, seed) { this._consumeLog(log, (seed ?? (log.id * 2654435761)) >>> 0, true); }   // shot apart
   consumeProp(rec) {                                                                              // FireManager burnout consumes a prop
     if (rec && rec.isBush) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, false);
+    else if (rec && rec.isProp) this._destroyProp(rec, false);
     else this._consumeLog(rec, (rec.id * 2654435761) >>> 0, false);
   }
 
@@ -283,6 +323,11 @@ export class ForestDemo {
       const dx = b.x - pos.x, dz = b.z - pos.z;
       if (dx * dx + dz * dz <= radius * radius) this._consumeBush(b, (b.id * 1597) >>> 0, true);
     }
+    for (const p of this.props) {                             // shatter nearby destructible props (rock tier 4 shrugs off a tier-3 rocket)
+      if (p.dead) continue;
+      const dx = p.x - pos.x, dz = p.z - pos.z;
+      if (dx * dx + dz * dz <= radius * radius && MATERIALS[p.dmat].tier <= blastTier) this._destroyProp(p, true);
+    }
   }
 
   // APFSDS / penetrator: fell standing trees the rod passes through (tier ≤ pen).
@@ -297,6 +342,13 @@ export class ForestDemo {
         rec.part.dead = true; this.fellTree(rec, [dir.x, dir.z], (rec.id * 7919) >>> 0);
       }
     }
+    for (const p of this.props) {                             // the rod also smashes props it passes (rock needs APFSDS-tier pen)
+      if (p.dead) continue;
+      const ox = p.x - origin.x, oz = p.z - origin.z, t = ox * dir.x + oz * dir.z;
+      if (t < 0 || t > range) continue;
+      const px = ox - dir.x * t, pz = oz - dir.z * t;
+      if (px * px + pz * pz <= 0.8 * 0.8 && MATERIALS[p.dmat].tier <= pen) this._destroyProp(p, true);
+    }
   }
 
   // weapons.js _destructHit routes a `box.prop` hit here — for us that's a BUSH. Damage it (grass tier 0,
@@ -304,19 +356,66 @@ export class ForestDemo {
   hitProp(rec, w, point) {
     if (!rec || rec.dead || !rec.part || rec.part.dead) return;
     const res = resolveHit(rec.part, w);
-    if (res.killed) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, true);
-    else if (res.effect === 'damage' && this.debris && point) this.debris.burst('splints', [point[0], point[1], point[2]], (rec.id ^ 0x55) >>> 0);
+    if (res.killed) { if (rec.isBush) this._consumeBush(rec, (rec.id * 2654435761) >>> 0, true); else this._destroyProp(rec, true); }   // bush vs rock/decor prop
+    else if (res.effect === 'damage' && this.debris && point) this.debris.burst(rec.dmat === 'stone' ? 'sparks' : 'splints', [point[0], point[1], point[2]], (rec.id ^ 0x55) >>> 0);
+  }
+
+  // ── DECOR PROPS (rocks + static fallen logs): destructible scenery placed by ForestScene._scatterDecor.
+  // A rock is a SOLID stone prop (tier 4 — bullets chip/spark, only HE-tier blast / APFSDS breaks it);
+  // routed via this.props (hitProp/blast/penetrate/consumeProp). Logs reuse the fallen-log path (this.logs).
+  _addRock(geometry, material, x, z, yaw) {
+    const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
+    const mesh = new THREE.Mesh(geometry, material); mesh.position.set(x, y, z); mesh.rotation.y = yaw;
+    mesh.castShadow = mesh.receiveShadow = true; this.scene.add(mesh);
+    geometry.computeBoundingBox(); const bb = geometry.boundingBox;
+    const hw = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.5 + 0.05, top = y + bb.max.y;
+    const id = 300000 + (++this._idc), min = [x - hw, y, z - hw], max = [x + hw, top, z + hw];
+    const part = makePart(id, 'stone', min, max, 1); part.downer = null;
+    const rec = { id, x, z, baseY: y, dmat: 'stone', mesh, part, dead: false, box: null, isProp: true, prop: true };
+    part.downer = rec;
+    const box = { min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), downer: rec, prop: true, dmat: 'stone', dpart: id };
+    rec.box = box; this.world.boxes.push(box); this.world.grid.addBox(box);
+    this.props.push(rec);
+    return rec;
+  }
+  _destroyProp(rec, shot) {
+    if (!rec || rec.dead) return;
+    rec.dead = true; if (rec.part) rec.part.dead = true;
+    this._emitForest('propdie', rec.id);                      // host-auth: clients remove the same rock/prop
+    if (this.game.fire) this.game.fire.retire(rec.part);
+    if (rec.box) { this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null; }
+    if (this.debris) this.debris.burst(rec.dmat === 'stone' ? 'rubble' : 'splints', [rec.x, rec.baseY + 0.4, rec.z], (rec.id * 2654435761) >>> 0, undefined, [0, shot ? 0.5 : 0.3, 0]);
+    if (rec.mesh && rec.mesh.parent) this.scene.remove(rec.mesh); rec.mesh = null;
+  }
+
+  // A static fallen-log scenery piece: reuses the live-log path (this.logs) so it's SOLID (stops rounds),
+  // shootable-apart (_destructHit → _breakLog) and FLAMMABLE — identical to a tree you felled.
+  _addDecorLog(mesh, x, z, yaw, length, r, charred = false) {
+    const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
+    mesh.position.set(x, y + r, z); mesh.rotation.y = yaw; mesh.castShadow = mesh.receiveShadow = true; this.scene.add(mesh);
+    const c = Math.cos(yaw), s = Math.sin(yaw), hl = length / 2;
+    const ax = x - s * hl, az = z - c * hl, bx = x + s * hl, bz = z + c * hl;   // the two ends along the log axis
+    const id = 100000 + (++this._idc);
+    const matName = 'trunk';
+    const minA = [Math.min(ax, bx) - r, y, Math.min(az, bz) - r], maxA = [Math.max(ax, bx) + r, y + 2 * r, Math.max(az, bz) + r];
+    const part = makePart(id, matName, minA, maxA, (TREE_HP[2] / MATERIALS[matName].hp) * LOG_HP_MUL);
+    const log = { fallen: true, prop: true, id, part, mesh, leafMesh: null, trunkR: r, cls: 2, height: 2 * r, burntOut: !!charred, consumed: false, boxes: [] };
+    part.downer = log;
+    const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id, felTier: felTierFor(r) };
+    log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
+    this.logs.push(log);
+    return log;
   }
 
   // ── BUSHES (M3): head-height understorey you push THROUGH (slow) + that fades at the camera + hides
   // you, and that a shot/blast/fire clears. A bush is a single leaf mesh + ONE foliage+thicket+prop box
   // (no wood bands — it's all leaf) + a light 'grass' destruct part (fuel>0 → burns). ─────────────────
   _addBush(x, z, scale, seed) {
-    const shrub = Math.random() < 0.32;                        // a few low steppe-scrub shrubs among the bushes
+    const shrub = this._frng() < 0.32;                         // a few low steppe-scrub shrubs among the bushes
     const res = shrub ? makeShrub(seed) : makeBush(seed);
     const geo = res.geometry; if (scale !== 1) geo.scale(scale, scale, scale);
     geo.computeBoundingBox(); const bb = geo.boundingBox;       // local AABB (post-scale), base ~at origin
-    const yaw = rr(0, Math.PI * 2);
+    const yaw = this._rr(0, Math.PI * 2);
     const y = this.world.terrain ? this.world.terrain.terrainHeightAt(x, z) : 0;
     const mesh = new THREE.Mesh(geo, FOLIAGE_OPAQUE);          // leaf material → fades near the camera (the showcase)
     mesh.position.set(x, y, z); mesh.rotation.y = yaw; mesh.castShadow = true;
@@ -347,20 +446,23 @@ export class ForestDemo {
     if (!this.trees.length) return;
     for (let i = 0; i < n; i++) {
       for (let tries = 0; tries < 14; tries++) {
-        const host = this.trees[(Math.random() * this.trees.length) | 0];
-        const a = Math.random() * Math.PI * 2, d = 1.5 + Math.random() * 5;
+        const host = this.trees[(this._frng() * this.trees.length) | 0];
+        const a = this._frng() * Math.PI * 2, d = 1.5 + this._frng() * 5;
         const x = host.x + Math.cos(a) * d, z = host.z + Math.sin(a) * d;
         if (Math.abs(x) > this.world.HALF - 4 || Math.abs(z) > this.world.HALF - 4) continue;
         if (terr && !terr.isPlaceable(x, z, 0.6, 'tree')) continue;
         if (this._blockedBush(x, z)) continue;
-        this._addBush(x, z, rr(0.85, 1.3), i * 23 + 5000); break;
+        this._addBush(x, z, this._rr(0.85, 1.3), i * 23 + 5000); break;
       }
     }
   }
 
   _consumeBush(rec, seed, shot) {
     if (!rec || rec.dead) return;
-    rec.dead = true; if (rec.part) rec.part.dead = true;
+    rec.dead = true;
+    this._emitForest('propdie', rec.id);                      // host-auth: clients remove the same bush
+    if (this.game.fire) this.game.fire.retire(rec.part);      // a burning bush flattened by a blast/shot: retire its fire
+    if (rec.part) rec.part.dead = true;
     this._fading.delete(rec);
     if (rec.box) { this.world.grid.removeBox(rec.box); const i = this.world.boxes.indexOf(rec.box); if (i >= 0) this.world.boxes.splice(i, 1); rec.box = null; }
     if (this.debris) this.debris.burst('splints', [rec.x, rec.baseY + rec.height * 0.5, rec.z], (seed >>> 0) || 1, undefined, [0, shot ? 0.5 : 0.3, 0]);
@@ -385,17 +487,41 @@ export class ForestDemo {
     if (!tree || !tree.standing || tree.charred) return;
     tree.charred = true;
     if (tree.part) tree.part.dhp = Math.max(1, tree.part.dhp * 0.5);   // charred wood snaps under the next hit
-    if (tree.mesh && tree.mesh.material && tree.mesh.material.color) tree.mesh.material.color.setHex(0x161310); // scorched black
+    // Scorch the trunk/wood IN PLACE. mesh is a Group(wood[,leaf]); tint each mesh EXCEPT the leaf mesh,
+    // whose foliage material is shared across all trees (tinting it would blacken the whole forest). The
+    // leaves blacken+drop later in dropLeaves. (Old code tinted tree.mesh.material — a Group has none → no-op.)
+    if (tree.mesh) tree.mesh.traverse((o) => { if (o.isMesh && o !== tree.leafMesh && o.material && o.material.color) o.material.color.setHex(0x161310); });
+    this._emitForest('char', tree.id);   // host-auth: mirror the charred snag on every peer
   }
 
-  // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self at the
-  // SAME height/species/seed (rec.height, NOT the short burntCharred snag) so the dead snag matches its
-  // neighbours. The fire keeps spanning the bare trunk; it later either fells charred or stays a burnt snag.
+  // FIRE on a DOWNED log: blacken the lying log INCLUDING its fallen crown leaves, then it burns out
+  // (fire._burnout → consumeProp → _consumeLog sinks it). Unlike a standing tree, here we DO scorch the
+  // leaf mesh — but its foliage material is shared, so clone it first (else the whole forest's leaves
+  // blacken). _noFade pins the tint so the near-camera leaf-fade rotation can't revert it.
+  charLog(log) {
+    if (!log || !log.fallen || log.charred || log.consumed) return;
+    log.charred = true; log._noFade = true; this._fading.delete(log);
+    if (log.mesh) log.mesh.traverse((o) => {
+      if (!o.isMesh || !o.material || !o.material.color) return;
+      if (o === log.leafMesh) o.material = o.material.clone();   // shared foliage mat → clone before tinting
+      o.material.color.setHex(0x161310);
+    });
+    this._emitForest('charlog', log.id);   // host-auth: mirror the blackened log on every peer
+  }
+  charLogById(id) { const l = this.logs.find((x) => x.id === id); if (l) this.charLog(l); }
+
+  // FIRE phase 2 — the blackened leaves DROP: rebuild the standing tree as its bare CHARRED self. Same
+  // species+seed+scale (NO height override) reproduces the EXACT standing tree, now bare + blackened, so the
+  // dead snag matches its neighbours. (Passing tree.height double-scaled the snag — it stood scale× too tall.)
+  // The fire keeps spanning the bare trunk; it later either fells charred or stays a burnt snag.
   dropLeaves(tree) {
     if (!tree || tree.bare || !tree.standing || !tree.mesh) return;
     tree.bare = true;
+    // leaves gone → drop the canopy's soft-cover hitbox so it isn't a phantom shoot-through box in mid-air
+    // (the trunk bands stay — the bare snag is still solid + shootable). fellTree drops ALL boxes via _dropBox.
+    if (tree.boxes) for (let i = tree.boxes.length - 1; i >= 0; i--) { const b = tree.boxes[i]; if (b.foliage) { this.world.grid.removeBox(b); const j = this.world.boxes.indexOf(b); if (j >= 0) this.world.boxes.splice(j, 1); tree.boxes.splice(i, 1); } }
     try {
-      const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, height: tree.height, lod: 0, damage: 'charred' });
+      const res = makeTree({ species: tree.species, seed: tree.seed, scale: tree.scale, lod: 0, damage: 'charred' });
       const old = tree.mesh;                                  // a Group(wood, leaf) — the charred snag is a single merged mesh (no leaves to fade)
       const m = new THREE.Mesh(res.geometry, res.material);
       m.position.copy(old.position); m.rotation.y = tree.yaw; m.castShadow = true;
@@ -406,6 +532,7 @@ export class ForestDemo {
     } catch (e) {
       tree.mesh.traverse && tree.mesh.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setHex(0x161310); }); // fallback: scorch-tint in place
     }
+    this._emitForest('drop', tree.id);   // host-auth: mirror the bare (leaves-dropped) snag on every peer
   }
 
   // A fire that burned out WITHOUT toppling the tree (the ~70% that don't fall): it stays standing as a
@@ -434,6 +561,12 @@ export class ForestDemo {
       f.pivot.quaternion.setFromAxisAngle(_axis, f.body.angle);
       if (f.body.settled && !f.logged) { f.logged = true; this._registerFallenLog(f); }   // settled THIS frame → register the log now
     }
+    // sink-into-ground animation for destroyed logs (ease-in accelerate down, then drop the mesh)
+    for (let i = this._sinking.length - 1; i >= 0; i--) {
+      const s = this._sinking[i]; s.t += dt; const u = Math.min(1, s.t / s.dur);
+      s.mesh.position.y = s.y0 - s.drop * (u * u);
+      if (u >= 1) { if (s.mesh.parent) s.mesh.parent.remove(s.mesh); this._sinking.splice(i, 1); }
+    }
     const gust = 0.5 + 0.4 * Math.sin(t * 0.5) + 0.2 * Math.sin(t * 1.7 + 1.3);
     for (const w of this.windy) {
       if (!w.m.parent) continue;
@@ -451,7 +584,7 @@ export class ForestDemo {
     const cx = cam.position.x, cy = cam.position.y, cz = cam.position.z, G = FOLIAGE_FADE_GATE, G2 = G * G;
     const want = new Set();
     for (const b of this.world.grid.queryAABB(cx - G, cz - G, cx + G, cz + G)) {
-      if (!b.foliage || !b.downer || !b.downer.leafMesh) continue;
+      if (!b.foliage || !b.downer || !b.downer.leafMesh || b.downer._noFade) continue;   // _noFade = a charred log: keep its blackened tint, don't swap to the fade material
       const ddx = Math.max(b.min.x - cx, 0, cx - b.max.x), ddy = Math.max(b.min.y - cy, 0, cy - b.max.y), ddz = Math.max(b.min.z - cz, 0, cz - b.max.z);
       if (ddx * ddx + ddy * ddy + ddz * ddz <= G2) want.add(b.downer);
     }
@@ -460,8 +593,37 @@ export class ForestDemo {
   }
 
   // ── co-op (basic — manual gate): fell ids streamed by the host ──
-  netSnapshot() { return this.trees.filter((t) => !t.standing && !t.cleared).map((t) => ({ id: t.id, dx: 0, dz: 1 })); }
+  // ── CO-OP: the host broadcasts every authoritative forest mutation (char / leaves-drop / fell / prop
+  // death); clients mirror it. Each mutation guards on its own state and _emitForest fires ONLY on the
+  // host, so a client mirror can't echo. ⚠️ Correct replay needs the forest LAYOUT identical on every
+  // peer (id→tree must match) — ForestDemo.scatter is currently UNSEEDED, so until it's made
+  // deterministic this is wired-but-positionally-approximate (known co-op-forest gap, 2-PC manual gate).
+  _emitForest(k, id, extra = null) {
+    const mp = this.game.mp;
+    if (!mp || !mp.active || !mp.isHost || !mp.net) return;
+    try { mp.net.send('forestfx', Object.assign({ k, id }, extra || {})); } catch (e) {}
+  }
   _treeById(id) { return this.trees.find((t) => t.id === id); }
   fellTreeById(id, dx, dz, seed) { const t = this._treeById(id); if (t && t.standing) { t.part.dead = true; this.fellTree(t, [dx, dz], seed); } }
+  dropLeavesById(id) { const t = this._treeById(id); if (t) this.dropLeaves(t); }
+  destroyPropById(id) {                                       // a fallen log / bush / rock removed on the host
+    let r = this.logs.find((l) => l.id === id); if (r) { this._consumeLog(r, (id * 2654435761) >>> 0, false); return; }
+    r = this.bushes.find((b) => b.id === id); if (r) { this._consumeBush(r, (id * 2654435761) >>> 0, false); return; }
+    r = this.props.find((p) => p.id === id); if (r) this._destroyProp(r, false);
+  }
+  consumeGrassById() {}                                       // groundcover here is non-destructible visual InstancedMeshes — nothing to consume (kept so the host 'grass' handler can't crash)
+  // Late-join: replay every authoritative mutation a fresh joiner missed, as .k-tagged 'forestfx' records.
+  netSnapshot() {
+    const out = [];
+    for (const t of this.trees) {
+      if (!t.standing && !t.cleared) out.push({ k: 'fell', id: t.id, dx: t._fellDx || 0, dz: t._fellDz || 1, seed: t._fellSeed || ((t.id * 2654435761) >>> 0) });
+      else if (t.bare) out.push({ k: 'drop', id: t.id });
+      else if (t.charred) out.push({ k: 'char', id: t.id });
+    }
+    for (const lg of this.logs) if (lg.consumed) out.push({ k: 'propdie', id: lg.id });
+    for (const b of this.bushes) if (b.dead) out.push({ k: 'propdie', id: b.id });
+    for (const p of this.props) if (p.dead) out.push({ k: 'propdie', id: p.id });
+    return out;
+  }
   stats() { return { trees: this.trees.length, standing: this.trees.filter((t) => t.standing).length, falling: this.FALLING.length }; }
 }

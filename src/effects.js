@@ -205,6 +205,17 @@ export class Effects {
 
   // Bullet impact on world — dust + a few sparks.
   impact(pos, normal, kind = 'dust') {
+    if (kind === 'leaf') {                                    // a round punching THROUGH foliage: green flecks, no dust
+      const leafC = new THREE.Color(0x6f9a45);
+      for (let i = 0; i < 6; i++) {
+        this._spawn({
+          pos, vel: _v.set(randRange(-1, 1), randRange(-0.4, 0.7), randRange(-1, 1)).multiplyScalar(randRange(0.8, 2.4)),
+          life: randRange(0.4, 0.85), size: randRange(0.05, 0.11),
+          grav: -4, drag: 4, color: leafC, bounce: 0, floorY: -999,
+        });
+      }
+      return;
+    }
     const dustC = new THREE.Color(0xb9a87e);
     for (let i = 0; i < 6; i++) {
       _v.copy(normal).multiplyScalar(2).add(_s.set(randRange(-1, 1), randRange(-1, 1), randRange(-1, 1)));

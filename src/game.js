@@ -15,6 +15,7 @@ import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
 import { ForestAtmosphere } from './forestatmos.js';
+import { HitboxDebug } from './debughitbox.js';
 import { ForestScene } from './forestscene.js';
 import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
@@ -76,7 +77,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-26 22:19';
+const GAME_BUILD = '2026-06-28 00:28';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -114,6 +115,7 @@ class Game {
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
+    this.dbgHitboxes = false; // F3+B collision-hitbox overlay toggle (see debughitbox.js)
     this.hitch = new HitchLogger(); installStress(this); // dev perf stress harness (GAME.stress) — never auto-runs
     this._stressName = null;
     this._drawDist = 0; this._showFps = false; this._fpsEl = null; this._culling = false;
@@ -138,6 +140,7 @@ class Game {
     this.forestAtmos = (this.mapId === 'forest') ? new ForestAtmosphere(this.engine.scene) : null; // ?map=forest pollen + fireflies
     this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
+    this.hitboxDebug = new HitboxDebug(this.engine.scene); // F3+B collision-hitbox overlay (Minecraft-style, dev)
     // Terrain excavation: shovel pits + explosion craters, with gravity-collapse of undermined
     // walls/trees/props. Wires its DeformField into world.terrain; harmless on maps without terrain
     // (empty field fast-returns 0). MUST follow forest/build/demoBuilding (its SupportScan reads them).
@@ -367,6 +370,7 @@ class Game {
       if (code === 'F3') { this.f3 = !this.f3; return; }
       if (code === 'F8') { this._fixedStep = !this._fixedStep; this._acc = 0; const _fs = this._fixedStep; this.hud.bigMessage('FIXED-STEP ' + (_fs ? 'ON · 60Hz' : 'OFF')); console.log('[fixed-step] ' + (_fs ? 'ON (60 Hz sim + camera interp)' : 'OFF (variable dt)')); return; } // M4 dev toggle (mirrors ?fixed=1)
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
+      if (code === 'KeyB' && this.input.isDown('F3')) { this.dbgHitboxes = !this.dbgHitboxes; this.f3 = !this.f3; this.hud.bigMessage('HITBOXY ' + (this.dbgHitboxes ? 'ON' : 'OFF')); return; } // F3+B toggles the collision-hitbox overlay (Minecraft); toggle f3 back so the chord doesn't flip the text overlay (and B doesn't change fire-mode)
       // dev fly-cam toggle (solo only): N, or Ctrl+F
       if (!(this.mp && this.mp.active) && (code === 'KeyN' || (code === 'KeyF' && (this.input.isDown('ControlLeft') || this.input.isDown('ControlRight'))))) { this.toggleFreecam(); return; }
       if (this.mpMenuOpen) {
@@ -643,7 +647,7 @@ class Game {
     if (!this.molotovPools) this.molotovPools = [];
     if (this.molotovPools.length >= FIRE_POOL_MAX) this._disposeMolotovPool(this.molotovPools.shift());
     this._downV = this._downV || new THREE.Vector3(0, -1, 0); // drop the burning liquid onto the floor under the impact so the fire never floats
-    const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200);
+    const gh = this.world.rayHit(new THREE.Vector3(pos.x, pos.y + 0.5, pos.z), this._downV, 200, (b) => !b.foliage);   // skip leaves/bushes so the puddle drops to the real ground, not floating on a bush canopy
     const py = gh ? gh.point.y + 0.02 : 0.05;
     const lh = this.engine.acquireFxLight(0xff5a26, 7, 14, 1.4); lh.light.position.set(pos.x, py + 0.45, pos.z); // borrow from the fixed FX pool (no scene.add → no shader recompile)
     const pool = { pos: new THREE.Vector3(pos.x, py, pos.z), light: lh.light, lightH: lh, life: FIRE_POOL_LIFE, maxLife: FIRE_POOL_LIFE, radius: FIRE_POOL_RADIUS, emitT: 0, tickT: 0 };
@@ -991,7 +995,11 @@ class Game {
     const b = this.world.demoBuilding;
     const blast = isRocket ? DEMO_HE_BLAST : { r1: radius * 0.35, r2: radius, tier: 2 };
     if (b && typeof b.applyBlast === 'function') b.applyBlast(pos, radius, { blast });
-    if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, blast.r1 + 0.6, blast.tier);
+    // Trees fall across the FULL explosion radius (matches the visible blast) for rockets/HE; a thrown
+    // grenade keeps the tight ring. forest.blast() uses horizontal distance, so this radius alone decides
+    // how much of the surrounding stand comes down — the small building r1 stays the building's breach size.
+    const fellR = isRocket ? Math.max(radius, blast.r1 + 0.6) : (blast.r1 + 0.6);
+    if (this.forest && typeof this.forest.blast === 'function') this.forest.blast(pos, fellR, blast.tier);
     if (this.fire && typeof this.fire.igniteAt === 'function') this.fire.igniteAt([pos.x, pos.y, pos.z], isRocket ? 4.5 : 3.2);
   }
   // Blast → terrain crater (shared by explode() and the hand-rolled mortar detonation). Host-auth:
@@ -1156,6 +1164,7 @@ class Game {
     else if (this._culling) { this._restoreVisibility(); this._culling = false; }
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
     if (interp) this.engine.camera.position.lerpVectors(this._camPrev, this._camCur, alpha); // smooth between ticks
+    if (this.hitboxDebug) this.hitboxDebug.update(this, this.dbgHitboxes && this.state === 'playing'); // F3+B collision overlay
     this.engine.update(frameDt); this.engine.render();
     if (interp) this.engine.camera.position.copy(this._camCur); // restore TRUE pos for F3/devconsole/raycasts/next prev
     { const _ri = this.engine.renderer.info.render; this._draws = _ri.calls; this._tris = _ri.triangles; } // F3 stats — read post-render (Three.js resets info per render)

@@ -1616,10 +1616,20 @@ export class WeaponSystem {
       }
       if (wHit) {
         const box = wHit.box;
-        if (box && box.downer && soft < SOFT_BUDGET && this._softPenetrable(box, d)) {
-          this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));   // carve soft cover with the marched (decayed) energy
+        if (box && box.downer && this._softPenetrable(box, d) && (box.foliage || soft < SOFT_BUDGET)) {
+          if (box.foliage) {
+            // FOLIAGE = a free, DAMAGE-FREE pass for tree CANOPY / fallen CROWN: leaves just react (green puff),
+            // never absorb the round, never fell the tree, never cost energy/budget — so the round ALWAYS reaches
+            // the solid trunk behind. A BUSH, though, is a destructible foliage PROP (~10 HP, "a shot clears it"),
+            // so still resolve its damage while keeping the pass-through. Tree foliage (box.tree) never takes a hit.
+            this.game.effects.impact(wHit.point, wHit.normal, 'leaf');
+            if (box.prop && !box.tree) this._destructHit(wHit, dir, d, dmg / (d.dmg || 1)); // the bush IS the destructible
+          } else {
+            // building soft cover (glass / wood / sheet-metal): carve it, sap energy (glass is the free pass)
+            this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));
+            if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }
+          }
           ignored.push(box);                                     // exclude it from the next pass (hit each cover once)
-          if (box.dmat !== 'glass') { dmg *= SOFT_FALLOFF; soft++; }   // glass is a free pass (like APFSDS); wood/metal sap energy
           if (dmg < 2) { this.game.effects.tracer(muzzle, wHit.point, d.accent); return; }   // round spent inside the cover
           continue;
         }
@@ -1640,6 +1650,12 @@ export class WeaponSystem {
   // Brick+ cells, fortifications, FABs and terrain are never soft, so they stop the round.
   _softPenetrable(box, d) {
     if (!box.downer || box.struct || box.explodable) return false;
+    // Trees decide by SHAPE, not material: you shoot THROUGH leaves (canopy/bush/fallen crown = soft cover)
+    // but a trunk STOPS the round — standing OR a fallen log's bole — for every weapon class (snipers
+    // included). Otherwise a canopy + trunk share one dmat ('trunk' t2): rifles stalled on leaves while
+    // snipers drilled clean through solid trunks.
+    if (box.foliage) return true;
+    if (box.tree) return false;
     const m = MATERIALS[box.dmat]; if (!m) return false;
     const pen = PEN_BY_CLASS[d.class] ?? 0;
     return m.tier <= FRAGILE_MAX_TIER && pen >= m.tier;
@@ -1663,8 +1679,10 @@ export class WeaponSystem {
     } else if ((box.tree || box.dmat === 'trunk') && box.downer.part) {
       const tree = box.downer, part = tree.part;
       if (!part || part.dead) return;
-      const r = resolveHit(part, w);
-      if (r.killed && tree.standing && this.game.forest) {
+      const r = resolveHit(part, w, box.felTier);   // fell-tier scales with trunk THICKNESS (slim → SMG/rifle pen1; thick → MG/sniper/HE pen2+)
+      if (r.killed && this.game.forest && (tree.standing || tree.fallen)) {
+        // standing → topple away from the shot; a fallen LOG → fellTree routes rec.fallen to _breakLog
+        // (splinter + remove), so you can finally shoot a downed log apart, not just stop the round on it.
         this.game.forest.fellTree(tree, [dir.x, dir.z], (tree.id * 2654435761) >>> 0);
       } else if (r.effect === 'damage' && this.game.forest && this.game.forest.debris) {
         this.game.forest.debris.burst('splints', [wHit.point.x, wHit.point.y, wHit.point.z], (tree.id ^ 0x55) >>> 0);
@@ -1995,23 +2013,22 @@ export class WeaponSystem {
       const g = this.projectiles[i];
       g.fuse -= dt;
       let boom = g.fuse <= 0;
-      let shatterAt = null;
+      let shatterAt = null, rocketAt = null;
       if (g.molotov) { // arcs with gravity + spins; raycasts EVERY frame so it can't tunnel walls
         g.vel.y -= MOLO_GRAV * dt;
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
-        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + MOLO_PROJ_R);
+        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + MOLO_PROJ_R, (b) => !b.foliage);   // fly THROUGH foliage (leaves/bushes/canopy) — break on the solid trunk/wall/ground behind, not on a leaf graze (mirrors the rocket)
         if (wh) { shatterAt = wh.point.clone().addScaledVector(wh.normal, OCCLUSION_INSET); boom = true; }
         if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; const rp = g.mesh.position; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + MOLO_PROJ_R && rp.y < e.pos.y + e.height + 0.4) { shatterAt = rp.clone(); boom = true; break; } }
         if (!boom) { g.mesh.position.addScaledVector(g.vel, dt); g.mesh.rotation.x += g.spin.x * dt; g.mesh.rotation.y += g.spin.y * dt; g.mesh.rotation.z += g.spin.z * dt; g.trailT -= dt; if (g.trailT <= 0) { g.trailT = 0.04; this.game.effects.firePool(g.mesh.position, 0.3, 0.6); } }
         else if (!shatterAt) shatterAt = g.mesh.position.clone();
-      } else if (g.rocket) { // straight, fast, detonates on contact
+      } else if (g.rocket) { // straight, fast, detonates on contact — raycast BEFORE moving (like the molotov) so a fast rocket can't tunnel a thin (~0.45 m) wall and overshoot
         const dir = this._tmp.copy(g.vel).normalize(), stepLen = g.vel.length() * dt;
-        g.mesh.position.addScaledVector(g.vel, dt);
-        const rp = g.mesh.position;
-        if (rp.y < this.game.world.groundY(rp.x, rp.z) + 0.2) boom = true;   // detonate on the terrain surface (groundY≡0 on flat maps)
-        if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + 0.7 && rp.y < e.pos.y + e.height + 0.5) { boom = true; break; } }
-        if (!boom) { const wh = this.game.world.rayHit(rp, dir, stepLen + 0.5); if (wh) boom = true; }
-        this.game.effects.impact(rp, dir, 'spark'); // smoke trail
+        const wh = this.game.world.rayHit(g.mesh.position, dir, stepLen + 0.5, (b) => !b.foliage);   // fly THROUGH soft foliage (leaves/bushes/canopy) — detonate on the solid trunk/wall/ground behind, not on a leaf mid-air
+        if (wh) { rocketAt = wh.point.clone().addScaledVector(wh.normal, OCCLUSION_INSET); boom = true; }   // detonate EXACTLY on the surface it strikes (wall/tree/prop), not a frame past it — so the blast is centred on what you aimed at
+        if (!boom) for (const e of this.game.enemies.active) { if (!e.alive) continue; const rp = g.mesh.position; if (Math.hypot(e.pos.x - rp.x, e.pos.z - rp.z) < e.radius + 0.7 && rp.y < e.pos.y + e.height + 0.5) { rocketAt = rp.clone(); boom = true; break; } }
+        if (!boom) { g.mesh.position.addScaledVector(g.vel, dt); const rp = g.mesh.position; if (rp.y < this.game.world.groundY(rp.x, rp.z) + 0.2) { rocketAt = rp.clone(); boom = true; } }   // nothing in the step → advance, then detonate on the terrain surface (groundY≡0 on flat maps)
+        this.game.effects.impact(g.mesh.position, dir, 'spark'); // smoke trail
       } else { // tossed grenade: gravity + bounce
         g.vel.y -= 22 * dt; g.mesh.position.addScaledVector(g.vel, dt);
         g.mesh.rotation.x += dt * 6; g.mesh.rotation.y += dt * 4;
@@ -2026,7 +2043,9 @@ export class WeaponSystem {
         } else {
           // bazooka = near-full dmg to Tolo (rocket 0.9×), grenades chip like bullets (0.2×). explode()
           // owns visual+enemy AoE+player splash (FF)+item clearing+demo destruction and the host/client split.
-          this.game.explode(g.mesh.position.clone(), { radius: g.radius, dmg: g.dmg, source: g.rocket ? 'rocket' : 'explosion', isRocket: !!g.rocket });
+          // rocketAt = the contact point from the pre-move raycast (centres the breach on the wall); grenades fall back to their mesh position (fuse detonation).
+          const bpos = rocketAt || g.mesh.position.clone();
+          this.game.explode(bpos, { radius: g.radius, dmg: g.dmg, source: g.rocket ? 'rocket' : 'explosion', isRocket: !!g.rocket });
         }
         this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose();
         if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); }

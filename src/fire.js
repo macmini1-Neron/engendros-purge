@@ -292,9 +292,10 @@ export class FireManager {
 
       if (f.kind === 'tree') {
         const fr = this.game.forest;
-        if (!f.blackened && f.age >= f.duration * LEAF_BLACKEN_FRAC) {       // leaves char black, still on the tree
+        if (!f.blackened && f.age >= f.duration * LEAF_BLACKEN_FRAC) {       // leaves char black, still on the tree/log
           f.blackened = true;
-          try { fr && fr.charTree(f.owner); } catch (e) { console.warn('[fire] charTree failed', e); }
+          // a DOWNED log blackens its lying crown (charLog); a STANDING tree chars its trunk (charTree).
+          try { if (fr) { if (f.owner && f.owner.fallen) fr.charLog(f.owner); else fr.charTree(f.owner); } } catch (e) { console.warn('[fire] char failed', e); }
         }
         if (!f.bared && f.age >= f.duration * LEAF_DROP_FRAC) {              // blackened leaves drop → bare snag
           f.bared = true;
@@ -313,6 +314,18 @@ export class FireManager {
 
       if (f.age >= f.duration) { this._burnout(f); this.fires.splice(i, 1); }
     }
+  }
+
+  // A flammable part is destroyed by something OTHER than burnout (felled / shot apart / blasted): drop
+  // its live fire WITHOUT the burnout consume (the caller already removes the prop). Frees the flame slots
+  // + the cap unit so the fire doesn't hover where the trunk used to be and doesn't pin OBJ_CAP/GRASS_CAP.
+  retire(part) {
+    const f = part && part._fire;
+    if (!f) return;
+    part._fire = null;
+    for (const s of f.slots) this.flames.release(s); f.slots.length = 0;
+    if (f.kind === 'grass') this._grassN--; else this._objN--;
+    const i = this.fires.indexOf(f); if (i >= 0) this.fires.splice(i, 1);
   }
 
   // A fire that has consumed its fuel: char+fell the tree, consume the grass/wood, free slots.

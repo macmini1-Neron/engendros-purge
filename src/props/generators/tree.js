@@ -500,7 +500,10 @@ export function makeTree(opts = {}) {
   // can render the leaves on the fade material while the wood stays opaque. The split (felling) path keeps
   // everything in the SplitBuilder for now (M4 will split its falling top too).
   const mb = breakAt != null ? new SplitBuilder(breakY) : new MeshBuilder();
-  const leafMB = breakAt != null ? mb : new MeshBuilder();
+  // On the split (felling) path leaves get their OWN SplitBuilder too, so the falling crown's leaves come
+  // back as a separate geometry the caller can put on the fadeable foliage material (see-through wade-in
+  // cover) instead of an opaque block merged into the bole.
+  const leafMB = breakAt != null ? new SplitBuilder(breakY) : new MeshBuilder();
 
   const trunkPts = buildTrunk(mb, r, cfg, effHeight, baseDia);
 
@@ -520,11 +523,16 @@ export function makeTree(opts = {}) {
   const scl = opts.scale != null ? opts.scale : GAME_SCALE;
   const material = voxelMaterial();
   if (breakAt != null) {
-    const stumpGeometry = mb.lo.build();
-    const topGeometry = mb.hi.build();
-    if (scl !== 1) { stumpGeometry.scale(scl, scl, scl); topGeometry.scale(scl, scl, scl); }
+    // WOOD (stump + falling top) and LEAF (crown, on the falling top) as SEPARATE geometries so the caller
+    // renders the fallen crown's leaves on the fadeable foliage material — the SAME wood/leaf split the
+    // STANDING tree uses. Leaf builders are usually empty on the stump (the break sits below the crown).
+    const sc = (g) => { if (g && scl !== 1) g.scale(scl, scl, scl); return g; };
+    const stumpWoodGeometry = sc(mb.lo.build());
+    const topWoodGeometry = sc(mb.hi.build());
+    const stumpLeafGeometry = leafMB.lo.pos.length ? sc(leafMB.lo.build()) : null;
+    const topLeafGeometry = leafMB.hi.pos.length ? sc(leafMB.hi.build()) : null;
     // breakY (scaled) = world height of the hinge pivot above the tree's base
-    return { stumpGeometry, topGeometry, breakY: breakY * scl, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
+    return { stumpWoodGeometry, topWoodGeometry, stumpLeafGeometry, topLeafGeometry, breakY: breakY * scl, material, height: effHeight * scl, trunkRadius: baseDia * 0.5 * scl, species: speciesKey };
   }
   // Split build: WOOD (mb) + LEAF (leafMB) as separate geometries (so the caller can render leaves on the
   // near-camera fade material while wood stays opaque), PLUS a legacy merged `geometry` for the ~6 callers

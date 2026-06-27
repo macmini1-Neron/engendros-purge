@@ -12,6 +12,8 @@ import { planBuild } from './buildings/plan.js';
 import { BuildingDestruct } from './destruct-lab/building-destruct.js';
 import { DebrisPool } from './destruct-debris.js';
 import { ForestDemo } from './forestdemo.js';
+import { makeGrassTuft, makeFlowerPatch, makeReedClump, makeShrub } from './props/generators/groundcover.js';
+import { voxelMaterial, MeshBuilder } from './util.js';
 
 export class ForestScene {
   constructor(game) {
@@ -24,6 +26,97 @@ export class ForestScene {
     this._buildColonnade();
     this.trees.scatter(150, 45, 124);                  // denser wood; scatter AFTER reserving the building footprints
     this.trees.scatterBushes(55);                      // head-height understorey bushes (push-through soft cover) — after the trees seed the clusters
+    this._groundcover = [];
+    this._scatterGroundcover();                        // a living forest FLOOR: grass tufts, flower patches, reeds, low scrub (visual, walk-over)
+    this._scatterDecor();                              // rocks (solid) + fallen logs + stumps (destructible/flammable props)
+  }
+
+  // Lush ground vegetation as InstancedMeshes (one draw call per variant). Purely visual / walk-over — no
+  // collision or destruct (you wade over grass). Shares one vertex-colored material across every variant.
+  _scatterGroundcover() {
+    const terr = this.world.terrain, HALF = this.world.HALF || 200;
+    const R = Math.min(HALF - 8, 138);                 // keep groundcover to the playable wood, not the far map edge
+    const gcMat = voxelMaterial();
+    const reserved = (x, z) => { for (const r of this.trees._reserved) { const dx = x - r.x, dz = z - r.z; if (dx * dx + dz * dz < r.r * r.r) return true; } return false; };
+    const tmp = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), scl = new THREE.Vector3();
+    const place = (makeFn, nVariants, count, sLo, sHi, castShadow) => {
+      const geos = []; for (let v = 0; v < nVariants; v++) geos.push(makeFn((v * 9173 + 41) >>> 0).geometry);
+      const buckets = geos.map(() => []);
+      for (let i = 0; i < count; i++) {
+        let x = 0, z = 0, ok = false;
+        for (let tries = 0; tries < 8; tries++) {
+          if (Math.random() < 0.62 && this.trees.trees.length) {   // cluster most groundcover AROUND the trees → a lush understory, not a thin even sprinkle
+            const t = this.trees.trees[(Math.random() * this.trees.trees.length) | 0], a = Math.random() * Math.PI * 2, rr2 = Math.random() * 6.5;
+            x = t.x + Math.cos(a) * rr2; z = t.z + Math.sin(a) * rr2;
+          } else { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * R; x = Math.cos(a) * d; z = Math.sin(a) * d; }
+          if (Math.abs(x) > HALF - 4 || Math.abs(z) > HALF - 4) continue;
+          if (terr && !terr.isPlaceable(x, z, 0.4, 'tree')) continue;
+          if (reserved(x, z)) continue;
+          ok = true; break;
+        }
+        if (!ok) continue;
+        const y = terr ? terr.terrainHeightAt(x, z) : 0;
+        const vi = (Math.random() * nVariants) | 0, s = sLo + Math.random() * (sHi - sLo);
+        q.setFromAxisAngle(up, Math.random() * Math.PI * 2); pos.set(x, y, z); scl.set(s, s, s);
+        buckets[vi].push(tmp.clone().compose(pos, q, scl));
+      }
+      for (let v = 0; v < nVariants; v++) {
+        const list = buckets[v]; if (!list.length) continue;
+        const im = new THREE.InstancedMesh(geos[v], gcMat, list.length);
+        for (let i = 0; i < list.length; i++) im.setMatrixAt(i, list[i]);
+        im.instanceMatrix.needsUpdate = true; im.castShadow = !!castShadow; im.receiveShadow = false;
+        this.scene.add(im); this._groundcover.push(im);
+      }
+    };
+    place(makeGrassTuft, 6, 950, 0.7, 1.4, false);     // dense feather-grass sward — the floor
+    place(makeFlowerPatch, 4, 160, 0.8, 1.3, false);   // pops of colour
+    place(makeReedClump, 3, 70, 0.7, 1.25, false);     // taller clumps in dips
+    place(makeShrub, 3, 95, 0.85, 1.3, true);          // low woody scrub (casts a little shadow)
+  }
+
+  // a rounded multi-tone voxel boulder (sits on y=0, grows +Y) — stone-grey shaded lighter toward the top
+  _makeBoulder(seed, scale) {
+    let s = (seed >>> 0) || 1; const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    const b = new MeshBuilder(), TONES = [0x6f7178, 0x898b93, 0xa3a5ad, 0xbcbec6], R = 0.9 * scale, n = 10 + (rnd() * 6 | 0);   // light granite-grey, shaded lighter toward the top
+    for (let i = 0; i < n; i++) {
+      const u = rnd() * Math.PI * 2, v = Math.acos(2 * rnd() - 1), rad = R * (0.35 + 0.5 * rnd());
+      const px = Math.sin(v) * Math.cos(u) * rad, py = Math.abs(Math.cos(v)) * rad * 0.8, pz = Math.sin(v) * Math.sin(u) * rad, sz = R * (0.45 + 0.4 * rnd());
+      b.box(sz, sz * 0.8, sz, px, py, pz, TONES[Math.min(3, Math.floor((py / (R * 0.9)) * 4))]);
+    }
+    return b.build();
+  }
+
+  // Destructible scenery: stone boulders (solid, only HE/APFSDS break) + lying deadwood logs (solid,
+  // shootable-apart, flammable). Routed through ForestDemo so weapons/blast/fire reach them.
+  _scatterDecor() {
+    const terr = this.world.terrain, HALF = this.world.HALF || 200, R = Math.min(HALF - 10, 130);
+    const rnd = this.trees._frng;   // shared SEEDED layout rng → rocks/logs land at the same spots on every co-op peer (id→prop matches for propdie sync)
+    const stoneMat = voxelMaterial(), logMat = new THREE.MeshLambertMaterial({ color: 0x5a4632 });
+    const reserved = (x, z) => { for (const r of this.trees._reserved) { const dx = x - r.x, dz = z - r.z; if (dx * dx + dz * dz < (r.r + 1) * (r.r + 1)) return true; } return false; };
+    const placed = [];
+    const pick = (minD) => {
+      for (let t = 0; t < 12; t++) {
+        const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * R, x = Math.cos(a) * d, z = Math.sin(a) * d;
+        if (Math.abs(x) > HALF - 5 || Math.abs(z) > HALF - 5) continue;
+        if (terr && !terr.isPlaceable(x, z, 1.0, 'tree')) continue;
+        if (reserved(x, z)) continue;
+        let near = false; for (const e of placed) { const dx = x - e.x, dz = z - e.z; if (dx * dx + dz * dz < minD * minD) { near = true; break; } }
+        if (near) continue;
+        return { x, z };
+      }
+      return null;
+    };
+    for (let i = 0; i < 24; i++) {                      // boulders — singles + occasional buddy
+      const p = pick(4); if (!p) continue; placed.push(p);
+      this.trees._addRock(this._makeBoulder((i * 733 + 17) >>> 0, 0.7 + rnd() * 1.3), stoneMat, p.x, p.z, rnd() * Math.PI * 2);
+      if (rnd() < 0.45) { const bx = p.x + (rnd() - 0.5) * 3, bz = p.z + (rnd() - 0.5) * 3; if (!reserved(bx, bz) && (!terr || terr.isPlaceable(bx, bz, 0.6, 'tree'))) { placed.push({ x: bx, z: bz }); this.trees._addRock(this._makeBoulder((i * 941 + 53) >>> 0, 0.45 + rnd() * 0.5), stoneMat, bx, bz, rnd() * Math.PI * 2); } }
+    }
+    for (let i = 0; i < 12; i++) {                      // lying deadwood logs
+      const p = pick(5); if (!p) continue; placed.push(p);
+      const r = 0.22 + rnd() * 0.18, length = 3 + rnd() * 3;
+      const geo = new THREE.CylinderGeometry(r, r * 1.05, length, 7, 1); geo.rotateX(Math.PI / 2);
+      this.trees._addDecorLog(new THREE.Mesh(geo, logMat), p.x, p.z, rnd() * Math.PI * 2, length, r);
+    }
   }
 
   _terrainMin(cx, cz, hw, hd) {

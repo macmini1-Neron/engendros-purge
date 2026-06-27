@@ -157,11 +157,15 @@ export function orphanedCells(cells) {
 }
 
 // Hitscan rule: pen < tier ⇒ cosmetic (decal/chip, no hp). Else damage; killed at hp ≤ 0.
-// Mutates part.dhp / part.dead when pen ≥ tier.
-export function resolveHit(part, weapon) {
+// Mutates part.dhp / part.dead when pen ≥ tier. `tierOverride` (optional) lets a caller gate on a
+// DIFFERENT threshold than the material's own tier — used by trees/logs so the "what caliber fells
+// it" check scales with the trunk THICKNESS (a slim trunk falls to an SMG; a thick bole needs an
+// MG/HE) while the material still drives fire + HP. null ⇒ use the material tier (unchanged).
+export function resolveHit(part, weapon, tierOverride = null) {
   if (part.dead) return { effect: 'cosmetic' };
   const m = MATERIALS[part.dmat];
-  if (weapon.pen < m.tier) return { effect: 'cosmetic' };
+  const tier = tierOverride != null ? tierOverride : m.tier;
+  if (weapon.pen < tier) return { effect: 'cosmetic' };
   part.dhp -= weapon.dmg;
   if (part.dhp <= 0) part.dead = true;
   return { effect: 'damage', dmg: weapon.dmg, killed: part.dead };
@@ -379,6 +383,62 @@ function subTumble(b) {
     }
     b.vel[1] *= -0.3; b.vel[0] *= 0.6; b.vel[2] *= 0.6; b.rotSpeed *= 0.5; b.bounces++;
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tight per-CELL AABBs hugging a TRANSFORMED mesh's vertices, binned in the log's own horizontal
+// frame. Gives a FELLED tree's lying log + branches a 1:1 collision hull — short boxes that follow
+// the log's real heading and rise ONLY where wood/branches actually are (walk UNDER a raised crown,
+// step OVER the bole), and — with crossBins > 1 — SPLIT the trunk from side-branches across the axis
+// so there's real air to walk between them. Replaces one fat axis-aligned box over the whole diagonal.
+// PURE & node-testable (no THREE): positions = flat [x,y,z,…] (Float32Array|Array); m = 16 column-major
+// matrixWorld elements; axis = [dx,dz] unit horizontal heading (the log direction); originXZ = [ax,az]
+// the projection origin (log butt); binLen ≈ slice length along the log (m); maxBins caps the ALONG
+// count; crossBins caps the ACROSS count (1 = a single slice per along-bin, the old 1-D behaviour);
+// crossLen ≈ cell width across the log (m). Returns [{ min:[x,y,z], max:[x,y,z] }] per non-empty cell,
+// in the SAME (world) space as `m` maps into, ordered along→across (deterministic for MP replay).
+export function binFallenAABBs(positions, m, axis, originXZ, binLen = 1.0, maxBins = 8, crossBins = 1, crossLen = 0.7) {
+  const n = positions.length;
+  if (n < 9) return [];
+  const ax = originXZ[0], az = originXZ[1], dx = axis[0], dz = axis[1];
+  const px = -dz, pz = dx;                              // perpendicular horizontal axis (across the log)
+  const cnt = (n / 3) | 0;
+  const wx = new Float64Array(cnt), wy = new Float64Array(cnt), wz = new Float64Array(cnt);
+  const uu = new Float64Array(cnt), vv = new Float64Array(cnt);
+  let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
+  for (let i = 0, j = 0; j < cnt; i += 3, j++) {
+    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+    const X = m[0] * x + m[4] * y + m[8] * z + m[12];   // column-major (THREE Matrix4.elements)
+    const Y = m[1] * x + m[5] * y + m[9] * z + m[13];
+    const Z = m[2] * x + m[6] * y + m[10] * z + m[14];
+    wx[j] = X; wy[j] = Y; wz[j] = Z;
+    const u = (X - ax) * dx + (Z - az) * dz;            // distance along the log axis from the butt
+    const v = (X - ax) * px + (Z - az) * pz;            // distance across the log (trunk ≈ 0)
+    uu[j] = u; vv[j] = v;
+    if (u < umin) umin = u; if (u > umax) umax = u; if (v < vmin) vmin = v; if (v > vmax) vmax = v;
+  }
+  const uspan = Math.max(1e-3, umax - umin);
+  const nu = Math.max(1, Math.min(maxBins | 0, Math.ceil(uspan / binLen)));
+  const uinv = nu / uspan;
+  const vspan = Math.max(1e-3, vmax - vmin);
+  const nv = (crossBins | 0) <= 1 ? 1 : Math.max(1, Math.min(crossBins | 0, Math.ceil(vspan / crossLen)));
+  const vinv = nv / vspan;
+  const cells = new Map();
+  for (let j = 0; j < cnt; j++) {
+    let bu = Math.floor((uu[j] - umin) * uinv); if (bu < 0) bu = 0; else if (bu >= nu) bu = nu - 1;
+    let bv = nv === 1 ? 0 : Math.floor((vv[j] - vmin) * vinv); if (bv < 0) bv = 0; else if (bv >= nv) bv = nv - 1;
+    const key = bu * nv + bv, X = wx[j], Y = wy[j], Z = wz[j];
+    const bb = cells.get(key);
+    if (!bb) cells.set(key, { min: [X, Y, Z], max: [X, Y, Z] });
+    else {
+      if (X < bb.min[0]) bb.min[0] = X; else if (X > bb.max[0]) bb.max[0] = X;
+      if (Y < bb.min[1]) bb.min[1] = Y; else if (Y > bb.max[1]) bb.max[1] = Y;
+      if (Z < bb.min[2]) bb.min[2] = Z; else if (Z > bb.max[2]) bb.max[2] = Z;
+    }
+  }
+  const out = [];
+  for (const k of [...cells.keys()].sort((a, b) => a - b)) out.push(cells.get(k));
+  return out;
 }
 
 // ───────────────────────────────────────────────────────────────────────────

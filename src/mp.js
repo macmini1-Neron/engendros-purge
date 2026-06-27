@@ -831,6 +831,8 @@ export class MP {
     n.on('forestfx', (d) => { if (this.isHost || !d) return; const fr = this.game.forest; if (!fr) return; // host-auth FOREST mutations: fell/char a tree, consume a grass tuft. Tree fall is replayed with the host's exact dir+seed → identical deterministic FallingBody
       if (d.k === 'fell') fr.fellTreeById(d.id, d.dx, d.dz, d.seed);
       else if (d.k === 'char') fr.charTreeById(d.id);
+      else if (d.k === 'drop') { if (fr.dropLeavesById) fr.dropLeavesById(d.id); }   // bare charred snag (leaves dropped)
+      else if (d.k === 'charlog') { if (fr.charLogById) fr.charLogById(d.id); }      // a downed log blackened by fire
       else if (d.k === 'grass') fr.consumeGrassById(d.id);
       else if (d.k === 'propdie') fr.destroyPropById(d.id); });
     // ── terrain excavation (craters + shovel) — the dig list is the single synced source of truth;
@@ -1031,10 +1033,12 @@ export class MP {
         const gy = g.world.groundY(gp.mesh.position.x, gp.mesh.position.z);
         if (gp.mesh.position.y <= gy + 0.05) { gp.mesh.position.y = gy + 0.05; boom = true; }
         if (!boom) { gp.trailT -= dt; if (gp.trailT <= 0) { gp.trailT = 0.04; g.effects.firePool(gp.mesh.position, 0.3, 0.6); } }
-      } else if (gp.kind === 'rocket') { // straight line + smoke/spark trail (mirrors the real rocket integration)
+      } else if (gp.kind === 'rocket') { // raycast BEFORE moving + skip foliage (mirrors the real rocket) so the ghost detonates on the SAME wall/trunk the host hit, not ~200 m downrange
         const dir = tmp.copy(gp.vel).normalize();
-        gp.mesh.position.addScaledVector(gp.vel, dt);
-        if (gp.mesh.position.y < g.world.groundY(gp.mesh.position.x, gp.mesh.position.z) + 0.2) boom = true;
+        const stepLen = gp.vel.length() * dt;
+        const wh = g.world.rayHit(gp.mesh.position, dir, stepLen + 0.5, (b) => !b.foliage);
+        if (wh) { gp.mesh.position.copy(wh.point); boom = true; }
+        else { gp.mesh.position.addScaledVector(gp.vel, dt); if (gp.mesh.position.y < g.world.groundY(gp.mesh.position.x, gp.mesh.position.z) + 0.2) boom = true; }
         g.effects.impact(gp.mesh.position, dir, 'spark');
       } else { // grenade: gravity + floor bounce (mirrors the real grenade integration)
         gp.vel.y -= 22 * dt; gp.mesh.position.addScaledVector(gp.vel, dt);
