@@ -425,7 +425,7 @@ export class ForestDemo {
   breakLogSegById(id, sids) {                                   // co-op client mirror (host already ran the cascade)
     const log = this.logs.find((l) => l.id === id); if (!log || !log.segs) return;
     for (const sid of (sids || [])) { const seg = log.segs.find((s) => s.sid === sid && !s.dead); if (seg) this._killSeg(log, seg, (sid >>> 0) || 1); }
-    if (log.segs.length && log.segs.every((s) => s.dead) && !log.consumed) { log.consumed = true; this._fading.delete(log); if (log.part) log.part.dead = true; if (this.game.fire) this.game.fire.retire(log.part); }
+    if (log.segs.length && log.segs.every((s) => s.dead) && !log.consumed) this._consumeLog(log, (id * 2654435761) >>> 0, true); // FULL tidy on the client too — the old inline cleanup left the crown's foliage boxes in world.grid + the mesh floating (the host's later propdie then no-ops on `consumed`). _consumeLog removes the boxes + sinks the mesh; its emit is host-gated so no echo.
   }
 
   consumeProp(rec) {                                                                              // FireManager burnout consumes a prop
