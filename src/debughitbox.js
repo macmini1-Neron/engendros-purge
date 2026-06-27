@@ -18,10 +18,11 @@ const C_STRUCT     = [0.32, 0.62, 1.00];   // blue   — player fortifications
 const C_FOLIAGE    = [0.27, 0.89, 0.35];   // green  — foliage (shoot-through / soft cover)
 const C_TREE       = [1.00, 0.62, 0.25];   // orange — solid wood (trunk band / fallen log)
 const C_WORLD      = [0.85, 0.86, 0.92];   // white  — generic world / terrain / arena colliders
+const C_CAP        = [0.20, 1.00, 0.75];   // aqua-green — exact capsule narrowphase (round hitbox)
 
 const R         = 30;     // draw radius around the camera (m) — readable (just your surroundings) + bounds the rebuild cost
-const MAX_BOXES = 2500;   // hard cap (each box = 12 edges = 24 line vertices) — headroom so a dense stand isn't truncated within R
-const VERTS     = MAX_BOXES * 24;
+const MAX_BOXES = 2500;   // hard cap: each box = AABB (24 verts) + optional cap rings (48 verts) = 72 max — headroom so a dense stand isn't truncated within R
+const VERTS     = MAX_BOXES * 72;
 
 const EDGES = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
 
@@ -58,6 +59,53 @@ export class HitboxDebug {
     this._n += 24;
   }
 
+  // draw a capsule wireframe: two perpendicular-plane rings at each end + 4 axis-parallel connectors.
+  // 2 rings × 10 segments × 2 verts + 4 connectors × 2 verts = 48 verts total.
+  // Writes directly into the preallocated posA/colA Float32Arrays (same pattern as _box).
+  _emitCapsule(cap, col) {
+    const RING = 10;
+    const needed = RING * 4 + 8;          // 40 ring verts + 8 connector verts = 48
+    if (this._n + needed > VERTS) { this._cap = true; return; }
+    // axis unit vector
+    const adx = cap.bx - cap.ax, ady = cap.by - cap.ay, adz = cap.bz - cap.az;
+    const al = Math.hypot(adx, ady, adz) || 1e-6;
+    const ux = adx / al, uy = ady / al, uz = adz / al;
+    // perpendicular basis e1 (cross with world-up; fall back to world-X if axis is near-vertical)
+    let e1x = -uy, e1y = ux, e1z = 0;
+    if (Math.abs(ux) < 1e-3 && Math.abs(uy) < 1e-3) { e1x = 1; e1y = 0; e1z = 0; }
+    const l1 = Math.hypot(e1x, e1y, e1z) || 1e-6; e1x /= l1; e1y /= l1; e1z /= l1;
+    // e2 = axis × e1
+    const e2x = uy * e1z - uz * e1y, e2y = uz * e1x - ux * e1z, e2z = ux * e1y - uy * e1x;
+    const r = cap.r;
+    const p = this.posA, co = this.colA;
+    // helper: emit one ring of RING segments at centre (cx,cy,cz)
+    const ring = (cx, cy, cz) => {
+      for (let i = 0; i < RING; i++) {
+        const a0 = (i / RING) * Math.PI * 2, a1 = ((i + 1) / RING) * Math.PI * 2;
+        const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+        let o = this._n * 3;
+        p[o]   = cx + r*(c0*e1x + s0*e2x); p[o+1] = cy + r*(c0*e1y + s0*e2y); p[o+2] = cz + r*(c0*e1z + s0*e2z);
+        co[o] = col[0]; co[o+1] = col[1]; co[o+2] = col[2]; o += 3;
+        p[o]   = cx + r*(c1*e1x + s1*e2x); p[o+1] = cy + r*(c1*e1y + s1*e2y); p[o+2] = cz + r*(c1*e1z + s1*e2z);
+        co[o] = col[0]; co[o+1] = col[1]; co[o+2] = col[2];
+        this._n += 2;
+      }
+    };
+    ring(cap.ax, cap.ay, cap.az);
+    ring(cap.bx, cap.by, cap.bz);
+    // 4 axis-parallel connectors at ±e1 and ±e2 offsets
+    const segs = [[e1x,e1y,e1z],[-e1x,-e1y,-e1z],[e2x,e2y,e2z],[-e2x,-e2y,-e2z]];
+    for (let s = 0; s < 4; s++) {
+      const sx = segs[s][0], sy = segs[s][1], sz = segs[s][2];
+      let o = this._n * 3;
+      p[o]   = cap.ax + r*sx; p[o+1] = cap.ay + r*sy; p[o+2] = cap.az + r*sz;
+      co[o] = col[0]; co[o+1] = col[1]; co[o+2] = col[2]; o += 3;
+      p[o]   = cap.bx + r*sx; p[o+1] = cap.by + r*sy; p[o+2] = cap.bz + r*sz;
+      co[o] = col[0]; co[o+1] = col[1]; co[o+2] = col[2];
+      this._n += 2;
+    }
+  }
+
   update(game, active) {
     if (!active) { if (this.mesh.visible) this.mesh.visible = false; return; }
     this._n = 0;
@@ -72,6 +120,7 @@ export class HitboxDebug {
         const c = b.explodable ? C_EXPLODABLE : b.struct ? C_STRUCT
                 : b.foliage ? C_FOLIAGE : b.tree ? C_TREE : C_WORLD;
         this._box(b.min, b.max, c);
+        if (b.cap) this._emitCapsule(b.cap, C_CAP);
       }
     }
 
