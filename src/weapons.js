@@ -1618,10 +1618,12 @@ export class WeaponSystem {
         const box = wHit.box;
         if (box && box.downer && this._softPenetrable(box, d) && (box.foliage || soft < SOFT_BUDGET)) {
           if (box.foliage) {
-            // FOLIAGE = a free, DAMAGE-FREE pass: leaves just react (green puff), never absorb the round,
-            // never fell the tree, never cost energy/budget — so the round ALWAYS reaches the solid trunk
-            // behind. No _destructHit (only the trunk/log takes damage) and NO crosshair hit-marker.
+            // FOLIAGE = a free, DAMAGE-FREE pass for tree CANOPY / fallen CROWN: leaves just react (green puff),
+            // never absorb the round, never fell the tree, never cost energy/budget — so the round ALWAYS reaches
+            // the solid trunk behind. A BUSH, though, is a destructible foliage PROP (~10 HP, "a shot clears it"),
+            // so still resolve its damage while keeping the pass-through. Tree foliage (box.tree) never takes a hit.
             this.game.effects.impact(wHit.point, wHit.normal, 'leaf');
+            if (box.prop && !box.tree) this._destructHit(wHit, dir, d, dmg / (d.dmg || 1)); // the bush IS the destructible
           } else {
             // building soft cover (glass / wood / sheet-metal): carve it, sap energy (glass is the free pass)
             this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));
