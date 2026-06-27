@@ -835,6 +835,7 @@ export class MP {
       else if (d.k === 'charlog') { if (fr.charLogById) fr.charLogById(d.id); }      // a downed log blackened by fire
       else if (d.k === 'segdie') { if (fr.breakLogSegById) fr.breakLogSegById(d.id, d.sids); }   // sectional: one+cascade log chunks shot out
       else if (d.k === 'grass') fr.consumeGrassById(d.id);
+      else if (d.k === 'reground') { if (fr.regroundLogById) fr.regroundLogById(d.id, d.d); }   // host dug under a downed log → drop it onto the new terrain by the host's exact amount (no-levitation on clients)
       else if (d.k === 'propdie') fr.destroyPropById(d.id); });
     // ── terrain excavation (craters + shovel) — the dig list is the single synced source of truth;
     //    everything else (collision, AI, molotov-Y, ghost landing, chunk mesh) is RECOMPUTED from it ──

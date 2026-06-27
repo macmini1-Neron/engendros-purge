@@ -61,9 +61,15 @@ export class SupportScan {
         footprint: this._fp(box), baseY,
         collapse: (prim) => {
           if (tree.part) tree.part.dead = true;             // ForestDemo expects the caller to retire the part (Forest does it itself — idempotent)
-          forest.fellTree(tree, this._dirInto(prim, { x: tx, z: tz }), (tree.id * 2654435761) >>> 0);
+          // breakAt 0 = UPROOT: the whole tree (root and all) topples into the hole, leaving no floating stump.
+          forest.fellTree(tree, this._dirInto(prim, { x: tx, z: tz }), (tree.id * 2654435761) >>> 0, null, 0);
         },
       };
+    }
+    // a DOWNED log/chunk whose ground was dug out from under it → drop it onto the new (lower) terrain.
+    if (box.tree && box.downer && box.downer.fallen && forest && typeof forest.regroundLog === 'function') {
+      const log = box.downer;
+      return { footprint: this._fp(box), baseY: box.min.y, collapse: () => forest.regroundLog(log, true) }; // emit → clients re-ground the same log (dig has no deterministic client replay)
     }
     if (box.prop && box.downer && !box.downer.dead && forest && typeof forest.destroyProp === 'function') {
       const rec = box.downer;
