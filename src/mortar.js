@@ -139,7 +139,13 @@ export class Mortar {
     if (this.game.player.mortar === this) this._doDismount();
     this.occupant = null;
     const sc = this.game.engine.scene;
-    for (const s of this.shells) { for (const o of [s.mesh, s.trace, s.ring]) if (o) { sc.remove(o); o.geometry.dispose(); o.material.dispose(); } }
+    // RECYCLE the shell mesh (its geo/mat are the SHARED pooled _shellGeo/_shellMat — disposing them here
+    // would corrupt every future shell + recompile the Lambert program). Only the per-shell debug trace/ring
+    // are genuine per-shell allocations, so dispose those.
+    for (const s of this.shells) {
+      if (s.mesh) { s.mesh.visible = false; if (this._shellPool) this._shellPool.push(s.mesh); }
+      for (const o of [s.trace, s.ring]) if (o) { sc.remove(o); o.geometry.dispose(); o.material.dispose(); }
+    }
     for (const k of this._impactMarks) { sc.remove(k.ring); k.ring.geometry.dispose(); k.ring.material.dispose(); }
     this.shells = []; this._impactMarks = [];
   }

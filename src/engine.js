@@ -27,6 +27,7 @@ export class Engine {
     this._renderScale = 1;                                   // graphics-quality render scale (×DPR)
     this._baseDpr = Math.min(window.devicePixelRatio || 1, 2);
     this._adaptive = false;                                  // adaptive resolution on/off
+    this._adaptCd = 0;                                       // updateAdaptive() realloc cooldown (frames); explicit init for clarity
     // Bloom post-processing — lazily built on first enable (setBloom). World-only:
     // the world pass goes through the composer, the viewmodel is forward-drawn on top.
     this._bloomOn = false; this._composer = null; this._bloomPass = null;

@@ -134,7 +134,7 @@ class RemotePlayer {
   dispose() {
     this.game.engine.scene.remove(this.obj);
     this.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-    if (this._flashH) this.game.engine.releaseFlashLight(this._flashH); // return the spotlight to the pool (no scene.remove → no recompile on leave)
+    if (this._flashH) { this.game.engine.releaseFlashLight(this._flashH); this._flashH = null; } // return the spotlight to the pool (no scene.remove → no recompile on leave); null-guard double-dispose
     if (this.label) this.label.remove();
   }
 }
