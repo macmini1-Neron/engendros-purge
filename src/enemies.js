@@ -1044,7 +1044,7 @@ export class EnemyManager {
     if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);   // refresh the boss/elite bar
   }
 
-  damage(e, amount, source = 'gun', hitPoint = null, attacker = 'host') {
+  damage(e, amount, source = 'gun', hitPoint = null, attacker = 'host', crit = false) {
     if (!e.alive) return false;
     const _mp = this.game.mp;
     if (_mp && _mp.active && !_mp.isHost) { _mp.claimHit(e, amount, source); return false; }
@@ -1063,6 +1063,9 @@ export class EnemyManager {
       this._bossHit(e, hitPoint, effective, attacker);                        // thunk + yellow crosshair, or weak tink
     }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
+    // Impact juice (host/solo path — the MP-client early-returns above). Skip DoT / instakill-bury so
+    // a burn tick or a building cave-in never spams numbers or punches the camera off-screen.
+    const _juice = source !== 'crush' && source !== 'fire' && source !== 'burn' && source !== 'radiation' && amount < 900;
     if (e.hp <= 0) {
       e.alive = false; e.mesh.visible = false;
       const top = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
@@ -1081,10 +1084,18 @@ export class EnemyManager {
       if (e.def.boss && this._bossBlob) this._bossBlob.visible = false; // hide the blob shadow on boss death
       this.game.onEnemyKilled(e, attacker);
       if (_mp && _mp.active && _mp.isHost) _mp.onEnemyDie(e, attacker);
+      if (_juice) {
+        this.game.hud.popDamage(top, amount, { crit, kill: true });
+        const eng = this.game.engine, big = e.def.boss || e.isElite;
+        if (eng) eng.addTrauma(big ? 0.5 : (source === 'rocket' || source === 'explosion' ? 0.32 : 0.16)); // kill micro-punch; bosses/elites wallop, the rest just thump
+        if (big) this.game.hitStop(0.09);                  // hit-stop reserved for the low-frequency player-driven kills (boss/elite,
+        else if (crit || source === 'melee') this.game.hitStop(0.05); // headshot, melee) — never on every trash mob → keeps the dynamic range
+      }
       return true;
     }
     const hpv = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.6, e.pos.z);
     this.game.effects.stuffing(hpv, e.col.body, 4, 3);
+    if (_juice) this.game.hud.popDamage(hitPoint || hpv, amount, { crit });
     if (source !== 'explosion') this.game.audio.enemyHurt();
     return false;
   }

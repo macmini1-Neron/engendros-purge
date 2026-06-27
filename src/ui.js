@@ -37,6 +37,57 @@ export class HUD {
       mortarpanel: $('mortarpanel'), mElev: $('m-elev'), mRange: $('m-range'), mMils: $('m-mils'), mAmmo: $('m-ammo'), spotcall: $('spotcall'),
     };
     this._hitT = 0; this._msgT = 0; this._spotT = 0;
+    this._initDamageNumbers();
+  }
+  // Floating damage numbers — a fixed pool of reused <div>s (no per-hit DOM alloc, in the spirit of the
+  // particle/ring pools). popDamage() world-anchors one; tickDamage() integrates a little arc and projects
+  // world→screen with a single scratch Vector3 each frame. Toggle via settings.data.dmgNumbers.
+  _initDamageNumbers() {
+    const c = document.createElement('div');
+    c.id = 'dmgnums';
+    c.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:24;overflow:hidden';
+    document.body.appendChild(c);
+    this._dmgC = c; this._dmgPool = []; this._dmgScratch = new THREE.Vector3();
+    for (let i = 0; i < 30; i++) {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:absolute;left:0;top:0;will-change:transform,opacity;opacity:0;font-weight:800;letter-spacing:.5px;white-space:nowrap;text-shadow:0 2px 5px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.95);transform:translate(-9999px,-9999px)';
+      c.appendChild(d);
+      this._dmgPool.push({ el: d, active: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, life: 0, max: 1 });
+    }
+  }
+  popDamage(world, amount, opts = {}) {
+    if (!this._dmgPool || !world) return;
+    const st = this.game.settings; if (st && st.data && st.data.dmgNumbers === 0) return;
+    let slot = null;
+    for (const s of this._dmgPool) if (!s.active) { slot = s; break; }
+    if (!slot) { slot = this._dmgPool[0]; for (const s of this._dmgPool) if (s.life < slot.life) slot = s; } // all busy → recycle the most-faded
+    const crit = !!opts.crit, kill = !!opts.kill;
+    slot.active = true;
+    slot.x = world.x; slot.y = world.y + 0.5; slot.z = world.z;
+    slot.vx = (Math.random() * 2 - 1) * 0.7; slot.vy = 1.8 + Math.random() * 0.6;
+    slot.max = slot.life = kill ? 1.0 : 0.7;
+    slot.el.style.color = kill ? '#ff4d2e' : (crit ? '#ffd23f' : '#fff3e0');
+    slot.el.style.fontSize = (kill || crit ? 30 : 20) + 'px';
+    slot.el.textContent = Math.max(1, Math.round(amount)) + (crit ? '!' : '');
+  }
+  clearDamage() { if (!this._dmgPool) return; for (const s of this._dmgPool) { if (!s.active) continue; s.active = false; s.el.style.opacity = '0'; s.el.style.transform = 'translate(-9999px,-9999px)'; } }
+  tickDamage(dt) {
+    if (!this._dmgPool) return;
+    if (this.game.state !== 'playing') { this.clearDamage(); return; } // never leave numbers floating over the death screen / menu (tick runs in every state)
+    const cam = this.game.engine && this.game.engine.camera; if (!cam) return;
+    const v = this._dmgScratch, W = window.innerWidth, H = window.innerHeight;
+    for (const s of this._dmgPool) {
+      if (!s.active) continue;
+      s.life -= dt;
+      if (s.life <= 0) { s.active = false; s.el.style.opacity = '0'; s.el.style.transform = 'translate(-9999px,-9999px)'; continue; }
+      s.x += s.vx * dt; s.y += s.vy * dt; s.vy -= 2.2 * dt;     // gentle upward arc, gravity-eased
+      v.set(s.x, s.y, s.z).project(cam);
+      if (v.z > 1) { s.el.style.opacity = '0'; continue; }      // behind the camera
+      const sx = (v.x * 0.5 + 0.5) * W, sy = (-v.y * 0.5 + 0.5) * H;
+      const t = s.life / s.max;                                 // 1 → 0 over its life
+      s.el.style.transform = `translate(${sx}px,${sy}px) translate(-50%,-50%) scale(${(1.3 - (1 - t) * 0.5).toFixed(3)})`;
+      s.el.style.opacity = String(Math.min(1, t * 2.4));        // pop in, fade over the last ~40%
+    }
   }
   show(on) { this.el.hud.classList.toggle('show', on); }
   setHealth(hp, max) { const f = clamp(hp / max, 0, 1); this.el.hpfill.style.width = (f * 100) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.el.vignette.style.boxShadow = `inset 0 0 200px 40px rgba(200,30,20,${(1 - f) * 0.5})`; }
@@ -62,6 +113,7 @@ export class HUD {
   }
   setWeapon(w) {
     const key = w.cur, d = WEAPONS[key];
+    this.el.ammonum.classList.remove('low'); // reset low-ammo tint (re-added below only for a near-empty gun mag)
     this.setCompass(null); // tear the буссоль overlay down on any held-item change (switch / death-reset)
     this.el.wepname.textContent = d.name.toUpperCase();
     this.el.wepname.style.color = 'var(--gold)';
@@ -77,7 +129,15 @@ export class HUD {
     const mode = d.melee ? '' : (d.auto ? (w.semi[key] ? ' · SEMI' : ' · AUTO') : ' · SEMI');
     this.el.wepclass.textContent = `${d.class}${slot ? ' · slot ' + slot : ''}${mode}`;
     if (d.melee) this.el.ammonum.innerHTML = `<span style="font-size:22px">MELEE</span>`;
-    else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
+    else {
+      const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`;
+      // low-ammo telegraph: tint the mag count red at ≤25%, with a soft click the moment it crosses (firing the SAME gun
+      // down — not a weapon switch, where the key changes, nor a reload, which refills above the threshold and re-arms it)
+      const low = w.reloading <= 0 && (d.mag || 0) > 0 && w.mag[key] / d.mag <= 0.25;
+      if (low) this.el.ammonum.classList.add('low');
+      if (low && !this._lowAmmo && this._lowAmmoKey === key && this.game.audio) this.game.audio.uiClick();
+      this._lowAmmo = low; this._lowAmmoKey = key;
+    }
     if (this.el.molotov) { const mc = this.game.inventory ? this.game.inventory.count('molotov') : 0; this.el.molotov.innerHTML = mc > 0 ? `${icon('molotov')} ×${mc}` : ''; }
   }
   setMountedGun(ammo = 0, maxAmmo = 250, label = '.50 CAL M2HB') { // shown in the weapon slot while manning a fixed heavy MG
@@ -265,6 +325,14 @@ export class HUD {
   }
   setInteract(text) { if (text) { this.el.interact.innerHTML = text; this.el.interact.classList.add('show'); } else this.el.interact.classList.remove('show'); }
   update(dt) {
+    // crosshair bloom/movement reactivity: drive the arm gap from the weapon's bloom + player speed + recent fire
+    // (the #cross arms already CSS-transition .05s, so this reads as a smooth bloom). Static crosshair → legible spread.
+    if (this.el.cross) {
+      const w = this.game.weapons, p = this.game.player;
+      const spd = p && p.vel ? Math.hypot(p.vel.x, p.vel.z) : 0;
+      const gap = 3.2 + (w ? w.bloom * 130 : 0) + Math.min(spd, 8) * 0.6 + (w && w.cooldown > 0 ? 3 : 0);
+      this.el.cross.style.setProperty('--cross-gap', gap.toFixed(1) + 'px');
+    }
     if (this._hitT > 0) { this._hitT -= dt; if (this._hitT <= 0) { this.el.hitmarker.style.transition = 'opacity .25s'; this.el.hitmarker.style.opacity = '0'; this.el.hitmarker.classList.remove('boss'); } }
     if (this._msgT > 0) { this._msgT -= dt; if (this._msgT <= 0) this.el.msg.classList.remove('show'); }
     if (this._spotT > 0) { this._spotT -= dt; if (this._spotT <= 0 && this.el.spotcall) this.el.spotcall.classList.remove('show'); }
@@ -296,7 +364,7 @@ const SETTINGS_VER = 1;
 // adaptiveRes + bloom default OFF: on high-refresh (144 Hz) displays the 60 fps-targeted adaptive resolution
 // churns the render-target size (stutter) and renders sub-native (blur), and bloom softens the crisp voxel look.
 // Both stay toggleable in Settings; the High/Medium presets can still switch bloom back on.
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, setVer: SETTINGS_VER };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, dmgNumbers: 1, setVer: SETTINGS_VER };
 
 export class Settings {
   constructor(game) {
@@ -340,7 +408,7 @@ export class Settings {
     const setTog = (id, on, onTxt, offTxt) => { const el = document.getElementById(id); if (el) { el.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); el.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
     const gpv = document.getElementById('s-gfx'); if (gpv) gpv.textContent = String(this.data.gfxPreset).toUpperCase();
     setTog('s-adapt', this.data.adaptiveRes); setTog('s-showfps', this.data.showFps); setTog('s-aa', this.data.aa, 'ON (reload)', 'OFF');
-    setTog('s-bloom', this.data.bloom);
+    setTog('s-bloom', this.data.bloom); setTog('s-dmgnum', this.data.dmgNumbers);
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
@@ -355,6 +423,7 @@ export class Settings {
     });
     const ar = document.getElementById('s-adapt'); if (ar) ar.addEventListener('click', () => { this.data.adaptiveRes = this.data.adaptiveRes ? 0 : 1; this.apply(); this.save(); this._refresh(); });
     const sfps = document.getElementById('s-showfps'); if (sfps) sfps.addEventListener('click', () => { this.data.showFps = this.data.showFps ? 0 : 1; this.apply(); this.save(); this._refresh(); });
+    const dn = document.getElementById('s-dmgnum'); if (dn) dn.addEventListener('click', () => { this.data.dmgNumbers = this.data.dmgNumbers ? 0 : 1; this.save(); this._refresh(); }); // floating damage numbers toggle
     const aaEl = document.getElementById('s-aa'); if (aaEl) aaEl.addEventListener('click', () => { this.data.aa = this.data.aa ? 0 : 1; this.save(); this._refresh(); }); // MSAA applies on reload
     const bl = document.getElementById('s-bloom'); if (bl) bl.addEventListener('click', () => { this.data.bloom = this.data.bloom ? 0 : 1; this.apply(); this.save(); this._refresh(); });
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());

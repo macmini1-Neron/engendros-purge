@@ -16,6 +16,9 @@ import { yawToMils } from './bearing.js';
 // cosmetic chip. glass=0/wood=1/sheetmetal=trunk=2/brick=3/concrete=4/steel=5. So pistols
 // pop glass; rifles/SMGs also break the wood door & fences; nothing under HE breaches brick.
 const PEN_BY_CLASS = { pistol: 0, smg: 1, rifle: 1, sniper: 2, shotgun: 1, hmg: 2, launcher: 4, cannon: 5 };
+// Per-shot trauma — RESTRAINT: only the heavy classes get a screen-kick; rifles/SMGs/pistols are sold
+// by the recoil model alone (shaking on every AK round would burn the dynamic range we're reserving).
+const FIRE_TRAUMA = { sniper: 0.34, shotgun: 0.30, launcher: 0.40, cannon: 0.42 };
 // Forced demo loadout so a tester needs no shop: an auto rifle (glass+door+enemies), the
 // BAZOOKA (HE breach + fire), two MOLOTOVs (ignite trees), the debug APFSDS cannon, + a knife.
 export const DEMO_LOADOUT = ['stg44', 'bazooka', 'molotov', 'molotov', 'apfsds', 'knife'];
@@ -1531,6 +1534,7 @@ export class WeaponSystem {
   _fire(d) {
     if (!(this.game.rules && this.game.rules.infiniteAmmo)) this.mag[this.cur]--; // /gamerule infiniteAmmo true → mag never depletes (no reload, unlimited)
     this.cooldown = 60 / d.rpm;
+    const _ft = FIRE_TRAUMA[d.class]; if (_ft) this.game.engine.addTrauma(_ft); // heavy-class fire kick (sniper/shotgun/launcher/cannon)
     if (d.enBloc && this.mag[this.cur] <= 0) this.game.audio.garandPing(); // empty clip ejects with the iconic ping
     const _climb = 1 + this._recoilStreak * (d.recoilClimb || 0);
     this.bloom = Math.min(this.bloom + d.bloom * _climb, 0.09);
@@ -1608,7 +1612,7 @@ export class WeaponSystem {
       }
       if (eHit && (!wHit || eHit.dist <= wHit.dist)) {     // a body always stops the round
         const hs = eHit.head && !eHit.enemy.def.boss;      // no headshot cheese on the boss — head = body
-        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), 'gun', eHit.point);
+        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), 'gun', eHit.point, 'host', hs);
         this.game.effects.tracer(muzzle, eHit.point, d.accent);
         if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
         else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }

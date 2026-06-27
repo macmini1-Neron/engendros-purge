@@ -1078,12 +1078,23 @@ export class MP {
     const col = (d.col != null) ? d.col : e.col.body;
     this.game.effects.stuffing(top, col, d.bs ? 44 : (d.el ? 30 : 16), d.bs ? 9 : (d.el ? 8 : 6)); // boss/elite get the bigger burst
     if (d.ex) this.game.effects.explosion(top, d.ex); else this.game.audio.enemyDie();              // exploder death blast (explosion() plays its own boom)
+    if (d.k === this.myId) { // I scored this kill → local kill-punch + hit-stop (mirrors the solo/host path in enemies.damage; runs for ALL clients so the killer gate is essential)
+      const big = !!d.bs || !!d.el;
+      if (this.game.engine) this.game.engine.addTrauma(big ? 0.5 : 0.16);
+      if (this.game.hitStop) this.game.hitStop(big ? 0.09 : 0.05);
+    }
     e.alive = false; e.mesh.visible = false;
     const i = this.game.enemies.active.indexOf(e); if (i >= 0) this.game.enemies.active.splice(i, 1);
     this.ghosts.delete(d.id);
   }
   // ---- combat ----
-  claimHit(e, dmg, src) { this.net.send('hit', { eid: e.id, dmg, src }); }
+  claimHit(e, dmg, src) {
+    this.net.send('hit', { eid: e.id, dmg, src });
+    // A client's enemies.damage() early-returns here, BEFORE the host-side impact juice runs — so pop a local
+    // (optimistic) damage number now, at the enemy's body, so co-op hits feel the same as solo. One spot covers
+    // every local damage source (gun/pellet/melee). Kill-punch + hit-stop arrive separately via _clientEnemyDie.
+    if (this.game.hud && this.game.hud.popDamage) this.game.hud.popDamage({ x: e.pos.x, y: e.pos.y + e.height * 0.6, z: e.pos.z }, dmg, {});
+  }
   creditKill(killerId, e) {
     this.net.sendTo(killerId, 'kill', { reward: KILL_CASH, name: e.name, type: e.type, x: e.pos.x, z: e.pos.z, elite: !!e.isElite, score: e.def.reward + (e.def.boss ? 1500 : 0) });
     this.feed(((this.roster.get(killerId) || {}).name) || 'Player', e.name);
