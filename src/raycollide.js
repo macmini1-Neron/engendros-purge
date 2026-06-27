@@ -1,4 +1,6 @@
-// raycollide.js — THREE-free ray↔shape narrowphase math for the shooting hitscan path.
+// raycollide.js — THREE-free ray↔shape narrowphase math for world.rayHit. The shooting hitscan is the
+// primary consumer, but the refine is global to world.rayHit (enemy LOS, throwables, remote shots also
+// get the tighter round hit); movement collision stays on queryAABB, a known mild LOS-vs-collision asymmetry.
 // Pure numbers in/out (no THREE) so it is node-testable AND worker-safe. Directions are
 // assumed UNIT length. Functions return the nearest t >= 0 along the ray, or null. When an
 // `out` object is passed, the unit surface normal is written to out.nx/out.ny/out.nz.

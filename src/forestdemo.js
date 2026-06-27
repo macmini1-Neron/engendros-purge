@@ -443,7 +443,7 @@ export class ForestDemo {
   _applyLogDrop(log, drop) {
     if (!log || !(drop > 0)) return;
     if (log.mesh) log.mesh.position.y -= drop;
-    for (const bx of (log.boxes || [])) { bx.min.y -= drop; bx.max.y -= drop; }
+    for (const bx of (log.boxes || [])) { bx.min.y -= drop; bx.max.y -= drop; if (bx.cap) { bx.cap.ay -= drop; bx.cap.by -= drop; } } // keep the precise shooting capsule aligned with the dropped AABB (else a regrounded log is unshootable)
     if (log.part) { log.part.min[1] -= drop; log.part.max[1] -= drop; }
     for (const seg of (log.segs || [])) { if (seg.part) { seg.part.min[1] -= drop; seg.part.max[1] -= drop; } }
   }
