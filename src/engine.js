@@ -27,6 +27,7 @@ export class Engine {
     this._renderScale = 1;                                   // graphics-quality render scale (×DPR)
     this._baseDpr = Math.min(window.devicePixelRatio || 1, 2);
     this._adaptive = false;                                  // adaptive resolution on/off
+    this._adaptCd = 0;                                       // updateAdaptive() realloc cooldown (frames); explicit init for clarity
     // Bloom post-processing — lazily built on first enable (setBloom). World-only:
     // the world pass goes through the composer, the viewmodel is forward-drawn on top.
     this._bloomOn = false; this._composer = null; this._bloomPass = null;
@@ -117,6 +118,27 @@ export class Engine {
   // Dim a borrowed light — but ONLY if it hasn't since been re-lent to a newer owner (token guard),
   // so a late release can never snuff out someone else's glow.
   releaseFxLight(h) { if (h && h.light && h.light.userData.fxTok === h.tok) h.light.intensity = 0; }
+
+  // Pooled remote-player flashlight SpotLights. A RemotePlayer used to `new SpotLight` + scene.add on join
+  // and scene.remove on leave — each forces THREE to recompile EVERY lit shader (the co-op join/leave hitch,
+  // same class of stall as the FX lights above). The pool is built on first borrow (ONE compile, during a
+  // co-op load), then reused forever: the scene's light count never changes again, so joins/leaves are free.
+  // Idle (intensity-0) spots are per-vertex cheap, and only exist once a co-op session actually starts.
+  acquireFlashLight() {
+    if (!this._flashPool) {
+      this._flashPool = [];
+      for (let i = 0; i < 6; i++) {                        // co-op cap is 6 players → ≤5 remote cones; 6 = margin
+        const L = new THREE.SpotLight(0xfff0d0, 0, 60, 0.62, 0.4, 0.0), T = new THREE.Object3D();
+        L.target = T; L.position.set(0, -999, 0); this.scene.add(L); this.scene.add(T);
+        this._flashPool.push({ light: L, target: T, inUse: false });
+      }
+    }
+    for (const h of this._flashPool) if (!h.inUse) { h.inUse = true; h.light.intensity = 0; return h; }
+    const L = new THREE.SpotLight(0xfff0d0, 0, 60, 0.62, 0.4, 0.0), T = new THREE.Object3D(); // backstop overflow (one rare recompile)
+    L.target = T; this.scene.add(L); this.scene.add(T);
+    const h = { light: L, target: T, inUse: true }; this._flashPool.push(h); return h;
+  }
+  releaseFlashLight(h) { if (h) { h.inUse = false; h.light.intensity = 0; h.light.position.set(0, -999, 0); } }
 
   _buildSky() {
     // Big gradient dome.
@@ -220,8 +242,11 @@ export class Engine {
   // Called each frame with the smoothed frame time; nudges render scale to hold ~60fps.
   updateAdaptive(frameMs) {
     if (!this._adaptive || !(frameMs > 0)) return;
+    // A scale change reallocates the composer render targets — expensive. Gate it to ~every 30 frames so
+    // the realloc can't fire every frame (the "cure" hitching) or oscillate across the target-band boundary.
+    if (this._adaptCd > 0) { this._adaptCd--; return; }
     const next = adaptiveStep(this._renderScale, frameMs, { targetMs: 16.7 });
-    if (next !== this._renderScale) { this._renderScale = next; this._applyPixelRatio(); }
+    if (next !== this._renderScale) { this._renderScale = next; this._applyPixelRatio(); this._adaptCd = 30; }
   }
   setShadowQuality(px) {
     const want = px | 0;

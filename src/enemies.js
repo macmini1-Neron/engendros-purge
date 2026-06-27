@@ -1096,7 +1096,9 @@ export class EnemyManager {
       }
       return true;
     }
-    const hpv = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.6, e.pos.z);
+    // scratch (not `new Vector3`) — this non-kill hit path fires on EVERY chip hit, and an AoE blast in a
+    // horde routes N of them through one frame; stuffing() reads pos synchronously (copied in _spawn), no re-entry.
+    const hpv = (this._hitPuff || (this._hitPuff = new THREE.Vector3())).set(e.pos.x, e.pos.y + e.height * 0.6, e.pos.z);
     this.game.effects.stuffing(hpv, e.col.body, 4, 3);
     if (_juice) this.game.hud.popDamage(hitPoint || hpv, amount, { crit });
     if (source !== 'explosion') this.game.audio.enemyHurt();
