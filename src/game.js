@@ -76,7 +76,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-23 15:10';
+const GAME_BUILD = '2026-06-26 22:19';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -110,7 +110,7 @@ class Game {
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
-    this.rules = { god: false, doMobSpawning: true, sendCommandFeedback: true };  // «ПОЛИГОН» gamerules
+    this.rules = { god: false, doMobSpawning: true, doDaylightCycle: true, infiniteAmmo: false, fallDamage: true, sendCommandFeedback: true };  // «ПОЛИГОН» gamerules
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
@@ -1237,8 +1237,10 @@ class Game {
     this._updateAdaptiveMusic();
     // World clock advances every frame in every mode. Host/solo = authoritative (advances the truth + fires timed
     // transitions via _stepMinute); clients predict locally for smooth HH:MM and reconcile to the host's 'night' push.
-    if (hostSim) this._worldClock.advance(dt, this._stepMinute);
-    else this._worldClock.advance(dt);
+    if (this.rules.doDaylightCycle !== false) {            // /gamerule doDaylightCycle false freezes the day/night clock (time of day stays put, like MC's doDaylightCycle)
+      if (hostSim) this._worldClock.advance(dt, this._stepMinute);
+      else this._worldClock.advance(dt);
+    }
     if (this.mode === 'longnight' && hostSim) this._surviveTime += dt; // run-duration record for the game-over screen (longnight only)
     this.dayNight.renderFrom(this._worldClock); // sky from minute-of-day + alpha (host + client)
     this.hud.setClock(this.dayNight.info(), this._worldClock);

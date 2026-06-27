@@ -818,7 +818,7 @@ export class MP {
     n.on('boss', (d) => { if (d.hide) g.hud.hideBoss(); else { g.hud.setBoss(d.frac, d.name); if (d.pip != null) g.hud.setBossPip(d.pip); } });
     n.on('wave', (d) => { g.waves.wave = d.n; g.hud.setWave(d.n); g.hud.bigMessage(d.label, d.sub); }); // continuous: clients just track the wave (no shop)
     n.on('wavetag', (d) => { if (!this.isHost && d) g.hud.setWaveTag(d.tags || []); });                  // host-authoritative special-wave tag (set/clear)
-    n.on('night', (d) => { if (!this.isHost && d) g.dayNight.applyNetState(d); });                       // host-authoritative world clock + day/night + blood-moon (clients reconcile, never roll their own)
+    n.on('night', (d) => { if (!this.isHost && d) { if (typeof d.dc === 'boolean') g.rules.doDaylightCycle = d.dc; g.dayNight.applyNetState(d); } }); // host-authoritative world clock + day/night + blood-moon (clients reconcile, never roll their own); dc mirrors the host's day/night-cycle freeze so the client stops advancing too (no creep-and-snap)
     n.on('timereq', (d, from) => { if (this.isHost && d && Number.isFinite(d.min)) g.dayNight.setMinuteOfDay(d.min); }); // client asked host to set time → host applies (setMinuteOfDay re-renders + broadcasts)
     n.on('clock', (d) => { if (!this.isHost && d) { if (typeof d.t === 'number') g._surviveTime = d.t; if (typeof d.left === 'number') g.hud.setEnemiesLeft(d.left); } }); // host-authoritative survive-clock + enemies-left
     n.on('waveclear', (d) => { if (g.state === 'playing') g.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); });
@@ -1289,7 +1289,7 @@ export class MP {
   }
   worldTimeState() {
     const g = this.game;
-    return { mode: g.mode || 'purge', active: true, total: g._worldClock.total, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon };
+    return { mode: g.mode || 'purge', active: true, total: g._worldClock.total, n: g.dayNight.nightCount, blood: g.dayNight.bloodMoon, dc: g.rules.doDaylightCycle !== false }; // dc = day/night cycle running (false = host froze it via /gamerule doDaylightCycle false)
   }
   sendWorldTime(pid = null) {
     if (!this.active || !this.isHost) return;

@@ -186,10 +186,12 @@ export class DevConsole {
     });
 
     // doMobSpawning = freeze natural/wave spawns (/summon still works); spawn_mobs = the 1.21.11+ MC alias.
+    // doDaylightCycle = freeze the day/night clock (time of day stays put); doDayCycle = short alias.
+    // infiniteAmmo = mag never depletes (no reload, unlimited). fallDamage = take fall trauma (false = no fall damage / leg break).
     // sendCommandFeedback = show/hide the console command echo + success lines (Minecraft's chat-feedback rule).
-    const RULE_KEY = { god: 'god', doMobSpawning: 'doMobSpawning', spawn_mobs: 'doMobSpawning', sendCommandFeedback: 'sendCommandFeedback' };
+    const RULE_KEY = { god: 'god', doMobSpawning: 'doMobSpawning', spawn_mobs: 'doMobSpawning', doDaylightCycle: 'doDaylightCycle', doDayCycle: 'doDaylightCycle', infiniteAmmo: 'infiniteAmmo', fallDamage: 'fallDamage', sendCommandFeedback: 'sendCommandFeedback' };
     this.reg.register('gamerule', {
-      args: [{ name: 'rule', type: 'enum', choices: ['god', 'doMobSpawning', 'spawn_mobs', 'sendCommandFeedback'] }, { name: 'value', type: 'enum', choices: ['true', 'false'] }], // Minecraft uses true/false (no on/off)
+      args: [{ name: 'rule', type: 'enum', choices: ['god', 'doMobSpawning', 'spawn_mobs', 'doDaylightCycle', 'doDayCycle', 'infiniteAmmo', 'fallDamage', 'sendCommandFeedback'] }, { name: 'value', type: 'enum', choices: ['true', 'false'] }], // Minecraft uses true/false (no on/off)
       run: (a) => {
         const on = a.value === 'true';
         const key = RULE_KEY[a.rule];
@@ -200,6 +202,18 @@ export class DevConsole {
 
     // /fly = player fly mode (noclip free movement) with the sim STILL running — NOT the N freecam (which freezes spawns/enemies).
     this.reg.register('fly', { args: [], run: () => { g.flyMode = !g.flyMode; if (g.flyMode) g.player.onGround = false; g.hud.bigMessage(g.flyMode ? '✈ FLY' : 'FLY OFF', g.flyMode ? 'WASD fly · Space up · Ctrl/C down · world keeps running' : ''); return `fly ${g.flyMode ? 'on' : 'off'}`; } });
+
+    // /test = one-shot sandbox: god + freeze spawns + day/night, no fall damage, fly on, wipe all current Engendros.
+    this.reg.register('test', { args: [], run: () => {
+      g.rules.god = true;                   // invulnerable
+      g.rules.doMobSpawning = false;        // no new natural/wave spawns
+      g.rules.doDaylightCycle = false;      // freeze the day/night clock
+      g.rules.fallDamage = false;           // no fall trauma / leg break
+      g.flyMode = true; g.player.onGround = false;             // fly mode on (world keeps running)
+      const n = g.enemies.aliveCount; g.enemies.clearAll();    // wipe current enemies
+      g.hud.bigMessage('🧪 TEST SANDBOX', `god · no spawns · time frozen · no fall · fly · cleared ${n}`);
+      return `test sandbox ON — god · spawns off · time frozen · fall off · fly on · cleared ${n} Engendros`;
+    } });
   }
 
   // ---- DOM ----
@@ -357,7 +371,7 @@ export class DevConsole {
       `Azimuth: ${formatUglomer(yawToMils(p.yaw))}  (угломер 60-00 · grid-N=+Z · CW→+X)`, // authoritative world datum (bearing.js). NB: the Facing line above uses the Minecraft −Z=north frame, so +Z reads "south" there but 00-00 (north) here — intentional.
       '',
       `Map: ${g.mapId}`,
-      `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}${g.rules && !g.rules.doMobSpawning ? '  ·  NO-SPAWN' : ''}`,
+      `Gamemode: ${g.mode}${g.rules && g.rules.god ? '  ·  GOD' : ''}${g.rules && !g.rules.doMobSpawning ? '  ·  NO-SPAWN' : ''}${g.rules && g.rules.doDaylightCycle === false ? '  ·  TIME FROZEN' : ''}${g.rules && g.rules.infiniteAmmo ? '  ·  ∞AMMO' : ''}${g.rules && g.rules.fallDamage === false ? '  ·  NO-FALL' : ''}`,
       `Wave ${g.waves.wave}   ·   enemies ${g.enemies.aliveCount}`,
       `Day #${di.n}  ${di.night ? 'NIGHT' : 'DAY'}${di.blood ? '  · BLOOD MOON' : ''}`,
       `HP ${Math.round(p.hp)}/${p.maxHp}   ARM ${Math.round(p.armor)}   food ${Math.round(p.hunger)}`,
