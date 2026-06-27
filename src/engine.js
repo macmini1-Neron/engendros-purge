@@ -239,27 +239,35 @@ export class Engine {
   }
 
   update(dt) {
+    this._lastDt = dt;                                    // stashed for the trauma-shake decay in render() (no dt there)
     if (this.clouds) this.clouds.position.x += dt * 1.2;
     if (this.clouds && this.clouds.position.x > 300) this.clouds.position.x -= 600;
     // Keep sky centered on camera.
     this.sky.position.copy(this.camera.position);
   }
 
-  shake(a) { this._shake = Math.min(0.6, (this._shake || 0) + a); }
+  // Trauma-model screen shake (Eiserloh, GDC 2016): callers add 0..1 of "trauma"; the actual
+  // shake is trauma² so a big boom BOOMS and a small tick barely quivers — one knob, huge dynamic
+  // range. Legacy shake(a) routes straight into trauma at the same numeric range it always used
+  // (an explosion's shake(0.5) lands at ~the old offset, so existing call-sites keep their feel).
+  addTrauma(t) { this._trauma = Math.min(1, (this._trauma || 0) + t); }
+  shake(a) { this.addTrauma(a); }
 
   render() {
     this.renderer.info.reset(); // once per frame; both passes below accumulate into info.render for the F3 stats
     // Apply camera shake as a transient per-frame offset.
     // The player/controller re-sets camera.position authoritatively every frame
     // before render() is called, so this offset is safely discarded next frame.
-    if (this._shake > 0) {
-      const s = this._shake * 0.3;
-      this.camera.position.x += (Math.random() - 0.5) * 2 * s;
-      this.camera.position.y += (Math.random() - 0.5) * 2 * s;
-      this.camera.position.z += (Math.random() - 0.5) * 2 * s;
-      this._shake *= 0.85;
-      if (this._shake < 0.005) this._shake = 0;
-    }
+    const tr = this._trauma || 0;
+    if (tr > 0.001) {
+      const m = tr * tr;                                  // quadratic: reserves the ceiling for big hits
+      const s = m * 0.6;                                  // positional magnitude (shake(0.5)→0.15, matches the old linear feel; trauma 1.0→0.6, a real wallop)
+      this.camera.position.x += (Math.random() * 2 - 1) * s;
+      this.camera.position.y += (Math.random() * 2 - 1) * s;
+      this.camera.position.z += (Math.random() * 2 - 1) * s;
+      this.camera.rotateZ((Math.random() * 2 - 1) * m * 0.012); // tiny roll kick (transient; player re-sets rotation next frame) — only meaningful at high trauma
+      this._trauma = Math.max(0, tr - (this._lastDt || 0.016) * 2.8); // decay per-second (frame-rate independent): full trauma settles in ~0.35 s
+    } else this._trauma = 0;
     // Two-pass render: world first, then wipe depth and draw the viewmodel on top.
     const r = this.renderer, cam = this.camera, sc = this.scene;
     // Refresh the (autoUpdate-off) shadow map every other frame — must be set before the world pass

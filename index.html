@@ -108,8 +108,8 @@
     #cross i { position: absolute; background: rgba(255,255,255,.85); box-shadow: 0 0 2px rgba(0,0,0,.6); transition: all .05s; }
     #cross .h { top: 50%; height: 2px; width: 7px; transform: translateY(-50%); }
     #cross .v { left: 50%; width: 2px; height: 7px; transform: translateX(-50%); }
-    #cross .l { right: 58%; } #cross .r { left: 58%; }
-    #cross .t { bottom: 58%; } #cross .b { top: 58%; }
+    #cross .l { right: calc(50% + var(--cross-gap, 3.2px)); } #cross .r { left: calc(50% + var(--cross-gap, 3.2px)); }
+    #cross .t { bottom: calc(50% + var(--cross-gap, 3.2px)); } #cross .b { top: calc(50% + var(--cross-gap, 3.2px)); }
     #cross .dot { left: 50%; top: 50%; width: 2px; height: 2px; transform: translate(-50%,-50%); border-radius: 50%; }
 
     #hitmarker { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(45deg); width: 22px; height: 22px; opacity: 0; }
@@ -245,6 +245,7 @@
     #survival .spl { color: #c9a8ff; }
     #ammonum { font-family: var(--font-stencil), var(--font-display); font-size: 38px; font-weight: 600; line-height: 1; color: var(--paper); }
     #ammonum .res { font-size: 18px; color: var(--ink-dim); font-weight: 400; }
+    #ammonum.low { color: #ff4d2e; } /* low-ammo telegraph (reserve keeps its own --ink-dim colour) */
     #wepname { font-family: var(--font-display); font-size: 15px; letter-spacing: 1px; margin-top: 5px; font-weight: 600; text-transform: uppercase; }
     #wepclass { font-size: 11.5px; color: var(--ink-dim); letter-spacing: .3px; }
 
@@ -1440,6 +1441,7 @@
         <div class="srow"><span>Antialiasing</span><b id="s-aa" style="cursor:pointer">OFF</b></div>
         <div class="srow"><span>Bloom (glow)</span><b id="s-bloom" style="cursor:pointer">ON</b></div>
         <div class="srow"><span>Show FPS</span><b id="s-showfps" style="cursor:pointer">OFF</b></div>
+        <div class="srow"><span>Damage numbers</span><b id="s-dmgnum" style="cursor:pointer">ON</b></div>
         <label class="srow"><span>Player name</span><input type="text" id="s-nick" maxlength="14" placeholder="Player" style="background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.18); border-radius: 6px; color: #fff; padding: 6px 10px; font: inherit; outline: none;"><b></b></label>
       </div>
       <button class="btn sec" id="s-fullscreen">⛶ TOGGLE FULLSCREEN</button>

@@ -115,6 +115,7 @@ class Game {
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
+    this._hitStopT = 0; this._hitStopCd = 0;           // hit-stop timer + re-arm cooldown (real seconds); see hitStop() + _frame
     this.dbgHitboxes = false; // F3+B collision-hitbox overlay toggle (see debughitbox.js)
     this.hitch = new HitchLogger(); installStress(this); // dev perf stress harness (GAME.stress) — never auto-runs
     this._stressName = null;
@@ -249,7 +250,14 @@ class Game {
   }
 
   _wireUI() {
-    const click = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('click', fn); };
+    // Every menu/flow button bound through this helper now speaks: a click tone (the first click also
+    // unlocks WebAudio — init() is idempotent) + a hover blip. Fixes the mute entry doors (DEPLOY / PURGE /
+    // pause / TRY-AGAIN had no sound or hover). Inventory/Armory buttons keep their own sounds (not via this).
+    const click = (id, fn) => {
+      const e = document.getElementById(id); if (!e) return;
+      e.addEventListener('click', (ev) => { try { this.audio.init(); } catch (_) {} if (this.audio.uiClick) this.audio.uiClick(); fn(ev); });
+      e.addEventListener('mouseenter', () => { if (this.audio.uiHover) this.audio.uiHover(); });
+    };
     // build version + release time (to the minute), shown in both the main menu and the co-op lobby corner
     const verHTML = `ENGENDROS PURGE <b>${GAME_VERSION}</b> (${GAME_BUILD})`;
     for (const id of ['lobby-version', 'menu-version']) { const e = document.getElementById(id); if (e) e.innerHTML = verHTML; }
@@ -1121,6 +1129,18 @@ class Game {
     m.setStress(Math.max(0, Math.min(1, (0.35 - hpFrac) / 0.35)));
   }
 
+  // Freeze-frame on impact. Caller passes a duration in seconds; we keep the LONGEST pending request
+  // (overlapping kills don't stack into a lag-spike) and hard-cap it so it can never read as a stutter.
+  // Skipped on the authoritative co-op host: simScale (see _frame) scales the WHOLE _updatePlaying, so a
+  // host freeze would stall enemies/waves AND pause the esnap/pstate broadcast for every client. A re-arm
+  // cooldown keeps a headshot/melee streak from chaining into continuous slow-mo (judder).
+  hitStop(sec) {
+    if (this.mp && this.mp.active && this.mp.isHost) return;
+    if (this._hitStopCd > 0) return;
+    this._hitStopT = Math.min(0.12, Math.max(this._hitStopT || 0, sec));
+    this._hitStopCd = 0.2;
+  }
+
   _frame(t) {
     requestAnimationFrame(this._bound);
     let dt = (t - this._last) / 1000; this._last = t;
@@ -1139,10 +1159,15 @@ class Game {
     }
     const frameDt = Math.min(dt, 0.05);
     if (this.audio.music) this.audio.music.update(frameDt); // score smoothing runs in every state
+    // Hit-stop: near-freeze the SIM (not the render) for a few ms after a meaty kill so the impact
+    // reads as weight. The timer drains in REAL wall-clock dt; simScale throttles only what the sim sees.
+    if (this._hitStopT > 0) this._hitStopT -= dt;
+    if (this._hitStopCd > 0) this._hitStopCd -= dt;     // re-arm cooldown drains in real time (I2: prevents chain-headshot judder)
+    const simScale = this._hitStopT > 0 ? 0.04 : 1;
 
     let interp = false, alpha = 0;
     if (this.state === 'playing' && this._fixedStep) {
-      this._acc += Math.min(dt, 0.25);                       // larger cap than the sim clamp; bounds catch-up
+      this._acc += Math.min(dt, 0.25) * simScale;            // larger cap than the sim clamp; bounds catch-up
       let n = 0;
       while (this._acc >= FIXED_STEP && n < MAX_SUBSTEPS && this.state === 'playing') { // re-check state: a sub-step (death/wipe) can leave 'playing'
         this._camPrev.copy(this.engine.camera.position);     // capture BEFORE each step → after the loop, _camPrev is exactly ONE step before _camCur (correct interp interval even when N>1)
@@ -1154,7 +1179,7 @@ class Game {
       if (n > 0) { this._camCur.copy(this.engine.camera.position); alpha = Math.min(this._acc / FIXED_STEP, 1); interp = true; } // clamp alpha so lerpVectors interpolates, never extrapolates
       // n === 0: no sim this frame → camera unchanged; edges NOT consumed (carry to next frame)
     } else if (this.state === 'playing') {
-      this._updatePlaying(frameDt);                          // OFF / non-fixed path = unchanged
+      this._updatePlaying(frameDt * simScale);               // OFF / non-fixed path (default) — hit-stop scales the sim dt
     }
 
     if (this.digManager) this.digManager.update();          // flush dug chunks → one re-mesh each (before chunks.update picks LODs)
@@ -1165,6 +1190,7 @@ class Game {
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
     if (interp) this.engine.camera.position.lerpVectors(this._camPrev, this._camCur, alpha); // smooth between ticks
     if (this.hitboxDebug) this.hitboxDebug.update(this, this.dbgHitboxes && this.state === 'playing'); // F3+B collision overlay
+    if (this.hud && this.hud.tickDamage) this.hud.tickDamage(frameDt); // floating damage numbers — project against the TRUE sim camera, before the shake offset is applied in render()
     this.engine.update(frameDt); this.engine.render();
     if (interp) this.engine.camera.position.copy(this._camCur); // restore TRUE pos for F3/devconsole/raycasts/next prev
     { const _ri = this.engine.renderer.info.render; this._draws = _ri.calls; this._tris = _ri.triangles; } // F3 stats — read post-render (Three.js resets info per render)
