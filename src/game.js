@@ -115,7 +115,7 @@ class Game {
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
-    this._hitStopT = 0;                                // hit-stop timer (real seconds remaining); see hitStop() + _frame
+    this._hitStopT = 0; this._hitStopCd = 0;           // hit-stop timer + re-arm cooldown (real seconds); see hitStop() + _frame
     this.dbgHitboxes = false; // F3+B collision-hitbox overlay toggle (see debughitbox.js)
     this.hitch = new HitchLogger(); installStress(this); // dev perf stress harness (GAME.stress) — never auto-runs
     this._stressName = null;
@@ -1131,7 +1131,15 @@ class Game {
 
   // Freeze-frame on impact. Caller passes a duration in seconds; we keep the LONGEST pending request
   // (overlapping kills don't stack into a lag-spike) and hard-cap it so it can never read as a stutter.
-  hitStop(sec) { this._hitStopT = Math.min(0.12, Math.max(this._hitStopT || 0, sec)); }
+  // Skipped on the authoritative co-op host: simScale (see _frame) scales the WHOLE _updatePlaying, so a
+  // host freeze would stall enemies/waves AND pause the esnap/pstate broadcast for every client. A re-arm
+  // cooldown keeps a headshot/melee streak from chaining into continuous slow-mo (judder).
+  hitStop(sec) {
+    if (this.mp && this.mp.active && this.mp.isHost) return;
+    if (this._hitStopCd > 0) return;
+    this._hitStopT = Math.min(0.12, Math.max(this._hitStopT || 0, sec));
+    this._hitStopCd = 0.2;
+  }
 
   _frame(t) {
     requestAnimationFrame(this._bound);
@@ -1154,6 +1162,7 @@ class Game {
     // Hit-stop: near-freeze the SIM (not the render) for a few ms after a meaty kill so the impact
     // reads as weight. The timer drains in REAL wall-clock dt; simScale throttles only what the sim sees.
     if (this._hitStopT > 0) this._hitStopT -= dt;
+    if (this._hitStopCd > 0) this._hitStopCd -= dt;     // re-arm cooldown drains in real time (I2: prevents chain-headshot judder)
     const simScale = this._hitStopT > 0 ? 0.04 : 1;
 
     let interp = false, alpha = 0;

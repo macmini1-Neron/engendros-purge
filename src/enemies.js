@@ -1063,9 +1063,12 @@ export class EnemyManager {
       this._bossHit(e, hitPoint, effective, attacker);                        // thunk + yellow crosshair, or weak tink
     }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
-    // Impact juice (host/solo path — the MP-client early-returns above). Skip DoT / instakill-bury so
-    // a burn tick or a building cave-in never spams numbers or punches the camera off-screen.
-    const _juice = source !== 'crush' && source !== 'fire' && source !== 'burn' && source !== 'radiation' && amount < 900;
+    // Impact juice (host/solo path — the MP-client early-returns above). Gated to the LOCAL player's own
+    // actions (attacker==='host' is the host's local-player sentinel): otherwise the host would pop numbers,
+    // shake, and hit-stop for EVERY other player's relayed hits/kills (each client gets its own juice via
+    // claimHit/_clientEnemyDie). Solo (!mp.active) always juices. Skip DoT / instakill-bury (number/punch spam).
+    const _juice = (!_mp || !_mp.active || attacker === 'host')
+      && source !== 'crush' && source !== 'fire' && source !== 'burn' && source !== 'radiation' && amount < 900;
     if (e.hp <= 0) {
       e.alive = false; e.mesh.visible = false;
       const top = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
