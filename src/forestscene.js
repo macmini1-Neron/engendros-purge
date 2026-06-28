@@ -14,6 +14,7 @@ import { DebrisPool } from './destruct-debris.js';
 import { ForestDemo } from './forestdemo.js';
 import { makeGrassTuft, makeFlowerPatch, makeReedClump, makeShrub } from './props/generators/groundcover.js';
 import { voxelMaterial, MeshBuilder } from './util.js';
+import { grassWindMaterial } from './grass-wind.js';
 
 export class ForestScene {
   constructor(game) {
@@ -36,7 +37,7 @@ export class ForestScene {
   _scatterGroundcover() {
     const terr = this.world.terrain, HALF = this.world.HALF || 200;
     const R = Math.min(HALF - 8, 138);                 // keep groundcover to the playable wood, not the far map edge
-    const gcMat = voxelMaterial();
+    const gcMat = grassWindMaterial();                 // the wind world-tell: groundcover bends downwind, gusting
     const reserved = (x, z) => { for (const r of this.trees._reserved) { const dx = x - r.x, dz = z - r.z; if (dx * dx + dz * dz < r.r * r.r) return true; } return false; };
     const tmp = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), scl = new THREE.Vector3();
     const place = (makeFn, nVariants, count, sLo, sHi, castShadow) => {

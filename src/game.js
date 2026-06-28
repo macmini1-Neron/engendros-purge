@@ -15,6 +15,8 @@ import { LootManager } from './loot.js';
 import { Forest } from './forest.js';
 import { installDemoBuilding } from './demobuilding.js';
 import { ForestAtmosphere } from './forestatmos.js';
+import { WIND } from './wind.js';
+import { updateGrassWind } from './grass-wind.js';
 import { HitboxDebug } from './debughitbox.js';
 import { ForestScene } from './forestscene.js';
 import { installArenaClocks } from './arenaclocks.js';
@@ -37,6 +39,7 @@ import { Effects } from './effects.js';
 import { registerModel } from './props/registry.js';
 import { NightPost } from './nightpost.js';
 import { Mortar } from './mortar.js';
+import { ShilkaStation } from './shilka.js';
 import { HitchLogger } from './hitch.js';
 import { installStress } from './stress.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
@@ -137,6 +140,7 @@ class Game {
       this.demoBuilding = installDemoBuilding(this); // no-op on flat maps (arena/steppe untouched)
     }
     this.forestAtmos = (this.mapId === 'forest') ? new ForestAtmosphere(this.engine.scene) : null; // ?map=forest pollen + fireflies
+    if (this.mapId === 'forest') WIND.mountHUD(); // wind field + windsock HUD: steers fire/smoke/motes (the nature-mechanics enabler)
     this.arenaClocks = installArenaClocks(this);   // arena-only: a stand of both live clocks by the spawn
     this.fire = new FireManager(this); // Phase 8: fire SPREAD (molotov→trees↔grass, dies at stone, chars→snaps). Inert on flat maps.
     this.hitboxDebug = new HitboxDebug(this.engine.scene); // F3+B collision-hitbox overlay (Minecraft-style, dev)
@@ -160,6 +164,11 @@ class Game {
     // Y resolved from terrain in ensureBuilt.
     this.mortars = [];
     if (this.mapId === 'steppe') this.mortars.push(new Mortar(this, new THREE.Vector3(-335, 0, -308), 0));
+    // ЗСУ-23-4 «Shilka» drivable AA vehicle. On ?map=forest, parked on open flat ground a bit out from
+    // the origin building cluster (player spawns at 0,30) so it's a short walk to board + drive the terrain.
+    // The constructor samples the terrain under the hull itself (pass y≈0); it grounds per-wheel via _groundY.
+    this.shilkas = [];
+    if (this.mapId === 'forest') this.shilkas.push(new ShilkaStation(this, new THREE.Vector3(24, 0, 10), 0.4, { id: 'shilka-forest' }));
     this.waves = new WaveManager(this);
     this.hud = new HUD(this);
     this.inventory = new Inventory(this); // survival backpack + unified held-item model
@@ -300,7 +309,12 @@ class Game {
       if (this.state === 'paused') this.resume(); else this.input.requestLock();
     });
     this.input.on('lock', () => { if (this.mpMenuOpen) this._closeMpMenu(false); else if (this.state === 'paused') { this.state = 'playing'; this.ui.hideAll(); } });
-    this.input.on('unlock', () => { if (this._intentionalUnlock) { this._intentionalUnlock = false; return; } if (this._invOpen) { this._closeInventory(); return; } if (this.state === 'playing') this.pause(); });
+    this.input.on('unlock', () => {
+      if (this.player && this.player.shilka) { this.player.shilka.onPointerUnlock(); return; } // seated in the Shilka: a dropped pointer-lock opens the radar cursor, not a pause
+      if (this._intentionalUnlock) { this._intentionalUnlock = false; return; }
+      if (this._invOpen) { this._closeInventory(); return; }
+      if (this.state === 'playing') this.pause();
+    });
     document.addEventListener('fullscreenchange', () => this.engine.resize());
   }
 
@@ -333,6 +347,12 @@ class Game {
       // delivered here without dropping fullscreen, so we drive BOTH pause and resume from it. Handled before
       // the state/console guards so it also works while paused — but we never steal the dev-console's own Esc.
       // (On FF/Safari Esc additionally releases pointer-lock and the 'unlock' handler pauses as a fallback.)
+      // Seated in the Shilka, Esc opens the radar/console cursor (never pauses) so the mouse can work the panel.
+      if (code === 'Escape' && this.state === 'playing' && this.player && this.player.shilka) {
+        if (ev) ev.preventDefault();
+        this.player.shilka._setCursorMode(true);
+        return;
+      }
       if (code === 'Escape' && !(this.devconsole && this.devconsole.open) && (this.state === 'playing' || this.state === 'paused')) {
         if (ev) ev.preventDefault();
         if (this.state === 'paused' || this.mpMenuOpen) this.resume(); else this.pause();
@@ -353,6 +373,15 @@ class Game {
       // + LMB fire are read in Mortar.controlUpdate via input.down, so they don't route through here)
       if (this.player.mortar) {
         if (code === 'KeyE') this.player.mortar.dismount();
+        else if (code === 'KeyF') this.toggleFullscreen();
+        else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
+        return;
+      }
+      // ЗСУ-23-4 «Shilka» station: E leave · F fullscreen · M mute. Driving (W/S/A/D/Space/digits/Enter)
+      // + the gunner panel (RMB/LMB/Tab/R/X/V) are read in Shilka.controlUpdate via input.down, so they
+      // don't route through here — must run BEFORE the dev-console (` / T / /) so those keys aren't eaten.
+      if (this.player.shilka) {
+        if (code === 'KeyE') this.player.shilka.dismount();
         else if (code === 'KeyF') this.toggleFullscreen();
         else if (code === 'KeyM') { this.audio.setMuted(!this.audio.muted); this.hud.bigMessage(this.audio.muted ? 'MUTED' : 'SOUND ON'); }
         return;
@@ -393,6 +422,7 @@ class Game {
           if (gun) gun.mount();
           else if (this.nearestNightPost()) { this.nearestNightPost().enter(); } // ННП-23: step up to the eyepieces
           else if (this.nearestMortar()) { this.nearestMortar().mount(); } // 82-ПМ-37: man the indirect-fire station
+          else if (this.nearestShilka()) { this.nearestShilka().mountNearest(this.player.pos); } // ЗСУ-23-4: board the nearest seat (driver hatch / turret)
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
@@ -481,6 +511,11 @@ class Game {
     for (const m of this.mortars) if (m.canMount(this.player.pos)) return m;
     return null;
   }
+  nearestShilka() {
+    if (this.player.mountedGun || this.player.nightPost || this.player.mortar || this.player.shilka) return null;
+    for (const s of this.shilkas || []) if (s.updateNearby(this.player.pos)) return s;
+    return null;
+  }
   // Spotter (v1 minimal): march the look-ray to the ground → range+bearing FROM THE MORTAR to that
   // point (the firing solution the gunner must dial), shown to the spotter + a shared marker. ЛПР-1
   // will later replace the look-ray with a real lased target; the {range,bearing} contract is the same.
@@ -531,12 +566,14 @@ class Game {
   reset() {
     if (this.devconsole && this.devconsole.open) this.devconsole.close();
     if (this._invOpen) { this._invOpen = false; if (this.hud) this.hud.closeInventory(); }
+    if (this.player && this.player.shilka) this.player.shilka.dismount(true); // eject from any Shilka seat before wiping per-run state
     this.player.reset();
     this.enemies.clearAll(); this.loot.reset();
     this._nextTagId = 1; // new run → enemy tag ids restart at 1
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
     for (const m of this.mortars) m.forceReset(); // step away from the ННП-23 (restores lights/FOV/overlay)
+    for (const s of this.shilkas || []) s.forceReset(); // wipe Shilka seat occupancy + state on run reset
     if (this.hud) this.hud.setCompass(null); // body-level overlay — hud.show(false) won't hide it; clear on run reset
     this.world.clearWrecks && this.world.clearWrecks();
     this.build.reset();
@@ -759,6 +796,7 @@ class Game {
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
     for (const m of this.mortars) m.forceReset(); // clear the ННП-23 NV filter/overlay when leaving to menu
+    for (const s of this.shilkas || []) s.forceReset(); // eject from any Shilka seat when leaving to menu
     if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on the way to menu
     this.enemies.clearAll(); if (this.audio.music) this.audio.music.setPlaylist('soviet'); this.hud.show(false);
     this.ui.show('menu'); this.ui.hint.style.display = '';
@@ -915,6 +953,7 @@ class Game {
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
     for (const m of this.mortars) m.forceReset(); // clear the ННП-23 NV filter/overlay on squad-wipe → lobby
+    for (const s of this.shilkas || []) s.forceReset(); // eject from any Shilka seat on squad-wipe → lobby
     if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on squad-wipe → lobby
     this.enemies.clearAll(); this.loot.reset(); this.build.reset(); this.waves.reset();
     this._clearFlares();
@@ -1011,6 +1050,7 @@ class Game {
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
     for (const m of this.mortars) m.forceReset(); // clear the ННП-23 NV filter/overlay off the death screen
+    for (const s of this.shilkas || []) s.forceReset(); // eject from any Shilka seat off the death screen
     if (this.hud) this.hud.setCompass(null); // tear the буссоль overlay down on death
     if (this.audio.music) { this.audio.music.setScene('gameover'); this.audio.music.setIntensity(0.85); this.audio.music.setStress(0); } this.hud.show(false);
     // persistent meta (per mode) + lifetime tallies
@@ -1178,15 +1218,19 @@ class Game {
 
     for (const np of this.nightPosts) np.ensureBuilt(); // place the ННП-23 prop once its spec registers (async boot fetch)
     for (const m of this.mortars) { m.ensureBuilt(); m.update(dt); } // mortar: lazy place + tick in-flight shells (even unseated)
+    for (const s of this.shilkas || []) s.update(dt); // Shilka: rig/radar/body-dynamics + drones + projectile visuals tick even when unseated
     if (this._mortarMark) { this._mortarMarkT -= dt; if (this._mortarMarkT <= 0) { this.engine.scene.remove(this._mortarMark); this._mortarMark.geometry.dispose(); this._mortarMark.material.dispose(); this._mortarMark = null; } } // fade the spotter beacon
     if (this.mp.active && this.mp.frozen) {
       if (this.player.mountedGun) this.player.mountedGun.dismount();
       if (this.player.nightPost) this.player.nightPost.exit();
       if (this.player.mortar) this.player.mortar.dismount();
+      if (this.player.shilka) this.player.shilka.dismount(true); // downed/dead in co-op: eject from the Shilka seat
       this.weapons.cancelMolotov();
       this.hud.setCompass(null); // downed/dead in co-op: weapons.update() is skipped → tear the буссоль overlay down
     }
-    if (this.player.mountedGun) {
+    if (this.player.shilka) {
+      this.player.shilka.controlUpdate(dt); // Shilka: driving (driver seat) / radar+optical fire-control (gunner) / ride-along camera — input + camera handled here
+    } else if (this.player.mountedGun) {
       this.player.mountedGun.controlUpdate(dt); // aim + fire + heat + camera handled here
     } else if (this.player.mortar) {
       this.player.mortar.controlUpdate(dt); // indirect-fire lay (W/S/A/D) + framing camera + fire handled here
@@ -1216,6 +1260,16 @@ class Game {
     if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
     if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
     if (this.forestAtmos) this.forestAtmos.update(dt, this.player.pos, isNight(this._worldClock.minuteOfDay())); // ?map=forest motes
+    if (this.world.cave) this.world.cave.update(dt); // forest cave: torch flicker
+    WIND.update(dt); // global gusting wind: drives fire-spread bias + mote drift + windsock HUD
+    updateGrassWind(dt); // tick the groundcover sway shader (grass bends downwind)
+    // TREMOR telegraph: a heavy boss announces itself through the ground (a building rumble) before you see
+    // it — fair-brutal readability + juice. Client-side visual (each peer rumbles for its own nearby boss).
+    if (this.enemies && this.enemies.active && this.engine.shake) {
+      let bn = 1e9; const pp = this.player.pos;
+      for (const e of this.enemies.active) { if (!e.alive || !e.def || !e.def.boss) continue; const dx = e.pos.x - pp.x, dz = e.pos.z - pp.z, d = Math.hypot(dx, dz); if (d < bn) bn = d; }
+      if (bn < 34) { const k = 1 - bn / 34; this.engine.shake(0.016 * k * k); }
+    }
     if (this.arenaClocks) this.arenaClocks.update(dt); // arena: drive both spawn-side clocks from the world clock
     this.gramophone.update(dt); // gramophone props: record spin + distance volume + score duck
     this.dayNight.flash.intensity = (!this.player.mountedGun && this.inventory.isHoldingFlashlight() && this.dayNight.flashOn) ? 7 : 0; // flashlight beam = the flashlight is the held item
@@ -1266,10 +1320,15 @@ class Game {
     }
     const _nearMountedGun = this.nearestMountedGun(this.player.pos, (gun) => gun.updateNearby(this.player.pos));
     const _reloadGun = this.nearestMountedGun(this.player.pos, (gun) => gun.near(this.player.pos));
+    const _nearShilka = this.nearestShilka();
     const activeGun = this.player.mountedGun || _nearMountedGun || _reloadGun;
     const mgName = activeGun && activeGun.displayName ? activeGun.displayName : 'mounted gun';
-    if (this.player.mountedGun) {
+    if (this.player.shilka) {
+      this.hud.setInteract(''); // seated in the Shilka: the drive HUD / radar panel are self-contained
+    } else if (this.player.mountedGun) {
       this.hud.setInteract(`Press <b>E</b> to leave the ${mgName}`);
+    } else if (_nearShilka) {
+      this.hud.setInteract(_nearShilka.interactLabel(this.player.pos)); // shows WHICH seat you'd board (driver / gunner / …) by where you stand
     } else if (this.player.nightPost) {
       this.hud.setInteract(''); // at the optic: the controls hint is self-contained in the NV overlay (#nvhint, timed fade)
     } else if (this.nearestNightPost()) {

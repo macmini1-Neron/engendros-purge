@@ -11,15 +11,23 @@
 // from:       [x, y, z]
 // radius:     metres
 // isBlocked:  (candidate) => boolean   — true if a wall occludes the line; optional.
+// wind:       optional { x, z, speed } — unit XZ wind dir + speed (~0..1.3). When present, fire reaches
+//             FARTHER downwind and crawls UPWIND (Far Cry 2): the squared distance is warped by the wind
+//             alignment so the chosen target is wind-biased. Omitted → identical to the old pure behaviour.
 // Returns the chosen candidate object, or null if none qualifies.
-export function nearestIgnitable(from, candidates, radius, isBlocked) {
+export function nearestIgnitable(from, candidates, radius, isBlocked, wind) {
   const r2 = radius * radius;
-  // Gather in-radius, not-taken candidates with their squared horizontal distance.
+  const windy = wind && wind.speed > 0.01;
+  // Gather in-radius, not-taken candidates with their (wind-warped) squared horizontal distance.
   const inRange = [];
   for (const c of candidates) {
     if (c.taken) continue;
     const dx = c.cx - from[0], dz = c.cz - from[2];
-    const d2 = dx * dx + dz * dz;
+    let d2 = dx * dx + dz * dz;
+    if (windy) {
+      const dd = Math.sqrt(d2) || 1e-3, dot = (dx / dd) * wind.x + (dz / dd) * wind.z; // +1 downwind, −1 upwind
+      d2 *= Math.max(0.18, 1 - 0.55 * wind.speed * dot);                                // downwind shrinks (reaches farther), upwind grows
+    }
     if (d2 <= r2) inRange.push({ c, d2 });
   }
   // Nearest first; the LOS ray (the expensive part) is only cast as we walk outward, so a

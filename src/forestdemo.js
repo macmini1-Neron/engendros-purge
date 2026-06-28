@@ -17,7 +17,9 @@ import { FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR, FOLIAGE_FADE_GATE } from './tuning
 // 0–2 trees the camera is inside get their leaf mesh swapped to the fade material so the leaves at your
 // face dissolve. Wood always uses a plain opaque material — only the LEAF mesh ever fades.
 const FOLIAGE_OPAQUE = voxelMaterial();
+FOLIAGE_OPAQUE.color.setHex(0xb6c0a2);   // mute the bright "candy-broccoli" leaf greens toward a cooler, rawer forest (multiplies the vertex colors)
 const FOLIAGE_FADE = foliageFadeMaterial(FOLIAGE_FADE_NEAR, FOLIAGE_FADE_FAR);
+if (FOLIAGE_FADE.color) FOLIAGE_FADE.color.setHex(0xb6c0a2);
 
 const _axis = new THREE.Vector3();
 const _v = new THREE.Vector3();

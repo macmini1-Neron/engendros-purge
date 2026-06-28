@@ -45,7 +45,8 @@ export function buildNavGrid(world, opts = {}) {
   }
   if (slopeAware && world.hasTerrain && world.terrain) {       // block too-steep terrain cells
     const terr = world.terrain;
-    const lim = terr.slopeLimit != null ? terr.slopeLimit : (Math.PI * 35) / 180;
+    // EARTHWORKS: nav uses the stricter HORDE slope limit so the flow-field routes mobs AROUND steep faces / dug walls the player can still climb.
+    const lim = terr.enemySlopeLimit != null ? terr.enemySlopeLimit : (terr.slopeLimit != null ? terr.slopeLimit : (Math.PI * 35) / 180);
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
       if (blocked[i]) continue;

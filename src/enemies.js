@@ -559,7 +559,9 @@ export class EnemyManager {
       // step — they bunch at the cliff base and re-steer. Gated on hasTerrain so flat maps are untouched.
       if (this.world.hasTerrain && !e.def.boss) {   // bosses have their own nav; don't wedge them at cliffs
         const bx = e.pos.x - e.vel.x * dt, bz = e.pos.z - e.vel.z * dt, terr = this.world.terrain;
-        if (slopeBlocks(terr.terrainHeightAt(bx, bz), terr.terrainHeightAt(e.pos.x, e.pos.z), terr.terrainSlopeAt(e.pos.x, e.pos.z), terr.slopeLimit)) {
+        // EARTHWORKS: the horde gives up on a gentler slope than the player → steep faces & dug ditch walls are horde-walls.
+        const hordeLim = terr.enemySlopeLimit != null ? terr.enemySlopeLimit : terr.slopeLimit;
+        if (slopeBlocks(terr.terrainHeightAt(bx, bz), terr.terrainHeightAt(e.pos.x, e.pos.z), terr.terrainSlopeAt(e.pos.x, e.pos.z), hordeLim)) {
           e.pos.x = bx; e.pos.z = bz; e.vel.x = 0; e.vel.z = 0;
         }
       }

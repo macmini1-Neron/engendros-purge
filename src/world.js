@@ -16,6 +16,8 @@ import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 import { makeTerrain } from './terrain.js';
 import { TerrainChunks } from './terrain-chunks.js';
+import { makeTerrainMaterial } from './terrain-tex.js';
+import { CaveVolume } from './cave/volume.js';
 import { seatProp } from './terrain-place.js';
 
 // ─── T2 WALKABLE-TERRAIN feel knobs (Phase 4) — owner-tunable ──────────────────
@@ -331,6 +333,11 @@ export class World {
     seatProp(this, 12, -14, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 0.6 });
     seatProp(this, -14, 11, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: -0.4 });
     seatProp(this, 22, 16, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 1.3 });
+
+    // TRUE 3D cave (real overhangs) carved under the steep massif over the sunken corridor. The floor stays
+    // the heightfield (no sink); the cave adds a density rock roof you walk under. Player-only retreat/ambush.
+    try { this.cave = new CaveVolume(this).build(makeTerrainMaterial()); }
+    catch (e) { console.warn('[forest] cave volume failed — continuing without it', e); this.cave = null; }
   }
 
   _buildDemo() {
@@ -393,7 +400,9 @@ export class World {
   _collideTerrain(pos, vel, r, h, dt) {
     let onGround = false;
     const terr = this.terrain;
-    const slopeLimit = (terr.slopeLimit != null) ? terr.slopeLimit : (Math.PI * 35) / 180;
+    // EARTHWORKS: the player scrambles steeper than the horde (playerSlopeLimit > enemySlopeLimit) → a steep
+    // face or a dug ditch wall blocks the mob but you can still climb out. Falls back to the legacy limit.
+    const slopeLimit = (terr.playerSlopeLimit != null) ? terr.playerSlopeLimit : ((terr.slopeLimit != null) ? terr.slopeLimit : (Math.PI * 35) / 180);
 
     // VERTICAL — gravity, terrain floor under the player, then man-made box tops/bottoms.
     pos.y += vel.y * dt;
@@ -429,6 +438,11 @@ export class World {
       } else if (onGround && pos.y - gy <= TERRAIN_GROUND_FOLLOW_STEP) { // descend smoothly within a step
         pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
       }
+    }
+    // CAVE CEILING — head can't pop through the rock roof (floor is still the heightfield → never fall through).
+    if (this.cave) {
+      const clamped = this.cave.clampHead(pos.x, pos.z, pos.y, h);
+      if (clamped < pos.y) { pos.y = clamped; if (vel.y > 0) vel.y = 0; }
     }
     return onGround;
   }
@@ -859,10 +873,15 @@ export class BuildManager {
 
 // Forest map sky/fog palette (ported from the forest-destruct demo). DayNight._apply re-tints over the
 // global desert SKYC when mapId === 'forest' (runs last → wins). Day = green-tan mist, night = dark green.
+// Cold, desaturated OVERCAST grade — the world is raw/brutal (only the plush enemies are cute), so the
+// forest reads cold & watchful, not a sunny park. The light model = a FLAT overcast: weak warm sun +
+// dominant cool sky-fill, FLOORED so it holds the same cold mood across the whole day (no dusk-dip, no
+// noon candy-park) and stays readable. Bright cool-grey sky/haze.
 const FOREST_SKY = {
-  dFog: new THREE.Color(0x9cb37a), nFog: new THREE.Color(0x141d16),
-  dHemiG: new THREE.Color(0x3a4a24), nHemiG: new THREE.Color(0x0e1610),
-  sun: new THREE.Color(0xffe6b0),
+  dFog: new THREE.Color(0x9aa6ab), nFog: new THREE.Color(0x121a14),     // bright cool-grey overcast haze + dome tint
+  dHemiG: new THREE.Color(0x4c5046), nHemiG: new THREE.Color(0x0d140f), // cool up-bounce off the forest floor
+  hemiSky: new THREE.Color(0x9aa6ab),                                   // the dominant overcast sky-fill
+  sun: new THREE.Color(0xeae0c8),                                       // weak, low-saturation sun
 };
 
 export class DayNight {
@@ -996,16 +1015,26 @@ export class DayNight {
     // ── ?map=forest: re-tint the world GREEN over the desert SKYC blend (runs LAST, so it wins) ──
     if (this.game.world && this.game.world.mapId === 'forest') {
       const t = clamp(L, 0, 1);
-      e.scene.fog.color.copy(FOREST_SKY.nFog).lerp(FOREST_SKY.dFog, t);    // green-tan mist by day → dark green at night
-      e.scene.fog.near = 12 + t * 50; e.scene.fog.far = 50 + t * 300;      // tighter, mistier than the open maps
-      // tint the whole sky DOME green so the haze reads green EVERYWHERE (matches the demo's green bg),
-      // strongest at the horizon where it dissolves into the fog. Only by day (t), so night stays starry.
-      u.top.value.lerp(FOREST_SKY.dFog, 0.45 * t);
-      u.mid.value.lerp(FOREST_SKY.dFog, 0.72 * t);
-      u.bot.value.lerp(FOREST_SKY.dFog, 0.9 * t);
+      const dn = clamp((L - 0.05) / 0.28, 0, 1);                          // "day-ness": 0 deep night → 1 once it's properly day
+      e.scene.fog.color.copy(FOREST_SKY.nFog).lerp(FOREST_SKY.dFog, t);   // cool-grey mist by day → near-black at night
+      e.scene.fog.near = 16 + t * 44; e.scene.fog.far = 62 + t * 205;     // atmospheric perspective (distant massif/trees desaturate & read MASSIVE)
+      // sky DOME → flat grey OVERCAST driven by day-ness (not the sun-elevation t), so the sky reads the same
+      // cold grey at dawn AND noon (round-2 bug: noon snapped back to a cheerful blue). Night (dn→0) stays starry.
+      u.top.value.lerp(FOREST_SKY.dFog, 0.72 * dn);
+      u.mid.value.lerp(FOREST_SKY.dFog, 0.88 * dn);
+      u.bot.value.lerp(FOREST_SKY.dFog, 0.97 * dn);
       e.scene.background.copy(u.mid.value);
-      e.hemi.groundColor.copy(FOREST_SKY.nHemiG).lerp(FOREST_SKY.dHemiG, t); // green up-bounce off the forest floor
-      if (day) e.sun.color.copy(FOREST_SKY.sun);                           // warm sun filtered through the canopy
+      // FLAT OVERCAST light model — OVERRIDE the desert curve: weak warm sun (soft shadows) + a dominant cool
+      // sky-fill, both floored so the same cold mood holds dawn→dusk (no dusk-dip, no noon candy-park).
+      e.sun.intensity = L * 2.1 * 0.58;                                   // cut the key hard (overcast has weak direct sun)
+      if (day) e.sun.color.copy(FOREST_SKY.sun);
+      e.hemi.intensity = 0.44 + 0.52 * dn;                               // cool sky-fill is the MAIN light (floored → readable dawn)
+      e.hemi.color.copy(FOREST_SKY.hemiSky);
+      e.hemi.groundColor.copy(FOREST_SKY.nHemiG).lerp(FOREST_SKY.dHemiG, t);
+      e.ambient.intensity = 0.10 + 0.10 * dn;
+      // no stars during overcast DAY (round-2: "DAY" showed a starfield) — fade them out HARD just after dawn
+      const sf = 1 - clamp((L - 0.04) / 0.12, 0, 1);
+      this.stars.material.opacity *= sf; this.cstars.material.opacity *= sf; this.clines.material.opacity *= sf;
     }
   }
 }

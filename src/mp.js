@@ -9,6 +9,7 @@ import { buildFlopo } from './props.js';
 import { LanNet, Net, makeRoomCode } from './net.js';
 import { canAnte, POKER_BUYIN_TIERS } from './poker/coop.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
+import { resolveSeatClaim } from './shilka-crew.js';
 
 
 // ---------------------------------------------------------------------------
@@ -403,6 +404,12 @@ export class MP {
     if (this.remotes.has(peerId)) { this.remotes.get(peerId).dispose(); this.remotes.delete(peerId); }
     this.roster.delete(peerId); this.pstate.delete(peerId); if (this._lastXf) this._lastXf.delete(peerId);
     if (this.isHost) {
+      // free any Shilka seat the dropped peer held so the vehicle isn't stranded (esp. the driver, seat 0)
+      for (const sh of this.game.shilkas || []) {
+        let freed = false;
+        for (let i = 0; i < sh.seats.length; i++) if (sh.seats[i] === peerId) { sh.seats[i] = null; freed = true; }
+        if (freed) { const pay = sh._statePayload(); this._applyShilkaState(pay); this.net.send('shilkastate', pay); }
+      }
       this.net.broadcast('playerLeft', { id: peerId });   // other clients dispose this character immediately
       this.net.send('roster', this._rosterArr());
       this._renderRoster(); this._checkGameOver();
@@ -718,6 +725,12 @@ export class MP {
     n.on('mortarfire', (d) => { if (this.isHost || !d) return; const m = this._mortarById(d.m); if (m) m.spawnShell(d, false); }); // host → clients: render the identical arc (NO damage)
     n.on('mortarspot', (d, from) => { if (this.isHost && d) this._hostMortarSpot(d.p, from); });                   // spotter → host: compute the firing solution
     n.on('mortarmark', (d) => { if (!this.isHost && d) this.game._dropMortarMark(d); });                           // host → clients: shared target marker + call
+    // ── ЗСУ-23-4 «Shilka» multi-crew ──
+    n.on('shilkaclaim', (d, from) => { if (this.isHost && d) this._hostShilkaClaim(d.want, from, d.v, d.seat, d); }); // client → host: mount/dismount a seat (or gunner radar toggle)
+    n.on('shilkastate', (d) => { if (!this.isHost && d) this._applyShilkaState(d); });                              // host → clients: authoritative seat occupancy + radar flag
+    n.on('shilkamove', (d) => { if (!d || d.pid === this.myId) return; const sh = this._shilkaById(d.v); if (sh && sh.seats[0] === d.pid) sh._recvMove(d); }); // apply only the seated driver's transform — a per-recipient check (the _r relay itself is unconditional); PvE, so a spoofed pid is a non-issue
+    n.on('shilkaaim', (d) => { if (!d || d.pid === this.myId) return; const sh = this._shilkaById(d.v); if (sh && sh.seats[2] === d.pid) { sh.aimAzMils = d.az; sh.aimElDeg = d.el; } }); // mirror the gunner's lay so the turret slews for everyone (apply via _applyTurretAim)
+    n.on('shilkafire', (d) => { if (!d || d.pid === this.myId) return; const sh = this._shilkaById(d.v); if (sh && sh.seats[2] === d.pid) sh._renderRemoteFire(d); }); // teammate burst: tracers + muzzle flash (damage stays host-authoritative via claimHit)
     n.on('proj', (d) => this._clientSpawnProj(d)); // a teammate threw/launched a projectile → render a visual-only ghost that flies + detonates like the real one
     n.on('boom', (d, from) => {                                                                                    // client thrower's explosion → host authoritatively applies enemy AoE + player FF + item clearing + destruction (visual already shown via the 'proj' ghost)
       if (!this.isHost) return;
@@ -838,6 +851,29 @@ export class MP {
     if (d.occ === this.myId) { if (this.game.player.mortar !== m) m._doMount(); }
     else if (this.game.player.mortar === m) { m._doDismount(); }            // someone else took/cleared the seat
   }
+  // ---- ЗСУ-23-4 «Shilka» multi-crew host authority (seat occupancy + shared radar flag) ----
+  _shilkaById(id) { return (this.game.shilkas || []).find((sh) => sh.id === id) || null; }
+  _hostShilkaClaim(want, from, vid, seat, d) {
+    if (!this.isHost) return; const sh = this._shilkaById(vid); if (!sh) return;
+    if (want === 'radar') {
+      if (sh.seats[2] === from) sh.setRadar(!!(d && d.radar));               // only the seated gunner toggles the radar
+    } else {
+      const res = resolveSeatClaim(sh.seats, seat, from, want, { speed: sh.drive ? sh.drive.speed : 0, force: !!(d && d.force) });
+      if (res.ok) sh.seats = res.seats;                                      // rejected claims leave occupancy unchanged (asker resyncs from the state below)
+    }
+    const payload = sh._statePayload();
+    this._applyShilkaState(payload);                                         // host applies locally (reconciles its own seat)
+    this.net.send('shilkastate', payload);                                   // → all clients
+  }
+  _applyShilkaState(d) {
+    const sh = this._shilkaById(d && d.v); if (!sh) return;
+    if (Array.isArray(d.seats)) sh.seats = d.seats.slice();
+    if (typeof d.radar === 'boolean') sh.setRadar(d.radar);                  // mirror the shared radar flag (no re-broadcast)
+    if (d.xf && sh.seats[0] == null) sh._applyNetTransform(d.xf);            // position a PARKED vehicle; a driven one rides the live shilkamove, and a local driver owns its own motion
+    const mySeat = sh.seats.indexOf(this.myId);
+    if (mySeat !== -1) { if (sh.localSeat !== mySeat) sh._netMount(mySeat); } // the host seated me here
+    else if (sh.localSeat !== -1) { sh._netDismount(); }                     // someone freed my seat (or I left)
+  }
   _hostMortarFire(mid, from) {
     if (!this.isHost) return; const m = this._mortarById(mid); if (!m) return;
     if (m.occupant !== from || m.ammo <= 0 || m.loadT > 0) { this.net.sendTo(from, 'mortarstate', { m: m.id, occ: m.occupant, ammo: m.ammo }); return; } // reject + resync
@@ -857,7 +893,7 @@ export class MP {
     this._xfT -= dt;
     if (this._xfT <= 0) {
       this._xfT = 0.066; const p = g.player;
-      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, waiting: this._localWaiting, wep: g.weapons.cur, fl: g.inventory.isHoldingFlashlight() && !!(g.dayNight && g.dayNight.flashOn), bf: (g.player.burnT > 0) ? 1 : 0, seat: (g.player.mountedGun ? 1 : 0) });
+      this.net.broadcast('xf', { id: this.myId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, down: this._localDown, dead: this._localDead, waiting: this._localWaiting, wep: g.weapons.cur, fl: g.inventory.isHoldingFlashlight() && !!(g.dayNight && g.dayNight.flashOn), bf: (g.player.burnT > 0) ? 1 : 0, seat: ((g.player.mountedGun || g.player.shilka) ? 1 : 0) });
     }
     for (const [, rp] of this.remotes) rp.update(dt, cam);
     this._updateGhostProjectiles(dt);
@@ -1188,6 +1224,19 @@ export class MP {
     if (b && typeof b.netSnapshot === 'function') { const snap = b.netSnapshot(); if (snap.parts.length || snap.holes.length) this.net.sendTo(pid, 'bdestroy', snap); } // existing breaches / shattered panes / APFSDS holes
     if (this.game.forest && typeof this.game.forest.netSnapshot === 'function') for (const fx of this.game.forest.netSnapshot()) this.net.sendTo(pid, 'forestfx', fx); // felled / charred trees + consumed grass
     if (this.game.fire && typeof this.game.fire.netSnapshot === 'function') for (const ig of this.game.fire.netSnapshot()) this.net.sendTo(pid, 'fireignite', ig); // currently-burning parts
+    // late-join: every Shilka — its seat occupancy + a position snapshot (shilkastate carries xf), so a
+    // joiner sees a driven-then-parked vehicle in the right place (a never-driven one snaps to its spawn,
+    // a no-op). An occupied-by-a-driver vehicle also gets the live shilkamove to seed the smooth stream.
+    for (const sh of this.game.shilkas || []) {
+      this.net.sendTo(pid, 'shilkastate', sh._statePayload());
+      if (sh.seats[0] != null) {                                   // a driver is seated → seed the live transform (host's sh.drive is current via _applyRemoteDrive)
+        const d = sh.drive;
+        this.net.sendTo(pid, 'shilkamove', { pid: sh.seats[0], v: sh.id,
+          x: +d.x.toFixed(2), z: +d.z.toFixed(2), heading: +d.heading.toFixed(3),
+          pitch: +d.pitch.toFixed(3), roll: +d.roll.toFixed(3),
+          gear: d.gear, speed: +d.speed.toFixed(2), ws: +d.wheelSpin.toFixed(2), ts: +d.trackScroll.toFixed(2) });
+      }
+    }
   }
   worldTimeState() {
     const g = this.game;

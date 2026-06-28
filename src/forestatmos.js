@@ -5,6 +5,7 @@
 // follows you across the map. No runtime lights; per-frame work is just buffer updates (bounded).
 import * as THREE from 'three';
 import { rr } from './util.js';
+import { WIND } from './wind.js';
 
 // soft round dot (radial alpha) shared by both clouds
 function dotTex() {
@@ -57,11 +58,13 @@ export class ForestAtmosphere {
   // dt seconds, playerPos (THREE.Vector3-ish), night (bool — drives the firefly layer)
   update(dt, playerPos, night) {
     this._t += dt; const t = this._t, px = playerPos.x, pz = playerPos.z;
-    // pollen drift — wrap height + recentre on the player as motes drift out of range
+    // pollen drift — wrap height + recentre on the player as motes drift out of range. WIND carries the
+    // motes downwind (a readable surface-tell for the global wind that also steers fire/smoke/foliage).
     const a = this.pollen.geometry.attributes.position, A = a.array;
+    const wdx = WIND.vx * WIND.speed * dt * 6.0, wdz = WIND.vz * WIND.speed * dt * 6.0;
     for (let i = 0; i < this.NP; i++) {
       const o = i * 3;
-      let x = A[o] + this.pv[o] * 0.04, y = A[o + 1] + this.pv[o + 1] * 0.04, z = A[o + 2] + this.pv[o + 2] * 0.04;
+      let x = A[o] + this.pv[o] * 0.04 + wdx, y = A[o + 1] + this.pv[o + 1] * 0.04, z = A[o + 2] + this.pv[o + 2] * 0.04 + wdz;
       if (y > 17) y = 0.5;
       if (Math.abs(x - px) > 55) x = px + rr(-50, 50);
       if (Math.abs(z - pz) > 55) z = pz + rr(-50, 50);
