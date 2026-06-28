@@ -165,6 +165,30 @@ export class Effects {
     }
   }
 
+  // Directional "blood"/stuffing SPRAY — a fast jet of particles shooting out of a wound along `dir`
+  // (used when a limb is severed). Faster + lower-drag than stuffing() so it spurts out, not just puffs.
+  gush(pos, dir, color, amount = 18, power = 7) {
+    const c = _col.set(color);                      // shared scratch (copied in _spawn) — no per-call Color alloc
+    const white = _COL_WHITE;
+    const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    const nx = dir.x / dl, ny = dir.y / dl, nz = dir.z / dl;
+    for (let i = 0; i < amount; i++) {
+      const useWhite = Math.random() < 0.45;
+      const sp = randRange(power * 0.5, power);
+      this._spawn({
+        pos,
+        vel: _v.set(nx + randRange(-0.5, 0.5), ny + randRange(-0.4, 0.6) + 0.2, nz + randRange(-0.5, 0.5)).normalize().multiplyScalar(sp),
+        life: randRange(0.4, 0.95),
+        size: randRange(0.06, 0.16),
+        grav: -16,
+        drag: 1.5,
+        color: useWhite ? white : c,
+        bounce: 0.25,
+        floorY: pos.y - 1.2,
+      });
+    }
+  }
+
   // Soft vapour puff that blooms then fades — Su-24 engine contrail.
   contrailPuff(pos, { size = 2.0, life = 3.4, color = 0xeef2f6 } = {}) {
     this._spawn({
