@@ -386,7 +386,10 @@ export class WeaponPreview {
   show(key) {
     if (this.cur === key) return; this.cur = key;
     this._clearHolder();
-    const m = buildViewmodel(WEAPONS[key]); m.material.depthTest = true; m.renderOrder = 0; this.holder.add(m);
+    const m = buildViewmodel(WEAPONS[key]); // a merged Mesh, OR a GLB Group (e.g. PKM) — handle both
+    if (m.material) { m.material.depthTest = true; m.renderOrder = 0; }
+    else m.traverse((o) => { if (o.isMesh) { o.renderOrder = 0; (Array.isArray(o.material) ? o.material : [o.material]).forEach((mt) => { if (mt) mt.depthTest = true; }); } });
+    this.holder.add(m);
     const sm = WEAPONS[key].spinMag; if (sm) { const mag = buildMag(sm); mag.material.depthTest = true; mag.renderOrder = 0; mag.position.set(sm.x, sm.y, sm.z); this.holder.add(mag); }
     const box = new THREE.Box3().setFromObject(this.holder);
     const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());

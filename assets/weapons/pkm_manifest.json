@@ -1,0 +1,11 @@
+{
+  "asset": "low_poly_pkm.gltf",
+  "title": "Low Poly PKM",
+  "author": "samanthacford",
+  "source": "Sketchfab",
+  "license": "CC-BY-4.0",
+  "notes": [
+    "Self-contained glTF: geometry buffers + the 3 RGB textures (PKM / AK-accessories / ammo) embedded as data URIs.",
+    "Belt-fed PKM with PSO scope, bipod, bullet belt + ammo box. Runtime viewmodel for the new PKM weapon."
+  ]
+}

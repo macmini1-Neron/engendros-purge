@@ -1118,9 +1118,11 @@ class Game {
     if (hostSim) this.hud.setEnemiesLeft(this.waves.active ? this.waves.toSpawn + this.enemies.aliveCount : this.enemies.aliveCount); // clients get the authoritative count via 'clock'
     this.effects.update(dt);
     // ADS hides the crosshair so you aim down the iron sight, which is 1:1 with the shot. F3 keeps it
-    // always-on as a safety fallback. Mounted-gun / night-post views manage their own reticle, so skip them.
+    // always-on as a safety fallback. Spray weapons opt out via def.adsCrosshair (an LMG wants a centre
+    // dot to walk fire, not a sight picture). Mounted-gun / night-post views manage their own reticle.
     if (!this.player.mountedGun && !this.player.nightPost && this.hud.el.cross) {
-      this.hud.el.cross.style.opacity = (!this.weapons.ads || this.f3) ? '' : '0';
+      const keepCross = !this.weapons.ads || this.f3 || (this.weapons.def() && this.weapons.def().adsCrosshair);
+      this.hud.el.cross.style.opacity = keepCross ? '' : '0';
     }
     this.hud.update(dt);
     // ---- Interact prompt priority: tank crew > mounted MG > loot ----

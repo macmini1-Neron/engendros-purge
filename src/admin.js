@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { clamp, voxelMaterial } from './util.js';
 import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSupplyCrate } from './props.js';
 import { buildGramophone } from './fonoteka.js';
-import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
+import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel, buildPkmHandPreview } from './weapons.js';
 import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
@@ -27,11 +27,36 @@ class AssetViewer {
     this.holder = new THREE.Group(); this.scene.add(this.holder);
     this.spin = 0.6; this.dist = 3; this.pov = false; this.dragX = 0; this.dragY = 0;
     this._drag = false; this._lx = 0; this._ly = 0;
+    // free-cam: fly the camera to inspect a model up close (WASD move · drag look · wheel dolly · Q/E up·down · Shift faster)
+    this.freecam = false; this._fcPos = new THREE.Vector3(0, 0.4, 3); this._fcYaw = 0; this._fcPitch = 0; this._keys = new Set(); this._worldUp = new THREE.Vector3(0, 1, 0);
+    this._FCKEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'Space', 'ShiftLeft', 'ShiftRight']);
     canvas.addEventListener('pointerdown', (e) => { this._drag = true; this._lx = e.clientX; this._ly = e.clientY; try { canvas.setPointerCapture(e.pointerId); } catch (x) {} });
     const up = () => { this._drag = false; };
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointerleave', up);
-    canvas.addEventListener('pointermove', (e) => { if (!this._drag) return; this.dragY += (e.clientX - this._lx) * 0.01; this.dragX = clamp(this.dragX + (e.clientY - this._ly) * 0.01, -1.3, 1.3); this._lx = e.clientX; this._ly = e.clientY; });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this._drag) return;
+      const dx = e.clientX - this._lx, dy = e.clientY - this._ly; this._lx = e.clientX; this._ly = e.clientY;
+      if (this.freecam) { this._fcYaw += dx * 0.005; this._fcPitch = clamp(this._fcPitch - dy * 0.005, -1.5, 1.5); }      // mouse-look
+      else { this.dragY += dx * 0.01; this.dragX = clamp(this.dragX + dy * 0.01, -1.3, 1.3); }                          // orbit the model
+    });
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (this.freecam) this._fcPos.addScaledVector(this._fcDir(), (e.deltaY < 0 ? 1 : -1) * Math.max(this.dist, 0.4) * 0.16); // dolly along view
+      else this.dist = clamp(this.dist * (e.deltaY > 0 ? 1.1 : 0.91), 0.15, 400);                                          // orbit zoom
+    }, { passive: false });
+    // WASD/QE fly — only while the admin canvas is on screen AND free-cam is armed, so it never steals gameplay keys
+    window.addEventListener('keydown', (e) => { if (!this.freecam || this.canvas.offsetParent === null) return; this._keys.add(e.code); if (this._FCKEYS.has(e.code)) e.preventDefault(); });
+    window.addEventListener('keyup', (e) => { this._keys.delete(e.code); });
     this.setSize();
+  }
+  _fcDir() { const cy = Math.cos(this._fcPitch); return new THREE.Vector3(Math.sin(this._fcYaw) * cy, Math.sin(this._fcPitch), -Math.cos(this._fcYaw) * cy); }
+  setFreecam(on) {
+    this.freecam = on; this._keys.clear();
+    if (on) {                                            // start where the orbit camera is, aimed at the model centre (origin)
+      this._fcPos.copy(this.cam.position);
+      const toC = this._fcPos.clone().multiplyScalar(-1).normalize();
+      this._fcYaw = Math.atan2(toC.x, -toC.z); this._fcPitch = Math.asin(clamp(toC.y, -1, 1));
+    }
   }
   setSize() {
     const w = this.canvas.clientWidth || 600, h = this.canvas.clientHeight || 380;
@@ -44,7 +69,7 @@ class AssetViewer {
     }
   }
   show(obj, pov = false) {
-    this.clear(); this.pov = pov; this.dragX = 0; this.dragY = 0; this.spin = 0.6;
+    this.clear(); this.pov = pov; this.freecam = false; this.dragX = 0; this.dragY = 0; this.spin = 0.6;
     obj.traverse((o) => { if (o.material) { o.material.depthTest = true; o.renderOrder = 0; } });
     this.holder.add(obj);
     if (pov) { obj.position.set(0.3, -0.27, -0.72); }
@@ -53,11 +78,24 @@ class AssetViewer {
       const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
       obj.position.sub(ctr);
       this.dist = Math.max(size.x, size.y, size.z, 0.5) * 1.6 * (obj.userData.viewerDistMult || 1) + 0.4;
+      this.cam.position.set(this.dist * 0.5, this.dist * 0.42, this.dist * 0.85); // seed a valid orbit pose so free-cam can start here before the first render
       if (typeof obj.userData.viewerSpin === 'number') this.spin = obj.userData.viewerSpin;
     }
   }
   render(dt) {
-    if (this.pov) {
+    if (this.freecam) {                                  // fly-cam: model frozen at its last orbit pose, camera moves
+      const dir = this._fcDir();
+      const right = new THREE.Vector3().crossVectors(dir, this._worldUp).normalize();
+      const boost = (this._keys.has('ShiftLeft') || this._keys.has('ShiftRight')) ? 3.2 : 1;
+      const sp = Math.max(this.dist, 0.4) * 1.1 * boost * Math.min(dt, 0.05);
+      if (this._keys.has('KeyW')) this._fcPos.addScaledVector(dir, sp);
+      if (this._keys.has('KeyS')) this._fcPos.addScaledVector(dir, -sp);
+      if (this._keys.has('KeyD')) this._fcPos.addScaledVector(right, sp);
+      if (this._keys.has('KeyA')) this._fcPos.addScaledVector(right, -sp);
+      if (this._keys.has('KeyE') || this._keys.has('Space')) this._fcPos.y += sp;
+      if (this._keys.has('KeyQ')) this._fcPos.y -= sp;
+      this.cam.fov = 55; this.cam.up.set(0, 1, 0); this.cam.position.copy(this._fcPos); this.cam.lookAt(this._fcPos.clone().add(dir));
+    } else if (this.pov) {
       this.cam.fov = 75; this.cam.position.set(0, 0, 0.0001); this.cam.up.set(0, 1, 0); this.cam.lookAt(0, -0.05, -1);
       this.holder.rotation.set(0, 0, 0);
     } else {
@@ -77,8 +115,14 @@ export class Admin {
     this.listEl = document.getElementById('adminList');
     this.nameEl = document.getElementById('adminName');
     this.povBtn = document.getElementById('adminPovBtn');
+    this.freecamBtn = document.getElementById('adminFreecamBtn');
+    this.hintEl = document.getElementById('adminHint');
     this._buildTabs();
     this.povBtn.addEventListener('click', () => { this.pov = !this.pov; this.povBtn.classList.toggle('on', this.pov); this._select(this.curIdx); });
+    if (this.freecamBtn) this.freecamBtn.addEventListener('click', () => {
+      const on = !this.viewer.freecam; this.viewer.setFreecam(on); this.freecamBtn.classList.toggle('on', on);
+      if (this.hintEl) this.hintEl.textContent = on ? 'WASD move · drag look · wheel dolly · Q/E up·down · Shift faster' : 'drag to rotate · scroll to zoom · scroll list →';
+    });
   }
   _buildTabs() {
     this.tabsEl.innerHTML = '';
@@ -98,7 +142,7 @@ export class Admin {
   }
   _items() {
     const g = this.game;
-    if (this.tab === 'weapons') return WEAPON_ORDER.map((k) => ({ name: WEAPONS[k].name, sub: WEAPONS[k].class, make: () => { const grp = new THREE.Group(); grp.add(buildViewmodel(WEAPONS[k])); const sm = WEAPONS[k].spinMag; if (sm) { const mg = buildMag(sm); mg.position.set(sm.x, sm.y, sm.z); grp.add(mg); } return grp; } }));
+    if (this.tab === 'weapons') return WEAPON_ORDER.map((k) => ({ name: WEAPONS[k].name, sub: WEAPONS[k].class, make: () => { const grp = new THREE.Group(); const part = (this.pov && k === 'pkm' && buildPkmHandPreview()) || buildViewmodel(WEAPONS[k]); grp.add(part); const sm = WEAPONS[k].spinMag; if (sm) { const mg = buildMag(sm); mg.position.set(sm.x, sm.y, sm.z); grp.add(mg); } return grp; } })); // PKM POV uses the real held viewmodel (layer-0 clone); its world model is centred-origin, which would sit the camera inside it
     if (this.tab === 'enemies') {
       const list = ENGENDRO_COLORS.map((col) => ({ name: col.name, sub: 'engendro skin', make: () => new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()) }));
       list.push({ name: 'BOSS TOLO', sub: 'boss', make: () => new THREE.Mesh(buildTolo(), voxelMaterial()) });
@@ -154,6 +198,7 @@ export class Admin {
     if (this.tab === 'music') { this._renderMusic(); return; }
     const isSound = this.tab === 'sounds';
     this.povBtn.style.display = this.tab === 'weapons' ? '' : 'none';
+    if (this.freecamBtn) this.freecamBtn.style.display = isSound ? 'none' : ''; // free-cam works for every 3D tab
     this.viewer.canvas.style.display = isSound ? 'none' : '';
     if (isSound) {
       this.nameEl.textContent = '🔊 Click a sound to play it';
@@ -171,6 +216,7 @@ export class Admin {
   _renderMusic() {
     const m = this.game.audio.music;
     this.povBtn.style.display = 'none';
+    if (this.freecamBtn) this.freecamBtn.style.display = 'none';
     this.viewer.canvas.style.display = 'none';
     if (!m) { this.nameEl.textContent = 'Audio not ready — click anywhere first.'; return; }
     this.nameEl.innerHTML =
@@ -229,7 +275,9 @@ export class Admin {
     if (!this._cache || !this._cache[i]) return;
     this.curIdx = i; this._rows.forEach((r, j) => r.classList.toggle('on', j === i));
     const it = this._cache[i], usePov = this.pov && this.tab === 'weapons';
-    this.viewer.show(it.make(), usePov);
+    this.viewer.show(it.make(), usePov); // show() turns free-cam off → un-highlight the button + restore the hint
+    if (this.freecamBtn) this.freecamBtn.classList.remove('on');
+    if (this.hintEl && (this.tab !== 'sounds' && this.tab !== 'music')) this.hintEl.textContent = 'drag to rotate · scroll to zoom · scroll list →';
     this.nameEl.textContent = it.name + (usePov ? '  ·  POV' : '');
   }
 }

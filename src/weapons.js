@@ -55,6 +55,10 @@ function prepWeaponMeshTree(root, renderOrder = 1000) {
     for (const mat of mats) {
       if (!mat) continue;
       mat.side = THREE.DoubleSide;
+      // glTF materials default metallicFactor=1 — metal with no env map renders pure black under the
+      // scene lights. Force non-metal so the baked base-colour texture reads (matches the voxel look).
+      if ('metalness' in mat) mat.metalness = 0;
+      if ('roughness' in mat) mat.roughness = Math.max(mat.roughness ?? 0.7, 0.6);
       mat.needsUpdate = true;
     }
   });
@@ -137,6 +141,125 @@ function buildMosinAssetViewmodel(assetRoot, fallback) {
   return wrapper;
 }
 
+// --- PKM belt-fed LMG (GLB viewmodel, replaces the procedural fallback at runtime) ---
+const PKM_ASSET_URL = './assets/weapons/low_poly_pkm.glb';
+const PKM_ASSET_TARGET_LENGTH = 2.55;
+// Orientation applied to the raw asset BEFORE the bbox is measured (3D-ripped models can come in any
+// pose); the asset already imports muzzle −Z / up +Y so no rotation is needed. Then scaled to length
+// along Z and re-centred at TARGET_CENTER.
+const PKM_ASSET_ROTATION = new THREE.Euler(0, 0, 0);
+// x≈0 keeps the bore on the group centreline so ADS (which pulls the group to screen-x 0) lands the
+// centre dot over the barrel; the rightward hip offset comes from WeaponSystem.basePos.x (0.3).
+const PKM_ASSET_TARGET_CENTER = new THREE.Vector3(0.03, -0.12, -0.42);
+
+function buildPkmAssetViewmodel(assetRoot) {
+  const wrapper = new THREE.Group();
+  wrapper.name = 'PKM GLB viewmodel';
+  wrapper.renderOrder = 1000;
+  wrapper.frustumCulled = false;
+  // bake the orientation into an inner pivot so scale/centre math stays axis-aligned on Z
+  const oriented = new THREE.Group();
+  oriented.rotation.copy(PKM_ASSET_ROTATION);
+  oriented.add(assetRoot);
+  oriented.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(oriented);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+  const scale = PKM_ASSET_TARGET_LENGTH / Math.max(0.001, size.z);
+  oriented.scale.setScalar(scale);
+  oriented.position.copy(PKM_ASSET_TARGET_CENTER).addScaledVector(center, -scale);
+  wrapper.add(oriented);
+  prepWeaponMeshTree(wrapper);
+  // The PKM's base texture is a dark gunmetal — under the scene lights it can read as a black blob.
+  // Self-light the base texture a touch so the dark parts lift out of shadow (the Mosin's honey wood
+  // didn't need this, so it stays a PKM-only tweak).
+  wrapper.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) {
+      if (!mat || !('emissive' in mat) || !mat.map) continue;
+      mat.emissiveMap = mat.map;
+      mat.emissive = new THREE.Color(0xffffff);
+      mat.emissiveIntensity = 0.55;
+      mat.needsUpdate = true;
+    }
+  });
+  wrapper.userData.pkm = { oriented };
+  return wrapper;
+}
+
+// Shared PKM GLB → an origin-centred WORLD model so the real gun shows EVERYWHERE buildViewmodel() is
+// consumed (lobby Armory preview, ground drops, the admin asset viewer, the lootbox reveal, co-op
+// ghosts) — not just the first-person hand. The hand uses buildPkmAssetViewmodel (hip offset +
+// WEAPON_LAYER); this world build stays on LAYER 0 / renderOrder 0 so it draws in the main pass.
+const PKM_WORLD_LENGTH = 2.0; // ground/preview footprint, ~matches the other voxel weapons
+let _pkmGlbPromise = null;
+let _pkmWorldTemplate = null;
+function loadPkmGlb() { if (!_pkmGlbPromise) _pkmGlbPromise = loadGltf(PKM_ASSET_URL); return _pkmGlbPromise; }
+function ensurePkmWorldTemplate() {            // returns the template if ready, else null + warms the async load
+  if (_pkmWorldTemplate) return _pkmWorldTemplate;
+  loadPkmGlb().then((gltf) => { if (!_pkmWorldTemplate) _pkmWorldTemplate = buildPkmWorldModel(gltf.scene.clone(true)); }).catch(() => {});
+  return _pkmWorldTemplate;
+}
+// Hand each consumer its OWN geometry + materials (textures stay shared — never disposed per-instance)
+// so a call site that deep-disposes on teardown (WeaponPreview._clearHolder, loot despawn) can't free
+// the shared template's buffers out from under the other PKM instances.
+function clonePkmWorldModel(tpl) {
+  const c = tpl.clone(true);
+  c.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.geometry) o.geometry = o.geometry.clone();
+    if (o.material) o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+  });
+  return c;
+}
+// The FIRST-PERSON viewmodel (hip offset), but rebuilt onto LAYER 0 so an external viewer (the admin
+// asset-viewer POV) can render it — the game's real in-hand model lives on WEAPON_LAYER, which only the
+// 2nd render pass sees. Lets the POV mode show the held PKM exactly like the procedural viewmodels.
+let _pkmHandTemplate = null;
+function ensurePkmHandTemplate() {
+  if (_pkmHandTemplate) return _pkmHandTemplate;
+  loadPkmGlb().then((gltf) => { if (!_pkmHandTemplate) { const h = buildPkmAssetViewmodel(gltf.scene.clone(true)); h.traverse((o) => o.layers.set(0)); _pkmHandTemplate = h; } }).catch(() => {});
+  return _pkmHandTemplate;
+}
+export function buildPkmHandPreview() {                 // held PKM for the admin POV; null until the GLB loads
+  const tpl = ensurePkmHandTemplate();
+  return tpl ? clonePkmWorldModel(tpl) : null;
+}
+function buildPkmWorldModel(assetRoot) {
+  const wrapper = new THREE.Group();
+  wrapper.name = 'PKM world model';
+  const oriented = new THREE.Group();
+  oriented.rotation.copy(PKM_ASSET_ROTATION);
+  oriented.add(assetRoot);
+  oriented.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(oriented);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+  const scale = PKM_WORLD_LENGTH / Math.max(0.001, size.z);
+  oriented.scale.setScalar(scale);
+  oriented.position.set(-center.x * scale, -center.y * scale, -center.z * scale); // geometry centred at origin
+  wrapper.add(oriented);
+  wrapper.traverse((o) => {
+    if (!o.isMesh) return;
+    o.renderOrder = 0;          // WORLD object: stay on the default layer + main render pass (NOT WEAPON_LAYER)
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      mat.side = THREE.DoubleSide;
+      if ('metalness' in mat) mat.metalness = 0;
+      if ('roughness' in mat) mat.roughness = Math.max(mat.roughness ?? 0.7, 0.6);
+      if ('emissive' in mat && mat.map) { mat.emissiveMap = mat.map; mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 0.55; }
+      mat.needsUpdate = true;
+    }
+  });
+  return wrapper;
+}
+
 
 // ---------------------------------------------------------------------------
 // Weapons — guns + melee. dmg is BASE (rarity & perks multiply at use).
@@ -168,6 +291,7 @@ export const WEAPONS = {
   grease:   { name: 'M3 Grease Gun', class: 'smg', shape: 'grease', dmg: 22, rpm: 450, auto: true, mag: 30, reserveMax: 150, reload: 2.2, spread: 0.026, bloom: 0.02, pellets: 1, recoil: 0.5, range: 120, adsFov: 62, price: 1250, loot: 9, recoilClimb: 0.02, recoilYaw: 0.10, color: 0x3a3d42, accent: 0x262626 },
   bar:      { name: 'BAR M1918',   class: 'rifle', shape: 'bar', dmg: 52, rpm: 500, auto: true, mag: 20, reserveMax: 120, reload: 3.0, spread: 0.016, bloom: 0.02, pellets: 1, recoil: 1.6, range: 300, adsFov: 55, price: 2600, loot: 6, recoilClimb: 0.10, recoilYaw: 0.15, color: 0x3a3128, accent: 0x26262a },
   dp28:     { name: 'DP-28',       class: 'rifle', shape: 'dp28', dmg: 33, rpm: 550, auto: true, mag: 47, reserveMax: 141, reload: 3.6, spread: 0.018, bloom: 0.020, pellets: 1, recoil: 0.9, range: 280, adsFov: 56, price: 2700, loot: 5, recoilClimb: 0.05, recoilYaw: 0.20, color: 0x3a352c, accent: 0x4a4a50, spinMag: { shape: 'pan', x: 0, y: 0.2, z: -0.3, r: 0.28, axis: 'y', step: TAU / 47 } },
+  pkm:      { name: 'PKM',         class: 'rifle', shape: 'pkm', dmg: 46, rpm: 650, auto: true, mag: 100, reserveMax: 300, reload: 5.0, spread: 0.017, bloom: 0.018, pellets: 1, recoil: 0.95, range: 420, adsFov: 58, adsCrosshair: true, price: 3000, loot: 5, recoilClimb: 0.045, recoilYaw: 0.14, bipod: true, color: 0x2a2c30, accent: 0x5a3a1c }, // belt-fed 7.62×54R GPMG (GLB viewmodel w/ bullet belt); spray weapon → mild ADS zoom, KEEPS its centre dot (adsCrosshair) instead of hiding it like the iron-sight rifles
   mosin:    { name: 'Mosin 91/30', class: 'sniper', shape: 'mosin', dmg: 175, rpm: 42, auto: false, mag: 5, reserveMax: 30, reload: 2.6, spread: 0.0020, bloom: 0, pellets: 1, recoil: 2.8, range: 500, adsFov: 38, scope: false, price: 2400, loot: 5, color: 0x6e4a28, accent: 0x4a4e54, boltAction: true, reloadStyle: 'mosin', clipReload: 1.95, roundReload: 0.54 },
   bazooka:  { name: 'Bazooka',     class: 'launcher', shape: 'bazooka', dmg: 0, rpm: 24, auto: false, mag: 1, reserveMax: 5, reload: 4.0, spread: 0.004, bloom: 0, pellets: 1, recoil: 0.6, range: 250, adsFov: 62, explodeDmg: 240, explodeRadius: 7.5, price: 3200, loot: 3, color: 0x4a5238, accent: 0x2e2e2e },
   axe:      { name: 'Trench Axe',  class: 'melee', shape: 'axe', melee: true, dmg: 95, rate: 0.5, range: 2.4, arcCos: 0.45, knock: 5, price: 700, loot: 7, color: 0x9aa0a6, accent: 0x6b4a2a },
@@ -184,7 +308,7 @@ export const WEAPONS = {
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'pkm', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -219,6 +343,21 @@ export function buildViewmodel(def) {
       b.box(0.046, 0.05, 0.045, 0, -0.045, 0.10, sLo);                         // downward beak
       b.box(0.02, 0.045, 0.035, 0, 0.0, 0.118, sSlot);                         // T-mortise slot (rearward)
       b.box(0.018, 0.02, 0.02, 0.03, 0.0, 0.055, sBright);                     // press-stud (right side)
+      break;
+    }
+    case 'pkm': { // PKM LMG — the real GLB world model everywhere once loaded; rough silhouette only as the transient fallback
+      const tpl = ensurePkmWorldTemplate();
+      if (tpl) return clonePkmWorldModel(tpl);
+      const sHi = 0x44474d, sMid = 0x2e3137, sLo = 0x1b1d21, wood = a || 0x5a3a1c;
+      b.box(0.12, 0.16, 0.60, 0, 0.0, -0.06, sMid, { tint: 0.02 });            // receiver
+      b.box(0.10, 0.05, 0.60, 0, 0.090, -0.06, sLo);                           // feed cover
+      b.box(0.05, 0.05, 1.20, 0, 0.03, -0.98, sMid);                           // barrel
+      b.box(0.056, 0.013, 1.05, 0, 0.066, -0.98, sHi);                         // barrel top glint
+      b.box(0.018, 0.07, 0.05, 0, 0.10, -1.52, sLo);                           // front sight
+      b.box(0.075, 0.20, 0.20, 0, -0.15, 0.02, sLo, { tint: 0.015 });          // ammo box
+      b.box(0.06, 0.10, 0.34, 0, -0.02, 0.40, wood);                           // skeleton stock wrist
+      b.box(0.05, 0.22, 0.06, 0, -0.06, 0.55, wood);                           // butt plate
+      b.box(0.048, 0.12, 0.05, 0, -0.13, 0.16, sMid);                          // pistol grip
       break;
     }
     case 'machete': { // U.S. M1942 machete — long bellied single-edge blade, riveted full-tang slab grip
@@ -1206,6 +1345,25 @@ export class WeaponSystem {
 
     this.resetLoadout();
     this._loadMosinAssetViewmodel();
+    this._loadPkmAssetViewmodel();
+  }
+
+  async _loadPkmAssetViewmodel() {
+    const fallback = this.models && this.models.pkm;
+    if (!fallback) return;
+    try {
+      const gltf = await loadPkmGlb();                        // shared promise — the world template reuses the same load
+      if (!this.models || this.models.pkm !== fallback) return;
+      const replacement = buildPkmAssetViewmodel(gltf.scene.clone(true)); // clone so gltf.scene stays pristine for the world model
+      replacement.visible = fallback.visible;
+      this.group.add(replacement);
+      this.models.pkm = replacement;
+      this.group.remove(fallback);
+      disposeObject3D(fallback);
+      ensurePkmWorldTemplate();                               // warm the shared world model for shop/drops/viewer/crate
+    } catch (e) {
+      console.warn('[weapons] Failed to load PKM GLB viewmodel; using procedural fallback.', e);
+    }
   }
 
   async _loadMosinAssetViewmodel() {
