@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { MeshBuilder, voxelMaterial, makeRNG, randRange, randInt, choice, chance, clamp, shade } from './util.js';
 import { rayCapsule } from './raycollide.js';
 import { stepBody } from './destruct.js';
+import { SEVER_BIT, SEVERABLE_ORDER, limbFlagsFromParts } from './dismember-core.js';
 
 // ---------------------------------------------------------------------------
 // Tuning — central so M6 extras + balance live in one place (owner can flip features).
@@ -66,8 +67,7 @@ const PART_META = [
   { name: 'legL', kind: 'leg', side: -1, severable: true, socket: [-0.115, -0.22, 0] }, // hips
   { name: 'legR', kind: 'leg', side: 1, severable: true, socket: [0.115, -0.22, 0] },
 ];
-export const SEVERABLE_ORDER = ['head', 'armL', 'armR', 'legL', 'legR'];
-const SEVER_BIT = { head: 1, armL: 2, armR: 4, legL: 8, legR: 16 };
+export { SEVERABLE_ORDER };   // bit math now lives in dismember-core.js (node-testable); re-exported for existing importers
 
 const DARK = 0x121212, CREAM = 0xfff4e2, RIM = 0x2c2c2c, BEAD = 0x070707;
 const BTN = 0x0c0c0c, STITCH = 0xf3f3f3;   // Tolo eye: dark button disc + white X-stitch (cBtn / cHead)
@@ -433,7 +433,7 @@ export function clearGibs() { if (_gibs) _gibs.clear(); }
 // Cosmetic-only replay path (clients) goes through severCosmetic().
 // ---------------------------------------------------------------------------
 export function partByName(rig, name) { return rig.byName[name]; }
-export function limbFlags(rig) { let f = 0; for (const p of rig.parts) if (p.severable && !p.alive) f |= SEVER_BIT[p.name]; return f; }
+export function limbFlags(rig) { return limbFlagsFromParts(rig.parts); }   // co-op `lf` bitmask (esnap/espawn); pure math in dismember-core.js
 export function applyLimbFlags(game, e, f) { // client/late-join: hide parts matching the flag int
   if (!e.rig || !f) return;
   for (const p of e.rig.parts) if (p.severable && (f & SEVER_BIT[p.name]) && p.alive) severCosmetic(game, e, p, null, true);
