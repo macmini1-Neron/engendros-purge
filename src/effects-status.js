@@ -19,6 +19,8 @@ const BURN_DPS = 9, BLEED_DPS = 6, RAD_DPS = 7;
 const RAD_HEAL = 12;
 // enemy movement / contact multipliers (<1 = slower / weaker)
 const BURN_SLOW = 0.45, PUKH_SLOW = 0.6, PUKH_WEAKEN = 0.6;
+// dismemberment limb-loss penalties (passive; applied by enemies._onLimbLost)
+const LIMP_SLOW = 0.55, CRAWL_SLOW = 0.30, MAIM_WEAKEN = 0.55;
 
 // One entry per effect:
 //   secs        default duration when applied without an explicit time
@@ -53,6 +55,10 @@ export const EFFECTS = {
     onApply: (entity, ctx) => ctx.setLimp(entity, true),
     onClear: (entity, ctx) => ctx.setLimp(entity, false),
   },
+  // --- enemy dismemberment limb-loss (passive slow/weaken; permanent until death clears the effects map) ---
+  crippled: { secs: Infinity, stack: 'refresh', cap: 1, hud: { icon: '🦿', color: 0xd2a23a }, enemySlow: LIMP_SLOW },   // one leg gone → limp
+  legless:  { secs: Infinity, stack: 'refresh', cap: 1, hud: { icon: '🪱', color: 0xc23a2a }, enemySlow: CRAWL_SLOW },  // both legs → crawl
+  maimed:   { secs: Infinity, stack: 'refresh', cap: 1, hud: { icon: '🦾', color: 0xaa8844 }, enemyWeaken: MAIM_WEAKEN }, // arm gone → weaker contact
 };
 
 // seconds → whole ticks (Infinity stays Infinity; any finite effect is at least 1 tick)

@@ -14,6 +14,7 @@ import { mountChipSkinPicker, mountCardBackPicker } from './poker/skinpicker.js'
 import { drawChip, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure — roster chip swatch + lobby picker fallback
 import { CARD_BACKS_FREE } from './poker/cardbacks.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
+import { animateRig, limbFlags, applyLimbFlags, severCosmetic } from './engendro.js';
 
 
 // ---------------------------------------------------------------------------
@@ -746,6 +747,7 @@ export class MP {
     n.on('doorset', (d) => { if (d && g.world.applyDoorSet) g.world.applyDoorSet(d.id, d.open); });                   // authoritative bunker гермодверь open/closed (host → clients)
     n.on('doorreq', (d, from) => { if (this.isHost && d && g.world.applyDoorSet) { g.world.applyDoorSet(d.id, d.open); n.broadcast('doorset', { id: d.id, open: !!d.open }); } }); // client asks host to swing a blast door
     n.on('edie', (d) => this._clientEnemyDie(d));
+    n.on('elimbsever', (d) => { if (this.isHost) return; const e = this.ghosts.get(d.id); if (e && e.rig) { const p = e.rig.byName[d.p]; if (p && p.alive) severCosmetic(g, e, p, d.d ? new THREE.Vector3(d.d[0], d.d[1], d.d[2]) : null); } }); // replay host limb detach + gib
     n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
       if (d.e === 'expl') { const bp = V(d.p); eff.explosion(bp, d.s || 3); if (g.engine.shake) { const dist = bp.distanceTo(g.player.pos); if (dist < 18) g.engine.shake(Math.max(0.08, 0.5 * (1 - dist / 18))); } } // distance-scaled shake so a teammate's blast also rattles the viewer
       else if (d.e === 'laser') { const from = V(d.p), dir = V(d.d); eff.muzzleFlash(from, dir, 2.6); g.audio.tone(1300, 0.08, 'square', 0.35); g.audio.noise(0.16, 0.35, 'highpass', 1400, 0.8); g._fxBeam(from, dir); } });
@@ -822,7 +824,7 @@ export class MP {
     n.on('timereq', (d, from) => { if (this.isHost && d && Number.isFinite(d.min)) g.dayNight.setMinuteOfDay(d.min); }); // client asked host to set time → host applies (setMinuteOfDay re-renders + broadcasts)
     n.on('clock', (d) => { if (!this.isHost && d) { if (typeof d.t === 'number') g._surviveTime = d.t; if (typeof d.left === 'number') g.hud.setEnemiesLeft(d.left); } }); // host-authoritative survive-clock + enemies-left
     n.on('waveclear', (d) => { if (g.state === 'playing') g.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); });
-    n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from); });
+    n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from, false, (e.rig && d.p) ? e.rig.byName[d.p] : null); }); // d.p = limb the client claims to have shot
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
     n.on('molotov', (d) => { if (this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('firepool', (d) => { if (!this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
@@ -969,7 +971,7 @@ export class MP {
       this._snapT -= dt;
       if (this._snapT <= 0) {
         this._snapT = 0.08; const arr = [];
-        for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100), bf: e.burnT > 0 ? 1 : 0 }); // y carried so terrain-map ghosts don't float at 0 (esnap-Y fix); host knows true Y incl. knockback/boss
+        for (const e of g.enemies.active) if (e.alive) arr.push({ id: e.id, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), ry: +e.mesh.rotation.y.toFixed(2), hp: Math.round((e.hp / e.maxHp) * 100), bf: e.burnT > 0 ? 1 : 0, lf: e.rig ? limbFlags(e.rig) : 0 }); // lf = severed-limb bitmask so clients/late-joiners see missing limbs
         this.net.send('esnap', arr); this._tickDowns(); this._tickBurn();
         // pick a SINGLE highest-priority boss without flicker: a real boss/tank outranks an elite mini-boss
         let boss = null; for (const e of g.enemies.active) { if (!e.alive) continue; if (e.def.boss) { boss = e; break; } if (e.isElite && !boss) boss = e; }
@@ -990,8 +992,15 @@ export class MP {
       for (const [, e] of this.ghosts) {
         if (!e.alive) continue;
         e.pos.x = damp(e.pos.x, e._tx, 14, dt); e.pos.z = damp(e.pos.z, e._tz, 14, dt); e.pos.y = damp(e.pos.y, (e._ty || 0), 14, dt); e.bob += dt * 7;
-        e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z); // ground Y from host (esnap-Y) + cosmetic bob on top; flat maps → host y=0 → identical to before
-        e.mesh.rotation.y = damp(e.mesh.rotation.y, e._try, 12, dt);
+        if (e.rig) {
+          // ghost plush: same wobble/crawl rig as the host. Heading from the damped host yaw; crawl derived from limb flags.
+          const bn = e.rig.byName; e.crawling = !!(bn.legL && !bn.legL.alive && bn.legR && !bn.legR.alive);
+          const yaw = damp(e.mesh.rotation.y, e._try, 12, dt); e._hx = Math.sin(yaw); e._hz = Math.cos(yaw);
+          animateRig(e, dt);
+        } else {
+          e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z); // ground Y from host (esnap-Y) + cosmetic bob on top
+          e.mesh.rotation.y = damp(e.mesh.rotation.y, e._try, 12, dt);
+        }
         if (e.burnT > 0) { e.burnT -= dt; e._burnFxT = (e._burnFxT || 0) - dt; if (e._burnFxT <= 0) { e._burnFxT = 0.08; g.effects.firePool(e.pos, 0.45, 0.4); } } // mirror the host's on-fire enemy flame
       }
     }
@@ -1059,23 +1068,26 @@ export class MP {
   }
   _clearGhostProjectiles() { if (this._ghostProjectiles) { for (const gp of this._ghostProjectiles) { this.game.engine.scene.remove(gp.mesh); gp.mesh.geometry.dispose(); gp.mesh.material.dispose(); } this._ghostProjectiles.length = 0; } }
   // ---- enemy sync (host → clients) ----
-  onEnemySpawn(e) { if (this.active && this.isHost) this.net.send('espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), hpf: Math.round((e.hp / e.maxHp) * 100) }); }
+  onEnemySpawn(e) { if (this.active && this.isHost) this.net.send('espawn', { id: e.id, type: e.type, gk: e.geoKey, cb: e.col.body, vr: e.def.variant, nm: e.name, sc: e.scale, sd: e.appearSeed, x: +e.pos.x.toFixed(2), y: +e.pos.y.toFixed(2), z: +e.pos.z.toFixed(2), hpf: Math.round((e.hp / e.maxHp) * 100), lf: e.rig ? limbFlags(e.rig) : 0 }); } // sd=appearance seed, lf=already-severed limbs (late join)
+  onLimbSever(e, partName, dir) { if (this.active && this.isHost) this.net.send('elimbsever', { id: e.id, p: partName, d: [+dir.x.toFixed(2), +dir.y.toFixed(2), +dir.z.toFixed(2)] }); } // one-shot: clients replay the detach + gib immediately
   onEnemyDie(e, killer) { if (this.active && this.isHost) this.net.send('edie', { id: e.id, k: killer, x: +e.pos.x.toFixed(2), y: +(e.pos.y + e.height * 0.5).toFixed(2), z: +e.pos.z.toFixed(2), col: e.col.body, el: !!e.isElite, bs: !!e.def.boss, ex: e.def.explode ? (e.def.explodeRadius || 5) : 0 }); }
   onBoss(frac, name) { if (this.active && this.isHost) this.net.send('boss', { frac, name }); }
   onBossHide() { if (this.active && this.isHost) this.net.send('boss', { hide: true }); }
   _enemyById(id) { for (const e of this.game.enemies.active) if (e.id === id) return e; return null; }
   _clientSpawnEnemy(d) {
     if (this.ghosts.has(d.id)) return;
-    const e = this.game.enemies.spawnGhost(d.id, d.type, d.gk, d.cb, d.vr, d.nm, d.sc);
+    const e = this.game.enemies.spawnGhost(d.id, d.type, d.gk, d.cb, d.vr, d.nm, d.sc, d.sd);
     if (Number.isFinite(d.x)) { e.pos.set(d.x, d.y || 0, d.z); e.mesh.position.set(d.x, 0, d.z); } // spawn at the host's real position (no (0,0,0) flash)
     if (Number.isFinite(d.hpf)) e.hp = (d.hpf / 100) * e.maxHp;                                   // late-join: start at the host's current HP, not full
+    if (d.lf && e.rig) applyLimbFlags(this.game, e, d.lf);                                        // late-join: enemy already missing limbs
     e._tx = e.pos.x; e._ty = e.pos.y; e._tz = e.pos.z; e._try = 0; this.ghosts.set(d.id, e);
   }
-  _clientSnap(arr) { for (const s of arr) { const e = this.ghosts.get(s.id); if (!e) continue; e._tx = s.x; e._tz = s.z; if (s.y != null) e._ty = s.y; e._try = s.ry; e.hp = (s.hp / 100) * e.maxHp; e.burnT = s.bf ? ENEMY_BURN_DUR : 0; } }
+  _clientSnap(arr) { for (const s of arr) { const e = this.ghosts.get(s.id); if (!e) continue; e._tx = s.x; e._tz = s.z; if (s.y != null) e._ty = s.y; e._try = s.ry; e.hp = (s.hp / 100) * e.maxHp; e.burnT = s.bf ? ENEMY_BURN_DUR : 0; if (s.lf && e.rig) applyLimbFlags(this.game, e, s.lf); } } // reconcile severed limbs (catches any missed elimbsever)
   _clientEnemyDie(d) {
     const e = this.ghosts.get(d.id); if (!e) return;
     const top = Number.isFinite(d.x) ? new THREE.Vector3(d.x, d.y, d.z) : new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
     const col = (d.col != null) ? d.col : e.col.body;
+    if (e.rig) { e.mesh.updateMatrixWorld(true); for (const p of e.rig.parts) if (p.severable && p.alive) severCosmetic(this.game, e, p, null); } // brutal plush burst: scatter the limbs still attached
     this.game.effects.stuffing(top, col, d.bs ? 44 : (d.el ? 30 : 16), d.bs ? 9 : (d.el ? 8 : 6)); // boss/elite get the bigger burst
     if (d.ex) this.game.effects.explosion(top, d.ex); else this.game.audio.enemyDie();              // exploder death blast (explosion() plays its own boom)
     if (d.k === this.myId) { // I scored this kill → local kill-punch + hit-stop (mirrors the solo/host path in enemies.damage; runs for ALL clients so the killer gate is essential)
@@ -1088,8 +1100,8 @@ export class MP {
     this.ghosts.delete(d.id);
   }
   // ---- combat ----
-  claimHit(e, dmg, src) {
-    this.net.send('hit', { eid: e.id, dmg, src });
+  claimHit(e, dmg, src, part) {
+    this.net.send('hit', { eid: e.id, dmg, src, p: part || undefined }); // p = limb name the client shot, so the host severs the right one
     // A client's enemies.damage() early-returns here, BEFORE the host-side impact juice runs — so pop a local
     // (optimistic) damage number now, at the enemy's body, so co-op hits feel the same as solo. One spot covers
     // every local damage source (gun/pellet/melee). Kill-punch + hit-stop arrive separately via _clientEnemyDie.

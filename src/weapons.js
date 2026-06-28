@@ -1612,7 +1612,7 @@ export class WeaponSystem {
       }
       if (eHit && (!wHit || eHit.dist <= wHit.dist)) {     // a body always stops the round
         const hs = eHit.head && !eHit.enemy.def.boss;      // no headshot cheese on the boss — head = body
-        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), 'gun', eHit.point, 'host', hs);
+        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), 'gun', eHit.point, 'host', hs, eHit.part);
         this.game.effects.tracer(muzzle, eHit.point, d.accent);
         if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
         else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
@@ -1711,7 +1711,7 @@ export class WeaponSystem {
   _fireAPFSDS(origin, dir, d) {
     this.game.effects.tracer(origin, origin.clone().addScaledVector(dir, d.range), d.accent);
     const eHit = this.game.enemies.rayHit(origin, dir, d.range);
-    if (eHit) { const k = this.game.enemies.damage(eHit.enemy, d.dmg, 'gun', eHit.point); this.game.hud.hitmarker(k); }
+    if (eHit) { const k = this.game.enemies.damage(eHit.enemy, d.dmg, 'gun', eHit.point, 'host', false, eHit.part); this.game.hud.hitmarker(k); }
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;                                   // host-authoritative destruction
     const w = CALIBERS.apfsds;
@@ -2877,7 +2877,7 @@ export class MountedGun {
     } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
       const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss
       const dmg = this.dmg * (hs ? 1.6 : 1) * this.game.player.damageMult;
-      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
+      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point, 'host', hs, eHit.part);
       end = eHit.point;
       this.game.effects.tracer(muzzleFx, end, tracerColor);
       if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
