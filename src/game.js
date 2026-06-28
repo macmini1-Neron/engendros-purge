@@ -1228,6 +1228,44 @@ class Game {
     if (!(this._fixedStep && this.state === 'playing')) this.input.endFrame(); // fixed path clears inside the loop (or carries when n===0)
   }
 
+  // One-shot perf/GPU diagnostic. Run `GAME.diag()` in the DevTools console in each browser
+  // and compare — the `gpu` field (unmasked WebGL renderer) reveals which physical GPU the
+  // browser actually uses, which is the usual culprit when one Chromium build stutters and
+  // another doesn't on the same machine. Pure read of existing state + one WebGL query.
+  diag() {
+    const r = this.engine && this.engine.renderer;
+    const d = {
+      build: GAME_BUILD, version: GAME_VERSION, state: this.state,
+      fps: Math.round(this._fps || 0), frameMs: +(this._frameMs || 0).toFixed(2),
+      pacing: this._pace ? 'ON' : 'OFF',
+      refreshHz: this._pacer ? this._pacer.hz : 0,
+      rawJitterMs: this._pacer ? +this._pacer.jitterMs.toFixed(2) : 0,
+      smoothJitterMs: this._pacer ? +this._pacer.outJitterMs.toFixed(2) : 0,
+      dpr: window.devicePixelRatio, cores: navigator.hardwareConcurrency || 0,
+      draws: this._draws || 0, tris: this._tris || 0,
+      bloom: !!(this.engine && this.engine._bloomOn),
+      adaptiveRes: !!(this.engine && this.engine._adaptive),
+      renderScale: this.engine ? this.engine._renderScale : 1,
+      coop: !!(this.mp && this.mp.active),
+      gpu: '(unknown)', glVendor: '(unknown)', webgl2: false, drawBuffer: '',
+    };
+    try {
+      const gl = r && r.getContext();
+      if (gl) {
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        d.gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '(masked)';
+        d.glVendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : '(masked)';
+        d.webgl2 = (typeof WebGL2RenderingContext !== 'undefined') && (gl instanceof WebGL2RenderingContext);
+        const b = r.getDrawingBufferSize(new THREE.Vector2());
+        d.drawBuffer = (b.x | 0) + 'x' + (b.y | 0);
+      }
+    } catch (e) { d.gpu = 'ERR ' + (e && e.message); }
+    try { d.settings = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); } catch (e) { /* ignore */ }
+    console.log('%c[ENGENDROS DIAG] copy this whole object ↓', 'color:#7CFC00;font-weight:bold');
+    console.log(JSON.stringify(d, null, 2));
+    return d;
+  }
+
   // One fixed effect tick: advance the player + every alive enemy by one step.
   // The player is skipped while MP-frozen (downed/dead/waiting — DoT suspended during bleed-out);
   // enemies have no such guard and always tick when alive.
