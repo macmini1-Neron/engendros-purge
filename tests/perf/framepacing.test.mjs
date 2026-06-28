@@ -170,3 +170,39 @@ test('every smoothed frame is a whole multiple of the detected base', () => {
       `output ${(o * 1000).toFixed(3)}ms is not a whole multiple of base ${(b * 1000).toFixed(3)}ms`);
   }
 });
+
+// ─── 9. Hitch resilience — the stuttery-machine case (the MEDIUM review fix) ───
+// A lone slow frame (GC pause, one dropped frame) must NOT wipe the lock. The old reset
+// threshold was 1/minHz (33 ms), so any 34 ms+ hitch forced a full re-warmup — worst exactly
+// on the stuttery machines this whole module targets. Only a real pause (> pauseS) resets now.
+
+test('a single mid-stream hitch frame does NOT drop the lock', () => {
+  const pacer = makeFramePacer();
+  const base = 1 / 165;
+  for (let i = 0; i < 40; i++) pacer.smooth(base);        // warm + lock 165
+  assert.equal(pacer.hz, 165, 'locked to 165 before the hitch');
+  pacer.smooth(0.040);                                    // one 40 ms GC hitch (>33 ms, < pauseS)
+  assert.equal(pacer.hz, 165, 'a single hitch must not reset the lock');
+  const after = [];
+  for (let i = 0; i < 20; i++) after.push(pacer.smooth(base));
+  for (const o of after) {
+    assert.ok(Math.abs(o - base) < base * 0.01, 'smoothing resumes cleanly right after the hitch');
+  }
+});
+
+test('sporadic GC hitches keep the lock (old 33 ms reset would have wiped it each time)', () => {
+  const pacer = makeFramePacer();
+  const base = 1 / 144;
+  for (let i = 0; i < 40; i++) pacer.smooth(base);
+  for (let i = 0; i < 200; i++) pacer.smooth(i % 40 === 0 ? 0.045 : base);  // a 45 ms hitch every 40 frames
+  assert.equal(pacer.hz, 144, 'lock survives sporadic hitches');
+});
+
+test('a real pause (> pauseS) DOES still reset the lock', () => {
+  const pacer = makeFramePacer({ pauseS: 0.5 });
+  const base = 1 / 165;
+  for (let i = 0; i < 40; i++) pacer.smooth(base);
+  assert.equal(pacer.hz, 165);
+  pacer.smooth(0.8);                                       // 0.8 s > pauseS → genuine pause
+  assert.equal(pacer.hz, 0, 'a real pause resets the lock');
+});

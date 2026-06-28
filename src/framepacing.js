@@ -69,12 +69,20 @@ function stableBase(est, tol = 0.08) {
   return best;
 }
 
+// Loose equality for refresh-interval candidates: exact for a standard rate (both sides are the
+// same KNOWN_S float, diff 0), tolerant for a VRR / non-standard display where the median is a
+// wobbling float — so the hysteresis can still re-lock there instead of comparing with `===`.
+function nearBase(a, b) { return b > 0 && Math.abs(a - b) <= b * 1e-3; }
+
 /**
  * makeFramePacer({ histLen?, minHz?, maxHz? }) → pacer
  *
  * @param {number} [histLen=60]  Samples kept for the vsync estimate + jitter readout.
- * @param {number} [minHz=30]    Below this implied refresh, dt is passed through untouched.
- * @param {number} [maxHz=360]   Above this implied refresh, dt is passed through untouched.
+ * @param {number} [minHz=30]    Slowest refresh the base lock tracks; a slower frame just won't
+ *                                snap, it does NOT drop the lock.
+ * @param {number} [maxHz=360]   Fastest refresh the base lock tracks.
+ * @param {number} [pauseS=0.5]  Only a gap LONGER than this (a real tab-out / pause) resets the
+ *                                lock. A mere hitch (one GC / dropped frame) keeps it.
  *
  * pacer.smooth(rawDt) → number
  *   Raw rAF dt (seconds) in, smoothed dt (seconds) out. Snaps to the nearest whole multiple
@@ -87,7 +95,7 @@ function stableBase(est, tol = 0.08) {
  * pacer.outJitterMs — stddev of recent SMOOTHED dts in ms (≪ jitterMs when it is working).
  * pacer.reset() — clear history + carry + lock (call on state transitions / pause).
  */
-export function makeFramePacer({ histLen = 60, minHz = 30, maxHz = 360 } = {}) {
+export function makeFramePacer({ histLen = 60, minHz = 30, maxHz = 360, pauseS = 0.5 } = {}) {
   const raw = [];          // recent raw dts (s) — base estimate + jitter readout
   const out = [];          // recent smoothed dts (s) — diagnostic only
   let lockedBase = 0;      // the vsync interval we are currently snapping to (s)
@@ -112,18 +120,20 @@ export function makeFramePacer({ histLen = 60, minHz = 30, maxHz = 360 } = {}) {
     const cand = stableBase(median(raw));
     if (!(cand >= minStep && cand <= maxStep)) return;
     if (lockedBase === 0) { lockedBase = cand; return; }          // first lock
-    if (cand === lockedBase) { candBase = 0; candCount = 0; return; }
+    if (nearBase(cand, lockedBase)) { candBase = 0; candCount = 0; return; }
     // Hysteresis: only switch once a different candidate has persisted long enough.
-    if (cand === candBase) {
+    if (nearBase(cand, candBase)) {
       if (++candCount >= LOCK_FRAMES) { lockedBase = cand; candBase = 0; candCount = 0; }
     } else { candBase = cand; candCount = 1; }
   }
 
   return {
     smooth(rawDt) {
-      // First frame / tab-out / pause / garbage value → pass through and reset, so we never
-      // snap a multi-second gap to a vsync multiple.
-      if (!(rawDt > 0) || rawDt > maxStep) { reset(); return rawDt; }
+      // First frame / real pause / tab-out / garbage value → pass through and DROP the lock, so
+      // we never snap a multi-second gap to a vsync multiple. A mere hitch (one slow frame up to
+      // pauseS) is NOT a reset — it flows through the normal path below and keeps the lock, so a
+      // stuttery machine (the whole point of this) doesn't re-warm its lock on every GC pause.
+      if (!(rawDt > 0) || rawDt > pauseS) { reset(); return rawDt; }
 
       raw.push(rawDt);
       if (raw.length > histLen) raw.shift();
