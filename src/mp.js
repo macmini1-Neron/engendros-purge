@@ -994,7 +994,10 @@ export class MP {
         e.pos.x = damp(e.pos.x, e._tx, 14, dt); e.pos.z = damp(e.pos.z, e._tz, 14, dt); e.pos.y = damp(e.pos.y, (e._ty || 0), 14, dt); e.bob += dt * 7;
         if (e.rig) {
           // ghost plush: same wobble/crawl rig as the host. Heading from the damped host yaw; crawl derived from limb flags.
-          const bn = e.rig.byName; e.crawling = !!(bn.legL && !bn.legL.alive && bn.legR && !bn.legR.alive);
+          const bn = e.rig.byName;                              // crawl on EITHER leg lost — match the host (it crawls on the FIRST leg, not both)
+          const legLgone = !!(bn.legL && !bn.legL.alive), legRgone = !!(bn.legR && !bn.legR.alive);
+          e.crawling = legLgone || legRgone;
+          if (e.crawling && !e._crawlRoll) e._crawlRoll = (legLgone && !legRgone) ? -0.18 : (legRgone && !legLgone) ? 0.18 : 0;   // lean toward the missing leg like the host
           const yaw = damp(e.mesh.rotation.y, e._try, 12, dt); e._hx = Math.sin(yaw); e._hz = Math.cos(yaw);
           animateRig(e, dt);
         } else {

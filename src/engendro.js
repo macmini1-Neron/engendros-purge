@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { MeshBuilder, voxelMaterial, makeRNG, randRange, randInt, choice, chance, clamp, shade } from './util.js';
 import { rayCapsule } from './raycollide.js';
-import { makeTumble, stepBody } from './destruct.js';
+import { stepBody } from './destruct.js';
 
 // ---------------------------------------------------------------------------
 // Tuning — central so M6 extras + balance live in one place (owner can flip features).
@@ -270,6 +270,7 @@ export function buildRig(mat) {
     // stump (hidden) — child of ROOT at the socket so it stays on the body when the part hides
     const stump = new THREE.Mesh(stumpGeo(), mat);
     stump.position.copy(sock); stump.scale.setScalar(cap.r * 0.9); stump.visible = false;
+    if (m.kind === 'arm') stump.rotation.z = Math.PI / 2;   // arm cut is ~horizontal → turn the torn felt ring to face outward (±X), not up
     root.add(stump); part.stump = stump;
   }
   return { root, parts, headPivot, faceMesh, byName: Object.fromEntries(parts.map((p) => [p.name, p])), wt: 0, seed: 0 };
@@ -306,7 +307,6 @@ export function dressRig(rig, colorHex, seed, variant = 'normal') {
 }
 
 // Per-frame transform: root pose (upright OR crawl) + loose plush wobble. Reads the enemy.
-const _qScratch = new THREE.Quaternion();
 export function animateRig(e, dt) {
   const rig = e.rig; if (!rig) return;
   rig.wt += dt;
@@ -368,10 +368,13 @@ export function raycastRig(rig, ox, oy, oz, dx, dy, dz, maxT) {
 }
 
 // Compute the broadphase AABB half-extents for an enemy given its pose (encloses prone crawl).
-export function rigAABB(e) {
-  // upright: radius wide, height tall; crawl: long+low. Generous so it never clips a precise hit.
-  if (e.crawling) return { r: 1.3 * e.scale, h: 0.9 * e.scale };
-  return { r: 0.62 * e.scale, h: 2.3 * e.scale };
+export function rigAABB(e, out = null) {
+  // upright: radius wide, height tall; crawl: long+low. Generous so it never clips a precise hit. `out` lets the
+  // hot raycast path reuse a scratch object instead of allocating one per enemy per ray.
+  out = out || { r: 0, h: 0 };
+  if (e.crawling) { out.r = 1.3 * e.scale; out.h = 0.9 * e.scale; }
+  else { out.r = 0.62 * e.scale; out.h = 2.3 * e.scale; }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -383,18 +386,21 @@ class GibPool {
     let it = this.items.find((g) => !g.live);
     if (!it) {
       if (this.items.length >= DISMEMBER.gibCap) { it = this.items.shift(); this.items.push(it); }   // FIFO recycle oldest
-      else { it = { mesh: new THREE.Mesh(undefined, this.mat), live: false }; this.scene.add(it.mesh); this.items.push(it); }
+      else { it = { mesh: new THREE.Mesh(undefined, this.mat), live: false, body: { kind: 'tumble', pos: [0, 0, 0], vel: [0, 0, 0], rotAxis: [0, 1, 0], rotAngle: 0, rotSpeed: 0, bounces: 0, settled: false, acc: 0, g: 11, radius: 0.2, floorY: 0 } }; this.scene.add(it.mesh); this.items.push(it); }
     }
     it.mesh.geometry = geo;
-    it.mesh.visible = true; it.mesh.scale.setScalar(worldScale);
-    const sp = randRange(3.0, 5.0, makeRNG(seed));
-    const up = randRange(2.0, 4.0, makeRNG(seed ^ 0x9e3779b1));
-    it.body = makeTumble({
-      pos: [worldPos.x, worldPos.y, worldPos.z],
-      vel: [dir.x * sp + randRange(-1, 1), up, dir.z * sp + randRange(-1, 1)],
-      seed: seed >>> 0, radius: 0.22 * worldScale, g: 11, spin: 1.4,
-      floorY: (floorY ?? 0) + 0.05,
-    });
+    it.mesh.visible = true; it.mesh.scale.setScalar(worldScale); it._s0 = worldScale;   // _s0 = base scale for the linear fade-out
+    // ONE seeded RNG stream + reused pooled body → no per-gib array/closure garbage (was makeTumble + 2 makeRNG closures
+    // + an UNSEEDED lateral that diverged across co-op peers). The cap-48 pool warms once, then bursts are alloc-free.
+    const rng = makeRNG(seed >>> 0);
+    const sp = 3.0 + rng() * 2.0, up = 2.0 + rng() * 2.0;
+    const b = it.body;
+    b.pos[0] = worldPos.x; b.pos[1] = worldPos.y; b.pos[2] = worldPos.z;
+    b.vel[0] = dir.x * sp + (rng() * 2 - 1); b.vel[1] = up; b.vel[2] = dir.z * sp + (rng() * 2 - 1);
+    const axx = rng() * 2 - 1, axy = rng() * 2 - 1, axz = rng() * 2 - 1, an = Math.hypot(axx, axy, axz) || 1;
+    b.rotAxis[0] = axx / an; b.rotAxis[1] = axy / an; b.rotAxis[2] = axz / an;
+    b.rotAngle = 0; b.rotSpeed = (2 + rng() * 6) * 1.4; b.bounces = 0; b.settled = false; b.acc = 0;
+    b.g = 11; b.radius = 0.22 * worldScale; b.floorY = (floorY ?? 0) + 0.05;
     it.linger = 0; it.live = true;
   }
   update(dt) {
@@ -430,7 +436,7 @@ export function partByName(rig, name) { return rig.byName[name]; }
 export function limbFlags(rig) { let f = 0; for (const p of rig.parts) if (p.severable && !p.alive) f |= SEVER_BIT[p.name]; return f; }
 export function applyLimbFlags(game, e, f) { // client/late-join: hide parts matching the flag int
   if (!e.rig || !f) return;
-  for (const p of e.rig.parts) if (p.severable && (f & SEVER_BIT[p.name]) && p.alive) severCosmetic(game, e, p, null);
+  for (const p of e.rig.parts) if (p.severable && (f & SEVER_BIT[p.name]) && p.alive) severCosmetic(game, e, p, null, true);
 }
 
 // world-space socket position of a part (where the cut is)
@@ -438,13 +444,14 @@ const _wp = new THREE.Vector3();
 function partSocketWorld(p) { p.pivot.updateWorldMatrix(true, false); return _wp.set(0, 0, 0).setFromMatrixPosition(p.pivot.matrixWorld); }
 
 // Cosmetic detach: hide the part, reveal the stump, fling a gib. Runs on host AND clients.
-export function severCosmetic(game, e, p, dir) {
+export function severCosmetic(game, e, p, dir, silent = false) {
   if (!p.alive) return;
   p.alive = false; p.pivot.visible = false; if (p.stump) p.stump.visible = true;
+  if (silent) return;   // late-join / esnap reconcile of an ALREADY-old wound: set the visual state only — no spray/gib/audio
   const rig = e.rig;
   const m = e.rig.root.matrixWorld;
   const wScale = _col0.setFromMatrixColumn(m, 0).length() || e.scale || 1;
-  const sock = partSocketWorld(p).clone();
+  const sock = partSocketWorld(p);   // scratch _wp; read synchronously by gush/stuffing/spawn below, never retained → no clone needed
   const d = dir ? _b.set(dir.x, dir.y, dir.z) : _b.set(randRange(-1, 1), 0.2, randRange(-1, 1));
   if (d.lengthSq() < 1e-4) d.set(0, 0.3, 1);
   d.normalize();

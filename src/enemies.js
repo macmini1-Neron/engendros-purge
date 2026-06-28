@@ -1064,13 +1064,17 @@ export class EnemyManager {
     let best = maxDist, hitE = null, hitPart = null, hp = null;
     for (const e of this.active) {
       if (!e.alive) continue;
-      const aabb = e.rig ? rigAABB(e) : { r: e.radius, h: e.height };
-      this._min.set(e.pos.x - aabb.r, e.pos.y, e.pos.z - aabb.r);
-      this._max.set(e.pos.x + aabb.r, e.pos.y + aabb.h, e.pos.z + aabb.r);
+      let aabbR, aabbH;
+      if (e.rig) { const ab = rigAABB(e, this._rigAabb || (this._rigAabb = { r: 0, h: 0 })); aabbR = ab.r; aabbH = ab.h; }
+      else { aabbR = e.radius; aabbH = e.height; }
+      const minY = e.crawling ? e.pos.y - 0.3 * e.scale : e.pos.y;   // crawl pose sinks parts below pos.y → drop the cull floor so a grazing shot isn't culled before narrowphase
+      this._min.set(e.pos.x - aabbR, minY, e.pos.z - aabbR);
+      this._max.set(e.pos.x + aabbR, e.pos.y + aabbH, e.pos.z + aabbR);
       const tb = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, this._min, this._max);
       if (tb === null || tb >= best) continue;                  // AABB entry t is a lower bound on any part hit → cull
       if (e.rig) {
-        e.mesh.updateMatrixWorld(true);                         // refresh pivot world matrices for exact capsules
+        const fid = this.game._frameId;                         // refresh pivot world matrices ONCE per frame — a shotgun fires N pellets through the same static pose
+        if (e._mwFrame !== fid) { e.mesh.updateMatrixWorld(true); e._mwFrame = fid; }
         const hit = raycastRig(e.rig, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best);
         if (hit) { best = hit.t; hitE = e; hitPart = hit.part; hp = hit.point; }
       } else {
@@ -1165,6 +1169,7 @@ export class EnemyManager {
   _trySever(e, amount, source, hitPoint, part) {
     if (!part || !part.severable || !part.alive) return null;
     if (!DISMEMBER.severSources[source]) return null;
+    if (e.isElite && part.kind === 'head') return null;   // elites/minibosses: no head-sever → no instakill snapping the boss bar from ~half to dead (they still lose arms/legs + die on HP)
     const overkill = amount >= e.maxHp * DISMEMBER.bigOverkillMult;
     part.goreHp -= amount;
     if (part.goreHp > 0 && !overkill) return null;

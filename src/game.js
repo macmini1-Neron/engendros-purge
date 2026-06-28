@@ -186,7 +186,7 @@ class Game {
 
     this.state = 'menu'; this.score = 0; this.kills = 0; this.mpMenuOpen = false;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
-    this._last = 0; this._bound = this._frame.bind(this);
+    this._last = 0; this._frameId = 0; this._bound = this._frame.bind(this);
     this._fixedStep = (() => { try { return new URLSearchParams(location.search).get('fixed') === '1'; } catch (e) { return false; } })(); // M4 fixed-timestep: ?fixed=1 URL opt-in or F8 toggle (default OFF)
     this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // render-time camera interpolation state
 
@@ -1153,6 +1153,7 @@ class Game {
   _frame(t) {
     requestAnimationFrame(this._bound);
     let dt = (t - this._last) / 1000; this._last = t;
+    this._frameId = (this._frameId | 0) + 1;                   // per-frame id — rig matrices refresh at most once per frame in enemies.rayHit
     if (!(dt > 0)) dt = 0.0001;
     const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
     if (this._stressName) { // dev stress harness: sample RAW frame-time (pre-clamp) to catch hitches
