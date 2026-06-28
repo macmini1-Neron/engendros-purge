@@ -43,6 +43,7 @@ import { installStress } from './stress.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
+import { makeFramePacer } from './framepacing.js';
 import { makeWorldClock, MINUTES_PER_DAY, isNight } from './worldclock.js';
 import { EFFECT_TPS, stepEffects } from './effects-status.js';
 
@@ -77,7 +78,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-28 15:34';
+const GAME_BUILD = '2026-06-28 23:00';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -189,6 +190,11 @@ class Game {
     this._last = 0; this._frameId = 0; this._bound = this._frame.bind(this);
     this._fixedStep = (() => { try { return new URLSearchParams(location.search).get('fixed') === '1'; } catch (e) { return false; } })(); // M4 fixed-timestep: ?fixed=1 URL opt-in or F8 toggle (default OFF)
     this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // render-time camera interpolation state
+    // Frame-pacing: snap the jittery rAF dt to the display's vsync grid so movement reads
+    // smooth on platforms (Chrome/Windows) that deliver wobbly frame timestamps. No-op on a
+    // clean cadence (macOS). Default ON; ?pace=0 disables; F9 toggles live for A/B. See framepacing.js.
+    this._pacer = makeFramePacer();
+    this._pace = (() => { try { return new URLSearchParams(location.search).get('pace') !== '0'; } catch (e) { return true; } })();
 
     // --- status effects (src/effects-status.js) ---
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
@@ -377,6 +383,7 @@ class Game {
       if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
       if (code === 'F3') { this.f3 = !this.f3; return; }
       if (code === 'F8') { this._fixedStep = !this._fixedStep; this._acc = 0; const _fs = this._fixedStep; this.hud.bigMessage('FIXED-STEP ' + (_fs ? 'ON · 60Hz' : 'OFF')); console.log('[fixed-step] ' + (_fs ? 'ON (60 Hz sim + camera interp)' : 'OFF (variable dt)')); return; } // M4 dev toggle (mirrors ?fixed=1)
+      if (code === 'F9') { this._pace = !this._pace; const _p = this._pace; this.hud.bigMessage('FRAME-PACING ' + (_p ? 'ON' : 'OFF')); console.log('[frame-pacing] ' + (_p ? 'ON' : 'OFF') + ' — ' + (this._pacer.hz || '…') + 'Hz · raw jitter ' + this._pacer.jitterMs.toFixed(2) + 'ms vs smoothed ' + this._pacer.outJitterMs.toFixed(2) + 'ms'); return; } // live A/B toggle (mirrors ?pace=0); pacer always measures while playing
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
       if (code === 'KeyB' && this.input.isDown('F3')) { this.dbgHitboxes = !this.dbgHitboxes; this.f3 = !this.f3; this.hud.bigMessage('HITBOXY ' + (this.dbgHitboxes ? 'ON' : 'OFF')); return; } // F3+B toggles the collision-hitbox overlay (Minecraft); toggle f3 back so the chord doesn't flip the text overlay (and B doesn't change fire-mode)
       // dev fly-cam toggle (solo only): N, or Ctrl+F
@@ -1167,7 +1174,14 @@ class Game {
         this._stressName = null; this._stressTick = null;
       }
     }
-    const frameDt = Math.min(dt, 0.05);
+    // Frame-pacing: while playing, ALWAYS measure (so the F3/console jitter readout stays live
+    // even with pacing off — that's the diagnostic) but only APPLY the vsync-snapped dt when
+    // enabled. Snapping is a no-op on a clean cadence (macOS), so it can't hurt smooth machines.
+    // Reset off-playing so a menu/pause gap can't poison the estimate. _fps/_frameMs stay on RAW dt.
+    let sdt = dt;
+    if (this.state === 'playing') { const sm = this._pacer.smooth(dt); if (this._pace) sdt = sm; }
+    else this._pacer.reset();
+    const frameDt = Math.min(sdt, 0.05);
     if (this.audio.music) this.audio.music.update(frameDt); // score smoothing runs in every state
     // Hit-stop: near-freeze the SIM (not the render) for a few ms after a meaty kill so the impact
     // reads as weight. The timer drains in REAL wall-clock dt; simScale throttles only what the sim sees.
