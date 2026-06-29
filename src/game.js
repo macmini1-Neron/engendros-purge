@@ -60,6 +60,7 @@ const _registerModels = async () => {
   await load('wallclock-chasozbor'); // «ЧАСОЗБОР» analog wall clock (demobuilding hangs it lazily once registered)
   await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
   await load('lpr1');               // ЛПР-1 «Каралон-М» laser rangefinder (hand tool; admin viewer + world prop)
+  await load('r105d');              // R-105d field radio — the rare "courier" engendro wears it on its back (enemies.makeCourier)
   await load('mortar-82pm37');      // 82-ПМ-37 (БМ-37) co-op indirect-fire mortar (placed at the steppe strongpoint)
   await load('poker-table');        // round green-baize poker table — the hero prop of the 3D poker scene
   await load('poker-chip');         // composite "dice" poker chip (canonical model; in-game stacks mirror it per denom)

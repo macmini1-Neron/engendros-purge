@@ -11,10 +11,27 @@ import { segDist2 } from './geom.js';
 import { movementSlow, contactWeaken, applyEffect, removeEffect } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
 import { DISMEMBER, dismemberOn, buildRig, dressRig, animateRig, raycastRig, rigAABB, severCosmetic, gibPool, limbFlags, applyLimbFlags, updateGibs, clearGibs } from './engendro.js';
+import { buildSpec } from './props/voxel-interp.js';
+import { getSpec } from './props/registry-core.js';
 
 const ENEMY_GRAVITY = 22;  // m/s² — pulls a mob off a ledge/roof once it walks past the edge (matches the player)
 const ENEMY_CLIMB = 3.0;   // m/s up a ladder zone toward a target above (player uses 3.7)
 const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steering snaps (flow cell-crossings, separation jostling, flow↔beeline flips) into turns instead of visible twitches
+
+// The rare "courier" engendro wears a detailed R-105d field radio on its back (models/r105d, registered
+// async in game.js). Build the spec ONCE into a prototype Group, then clone it per courier (cheap — clones
+// share geometry). Until the registry has loaded (or if the build throws) this returns null and makeCourier
+// falls back to the cheap canvas pack — the modelgen "consumer keeps a fallback for the async window" rule.
+const COURIER_RADIO_SCALE = 1.1;
+let _courierRadioProto = null;
+function _buildCourierRadio() {
+  if (_courierRadioProto) return _courierRadioProto.clone();
+  const spec = getSpec('r105d');
+  if (!spec) return null;                                  // registry not loaded yet
+  try { _courierRadioProto = buildSpec(spec); }
+  catch (e) { console.warn('[enemies] courier R-105d build failed — canvas-pack fallback:', e); return null; }
+  return _courierRadioProto.clone();
+}
 
 
 // ---------------------------------------------------------------------------
@@ -348,14 +365,22 @@ export class EnemyManager {
   makeCourier(e) {
     e.courier = true;
     if (!e._pack) {
-      const pb = new MeshBuilder();
-      pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
-      pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
-      pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
-      pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
-      pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
-      e._pack = new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 }));
-      e._pack.position.set(0, 1.05, 0.34); // on the back
+      const radio = _buildCourierRadio();
+      if (radio) {                                                   // detailed R-105d field radio, worn on the BACK
+        radio.scale.setScalar(COURIER_RADIO_SCALE);
+        radio.rotation.y = Math.PI / 2;                             // harness side (−X) → +Z, against the plush's back; panel/antenna face outward
+        radio.position.set(0.05, 0.7, -0.32);                       // upper back, behind the body (−Z = back; the old pack sat at +0.34 = the CHEST by mistake)
+        e._pack = radio;
+      } else {                                                      // registry async window / build fail → cheap canvas pack (also on the BACK now)
+        const pb = new MeshBuilder();
+        pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
+        pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
+        pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
+        pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
+        pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
+        e._pack = new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 }));
+        e._pack.position.set(0, 1.05, -0.30);                        // on the BACK (was +0.34 = front/chest)
+      }
       e.mesh.add(e._pack);
     }
     e._pack.visible = true;
