@@ -11,8 +11,11 @@
 // than risk flagging a discrete Radeon as integrated — distinguishing them by string is unreliable.
 
 const SOFTWARE = /swiftshader|software|llvmpipe|microsoft basic|basic render/i;
-const DISCRETE = /nvidia|geforce|\brtx\b|\bgtx\b|quadro|radeon\s*(rx|pro)\b|\brx\s?\d{3,}/i;
-const MOBILE = /\bmali\b|adreno|powervr|apple\s+gpu|videocore/i;
+// Capable GPUs trusted as OK, checked BEFORE the integrated/mobile rules so they aren't mis-flagged:
+// NVIDIA, Radeon RX/Pro, Intel Arc (Intel's DISCRETE line — must beat the \bintel\b integrated rule),
+// and Apple Silicon (Safari reports "Apple GPU", Chrome "... Apple M2 ..." — desktop-class, NOT a phone).
+const DISCRETE = /nvidia|geforce|\brtx\b|\bgtx\b|quadro|\barc\b|\bapple\b|radeon\s*(rx|pro)\b|\brx\s?\d{3,}/i;
+const MOBILE = /\bmali\b|adreno|powervr|videocore/i;
 const INTEGRATED = /\bintel\b|\biris\b|\buhd\b|\bhd graphics\b/i;
 
 // Pull a clean human label out of the (mostly ANGLE-formatted) renderer string.
@@ -37,7 +40,7 @@ export function classifyRenderer(renderer) {
   }
   const label = prettyLabel(s);
   if (SOFTWARE.test(s)) return { tier: 'weak', kind: 'software', label };
-  if (DISCRETE.test(s)) return { tier: 'ok', kind: 'discrete', label };   // trust NVIDIA / Radeon RX first
+  if (DISCRETE.test(s)) return { tier: 'ok', kind: 'discrete', label };   // capable parts before the integrated/mobile rules
   if (MOBILE.test(s)) return { tier: 'weak', kind: 'mobile', label };
   if (INTEGRATED.test(s)) return { tier: 'weak', kind: 'integrated', label };
   return { tier: 'unknown', kind: 'unknown', label };

@@ -14,6 +14,9 @@ const INTEL_UHD = 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_
 const MALI = 'ANGLE (ARM, Mali-G78 MC14, OpenGL ES 3.2)';
 const BASIC = 'ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)';
 const NVIDIA_RAW = 'NVIDIA GeForce RTX 4090/PCIe/SSE2'; // non-ANGLE (Linux/desktop GL)
+const INTEL_ARC = 'ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics (0x000056A0) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+const APPLE_SAFARI = 'Apple GPU';                       // Safari on M1-M4 reports exactly this
+const APPLE_CHROME = 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)';
 
 // ─── weak: integrated / software / mobile ─────────────────────────────────────
 
@@ -63,6 +66,22 @@ test('AMD Radeon RX 6800 XT → ok / discrete (NOT mistaken for integrated)', ()
 
 test('non-ANGLE NVIDIA string → ok / discrete', () => {
   assert.equal(classifyRenderer(NVIDIA_RAW).tier, 'ok');
+});
+
+test('Intel Arc (discrete) → ok / discrete (NOT mistaken for integrated Intel)', () => {
+  const r = classifyRenderer(INTEL_ARC);
+  assert.equal(r.tier, 'ok');
+  assert.equal(r.kind, 'discrete');
+});
+
+test('Apple Silicon "Apple GPU" (Safari) → ok, NOT weak/mobile', () => {
+  const r = classifyRenderer(APPLE_SAFARI);
+  assert.equal(r.tier, 'ok');
+  assert.notEqual(r.kind, 'mobile');
+});
+
+test('Apple M-series via Chrome/ANGLE → ok / discrete', () => {
+  assert.equal(classifyRenderer(APPLE_CHROME).tier, 'ok');
 });
 
 // ─── unknown: masked / empty → never warn ─────────────────────────────────────
