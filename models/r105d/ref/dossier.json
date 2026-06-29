@@ -1,0 +1,82 @@
+{
+  "id": "r105d",
+  "title": "Radiostanice R-105d — Czechoslovak (ČSLA, Tesla Pardubice) man-pack VHF FM radio station, metal-cased R-105/R-105D family",
+  "era": "Soviet R-105 family (1960s); R-105D = modernized R-105 with a built-in retranslation (relay) unit; licence-built for the ČSLA by Tesla Pardubice with a Czech-language (Latin) control panel — NOT Cyrillic. 36.0–46.1 MHz, 1–1.2 W FM, carried on the back with a webbing harness.",
+  "sources": {
+    "valka": "https://www.valka.cz/SOV-R-105-108-109-114-prenosna-radiostanica-t38027 — radio unit 310×170×325 mm; working set ~20.5 kg; grey rough-enamel front panel; Czech control inventory",
+    "radiomuseum": "https://www.radiomuseum.org/r/b_8865_r_105m_p_105m.html — R-105M 170×325×310 mm (W×H×D); same body envelope as R-105D",
+    "greenradio": "https://www.greenradio.de/e_r105m.htm — 310×170×325 mm",
+    "army_surplus": "https://www.army-surplus.cz/radiova-stanice-r-105d-csla-original/ — R-105d ČSLA original ~37×17,5×35 cm; bare transceiver ~13 kg; licence-built Tesla Pardubice; sold without straps/belt/antenna",
+    "feldfunker": "https://feldfunker-la7sna.com/radio_r105d.htm — aluminium-alloy chassis & covers, painted 'Telegreen'; AŠ-1,5 Kulikov whip 1.5 m; back cushion + canvas straps; ~21 kg working",
+    "ruwiki": "https://ru.wikipedia.org/wiki/Р-105Д — 36–46.1 MHz, 203 channels; Cyrillic panel on Soviet issue (AVOID)",
+    "vu9967": "https://www.vu9967.cz/technika/radiove-stanice/radiove-stanice-typu-astra — Czech control inventory & verbatim Czech panel labels; confirms Latin (Czech) script, not Cyrillic",
+    "photos_local": "ref/Untitled2.png + ref/tschechoslowakei-*~2.jpg (Czech R-105d front panel, all labels legible) · ref/tschechoslowakei-*~6.jpg (CLOSED lid: stamped X-cross + centre boss) · ref/tschechoslowakei-*~8.jpg (rounded corner guards + stencilled serial '320065') · ref/6086bfa133e46e93a984bf2035adde9f.jpg (deployed straight telescopic whip on a BRASS base + black headset cable arc) · ref/how-was-this-r105d-radio-worn-*.jpg (back harness: tan canvas straps, leather keepers, waist strap, on the large side face) · ref/r105d1.jpg & ref/s-l1200.jpg (Soviet Р-105Д/М Cyrillic variants — AVOID)"
+  },
+  "specifications": {
+    "body_dims": {
+      "width_mm": 170,
+      "height_mm": 325,
+      "depth_mm": 310,
+      "src": "radiomuseum",
+      "quote": "170 × 325 × 310 mm (W×H×D); corroborated '310×170×325' by valka & greenradio; army_surplus ~175×350×370",
+      "note": "narrow upright metal case; the grey control panel + its hinged lid are on the FRONT narrow face (170 W × 325 H); 310 deep. The carry harness is on a LARGE side face (depth×height ≈ 310×325). Worn on the back."
+    },
+    "mass_kg": { "bare": 13, "working": 20.5, "src": "army_surplus", "quote": "bare transceiver ~13 kg; ~20.5–21 kg working set (valka, feldfunker, ruwiki)" },
+    "freq": { "range_mhz": "36.0–46.1", "channels": 203, "power_w": "1–1.2", "src": "ruwiki", "quote": "36–46.1 MHz, 203 channels, FM, 1–1.2 W (ruwiki, vu9967)" },
+    "materials": {
+      "case": "aluminium alloy, painted military green ('Telegreen')",
+      "panel": "grey rough/textured enamel plate",
+      "knobs": "black bakelite",
+      "src": "feldfunker",
+      "quote": "aluminium-alloy chassis & covers, 'Telegreen' green paint (feldfunker); grey rough-enamel front panel (valka); ČSLA Tesla Pardubice (army_surplus)"
+    },
+    "antenna": {
+      "type": "AŠ-1,5 Kulikov whip",
+      "stowed_m": 1.5,
+      "construction": "deployed it stands as a near-straight telescopic/segmented whip of decreasing-diameter sections rising from a prominent BRASS knurled base + nut on top of the case; the large black rubber ARC over the top is the headset/handset cable, NOT the antenna",
+      "mount": "brass knurled base screwed to the antenna socket on top of the case toward the panel/front edge (no spring base)",
+      "src": "feldfunker",
+      "quote": "АШ-1,5 1.5 m whip; ref/6086bfa133e46e93a984bf2035adde9f.jpg shows the straight telescopic whip on a brass base, with the separate black headset cable arcing from a top-left connector"
+    },
+    "harness": {
+      "layout": "plastic-covered back cushion/pad against the operator + two canvas (webbing) shoulder straps each held by TWO reddish-brown leather keeper loops + a waist strap with buckles; clips to lugs on the case edges; mounted on a LARGE side face",
+      "colour": "khaki/tan cotton webbing, reddish-brown leather keepers",
+      "src": "feldfunker",
+      "quote": "back cushion + canvas straps (feldfunker); ref/how-was-this-r105d-radio-worn-*.jpg shows tan webbing shoulder straps with 2 leather keepers each, a waist strap, on the big side face"
+    },
+    "top_face": {
+      "layout": "brass knurled antenna base (toward the front/panel edge) with the telescopic whip rising from it; a leather carry handle (centre); a brass headset connector (top-left) with the black rubber cable arcing from it; side lever clasps on the right edge, hinges on the left",
+      "src": "photos_local",
+      "quote": "ref/6086bfa133e46e93a984bf2035adde9f.jpg, ref/Untitled.png"
+    },
+    "lid_face": {
+      "layout": "the closed front lid (door) is a stamped steel sheet carrying TWO diagonal raised ribs forming an X corner-to-corner, with a raised circular boss where they cross; riveted perimeter; hinged on the left edge, two lever clasps on the right. The case's four vertical corners carry MASSIVE rounded corner-guard rails (not thin rods). A white spray-stencilled serial (e.g. '320065') sits on a case face.",
+      "src": "photos_local",
+      "quote": "ref/tschechoslowakei-*~6.jpg (closed lid X-cross + centre boss) and ~8.jpg (rounded corner guards + stencil '320065')"
+    },
+    "power_switch": {
+      "layout": "a LARGE round black rotary power knob accessible on the closed case (lower-left of the front face), with white stencilled 'VYP' (vypnuto = off, upper) and 'ZAP' (zapnuto = on, lower) labels to its right",
+      "src": "photos_local",
+      "quote": "ref/zap.png — hand turning the big black VYP/ZAP knob on the X-cross face, lid clasp at the right edge"
+    },
+    "panel_layout": {
+      "layout": "behind the lid: tall grey panel with LADĚNÍ ANTÉNY, NASTAVENÍ KMITOČTU, ARETACE STUPNICE, round tuning-scale window, DÁLK. OVLÁD. A RETRANSLACE selector, ANT. PROUD/NAPĚTÍ AKU V-meter, white blank plate, red 'POZOR! NEPŘÍTEL NASLOUCHÁ', KALIBRÁTOR STISKNOUT, nameplate 'R-105d'. The lid's inner face carries 'NÁVOD K OBSLUZE RÁDIOVÉ STANICE'. (For the OPEN version, later.)",
+      "src": "photos_local",
+      "quote": "ref/Untitled2.png, ref/tschechoslowakei-*~2.jpg — all Czech labels legible"
+    }
+  },
+  "derivation": {
+    "feature_layout_m": {
+      "value": "sub-features placed by proportional reading of the reference photos against the 170 mm panel width / 310 mm depth",
+      "formula": "feature_pos = (pixel offset / reference pixel size) × body dimension",
+      "inputs": "body_dims (radiomuseum), lid_face/top_face/harness (photos_local)",
+      "note": "honest photo-proportional placement of sub-features; no invented absolute sub-dimensions"
+    }
+  },
+  "needs": [
+    "exact corner-guard and antenna-base diameters — placed by photo proportion, not individually sourced",
+    "exact webbing colour/width and the case lug positions for the harness — read from ref/how-was-this-r105d-radio-worn-*.jpg",
+    "the back narrow face X-cross is MIRRORED from the front lid per owner direction — not photo-confirmed (the real back face may be plain or differently stamped)",
+    "antenna AŠ-1,5 exact stowed segment count/lengths — modeled as a tapered telescopic whip per ref/6086bfa133e46e93a984bf2035adde9f.jpg"
+  ]
+}
