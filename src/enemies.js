@@ -24,7 +24,7 @@ const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steerin
 const R105D_SCALE = 2.0;         // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
 const R105D_Y = 0.42;            // mount height — low on the back/body (radio is floor-anchored at y=0)
 const R105D_Z = -0.34;           // SET INTO the back — the box sinks into the round body so it sits flush, not cantilevered out
-const R105D_YAW = 3 * Math.PI / 2; // harness side (back-pad + webbing straps) faces OUT the back = the visible "worn pack" look; antenna up
+const R105D_YAW = Math.PI / 2; // harness side (back-pad + webbing straps) sits AGAINST the plush's back; the radio case faces out = real worn-pack look; antenna up
 
 
 // ---------------------------------------------------------------------------
