@@ -468,6 +468,7 @@ export class EnemyManager {
       if (e.noAI) { // {NoAI:1} dummy: stands still, no steering / contact damage / attacks — but still grounded, drawn, and killable (damage() is independent)
         e.vel.x = 0; e.vel.z = 0;
         e.pos.y = this.world.groundY(e.pos.x, e.pos.z);
+        if (e.squash > 0) e.squash -= dt;                            // decay the hit-squash here too — the normal path's decay (below) is skipped by the `continue`, else a shot dummy stays squashed/shrunk forever
         if (e.rig) { e.bob += dt * 6; animateRig(e, dt); }            // rigged dummy still wobbles + shows its parts
         else { e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z); e.mesh.scale.set(e.scale, e.scale, e.scale); e.mesh.rotation.set(0, e.mesh.rotation.y, 0); }
         continue;
