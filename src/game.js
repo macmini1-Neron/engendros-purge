@@ -78,7 +78,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-30 23:12';
+const GAME_BUILD = '2026-06-30 23:28';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -192,9 +192,12 @@ class Game {
     this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // render-time camera interpolation state
     // Frame-pacing: snap the jittery rAF dt to the display's vsync grid so movement reads
     // smooth on platforms (Chrome/Windows) that deliver wobbly frame timestamps. No-op on a
-    // clean cadence (macOS). Default ON; ?pace=0 disables; F9 toggles live for A/B. See framepacing.js.
+    // clean cadence (macOS) and on VRR panels. See framepacing.js.
     this._pacer = makeFramePacer();
-    this._pace = (() => { try { return new URLSearchParams(location.search).get('pace') !== '0'; } catch (e) { return true; } })();
+    // The on/off (_pace) is owned by Settings ('Frame pacing', default ON) — already set by
+    // Settings.apply() above (constructed ~line 180), with ?pace=0 a dev override seed (Settings.load).
+    // F9 toggles it live and writes back to Settings. Fallback ON if Settings somehow left it unset.
+    if (typeof this._pace !== 'boolean') this._pace = true;
 
     // --- status effects (src/effects-status.js) ---
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
@@ -383,7 +386,7 @@ class Game {
       if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
       if (code === 'F3') { this.f3 = !this.f3; return; }
       if (code === 'F8') { this._fixedStep = !this._fixedStep; this._acc = 0; const _fs = this._fixedStep; this.hud.bigMessage('FIXED-STEP ' + (_fs ? 'ON · 60Hz' : 'OFF')); console.log('[fixed-step] ' + (_fs ? 'ON (60 Hz sim + camera interp)' : 'OFF (variable dt)')); return; } // M4 dev toggle (mirrors ?fixed=1)
-      if (code === 'F9') { this._pace = !this._pace; const _p = this._pace; this.hud.bigMessage('FRAME-PACING ' + (_p ? 'ON' : 'OFF')); console.log('[frame-pacing] ' + (_p ? 'ON' : 'OFF') + ' — ' + (this._pacer.hz || '…') + 'Hz · raw jitter ' + this._pacer.jitterMs.toFixed(2) + 'ms vs smoothed ' + this._pacer.outJitterMs.toFixed(2) + 'ms'); return; } // live A/B toggle (mirrors ?pace=0); pacer always measures while playing
+      if (code === 'F9') { this._pace = !this._pace; const _p = this._pace; if (this.settings) { this.settings.data.pace = _p ? 1 : 0; this.settings.save(); this.settings._refresh(); } this.hud.bigMessage('FRAME-PACING ' + (_p ? 'ON' : 'OFF')); console.log('[frame-pacing] ' + (_p ? 'ON' : 'OFF') + ' — ' + (this._pacer.hz || '…') + 'Hz · raw jitter ' + this._pacer.jitterMs.toFixed(2) + 'ms vs smoothed ' + this._pacer.outJitterMs.toFixed(2) + 'ms'); return; } // live A/B toggle; writes back to the Settings 'Frame pacing' toggle + persists; pacer always measures while playing
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
       if (code === 'KeyB' && this.input.isDown('F3')) { this.dbgHitboxes = !this.dbgHitboxes; this.f3 = !this.f3; this.hud.bigMessage('HITBOXY ' + (this.dbgHitboxes ? 'ON' : 'OFF')); return; } // F3+B toggles the collision-hitbox overlay (Minecraft); toggle f3 back so the chord doesn't flip the text overlay (and B doesn't change fire-mode)
       // dev fly-cam toggle (solo only): N, or Ctrl+F

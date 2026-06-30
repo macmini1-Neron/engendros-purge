@@ -364,7 +364,7 @@ const SETTINGS_VER = 1;
 // adaptiveRes + bloom default OFF: on high-refresh (144 Hz) displays the 60 fps-targeted adaptive resolution
 // churns the render-target size (stutter) and renders sub-native (blur), and bloom softens the crisp voxel look.
 // Both stay toggleable in Settings; the High/Medium presets can still switch bloom back on.
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, dmgNumbers: 1, setVer: SETTINGS_VER };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, dmgNumbers: 1, pace: 1, setVer: SETTINGS_VER };
 
 export class Settings {
   constructor(game) {
@@ -373,7 +373,7 @@ export class Settings {
     this.returnTo = 'menu';
     this.load(); this._wire(); this.apply();
   }
-  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } } catch (e) {} }
+  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } const pv = new URLSearchParams(location.search).get('pace'); if (pv != null) this.data.pace = (pv !== '0') ? 1 : 0; } catch (e) {} } // ?pace=0/1 dev override seeds the saved frame-pacing pref so the menu toggle always matches reality
   save() { try { localStorage.setItem('engendros_settings', JSON.stringify(this.data)); } catch (e) {} }
   apply() {
     if (this.game.player) { this.game.player.sens = this.data.sens; this.game.player.nick = this.data.nick; }
@@ -389,6 +389,8 @@ export class Settings {
     this.game._drawDist = this.data.drawDist | 0;
     this.game._showFps = !!this.data.showFps;
     if (!this.data.showFps) { const f = document.getElementById('fps'); if (f) f.style.display = 'none'; }
+    this.game._pace = !!this.data.pace; // vsync-snap frame pacing (framepacing.js) — Settings owns the on/off
+
     const mpName = document.getElementById('mp-name'); if (mpName && !mpName.value) mpName.value = this.data.nick; // pre-fill the co-op lobby name
     this._refresh();
   }
@@ -408,7 +410,7 @@ export class Settings {
     const setTog = (id, on, onTxt, offTxt) => { const el = document.getElementById(id); if (el) { el.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); el.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
     const gpv = document.getElementById('s-gfx'); if (gpv) gpv.textContent = String(this.data.gfxPreset).toUpperCase();
     setTog('s-adapt', this.data.adaptiveRes); setTog('s-showfps', this.data.showFps); setTog('s-aa', this.data.aa, 'ON (reload)', 'OFF');
-    setTog('s-bloom', this.data.bloom); setTog('s-dmgnum', this.data.dmgNumbers);
+    setTog('s-bloom', this.data.bloom); setTog('s-dmgnum', this.data.dmgNumbers); setTog('s-pace', this.data.pace);
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
@@ -426,6 +428,7 @@ export class Settings {
     const dn = document.getElementById('s-dmgnum'); if (dn) dn.addEventListener('click', () => { this.data.dmgNumbers = this.data.dmgNumbers ? 0 : 1; this.save(); this._refresh(); }); // floating damage numbers toggle
     const aaEl = document.getElementById('s-aa'); if (aaEl) aaEl.addEventListener('click', () => { this.data.aa = this.data.aa ? 0 : 1; this.save(); this._refresh(); }); // MSAA applies on reload
     const bl = document.getElementById('s-bloom'); if (bl) bl.addEventListener('click', () => { this.data.bloom = this.data.bloom ? 0 : 1; this.apply(); this.save(); this._refresh(); });
+    const pc = document.getElementById('s-pace'); if (pc) pc.addEventListener('click', () => { this.data.pace = this.data.pace ? 0 : 1; this.apply(); this.save(); this._refresh(); }); // vsync-snap frame pacing (also F9 live A/B)
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }
