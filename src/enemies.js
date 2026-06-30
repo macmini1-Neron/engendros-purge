@@ -21,9 +21,9 @@ const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steerin
 // Courier backpack mount — the registered R-105d radio (authored in METRES,
 // floor-anchored) rides in the enemy mesh's LOCAL space, which def.scale
 // uniformly scales. Tuned against the plush by eye in-game (models/r105d/BUILD.md).
-const R105D_SCALE = 2.2;     // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
-const R105D_Y = 0.95;        // mount height — high on the back so the antenna clears the head (radio is floor-anchored at y=0)
-const R105D_Z = -0.55;       // behind the head/torso
+const R105D_SCALE = 2.0;     // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
+const R105D_Y = 0.85;        // mount height on the back (radio is floor-anchored at y=0)
+const R105D_Z = -0.34;       // SET INTO the back — the box sinks into the round body so the panel sits flush/proud, not cantilevered out
 const R105D_YAW = Math.PI;   // X-cross panel + telescopic antenna face outward (the "spot the courier" tell)
 
 
