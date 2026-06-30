@@ -29,5 +29,10 @@
 ## needs[]
 See `ref/dossier.json` — corner-guard/antenna diameters are photo-proportional; back-face X is mirrored per owner direction (not photo-confirmed); harness webbing colour/lugs read from photos.
 
-## Integration (next)
-Replace the courier's inline `_pack` mesh in `src/enemies.js` (`makeCourier`) with this registered model, mounted on the enemy's **back** (current `_pack` is at z=+0.34 = front; move to z<0), panel/antenna facing outward, harness toward the body. Async `fetch` spec → `registerModel('r105d', spec)` → build mesh → attach with a small fallback box; scale to fit the plush.
+## Integration (DONE — 2026-06-30)
+Wired onto the rare **backpack courier** engendro on branch `feat/courier-radio-r105d`:
+- `src/game.js` `_registerModels()` → `await load('r105d')` (registered at boot alongside the other modelgen props).
+- `src/enemies.js` `makeCourier()` → builds `buildSpec(getSpec('r105d'))` into the enemy mesh's local space via a new `_buildCourierPack(real)` helper; the original procedural canvas pack stays as a fallback during the async-register window, and a pooled enemy that cached the fallback upgrades to the real model on reuse.
+- Mounted high on the **back** with the panel + telescopic antenna facing **outward** (the antenna clears the big plush head — the "spot the courier" tell). Tunables `R105D_SCALE=2.2 / R105D_Y=0.95 / R105D_Z=-0.55 / R105D_YAW=π` (mesh-local; def.scale rides them), tuned by eye in-game against the plush.
+- `src/admin.js` Asset Viewer entry added for inspection.
+- **In-game verified (Mac/Chrome):** spawned a courier (`enemies.spawn('grunt') → makeCourier`), confirmed the radio reads on the back from behind/side/front with the antenna above the head; 0 console errors; source-built (not live-tuned) placement confirmed after a clean module reload. See `renders/ingame-courier-back.png`.

@@ -11,10 +11,20 @@ import { segDist2 } from './geom.js';
 import { movementSlow, contactWeaken, applyEffect, removeEffect } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
 import { DISMEMBER, dismemberOn, buildRig, dressRig, animateRig, raycastRig, rigAABB, severCosmetic, gibPool, limbFlags, applyLimbFlags, updateGibs, clearGibs } from './engendro.js';
+import { hasModel, getSpec } from './props/registry.js';
+import { buildSpec } from './props/voxel-interp.js';
 
 const ENEMY_GRAVITY = 22;  // m/s² — pulls a mob off a ledge/roof once it walks past the edge (matches the player)
 const ENEMY_CLIMB = 3.0;   // m/s up a ladder zone toward a target above (player uses 3.7)
 const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steering snaps (flow cell-crossings, separation jostling, flow↔beeline flips) into turns instead of visible twitches
+
+// Courier backpack mount — the registered R-105d radio (authored in METRES,
+// floor-anchored) rides in the enemy mesh's LOCAL space, which def.scale
+// uniformly scales. Tuned against the plush by eye in-game (models/r105d/BUILD.md).
+const R105D_SCALE = 2.2;     // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
+const R105D_Y = 0.95;        // mount height — high on the back so the antenna clears the head (radio is floor-anchored at y=0)
+const R105D_Z = -0.55;       // behind the head/torso
+const R105D_YAW = Math.PI;   // X-cross panel + telescopic antenna face outward (the "spot the courier" tell)
 
 
 // ---------------------------------------------------------------------------
@@ -344,22 +354,47 @@ export class EnemyManager {
     this.active.push(e);
     return e;
   }
-  // Mark an enemy as a rare "backpack courier" — glows + wears a pack; drops a radio on death.
+  // Mark an enemy as a rare "backpack courier" — glows + wears the R-105d field
+  // radio on its back; drops a radio on death. The pack is built once per pooled
+  // enemy and reused (visibility toggled). If a courier spawns before the spec
+  // registers at boot it gets the procedural fallback pack, then upgrades to the
+  // real model the next time it's recycled as a courier.
   makeCourier(e) {
     e.courier = true;
-    if (!e._pack) {
+    const real = hasModel('r105d');
+    if (!e._pack || (e._pack.userData.fallback && real)) {
+      if (e._pack) e.mesh.remove(e._pack);
+      e._pack = this._buildCourierPack(real);
+      e.mesh.add(e._pack);
+    }
+    e._pack.visible = true;
+    if (e.mat && e.mat.emissive) { e.mat.emissive.setHex(0x123a14); e.mat.emissiveIntensity = 0.55; } // teal glow so you spot it
+  }
+  // The backpack worn by a courier. `real` → the registered R-105d radio
+  // (models/r105d/), sized + oriented to read as a backpack on the plush (panel
+  // + telescopic antenna outward, harness toward the body); else the original
+  // procedural canvas pack as a fallback during the async-register window.
+  _buildCourierPack(real) {
+    const g = new THREE.Group();
+    if (real) {
+      const radio = buildSpec(getSpec('r105d'));
+      radio.scale.setScalar(R105D_SCALE);          // metres → mesh-local
+      radio.rotation.y = R105D_YAW;
+      g.add(radio);
+      g.position.set(0, R105D_Y, R105D_Z);          // on the back
+      g.userData.fallback = false;
+    } else {
       const pb = new MeshBuilder();
       pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
       pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
       pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
       pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
       pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
-      e._pack = new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 }));
-      e._pack.position.set(0, 1.05, 0.34); // on the back
-      e.mesh.add(e._pack);
+      g.add(new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 })));
+      g.position.set(0, 1.05, 0.34); // on the back
+      g.userData.fallback = true;
     }
-    e._pack.visible = true;
-    if (e.mat && e.mat.emissive) { e.mat.emissive.setHex(0x123a14); e.mat.emissiveIntensity = 0.55; } // teal glow so you spot it
+    return g;
   }
   get aliveCount() { return this.active.length; }
 
