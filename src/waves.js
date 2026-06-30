@@ -151,7 +151,7 @@ export class WaveManager {
     const hpScale = (1 + (n - 1) * 0.16) * this.hpMul;
     const spd = def.speed * Math.min(1 + (n - 1) * 0.025, 1.55) * this.speedMul;
     const e = this.game.enemies.spawn(type, pos, Math.round(def.hp * hpScale), spd);
-    if (chc(0.01)) this.game.enemies.makeCourier(e); // ~1% rare backpack courier → drops a radio
+    if (type === 'grunt' && chc(0.01)) this.game.enemies.makeCourier(e); // ~1% of normal-size grunts → rare backpack courier (drops a radio)
     this.spawned++;
   }
   _spawnBoss(which, pos, hpScale) {

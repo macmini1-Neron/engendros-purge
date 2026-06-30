@@ -21,10 +21,10 @@ const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steerin
 // Courier backpack mount — the registered R-105d radio (authored in METRES,
 // floor-anchored) rides in the enemy mesh's LOCAL space, which def.scale
 // uniformly scales. Tuned against the plush by eye in-game (models/r105d/BUILD.md).
-const R105D_SCALE = 2.0;     // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
-const R105D_Y = 0.85;        // mount height on the back (radio is floor-anchored at y=0)
-const R105D_Z = -0.34;       // SET INTO the back — the box sinks into the round body so the panel sits flush/proud, not cantilevered out
-const R105D_YAW = Math.PI;   // X-cross panel + telescopic antenna face outward (the "spot the courier" tell)
+const R105D_SCALE = 2.0;       // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
+const R105D_Y = 0.65;          // mount height on the back (radio is floor-anchored at y=0)
+const R105D_Z = -0.34;         // SET INTO the back — the box sinks into the round body so it sits flush, not cantilevered out
+const R105D_YAW = Math.PI / 2; // turned a quarter so the wide flat side lies across the back (X-cross to the side); antenna up = the tell
 
 
 // ---------------------------------------------------------------------------
@@ -361,7 +361,11 @@ export class EnemyManager {
   // then upgrades to the real model the next time it's recycled as a courier.
   // NB: no emissive body-glow — the old teal "spot it" tint read as a night-time
   // green-lighting bug; the modeled radio is a clearer, non-glowing cue.
+  // Only the NORMAL-size plain engendro (`grunt`, scale 1.0) carries the radio —
+  // never the small (swarmer/runner/minitolo) or big (brute/titan) variants, nor
+  // the special explode types — so the pack always sits at the size it's tuned for.
   makeCourier(e) {
+    if (e.type !== 'grunt') return;
     e.courier = true;
     const real = hasModel('r105d');
     if (!e._pack || (e._pack.userData.fallback && real)) {
