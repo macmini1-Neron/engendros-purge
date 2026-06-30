@@ -21,10 +21,11 @@ const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steerin
 // Courier backpack mount — the registered R-105d radio (authored in METRES,
 // floor-anchored) rides in the enemy mesh's LOCAL space, which def.scale
 // uniformly scales. Tuned against the plush by eye in-game (models/r105d/BUILD.md).
-const R105D_SCALE = 2.0;         // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
-const R105D_Y = 0.42;            // mount height — low on the back/body (radio is floor-anchored at y=0)
-const R105D_Z = -0.34;           // SET INTO the back — the box sinks into the round body so it sits flush, not cantilevered out
-const R105D_YAW = Math.PI / 2; // harness side (back-pad + webbing straps) sits AGAINST the plush's back; the radio case faces out = real worn-pack look; antenna up
+const R105D_SCALE = 2.0;          // metres → mesh-local; sizes the radio to read as a back-worn pack on the big-headed plush
+const R105D_Y = 0.36;             // mount height — low on the back/body (radio is floor-anchored at y=0)
+const R105D_Z = -0.44;            // distance behind the body — pulled off the back a touch so it reads as a hung pack
+const R105D_YAW = Math.PI / 2;    // harness side (back-pad + webbing straps) sits AGAINST the plush's back; the radio case faces out
+const R105D_TILT = -Math.PI / 9;  // pitch: −20° leans the whole pack backward off the back (top away from the body), antenna swung back
 
 // The R-105d radio as worn on a courier's back — a Group offset/scaled/rotated
 // in the enemy mesh's LOCAL space (the single source of truth for the mount, so
@@ -38,6 +39,7 @@ export function buildCourierRadio() {
   radio.rotation.y = R105D_YAW;
   g.add(radio);
   g.position.set(0, R105D_Y, R105D_Z);  // on the back
+  g.rotation.x = R105D_TILT;            // lean the whole pack backward off the back
   return g;
 }
 
