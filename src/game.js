@@ -45,6 +45,8 @@ import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
 import { makeWorldClock, MINUTES_PER_DAY, isNight } from './worldclock.js';
 import { EFFECT_TPS, stepEffects } from './effects-status.js';
+import { classifyRenderer } from './gpucheck.js';
+import { makeGpuNotice } from './gpunotice.js';
 
 // Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
 // Specs are authored in METRES — never compensate a wrong-sized spec with a
@@ -77,7 +79,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-28 15:34';
+const GAME_BUILD = '2026-06-29 08:15';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -207,8 +209,22 @@ class Game {
     };
 
     this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin();
+    this._initGpuNotice(); // low-end-GPU helper banner (gpucheck.js classifier + gpunotice.js DOM)
     this.player.update(0.0001); this.engine.render();
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
+  }
+
+  // Read the unmasked WebGL renderer once at boot, classify it, and wire the low-end-GPU banner.
+  // No-op (inert handle) on a discrete/unknown GPU, so this is safe to always call.
+  _initGpuNotice() {
+    let str = '';
+    try {
+      const gl = this.engine.renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbg) str = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '';
+    } catch (e) { /* masked / no extension → classifyRenderer returns 'unknown' → no banner */ }
+    this.gpuInfo = classifyRenderer(str);
+    this.gpuNotice = makeGpuNotice({ info: this.gpuInfo, onApplyPerfMode: () => this.settings.applyPerformanceMode() });
   }
 
   // Main-menu map picker (Arena/Steppe). The world is built once at boot from this.mapId,
@@ -1211,6 +1227,7 @@ class Game {
     if (this.state === 'crate' && this.crate) this.crate.render(frameDt);
     else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
     if (this.state === 'poker' && this.poker) { this.poker.update(frameDt); this.poker.render(frameDt); }
+    if (this.gpuNotice) this.gpuNotice.syncState(this.state); // low-end-GPU banner: visible only on menu/lobby (guarded, no per-frame DOM churn)
     if (!(this._fixedStep && this.state === 'playing')) this.input.endFrame(); // fixed path clears inside the loop (or carries when n===0)
   }
 

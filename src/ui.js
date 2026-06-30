@@ -392,6 +392,16 @@ export class Settings {
     const mpName = document.getElementById('mp-name'); if (mpName && !mpName.value) mpName.value = this.data.nick; // pre-fill the co-op lobby name
     this._refresh();
   }
+  // One-click "performance mode" for the low-end-GPU notice: Low preset + adaptive resolution.
+  // Reuses the exact preset/apply path the Settings UI uses, so it persists like any manual change.
+  applyPerformanceMode() {
+    this.data.gfxPreset = 'Low';
+    const c = presetConfig('Low');
+    this.data.shadowQ = c.shadowQ; this.data.drawDist = c.drawDist;
+    this.data.renderScale = c.renderScale; this.data.aa = c.aa; this.data.bloom = c.bloom;
+    this.data.adaptiveRes = 1;
+    this.apply(); this.save(); this._refresh();
+  }
   _refresh() {
     const txt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     const val = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
