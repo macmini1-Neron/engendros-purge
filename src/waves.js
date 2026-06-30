@@ -101,6 +101,9 @@ export class WaveManager {
       base.brute = (base.brute || 0) + n * 0.8;
       if (n >= 5) base.titan = (base.titan || 0) + (n - 4) * 1.4;
       base.swarmer = Math.max(4, (base.swarmer || 0) - n * 0.4);
+      if (n >= 4) base.armored = 5 + (n - 4) * 0.6;        // SN-42 cuirass tanks creep in from wave 4, occasionally
+    } else if (typeKey === 'elite' && n >= 4) {
+      base.armored = 18;                                   // an ELITE wave is mostly tanks — armored fits right in
     }
     return Object.keys(base).map((v) => ({ v, w: base[v] }));
   }

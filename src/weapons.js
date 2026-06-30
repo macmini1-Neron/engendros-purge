@@ -188,6 +188,13 @@ export const WEAPONS = {
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
 export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
+
+// Which weapons defeat the СН-42 steel cuirass (worn by the "armored" engendro). Realistic to the 2 mm
+// 36СГН plate: pistol/SMG/buckshot fire rings off it, but full-power rifle rounds (and bigger) punch
+// through. So rifles/snipers/MGs/launchers/cannon + the .44 magnum fire as source 'ap' (the enemy
+// damage() path treats 'ap' as armor-piercing); everything else stays 'gun' (rings off a plate strike).
+const CUIRASS_AP_CLASS = { rifle: true, sniper: true, launcher: true, cannon: true };
+export function cuirassSource(d) { return (d && (CUIRASS_AP_CLASS[d.class] || d.shape === 'magnum')) ? 'ap' : 'gun'; }
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -1612,7 +1619,7 @@ export class WeaponSystem {
       }
       if (eHit && (!wHit || eHit.dist <= wHit.dist)) {     // a body always stops the round
         const hs = eHit.head && !eHit.enemy.def.boss;      // no headshot cheese on the boss — head = body
-        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), 'gun', eHit.point, 'host', hs, eHit.part);
+        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), cuirassSource(d), eHit.point, 'host', hs, eHit.part);
         this.game.effects.tracer(muzzle, eHit.point, d.accent);
         if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
         else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
@@ -1711,7 +1718,7 @@ export class WeaponSystem {
   _fireAPFSDS(origin, dir, d) {
     this.game.effects.tracer(origin, origin.clone().addScaledVector(dir, d.range), d.accent);
     const eHit = this.game.enemies.rayHit(origin, dir, d.range);
-    if (eHit) { const k = this.game.enemies.damage(eHit.enemy, d.dmg, 'gun', eHit.point, 'host', false, eHit.part); this.game.hud.hitmarker(k); }
+    if (eHit) { const k = this.game.enemies.damage(eHit.enemy, d.dmg, 'ap', eHit.point, 'host', false, eHit.part); this.game.hud.hitmarker(k); } // APFSDS long-rod punches straight through the СН-42 cuirass
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;                                   // host-authoritative destruction
     const w = CALIBERS.apfsds;
@@ -2877,7 +2884,7 @@ export class MountedGun {
     } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
       const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss
       const dmg = this.dmg * (hs ? 1.6 : 1) * this.game.player.damageMult;
-      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point, 'host', hs, eHit.part);
+      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'ap', eHit.point, 'host', hs, eHit.part); // .50-cal/DShK tears through the СН-42 cuirass
       end = eHit.point;
       this.game.effects.tracer(muzzleFx, end, tracerColor);
       if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }

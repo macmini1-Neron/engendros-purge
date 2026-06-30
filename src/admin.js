@@ -121,6 +121,7 @@ export class Admin {
       { name: 'ННП-23 «Резчик» (1ПН54)', sub: 'night obs post (modelgen)', make: () => { const s = getSpec('nnp23'); return s ? buildSpec(s) : null; } },
       { name: 'ЛПР-1 «Каралон-М» (1Д13)', sub: 'laser rangefinder (modelgen)', make: () => { const s = getSpec('lpr1'); return s ? buildSpec(s) : null; } },
       { name: 'Radiostanice R-105d', sub: 'courier backpack radio (modelgen)', make: () => { const s = getSpec('r105d'); return s ? buildSpec(s) : null; } },
+      { name: 'СН-42 нагрудник', sub: 'armored-engendro steel cuirass (modelgen)', make: () => { const s = getSpec('sn42'); return s ? buildSpec(s) : null; } },
       { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
       { name: 'Field splint', sub: 'pickup', make: () => g.loot._pickupMesh('splint') },
       { name: 'Ration tin', sub: 'pickup', make: () => g.loot._pickupMesh('food') },

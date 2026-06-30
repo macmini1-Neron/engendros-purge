@@ -382,6 +382,18 @@ export class AudioManager {
   reloadIn() { this.tone(180, 0.08, 'square', 0.25); this.noise(0.05, 0.25, 'lowpass', 500, 1); }
   boltCycle() { this.noise(0.05, 0.28, 'bandpass', 1700, 4); setTimeout(() => { this.noise(0.06, 0.32, 'bandpass', 2200, 5); this.tone(150, 0.05, 'square', 0.14); }, 130); } // bolt lift-pull then push-lock
   garandPing() { this.tone(2300, 0.55, 'triangle', 0.30); this.tone(3100, 0.45, 'sine', 0.16); this.tone(1750, 0.5, 'triangle', 0.10); } // en-bloc clip "ping"
+  armorPing() { // small-arms round glancing off the СН-42 steel cuirass — bright metallic ricochet
+    if (!this.ctx) return; const t = this.ctx.currentTime;
+    this._metalPing(t, 3200 + Math.random() * 1400, 0.06, 0.09);
+    this._metalPing(t + 0.018, 5200 + Math.random() * 1800, 0.038, 0.06);
+    this._burst(t, 0.03, 0.05, 'highpass', 5000, 0.8);              // sharp spark zip
+  }
+  armorBreak() { // the cuirass shatters off the mob — heavy steel clank + a debris rattle
+    if (!this.ctx) return; const t = this.ctx.currentTime;
+    this._clank(t, 0.5, 230);
+    this._metalPing(t + 0.05, 2600, 0.08, 0.18);
+    this._burst(t + 0.02, 0.18, 0.08, 'bandpass', 1300, 1.6);
+  }
   shellInsert() { this.noise(0.05, 0.3, 'lowpass', 600, 1); this.tone(210, 0.05, 'square', 0.16); } // a single shell pressed into the tube
   dryFire() { this.noise(0.03, 0.25, 'bandpass', 3200, 4); }
 
