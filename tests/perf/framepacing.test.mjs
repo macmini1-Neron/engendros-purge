@@ -206,3 +206,37 @@ test('a real pause (> pauseS) DOES still reset the lock', () => {
   pacer.smooth(0.8);                                       // 0.8 s > pauseS → genuine pause
   assert.equal(pacer.hz, 0, 'a real pause resets the lock');
 });
+
+// ─── 10. VRR / non-standard panel — never lock, never flatten (the review fix) ───
+// A base only ever locks onto a recognised STANDARD refresh. An adaptive-sync display
+// (VRR / G-Sync / FreeSync) whose presents genuinely vary with render load — or an exotic
+// non-standard refresh — must NOT be snapped onto a frozen grid: that would flatten the
+// real-variable stream into a constant base and REINTRODUCE judder. So such a stream stays a
+// bit-exact pass-through and pacer.hz stays 0.
+
+test('a clean non-standard refresh (100 Hz) never locks — bit-exact pass-through, hz stays 0', () => {
+  const pacer = makeFramePacer();
+  const base = 1 / 100;                                // 100 Hz: >8% from both 90 and 120 → no standard match
+  let maxDelta = 0;
+  for (let i = 0; i < 200; i++) {
+    const o = pacer.smooth(base);
+    maxDelta = Math.max(maxDelta, Math.abs(o - base));
+  }
+  assert.equal(pacer.hz, 0, 'a non-standard rate must not lock a base');
+  assert.equal(maxDelta, 0, 'an unlocked stream must pass through bit-exact');
+});
+
+test('a genuinely-variable VRR stream is passed through untouched, not flattened to one base', () => {
+  const pacer = makeFramePacer();
+  const base = 1 / 200;                                // sits in the wide 165↔240 gap — no standard near
+  const seq = jitterSeq(base, base * 0.3, 300, 5);     // real adaptive-sync variation (±60% dt swing)
+  const outputs = [];
+  for (const dt of seq) outputs.push(pacer.smooth(dt));
+  assert.equal(pacer.hz, 0, 'a VRR median must never match a standard rate → no lock');
+  for (let i = 0; i < seq.length; i++) {               // every frame out exactly as it came in
+    assert.equal(outputs[i], seq[i], `VRR frame ${i} was altered (${seq[i]} → ${outputs[i]})`);
+  }
+  // …so output jitter equals input jitter — it is NOT collapsed toward zero (that was the bug).
+  const inJ = stddevMs(seq.slice(40)), outJ = stddevMs(outputs.slice(40));
+  assert.ok(Math.abs(inJ - outJ) < 1e-9, `VRR jitter must be preserved: in=${inJ} out=${outJ}`);
+});

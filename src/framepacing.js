@@ -24,6 +24,11 @@
 // within a hair of 1×base, so the snap is a no-op. This can never make a smooth machine
 // worse — it only removes wobble that was already there.
 //
+// Safe-on-VRR by construction too: a base only ever locks onto a recognised STANDARD refresh
+// (see stableBase). An adaptive-sync panel (G-Sync / FreeSync) whose presents genuinely vary
+// with render load never matches a standard rate, so it never locks and every frame passes
+// through untouched — we refuse to flatten real-variable presents onto a frozen grid.
+//
 // Usage:
 //   import { makeFramePacer } from './framepacing.js';
 //   const pacer = makeFramePacer();
@@ -58,20 +63,24 @@ function stddevMs(a) {
   return Math.sqrt(varc / n) * 1000;
 }
 
-// Snap an estimated interval to the nearest standard refresh rate within `tol`, giving a
-// stable base. If nothing standard is close (an unusual / VRR display), keep the estimate.
+// Snap an estimated interval to the nearest STANDARD refresh rate within `tol`. We only ever
+// lock onto a recognised fixed rate: if nothing standard is close — an adaptive-sync display
+// (VRR / G-Sync / FreeSync) whose real present intervals genuinely vary with render load, or an
+// exotic non-standard refresh — return 0 so updateLock() refuses to lock and smooth() passes
+// frames through untouched. Snapping a genuinely-variable VRR stream onto a frozen grid would
+// REINTRODUCE the judder this module exists to remove, so "no clean cadence" must mean "no-op".
 function stableBase(est, tol = 0.08) {
-  let best = est, bestErr = Infinity;
+  let best = 0, bestErr = Infinity;
   for (const s of KNOWN_S) {
     const e = Math.abs(s - est);
     if (e < bestErr && e <= est * tol) { bestErr = e; best = s; }
   }
-  return best;
+  return best;   // 0 ⇒ no standard rate matched ⇒ do not lock (VRR / non-standard panel)
 }
 
-// Loose equality for refresh-interval candidates: exact for a standard rate (both sides are the
-// same KNOWN_S float, diff 0), tolerant for a VRR / non-standard display where the median is a
-// wobbling float — so the hysteresis can still re-lock there instead of comparing with `===`.
+// Equality test for two locked-base candidates. Both are now always exact KNOWN_S floats — VRR /
+// non-standard medians no longer lock (stableBase returns 0 there) — so this is effectively `===`
+// with a 0.1% guard against any floating-point dust in the division.
 function nearBase(a, b) { return b > 0 && Math.abs(a - b) <= b * 1e-3; }
 
 /**
@@ -89,8 +98,9 @@ function nearBase(a, b) { return b > 0 && Math.abs(a - b) <= b * 1e-3; }
  *   of the locked vsync interval; leaves genuinely irregular frames (real stalls, tab-out)
  *   alone so the sim still sees them.
  *
- * pacer.vsync  — locked display interval in seconds (0 until warmed up).
- * pacer.hz     — locked refresh in Hz (0 until warmed up).
+ * pacer.vsync  — locked display interval in seconds (0 until warmed up; stays 0 on a VRR /
+ *                non-standard panel, where pacing is a pass-through no-op).
+ * pacer.hz     — locked refresh in Hz (0 until warmed up / on a VRR / non-standard panel).
  * pacer.jitterMs    — stddev of recent RAW dts in ms (the problem).
  * pacer.outJitterMs — stddev of recent SMOOTHED dts in ms (≪ jitterMs when it is working).
  * pacer.reset() — clear history + carry + lock (call on state transitions / pause).
