@@ -26,6 +26,21 @@ const R105D_Y = 0.42;            // mount height — low on the back/body (radio
 const R105D_Z = -0.34;           // SET INTO the back — the box sinks into the round body so it sits flush, not cantilevered out
 const R105D_YAW = Math.PI / 2; // harness side (back-pad + webbing straps) sits AGAINST the plush's back; the radio case faces out = real worn-pack look; antenna up
 
+// The R-105d radio as worn on a courier's back — a Group offset/scaled/rotated
+// in the enemy mesh's LOCAL space (the single source of truth for the mount, so
+// makeCourier and the admin asset-viewer preview never drift). null until the
+// spec registers at boot.
+export function buildCourierRadio() {
+  if (!hasModel('r105d')) return null;
+  const g = new THREE.Group();
+  const radio = buildSpec(getSpec('r105d'));
+  radio.scale.setScalar(R105D_SCALE);   // metres → mesh-local
+  radio.rotation.y = R105D_YAW;
+  g.add(radio);
+  g.position.set(0, R105D_Y, R105D_Z);  // on the back
+  return g;
+}
+
 
 // ---------------------------------------------------------------------------
 // Engendros — voodoo-plush enemies. Round ball head, big button eye, stitched
@@ -380,25 +395,17 @@ export class EnemyManager {
   // + telescopic antenna outward, harness toward the body); else the original
   // procedural canvas pack as a fallback during the async-register window.
   _buildCourierPack(real) {
+    if (real) { const g = buildCourierRadio(); g.userData.fallback = false; return g; }
     const g = new THREE.Group();
-    if (real) {
-      const radio = buildSpec(getSpec('r105d'));
-      radio.scale.setScalar(R105D_SCALE);          // metres → mesh-local
-      radio.rotation.y = R105D_YAW;
-      g.add(radio);
-      g.position.set(0, R105D_Y, R105D_Z);          // on the back
-      g.userData.fallback = false;
-    } else {
-      const pb = new MeshBuilder();
-      pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
-      pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
-      pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
-      pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
-      pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
-      g.add(new THREE.Mesh(pb.build(), voxelMaterial()));   // no glow — plain canvas pack
-      g.position.set(0, 1.05, 0.34); // on the back
-      g.userData.fallback = true;
-    }
+    const pb = new MeshBuilder();
+    pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
+    pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
+    pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
+    pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
+    pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
+    g.add(new THREE.Mesh(pb.build(), voxelMaterial()));   // no glow — plain canvas pack
+    g.position.set(0, 1.05, 0.34); // on the back
+    g.userData.fallback = true;
     return g;
   }
   get aliveCount() { return this.active.length; }

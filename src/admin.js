@@ -4,7 +4,8 @@ import { clamp, voxelMaterial } from './util.js';
 import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSupplyCrate } from './props.js';
 import { buildGramophone } from './fonoteka.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
-import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
+import { ENGENDRO_COLORS, buildTolo, buildCourierRadio } from './enemies.js';
+import { buildRig, dressRig } from './engendro.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildIl76AirdropFallback, buildIl76AirdropModel, preloadIl76AirdropModel } from './aircraft.js';
@@ -100,11 +101,21 @@ export class Admin {
     const g = this.game;
     if (this.tab === 'weapons') return WEAPON_ORDER.map((k) => ({ name: WEAPONS[k].name, sub: WEAPONS[k].class, make: () => { const grp = new THREE.Group(); grp.add(buildViewmodel(WEAPONS[k])); const sm = WEAPONS[k].spinMag; if (sm) { const mg = buildMag(sm); mg.position.set(sm.x, sm.y, sm.z); grp.add(mg); } return grp; } }));
     if (this.tab === 'enemies') {
-      const list = ENGENDRO_COLORS.map((col) => ({ name: col.name, sub: 'engendro skin', make: () => new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()) }));
-      list.push({ name: 'BOSS TOLO', sub: 'boss', make: () => new THREE.Mesh(buildTolo(), voxelMaterial()) });
-      list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'mini' }, 'normal'), voxelMaterial()) });
-      list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: () => new THREE.Mesh(buildEngendro(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length], 'exploder'), voxelMaterial()) });
-      list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
+      // Live in-game model: regular engendros are part-rigged plush (engendro.js buildRig/dressRig),
+      // NOT the legacy buildEngendro merged mesh — so the viewer dresses a rig to match what spawns.
+      const rigged = (colorHex, variant, seed) => () => { const rig = buildRig(voxelMaterial()); dressRig(rig, colorHex, seed >>> 0, variant); return rig.root; };
+      const list = ENGENDRO_COLORS.map((col, i) => ({ name: col.name, sub: 'engendro skin', make: rigged(col.body, 'normal', (i + 1) * 2654435761) }));
+      list.push({ name: 'BOSS TOLO', sub: 'boss (legacy merged mesh)', make: () => new THREE.Mesh(buildTolo(), voxelMaterial()) });
+      list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: rigged(0xede7df, 'normal', 7777) });
+      list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: rigged(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length].body, 'exploder', 5151) });
+      list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: rigged(0x8a2b2b, 'charger', 3131) });
+      list.push({ name: 'Courier (R-105d on back)', sub: 'backpack courier — radio worn on the back', make: () => {
+        const rig = buildRig(voxelMaterial());
+        dressRig(rig, ENGENDRO_COLORS[0].body, 4242, 'normal');
+        const radio = buildCourierRadio();   // null until the spec registers; mounted exactly as in makeCourier
+        if (radio) rig.root.add(radio);
+        return rig.root;
+      } });
       return list;
     }
     if (this.tab === 'props') return [
