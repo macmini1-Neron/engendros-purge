@@ -18,6 +18,7 @@
 ## Status
 - `node tools/modelgen/lint.mjs models/r105d` → ✓ built 0.227×0.811×0.379 m, **58 parts**, fills 99/97/100%.
 - Verified visually in the modelgen viewer with the owner (no headless Playwright on this Windows box → owner screenshots drove the loop). Owner sign-off: "ok".
+- **2026-06-30 (Mac/Chrome):** cherry-picked onto a clean branch off main (`feat/courier-radio-r105d`); re-linted (all ops on main: bevelBox/cylinder/cone/plate/decal/handleU) + ran the full Playwright render sweep (`renders/{front,q34,side,back34,top,graze,ghost}.png`). Read every view — silhouette reads as the real R-105d at a glance; X-cross + power knob + 320065 serial + telescopic whip + harness all present; no z-fighting at graze; ghost scale correct. **Defect-free.**
 
 ## Rounds
 1. v1 open-panel concept → owner: make it **closed + detailed**, straps on the **larger** side.
