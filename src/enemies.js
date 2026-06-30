@@ -354,11 +354,13 @@ export class EnemyManager {
     this.active.push(e);
     return e;
   }
-  // Mark an enemy as a rare "backpack courier" — glows + wears the R-105d field
-  // radio on its back; drops a radio on death. The pack is built once per pooled
-  // enemy and reused (visibility toggled). If a courier spawns before the spec
-  // registers at boot it gets the procedural fallback pack, then upgrades to the
-  // real model the next time it's recycled as a courier.
+  // Mark an enemy as a rare "backpack courier" — wears the R-105d field radio on
+  // its back (that radio + antenna IS the tell); drops a radio on death. The pack
+  // is built once per pooled enemy and reused (visibility toggled). If a courier
+  // spawns before the spec registers at boot it gets the procedural fallback pack,
+  // then upgrades to the real model the next time it's recycled as a courier.
+  // NB: no emissive body-glow — the old teal "spot it" tint read as a night-time
+  // green-lighting bug; the modeled radio is a clearer, non-glowing cue.
   makeCourier(e) {
     e.courier = true;
     const real = hasModel('r105d');
@@ -368,7 +370,6 @@ export class EnemyManager {
       e.mesh.add(e._pack);
     }
     e._pack.visible = true;
-    if (e.mat && e.mat.emissive) { e.mat.emissive.setHex(0x123a14); e.mat.emissiveIntensity = 0.55; } // teal glow so you spot it
   }
   // The backpack worn by a courier. `real` → the registered R-105d radio
   // (models/r105d/), sized + oriented to read as a backpack on the plush (panel
@@ -390,7 +391,7 @@ export class EnemyManager {
       pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
       pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
       pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
-      g.add(new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 })));
+      g.add(new THREE.Mesh(pb.build(), voxelMaterial()));   // no glow — plain canvas pack
       g.position.set(0, 1.05, 0.34); // on the back
       g.userData.fallback = true;
     }
