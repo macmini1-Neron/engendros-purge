@@ -813,6 +813,8 @@ class Game {
     const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
     this.mpMenuOpen = false;
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    if (this.radioPanel && this.radioPanel.open_) this.radioPanel.close(); // run ended with the radio panel up → close it (restores controls + unducks music)
+    if (this.audio && this.audio.setUiMusicDuck) this.audio.setUiMusicDuck(1); // safety: never leave the UI music-duck stuck on the way to the menu
     this._setUnloadGuard(false); this._unlockKeyboard(); // run over → drop the exit guards
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
@@ -829,7 +831,7 @@ class Game {
     return o;
   }
 
-  openAdmin() { this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // keep the jukebox running so the asset-viewer Music player controls it live
+  openAdmin() { if (this.audio && this.audio.setUiMusicDuck) this.audio.setUiMusicDuck(1); this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // un-duck (Settings→admin skips Settings.close): keep the jukebox running so the asset-viewer Music player controls it live
   // ФОНОТЕКА — full-screen music screen (live 3D gramophone + genre browser), from the menu or the co-op lobby.
   openFonoteka(from) {
     this._fonoFrom = (from === 'lobby') ? 'lobby' : 'menu';
