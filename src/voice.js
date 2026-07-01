@@ -72,6 +72,7 @@ export class VoiceChat {
       if (typeof console !== 'undefined') console.warn('[voice] mic unavailable — receive-only:', e && e.name);
     }
     this._buildOutputGraph();
+    this._buildCrackle();
     if (!this.micDenied) this._buildMicGraph();
     this.enabled = true;
     // if a run is already live, join the mesh now
@@ -83,6 +84,7 @@ export class VoiceChat {
     if (!this.enabled) return;
     this._announce(false);
     this._exitMesh();
+    try { this._crackleSrc && this._crackleSrc.stop(); } catch (e) {} this._crackleSrc = null; this._crackleGain = null;
     if (this.micStreamRaw) { for (const t of this.micStreamRaw.getTracks()) try { t.stop(); } catch (e) {} }
     try { this.voiceOutEl && this.voiceOutEl.pause(); } catch (e) {}
     this.micStreamRaw = this.micSrc = this.micGainNode = this.micDest = this.micStream = this.micTrack = null;
@@ -123,6 +125,18 @@ export class VoiceChat {
     this.voiceOutEl.play().catch(() => {});
   }
 
+  _buildCrackle() {
+    if (!this.ctx || this._crackleGain) return;
+    const ctx = this.ctx, len = Math.floor(ctx.sampleRate * 2);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate), data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * 0.5;
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.7;
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(bp); bp.connect(g); if (this.voiceMaster) g.connect(this.voiceMaster);
+    try { src.start(); } catch (e) {}
+    this._crackleSrc = src; this._crackleGain = g;
+  }
   _applySink() {
     const el = this.voiceOutEl, id = this._s.outDevId;
     if (el && id && el.setSinkId) el.setSinkId(id).catch(() => {});
@@ -250,6 +264,7 @@ export class VoiceChat {
     const tick = this._occT <= 0; if (tick) this._occT = 1 / OCC_HZ;
 
     const cam = this.game.engine && this.game.engine.camera;
+    this._crackleTarget = 0;
     for (const [id, pv] of this.peers) {
       const rp = this.game.mp.remotes && this.game.mp.remotes.get(id);
       if (rp && pv.panner) this._setPos(pv.panner, rp.pos);
@@ -269,10 +284,12 @@ export class VoiceChat {
           const pen = detunePenalty(Math.abs((pv.rf - this.radioFreq) * 1e6));
           rg = 0.95 * (pen >= RADIO.DETUNE_K ? 0 : Math.max(0, 1 - pen / RADIO.DETUNE_K)); // clarity from detune (distance/SNR + capture/garble: follow-up)
         }
+        if (rg > 0) this._crackleTarget = Math.max(this._crackleTarget, 1 - rg / 0.95);
         pv.radioGain.gain.value = damp(pv.radioGain.gain.value, rg, 12, dt);
       }
     }
     this._updateSpeakers(dt);
+    if (this._crackleGain) this._crackleGain.gain.value = damp(this._crackleGain.gain.value, (this._crackleTarget || 0) * 0.12, 8, dt);
   }
 
   _updateListener() {
@@ -386,6 +403,7 @@ export class VoiceChat {
           const pen = detunePenalty(Math.abs((pv.rf - sp.freq) * 1e6));
           g = 0.95 * (pen >= RADIO.DETUNE_K ? 0 : Math.max(0, 1 - pen / RADIO.DETUNE_K));
         }
+        if (g > 0) this._crackleTarget = Math.max(this._crackleTarget || 0, 1 - g / 0.95);
         let tap = sp.taps.get(id);
         if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; pv.srcNode.connect(tap); tap.connect(sp.bp); sp.taps.set(id, tap); }
         if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
