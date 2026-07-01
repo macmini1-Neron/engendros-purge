@@ -45,6 +45,7 @@ export class VoiceChat {
     this.ptt = false; this.pttKey = 'CapsLock';
     this.radioOn = false; this.radioFreq = 40.150; this.radioTx = false; this.radioPttKey = 'KeyX'; // field-radio channel (Phase 2)
     this.speakers = new Map();     // deployed-radio loudspeakers: structId -> { panner, bp, freq, on, taps:Map<peerId,gain> }
+    this.stations = [];            // preset RADIO_STATIONS: a local asset "always broadcasting" on a fixed freq — tune in to hear it (single-machine testable)
     this.vadThresh = SPEAK_RMS; this.localSpeaking = false; this._vadHang = 0;
     this._inCoop = false; this._occT = 0; this._micTest = false;
     // settings mirror (filled by applySettings)
@@ -73,6 +74,7 @@ export class VoiceChat {
     }
     this._buildOutputGraph();
     this._buildCrackle();
+    this._initStations();
     if (!this.micDenied) this._buildMicGraph();
     this.enabled = true;
     // if a run is already live, join the mesh now
@@ -85,6 +87,7 @@ export class VoiceChat {
     this._announce(false);
     this._exitMesh();
     try { this._crackleSrc && this._crackleSrc.stop(); } catch (e) {} this._crackleSrc = null; this._crackleGain = null;
+    for (const st of this.stations) { try { st.el.pause(); } catch (e) {} } this.stations = [];
     if (this.micStreamRaw) { for (const t of this.micStreamRaw.getTracks()) try { t.stop(); } catch (e) {} }
     try { this.voiceOutEl && this.voiceOutEl.pause(); } catch (e) {}
     this.micStreamRaw = this.micSrc = this.micGainNode = this.micDest = this.micStream = this.micTrack = null;
@@ -281,6 +284,7 @@ export class VoiceChat {
       }
     }
     this._updateRadioReception(dt);
+    this._updateStations(dt);
     this._updateSpeakers(dt);
     if (this._crackleGain) this._crackleGain.gain.value = damp(this._crackleGain.gain.value, (this._crackleTarget || 0) * 0.12, 8, dt);
   }
@@ -375,7 +379,7 @@ export class VoiceChat {
       const panner = ctx.createPanner(); panner.panningModel = 'HRTF'; panner.distanceModel = 'inverse'; panner.refDistance = 3; panner.maxDistance = 45; panner.rolloffFactor = 1.4;
       const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1650; bp.Q.value = 1.0;
       bp.connect(panner); if (this.voiceMaster) panner.connect(this.voiceMaster);
-      sp = { id, panner, bp, freq, on: !!on, taps: new Map() };
+      sp = { id, panner, bp, freq, on: !!on, taps: new Map(), stationTaps: new Map() };
       this.speakers.set(id, sp);
     }
     sp.freq = freq; sp.on = !!on;
@@ -397,6 +401,13 @@ export class VoiceChat {
         let tap = sp.taps.get(id);
         if (!tap && target > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; pv.srcNode.connect(tap); tap.connect(sp.bp); sp.taps.set(id, tap); }
         if (tap) tap.gain.value = damp(tap.gain.value, target, 12, dt);
+      }
+      if (sp.stationTaps) for (const st of this.stations) {                 // deployed radio also plays preset stations out loud
+        let g = 0;
+        if (sp.on && withinPassband(sp.freq, st.freq)) g = 0.85 * quality(RADIO.CLEAR_DB - detunePenalty(Math.abs((sp.freq - st.freq) * 1e6)), RADIO.SQUELCH_DB).clarity;
+        let tap = sp.stationTaps.get(st);
+        if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; st.srcNode.connect(tap); tap.connect(sp.bp); sp.stationTaps.set(st, tap); if (st.el.paused) st.el.play().catch(() => {}); }
+        if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
       }
     }
   }
@@ -422,6 +433,7 @@ export class VoiceChat {
     }
   }
   _updateRadioReception(dt) {
+    if (this.radioOn) this._crackleTarget = Math.max(this._crackleTarget || 0, 0.15); // faint open-channel hiss while the radio is ON (so tuning always has "air")
     const gains = new Map();
     if (this.radioOn) this._applyChannel(this._resolveChannel(this.radioFreq, this._enclosureDb || 0), gains);
     for (const [id, pv] of this.peers) if (pv.radioGain) pv.radioGain.gain.value = damp(pv.radioGain.gain.value, gains.get(id) || 0, 12, dt);
@@ -430,6 +442,35 @@ export class VoiceChat {
     const grid = this.game.world && this.game.world.grid; if (!grid || !grid.raycast) return 0;
     const hit = grid.raycast(cam.position.x, cam.position.y, cam.position.z, 0, 1, 0, 14);
     return hit ? clamp(14 - hit.t, 0, 12) : 0;               // closer roof = more enclosed (up to 12 dB)
+  }
+
+  // ---- preset RADIO_STATIONS (design §4): local audio "always on" at a fixed freq; tune in to hear it ----
+  _initStations() {
+    if (this.stations.length || !this.ctx || !this.voiceMaster) return;
+    this._addStation(44.100, 'assets/polyushko.mp3'); // «СЕКРЕТ» — hidden Soviet station (Полюшко-поле); single-machine test target
+  }
+  _addStation(freq, url) {
+    const ctx = this.ctx;
+    let el, srcNode;
+    try { el = new Audio(url); el.loop = true; srcNode = ctx.createMediaElementSource(el); }
+    catch (e) { if (typeof console !== 'undefined') console.warn('[voice] station load failed', url, e); return; }
+    const cgain = ctx.createGain(); cgain.gain.value = 0;
+    srcNode.connect(cgain); cgain.connect(this.voiceMaster);       // carried/private reception path
+    el.play().catch(() => {});
+    this.stations.push({ freq, el, srcNode, cgain });
+  }
+  _updateStations(dt) {
+    for (const st of this.stations) {
+      let g = 0;
+      if (this.radioOn && withinPassband(this.radioFreq, st.freq)) {
+        const snr = RADIO.CLEAR_DB - detunePenalty(Math.abs((this.radioFreq - st.freq) * 1e6)) - (this._enclosureDb || 0);
+        const q = quality(snr, RADIO.SQUELCH_DB);
+        g = 0.85 * q.clarity;
+        if (g > 0) this._crackleTarget = Math.max(this._crackleTarget || 0, q.crackle);
+      }
+      if (g > 0.02 && st.el.paused) st.el.play().catch(() => {});
+      if (st.cgain) st.cgain.gain.value = damp(st.cgain.gain.value, g, 12, dt);
+    }
   }
 
   // ---- settings + mic test ----------------------------------------------------------------
