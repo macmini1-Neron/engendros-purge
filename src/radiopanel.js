@@ -88,8 +88,8 @@ export class RadioPanel {
   setFreq(mhz) { this.freq = clampFreq(snapReadout(mhz)); this._refresh(); this._pushState(); } // jump straight to a known freq
   _pushState() {
     const g = this.game;
-    if (this.struct && g.build && g.build.setR105State) g.build.setR105State(this.struct, this.freq, this.on); // deployed → loudspeaker + squad sync
-    else if (g.voice) { if (g.voice.setRadioFreq) g.voice.setRadioFreq(this.freq); if (g.voice.setRadioOn) g.voice.setRadioOn(this.on); } // carried → private reception
+    if (g.voice) { if (g.voice.setRadioFreq) g.voice.setRadioFreq(this.freq); if (g.voice.setRadioOn) g.voice.setRadioOn(this.on); } // live-monitor the tuning in your ear (real-time static↔signal as you turn the dial)
+    if (this.struct && g.build && g.build.setR105State) g.build.setR105State(this.struct, this.freq, this.on); // deployed → ALSO loudspeaker + squad sync
   }
 
   _pickup() {
@@ -109,19 +109,22 @@ export class RadioPanel {
     if (this.open_) return;
     this.open_ = true;
     this.el.style.display = 'flex';
-    this.game._radioPanelOpen = true;                       // let the game gate input while tuning
-    try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) {}
+    this.game._radioPanelOpen = true;                       // freezes movement (player.controlsPaused) but the SIM keeps running → live tuning audio
+    this.game._intentionalUnlock = this.game.input.locked; this.game.input.exitLock(); // free the cursor WITHOUT the pause-on-unlock (mirrors the game's menu pattern)
     window.addEventListener('keydown', this._onKey, true);
     window.addEventListener('wheel', this._onWheel, { passive: false, capture: true });
   }
 
   close() {
     if (!this.open_) return;
+    const wasStruct = !!this.struct;
     this.open_ = false; this.struct = null;
     if (this.el) this.el.style.display = 'none';
     this.game._radioPanelOpen = false;
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('wheel', this._onWheel, true);
+    if (wasStruct && this.game.voice && this.game.voice.setRadioOn) this.game.voice.setRadioOn(false); // deployed radio keeps broadcasting via its loudspeaker, not in your ear
+    if (this.game.state === 'playing' && this.game.input) this.game.input.requestLock(); // straight back into the game (re-lock cursor) — NOT the pause menu
   }
 
   toggle() { this.open_ ? this.close() : this.open(); }
