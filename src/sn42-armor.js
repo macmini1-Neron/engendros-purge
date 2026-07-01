@@ -26,14 +26,17 @@ export function isArmorPiercing(source) { return !!AP_SOURCES[source]; }
 //   plateHits  : hits the plate has left before it shatters
 //   amount     : incoming body damage
 //   ap         : isArmorPiercing(source) — caliber punches through the steel
+//   chip       : how much plate integrity this blocked hit removes (default 1). The caller passes 0 for the
+//                extra pellets of ONE shotgun blast (all land the same frame) so a single point-blank blast
+//                counts as a single dent — else its 9–12 pellets would shatter the "rings-off" plate at once.
 // → { blocked, penetrate, plateBreak, damage, plateHitsLeft }
-export function resolveArmorHit({ plateHit, plateHits, amount, ap }) {
+export function resolveArmorHit({ plateHit, plateHits, amount, ap, chip = 1 }) {
   if (!plateHit) {                          // shot missed the plate → cuirass irrelevant, full damage, no sparks
     return { blocked: false, penetrate: false, plateBreak: false, damage: amount, plateHitsLeft: plateHits };
   }
   if (ap) {                                 // rifle+/.50/RPG/blast → punches clean through: full damage, plate destroyed
     return { blocked: false, penetrate: true, plateBreak: true, damage: amount, plateHitsLeft: 0 };
   }
-  const left = plateHits - 1;               // pistol/SMG/buckshot → rings off the steel: no body damage, plate chipped
+  const left = plateHits - chip;            // pistol/SMG/buckshot → rings off the steel: no body damage, plate chipped
   return { blocked: true, penetrate: false, plateBreak: left <= 0, damage: 0, plateHitsLeft: left };
 }

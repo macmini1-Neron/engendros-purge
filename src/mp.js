@@ -15,6 +15,7 @@ import { drawChip, CHIP_SKINS_FREE } from './poker/chipskins.js'; // pure — ro
 import { CARD_BACKS_FREE } from './poker/cardbacks.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 import { animateRig, limbFlags, applyLimbFlags, severCosmetic } from './engendro.js';
+import { PLATE_PART } from './enemies.js';                     // synthetic СН-42 cuirass "part" — re-tag a client's plate claim so the host blocks it
 
 
 // ---------------------------------------------------------------------------
@@ -825,7 +826,7 @@ export class MP {
     n.on('timereq', (d, from) => { if (this.isHost && d && Number.isFinite(d.min)) g.dayNight.setMinuteOfDay(d.min); }); // client asked host to set time → host applies (setMinuteOfDay re-renders + broadcasts)
     n.on('clock', (d) => { if (!this.isHost && d) { if (typeof d.t === 'number') g._surviveTime = d.t; if (typeof d.left === 'number') g.hud.setEnemiesLeft(d.left); } }); // host-authoritative survive-clock + enemies-left
     n.on('waveclear', (d) => { if (g.state === 'playing') g.hud.bigMessage('WAVE CLEAR', 'breathe — next wave incoming'); });
-    n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) g.enemies.damage(e, d.dmg, d.src || 'gun', null, from, false, (e.rig && d.p) ? e.rig.byName[d.p] : null); }); // d.p = limb the client claims to have shot
+    n.on('hit', (d, from) => { if (!this.isHost) return; const e = this._enemyById(d.eid); if (e && e.alive) { const part = d.p === 'plate' ? PLATE_PART : ((e.rig && d.p) ? e.rig.byName[d.p] : null); g.enemies.damage(e, d.dmg, d.src || 'gun', null, from, false, part); } }); // d.p = limb the client claims to have shot ('plate' = a СН-42 cuirass strike → host re-tags it so the plate rings off / breaks authoritatively)
     n.on('phit', (d, from) => { if (this.isHost) this.hostHurt(d.tid, d.dmg, from); });
     n.on('molotov', (d) => { if (this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });
     n.on('firepool', (d) => { if (!this.isHost) this.game._spawnMolotovPool(new THREE.Vector3(d.x, d.y, d.z), true); });

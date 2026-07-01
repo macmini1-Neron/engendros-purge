@@ -54,3 +54,26 @@ test('a shot that MISSED the plate → full damage, no block (head/flank/back/le
     assert.equal(r.plateBreak, false, `ap=${ap}`);
   }
 });
+
+// chip: 0 is how the caller debounces a shotgun blast — the extra pellets of ONE shot ring off (block, no
+// body damage) but do NOT chip the plate, so a single point-blank blast can't shatter the "rings-off" cuirass.
+test('chip:0 (a shotgun blast\'s extra pellets) → still blocked, but no chip and no break', () => {
+  const r = resolveArmorHit({ plateHit: true, plateHits: SN42.PLATE_HITS, amount: 30, ap: false, chip: 0 });
+  assert.equal(r.blocked, true);
+  assert.equal(r.damage, 0);
+  assert.equal(r.plateHitsLeft, SN42.PLATE_HITS);   // unchanged — no dent from the trailing pellets
+  assert.equal(r.plateBreak, false);
+});
+
+test('chip:0 never shatters a 1-hit-from-death plate (trailing pellets can\'t break it, only the next shot can)', () => {
+  const r = resolveArmorHit({ plateHit: true, plateHits: 1, amount: 30, ap: false, chip: 0 });
+  assert.equal(r.plateHitsLeft, 1);
+  assert.equal(r.plateBreak, false);
+  const nextShot = resolveArmorHit({ plateHit: true, plateHits: 1, amount: 30, ap: false });  // default chip:1
+  assert.equal(nextShot.plateBreak, true);
+});
+
+test('chip defaults to 1 when omitted (a normal pistol/SMG round dents the plate)', () => {
+  const r = resolveArmorHit({ plateHit: true, plateHits: SN42.PLATE_HITS, amount: 30, ap: false });
+  assert.equal(r.plateHitsLeft, SN42.PLATE_HITS - 1);
+});

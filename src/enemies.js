@@ -44,7 +44,7 @@ const ARMOR_PLATE_SCALE = 1.05;
 const WRAP_R = 0.38;                          // radius the cuirass wraps the body ball around (×SCALE ≈ 0.40 > body surface ≈ 0.34 → the shell sits proud ON the body, edges still curl in)
 const PLATE_Y = 0.24;                         // lift the bent band onto the upper-lit chest (mesh-local)
 const PLATE_CAP = { ax: 0, ay: 0.34, az: 0.30, bx: 0, by: 0.70, bz: 0.30, r: 0.30 };  // chest-front capsule (1:1 hitbox)
-const _PLATE_PART = { name: 'plate', kind: 'plate', side: 0, severable: false };  // synthetic "part" rayHit returns on a cuirass strike
+export const PLATE_PART = { name: 'plate', kind: 'plate', side: 0, severable: false };  // synthetic "part" rayHit returns on a cuirass strike (also imported by mp.js to re-tag a client's plate claim)
 const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pcol = new THREE.Vector3(), _pscratch = new THREE.Vector3();
 
 // Bend a flat plate group around the body's vertical (Y) axis at radius R so it wraps the round plush:
@@ -1222,7 +1222,7 @@ export class EnemyManager {
         if (hit) { best = hit.t; hitE = e; hitPart = hit.part; hp = hit.point; }
         if (e.armored && e.plateIntact && e._plateCap) {           // СН-42 cuirass: a precise capsule on the chest
           const tp = this._rayPlate(e, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best); // front — only a shot that
-          if (tp !== null) { best = tp; hitE = e; hitPart = _PLATE_PART; hp = new THREE.Vector3(origin.x + dir.x * tp, origin.y + dir.y * tp, origin.z + dir.z * tp); } // actually strikes it rings off (1:1)
+          if (tp !== null) { best = tp; hitE = e; hitPart = PLATE_PART; hp = new THREE.Vector3(origin.x + dir.x * tp, origin.y + dir.y * tp, origin.z + dir.z * tp); } // actually strikes it rings off (1:1)
         }
       } else {
         best = tb; hitE = e; hitPart = null; hp = new THREE.Vector3(origin.x + dir.x * tb, origin.y + dir.y * tb, origin.z + dir.z * tb);
@@ -1263,11 +1263,17 @@ export class EnemyManager {
     // rifle+/.50/RPG ('ap'/blast) punches clean through (full damage) and wrecks the plate. A hit that
     // missed the plate (head/flank/back/legs) never reaches here as 'plate' → normal damage, no sparks.
     if (e.armored && e.plateIntact && part && part.kind === 'plate' && !e.def.boss) {
-      const res = resolveArmorHit({ plateHit: true, plateHits: e.plateHits, amount, ap: isArmorPiercing(source) });
+      // One dent per shot: a shotgun fires 9–12 pellets in ONE frame — count them as a single plate chip
+      // (chip:0 for the extra pellets), else a single point-blank blast shatters the "rings-off" cuirass. AP
+      // rounds still punch through per-pellet. (Co-op: pellet claims usually batch into one host frame too.)
+      const firstThisShot = e._plateHitFrame !== this.game._frameId;
+      e._plateHitFrame = this.game._frameId;
+      const res = resolveArmorHit({ plateHit: true, plateHits: e.plateHits, amount, ap: isArmorPiercing(source), chip: firstThisShot ? 1 : 0 });
       if (res.penetrate) { this.breakPlate(e, hitPoint); }   // plate wrecked; full damage falls through below
       else {
         e.plateHits = res.plateHitsLeft;
-        this._plateDent(e, hitPoint);                        // ricochet sparks + ping + crumple
+        if (firstThisShot) this._plateDent(e, hitPoint);     // ricochet sparks + ping + crumple + progressive darken (once per shot)
+        else if (hitPoint) this.game.effects.metalSpark(hitPoint, 3);  // extra pellet off the same plate this frame: a few sparks, no second ping/chip
         if (res.plateBreak) this.breakPlate(e, hitPoint);
         return false;                                        // rang off — no body damage, no kill
       }
