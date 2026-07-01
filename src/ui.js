@@ -493,8 +493,8 @@ export class Settings {
   }
   _stopMicTest() { this._micTestOn = false; if (this.game.voice && this.game.voice.stopMicTest) this.game.voice.stopMicTest(); if (this._micRaf) cancelAnimationFrame(this._micRaf); const bar = document.getElementById('s-miclevel'); if (bar) bar.style.width = '0%'; const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'TEST MIC'; }
   _prettyKey(code) { if (!code) return '—'; return String(code).replace(/^Key/, '').replace(/^Digit/, 'Digit ').replace(/^Arrow/, ''); }
-  open(from) { this.returnTo = from || 'menu'; this._refresh(); this._populateDevices(); this.game.ui.show('settings'); }
-  close() { this.game.ui.show(this.returnTo); }
+  open(from) { this.returnTo = from || 'menu'; this._refresh(); this._populateDevices(); if (this.game.audio && this.game.audio.setUiMusicDuck) this.game.audio.setUiMusicDuck(0); this.game.ui.show('settings'); } // duck game music so the mic-test / voice is heard cleanly
+  close() { if (this.game.audio && this.game.audio.setUiMusicDuck) this.game.audio.setUiMusicDuck(1); this.game.ui.show(this.returnTo); }
 }
 
 // ---------------------------------------------------------------------------
