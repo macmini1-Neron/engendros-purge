@@ -163,7 +163,7 @@ The core everything else reuses. One mic per player, meshed over WebRTC; each re
 - **Activation:** open mic with **VAD** (RMS gate on `track.enabled` → saves bandwidth + DTX). Settings toggle → **push-to-talk** with a bindable key.
 - **Per-remote graph:** `MediaStreamSource → PannerNode (pos = RemotePlayer world pos, listener = camera) → BiquadFilter (lowpass for occlusion) → GainNode → destination`. Attaches to the **existing `AudioContext` in `audio.js`** (no second context).
 - **Occlusion:** each frame, raycast camera→remote against world `boxes` via `rayAABB` (util.js); blocked → lower lowpass cutoff + gain, smoothed with `damp` (no popping).
-- **HUD/UX:** speaking indicator by nameplate + a small voice roster; global mute key; per-player volume; master voice volume; lobby **mic-test** (see your own level).
+- **HUD/UX:** speaking indicator by nameplate; **Tab** scoreboard with per-player volume + mute; global mute key; master voice volume; a detailed audio-settings panel with device in/out select + self-monitor mic-test (full spec in §11).
 
 Deliverable: proximity voice working, verifiable on **2 physical PCs**.
 
@@ -225,11 +225,23 @@ Deliverable: squad radio + eavesdropping, verifiable on **2 physical PCs**.
 
 ---
 
-## 11. UX / Controls (proposals — refined during implementation)
+## 11. UX / Controls & Audio Settings (proposals — refined during implementation)
 
-- **Proximity:** talk automatically (VAD) or hold PTT (setting). Mute key. Per-player volume in the roster.
-- **Radio:** a key to raise/holster the handset (weapon down). While raised: wheel = coarse tune, modifier+wheel = fine tune, a key/knob for squelch, PTT to transmit. Numeric frequency readout on the handset.
-- **Lobby:** enable-voice toggle (permission prompt), input-mode toggle (open/PTT), PTT key bind, mic device select, mic-test meter, master voice volume.
+**In-world controls**
+- **Proximity:** talk automatically (VAD) or hold PTT (setting). Global mute key.
+- **Radio:** a key to raise/holster the handset (weapon down). While raised: wheel = coarse tune, modifier + wheel = fine tune, a knob/key for squelch, PTT to transmit. Numeric frequency readout on the handset.
+
+**Audio Settings panel (ultra-detailed; in `Settings`, usable pre-game since there is no lobby voice)**
+- **Devices:** select the **input device** (microphone) *and* the **output device** for voice — output routing via `AudioContext` / `HTMLMediaElement.setSinkId()` (supported in Chrome, the project's target browser).
+- **Levels:** master voice volume, microphone input gain, and an optional proximity-vs-radio balance.
+- **Processing toggles (quality):** echo cancellation, noise suppression, auto-gain — each independently on/off (power users may disable noise suppression for fidelity).
+- **VAD sensitivity:** threshold slider for open-mic activation.
+- **Self-monitor / mic test:** hear your **own** microphone played back with a live level meter, so you can confirm the device and its quality ("listen to yourself"), with a headphones/echo warning. Includes an optional persistent live self-monitor toggle (default **off**).
+- **Persistence:** all of the above saved with the existing `Settings` (localStorage), like other game settings.
+
+**Per-player mixer — the Tab scoreboard**
+- Pressing **Tab** opens the co-op roster/scoreboard; each player row shows the name, a **speaking indicator**, an **individual volume slider**, and a **mute toggle**.
+- Adjustments apply live (per-remote `GainNode`) and are **persisted per `playerId`**, so a teammate you turned down stays down across sessions.
 
 ---
 
