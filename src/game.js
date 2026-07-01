@@ -190,6 +190,7 @@ class Game {
     this.mp = new MP(this); // multiplayer co-op (dormant until host/join)
     this.voice = new VoiceChat(this); // co-op proximity voice (opt-in; dormant until enabled + in a run)
     this.radioPanel = new RadioPanel(this); // deployed-radio control panel UI (Phase 2); dev-open: GAME.radioPanel.open()
+    this._settingsEl = document.getElementById('settings'); // cached for the per-frame radio-UI reconciliation (state-derived music duck)
     this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
     this._molTmp = new THREE.Vector3(); this._molTmp2 = new THREE.Vector3(); this._molTmp3 = new THREE.Vector3();
 
@@ -807,14 +808,25 @@ class Game {
     if (lockPointer && this.state === 'playing') this.input.requestLock();
   }
   _lobbyVisible() { const el = document.getElementById('lobby'); return !!(el && el.classList.contains('show')); }
+  // Single source of truth for the deployed-radio panel + its music duck, reconciled every frame in EVERY
+  // state (called from _frame). The panel is a custom body-level overlay (ui.hideAll can't reach it) that
+  // holds state='playing' while open, so any non-playing state means an outside transition (death/gameover/
+  // wipe→lobby/menu) left it stranded → force-close it. The UI music-duck is DERIVED from live UI state
+  // (panel open OR the Settings overlay is shown) so it can never get stuck (Esc-from-Settings → resume →
+  // ui.hideAll drops the 'show' class → this restores it next frame).
+  _reconcileRadioUi() {
+    if (this._radioPanelOpen && this.state !== 'playing' && this.radioPanel) this.radioPanel.close();
+    if (this.audio && this.audio.setUiMusicDuck) {
+      const settingsShown = !!(this._settingsEl && this._settingsEl.classList.contains('show'));
+      this.audio.setUiMusicDuck((this._radioPanelOpen || settingsShown) ? 0 : 1);
+    }
+  }
   toMenu() {
     if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();
     const _lab = document.getElementById('mp-labels'); if (_lab) _lab.style.display = 'none';
     this.mpMenuOpen = false;
     this.state = 'menu'; this._intentionalUnlock = this.input.locked; this.input.exitLock();
-    if (this.radioPanel && this.radioPanel.open_) this.radioPanel.close(); // run ended with the radio panel up → close it (restores controls + unducks music)
-    if (this.audio && this.audio.setUiMusicDuck) this.audio.setUiMusicDuck(1); // safety: never leave the UI music-duck stuck on the way to the menu
     this._setUnloadGuard(false); this._unlockKeyboard(); // run over → drop the exit guards
     this.resetMountedGuns();
     for (const np of this.nightPosts) np.forceReset();
@@ -831,7 +843,7 @@ class Game {
     return o;
   }
 
-  openAdmin() { if (this.audio && this.audio.setUiMusicDuck) this.audio.setUiMusicDuck(1); this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // un-duck (Settings→admin skips Settings.close): keep the jukebox running so the asset-viewer Music player controls it live
+  openAdmin() { this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // keep the jukebox running so the asset-viewer Music player controls it live (un-duck handled by _reconcileRadioUi)
   // ФОНОТЕКА — full-screen music screen (live 3D gramophone + genre browser), from the menu or the co-op lobby.
   openFonoteka(from) {
     this._fonoFrom = (from === 'lobby') ? 'lobby' : 'menu';
@@ -1191,6 +1203,7 @@ class Game {
     let dt = (t - this._last) / 1000; this._last = t;
     this._frameId = (this._frameId | 0) + 1;                   // per-frame id — rig matrices refresh at most once per frame in enemies.rayHit
     if (!(dt > 0)) dt = 0.0001;
+    this._reconcileRadioUi();                                  // radio panel + music-duck self-heal (runs in ALL states, so death/gameover/Esc-resume can't strand them)
     const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
     if (this._stressName) { // dev stress harness: sample RAW frame-time (pre-clamp) to catch hitches
       if (this._stressTick) { this._stressTick.acc += dt; if (this._stressTick.acc >= this._stressTick.every) { this._stressTick.acc = 0; this._stressTick.fn(); } }

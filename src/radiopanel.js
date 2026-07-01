@@ -138,8 +138,7 @@ export class RadioPanel {
     if (this.open_) return;
     this.open_ = true;
     this.el.style.display = 'flex';
-    this.game._radioPanelOpen = true;                       // freezes movement (player.controlsPaused) but the SIM keeps running → live tuning audio
-    if (this.game.audio && this.game.audio.setUiMusicDuck) this.game.audio.setUiMusicDuck(0); // silence other game music → the radio static/station/voice is heard cleanly
+    this.game._radioPanelOpen = true;                       // freezes movement (player.controlsPaused) but the SIM keeps running → live tuning audio; music ducks via game._reconcileRadioUi
     this.game._intentionalUnlock = this.game.input.locked; this.game.input.exitLock(); // free the cursor WITHOUT the pause-on-unlock (mirrors the game's menu pattern)
     window.addEventListener('keydown', this._onKey, true);
     window.addEventListener('wheel', this._onWheel, { passive: false, capture: true });
@@ -148,15 +147,13 @@ export class RadioPanel {
 
   close() {
     if (!this.open_) return;
-    const wasStruct = !!this.struct;
     this.open_ = false; this.struct = null;
     this._stopLive();
     if (this.el) this.el.style.display = 'none';
-    this.game._radioPanelOpen = false;
-    if (this.game.audio && this.game.audio.setUiMusicDuck) this.game.audio.setUiMusicDuck(1); // restore game music
+    this.game._radioPanelOpen = false;                      // music un-ducks via game._reconcileRadioUi
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('wheel', this._onWheel, true);
-    if (wasStruct && this.game.voice && this.game.voice.setRadioOn) this.game.voice.setRadioOn(false); // deployed radio keeps broadcasting via its loudspeaker, not in your ear
+    if (this.game.voice && this.game.voice.setRadioOn) this.game.voice.setRadioOn(false); // closing the panel ALWAYS stops the in-ear channel monitor (a deployed radio keeps broadcasting via its loudspeaker/setSpeaker, independently)
     if (this.game.state === 'playing' && this.game.input) this.game.input.requestLock(); // straight back into the game (re-lock cursor) — NOT the pause menu
   }
 

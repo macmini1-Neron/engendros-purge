@@ -139,7 +139,7 @@ export class AudioManager {
   setVolume(v) { this.volume = v; if (this.sfxGain) this.sfxGain.gain.value = v; }
   setMusicVolume(v) { this.musicVolume = v; this._applyMusicGain(); }
   setMusicDuck(d) { this._musicDuck = Math.max(0, Math.min(1, d)); this._applyMusicGain(); } // 1 = full, ~0.15 = radio nearby
-  setUiMusicDuck(d) { this._uiDuck = Math.max(0, Math.min(1, d)); this._applyMusicGain(); } // 0 while the radio panel / Settings is open → clean radio+mic audio; independent of proximity duck
+  setUiMusicDuck(d) { d = Math.max(0, Math.min(1, d)); if (d === this._uiDuck) return; this._uiDuck = d; this._applyMusicGain(); } // derived per-frame from UI state (radio panel / Settings open); no-op guard keeps the per-frame call cheap
   _applyMusicGain() { if (this.musicGain) this.musicGain.gain.value = this.musicVolume * (this._musicDuck == null ? 1 : this._musicDuck) * (this._uiDuck == null ? 1 : this._uiDuck); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 1; }
 
