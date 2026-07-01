@@ -809,6 +809,7 @@ export class BuildManager {
     this.structures.splice(i, 1);
     if (s.mesh) { this.scene.remove(s.mesh); try { s.mesh.traverse && s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); }); } catch (e) {} }
     if (this.r105Target === s) this.r105Target = null;
+    if (this.game.radioPanel && this.game.radioPanel.struct === s) this.game.radioPanel.close(); // close the panel if it's open on this radio (idempotent)
     if (this.game.voice) this.game.voice.removeSpeaker(s.id);
     this.game.inventory.addItem('r105');
     if (mp && mp.active && mp.isHost) mp.net.broadcast('struct_rm', { id: s.id });
@@ -834,6 +835,7 @@ export class BuildManager {
     if (s.mesh) { this.scene.remove(s.mesh); try { s.mesh.traverse && s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); }); } catch (e) {} }
     if (this.game.voice) this.game.voice.removeSpeaker(id);
     if (this.r105Target === s) this.r105Target = null;
+    if (this.game.radioPanel && this.game.radioPanel.struct === s) this.game.radioPanel.close(); // host/teammate removed this radio while our panel was open on it → close cleanly (no dangling struct)
   }
   toggleRadio(s) {
     if (!s) return;
