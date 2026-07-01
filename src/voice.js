@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, damp } from './util.js';
 import { iceConfig } from './net.js';
-import { RADIO, withinPassband, detunePenalty } from './radiosim.js';
+import { RADIO, withinPassband, detunePenalty, quality, resolveReception } from './radiosim.js';
 
 const OCC_HZ = 10;                 // occlusion raycast + speaking-meter rate (Hz)
 const VAD_HANG = 0.25;             // seconds the mic stays open after voice drops below threshold
@@ -264,6 +264,7 @@ export class VoiceChat {
     const tick = this._occT <= 0; if (tick) this._occT = 1 / OCC_HZ;
 
     const cam = this.game.engine && this.game.engine.camera;
+    if (tick && cam) this._enclosureDb = this._enclosure(cam);
     this._crackleTarget = 0;
     for (const [id, pv] of this.peers) {
       const rp = this.game.mp.remotes && this.game.mp.remotes.get(id);
@@ -278,16 +279,8 @@ export class VoiceChat {
         const spk = this._rms(pv.analyser, pv._buf) > SPEAK_RMS;
         if (spk !== pv.speaking) { pv.speaking = spk; if (rp && rp.setSpeaking) rp.setSpeaking(spk); if (this.onSpeaking) this.onSpeaking(id, spk); }
       }
-      if (pv.radioGain) {                                                  // radio reception: hear a peer transmitting on ~my tuned freq
-        let rg = 0;
-        if (this.radioOn && pv.rt && pv.ro && withinPassband(pv.rf, this.radioFreq)) {
-          const pen = detunePenalty(Math.abs((pv.rf - this.radioFreq) * 1e6));
-          rg = 0.95 * (pen >= RADIO.DETUNE_K ? 0 : Math.max(0, 1 - pen / RADIO.DETUNE_K)); // clarity from detune (distance/SNR + capture/garble: follow-up)
-        }
-        if (rg > 0) this._crackleTarget = Math.max(this._crackleTarget, 1 - rg / 0.95);
-        pv.radioGain.gain.value = damp(pv.radioGain.gain.value, rg, 12, dt);
-      }
     }
+    this._updateRadioReception(dt);
     this._updateSpeakers(dt);
     if (this._crackleGain) this._crackleGain.gain.value = damp(this._crackleGain.gain.value, (this._crackleTarget || 0) * 0.12, 8, dt);
   }
@@ -396,19 +389,47 @@ export class VoiceChat {
   }
   _updateSpeakers(dt) {
     for (const sp of this.speakers.values()) {
+      const gains = new Map();
+      if (sp.on) this._applyChannel(this._resolveChannel(sp.freq, 0), gains);
       for (const [id, pv] of this.peers) {
         if (!pv.srcNode) continue;
-        let g = 0;
-        if (sp.on && pv.rt && pv.ro && withinPassband(pv.rf, sp.freq)) {
-          const pen = detunePenalty(Math.abs((pv.rf - sp.freq) * 1e6));
-          g = 0.95 * (pen >= RADIO.DETUNE_K ? 0 : Math.max(0, 1 - pen / RADIO.DETUNE_K));
-        }
-        if (g > 0) this._crackleTarget = Math.max(this._crackleTarget || 0, 1 - g / 0.95);
+        const target = gains.get(id) || 0;
         let tap = sp.taps.get(id);
-        if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; pv.srcNode.connect(tap); tap.connect(sp.bp); sp.taps.set(id, tap); }
-        if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
+        if (!tap && target > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; pv.srcNode.connect(tap); tap.connect(sp.bp); sp.taps.set(id, tap); }
+        if (tap) tap.gain.value = damp(tap.gain.value, target, 12, dt);
       }
     }
+  }
+  // Collect same-channel transmitters, resolve capture vs doubling/garble (radiosim §3.4). enclosureDb
+  // subtracts from every candidate's SNR (underground/roofed receiver = worse reception).
+  _resolveChannel(freq, enclosureDb) {
+    const cands = [];
+    for (const [id, pv] of this.peers) {
+      if (!pv.rt || !pv.ro || !withinPassband(pv.rf, freq)) continue;
+      const snr = RADIO.CLEAR_DB - detunePenalty(Math.abs((pv.rf - freq) * 1e6)) - (enclosureDb || 0);
+      cands.push({ id, snr });
+    }
+    return resolveReception(cands, RADIO.SQUELCH_DB);
+  }
+  _applyChannel(res, gains) {
+    if (res.mode === 'clear') {
+      const q = quality(res.snr, RADIO.SQUELCH_DB);
+      gains.set(res.id, 0.95 * q.clarity);
+      this._crackleTarget = Math.max(this._crackleTarget || 0, q.crackle + (res.captured ? 0.12 : 0)); // faint "someone doubling under it" texture
+    } else if (res.mode === 'garble') {
+      gains.set(res.top, 0.3 * (1 - res.intensity));          // the stronger voice only leaks faintly through the mush
+      this._crackleTarget = Math.max(this._crackleTarget || 0, 0.6 + 0.35 * res.intensity);
+    }
+  }
+  _updateRadioReception(dt) {
+    const gains = new Map();
+    if (this.radioOn) this._applyChannel(this._resolveChannel(this.radioFreq, this._enclosureDb || 0), gains);
+    for (const [id, pv] of this.peers) if (pv.radioGain) pv.radioGain.gain.value = damp(pv.radioGain.gain.value, gains.get(id) || 0, 12, dt);
+  }
+  _enclosure(cam) {                                          // roof/overhead mass above the receiver → dB penalty (§7 enclosure model)
+    const grid = this.game.world && this.game.world.grid; if (!grid || !grid.raycast) return 0;
+    const hit = grid.raycast(cam.position.x, cam.position.y, cam.position.z, 0, 1, 0, 14);
+    return hit ? clamp(14 - hit.t, 0, 12) : 0;               // closer roof = more enclosed (up to 12 dB)
   }
 
   // ---- settings + mic test ----------------------------------------------------------------
