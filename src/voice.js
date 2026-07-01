@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, damp } from './util.js';
 import { iceConfig } from './net.js';
+import { RADIO, withinPassband, detunePenalty } from './radiosim.js';
 
 const OCC_HZ = 10;                 // occlusion raycast + speaking-meter rate (Hz)
 const VAD_HANG = 0.25;             // seconds the mic stays open after voice drops below threshold
@@ -42,6 +43,7 @@ export class VoiceChat {
     // state
     this.enabled = false; this.micDenied = false; this.voiceMuted = false;
     this.ptt = false; this.pttKey = 'CapsLock';
+    this.radioOn = false; this.radioFreq = 40.150; this.radioTx = false; this.radioPttKey = 'KeyX'; // field-radio channel (Phase 2)
     this.vadThresh = SPEAK_RMS; this.localSpeaking = false; this._vadHang = 0;
     this._inCoop = false; this._occT = 0; this._micTest = false;
     // settings mirror (filled by applySettings)
@@ -151,7 +153,7 @@ export class VoiceChat {
     if (d.on) {
       const isNew = !this._voiceOn.has(d.from);
       this._voiceOn.add(d.from);
-      if (this.enabled) { if (isNew) this._announce(true); this._ensurePeer(d.from); }
+      if (this.enabled) { if (isNew) this._announce(true); this._ensurePeer(d.from); this._announceRadio(); }
     } else {
       this._voiceOn.delete(d.from); this._dropPeer(d.from);
     }
@@ -213,6 +215,10 @@ export class VoiceChat {
     pv.analyser = ctx.createAnalyser(); pv.analyser.fftSize = 256; pv._buf = new Uint8Array(pv.analyser.fftSize);
     pv.srcNode.connect(pv.panner); pv.panner.connect(pv.lowpass); pv.lowpass.connect(pv.gain); pv.gain.connect(this.voiceMaster);
     pv.srcNode.connect(pv.analyser);
+    // radio RECEIVE chain (2D "radio" timbre) off the SAME stream — gated each frame by tuning (§3). Loudspeaker/positional variant is a follow-up.
+    pv.radioBP = ctx.createBiquadFilter(); pv.radioBP.type = 'bandpass'; pv.radioBP.frequency.value = 1650; pv.radioBP.Q.value = 1.1;
+    pv.radioGain = ctx.createGain(); pv.radioGain.gain.value = 0;
+    pv.srcNode.connect(pv.radioBP); pv.radioBP.connect(pv.radioGain); pv.radioGain.connect(this.voiceMaster);
   }
 
   _dropPeer(peerId) {
@@ -255,6 +261,14 @@ export class VoiceChat {
         const spk = this._rms(pv.analyser, pv._buf) > SPEAK_RMS;
         if (spk !== pv.speaking) { pv.speaking = spk; if (rp && rp.setSpeaking) rp.setSpeaking(spk); if (this.onSpeaking) this.onSpeaking(id, spk); }
       }
+      if (pv.radioGain) {                                                  // radio reception: hear a peer transmitting on ~my tuned freq
+        let rg = 0;
+        if (this.radioOn && pv.rt && pv.ro && withinPassband(pv.rf, this.radioFreq)) {
+          const pen = detunePenalty(Math.abs((pv.rf - this.radioFreq) * 1e6));
+          rg = 0.95 * (pen >= RADIO.DETUNE_K ? 0 : Math.max(0, 1 - pen / RADIO.DETUNE_K)); // clarity from detune (distance/SNR + capture/garble: follow-up)
+        }
+        pv.radioGain.gain.value = damp(pv.radioGain.gain.value, rg, 12, dt);
+      }
     }
   }
 
@@ -278,19 +292,24 @@ export class VoiceChat {
   }
 
   _updateLocalGate(dt) {
-    if (!this.micTrack) { this.localSpeaking = false; return; }
+    if (!this.micTrack) { this.localSpeaking = false; this._setRadioTx(false); return; }
     const mp = this.game.mp;
-    let talk;
-    if (mp && mp._localDead) talk = false;                                  // dead = receive-only (spec §16)
-    else if (this.ptt) talk = this.game.input.isDown(this.pttKey);
+    const dead = !!(mp && mp._localDead);                                   // dead = receive-only (spec §16)
+    let prox;
+    if (dead) prox = false;
+    else if (this.ptt) prox = this.game.input.isDown(this.pttKey);
     else {
       const rms = this._rms(this.micAnalyser, this._micBuf);
       if (rms > this.vadThresh) this._vadHang = VAD_HANG; else this._vadHang = Math.max(0, this._vadHang - dt);
-      talk = this._vadHang > 0;
+      prox = this._vadHang > 0;
     }
-    this.localSpeaking = talk;
-    if (this.micTrack.enabled !== talk) this.micTrack.enabled = talk;      // free DTX when closed
+    const radio = !dead && this.radioOn && this.game.input.isDown(this.radioPttKey); // hold radio-PTT to transmit on the channel
+    this._setRadioTx(radio);
+    this.localSpeaking = prox;
+    const talk = prox || radio;                                            // mic opens for EITHER proximity or radio
+    if (this.micTrack.enabled !== talk) this.micTrack.enabled = talk;      // free DTX when both are closed
   }
+  _setRadioTx(tx) { if (tx !== this.radioTx) { this.radioTx = tx; this._announceRadio(); } }
 
   _occlusionTarget(cam, pos) {
     const grid = this.game.world && this.game.world.grid; if (!grid || !grid.raycast) return 0;
@@ -326,6 +345,12 @@ export class VoiceChat {
   isPeerMuted(peerId) { const pv = this.peers.get(peerId); return !!(pv && pv.muted); }
 
   toggleVoiceMute() { this.voiceMuted = !this.voiceMuted; if (this.voiceMaster) this.voiceMaster.gain.value = this.voiceMuted ? 0 : this._s.voiceVol; return this.voiceMuted; }
+
+  // ---- field radio (Phase 2): tuning state is synced; audibility is computed locally (radiosim) ----
+  setRadioFreq(f) { this.radioFreq = f; this._announceRadio(); }
+  setRadioOn(on) { this.radioOn = !!on; this._announceRadio(); }
+  _announceRadio() { const n = this._net; if (n) n.broadcast('rstate', { from: this.myId, rf: this.radioFreq, rt: this.radioTx, ro: this.radioOn }); }
+  _onRadioState(d) { if (!d || d.from == null || d.from === this.myId) return; const pv = this.peers.get(d.from); if (pv) { pv.rf = d.rf; pv.rt = !!d.rt; pv.ro = !!d.ro; } }
 
   // ---- settings + mic test ----------------------------------------------------------------
 

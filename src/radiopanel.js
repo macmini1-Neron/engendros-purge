@@ -33,7 +33,7 @@ export class RadioPanel {
           '<div class="rp-freq" style="font-size:30px;font-weight:700;letter-spacing:2px;color:#7dffb0;text-shadow:0 0 8px rgba(80,255,150,.8);line-height:1;">40.150</div>' +
           '<div class="rp-sub" style="font-size:11px;letter-spacing:3px;color:#4fe08f;margin-top:3px;">MHz · <span class="rp-onoff">ЗАП</span></div>' +
         '</div>' +
-        '<div class="rp-hint" style="position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);white-space:nowrap;font:12px/1.4 system-ui,sans-serif;color:#9fb0a6;opacity:.8;">scroll = ladit · shift+scroll = jemně · Z = ЗАП/ВЫП · G = sebrat · E / Esc = zavřít</div>' +
+        '<div class="rp-hint" style="position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);white-space:nowrap;font:12px/1.4 system-ui,sans-serif;color:#9fb0a6;opacity:.8;">scroll = ladit · shift+scroll = jemně · drž X = vysílat · Z = ЗАП/ВЫП · G = sebrat · E / Esc = zavřít</div>' +
       '</div>';
     document.body.appendChild(wrap);
     this.el = wrap;
@@ -62,13 +62,14 @@ export class RadioPanel {
     if (s && this.game.build && this.game.build.pickupR105) this.game.build.pickupR105(s);
   }
 
-  toggleOn() { this.on = !this.on; this._refresh(); }
+  toggleOn() { this.on = !this.on; this._refresh(); if (this.game.voice && this.game.voice.setRadioOn) this.game.voice.setRadioOn(this.on); }
 
   open(struct) {
     this._build();
     this.struct = struct || null;
     if (this.struct && typeof this.struct.freq === 'number') this.freq = this.struct.freq;
     this._refresh();
+    if (this.game.voice) { if (this.game.voice.setRadioFreq) this.game.voice.setRadioFreq(this.freq); if (this.game.voice.setRadioOn) this.game.voice.setRadioOn(this.on); }
     if (this.open_) return;
     this.open_ = true;
     this.el.style.display = 'flex';

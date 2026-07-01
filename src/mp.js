@@ -659,6 +659,7 @@ export class MP {
     n.on('vhello', (d) => { if (g.voice) g.voice._onHello(d); });
     n.on('vsdp', (d) => { if (g.voice) g.voice._onSdp(d); });
     n.on('vice', (d) => { if (g.voice) g.voice._onIce(d); });
+    n.on('rstate', (d) => { if (g.voice) g.voice._onRadioState(d); }); // field-radio tuning/TX state (voice.js)
     n.onDisconnect = (pid) => {
       if (this.isHost) { this._dropPeer(pid); if (g.poker && g.poker.coop) g.poker.onPeerDisconnect(pid); } // host: bust the dropped poker seat
       else if (this.active) this._hostGone();
