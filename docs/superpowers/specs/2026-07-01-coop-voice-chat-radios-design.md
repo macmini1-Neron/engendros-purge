@@ -287,6 +287,11 @@ A "what isn't clearly predefined?" review pass surfaced the following. Resolutio
 - **Enemies do not react to voice (v1).** Otherwise open-mic would punish stealth. Reserved as a future horror hook only.
 - **Two distinct "transmit" concepts.** Proximity = open-mic / VAD (continuous, auto). Radio = **held PTT** (half-duplex). Holding radio-PTT also emits your natural proximity voice to nearby players (the dual-hear).
 
+- **Frequency band = R-105D 36.0–46.1 MHz** (authentic; e.g. 40.150, 44.200). "105.100"-style numbers were illustrative only.
+- **Radio ownership = lootable item.** The R-105D is scavenged (an `ITEM_DEFS` / loot entry), **not** standard-issue — early game is proximity-only until you find one, so long-range comms is an earned advantage and the squad has a "radioman". Thematic loot source: the **courier Engendro carries an R-105D on its back → drops a working set on death.** It is a normal inventory item (droppable / tradeable — hand it to the radioman).
+- **Lobby voice = none.** Voice is **in-world only** (no Discord-style lobby chat; coordination is diegetic). Voice *setup* (enable + mic permission + self mic-test) lives in **Settings** and/or a lobby panel that plays back only your own level — no peer audio in the lobby.
+- **Stated defaults (unvetoed):** squelch gates **radio reception only** (not proximity); nearby proximity voices simply **mix** (no capture — capture is an RF-only effect); **one radio monitors one frequency at a time** (simplex); a found radio starts on a default frequency and the squad agrees a channel **in-world**; light transmit **sidetone**; a **downed** player can talk via proximity but **cannot operate the radio** (incapacitated).
+
 ### Transmission model — "is it like Discord rooms?" (clarification)
 
 Conceptually **yes**: a frequency behaves like a shared channel/room — tune to it and you are "in the room"; anyone tuned there hears anyone transmitting; you can accidentally tune onto someone's frequency and eavesdrop. **But the mechanism is broadcast + local gate, NOT server-addressed rooms:**
@@ -297,9 +302,8 @@ Conceptually **yes**: a frequency behaves like a shared channel/room — tune to
 
 ### Still open (decide at their phase)
 
-- **Radio ownership** (Phase 2): standard-issue (everyone spawns with an R-105D) vs a lootable/scavenged item (asymmetric — comms as a scarce resource). **TBD.**
 - **Mesh roster distribution** (Phase 1, implementation): the host broadcasts the peer roster so clients can form the client↔client audio mesh (today clients connect only to the host). A to-do, not a design fork.
-- **Minor tunables:** dual-hear echo voicing (the radio copy is bandpass + slight delay so it reads as a radio echo, not a flam), the default squad frequency, PTT + handset control ergonomics.
+- **Minor tunables:** dual-hear echo voicing (the radio copy is bandpass + slight delay so it reads as a radio echo, not a flam), the found-radio default frequency, proximity falloff distance, PTT + handset control ergonomics, radio spawn frequency in `LootManager`.
 
 ## Appendix — Research sources (real-radio behaviour behind the model)
 
