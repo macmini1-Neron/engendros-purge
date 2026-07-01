@@ -36,6 +36,7 @@ export const ITEM_DEFS = {
   wire:    { name: 'Barbed Wire',  class: 'material',   icon: '🔩', build: 'wire' },
   wood:    { name: 'Barricade',    class: 'material',   icon: '🪵', build: 'wood' },
   radio:   { name: 'Radio',        class: 'material',   icon: '📻', build: 'radio' },
+  r105:    { name: 'R-105Д',       class: 'material',   icon: '📻', build: 'r105' }, // deployable voice radio → control panel on E
 };
 
 // ---------------------------------------------------------------------------

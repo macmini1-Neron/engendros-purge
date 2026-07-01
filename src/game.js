@@ -370,6 +370,7 @@ class Game {
 
   _wireInput() {
     this.input.on('key', (code, ev) => {
+      if (this._radioPanelOpen) return; // radio control panel open → it owns the keyboard (own listeners handle tune/close/pickup)
       // Esc toggles pause/resume in a live run. Under Keyboard Lock (Chromium fullscreen) the tapped Esc is
       // delivered here without dropping fullscreen, so we drive BOTH pause and resume from it. Handled before
       // the state/console guards so it also works while paused — but we never steal the dev-console's own Esc.
@@ -442,6 +443,7 @@ class Game {
           else if (this.nearestMortar()) { this.nearestMortar().mount(); } // 82-ПМ-37: man the indirect-fire station
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
+          else if (this.build.r105Target) { this.radioPanel.open(this.build.r105Target); } // deployed R-105Д voice radio → open the control panel
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
           else if (this.gramophone.target) { this.gramophone.toggle(this.gramophone.target); }
           else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
@@ -1332,6 +1334,7 @@ class Game {
       }
       if (!this.mp.frozen && !(this.devconsole && this.devconsole.open) && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory — disabled while chat is open
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
+      this.build.updateR105Target(); // deployed R-105Д voice radio look-target → E opens the control panel
       this.gramophone.updateTarget(); // gramophone prop look-target + ←/→ song change (BEFORE player.update reads strafe)
       if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)
       if (this.world.updateDoorTarget) this.world.updateDoorTarget(this); // bunker гермодверь look-target (steppe only)
@@ -1427,6 +1430,8 @@ class Game {
       this.hud.setInteract('Press <b>E</b> to ' + (_open ? 'CLOSE' : 'OPEN') + ' the gate · ВОРОТА');
     } else if (this.world.doorTarget) {
       this.hud.setInteract('Press <b>E</b> to ' + (this.world.doorTarget.open ? 'ЗАКРЫТЬ' : 'ОТКРЫТЬ') + ' · ГЕРМОДВЕРЬ');
+    } else if (this.build.r105Target) {
+      this.hud.setInteract('Press <b>E</b> to operate the R-105Д radio');
     } else if (this.build.radioTarget) {
       const _r = this.build.radioTarget;
       this.hud.setInteract(_r.on ? '←/→ stanice · <b>E</b> vypnout rádio' : 'Press <b>E</b> to turn on radio');

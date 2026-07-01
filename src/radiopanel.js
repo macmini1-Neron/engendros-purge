@@ -33,7 +33,7 @@ export class RadioPanel {
           '<div class="rp-freq" style="font-size:30px;font-weight:700;letter-spacing:2px;color:#7dffb0;text-shadow:0 0 8px rgba(80,255,150,.8);line-height:1;">40.150</div>' +
           '<div class="rp-sub" style="font-size:11px;letter-spacing:3px;color:#4fe08f;margin-top:3px;">MHz · <span class="rp-onoff">ЗАП</span></div>' +
         '</div>' +
-        '<div class="rp-hint" style="position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);white-space:nowrap;font:12px/1.4 system-ui,sans-serif;color:#9fb0a6;opacity:.8;">scroll = ladit · shift+scroll = jemně · Z = ЗАП/ВЫП · E / Esc = zavřít</div>' +
+        '<div class="rp-hint" style="position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);white-space:nowrap;font:12px/1.4 system-ui,sans-serif;color:#9fb0a6;opacity:.8;">scroll = ladit · shift+scroll = jemně · Z = ЗАП/ВЫП · G = sebrat · E / Esc = zavřít</div>' +
       '</div>';
     document.body.appendChild(wrap);
     this.el = wrap;
@@ -52,14 +52,23 @@ export class RadioPanel {
 
   tune(deltaHz) {
     this.freq = clampFreq(snapReadout(this.freq + deltaHz / 1e6));
+    if (this.struct) this.struct.freq = this.freq;                                                   // persist per-radio
     this._refresh();
     if (this.game.voice && this.game.voice.setRadioFreq) this.game.voice.setRadioFreq(this.freq);   // wired in the audio-routing step
   }
 
+  _pickup() {
+    const s = this.struct; this.struct = null; this.close();
+    if (s && this.game.build && this.game.build.pickupR105) this.game.build.pickupR105(s);
+  }
+
   toggleOn() { this.on = !this.on; this._refresh(); }
 
-  open() {
+  open(struct) {
     this._build();
+    this.struct = struct || null;
+    if (this.struct && typeof this.struct.freq === 'number') this.freq = this.struct.freq;
+    this._refresh();
     if (this.open_) return;
     this.open_ = true;
     this.el.style.display = 'flex';
@@ -71,7 +80,7 @@ export class RadioPanel {
 
   close() {
     if (!this.open_) return;
-    this.open_ = false;
+    this.open_ = false; this.struct = null;
     if (this.el) this.el.style.display = 'none';
     this.game._radioPanelOpen = false;
     window.removeEventListener('keydown', this._onKey, true);
@@ -82,6 +91,7 @@ export class RadioPanel {
 
   _onKey(e) {
     if (e.code === 'Escape' || e.code === 'KeyE') { e.preventDefault(); this.close(); return; }
+    if (e.code === 'KeyG') { e.preventDefault(); this._pickup(); return; }
     if (e.code === 'KeyZ') { e.preventDefault(); this.toggleOn(); return; }
     if (e.code === 'ArrowLeft' || e.code === 'ArrowDown') { e.preventDefault(); this.tune(-(e.shiftKey ? FINE_HZ : COARSE_HZ)); }
     else if (e.code === 'ArrowRight' || e.code === 'ArrowUp') { e.preventDefault(); this.tune(e.shiftKey ? FINE_HZ : COARSE_HZ); }
