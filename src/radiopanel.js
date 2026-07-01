@@ -130,15 +130,20 @@ export class RadioPanel {
   toggle() { this.open_ ? this.close() : this.open(); }
 
   _onKey(e) {
-    if (e.code === 'Escape' || e.code === 'KeyE') { e.preventDefault(); this.close(); return; }
-    if (e.code === 'KeyG') { e.preventDefault(); this._pickup(); return; }
-    if (e.code === 'KeyZ') { e.preventDefault(); this.toggleOn(); return; }
-    if (e.code === 'ArrowLeft' || e.code === 'ArrowDown') { e.preventDefault(); this.tune(-(e.shiftKey ? FINE_HZ : COARSE_HZ)); }
-    else if (e.code === 'ArrowRight' || e.code === 'ArrowUp') { e.preventDefault(); this.tune(e.shiftKey ? FINE_HZ : COARSE_HZ); }
+    // Capture-phase listener: swallow the keystroke so it never bubbles to input.js (window keydown,
+    // bubble phase) → game.js. Critical for the CLOSE keys — close() flips game._radioPanelOpen=false
+    // mid-dispatch, so without stopImmediatePropagation the same Esc reaches game.js and opens the pause
+    // menu (and E would fall through the interact ladder → grab loot / toggle a gramophone / mount a gun).
+    const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+    if (e.code === 'Escape' || e.code === 'KeyE') { stop(); this.close(); return; }
+    if (e.code === 'KeyG') { stop(); this._pickup(); return; }
+    if (e.code === 'KeyZ') { stop(); this.toggleOn(); return; }
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowDown') { stop(); this.tune(-(e.shiftKey ? FINE_HZ : COARSE_HZ)); }
+    else if (e.code === 'ArrowRight' || e.code === 'ArrowUp') { stop(); this.tune(e.shiftKey ? FINE_HZ : COARSE_HZ); }
   }
 
   _onWheel(e) {
-    e.preventDefault();
+    e.preventDefault(); e.stopImmediatePropagation();   // capture-phase: keep the tuning scroll out of game.js's wheel handler
     const step = e.shiftKey ? FINE_HZ : COARSE_HZ;
     this.tune(e.deltaY < 0 ? step : -step);
   }
