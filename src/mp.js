@@ -1306,7 +1306,7 @@ export class MP {
         + '<span class="sb-money"></span><span class="sb-ping"></span><span class="sb-voice"></span>';
       rows.appendChild(row);
       const c = { id, row, moneyEl: row.querySelector('.sb-money'), pingEl: row.querySelector('.sb-ping'), voiceEl: row.querySelector('.sb-voice') };
-      if (!isSelf && id !== 'host') this._sbBuildVoiceCell(c);
+      if (!isSelf) this._sbBuildVoiceCell(c); // any non-self row is a real voice peer (incl. 'host' as seen by a client) → give it a mute/volume cell
       this._sbRows.set(id, c);
     }
     this._sbKey = this._sbRosterKey(); this._sbSync(); this._sbSyncLive();
