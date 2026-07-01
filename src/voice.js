@@ -410,6 +410,7 @@ export class VoiceChat {
   removeSpeaker(id) {
     const sp = this.speakers.get(id); if (!sp) return;
     for (const g of sp.taps.values()) { try { g.disconnect(); } catch (e) {} }
+    if (sp.stationTaps) for (const g of sp.stationTaps.values()) { try { g.disconnect(); } catch (e) {} } // station taps hang off the session-lived station srcNode → cut them or they leak
     try { sp.bp.disconnect(); sp.panner.disconnect(); } catch (e) {}
     this.speakers.delete(id);
   }
