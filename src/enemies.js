@@ -44,11 +44,15 @@ function _mountCourierRadio(radio) {
 }
 // A courier engendro (plush + worn R-105d radio) for the admin asset viewer. Just the
 // plush if the radio spec hasn't registered yet (same async-window rule as makeCourier).
+// The radio is built FRESH here (NOT the cached _courierRadioProto clone makeCourier uses):
+// the viewer's clear() disposes whatever it shows, and a proto-clone shares its geometry +
+// material with the proto AND every live courier's pack — disposing it would corrupt them all.
+// A fresh buildSpec owns its own buffers, so it's safe to dispose (cf. the IL-76 entry's cache:false).
 export function buildCourierPreview(col = ENGENDRO_COLORS[0]) {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()));
-  const radio = _buildCourierRadio();
-  if (radio) g.add(_mountCourierRadio(radio));
+  const spec = getSpec('r105d');
+  if (spec) { try { g.add(_mountCourierRadio(buildSpec(spec))); } catch (e) { /* spec build failed → plush only */ } }
   return g;
 }
 
