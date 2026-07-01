@@ -327,6 +327,22 @@ Conceptually **yes**: a frequency behaves like a shared channel/room — tune to
 - **Mesh roster distribution** (Phase 1, implementation): the host broadcasts the peer roster so clients can form the client↔client audio mesh (today clients connect only to the host). A to-do, not a design fork.
 - **Minor tunables:** dual-hear echo voicing (the radio copy is bandpass + slight delay so it reads as a radio echo, not a flam), the found-radio default frequency, proximity falloff distance, PTT + handset control ergonomics, radio spawn frequency in `LootManager`.
 
+## 17. Radio interaction — revised (2026-07-01, supersedes decision #8)
+
+Post-Phase-1 owner direction + a sourced research pass on R-105D/R-114D operating reality revise the radio interaction. **Both radios are the same 21 kg «Астра» manpack family; both are walk-and-talk (1.5 m whip, ~6 km); "deploying" a big antenna only unlocks long range (10–40 km) / retranslation (relay) — it is NOT required to talk.** So the "can't call while walking / must deploy" premise is a fair *gameplay* abstraction, not literal hardware. Resulting model:
+
+- **One radio: the R-105D** (36.0–46.1 MHz — the set the courier already carries). No separate R-114D unit; the pixel panel art (`assets/ui/radio-r114d-panel.png`, an Astra control head — R-105D uses the same one) is the reference until the owner supplies the final R-105 panel.
+- **Two states:**
+  1. **Carried (equipped):** personal **walk-and-talk** — transmit + receive **while moving**, **private** (you hear the channel via the handset; teammates do not). This **replaces decision #8's "held handset, weapon-down"** — the manpack is worn, no forced holster. PTT to transmit.
+  2. **Placed on the ground (deploy key):**
+     - Interacting (**E**) opens the **radio control-panel UI** (the pixel Astra panel) for tuning / transmit / calibrate.
+     - **Loudspeaker mode:** the placed radio's *received* audio plays **out loud at its world position** — nearby players hear the channel via the Phase-1 positional proximity graph, **without their own radio** ("the handset becomes a loudspeaker"). A deployed radio is a shareable listening post (leave it playing; squad clusters around it; a future hook: enemies drawn to the noise).
+     - **Pick back up** into the inventory.
+- **Emergent, ~free from the unified emitter model:** a placed radio is just a positional emitter whose source is the live received-channel audio, at the radio's ground position — the *same* proximity graph Phase 1 builds. Carried ⇒ route received audio to the owner's voice bus (private); placed ⇒ route it to a `PannerNode` at the ground position (public). Deploy/pickup + the panel UI are single-machine testable; only the live radio audio needs 2 PCs.
+- **Range realism (deferred):** carried whip = short range; a later "raise antenna" action could unlock long range + retranslation per the research.
+
+Research sources (deployment reality): en/ru.wikipedia.org R-105D + Р-114Д · radiomuseum.org · feldfunker-la7sna.com · greenradio.de · radiotract.ru · Soviet manual (archive.org r105d_108d_109d). **Key fact:** R-105D and R-114D are one manpack family (same 21 kg case), differing mainly in band (R-114D = 20–26 MHz); both walk-and-talk.
+
 ## Appendix — Research sources (real-radio behaviour behind the model)
 
 - FM capture effect — https://en.wikipedia.org/wiki/Capture_effect
