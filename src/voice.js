@@ -542,6 +542,7 @@ export class VoiceChat {
       this.micStreamRaw = fresh;
       // rebuild the mic graph + swap the sent track on every live peer connection
       if (this.micSrc) try { this.micSrc.disconnect(); } catch (e) {}
+      if (this._monitorGain) { try { this._monitorGain.disconnect(); } catch (e) {} this._monitorGain = null; } // else _buildMicGraph→_applySelfMonitor sees a stale gain and never re-taps the NEW micSrc (self-monitor goes silent)
       this._buildMicGraph();
       for (const pv of this.peers.values()) {
         const sender = pv.pc.getSenders().find(x => x.track && x.track.kind === 'audio');
