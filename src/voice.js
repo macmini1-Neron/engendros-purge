@@ -92,12 +92,23 @@ export class VoiceChat {
     if (!this.enabled) return;
     this._announce(false);
     this._exitMesh();
-    try { this._crackleSrc && this._crackleSrc.stop(); } catch (e) {} this._crackleSrc = null; this._crackleGain = null;
-    for (const st of this.stations) { try { st.el.pause(); } catch (e) {} } this.stations = [];
+    // stations: pause AND disconnect their source/gain (not just el.pause) so they don't dangle off the old voiceMaster
+    for (const st of this.stations) { try { st.el.pause(); } catch (e) {} try { st.srcNode && st.srcNode.disconnect(); } catch (e) {} try { st.cgain && st.cgain.disconnect(); } catch (e) {} }
+    this.stations = [];
+    for (const id of [...this.speakers.keys()]) this.removeSpeaker(id); // tear down every deployed-radio loudspeaker (also clears its peer/station taps)
+    try { this._crackleSrc && this._crackleSrc.stop(); } catch (e) {} try { this._crackleGain && this._crackleGain.disconnect(); } catch (e) {}
+    this._crackleSrc = null; this._crackleGain = null;
+    try { this._monitorGain && this._monitorGain.disconnect(); } catch (e) {} this._monitorGain = null;
     if (this.micStreamRaw) { for (const t of this.micStreamRaw.getTracks()) try { t.stop(); } catch (e) {} }
-    try { this.voiceOutEl && this.voiceOutEl.pause(); } catch (e) {}
+    try { this.micSrc && this.micSrc.disconnect(); } catch (e) {}
     this.micStreamRaw = this.micSrc = this.micGainNode = this.micDest = this.micStream = this.micTrack = null;
-    this.micAnalyser = null; this.enabled = false; this.micDenied = false; this.localSpeaking = false;
+    this.micAnalyser = null;
+    // output bus: disconnect + release so a re-enable rebuilds cleanly instead of orphaning the whole graph
+    try { this.voiceMaster && this.voiceMaster.disconnect(); } catch (e) {}
+    try { this.voiceSink && this.voiceSink.disconnect(); } catch (e) {}
+    try { if (this.voiceOutEl) { this.voiceOutEl.pause(); this.voiceOutEl.srcObject = null; } } catch (e) {}
+    this.voiceMaster = this.voiceSink = this.voiceOutEl = null;
+    this.enabled = false; this.micDenied = false; this.localSpeaking = false;
   }
 
   _micConstraints() {
