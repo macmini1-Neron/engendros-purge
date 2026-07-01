@@ -65,7 +65,7 @@ The two combine: **effective SNR = raw SNR − detune penalty**. Both must clear
 txPowerW(A)  = A.radioPowerW * A.battery                 // battery scales power (Phase 3; =1 before then)
 TxdBm(A)     = 30 + 10*log10(max(txPowerW(A), ε))        // 1 W ⇒ 30 dBm
 pathLoss(d)  = L0 + 10*n*log10(max(d, d0)/d0)            // n≈3; negligible at map scale for radio
-obstruct(A,B)= terrain/underground penalty in dB         // 0 in open-air LOS; large underground / behind a massif
+obstruct(A,B)= enclosure penalty in dB                   // 0 open-air; grows with mass around/above the RECEIVER (underground/bunker/cave). NOT a strict LOS cut — low-VHF diffracts over hills. Optional light hill term later.
 RXdBm(A→B)   = TxdBm(A) − pathLoss(d) − obstruct(A,B)
 SNR(A→B)     = RXdBm(A→B) − NOISE_FLOOR_dBm
 Δf(A,B)      = |A.freq − B.freq|
@@ -190,7 +190,7 @@ Deliverable: squad radio + eavesdropping, verifiable on **2 physical PCs**.
 ## 7. Phase 3 — Sim Depth
 
 - **Battery (decision 10):** swappable batteries as loot (an `ITEM_DEFS` entry, like ammo); drains, faster on TX; empty → radio silence. **Host-owned** physical state (the only host-authoritative part of the whole feature), synced like `pstate`.
-- **Full terrain-obstruction range model:** compute `obstruct(A,B)` from real terrain/underground/building occlusion, beyond the Phase-2 underground flag. Gives the radio a spatial/tactical dimension (go underground = lose comms = horror tension) and ties into the terrain/caves/bunker systems.
+- **Full enclosure range model:** compute `obstruct(A,B)` as an enclosure/depth metric — mass around/above the receiver (underground depth, building thickness) — beyond the Phase-2 binary underground flag; optional light hill-attenuation term. **Not** a strict line-of-sight cut (low-VHF diffracts over hills). Gives the radio a spatial/tactical dimension (go underground = lose comms = horror tension) and ties into the terrain/caves/bunker systems.
 - **Polish:** tuning feel, squelch feel, station scheduling helpers.
 
 ---
@@ -274,6 +274,32 @@ Each is a `RADIO_STATIONS` row + an asset; the deterministic model already cover
 Exact dB thresholds, `PASSBAND_EDGE`, `DETUNE_K`, `NOISE_FLOOR`, proximity falloff distance, VAD sensitivity, battery drain rates, terrain-obstruction penalty curve, tuning wheel sensitivity, radio filter voicing.
 
 ---
+
+## 16. Open Design Decisions & Late Resolutions (2026-07-01 audit)
+
+A "what isn't clearly predefined?" review pass surfaced the following. Resolutions are folded into the sections above; this is the audit trail.
+
+### Resolved
+
+- **Terrain/range model = enclosure backbone** (not LOS raycast, not full Fresnel). `obstruct` grows with mass around/above the *receiver* (underground/bunker/cave). Phase 2 = binary "underground → heavy penalty" (analog ramp at entrances); Phase 3 = enclosure depth + optional light hill term. Rationale: at 36–46 MHz low-VHF, signals diffract over hills, so enclosure/underground is the dominant honest effect; a strict line-of-sight cut would be unrealistically harsh outdoors.
+- **Two-layer model confirmed.** Proximity = your natural voice, heard by nearby players **without any radio** (short-range, positional, wall-occluded — the horror layer, Phase 1). Radio = R-105D for distance (Phase 2+). Voice is NOT radio-only.
+- **Voice × co-op life-states.** Living **and** downed players talk (proximity + radio; downed = dying words / "revive me"). **Permanently dead / spectating players are silent** to everyone (no relaying enemy positions from a spectator camera). Note: a future vision item turns a dead co-op player into a playable Engendro, which removes any need for a "dead chat" — that feature is **out of scope, not in the codebase; do not implement or search for it here.**
+- **Enemies do not react to voice (v1).** Otherwise open-mic would punish stealth. Reserved as a future horror hook only.
+- **Two distinct "transmit" concepts.** Proximity = open-mic / VAD (continuous, auto). Radio = **held PTT** (half-duplex). Holding radio-PTT also emits your natural proximity voice to nearby players (the dual-hear).
+
+### Transmission model — "is it like Discord rooms?" (clarification)
+
+Conceptually **yes**: a frequency behaves like a shared channel/room — tune to it and you are "in the room"; anyone tuned there hears anyone transmitting; you can accidentally tune onto someone's frequency and eavesdrop. **But the mechanism is broadcast + local gate, NOT server-addressed rooms:**
+
+- A player's mic stream flows to all peers over the WebRTC mesh continuously; "transmitting on 105.100" = broadcasting the tiny `{freq, ptt}` state alongside it. **Each receiver decides locally** whether it hears you (Rule A, §3.3) from its own tuning — the frequency is a *receiver-side filter*, not a routing address. This is exactly why eavesdropping and determinism both fall out for free.
+- **Player audio is live-only:** a frequency "has audio on it" only while some player is actually keyed (PTT) there. There is no server-side room persisting audio for an empty channel.
+- **Preset `RADIO_STATIONS` (future) ARE the always-on rooms:** a numbers station on 44.200 broadcasts continuously (deterministic from `worldclock`), so tuning in always catches it "even when no player is there" — the closest thing to a persistent Discord room, achieved with **zero bandwidth** (local asset, tuning-gated).
+
+### Still open (decide at their phase)
+
+- **Radio ownership** (Phase 2): standard-issue (everyone spawns with an R-105D) vs a lootable/scavenged item (asymmetric — comms as a scarce resource). **TBD.**
+- **Mesh roster distribution** (Phase 1, implementation): the host broadcasts the peer roster so clients can form the client↔client audio mesh (today clients connect only to the host). A to-do, not a design fork.
+- **Minor tunables:** dual-hear echo voicing (the radio copy is bandpass + slight delay so it reads as a radio echo, not a flam), the default squad frequency, PTT + handset control ergonomics.
 
 ## Appendix — Research sources (real-radio behaviour behind the model)
 
