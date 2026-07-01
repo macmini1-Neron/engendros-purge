@@ -309,7 +309,7 @@ export class VoiceChat {
     // STATIC crossfade: radio ON + nothing tuned = full open static; it recedes toward a whisper as a clean
     // signal (station or voice) locks in, so scanning the dial FEELS like a real radio hunting for a station.
     let staticTarget = 0;
-    if (this.radioOn) {
+    if (this.radioOn && !this.radioTx) {                            // keyed up = deaf on RX → no open static either (you're transmitting, not scanning)
       staticTarget = STATIC_FLOOR + (STATIC_OPEN - STATIC_FLOOR) * (1 - clamp(this._recvClarity || 0, 0, 1));
       staticTarget = Math.max(staticTarget, this._garble || 0);   // doubling on one channel = extra mush
     }
@@ -426,9 +426,12 @@ export class VoiceChat {
     this.speakers.delete(id);
   }
   _updateSpeakers(dt) {
+    // the deployed radio you're keying (panel open + transmitting through it) can't also RECEIVE on its loudspeaker
+    const keyedId = (this.radioTx && this.game.radioPanel && this.game.radioPanel.struct) ? this.game.radioPanel.struct.id : null;
     for (const sp of this.speakers.values()) {
+      const rx = sp.on && sp.id !== keyedId;   // receiving = on AND not the one you're transmitting through
       const gains = new Map();
-      if (sp.on) this._applyChannel(this._resolveChannel(sp.freq, 0), gains);
+      if (rx) this._applyChannel(this._resolveChannel(sp.freq, 0), gains);
       for (const [id, pv] of this.peers) {
         if (!pv.srcNode) continue;
         const target = gains.get(id) || 0;
@@ -438,7 +441,7 @@ export class VoiceChat {
       }
       if (sp.stationTaps) for (const st of this.stations) {                 // deployed radio also plays preset stations out loud
         let g = 0;
-        if (sp.on && withinPassband(sp.freq, st.freq)) g = 0.85 * quality(channelSnr(sp.freq - st.freq), RADIO.SQUELCH_DB).clarity;
+        if (rx && withinPassband(sp.freq, st.freq)) g = 0.85 * quality(channelSnr(sp.freq - st.freq), RADIO.SQUELCH_DB).clarity;
         let tap = sp.stationTaps.get(st);
         if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; st.srcNode.connect(tap); tap.connect(sp.bp); sp.stationTaps.set(st, tap); if (st.el.paused) st.el.play().catch(() => {}); }
         if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
@@ -471,7 +474,7 @@ export class VoiceChat {
   }
   _updateRadioReception(dt) {
     const gains = new Map();
-    if (this.radioOn) {
+    if (this.radioOn && !this.radioTx) {                                   // half-duplex: transmitting = deaf on the radio (spec decision #5)
       const c = this._applyChannel(this._resolveChannel(this.radioFreq, this._enclosureDb || 0), gains);
       this._recvClarity = Math.max(this._recvClarity || 0, c.clarity);   // a clear voice cuts through the static
       this._garble = Math.max(this._garble || 0, c.garble);
@@ -502,7 +505,7 @@ export class VoiceChat {
   _updateStations(dt) {
     for (const st of this.stations) {
       let g = 0;
-      if (this.radioOn && withinPassband(this.radioFreq, st.freq)) {
+      if (this.radioOn && !this.radioTx && withinPassband(this.radioFreq, st.freq)) { // half-duplex: keyed up = deaf on RX (spec decision #5)
         const snr = channelSnr(this.radioFreq - st.freq, this._enclosureDb || 0);
         const q = quality(snr, RADIO.SQUELCH_DB);
         g = 0.9 * q.clarity;
