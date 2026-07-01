@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
 <meta charset="utf-8">
-<title>ENGENDROS — World Map Master Plan «ШРАМ» v1.0 (2026-07-02)</title>
+<title>ENGENDROS — World Map Master Plan «ЗОНА 704» v1.1 (2026-07-02)</title>
 <style>
   body { font-family: ui-monospace, Menlo, monospace; background:#f7f4ea; color:#222; margin:0; padding:24px; }
   h1 { font-size:22px; margin:0 0 4px } h2 { font-size:16px; border-bottom:2px solid #888; padding-bottom:4px; margin-top:34px }
@@ -21,10 +21,10 @@
 </style>
 </head>
 <body>
-<h1>ENGENDROS PURGE — World Map Master Plan «ШРАМ» (Зона 704)</h1>
-<div class="meta">v1.0 · 2026-07-02 · SINGLE SOURCE OF TRUTH — každý model/POI/cesta se staví PODLE tohoto plánu · svět 2500×2500 m · souřadnice x,z ∈ [−1250,+1250] · +X=východ, +Z=sever (nahoře na mapě), +Y=nahoru, 1 unit ≈ 1 m · výšky v m nad rovinou stepi (±0) · POI = BLACKBOX parcely (interiéry a rozvržení budov = navazující specy; instancované interiéry žijí v y≈−2500) · schváleno owner-review Sekce 1–4 (brainstorm 2026-07-02)</div>
+<h1>ENGENDROS PURGE — World Map Master Plan «ЗОНА 704»</h1>
+<div class="meta">v1.1 (v1.0 „jizva" → přírodní centrální masiv, owner korekce) · 2026-07-02 · SINGLE SOURCE OF TRUTH — každý model/POI/cesta se staví PODLE tohoto plánu · svět 2500×2500 m · souřadnice x,z ∈ [−1250,+1250] · +X=východ, +Z=sever (nahoře na mapě), +Y=nahoru, 1 unit ≈ 1 m · výšky v m nad rovinou stepi (±0) · POI = BLACKBOX parcely (interiéry a rozvržení budov = navazující specy; instancované interiéry žijí v y≈−2500) · schváleno owner-review Sekce 1–4 (brainstorm 2026-07-02)</div>
 
-<div class="note"><b>Zamčené pilíře</b> (z vision docu + tohoto brainstormu): topologie «ШРАМ» — jizva NW→SE dělí svět · start SW → cíl NE · N routa suchá/vysoká (delší) vs S routa mokrá/smrtelnější (kratší) · výšková zonace biomů (jedno mírné pásmo; „tajga" = smrkový pás svahů) · jeskyně střídmě: 3 hero místa (704, důl, lom-převisy) · rádio = systém mapy (3 stožáry vs rušení jádra) · Shilka = korunovační nález Act 1 (letiště) · ~4–6 h Act 1, STALKER hustota · gaty fyzické a samo-vysvětlující · okraje = POI prstenec + poctivé hranice (hory/sráz/perimetr, žádná neviditelná zeď).</div>
+<div class="note"><b>Zamčené pilíře</b> (z vision docu + tohoto brainstormu): topologie «ХРЕБЕТ» — PŘÍRODNÍ horský masiv NW→SE uprostřed (nic unreal): silnice ho obcházejí → vidlice rout; pěšky je hřbet přechodný (T5 zkratka pro odvážné); 704 = bunkr zavrtaný V hoře, na temeni jen reálná oplocená запретка (Act 2) · start SW → cíl NE · N routa suchá/vysoká (delší) vs S routa mokrá/smrtelnější (kratší) · výšková zonace biomů (jedno mírné pásmo; „tajga" = smrkový pás svahů) · jeskyně střídmě: 3 hero místa (704, důl, lom-převisy) · rádio = systém mapy (3 stožáry vs rušení jádra) · Shilka = korunovační nález Act 1 (letiště) · ~4–6 h Act 1, STALKER hustota · gaty fyzické a samo-vysvětlující · okraje = POI prstenec + poctivé hranice (hory/sráz/perimetr, žádná neviditelná zeď).</div>
 
 <h2>A. Mapa (vrstvy)</h2>
 <div class="lay">
@@ -67,14 +67,22 @@
     <ellipse cx="700" cy="920" rx="120" ry="60" fill="#5f9dbd" opacity="0.45"/>
     <path d="M -650 -1050 Q -560 -950 -370 -880" stroke="#5f9dbd" stroke-width="12" fill="none"/>
   </g>
-  <!-- scar: always visible -->
+  <!-- central massif: always visible -->
   <g>
-    <polygon points="-427,-682 793,318 527,642 -693,-358" fill="#c9b6a4" opacity="0.88"/>
-    <polygon points="-427,-682 793,318 527,642 -693,-358" fill="none" stroke="#8a5a4a" stroke-width="4" stroke-dasharray="4 8"/>
-    <polygon points="-478,-620 743,380 578,580 -642,-420" fill="#a08b8b"/>
-    <polygon points="-478,-620 743,380 578,580 -642,-420" fill="none" stroke="#5a3d3d" stroke-width="6"/>
+    <polygon points="-427,-682 793,318 527,642 -693,-358" fill="#a9906f" opacity="0.8"/><!-- úpatí: mrtvý les (dieback) -->
+    <polygon points="-427,-682 793,318 527,642 -693,-358" fill="none" stroke="#7a5a3a" stroke-width="4" stroke-dasharray="4 8"/>
+    <polygon points="-478,-620 743,380 578,580 -642,-420" fill="#b0aeb6"/><!-- horní svahy -->
+    <polygon points="-510,-548 700,332 636,410 -574,-470" fill="#8d8d93"/><!-- skalní temeno -->
+    <!-- scramble crossings (pěší zkratky přes hřbet) -->
+    <path d="M -502 -111 L -146 -543" stroke="#fff" stroke-width="6" stroke-dasharray="8 10" opacity="0.9"/>
+    <path d="M 190 457 L 546 25" stroke="#fff" stroke-width="6" stroke-dasharray="8 10" opacity="0.9"/>
+    <text x="-500" y="-80" font-size="30" fill="#333">stezka přes hřbet (T5, toxin)</text>
+    <text x="330" y="470" font-size="30" fill="#333">JV rameno (T5)</text>
+    <!-- запретка compound -->
+    <circle cx="50" cy="-20" r="100" fill="none" stroke="#3a2c2c" stroke-width="5" stroke-dasharray="10 8"/>
     <circle cx="50" cy="-20" r="24" fill="#3a2c2c"/>
-    <text x="-430" y="-300" font-size="42" fill="#5a3d3d" transform="rotate(39 -430 -300)" font-weight="bold">JIZVA «РАНА» +90 · stěny >35°</text>
+    <text x="120" y="-120" font-size="34" fill="#3a2c2c" font-weight="bold">ЗАПРЕТКА (plot, Act 2)</text>
+    <text x="-430" y="-300" font-size="42" fill="#5a4a3a" transform="rotate(39 -430 -300)" font-weight="bold">ХРЕБЕТ «РАНА» — mrtvý les → skála +150 · PĚŠKY přechodný</text>
   </g>
   <g id="g-ter">
     <path d="M -700 700 Q -560 750 -400 820" stroke="#8a7448" stroke-width="16" fill="none" stroke-linecap="round"/>
@@ -129,7 +137,7 @@
     <path d="M 480 -820 Q 700 -880 900 -760 Q 1050 -600 950 -400 Q 800 -300 650 -400 Q 500 -600 480 -820 Z" fill="#cf6f2f" opacity="0.25"/><text x="700" y="-600" font-size="52" fill="#8f4f1f">T4</text>
     <path d="M 540 -60 Q 750 -160 950 -60 Q 1000 100 850 220 Q 650 260 540 160 Z" fill="#cf6f2f" opacity="0.25"/><text x="700" y="80" font-size="52" fill="#8f4f1f">T4</text>
     <path d="M 850 -1150 Q 1050 -1200 1150 -1050 Q 1200 -900 1050 -800 Q 900 -850 850 -1000 Z" fill="#cf3f3f" opacity="0.28"/><text x="960" y="-960" font-size="52" fill="#8f1f1f">T5</text>
-    <circle cx="50" cy="-20" r="140" fill="#5f1f6f" opacity="0.38"/><text x="-40" y="-180" font-size="48" fill="#4f1f5f">704=T6</text>
+    <circle cx="50" cy="-20" r="140" fill="#5f1f6f" opacity="0.38"/><text x="-40" y="-200" font-size="48" fill="#4f1f5f">704=T6 · svahy=T5</text>
   </g>
   <g id="g-net">
     <path d="M -1250 1180 L -700 1185 L -100 1190 L 500 1195 L 1050 1180" stroke="#7a2a2a" stroke-width="6" stroke-dasharray="24 8 4 8" fill="none"/>
@@ -219,7 +227,7 @@
 <tr><td>P6</td><td>Důl «ШАХТА №8»</td><td><b>G2</b> hlavní</td><td>povrch (+640,+760) 60×50 · štola 120 m</td><td>hory +140</td><td>T4</td><td>N-gate 2; jeskyně #2 (Surface Nets); dynamit→zával «Щель» (+700,+770)</td><td>modelgen + cave engine</td></tr>
 <tr><td>P7</td><td>Přehrada «ПЛОТИНА»</td><td><b>G4</b> hlavní</td><td>hráz (+780,−680) 90×12 · gať 320×5</td><td>bažina −12</td><td>T4</td><td>S-gate 2; 2-hráčová stavidla (co-op zámek); drží jed v zóně</td><td>buildgen (nové)</td></tr>
 <tr><td>P8</td><td>Bunkr «Объект 1180» + LZ — CÍL</td><td>kotva ★</td><td>bunkr (+960,+1020) 70×60 · LZ (+1060,+1120) 80×80</td><td>sedlo +200</td><td>T5</td><td>finále Act 1, beat «Аист» (hraný); Act 2 holdout</td><td>bunker.js ✓ (přesadit)</td></tr>
-<tr><td>P9</td><td>Ústí Objektu 704</td><td>endgame</td><td>(+180,+80), stezka od P5</td><td>jizva +40</td><td>T6</td><td>Act 2 dungeon vstup (pečeť = 5 mrtvých G-bossů); vlastní spec</td><td>cave mouth + instance</td></tr>
+<tr><td>P9</td><td>Objekt 704 — bunkr V hoře</td><td>endgame</td><td>portál SV stěny (+180,+80), stezka od P5; ventilační šachty + запретка plot r≈100 na temeni (+50,+20)</td><td>masiv +40 (portál)</td><td>T6</td><td>Act 2 dungeon (pečeť = 5 mrtvých G-bossů → brána запретки/portál); vlastní spec</td><td>cave mouth + instance</td></tr>
 </table>
 <table>
 <tr><th>ID</th><th>Vedlejší POI</th><th>Pozice</th><th>K čemu</th></tr>
@@ -261,7 +269,7 @@
 <tr><td>G4</td><td>(+780,−680)</td><td>gať zatopená (hráz drží jed v zóně — lore)</td><td>bažinný boss → 2 kola stavidel = 2 hráči naráz → hladina −1,2 m</td></tr>
 <tr><td>G5</td><td>(+940,+370)</td><td>železniční zářez ucpán vykolejeným vlakem</td><td>boss Kombinátu → portálovým jeřábem odtáhnout vagón</td></tr>
 </table>
-<p style="font-size:12px">Pořadí: N = G1→G2 · S = G3→G4 · sběh u P5 → G5 → serpentina → P8 (beat «Аист»). Každý otevřený gate = rally/fast-travel uzel (Act 2). Boss identity zástupné — vazba na 9-boss bibli v roster specu.</p>
+<p style="font-size:12px">Pořadí: N = G1→G2 · S = G3→G4 · sběh u P5 → G5 → serpentina → P8 (beat «Аист»). <b>Neoficiální 3. cesta:</b> pěší scramble PŘES hřbet (2 stezky, T5: mrtvý les, toxin u temene, žádný kryt, vozidla ne) — nejkratší a nejsmrtelnější; gaty neobchází věcně (G-bossové dál drží silnice pro vozidla/logistiku a otvírají fast-travel). Každý otevřený gate = rally/fast-travel uzel (Act 2). Boss identity zástupné — vazba na 9-boss bibli v roster specu.</p>
 
 <h2>D. Cesty & vzdálenosti</h2>
 <table>
@@ -281,7 +289,7 @@
 <tr><th>ID</th><th>Prvek</th><th>Pozice</th><th>Rozměr</th><th>Funkce</th></tr>
 <tr><td>T01–T03</td><td>Balky</td><td>(−700,−700)→(−400,−820) · (−100,−400)→(+200,−520) · (−350,−950)→(−80,−1030)</td><td>280–350 m, hl. 6–10</td><td>kryté přesuny, defiláda, dig</td></tr>
 <tr><td>T04</td><td>Lom (=S07)</td><td>(−140,−260)</td><td>⌀180, −25</td><td>převisy (jeskyně #3), trhaviny, žula</td></tr>
-<tr><td>T05</td><td>Kráterové pole (=S08)</td><td>(−620…−380, +180…+420)</td><td>~40 kráterů ⌀8–20</td><td>nálety na jizvu (lore), voda, krytí</td></tr>
+<tr><td>T05</td><td>Kráterové pole (=S08)</td><td>(−620…−380, +180…+420)</td><td>~40 kráterů ⌀8–20</td><td>nálety na 704 / ventilační šachty (lore), voda, krytí</td></tr>
 <tr><td>T06</td><td>Kurhany ×5 (=S06)</td><td>okolo (−450,−250)</td><td>+8–12, ⌀30–50</td><td>knolls, orientace</td></tr>
 <tr><td>T07</td><td>Úvoz</td><td>(−700,−80)→(−480,+80)</td><td>280 m, −4</td><td>choke/ambush</td></tr>
 <tr><td>T08</td><td>Říční terasy</td><td>Z břeh, z∈[0,+320]</td><td>3× (+10/+20/+30)</td><td>ploché stupně (shape-language)</td></tr>
@@ -299,22 +307,22 @@
 <tr><td>Tajga (smrkový pás)</td><td>+80…+160</td><td>11 %</td><td>podhůří N + V bok</td><td>dread pás, tma</td></tr>
 <tr><td>Hory/alpín</td><td>+160…+280</td><td>14 %</td><td>N+NE+E okraj (krest neprůchodný)</td><td>hranice, sedlo +200, důl</td></tr>
 <tr><td>Bažina</td><td>−15…0</td><td>12 %</td><td>JV pánev</td><td>S routa, toxin, zpomalení</td></tr>
-<tr><td>Jizva+lem</td><td>hřbet +90 / lem +10</td><td>8 %</td><td>osa (−560,+520)→(+660,−480), hřbet š260 + lem 80/strana</td><td>sealed jádro; 704 ústí (+180,+80)</td></tr>
+<tr><td>Centrální masiv «ХРЕБЕТ»</td><td>úpatí +40 → temeno +150</td><td>8 %</td><td>osa (−560,+520)→(+660,−480), úpatí š~420, temeno š~120; lokální srázy >35° jen na SV stěně u portálu</td><td>PŘECHODNÝ pěšky (T5), bez cest; dieback gradient: les → mrtvý les → skála; 704 portál (+180,+80), запретка na temeni</td></tr>
 <tr><td>Voda</td><td>hladiny −2…+40</td><td>3 %</td><td>Тихая (Z, N→S) + oka bažiny</td><td>most S04, brody, překážka</td></tr>
 <tr><td>Sráz/perimetr</td><td>—</td><td>2 %</td><td>Z sráz · J plot z≈−1180 (вышки à 300 m, minová pole značená)</td><td>poctivé hranice</td></tr>
 </table>
-<p style="font-size:12px">Drenážní logika: hory N (nejvýš) → jizva přehradila odtok k JV → bažina za ní (nejníž), jed stéká z lemu do bažiny → S routa mokrá a smrtelnější. Řeka Тихая: (−350,+1250)→(−370,+900)→(−330,+600)→(−420,+300)→(−480,0)→(−520,−300)→(−480,−600)→(−380,−800)→(−140,−950)→ delta do bažiny → výtok (+330,−1250). Ekotony: plynulé blendy (moisture×temp×alt váhy), šev nikdy tvrdý řez.</p>
+<p style="font-size:12px">Drenážní logika: hory N (nejvýš) → centrální masiv uzavírá JV pánvi odtok → bažina za ním (nejníž); kontaminace z komplexu 704 stéká po svazích do pánve → S routa mokrá a smrtelnější (vše přirozené, nic unreal). Řeka Тихая: (−350,+1250)→(−370,+900)→(−330,+600)→(−420,+300)→(−480,0)→(−520,−300)→(−480,−600)→(−380,−800)→(−140,−950)→ delta do bažiny → výtok (+330,−1250). Ekotony: plynulé blendy (moisture×temp×alt váhy), šev nikdy tvrdý řez.</p>
 
 <h2>G. Systémové vrstvy</h2>
 <table>
 <tr><th>Systém</th><th>Pravidla (mapová)</th></tr>
-<tr><td>Rádio</td><td>stožáry РТ-1/2/3 (S01–S03), oprava → pokrytí r≈500 (kontrakty, IL-76, voice boost); rušení jádra r≈450 kolem (+50,+20) — u jizvy jen chrastění; hřebeny/sedlo = vždy signál; výška pomáhá, údolí stíní. Act 2: stožáry sporné (patroly vypínají).</td></tr>
+<tr><td>Rádio</td><td>stožáry РТ-1/2/3 (S01–S03), oprava → pokrytí r≈500 (kontrakty, IL-76, voice boost); rušení jádra r≈450 kolem (+50,+20) — u masivu jen chrastění; hřebeny/sedlo = vždy signál; výška pomáhá, údolí stíní. Act 2: stožáry sporné (patroly vypínají).</td></tr>
 <tr><td>Shilka</td><td>revetment P3 (+200,+680), nepojízdná: ① aku+filtry (МТС P4 ∨ depo P5) ② nafta 400 l (S05 ∨ ГСМ P3) ③ pásy 23 mm (погреб P3 + vzácné dropy) → nutí křížit routy. Multi-crew (driver+gunner).</td></tr>
 <tr><td>Vozidla</td><td>ultra-vzácná: UAZ vrak (S09, lehká oprava) · ZIL (S05, střední) · DREZÍNA (E05, kolej) · Shilka (korunovace). Nejedou: čaща, bažina mimo gať, hory mimo cesty.</td></tr>
-<tr><td>Threat-tiery</td><td>T1 start → T2 les/step → T3 P3+P4/bažina → T4 P6/P7/P5 → T5 lem+finále → T6=704. Eskalace NOVÝM chováním (flanker→charger→armored/breach→elity+«пух»), ne HP. Reinfestace: vyčištěné POI po čase +1 tier (max T5 v Act 1).</td></tr>
+<tr><td>Threat-tiery</td><td>T1 start → T2 les/step → T3 P3+P4/bažina → T4 P6/P7/P5 → T5 svahy masivu+finále → T6=704. Eskalace NOVÝM chováním (flanker→charger→armored/breach→elity+«пух»), ne HP. Reinfestace: vyčištěné POI po čase +1 tier (max T5 v Act 1).</td></tr>
 <tr><td>Spawn</td><td>nikdy v no-spawn bublinách POI (r50–70) ani v zorném poli — vždy z čaщи/balky/za hřebenem/z rákosí/kráterů. Holdouty: kite smyčka + 2 úniky + 2–3 fronty (detail v POI specech — blackbox).</td></tr>
 <tr><td>Act 1 dramaturgie</td><td>rádio: jistota → váhání → chrastění u jizvy; An-2 (E04) němé varování; každý mrtvý G-boss → 704 se budí (záře/siréna/пух z celé mapy). Finále «Аист» = HRANÝ beat na LZ, vrak → S18 (+260,+190).</td></tr>
-<tr><td>Act 2 «Покинутые»</td><td>hunter-patroly vstupují: E07 (jih) · E05 (tunel) · P8 sedlo (sever); drží koridory, vypínají stožáry, IL-76 shazuje jen jim (krádež shozu = objective). Svět +1 tier, blood-moon vlny; lem jizvy roste ~40 m/cyklus (max +200); gaty G1–G5 = fast-travel; pečeť 704 = 5 mrtvých G-bossů → T6 dungeon (vlastní spec).</td></tr>
+<tr><td>Act 2 «Покинутые»</td><td>hunter-patroly vstupují: E07 (jih) · E05 (tunel) · P8 sedlo (sever); drží koridory, vypínají stožáry, IL-76 shazuje jen jim (krádež shozu = objective). Svět +1 tier, blood-moon vlny; mrtvý les se šíří ze svahů masivu ven ~40 m/cyklus (max +200); gaty G1–G5 = fast-travel; pečeť 704 = 5 mrtvých G-bossů → brána запретки/portál → T6 dungeon (vlastní spec).</td></tr>
 <tr><td>Co-op</td><td>gaty/pečeť/reinfestace = host-auth (`hostSim`); boss-kill kredit všem účastníkům; nikdy lockout z arény (warp k rally uzlu gatu); intenzita škáluje podle živého headcountu (cap 6).</td></tr>
 </table>
 

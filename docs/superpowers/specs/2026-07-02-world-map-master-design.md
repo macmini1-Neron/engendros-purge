@@ -1,4 +1,4 @@
-# World Map Master Design — «ШРАМ» (Зона 704)
+# World Map Master Design — «ЗОНА 704» (central-massif world)
 
 **Date:** 2026-07-02 · **Status:** owner-approved design (brainstorm, sections 1–4 ratified live) · **Branch:** `feat/world-map-master-design`
 **Canonical artifact:** [`2026-07-02-world-map-master-plan.html`](2026-07-02-world-map-master-plan.html) — the **single source of truth** for the world layout. Every asset, POI, road and terrain feature is built *to* that plan; changes go into the plan first (bump its version), then into assets.
@@ -11,11 +11,11 @@
 |---|---|
 | Rebuild basis | **From zero** — existing districts (airfield, kolkhoz, bunker, gatehouse, strongpoint) are re-*placed* as building blocks per this plan, not kept at old coordinates |
 | World size | **2500×2500 m**, x,z ∈ [−1250,+1250], +X=E +Z=N, 1u≈1m |
-| Macro-topology | **«ШРАМ» (The Scar)** — an elongated dead ridge NW→SE across the middle (axis (−560,+520)→(+660,−480), ridge 260 m wide, top +90 m, cliffs >35°, toxic apron +80 m/side) with Object 704 at its heart. Perpendicular to the SW→NE travel diagonal → forces the two-route fork by geography |
+| Macro-topology | **«ХРЕБЕТ» — a NATURAL central massif** NW→SE across the middle (axis (−560,+520)→(+660,−480); foot ~420 m wide at +40, rocky crest ~120 m wide at +150; local >35° crags only on the NE face by the portal). Object 704 is a **bunker inside the mountain** (Soviet mountain-complex realism — "nothing unreal", owner correction of the v1.0 raised-scar reading). Perpendicular to the SW→NE diagonal → forces the two-route fork; **crossable on foot** as an unofficial 3rd path (T5: dieback forest, summit toxin, no cover, no vehicles); roads logically go around it. Summit has a real fenced «запретка» compound over the 704 vents — sealed until Act 2 |
 | Start / Goal | START = КПП SW (−1080,−1060) · GOAL = mountain saddle NE, bunker «Объект 1180» (+960,+1020) + evac LZ (+1060,+1120) at +200 m |
 | Biome logic | **Vertical zonation** in ONE temperate continental zone (Carpathian model): steppe ±0…+30 → mixed forest +20…+80 → spruce "taiga" belt +80…+160 → mountains/alpine +160…+280; swamp −15…0 in the SE basin. "Taiga" exists only as the mountain-slope spruce belt |
 | Forests | 27 % of map in **3 density tiers**: open woodland (sightline 60–120 m) · standard forest (25–60 m) · **ЧАЩА** dense cores (3–10 m, thicket traversal, 6 pockets 150–300 m, never block a route) |
-| Hydrology | The scar **dammed the land's natural SE drainage** → swamp formed behind it; toxin leaches from the apron into it (why the S route is wetter and deadlier). River «Тихая» N mountains → W side → swamp delta |
+| Hydrology | The central massif **closes off the SE basin's drainage** → the swamp collects behind it; contamination from the 704 complex washes down the slopes into it (why the S route is wetter and deadlier — all natural). River «Тихая» N mountains → W side → swamp delta |
 | Caves | **Sparingly, where they carry weight** (3 hero spots): Object 704 mouth (+180,+80) · mine gallery P6 (Surface Nets) · quarry overhangs S07. Everything else = portal interiors at y≈−2500 (GTA-SA instancing, already in progress on another branch) |
 | Radio | **Signal is a map system**: 3 repairable masts РТ-1/2/3 (r≈500 coverage: contracts, IL-76, voice boost) vs. core jamming r≈450; elevation helps, valleys shadow. Act 2: masts become contested |
 | Shilka | **Act-1 crown-jewel find** at the airfield AA revetment (+200,+680); needs battery+filters (МТС kolkhoz ∨ Kombinát depot), 400 l diesel (АЗС ∨ airfield ГСМ), 23 mm belts (airfield magazine) → forces route-crossing; multi-crew |
@@ -28,7 +28,7 @@
 ## 2. Act structure on this map
 
 - **Act 1 «Přechod»:** SW→NE around the scar; radio degrades (certainty → hesitation → jamming near the scar); every dead G-boss visibly "wakes" 704 (glow, siren, thickening «пух»). Finale «Аист» is **played, not watched** on the LZ; the shot-down evac crashes at S18 (+260,+190) by the apron.
-- **Act 2 «Покинутые»:** the state actively writes the squad off — hunter patrols enter via edge gates (E07 south, E05 tunnel, P8 saddle), contest the masts, steal the airdrops; world +1 threat tier; the apron creeps outward (~40 m/cycle, cap +200); opened gates act as fast-travel nodes; the 704 seal breaks after all five G-bosses → T6 endgame dungeon (own spec).
+- **Act 2 «Покинутые»:** the state actively writes the squad off — hunter patrols enter via edge gates (E07 south, E05 tunnel, P8 saddle), contest the masts, steal the airdrops; world +1 threat tier; the dieback forest creeps outward from the massif slopes (~40 m/cycle, cap +200); opened gates act as fast-travel nodes; the 704 seal (запретка gate/portal) breaks after all five G-bosses → T6 endgame dungeon (own spec).
 
 ## 3. Engine fit
 
@@ -40,4 +40,4 @@ Boss roster assignment (reconcile the 9-boss bible) · per-POI interior specs (b
 
 ## 5. Process record
 
-Brainstorm 2026-07-02 with visual companion (macro-topology choice A/B/C → owner picked «ШРАМ»; sections: terrain v3 with density-tiered forests + 12 terrain-diversity features → routes/gates/POI v2 with edge ring → POI blocks (kept provisional/blackbox per owner) → mechanics layers with loot skipped). Session sketches live in `.superpowers/brainstorm/` (gitignored); the ratified content is consolidated in the master-plan HTML.
+Brainstorm 2026-07-02 with visual companion (macro-topology choice A/B/C → owner picked the elongated-center variant; sections: terrain v3 with density-tiered forests + 12 terrain-diversity features → routes/gates/POI v2 with edge ring → POI blocks (kept provisional/blackbox per owner) → mechanics layers with loot skipped). **v1.1 owner correction:** the center is a *natural* mountain massif (crossable, bunker-in-mountain), not a surreal raised scar — "ne nic unreal". Session sketches live in `.superpowers/brainstorm/` (gitignored); the ratified content is consolidated in the master-plan HTML.
