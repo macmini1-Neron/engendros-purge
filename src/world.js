@@ -11,13 +11,16 @@ import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animat
 import { buildSpec } from './props/voxel-interp.js';
 import { getSpec } from './props/registry-core.js';
 
-// Deployable R-105Д VOICE radio mesh — reuses the courier's R-105D voxel spec (built once, cloned).
+// Deployable R-105Д VOICE radio mesh — built FRESH from the courier's R-105D voxel spec on every placement.
+// NOT a cached-proto clone: a placed radio is a `prop`, so pickupR105 / removeR105Remote / _disposeMesh
+// deep-dispose its geometry+material — a shared clone would free the proto's buffers and corrupt every sibling
+// radio for the rest of the session. buildSpec() owns its own buffers and is cheap (radios cap at
+// STRUCT_DEFS.r105.max), mirroring buildFieldRadio() and enemies.js buildCourierPreview().
 // Falls back to the field-radio prop if the spec registry isn't ready.
-let _r105Proto = null;
 function buildR105Mesh() {
   try {
-    if (!_r105Proto) { const spec = getSpec('r105d'); if (spec) _r105Proto = buildSpec(spec); }
-    if (_r105Proto) { const m = _r105Proto.clone(); m.scale.setScalar(1.0); return m; } // TODO: tune scale after visual review
+    const spec = getSpec('r105d');
+    if (spec) { const m = buildSpec(spec); m.scale.setScalar(1.0); return m; } // TODO: tune scale after visual review
   } catch (e) { if (typeof console !== 'undefined') console.warn('[world] R-105 model build failed — field-radio fallback', e); }
   return buildFieldRadio();
 }
