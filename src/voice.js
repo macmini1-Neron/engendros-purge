@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, damp } from './util.js';
 import { iceConfig } from './net.js';
-import { RADIO, withinPassband, detunePenalty, quality, resolveReception } from './radiosim.js';
+import { RADIO, withinPassband, channelSnr, quality, resolveReception } from './radiosim.js';
 
 const OCC_HZ = 10;                 // occlusion raycast + speaking-meter rate (Hz)
 const VAD_HANG = 0.25;             // seconds the mic stays open after voice drops below threshold
@@ -438,7 +438,7 @@ export class VoiceChat {
       }
       if (sp.stationTaps) for (const st of this.stations) {                 // deployed radio also plays preset stations out loud
         let g = 0;
-        if (sp.on && withinPassband(sp.freq, st.freq)) g = 0.85 * quality(RADIO.CLEAR_DB - detunePenalty(Math.abs((sp.freq - st.freq) * 1e6)), RADIO.SQUELCH_DB).clarity;
+        if (sp.on && withinPassband(sp.freq, st.freq)) g = 0.85 * quality(channelSnr(sp.freq - st.freq), RADIO.SQUELCH_DB).clarity;
         let tap = sp.stationTaps.get(st);
         if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; st.srcNode.connect(tap); tap.connect(sp.bp); sp.stationTaps.set(st, tap); if (st.el.paused) st.el.play().catch(() => {}); }
         if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
@@ -451,7 +451,7 @@ export class VoiceChat {
     const cands = [];
     for (const [id, pv] of this.peers) {
       if (!pv.rt || !pv.ro || !withinPassband(pv.rf, freq)) continue;
-      const snr = RADIO.CLEAR_DB - detunePenalty(Math.abs((pv.rf - freq) * 1e6)) - (enclosureDb || 0);
+      const snr = channelSnr(pv.rf - freq, enclosureDb);
       cands.push({ id, snr });
     }
     return resolveReception(cands, RADIO.SQUELCH_DB);
@@ -503,7 +503,7 @@ export class VoiceChat {
     for (const st of this.stations) {
       let g = 0;
       if (this.radioOn && withinPassband(this.radioFreq, st.freq)) {
-        const snr = RADIO.CLEAR_DB - detunePenalty(Math.abs((this.radioFreq - st.freq) * 1e6)) - (this._enclosureDb || 0);
+        const snr = channelSnr(this.radioFreq - st.freq, this._enclosureDb || 0);
         const q = quality(snr, RADIO.SQUELCH_DB);
         g = 0.9 * q.clarity;
         this._recvClarity = Math.max(this._recvClarity || 0, q.clarity);  // station clarity ramps the static DOWN as you tune in

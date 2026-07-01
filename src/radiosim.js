@@ -38,6 +38,12 @@ export function detunePenalty(dfHz) {
   if (df >= RADIO.PASSBAND_EDGE) return Infinity;
   return RADIO.DETUNE_K * (df - RADIO.TOL) / (RADIO.PASSBAND_EDGE - RADIO.TOL);
 }
+// composed same-channel SNR (dB): full-clarity ceiling − detune penalty (|Δf| given in MHz) − receiver
+// enclosure penalty. The single shared formula for the carried-radio, loudspeaker, and preset-station
+// paths in voice.js, so their audibility can't drift out of sync.
+export function channelSnr(dfMHz, enclosureDb = 0) {
+  return RADIO.CLEAR_DB - detunePenalty(Math.abs(dfMHz || 0) * 1e6) - (enclosureDb || 0);
+}
 // effective SNR (dB) of emitter A as heard by listener B.
 export function effectiveSnr({ powerW, battery, dist, obstructDb, dfHz } = {}) {
   const rx = txDbm(powerW, battery) - pathLoss(dist) - (obstructDb || 0);
