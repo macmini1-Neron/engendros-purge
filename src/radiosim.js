@@ -6,9 +6,9 @@
 export const RADIO = {
   BAND_MIN: 36.0, BAND_MAX: 46.1,   // MHz — R-105D band
   READOUT_STEP: 0.001,               // MHz dial resolution (1 kHz) — finer than TOL so a shared number reliably locks
-  TOL: 8_000,                         // Hz — clean-window half-width (≈ R-105D ±8 kHz)
-  PASSBAND_EDGE: 25_000,             // Hz — beyond this the signal is filter-rejected → silence
-  DETUNE_K: 30,                      // dB penalty ramp across the shoulder (TOL..PASSBAND_EDGE)
+  TOL: 8_000,                         // Hz — clean-window half-width (≈ R-105D ±8 kHz): land here = fully clear
+  PASSBAND_EDGE: 60_000,             // Hz — beyond this the signal is filter-rejected → silence
+  DETUNE_K: 14,                      // dB penalty ramp across the shoulder (TOL..PASSBAND_EDGE) — gentle, so you HEAR the static→signal fade over several dial clicks
   CAPTURE_DB: 6,                     // FM capture margin (stronger-by-this wins cleanly)
   CLEAR_DB: 20,                      // SNR (dB) for full clarity
   SQUELCH_DB: 9,                     // default squelch threshold (player-adjustable)

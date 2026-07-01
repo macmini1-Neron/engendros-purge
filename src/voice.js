@@ -24,6 +24,11 @@ const OCC_LP_OPEN = 22050;         // lowpass cutoff, clear line-of-sight
 const OCC_LP_BLOCK = 500;          // lowpass cutoff, fully occluded (muffled through a wall)
 const OCC_GAIN_BLOCK = 0.55;       // gain multiplier when fully occluded
 const SPEAK_RMS = 0.02;            // RMS above which a remote's "speaking" dot lights
+// field-radio STATIC/hiss model — real radio: ON + tuned to nothing = loud open static; it fades as a clean signal locks in.
+const STATIC_OPEN = 0.9;           // static level (0..1) when the radio is ON but receiving nothing (between stations)
+const STATIC_FLOOR = 0.05;         // faint carrier hiss that survives even on a locked, perfectly-clear signal
+const STATIC_OUT = 0.42;           // output gain applied to the static level → makes it clearly audible (was an inaudible 0.12)
+const STATIC_LAMBDA = 10;          // static crossfade smoothing (higher = snappier as you turn the dial)
 
 export class VoiceChat {
   constructor(game) {
@@ -132,11 +137,13 @@ export class VoiceChat {
     if (!this.ctx || this._crackleGain) return;
     const ctx = this.ctx, len = Math.floor(ctx.sampleRate * 2);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate), data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * 0.5;
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
     const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.7;
+    // shape white noise into a broad radio "shhhh": a gentle highpass kills the rumble, a wide bandpass gives the hiss body
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 0.45;
     const g = ctx.createGain(); g.gain.value = 0;
-    src.connect(bp); bp.connect(g); if (this.voiceMaster) g.connect(this.voiceMaster);
+    src.connect(hp); hp.connect(bp); bp.connect(g); if (this.voiceMaster) g.connect(this.voiceMaster);
     try { src.start(); } catch (e) {}
     this._crackleSrc = src; this._crackleGain = g;
   }
@@ -268,7 +275,8 @@ export class VoiceChat {
 
     const cam = this.game.engine && this.game.engine.camera;
     if (tick && cam) this._enclosureDb = this._enclosure(cam);
-    this._crackleTarget = 0;
+    this._recvClarity = 0;  // best clean reception this frame (station or voice), 0..1 → drives the static crossfade
+    this._garble = 0;       // extra mush from two stations doubling on one channel
     for (const [id, pv] of this.peers) {
       const rp = this.game.mp.remotes && this.game.mp.remotes.get(id);
       if (rp && pv.panner) this._setPos(pv.panner, rp.pos);
@@ -286,7 +294,14 @@ export class VoiceChat {
     this._updateRadioReception(dt);
     this._updateStations(dt);
     this._updateSpeakers(dt);
-    if (this._crackleGain) this._crackleGain.gain.value = damp(this._crackleGain.gain.value, (this._crackleTarget || 0) * 0.12, 8, dt);
+    // STATIC crossfade: radio ON + nothing tuned = full open static; it recedes toward a whisper as a clean
+    // signal (station or voice) locks in, so scanning the dial FEELS like a real radio hunting for a station.
+    let staticTarget = 0;
+    if (this.radioOn) {
+      staticTarget = STATIC_FLOOR + (STATIC_OPEN - STATIC_FLOOR) * (1 - clamp(this._recvClarity || 0, 0, 1));
+      staticTarget = Math.max(staticTarget, this._garble || 0);   // doubling on one channel = extra mush
+    }
+    if (this._crackleGain) this._crackleGain.gain.value = damp(this._crackleGain.gain.value, staticTarget * STATIC_OUT, STATIC_LAMBDA, dt);
   }
 
   _updateListener() {
@@ -422,20 +437,26 @@ export class VoiceChat {
     }
     return resolveReception(cands, RADIO.SQUELCH_DB);
   }
+  // Fill `gains` (peerId → receive gain) for one resolved channel; RETURN the static contribution
+  // { clarity, garble } so the caller decides whether it drives the local static (own radio) or not (a speaker).
   _applyChannel(res, gains) {
     if (res.mode === 'clear') {
       const q = quality(res.snr, RADIO.SQUELCH_DB);
       gains.set(res.id, 0.95 * q.clarity);
-      this._crackleTarget = Math.max(this._crackleTarget || 0, q.crackle + (res.captured ? 0.12 : 0)); // faint "someone doubling under it" texture
+      return { clarity: q.clarity, garble: res.captured ? 0.12 : 0 };  // faint "someone doubling under it" texture
     } else if (res.mode === 'garble') {
       gains.set(res.top, 0.3 * (1 - res.intensity));          // the stronger voice only leaks faintly through the mush
-      this._crackleTarget = Math.max(this._crackleTarget || 0, 0.6 + 0.35 * res.intensity);
+      return { clarity: 0, garble: 0.6 + 0.35 * res.intensity };
     }
+    return { clarity: 0, garble: 0 };
   }
   _updateRadioReception(dt) {
-    if (this.radioOn) this._crackleTarget = Math.max(this._crackleTarget || 0, 0.15); // faint open-channel hiss while the radio is ON (so tuning always has "air")
     const gains = new Map();
-    if (this.radioOn) this._applyChannel(this._resolveChannel(this.radioFreq, this._enclosureDb || 0), gains);
+    if (this.radioOn) {
+      const c = this._applyChannel(this._resolveChannel(this.radioFreq, this._enclosureDb || 0), gains);
+      this._recvClarity = Math.max(this._recvClarity || 0, c.clarity);   // a clear voice cuts through the static
+      this._garble = Math.max(this._garble || 0, c.garble);
+    }
     for (const [id, pv] of this.peers) if (pv.radioGain) pv.radioGain.gain.value = damp(pv.radioGain.gain.value, gains.get(id) || 0, 12, dt);
   }
   _enclosure(cam) {                                          // roof/overhead mass above the receiver → dB penalty (§7 enclosure model)
@@ -465,8 +486,8 @@ export class VoiceChat {
       if (this.radioOn && withinPassband(this.radioFreq, st.freq)) {
         const snr = RADIO.CLEAR_DB - detunePenalty(Math.abs((this.radioFreq - st.freq) * 1e6)) - (this._enclosureDb || 0);
         const q = quality(snr, RADIO.SQUELCH_DB);
-        g = 0.85 * q.clarity;
-        if (g > 0) this._crackleTarget = Math.max(this._crackleTarget || 0, q.crackle);
+        g = 0.9 * q.clarity;
+        this._recvClarity = Math.max(this._recvClarity || 0, q.clarity);  // station clarity ramps the static DOWN as you tune in
       }
       if (g > 0.02 && st.el.paused) st.el.play().catch(() => {});
       if (st.cgain) st.cgain.gain.value = damp(st.cgain.gain.value, g, 12, dt);
