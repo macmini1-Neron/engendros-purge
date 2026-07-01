@@ -55,6 +55,7 @@ export class RadioPanel {
     this._refresh();
     this._pushState();
   }
+  setFreq(mhz) { this.freq = clampFreq(snapReadout(mhz)); this._refresh(); this._pushState(); } // jump straight to a known freq
   _pushState() {
     const g = this.game;
     if (this.struct && g.build && g.build.setR105State) g.build.setR105State(this.struct, this.freq, this.on); // deployed → loudspeaker + squad sync
