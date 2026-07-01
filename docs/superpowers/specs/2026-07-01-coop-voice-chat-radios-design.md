@@ -276,6 +276,7 @@ From the "who's on the air" exploration, deferred to later data-only additions o
 - **Enemy / faction chatter** on hidden frequencies (intel, horde warnings, creepy numbers-station voice) — the courier Engendro already carries an R-105D.
 - **Objective frequencies** — airdrop beacon you must find to locate/claim the drop; Shilka / command orders on a channel. (This is where the "airdrop = find-the-frequency minigame" and the "radio in the Shilka" ideas land.)
 - **Ambient lore stations** — UVB-76 "Buzzer", numbers stations, for atmosphere.
+- **Radio mechanics (future):** enemy **jamming** — a station broadcasts noise on a frequency to deny it (falls out of the capture/garble model); **direction-finding** — home in on a transmitter by signal strength (the core of the airdrop "find-the-frequency, then triangulate" minigame). **Whisper/shout** + **enemies-hear-voice** also live here.
 
 Each is a `RADIO_STATIONS` row + an asset; the deterministic model already covers jamming, eavesdropping, and capture between players and stations uniformly.
 
@@ -311,6 +312,15 @@ Conceptually **yes**: a frequency behaves like a shared channel/room — tune to
 - A player's mic stream flows to all peers over the WebRTC mesh continuously; "transmitting on 105.100" = broadcasting the tiny `{freq, ptt}` state alongside it. **Each receiver decides locally** whether it hears you (Rule A, §3.3) from its own tuning — the frequency is a *receiver-side filter*, not a routing address. This is exactly why eavesdropping and determinism both fall out for free.
 - **Player audio is live-only:** a frequency "has audio on it" only while some player is actually keyed (PTT) there. There is no server-side room persisting audio for an empty channel.
 - **Preset `RADIO_STATIONS` (future) ARE the always-on rooms:** a numbers station on 44.200 broadcasts continuously (deterministic from `worldclock`), so tuning in always catches it "even when no player is there" — the closest thing to a persistent Discord room, achieved with **zero bandwidth** (local asset, tuning-gated).
+
+### Resolved (round 3 — juice, edge cases, scope)
+
+- **Radio SFX / squelch clicks (Phase 2 juice):** a "kchht" burst on PTT key-up *and* release (squelch tail), optional roger beep — listeners hear the click before a transmission starts. Iconic radio feel.
+- **Combat-deafen → comms muffle (Phase 1 immersion):** a nearby explosion applies tinnitus + temporarily ducks/muffles all voice (proximity and radio), tying comms into the existing combat audio.
+- **No non-voice comms.** Pure voice only — **no text chat, no ping/marker system.** Communication is a diegetic skill, consistent with "no lobby voice / in-world only." Accepted trade-off: players without a mic rely on listening + in-world actions.
+- **Proximity loudness = single range (v1).** No whisper/shout tiers yet; deferred until enemies react to voice (then shout can attract the horde). v1 proximity has one falloff.
+- **Dead / spectating players: can HEAR, cannot TRANSMIT.** A permanently-dead spectator hears the world and the voice of whoever they spectate (atmospheric), but emits nothing (no relaying positions back). Refines the earlier "dead = silent" to "dead = receive-only".
+- **Emergent (free from the model, no code):** *radioman relay* — whoever holds the looted radio naturally relays traffic to nearby teammates via proximity; *DJ-over-radio* — music played near you is picked up by your mic and transmitted to your channel. Per-player mute (Tab) mitigates griefing.
 
 ### Still open (decide at their phase)
 
