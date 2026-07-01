@@ -147,7 +147,7 @@ export class VoiceChat {
 
   _applySelfMonitor() {
     if (!this.ctx || !this.micSrc) return;
-    const want = !!this._s.selfMonitor && !this._micTest;
+    const want = !!this._s.selfMonitor || this._micTest; // hear yourself if the toggle is on OR during an active mic test
     if (want && !this._monitorGain) {
       this._monitorGain = this.ctx.createGain(); this._monitorGain.gain.value = 1;
       this.micSrc.connect(this._monitorGain); this._monitorGain.connect(this.ctx.destination);

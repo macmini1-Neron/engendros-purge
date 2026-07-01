@@ -487,11 +487,11 @@ export class Settings {
   }
   _startMicTest() {
     const g = this.game; if (!g.voice) return;
-    const begin = () => { this._micTestOn = true; const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'STOP'; const bar = document.getElementById('s-miclevel'); const tick = () => { if (!this._micTestOn) return; if (bar) bar.style.width = Math.min(100, g.voice.getMicLevel() * 320).toFixed(0) + '%'; this._micRaf = requestAnimationFrame(tick); }; tick(); };
+    const begin = () => { this._micTestOn = true; if (g.voice.startMicTest) g.voice.startMicTest(); const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'STOP'; const bar = document.getElementById('s-miclevel'); const tick = () => { if (!this._micTestOn) return; if (bar) bar.style.width = Math.min(100, g.voice.getMicLevel() * 320).toFixed(0) + '%'; this._micRaf = requestAnimationFrame(tick); }; tick(); };
     if (!g.voice.enabled) { g.voice.enable().then((ok) => { if (ok) { this.data.voiceOn = 1; this.save(); g.voice.applySettings(this.data); this._populateDevices(); this._refreshVoice(); begin(); } }); }
     else begin();
   }
-  _stopMicTest() { this._micTestOn = false; if (this._micRaf) cancelAnimationFrame(this._micRaf); const bar = document.getElementById('s-miclevel'); if (bar) bar.style.width = '0%'; const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'TEST MIC'; }
+  _stopMicTest() { this._micTestOn = false; if (this.game.voice && this.game.voice.stopMicTest) this.game.voice.stopMicTest(); if (this._micRaf) cancelAnimationFrame(this._micRaf); const bar = document.getElementById('s-miclevel'); if (bar) bar.style.width = '0%'; const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'TEST MIC'; }
   _prettyKey(code) { if (!code) return '—'; return String(code).replace(/^Key/, '').replace(/^Digit/, 'Digit ').replace(/^Arrow/, ''); }
   open(from) { this.returnTo = from || 'menu'; this._refresh(); this._populateDevices(); this.game.ui.show('settings'); }
   close() { this.game.ui.show(this.returnTo); }
