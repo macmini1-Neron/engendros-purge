@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>ENGENDROS — World Map Master Plan «ШРАМ» v1.0 (2026-07-02)</title>
+<style>
+  body { font-family: ui-monospace, Menlo, monospace; background:#f7f4ea; color:#222; margin:0; padding:24px; }
+  h1 { font-size:22px; margin:0 0 4px } h2 { font-size:16px; border-bottom:2px solid #888; padding-bottom:4px; margin-top:34px }
+  .meta { color:#666; font-size:12px; margin-bottom:18px }
+  table { width:100%; border-collapse:collapse; font-size:12px; margin:10px 0 }
+  th { text-align:left; border-bottom:2px solid #888; padding:3px 6px; background:#eee8d5 }
+  td { border-bottom:1px solid #ccc; padding:3px 6px; vertical-align:top }
+  .lay { margin:12px 0 6px; font-size:13px } .lay label { margin-right:14px; cursor:pointer; user-select:none }
+  .mapwrap { text-align:center; background:#f2efe4; border:1px solid #999; }
+  svg text { font-family: ui-monospace, Menlo, monospace }
+  .note { background:#eee8d5; border-left:4px solid #b09a5a; padding:8px 12px; font-size:12px; margin:10px 0 }
+  .def { background:#e8e0ee; border-left:4px solid #8a6aaa; padding:8px 12px; font-size:12px; margin:10px 0 }
+  #ly-bio:not(:checked) ~ .mapwrap #g-bio, #ly-ter:not(:checked) ~ .mapwrap #g-ter,
+  #ly-net:not(:checked) ~ .mapwrap #g-net, #ly-rad:not(:checked) ~ .mapwrap #g-rad,
+  #ly-tier:not(:checked) ~ .mapwrap #g-tier, #ly-grid:not(:checked) ~ .mapwrap #g-grid { display:none }
+</style>
+</head>
+<body>
+<h1>ENGENDROS PURGE — World Map Master Plan «ШРАМ» (Зона 704)</h1>
+<div class="meta">v1.0 · 2026-07-02 · SINGLE SOURCE OF TRUTH — každý model/POI/cesta se staví PODLE tohoto plánu · svět 2500×2500 m · souřadnice x,z ∈ [−1250,+1250] · +X=východ, +Z=sever (nahoře na mapě), +Y=nahoru, 1 unit ≈ 1 m · výšky v m nad rovinou stepi (±0) · POI = BLACKBOX parcely (interiéry a rozvržení budov = navazující specy; instancované interiéry žijí v y≈−2500) · schváleno owner-review Sekce 1–4 (brainstorm 2026-07-02)</div>
+
+<div class="note"><b>Zamčené pilíře</b> (z vision docu + tohoto brainstormu): topologie «ШРАМ» — jizva NW→SE dělí svět · start SW → cíl NE · N routa suchá/vysoká (delší) vs S routa mokrá/smrtelnější (kratší) · výšková zonace biomů (jedno mírné pásmo; „tajga" = smrkový pás svahů) · jeskyně střídmě: 3 hero místa (704, důl, lom-převisy) · rádio = systém mapy (3 stožáry vs rušení jádra) · Shilka = korunovační nález Act 1 (letiště) · ~4–6 h Act 1, STALKER hustota · gaty fyzické a samo-vysvětlující · okraje = POI prstenec + poctivé hranice (hory/sráz/perimetr, žádná neviditelná zeď).</div>
+
+<h2>A. Mapa (vrstvy)</h2>
+<div class="lay">
+  <input type="checkbox" id="ly-bio" checked><label for="ly-bio">■ Biomy+voda</label>
+  <input type="checkbox" id="ly-ter" checked><label for="ly-ter">■ Terénní prvky</label>
+  <input type="checkbox" id="ly-net" checked><label for="ly-net">■ Síť+POI</label>
+  <input type="checkbox" id="ly-rad"><label for="ly-rad">■ Rádio</label>
+  <input type="checkbox" id="ly-tier"><label for="ly-tier">■ Threat-tiery</label>
+  <input type="checkbox" id="ly-grid" checked><label for="ly-grid">■ Mřížka 500 m</label>
+<div class="mapwrap">
+<svg viewBox="-1250 -1250 2500 2500" width="960" height="960">
+  <rect x="-1250" y="-1250" width="2500" height="2500" fill="#e8dfa6"/>
+  <g id="g-bio">
+    <path d="M -80 480 L 950 480 L 1050 700 L 1050 1150 L 380 1250 L -150 1150 Z" fill="#a9c4b5"/>
+    <path d="M -80 480 L 950 480 L 1050 700 L 1050 1150 L 380 1250 L -150 1150 Z" fill="none" stroke="#5b8071" stroke-width="4" stroke-dasharray="14 10"/>
+    <path d="M -1000 -180 Q -520 -360 -60 -200 Q 120 -80 40 160 Q -100 340 -420 420 Q -800 460 -1000 300 Q -1100 60 -1000 -180 Z" fill="#cfdcb2"/>
+    <path d="M -760 460 Q -520 520 -400 700 Q -380 840 -560 880 Q -800 860 -900 700 Q -920 560 -760 460 Z" fill="#cfdcb2"/>
+    <path d="M 620 200 Q 800 160 900 260 Q 940 380 820 450 Q 680 470 600 380 Q 560 280 620 200 Z" fill="#cfdcb2"/>
+    <path d="M -900 -140 Q -560 -300 -180 -160 Q -40 -60 -100 120 Q -300 290 -600 330 Q -880 330 -900 -140 Z" fill="#b7d0a0"/>
+    <path d="M -560 -700 Q -160 -800 280 -680 Q 460 -610 400 -470 Q 60 -380 -340 -440 Q -600 -520 -560 -700 Z" fill="#b7d0a0"/>
+    <path d="M -420 -240 Q -360 -80 -450 80 Q -530 240 -500 420 L -560 420 Q -600 220 -520 40 Q -470 -120 -480 -240 Z" fill="#b7d0a0"/>
+    <path d="M -780 -60 Q -640 -140 -520 -60 Q -460 40 -540 130 Q -680 190 -770 110 Q -820 20 -780 -60 Z" fill="#7fa878" stroke="#3f5f38" stroke-width="5"/>
+    <path d="M -260 -600 Q -120 -660 -20 -580 Q 20 -500 -80 -440 Q -220 -420 -290 -500 Q -310 -560 -260 -600 Z" fill="#7fa878" stroke="#3f5f38" stroke-width="5"/>
+    <path d="M -240 60 Q -140 10 -60 80 Q -30 160 -120 210 Q -230 230 -270 150 Q -280 100 -240 60 Z" fill="#7fa878" stroke="#3f5f38" stroke-width="5"/>
+    <path d="M 60 520 Q 200 470 300 540 Q 330 620 220 660 Q 90 670 40 600 Q 30 550 60 520 Z" fill="#6f9a80" stroke="#38584a" stroke-width="5"/>
+    <path d="M -1250 -820 L 1250 -700 L 1250 -560 L 900 -520 L -400 -640 L -1250 -680 Z" fill="#94b89c"/>
+    <path d="M 880 -560 L 1250 -560 L 1250 300 L 1040 260 L 920 -100 Z" fill="#94b89c"/>
+    <path d="M -900 -760 Q -760 -800 -640 -740 Q -600 -690 -700 -660 Q -860 -650 -920 -700 Z" fill="#6d987f" stroke="#33523f" stroke-width="5"/>
+    <path d="M 960 -300 Q 1030 -360 1090 -300 Q 1100 -180 1040 -120 Q 970 -140 950 -220 Z" fill="#6d987f" stroke="#33523f" stroke-width="5"/>
+    <path d="M -1250 -1250 L 1250 -1250 L 1250 -560 L 900 -620 L 300 -700 L -500 -760 L -1250 -820 Z" fill="#cdd0d8"/>
+    <path d="M 1250 -560 L 1250 380 L 1060 320 L 1000 -200 L 1040 -520 Z" fill="#cdd0d8"/>
+    <path d="M -1250 -1250 L 1250 -1250 L 1250 -900 L 760 -940 L 40 -1010 L -700 -1060 L -1250 -1100 Z" fill="#aeb2be"/>
+    <path d="M 1250 -900 L 1250 60 L 1130 20 L 1090 -420 L 1110 -760 Z" fill="#aeb2be"/>
+    <path d="M 940 -1010 L 1120 -1010 L 1120 -1140 L 940 -1140 Z" fill="#cdd0d8"/>
+    <path d="M -1250 -820 L -1130 -700 L -1150 200 L -1090 800 L -1250 1250 Z" fill="#d9cfa8" stroke="#9a8c60" stroke-width="4" stroke-dasharray="6 6"/>
+    <path d="M -350 -1250 L -370 -900 L -330 -600 L -420 -300 L -480 0 L -520 300 L -480 600 L -380 800 L -140 950" stroke="#5f9dbd" stroke-width="26" fill="none" stroke-linecap="round"/>
+    <path d="M -140 950 Q 100 1030 240 1000 Q 420 980 520 900" stroke="#5f9dbd" stroke-width="34" fill="none" opacity="0.7"/>
+    <path d="M 240 1010 L 330 1250" stroke="#5f9dbd" stroke-width="22" fill="none"/>
+    <ellipse cx="420" cy="820" rx="150" ry="70" fill="#5f9dbd" opacity="0.45"/>
+    <ellipse cx="700" cy="920" rx="120" ry="60" fill="#5f9dbd" opacity="0.45"/>
+    <path d="M -650 -1050 Q -560 -950 -370 -880" stroke="#5f9dbd" stroke-width="12" fill="none"/>
+  </g>
+  <!-- scar: always visible -->
+  <g>
+    <polygon points="-427,-682 793,318 527,642 -693,-358" fill="#c9b6a4" opacity="0.88"/>
+    <polygon points="-427,-682 793,318 527,642 -693,-358" fill="none" stroke="#8a5a4a" stroke-width="4" stroke-dasharray="4 8"/>
+    <polygon points="-478,-620 743,380 578,580 -642,-420" fill="#a08b8b"/>
+    <polygon points="-478,-620 743,380 578,580 -642,-420" fill="none" stroke="#5a3d3d" stroke-width="6"/>
+    <circle cx="50" cy="-20" r="24" fill="#3a2c2c"/>
+    <text x="-430" y="-300" font-size="42" fill="#5a3d3d" transform="rotate(39 -430 -300)" font-weight="bold">JIZVA «РАНА» +90 · stěny >35°</text>
+  </g>
+  <g id="g-ter">
+    <path d="M -700 700 Q -560 750 -400 820" stroke="#8a7448" stroke-width="16" fill="none" stroke-linecap="round"/>
+    <path d="M -100 400 Q 40 450 200 520" stroke="#8a7448" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <path d="M -350 950 Q -220 990 -80 1030" stroke="#8a7448" stroke-width="12" fill="none" stroke-linecap="round"/>
+    <text x="-690" y="668" font-size="30" fill="#6a5430">T01 balka</text><text x="-95" y="372" font-size="30" fill="#6a5430">T02 balka</text><text x="-345" y="922" font-size="30" fill="#6a5430">T03 balka</text>
+    <circle cx="-140" cy="260" r="55" fill="#b9b3a6" stroke="#5a5248" stroke-width="5"/><circle cx="-140" cy="260" r="30" fill="#8d867a"/>
+    <text x="-230" y="342" font-size="32" fill="#5a5248" font-weight="bold">T04 LOM ⛏ převisy</text>
+    <g fill="#9a8c60" stroke="#6a5c34" stroke-width="2">
+      <circle cx="-590" cy="-220" r="10"/><circle cx="-545" cy="-280" r="14"/><circle cx="-490" cy="-230" r="8"/>
+      <circle cx="-520" cy="-350" r="12"/><circle cx="-455" cy="-310" r="9"/><circle cx="-420" cy="-390" r="13"/>
+      <circle cx="-560" cy="-390" r="8"/><circle cx="-480" cy="-410" r="10"/>
+    </g>
+    <circle cx="-545" cy="-280" r="8" fill="#5f9dbd"/><circle cx="-420" cy="-390" r="7" fill="#5f9dbd"/>
+    <text x="-660" y="-446" font-size="30" fill="#6a5c34">T05 krátery</text>
+    <g fill="#c2ac6a" stroke="#7a6430" stroke-width="3">
+      <polygon points="-470,235 -450,205 -430,235"/><polygon points="-520,275 -500,245 -480,275"/>
+      <polygon points="-420,285 -400,255 -380,285"/><polygon points="-370,225 -350,195 -330,225"/><polygon points="-460,320 -440,290 -420,320"/>
+    </g>
+    <text x="-570" y="356" font-size="30" fill="#7a6430">T06 kurhany</text>
+    <path d="M -700 80 L -480 -80" stroke="#6a5c34" stroke-width="10" stroke-dasharray="2 6" fill="none"/><text x="-830" y="116" font-size="30" fill="#6a5c34">T07 úvoz</text>
+    <path d="M -565 -20 Q -545 -120 -560 -240" stroke="#9a8c60" stroke-width="4" fill="none"/>
+    <path d="M -610 -10 Q -590 -130 -605 -260" stroke="#9a8c60" stroke-width="4" fill="none"/>
+    <path d="M -655 0 Q -635 -140 -650 -280" stroke="#9a8c60" stroke-width="4" fill="none"/>
+    <text x="-890" y="-140" font-size="28" fill="#7a6c40">T08 terasy</text>
+    <ellipse cx="-600" cy="-180" rx="45" ry="28" fill="#5f9dbd" opacity="0.6"/><text x="-725" y="-212" font-size="28" fill="#3a708d">T09 starica</text>
+    <g stroke="#4a6a3f" stroke-width="5"><line x1="-30" y1="-700" x2="150" y2="-660"/><line x1="0" y1="-660" x2="130" y2="-710"/><line x1="-20" y1="-630" x2="120" y2="-640"/></g>
+    <text x="160" y="-636" font-size="30" fill="#3f5a34">T10 polom</text>
+    <g fill="#a8a8b0" stroke="#5c5c66" stroke-width="2">
+      <circle cx="-760" cy="-660" r="9"/><circle cx="-735" cy="-640" r="6"/><circle cx="-775" cy="-635" r="5"/>
+      <circle cx="-480" cy="-150" r="8"/><circle cx="-458" cy="-132" r="5"/>
+      <circle cx="860" cy="640" r="9"/><circle cx="885" cy="660" r="6"/>
+    </g>
+    <text x="-706" y="-598" font-size="26" fill="#5c5c66">T11a</text><text x="-445" y="-105" font-size="26" fill="#5c5c66">T11b</text><text x="772" y="700" font-size="26" fill="#5c5c66">T11c</text>
+    <circle cx="-140" cy="-540" r="8" fill="#5f9dbd"/><path d="M -140 -540 Q -240 -560 -330 -600" stroke="#5f9dbd" stroke-width="6" fill="none"/>
+    <circle cx="950" cy="300" r="8" fill="#5f9dbd"/><path d="M 950 300 Q 870 390 800 480" stroke="#5f9dbd" stroke-width="6" fill="none"/>
+    <text x="-130" y="-562" font-size="26" fill="#3a708d">T12a</text><text x="965" y="292" font-size="26" fill="#3a708d">T12b</text>
+  </g>
+  <g id="g-rad">
+    <circle cx="50" cy="-20" r="450" fill="#8a4a9a" opacity="0.10"/>
+    <circle cx="50" cy="-20" r="450" fill="none" stroke="#8a4a9a" stroke-width="5" stroke-dasharray="16 10"/>
+    <g fill="none" stroke="#3f7f3f" stroke-width="4" stroke-dasharray="4 10" opacity="0.8">
+      <circle cx="-820" cy="700" r="500"/><circle cx="-120" cy="-480" r="500"/><circle cx="920" cy="-560" r="500"/>
+    </g>
+    <text x="-160" y="-420" font-size="40" fill="#8a4a9a" font-weight="bold">RUŠENÍ r450</text>
+  </g>
+  <g id="g-tier" font-weight="bold">
+    <ellipse cx="-870" cy="870" rx="360" ry="330" fill="#3f8f3f" opacity="0.20"/><text x="-1000" y="880" font-size="52" fill="#1f5f1f">T1</text>
+    <path d="M -1000 300 Q -600 100 -300 300 Q -100 500 -200 750 Q -500 900 -800 750 Q -1050 550 -1000 300 Z" fill="#7f9f2f" opacity="0.20"/><text x="-620" y="560" font-size="52" fill="#4f6f1f">T2</text>
+    <path d="M -700 -750 Q -300 -820 240 -700 Q 400 -640 300 -520 Q -100 -420 -600 -520 Q -760 -620 -700 -750 Z" fill="#bf9f2f" opacity="0.22"/><text x="-300" y="-580" font-size="52" fill="#7f6f1f">T3</text>
+    <path d="M 100 550 Q 450 480 850 600 Q 1000 750 850 950 Q 500 1100 200 1000 Q 50 800 100 550 Z" fill="#bf9f2f" opacity="0.22"/><text x="420" y="800" font-size="52" fill="#7f6f1f">T3</text>
+    <path d="M 480 -820 Q 700 -880 900 -760 Q 1050 -600 950 -400 Q 800 -300 650 -400 Q 500 -600 480 -820 Z" fill="#cf6f2f" opacity="0.25"/><text x="700" y="-600" font-size="52" fill="#8f4f1f">T4</text>
+    <path d="M 540 -60 Q 750 -160 950 -60 Q 1000 100 850 220 Q 650 260 540 160 Z" fill="#cf6f2f" opacity="0.25"/><text x="700" y="80" font-size="52" fill="#8f4f1f">T4</text>
+    <path d="M 850 -1150 Q 1050 -1200 1150 -1050 Q 1200 -900 1050 -800 Q 900 -850 850 -1000 Z" fill="#cf3f3f" opacity="0.28"/><text x="960" y="-960" font-size="52" fill="#8f1f1f">T5</text>
+    <circle cx="50" cy="-20" r="140" fill="#5f1f6f" opacity="0.38"/><text x="-40" y="-180" font-size="48" fill="#4f1f5f">704=T6</text>
+  </g>
+  <g id="g-net">
+    <path d="M -1250 1180 L -700 1185 L -100 1190 L 500 1195 L 1050 1180" stroke="#7a2a2a" stroke-width="6" stroke-dasharray="24 8 4 8" fill="none"/>
+    <path d="M -1080 1060 L -950 920 L -760 760 L -600 660 L -470 620 L -340 540" stroke="#3a3a3a" stroke-width="14" fill="none"/>
+    <path d="M -340 540 L -330 380 L -300 200 L -340 20 L -440 -140 L -560 -240 L -660 -320 L -700 -480 L -720 -560 L -690 -720 L -520 -690 L -300 -670 L -140 -630" stroke="#3a3a3a" stroke-width="12" fill="none"/>
+    <path d="M 240 -640 L 380 -660 L 520 -700 L 640 -760" stroke="#3a3a3a" stroke-width="12" fill="none"/>
+    <path d="M 640 -760 L 780 -780 L 900 -700 L 950 -540 L 880 -380 L 800 -200" stroke="#5a5a5a" stroke-width="10" stroke-dasharray="20 8" fill="none"/>
+    <path d="M -340 540 L -260 600 L -240 640 L -160 700 L -80 780" stroke="#6a6a72" stroke-width="12" fill="none"/>
+    <path d="M 180 820 L 280 840 L 420 800 L 520 820 L 620 780 L 720 720 L 780 680" stroke="#6a6a72" stroke-width="12" fill="none"/>
+    <path d="M 780 680 L 820 560 L 850 400 L 840 240 L 800 100 L 740 60" stroke="#6a6a72" stroke-width="12" fill="none"/>
+    <path d="M -470 620 L -580 400 L -640 200 L -700 80 L -480 -80 L -600 -180 L -700 -320 L -660 -320" stroke="#8a7448" stroke-width="8" stroke-dasharray="12 8" fill="none"/>
+    <path d="M -300 200 L -200 240 L -140 260 L -120 440 L -100 600 L -80 780" stroke="#8a7448" stroke-width="8" stroke-dasharray="12 8" fill="none"/>
+    <path d="M 1250 20 L 1050 30 L 920 40 L 820 40 L 740 20" stroke="#4a3a2a" stroke-width="8" fill="none"/>
+    <path d="M 800 -200 L 900 -320 L 980 -420 L 1000 -560 L 980 -760 L 1040 -880 L 1000 -990 L 960 -1020 L 1060 -1120" stroke="#5a5a5a" stroke-width="10" fill="none"/>
+    <path d="M 540 -60 L 380 -70 L 180 -80" stroke="#8a4a9a" stroke-width="6" stroke-dasharray="6 8" fill="none"/>
+    <path d="M -400 -780 L -350 -900 L -320 -980" stroke="#8a7448" stroke-width="6" stroke-dasharray="8 8" fill="none"/>
+    <path d="M -950 920 L -1090 700 L -1160 500 L -1160 -380" stroke="#8a7448" stroke-width="6" stroke-dasharray="8 8" fill="none"/>
+    <path d="M -80 780 L 200 1000 L 500 1120 L 600 1180" stroke="#8a7448" stroke-width="6" stroke-dasharray="8 8" fill="none"/>
+    <rect x="-140" y="-700" width="380" height="140" fill="#d8d2c2" stroke="#444" stroke-width="5"/>
+    <rect x="-80" y="760" width="260" height="160" fill="#d8d2c2" stroke="#444" stroke-width="5"/>
+    <rect x="540" y="-180" width="280" height="240" fill="#c9c2b2" stroke="#444" stroke-width="5"/>
+    <circle cx="880" cy="80" r="55" fill="#7a6a5a" stroke="#444" stroke-width="4"/>
+    <rect x="610" y="-790" width="60" height="50" fill="#c9c2b2" stroke="#444" stroke-width="4"/>
+    <rect x="736" y="646" width="90" height="24" fill="#c9c2b2" stroke="#444" stroke-width="4" transform="rotate(18 781 658)"/>
+    <rect x="930" y="-1050" width="70" height="60" fill="#b8b2a2" stroke="#444" stroke-width="4"/>
+    <rect x="1020" y="-1160" width="80" height="80" fill="none" stroke="#444" stroke-width="4" stroke-dasharray="8 6"/>
+    <rect x="-1100" y="1040" width="40" height="30" fill="#b8b2a2" stroke="#444" stroke-width="4"/>
+    <circle cx="-950" cy="920" r="40" fill="none" stroke="#444" stroke-width="4"/>
+    <g font-size="40" font-weight="bold">
+      <polygon points="240,-640 265,-615 240,-590 215,-615" fill="#c83232"/><text x="274" y="-604" fill="#8a1a1a">G1</text>
+      <polygon points="700,-770 725,-745 700,-720 675,-745" fill="#c83232"/><text x="730" y="-786" fill="#8a1a1a">G2</text>
+      <polygon points="180,795 205,820 180,845 155,820" fill="#c83232"/><text x="210" y="812" fill="#8a1a1a">G3</text>
+      <polygon points="780,680 805,705 780,730 755,705" fill="#c83232"/><text x="812" y="742" fill="#8a1a1a">G4</text>
+      <polygon points="940,-370 965,-345 940,-320 915,-345" fill="#c83232"/><text x="972" y="-350" fill="#8a1a1a">G5</text>
+    </g>
+    <g fill="#222">
+      <circle cx="-820" cy="700" r="14"/><circle cx="-470" cy="620" r="12"/><circle cx="-240" cy="640" r="14"/>
+      <circle cx="-120" cy="-480" r="14"/><circle cx="320" cy="-700" r="14"/><circle cx="200" cy="-680" r="12" fill="#8a6a1a"/>
+      <circle cx="140" cy="800" r="14"/><circle cx="380" cy="980" r="14"/><circle cx="180" cy="520" r="12"/>
+      <circle cx="920" cy="40" r="12"/><circle cx="920" cy="-560" r="14"/><circle cx="180" cy="-80" r="16" fill="#5a2a6a"/>
+      <circle cx="260" cy="-190" r="12" fill="#8a1a1a"/><circle cx="-300" cy="480" r="9"/><circle cx="40" cy="700" r="9"/>
+    </g>
+    <g fill="#8a1a5a">
+      <rect x="-1195" y="-405" width="26" height="26" transform="rotate(45 -1182 -392)"/><rect x="-1145" y="335" width="24" height="24" transform="rotate(45 -1133 347)"/>
+      <rect x="-335" y="-1005" width="24" height="24" transform="rotate(45 -323 -993)"/><rect x="-715" y="-965" width="24" height="24" transform="rotate(45 -703 -953)"/>
+      <rect x="1165" y="5" width="24" height="24" transform="rotate(45 1177 17)"/><rect x="965" y="245" width="24" height="24" transform="rotate(45 977 257)"/>
+      <rect x="585" y="1165" width="24" height="24" transform="rotate(45 597 1177)"/><rect x="-565" y="1175" width="24" height="24" transform="rotate(45 -553 1187)"/>
+    </g>
+    <g font-size="30" fill="#333">
+      <text x="-935" y="905">P2</text><text x="-1105" y="1030">P1⛳</text><text x="-1085" y="672">S01▲</text><text x="-455" y="595">S04</text>
+      <text x="-230" y="620">S05⛽</text><text x="-105" y="-505">S02▲</text><text x="335" y="-685">S11</text>
+      <text x="205" y="-655" fill="#8a6a1a">ШИЛКА</text><text x="155" y="835">S12</text><text x="395" y="1010">S13≈</text>
+      <text x="195" y="505">S14</text><text x="935" y="70">S15</text><text x="935" y="-535">S03▲</text>
+      <text x="205" y="-60" fill="#5a2a6a" font-weight="bold">P9=704</text><text x="285" y="-180" fill="#8a1a1a">S18«Аист»</text>
+      <text x="60" y="-620" font-size="34" font-weight="bold">P3 LETIŠTĚ</text><text x="-40" y="850" font-size="34" font-weight="bold">P4 KOLCHOZ</text>
+      <text x="560" y="-40" font-size="34" font-weight="bold">P5 KOMBINÁT</text><text x="600" y="-800" font-size="32" font-weight="bold">P6 DŮL</text>
+      <text x="690" y="770" font-size="32" font-weight="bold">P7 HRÁZ</text><text x="900" y="-1064" font-size="32" font-weight="bold">P8 BUNKR+LZ★</text>
+      <text x="-1240" y="-440" fill="#8a1a5a">E01</text><text x="-1105" y="355" fill="#8a1a5a">E02</text><text x="-300" y="-1020" fill="#8a1a5a">E03</text>
+      <text x="-680" y="-985" fill="#8a1a5a">E04</text><text x="1100" y="-10" fill="#8a1a5a">E05</text><text x="1005" y="265" fill="#8a1a5a">E06</text>
+      <text x="625" y="1155" fill="#8a1a5a">E07</text><text x="-540" y="1155" fill="#8a1a5a">E08</text>
+    </g>
+  </g>
+  <g id="g-grid">
+    <g stroke="#00000022" stroke-width="2">
+      <line x1="-750" y1="-1250" x2="-750" y2="1250"/><line x1="-250" y1="-1250" x2="-250" y2="1250"/>
+      <line x1="250" y1="-1250" x2="250" y2="1250"/><line x1="750" y1="-1250" x2="750" y2="1250"/>
+      <line x1="-1250" y1="-750" x2="1250" y2="-750"/><line x1="-1250" y1="-250" x2="1250" y2="-250"/>
+      <line x1="-1250" y1="250" x2="1250" y2="250"/><line x1="-1250" y1="750" x2="1250" y2="750"/>
+    </g>
+    <g font-size="34" fill="#00000055">
+      <text x="-745" y="1240">x=−750</text><text x="-245" y="1240">x=−250</text><text x="255" y="1240">x=+250</text><text x="755" y="1240">x=+750</text>
+      <text x="-1240" y="-756">z=+750</text><text x="-1240" y="-256">z=+250</text><text x="-1240" y="244">z=−250</text><text x="-1240" y="744">z=−750</text>
+    </g>
+  </g>
+</svg>
+</div>
+</div>
+
+<h2>B. Registry parcel (POI = blackbox — interiér/rozvržení řeší navazující specy)</h2>
+<table>
+<tr><th>ID</th><th>Název</th><th>Typ</th><th>Pozice / parcela</th><th>Biom·výška</th><th>Tier</th><th>Účel na mapě</th><th>Asset základ</th></tr>
+<tr><td>P1</td><td>КПП «ПРОХОДНАЯ» — START</td><td>kotva</td><td>(−1080,−1060) · 40×30</td><td>step +5</td><td>T1</td><td>spawn, vstup do zóny perimetrem</td><td>gatehouse.js ✓</td></tr>
+<tr><td>P2</td><td>Opěrný bod (strongpoint)</td><td>kotva</td><td>(−950,−920) · r56</td><td>step +8</td><td>T1</td><td>tutorial foothold, fortifikace</td><td>strongpoint.js ✓</td></tr>
+<tr><td>P3</td><td>Letiště «ЗАСЛОН»</td><td><b>G1</b> hlavní</td><td>x[−140,+240] z[+560,+700]</td><td>šelf +60</td><td>T3</td><td>N-gate; Shilka revetment (+200,+680); vrata G1 (+240,+640)</td><td>airfield.js (přesadit)</td></tr>
+<tr><td>P4</td><td>Kolchoz «ЗАРЯ»</td><td><b>G3</b> hlavní</td><td>x[−80,+180] z[−920,−760]</td><td>step +4</td><td>T3</td><td>S-gate; hnízdo na hrázi (+180,−820); elevátor maják</td><td>buildgen (nové)</td></tr>
+<tr><td>P5</td><td>Kombinát «ПЛЮШТАЛЬ»</td><td><b>G5</b> hlavní</td><td>x[+540,+820] z[−60,+180] + terrikon (+880,−80) r70</td><td>průmysl +30</td><td>T4</td><td>sbíhání rout; jeřáb (G5); komín+chladicí věž = maják V</td><td>buildgen + chladicí věž ✓★</td></tr>
+<tr><td>P6</td><td>Důl «ШАХТА №8»</td><td><b>G2</b> hlavní</td><td>povrch (+640,+760) 60×50 · štola 120 m</td><td>hory +140</td><td>T4</td><td>N-gate 2; jeskyně #2 (Surface Nets); dynamit→zával «Щель» (+700,+770)</td><td>modelgen + cave engine</td></tr>
+<tr><td>P7</td><td>Přehrada «ПЛОТИНА»</td><td><b>G4</b> hlavní</td><td>hráz (+780,−680) 90×12 · gať 320×5</td><td>bažina −12</td><td>T4</td><td>S-gate 2; 2-hráčová stavidla (co-op zámek); drží jed v zóně</td><td>buildgen (nové)</td></tr>
+<tr><td>P8</td><td>Bunkr «Объект 1180» + LZ — CÍL</td><td>kotva ★</td><td>bunkr (+960,+1020) 70×60 · LZ (+1060,+1120) 80×80</td><td>sedlo +200</td><td>T5</td><td>finále Act 1, beat «Аист» (hraný); Act 2 holdout</td><td>bunker.js ✓ (přesadit)</td></tr>
+<tr><td>P9</td><td>Ústí Objektu 704</td><td>endgame</td><td>(+180,+80), stezka od P5</td><td>jizva +40</td><td>T6</td><td>Act 2 dungeon vstup (pečeť = 5 mrtvých G-bossů); vlastní spec</td><td>cave mouth + instance</td></tr>
+</table>
+<table>
+<tr><th>ID</th><th>Vedlejší POI</th><th>Pozice</th><th>K čemu</th></tr>
+<tr><td>S01–S03</td><td>Radio stožáry РТ-1/2/3</td><td>(−820,−700) · (−120,+480) · (+920,+560)</td><td>oprava → pokrytí r500 (kontrakty/airdrop/voice); Act 2 sporné</td></tr>
+<tr><td>S04</td><td>Most přes Тихou</td><td>(−470,−620)</td><td>jediný most; checkpoint vrak; micro</td></tr>
+<tr><td>S05</td><td>АЗС</td><td>(−240,−640)</td><td>palivo (Shilka/vozidla); u rozcestí</td></tr>
+<tr><td>S06</td><td>Kurhany ×5</td><td>okolo (−450,−250)</td><td>= T06 terén; sniper knolls, lore</td></tr>
+<tr><td>S07</td><td>Lom «КАРЬЕР»</td><td>(−140,−260) ⌀180 −25</td><td>jeskyně #3 (převisy); trhaviny = alternativa G2 ★</td></tr>
+<tr><td>S08</td><td>Kráterové pole</td><td>(−500,+300)</td><td>= T05 terén; vrak bombardéru, radiační kapsa</td></tr>
+<tr><td>S09</td><td>Hájovna</td><td>(−700,+320)</td><td>lore deníky; UAZ vrak; u úvozu/staricy</td></tr>
+<tr><td>S10</td><td>Vyška + Тесná brána</td><td>(−690,+720)</td><td>overwatch chokeu mezi jizvou a horami</td></tr>
+<tr><td>S11</td><td>Baterie С-75</td><td>(+320,+700)</td><td>AA lore u letiště; loot</td></tr>
+<tr><td>S12</td><td>Elevátor</td><td>(+140,−800) 16×16×35</td><td>maják J poloviny; sniper věž (v parcele P4)</td></tr>
+<tr><td>S13</td><td>Potopený kostel</td><td>(+380,−980)</td><td>bažinný ostrov, dread, lore</td></tr>
+<tr><td>S14</td><td>Tábor pytláků</td><td>(+180,−520)</td><td>u olšové čaщи; stopy „co bažina dělá"</td></tr>
+<tr><td>S15</td><td>Vodárna (rail)</td><td>(+920,−40)</td><td>micro na koleji</td></tr>
+<tr><td>S16</td><td>Studna</td><td>(+40,−700)</td><td>micro v polích</td></tr>
+<tr><td>S17</td><td>Zastávka</td><td>(−300,−480)</td><td>micro na betonce</td></tr>
+<tr><td>S18</td><td>Vrak «Аист»</td><td>(+260,+190)</td><td>Act 2 POI — dopad sestřeleného evak. letounu, sloup dýmu</td></tr>
+</table>
+<table>
+<tr><th>ID</th><th>Okrajové POI</th><th>Pozice</th><th>K čemu · Act 2 role</th></tr>
+<tr><td>E01</td><td>Tábor «ОРЛЁНОК»</td><td>(−1180,+390)</td><td>dětský tábor na srázu; prototypy Engendros (cute-horor) · hnízdo reinfestace</td></tr>
+<tr><td>E02</td><td>Triangulační věž</td><td>(−1130,−350)</td><td>výhled — odhalí POI markery Z poloviny · patrol overwatch</td></tr>
+<tr><td>E03</td><td>Meteostanice «ГОРА-9»</td><td>(−320,+990)</td><td>díly stožárů; vítr/zima · signální bod patrol</td></tr>
+<tr><td>E04</td><td>Vrak An-2</td><td>(−700,+950)</td><td>foreshadowing «Аист»; černá skříňka</td></tr>
+<tr><td>E05</td><td>Tunel + drezína</td><td>(+1180,−20)</td><td>poctivá V hranice; DREZÍNA po koleji ↔ Kombinát · vstup patrol</td></tr>
+<tr><td>E06</td><td>«ИЗОЛЯТОР»</td><td>(+980,−260)</td><td>karanténní špitál; medicína, deníky · elite hnízdo</td></tr>
+<tr><td>E07</td><td>«ЗАСТАВА ЮГ»</td><td>(+600,−1180)</td><td>garnizona perimetru; zbrojnice, BTR vrak · hlavní brána patrol</td></tr>
+<tr><td>E08</td><td>«ПРОРЫВ» ✝</td><td>(−550,−1190)</td><td>zastavený útěk civilistů; těžký dread, cennosti</td></tr>
+</table>
+
+<h2>C. Gaty (fyzické, samo-vysvětlující; stav = host-auth world-state)</h2>
+<table>
+<tr><th>#</th><th>Pozice</th><th>Blokáda</th><th>Otevření (hraješ, nekoukáš)</th></tr>
+<tr><td>G1</td><td>(+240,+640)</td><td>ocelová vrata perimetru letiště (zeď šelf↔hory)</td><td>boss ve věži КДП → vrata odemčena, hráč otevírá</td></tr>
+<tr><td>G2</td><td>(+700,+770)</td><td>zával v průsmykovém slotu (stěny +25, open-top)</td><td>boss u skladu trhavin ve štole → vezmi dynamit → sám odpal (alt. trhaviny z lomu S07 ★)</td></tr>
+<tr><td>G3</td><td>(+180,−820)</td><td>Tolovo hnízdo přerostlé přes jedinou suchou hráz</td><td>Tolo padne → hnízdo zapálit → hráz průchozí</td></tr>
+<tr><td>G4</td><td>(+780,−680)</td><td>gať zatopená (hráz drží jed v zóně — lore)</td><td>bažinný boss → 2 kola stavidel = 2 hráči naráz → hladina −1,2 m</td></tr>
+<tr><td>G5</td><td>(+940,+370)</td><td>železniční zářez ucpán vykolejeným vlakem</td><td>boss Kombinátu → portálovým jeřábem odtáhnout vagón</td></tr>
+</table>
+<p style="font-size:12px">Pořadí: N = G1→G2 · S = G3→G4 · sběh u P5 → G5 → serpentina → P8 (beat «Аист»). Každý otevřený gate = rally/fast-travel uzel (Act 2). Boss identity zástupné — vazba na 9-boss bibli v roster specu.</p>
+
+<h2>D. Cesty & vzdálenosti</h2>
+<table>
+<tr><th>Cesta</th><th>Povrch·šířka</th><th>Polyline (world)</th></tr>
+<tr><td>R1 «Трасса»</td><td>asfalt 7,5</td><td>(−1080,−1060)→(−950,−920)→(−760,−760)→(−600,−660)→most(−470,−620)→ROZCESTÍ(−340,−540)→(−330,−380)→(−300,−200)→(−340,−20)→(−440,+140)→(−560,+240)→(−660,+320)→(−700,+480)→(−720,+560)→Тесná brána(−690,+720)→(−520,+690)→(−300,+670)→P3-Z(−140,+630); za G1: (+240,+640)→(+380,+660)→(+520,+700)→P6(+640,+760); za G2: (+780,+780)→(+900,+700)→(+950,+540)→(+880,+380)→P5-NE(+800,+200)</td></tr>
+<tr><td>R2 «Бетонка»</td><td>panely 6</td><td>ROZCESTÍ→(−260,−600)→S05(−240,−640)→(−160,−700)→P4-Z(−80,−780); za G3: (+180,−820)→(+280,−840)→(+420,−800)→gať(+520,−820)→(+620,−780)→(+720,−720)→P7(+780,−680); za G4: (+820,−560)→(+850,−400)→(+840,−240)→(+800,−100)→P5-J(+740,−60)</td></tr>
+<tr><td>Lesní okruh</td><td>hlína 4</td><td>most(−470,−620)→(−580,−400)→(−640,−200)→úvoz(−700,−80)→(−480,+80)→starica(−600,+180)→hájovna S09(−700,+320)→napojení R1(−660,+320) — volitelná smyčka</td></tr>
+<tr><td>Lomová spojka</td><td>hlína 4</td><td>R1(−300,−200)→(−200,−240)→S07(−140,−260)→(−120,−440)→(−100,−600)→P4-Z(−80,−780) — přestup rout</td></tr>
+<tr><td>Železnice</td><td>kolej</td><td>E05 tunel(+1250,−20)→(+1050,−30)→S15(+920,−40)→seřadiště P5(+820,−40)</td></tr>
+<tr><td>Serpentina</td><td>štěrk 4</td><td>P5-NE(+800,+200)→G5(+940,+370)→(+1000,+560)→(+980,+760)→(+1040,+880)→(+1000,+990)→P8(+960,+1020)→LZ(+1060,+1120)</td></tr>
+<tr><td>Spur-stezky</td><td>pěšina</td><td>meteo: (−400,+780)→E03 · sráz: P2→(−1090,−700)→E01→E02 · perimetr: P4→(+200,−1000)→(+500,−1120)→E07</td></tr>
+</table>
+<p style="font-size:12px">Délky: start→rozcestí ~0,9 km · N routa ~4,3 km · S routa ~2,9 km · finále ~1,2 km → Act 1 ≈ 4–6 h.</p>
+
+<h2>E. Terénní prvky (landform primitivy, pure fn(x,z))</h2>
+<table>
+<tr><th>ID</th><th>Prvek</th><th>Pozice</th><th>Rozměr</th><th>Funkce</th></tr>
+<tr><td>T01–T03</td><td>Balky</td><td>(−700,−700)→(−400,−820) · (−100,−400)→(+200,−520) · (−350,−950)→(−80,−1030)</td><td>280–350 m, hl. 6–10</td><td>kryté přesuny, defiláda, dig</td></tr>
+<tr><td>T04</td><td>Lom (=S07)</td><td>(−140,−260)</td><td>⌀180, −25</td><td>převisy (jeskyně #3), trhaviny, žula</td></tr>
+<tr><td>T05</td><td>Kráterové pole (=S08)</td><td>(−620…−380, +180…+420)</td><td>~40 kráterů ⌀8–20</td><td>nálety na jizvu (lore), voda, krytí</td></tr>
+<tr><td>T06</td><td>Kurhany ×5 (=S06)</td><td>okolo (−450,−250)</td><td>+8–12, ⌀30–50</td><td>knolls, orientace</td></tr>
+<tr><td>T07</td><td>Úvoz</td><td>(−700,−80)→(−480,+80)</td><td>280 m, −4</td><td>choke/ambush</td></tr>
+<tr><td>T08</td><td>Říční terasy</td><td>Z břeh, z∈[0,+320]</td><td>3× (+10/+20/+30)</td><td>ploché stupně (shape-language)</td></tr>
+<tr><td>T09</td><td>Starica</td><td>(−600,+180)</td><td>⌀120</td><td>mokřadní oko, atmosféra</td></tr>
+<tr><td>T10</td><td>Polom</td><td>(+60,+680)</td><td>220×130</td><td>vývraty, pomalý průchod</td></tr>
+<tr><td>T11</td><td>Žulová pole ×3</td><td>(−760,+660)·(−480,+150)·(+860,−640)</td><td>30–60 shluky</td><td>tvrdé krytí, nehořlavé</td></tr>
+<tr><td>T12</td><td>Prameniště ×2</td><td>(−140,+540)·(+950,−300)</td><td>potoky 3–6 m</td><td>čitelná drenáž</td></tr>
+</table>
+
+<h2>F. Biomy & výšky (výšková zonace, jedno mírné pásmo)</h2>
+<table>
+<tr><th>Zóna</th><th>Výška</th><th>~Plocha</th><th>Kde</th><th>Funkce</th></tr>
+<tr><td>Step (matrix)</td><td>±0…+30</td><td>21 %</td><td>SW/střed pás</td><td>start, sightlines, kite</td></tr>
+<tr><td>Les — 3 hustoty (háj 10–30 % · les 40–70 % · ЧАЩА 80–100 %+podrost, sightline 3–10 m, 6 ohnisek 150–300 m, nikdy nepřehradí routu)</td><td>+20…+80</td><td>27 % (10+11+6)</td><td>Z-střed, šelf, háje, galerie řeky</td><td>soft-cover / skrýš / ambush</td></tr>
+<tr><td>Tajga (smrkový pás)</td><td>+80…+160</td><td>11 %</td><td>podhůří N + V bok</td><td>dread pás, tma</td></tr>
+<tr><td>Hory/alpín</td><td>+160…+280</td><td>14 %</td><td>N+NE+E okraj (krest neprůchodný)</td><td>hranice, sedlo +200, důl</td></tr>
+<tr><td>Bažina</td><td>−15…0</td><td>12 %</td><td>JV pánev</td><td>S routa, toxin, zpomalení</td></tr>
+<tr><td>Jizva+lem</td><td>hřbet +90 / lem +10</td><td>8 %</td><td>osa (−560,+520)→(+660,−480), hřbet š260 + lem 80/strana</td><td>sealed jádro; 704 ústí (+180,+80)</td></tr>
+<tr><td>Voda</td><td>hladiny −2…+40</td><td>3 %</td><td>Тихая (Z, N→S) + oka bažiny</td><td>most S04, brody, překážka</td></tr>
+<tr><td>Sráz/perimetr</td><td>—</td><td>2 %</td><td>Z sráz · J plot z≈−1180 (вышки à 300 m, minová pole značená)</td><td>poctivé hranice</td></tr>
+</table>
+<p style="font-size:12px">Drenážní logika: hory N (nejvýš) → jizva přehradila odtok k JV → bažina za ní (nejníž), jed stéká z lemu do bažiny → S routa mokrá a smrtelnější. Řeka Тихая: (−350,+1250)→(−370,+900)→(−330,+600)→(−420,+300)→(−480,0)→(−520,−300)→(−480,−600)→(−380,−800)→(−140,−950)→ delta do bažiny → výtok (+330,−1250). Ekotony: plynulé blendy (moisture×temp×alt váhy), šev nikdy tvrdý řez.</p>
+
+<h2>G. Systémové vrstvy</h2>
+<table>
+<tr><th>Systém</th><th>Pravidla (mapová)</th></tr>
+<tr><td>Rádio</td><td>stožáry РТ-1/2/3 (S01–S03), oprava → pokrytí r≈500 (kontrakty, IL-76, voice boost); rušení jádra r≈450 kolem (+50,+20) — u jizvy jen chrastění; hřebeny/sedlo = vždy signál; výška pomáhá, údolí stíní. Act 2: stožáry sporné (patroly vypínají).</td></tr>
+<tr><td>Shilka</td><td>revetment P3 (+200,+680), nepojízdná: ① aku+filtry (МТС P4 ∨ depo P5) ② nafta 400 l (S05 ∨ ГСМ P3) ③ pásy 23 mm (погреб P3 + vzácné dropy) → nutí křížit routy. Multi-crew (driver+gunner).</td></tr>
+<tr><td>Vozidla</td><td>ultra-vzácná: UAZ vrak (S09, lehká oprava) · ZIL (S05, střední) · DREZÍNA (E05, kolej) · Shilka (korunovace). Nejedou: čaща, bažina mimo gať, hory mimo cesty.</td></tr>
+<tr><td>Threat-tiery</td><td>T1 start → T2 les/step → T3 P3+P4/bažina → T4 P6/P7/P5 → T5 lem+finále → T6=704. Eskalace NOVÝM chováním (flanker→charger→armored/breach→elity+«пух»), ne HP. Reinfestace: vyčištěné POI po čase +1 tier (max T5 v Act 1).</td></tr>
+<tr><td>Spawn</td><td>nikdy v no-spawn bublinách POI (r50–70) ani v zorném poli — vždy z čaщи/balky/za hřebenem/z rákosí/kráterů. Holdouty: kite smyčka + 2 úniky + 2–3 fronty (detail v POI specech — blackbox).</td></tr>
+<tr><td>Act 1 dramaturgie</td><td>rádio: jistota → váhání → chrastění u jizvy; An-2 (E04) němé varování; každý mrtvý G-boss → 704 se budí (záře/siréna/пух z celé mapy). Finále «Аист» = HRANÝ beat na LZ, vrak → S18 (+260,+190).</td></tr>
+<tr><td>Act 2 «Покинутые»</td><td>hunter-patroly vstupují: E07 (jih) · E05 (tunel) · P8 sedlo (sever); drží koridory, vypínají stožáry, IL-76 shazuje jen jim (krádež shozu = objective). Svět +1 tier, blood-moon vlny; lem jizvy roste ~40 m/cyklus (max +200); gaty G1–G5 = fast-travel; pečeť 704 = 5 mrtvých G-bossů → T6 dungeon (vlastní spec).</td></tr>
+<tr><td>Co-op</td><td>gaty/pečeť/reinfestace = host-auth (`hostSim`); boss-kill kredit všem účastníkům; nikdy lockout z arény (warp k rally uzlu gatu); intenzita škáluje podle živého headcountu (cap 6).</td></tr>
+</table>
+
+<div class="def"><b>Odloženo / mimo rozsah tohoto plánu:</b> loot tabulky a scavenge ekonomika (mechanika zatím není ve hře — POI mají jen „účel", ne dropy) · interiéry a rozvržení budov POI (parcely = blackbox; per-POI specy přes buildgen; provizorní blokové skici z brainstormu = jen příloha, ne závazek) · boss roster (9-boss bible reconcile) · interiér Objektu 704 (vlastní spec) · přesné heightfield parametry (implementace M4 landforms) · počasí.</div>
+
+<div class="note"><b>Změnové řízení:</b> tento soubor je jediný zdroj pravdy rozložení světa. Každá změna pozice/rozměru = úprava TADY (verze v hlavičce nahoru), pak teprve v assetech. Souřadnicová konvence všude: world (x,z), +Z sever; v SVG je y=−z.</div>
+</body>
+</html>
