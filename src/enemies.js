@@ -34,6 +34,23 @@ function _buildCourierRadio() {
   catch (e) { console.warn('[enemies] courier R-105d build failed — canvas-pack fallback:', e); return null; }
   return _courierRadioProto.clone();
 }
+// Mount the R-105d on a courier's back — SHARED by makeCourier (gameplay) and the admin
+// asset-viewer preview (buildCourierPreview) so the two mounts can never drift.
+function _mountCourierRadio(radio) {
+  radio.scale.setScalar(COURIER_RADIO_SCALE);
+  radio.rotation.y = Math.PI / 2;        // harness side (−X) → +Z, against the plush's back; panel + antenna face out
+  radio.position.set(0.05, 0.7, -0.32);  // upper back, behind the body
+  return radio;
+}
+// A courier engendro (plush + worn R-105d radio) for the admin asset viewer. Just the
+// plush if the radio spec hasn't registered yet (same async-window rule as makeCourier).
+export function buildCourierPreview(col = ENGENDRO_COLORS[0]) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()));
+  const radio = _buildCourierRadio();
+  if (radio) g.add(_mountCourierRadio(radio));
+  return g;
+}
 
 // The "armored" engendro wears a СН-42 steel cuirass (models/sn42, registered in game.js) on its chest.
 // Build-once-clone-per-spawn (like the courier radio). The plush body is a ~0.34-radius BALL, so a flat
@@ -417,10 +434,7 @@ export class EnemyManager {
     if (!e._pack) {
       const radio = _buildCourierRadio();
       if (radio) {                                                   // detailed R-105d field radio, worn on the BACK
-        radio.scale.setScalar(COURIER_RADIO_SCALE);
-        radio.rotation.y = Math.PI / 2;                             // harness side (−X) → +Z, against the plush's back; panel/antenna face outward
-        radio.position.set(0.05, 0.7, -0.32);                       // upper back, behind the body (−Z = back; the old pack sat at +0.34 = the CHEST by mistake)
-        e._pack = radio;
+        e._pack = _mountCourierRadio(radio);                        // shared mount → admin preview can't drift from gameplay
       } else {                                                      // registry async window / build fail → cheap canvas pack (also on the BACK now)
         const pb = new MeshBuilder();
         pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
