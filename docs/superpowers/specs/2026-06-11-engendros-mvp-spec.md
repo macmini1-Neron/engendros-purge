@@ -129,7 +129,7 @@ Každá fáze: postav v «ПОЛИГОН» → feel-test → promuj do hratelné
 
 ## 7. Mimo MVP scope (až po ověření feelu)
 
-Celá velká mapa (1000×1000) — MVP žije v 1 biom-regionu · víc biomů/POI · plný roster Engendros (MVP = 1–2 typy) · víc bossů · vozidla (palivo/oprava) · zranění končetin a kontaminace jako *plné* systémy (v MVP základ/«ПОЛИГОН») · PvP · počasí jako plný systém · ekonomika balanc (jen funkční, ne vyladěná).
+Celá velká mapa (2500×2500) — MVP žije v 1 biom-regionu · víc biomů/POI · plný roster Engendros (MVP = 1–2 typy) · víc bossů · vozidla (palivo/oprava) · zranění končetin a kontaminace jako *plné* systémy (v MVP základ/«ПОЛИГОН») · PvP · počasí jako plný systém · ekonomika balanc (jen funkční, ne vyladěná).
 
 ---
 

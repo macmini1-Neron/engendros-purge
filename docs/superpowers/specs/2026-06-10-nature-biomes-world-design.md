@@ -4,7 +4,7 @@
 
 ## Vision
 
-Turn the 1000×1000 steppe open-world into a believable **Ukrainian/Russian regional
+Turn the 2500×2500 steppe open-world into a believable **Ukrainian/Russian regional
 landscape** — two faces of the same land: **war-torn** (water-filled craters, burnt &
 blown-down forests, shattered shelterbelts) and **untouched nature** (flower meadows,
 clear streams & rivers, dense forest interiors, reed marshes). Mini-biomes that read like

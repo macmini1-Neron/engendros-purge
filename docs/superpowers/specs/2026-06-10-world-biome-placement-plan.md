@@ -1,4 +1,4 @@
-# World / Biome Placement Plan — 1000×1000 Steppe Open-World
+# World / Biome Placement Plan — 2500×2500 Steppe Open-World
 
 **Date:** 2026-06-10 · **Branch:** `feat/nature-props` · **Status:** plan (terrain-aware, pre-engine)
 **Consumes:** `docs/superpowers/specs/2026-06-10-nature-biomes-world-design.md` (design) ·
@@ -14,8 +14,9 @@ placement contract the future terrain engine must satisfy, the staged engine blu
 
 ## 0. The board — what is already on the plane (authoritative coordinates)
 
-World space: `+X` = east, `+Z` = north, `+Y` = up, 1 unit ≈ 1 m. The plane is **1000×1000**,
-`world.HALF = 500`, so all coordinates live in `x,z ∈ [−500, +500]`. Player **spawns at the
+World space: `+X` = east, `+Z` = north, `+Y` = up, 1 unit ≈ 1 m. The plane is **2500×2500**,
+`world.HALF = 1250`, so all coordinates live in `x,z ∈ [−1250, +1250]` (existing districts keep
+their coordinates — the larger plane just adds room around the same structure). Player **spawns at the
 centre `(0,0)`**; the engine spawn ring for enemies is at radius ≈ 488. The map is fringed by an
 impassable voxel **mountain border** (height `MH = 26`) at the four edges. Fog far = 900.
 
@@ -291,7 +292,7 @@ the owner verifies in-browser before we proceed; nothing merges that fails to bo
 > **and** co-op booting (`hostSim` authority unchanged — terrain is host-authoritative data).
 
 ### Stage T0 — Heightfield data model (no visual change)
-Add a deterministic, seeded **heightfield** sampler: `terrainHeightAt(x,z)` over the 1000×1000
+Add a deterministic, seeded **heightfield** sampler: `terrainHeightAt(x,z)` over the 2500×2500
 plane, default **flat (y=0)** everywhere so the game is byte-for-byte unchanged at boot.
 Implement the full §3a API against this flat field first. **Checkpoint:** game identical;
 `window.GAME.world.terrainHeightAt(0,0) === 0`. Risk: low (pure addition). Touch: `world.js`.
@@ -313,7 +314,7 @@ fallback camera). Risk: **high** — this is the gameplay-feel stage. Touch: `pl
 ### Stage T3 — Mountains (NE/E massif) + LOD
 Raise the §1f corner into a real massif (and optionally a NW ridge for the bor) using a separate
 high-amplitude mask blended into the heightfield; build **distance LOD** on the terrain mesh
-(coarse far tiles) so the 1000×1000 displaced mesh stays cheap. The existing border wall becomes
+(coarse far tiles) so the 2500×2500 displaced mesh stays cheap. The existing border wall becomes
 the massif skirt. **Checkpoint:** framerate held at the open horizon (fog far 900); massif
 silhouette reads. Risk: **medium-high** (perf + the engine two-pass render). Touch: `world.js`,
 `engine.js`.
