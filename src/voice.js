@@ -26,7 +26,6 @@ const OCC_GAIN_BLOCK = 0.55;       // gain multiplier when fully occluded
 const SPEAK_RMS = 0.02;            // RMS above which a remote's "speaking" dot lights
 // field-radio STATIC/hiss model — real radio: ON + tuned to nothing = loud open static; it fades as a clean signal locks in.
 const STATIC_OPEN = 0.9;           // static level (0..1) when the radio is ON but receiving nothing (between stations)
-const STATIC_FLOOR = 0.05;         // faint carrier hiss that survives even on a locked, perfectly-clear signal
 const STATIC_OUT = 0.42;           // output gain applied to the static level → makes it clearly audible (was an inaudible 0.12)
 const STATIC_LAMBDA = 10;          // static crossfade smoothing (higher = snappier as you turn the dial)
 
@@ -310,7 +309,8 @@ export class VoiceChat {
     // signal (station or voice) locks in, so scanning the dial FEELS like a real radio hunting for a station.
     let staticTarget = 0;
     if (this.radioOn && !this.radioTx) {                            // keyed up = deaf on RX → no open static either (you're transmitting, not scanning)
-      staticTarget = STATIC_FLOOR + (STATIC_OPEN - STATIC_FLOOR) * (1 - clamp(this._recvClarity || 0, 0, 1));
+      const clarity = clamp(this._recvClarity || 0, 0, 1);
+      staticTarget = STATIC_OPEN * (1 - clarity) * (1 - clarity);   // cleanest signal → 0 static (no carrier-hiss floor, so it never "returns" after PTT); squared → drops off fast as you lock on
       staticTarget = Math.max(staticTarget, this._garble || 0);   // doubling on one channel = extra mush
     }
     if (this._crackleGain) this._crackleGain.gain.value = damp(this._crackleGain.gain.value, staticTarget * STATIC_OUT, STATIC_LAMBDA, dt);
