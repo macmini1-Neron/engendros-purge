@@ -31,6 +31,7 @@ import { PokerTable } from './poker-table.js';
 import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
 import { VoiceChat } from './voice.js';
+import { RadioPanel } from './radiopanel.js';
 import { Engine } from './engine.js';
 import { SimWorker } from './sim-worker-client.js';
 import { Input } from './input.js';
@@ -188,6 +189,7 @@ class Game {
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
     this.mp = new MP(this); // multiplayer co-op (dormant until host/join)
     this.voice = new VoiceChat(this); // co-op proximity voice (opt-in; dormant until enabled + in a run)
+    this.radioPanel = new RadioPanel(this); // deployed-radio control panel UI (Phase 2); dev-open: GAME.radioPanel.open()
     this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
     this._molTmp = new THREE.Vector3(); this._molTmp2 = new THREE.Vector3(); this._molTmp3 = new THREE.Vector3();
 
