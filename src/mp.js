@@ -57,7 +57,7 @@ class RemotePlayer {
     this._animT = 0; this._spd = 0; this._lastx = 0; this._lastz = 30;
     const wrap = document.getElementById('mp-labels');
     this.label = document.createElement('div'); this.label.className = 'mp-label';
-    this.label.innerHTML = '<span class="mp-name"></span><span class="mp-hpwrap"><i class="mp-hp"></i></span>';
+    this.label.innerHTML = '<i class="mp-spk"></i><span class="mp-name"></span><span class="mp-hpwrap"><i class="mp-hp"></i></span>';
     this.label.querySelector('.mp-name').textContent = this.name;
     this._hpEl = this.label.querySelector('.mp-hp');
     if (wrap) wrap.appendChild(this.label);
@@ -73,6 +73,7 @@ class RemotePlayer {
   } // pstate is authoritative; xf mirrors down/dead/waiting as an immediate visual fallback for host/self state.
   setHP(hp, maxHp) { this.hp = hp; if (maxHp) this.maxHp = maxHp; }
   setBurn(t) { this.burnT = t; }
+  setSpeaking(b) { b = !!b; if (this._speaking === b) return; this._speaking = b; if (this.label) this.label.classList.toggle('speaking', b); } // voice.js drives this from the remote's audio level
   update(dt, cam) {
     const k = 1 - Math.exp(-15 * dt);
     this.pos.lerp(this.tpos, k);
@@ -409,6 +410,7 @@ export class MP {
     if (peerId === 'host') return;
     const r = this.roster.get(peerId), nm = r ? r.name : null;
     if (this.remotes.has(peerId)) { this.remotes.get(peerId).dispose(); this.remotes.delete(peerId); }
+    if (this.game.voice) this.game.voice._dropPeer(peerId);   // tear down that peer's voice mesh connection
     this.roster.delete(peerId); this.pstate.delete(peerId); if (this._lastXf) this._lastXf.delete(peerId);
     if (this.isHost) {
       this.net.broadcast('playerLeft', { id: peerId });   // other clients dispose this character immediately
@@ -652,6 +654,14 @@ export class MP {
   _wireNet() {
     const n = this.net, g = this.game;
     n.onDiag = (d) => this._onNetDiag(d);
+    // voice-chat signalling (voice.js). Client↔client rides broadcast+relay, so the ORIGINAL sender
+    // is d.from (the transport fromId would be the relaying host) — voice.js reads d.from.
+    n.on('vhello', (d) => { if (g.voice) g.voice._onHello(d); });
+    n.on('vsdp', (d) => { if (g.voice) g.voice._onSdp(d); });
+    n.on('vice', (d) => { if (g.voice) g.voice._onIce(d); });
+    n.on('rstate', (d) => { if (g.voice) g.voice._onRadioState(d); }); // field-radio tuning/TX state (voice.js)
+    n.on('r105set', (d) => { g.build.applyR105Set(d); if (this.isHost) n.broadcast('r105set', d); }); // deployed-radio freq/on → loudspeaker
+    n.on('struct_rm', (d) => { if (d) g.build.removeR105Remote(d.id); }); // deployed radio picked up → remove for everyone
     n.onDisconnect = (pid) => {
       if (this.isHost) { this._dropPeer(pid); if (g.poker && g.poker.coop) g.poker.onPeerDisconnect(pid); } // host: bust the dropped poker seat
       else if (this.active) this._hostGone();
@@ -699,7 +709,7 @@ export class MP {
       }
     });
     n.on('goodbye', (d, from) => { if (this.isHost) { this._dropPeer(from); if (g.poker && g.poker.coop) g.poker.onPeerDisconnect(from); } }); // client left cleanly — also drop its poker seat (mirror onDisconnect/pkleave; latent today since poker never sets mp.active)
-    n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
+    n.on('playerLeft', (d) => { if (!d) return; const id = d.id; if (g.voice) g.voice._dropPeer(id); if (this.remotes.has(id)) { this.remotes.get(id).dispose(); this.remotes.delete(id); } this.roster.delete(id); this.pstate.delete(id); this._renderRoster(); }); // despawn that character now
     n.on('kicked', () => { if (!this.isHost) { try { this.game.hud.bigMessage('KICKED', 'the host removed you from the game'); } catch (e) {} this.leave(); this.game.toMenu(); } });
     n.on('roster', (arr) => { if (!Array.isArray(arr)) return; this.roster.clear(); for (const p of arr) this.roster.set(p.id, { name: p.name, skin: p.skin, chipSkin: (typeof p.chipSkin === 'string') ? p.chipSkin : 'dice', ready: !!p.ready, loadout: p.loadout || [], pid: p.pid || null, basket: (p.basket && p.basket.items) ? { items: p.basket.items } : { items: {} } }); this._renderRoster(); this._syncRemoteObjs(); });
     n.on('ready', (d, from) => { if (!this.isHost) return; const r = this.roster.get(from); if (r) r.ready = !!d.val; this.net.send('roster', this._rosterArr()); this._renderRoster(); });
@@ -860,7 +870,7 @@ export class MP {
     n.on('reviveprog', (d, from) => { if (this.isHost) this._hostReviveProgress(d, from); else this._applyReviveProgress(d); });
     n.on('ping', (d, from) => { if (this.isHost) this.net.sendTo(from, 'pong', d); });
     n.on('pong', (d) => { this.myPing = Math.round(performance.now() - d.t); });
-    n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this.renderScoreboard(); });
+    n.on('pstat', (d) => { const r = this.roster.get(d.id); if (r) { r.ping = d.ping; r.money = d.money; } if (this._sbOpen) this._sbSync(); });
     n.on('feed', (d) => this.game.hud.kill(d.who + ' \u27a4 ' + d.what));
     n.on('gameover', (d) => this.game._mpGameOver(d && d.reason));
     n.on('droppickup', (d) => { if (!d || typeof d.kind !== 'string' || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return; const p = this.game.player.pos.clone(); p.set(d.x, 0.55, d.z); this.game.loot._spawnPickup(d.kind, p, d.value); }); // a teammate's spilled loot → grab it with E (legacy local pile)
@@ -962,6 +972,7 @@ export class MP {
   update(dt) {
     if (!this.active) return;
     const g = this.game, cam = g.engine.camera;
+    if (this._sbOpen) this._sbSyncLive();   // live speaking dots on the Tab scoreboard
     this._xfT -= dt;
     if (this._xfT <= 0) {
       this._xfT = 0.066; const p = g.player;
@@ -1010,7 +1021,7 @@ export class MP {
       }
     }
     this._pingT -= dt; if (this._pingT <= 0) { this._pingT = 2; if (!this.isHost) this.net.send('ping', { t: performance.now() }); }
-    this._pstatT -= dt; if (this._pstatT <= 0) { this._pstatT = 1; const myPing = this.isHost ? 0 : this.myPing, myMoney = g.player.money; const me = this.roster.get(this.myId); if (me) { me.ping = myPing; me.money = myMoney; } this.net.broadcast('pstat', { id: this.myId, ping: myPing, money: myMoney }); if (this._sbOpen) this.renderScoreboard(); }
+    this._pstatT -= dt; if (this._pstatT <= 0) { this._pstatT = 1; const myPing = this.isHost ? 0 : this.myPing, myMoney = g.player.money; const me = this.roster.get(this.myId); if (me) { me.ping = myPing; me.money = myMoney; } this.net.broadcast('pstat', { id: this.myId, ping: myPing, money: myMoney }); if (this._sbOpen) this._sbSync(); }
     this._updateRevive(dt);
     this.updateSpectator(dt);
     // local bleed-out bar: counts the downed player's 30s toward bleeding out; revive progress temporarily takes over this bar.
@@ -1277,20 +1288,54 @@ export class MP {
     };
     window.addEventListener('keydown', toggle(true)); window.addEventListener('keyup', toggle(false));
   }
+  // Built ONCE on Tab-open (cached rows + wired volume/mute), because a full innerHTML rebuild mid-drag
+  // would kill a slider. Dynamic bits (ping/cash) go through _sbSync; speaking dots through _sbSyncLive.
   renderScoreboard() {
     const rows = document.getElementById('sb-rows'); if (!rows) return;
-    const list = [...this.roster.entries()].map(([id, r]) => ({ id, name: r.name, skin: r.skin || 0, ping: r.ping, money: r.money }));
-    list.sort((a, b) => (b.money || 0) - (a.money || 0));
-    rows.innerHTML = list.map(e => {
-      const sk = MP_SKINS[e.skin % MP_SKINS.length];
+    rows.innerHTML = ''; this._sbRows = new Map();
+    const list = [...this.roster.keys()];
+    list.sort((a, b) => ((this.roster.get(b).money || 0) - (this.roster.get(a).money || 0)));
+    for (const id of list) {
+      const r = this.roster.get(id);
+      const sk = MP_SKINS[(r.skin || 0) % MP_SKINS.length];
       const skinCss = '#' + sk.skin.toString(16).padStart(6, '0'), petalCss = '#' + sk.petal.toString(16).padStart(6, '0');
-      const isHostRow = (e.id === 'host');
-      const ping = isHostRow ? 'host' : (e.ping == null ? '\u2014' : e.ping + 'ms');
-      const pc = isHostRow ? '#9fd0ff' : (e.ping == null ? '#888' : e.ping < 80 ? '#7fd06a' : e.ping < 180 ? '#ffcf5c' : '#e8533a');
-      const money = e.money == null ? '' : '$' + e.money;
-      const you = e.id === this.myId ? ' <span style="opacity:.55;font-weight:400">(you)</span>' : '';
-      return '<div class="sb-row"><span class="sb-skin" style="background:' + skinCss + ';border-color:' + petalCss + '"></span><span class="sb-name">' + mpEscape(e.name) + you + '</span><span class="sb-money">' + money + '</span><span class="sb-ping" style="color:' + pc + '">' + ping + '</span></div>';
-    }).join('');
+      const isSelf = id === this.myId;
+      const row = document.createElement('div'); row.className = 'sb-row';
+      row.innerHTML = '<span class="sb-skin" style="background:' + skinCss + ';border-color:' + petalCss + '"></span>'
+        + '<span class="sb-name">' + mpEscape(r.name) + (isSelf ? ' <span style="opacity:.55;font-weight:400">(you)</span>' : '') + '</span>'
+        + '<span class="sb-money"></span><span class="sb-ping"></span><span class="sb-voice"></span>';
+      rows.appendChild(row);
+      const c = { id, row, moneyEl: row.querySelector('.sb-money'), pingEl: row.querySelector('.sb-ping'), voiceEl: row.querySelector('.sb-voice') };
+      if (!isSelf) this._sbBuildVoiceCell(c); // any non-self row is a real voice peer (incl. 'host' as seen by a client) → give it a mute/volume cell
+      this._sbRows.set(id, c);
+    }
+    this._sbKey = this._sbRosterKey(); this._sbSync(); this._sbSyncLive();
+  }
+  _sbBuildVoiceCell(c) {
+    const g = this.game, peerId = c.id;
+    const mute = document.createElement('button'); mute.className = 'sb-mute'; mute.type = 'button';
+    mute.textContent = (g.voice && g.voice.isPeerMuted(peerId)) ? '\u{1F507}' : '\u{1F50A}';
+    const vol = document.createElement('input'); vol.className = 'sb-vol'; vol.type = 'range'; vol.min = 0; vol.max = 1.5; vol.step = 0.05;
+    vol.value = g.voice ? g.voice.peerVolumeRaw(peerId) : 1;
+    mute.addEventListener('click', () => { if (!g.voice) return; const m = !g.voice.isPeerMuted(peerId); g.voice.setPeerMuted(peerId, m); mute.textContent = m ? '\u{1F507}' : '\u{1F50A}'; });
+    vol.addEventListener('input', () => { if (g.voice) g.voice.setPeerVolume(peerId, parseFloat(vol.value)); });
+    c.voiceEl.appendChild(mute); c.voiceEl.appendChild(vol);
+  }
+  _sbRosterKey() { return [...this.roster.keys()].sort().join(','); }
+  _sbSync() {                     // ping/cash text only \u2014 no innerHTML rebuild (safe while open)
+    if (!this._sbOpen || !this._sbRows) return;
+    if (this._sbRosterKey() !== this._sbKey) { this.renderScoreboard(); return; }  // roster changed \u2192 full rebuild
+    for (const [id, c] of this._sbRows) {
+      const r = this.roster.get(id); if (!r) continue;
+      const isHost = id === 'host';
+      c.moneyEl.textContent = r.money == null ? '' : '$' + r.money;
+      c.pingEl.textContent = isHost ? 'host' : (r.ping == null ? '\u2014' : r.ping + 'ms');
+      c.pingEl.style.color = isHost ? '#9fd0ff' : (r.ping == null ? '#888' : r.ping < 80 ? '#7fd06a' : r.ping < 180 ? '#ffcf5c' : '#e8533a');
+    }
+  }
+  _sbSyncLive() {                 // per-frame speaking dots from live voice state
+    if (!this._sbOpen || !this._sbRows || !this.game.voice) return;
+    for (const [id, c] of this._sbRows) { const pv = this.game.voice.peers.get(id); c.row.classList.toggle('speaking', !!(pv && pv.speaking)); }
   }
   _sendWorldTo(pid) {
     this.net.sendTo(pid, 'start', { mode: this.game.mode || 'purge' });
@@ -1302,6 +1347,7 @@ export class MP {
     if (snap.length) this.net.sendTo(pid, 'esnap', snap);                                   // immediate exact positions/HP (don't make the joiner wait ~80ms)
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
     for (const s of this.game.build.structures) if (s.kind === 'radio' && s.on) this.net.sendTo(pid, 'radioset', { id: s.id, on: true, station: s.station }); // late-join: tune newcomers into playing radios
+    for (const s of this.game.build.structures) if (s.kind === 'r105') this.net.sendTo(pid, 'r105set', { id: s.id, freq: s.freq, on: s.on }); // late-join: match deployed voice-radio loudspeakers
     if (this.game.gramophone) for (const p of this.game.gramophone.props) if (p.on) this.net.sendTo(pid, 'gramoset', { id: p.id, on: true, songIdx: p.songIdx }); // late-join: start newcomers' playing gramophones
     if (this.game.world._slideGate) this.net.sendTo(pid, 'gateset', { open: !!this.game.world._slideGate.open }); // late-join: current works-gate state
     if (this.game.world._doors) for (const dr of this.game.world._doors) this.net.sendTo(pid, 'doorset', { id: dr.id, open: !!dr.open }); // late-join: current bunker гермодверь states

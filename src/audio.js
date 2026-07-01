@@ -11,6 +11,7 @@ export class AudioManager {
     this.volume = 0.8;
     this.musicVolume = 0.5;
     this._musicDuck = 1;
+    this._uiDuck = 1;       // independent UI duck (radio panel / Settings open) — composes with _musicDuck so a nearby gramophone/radio's per-frame proximity duck can't fight it
     this.muted = false;
     this._musicTimer = null;
     this._started = false;
@@ -138,7 +139,8 @@ export class AudioManager {
   setVolume(v) { this.volume = v; if (this.sfxGain) this.sfxGain.gain.value = v; }
   setMusicVolume(v) { this.musicVolume = v; this._applyMusicGain(); }
   setMusicDuck(d) { this._musicDuck = Math.max(0, Math.min(1, d)); this._applyMusicGain(); } // 1 = full, ~0.15 = radio nearby
-  _applyMusicGain() { if (this.musicGain) this.musicGain.gain.value = this.musicVolume * (this._musicDuck == null ? 1 : this._musicDuck); }
+  setUiMusicDuck(d) { d = Math.max(0, Math.min(1, d)); if (d === this._uiDuck) return; this._uiDuck = d; this._applyMusicGain(); } // derived per-frame from UI state (radio panel / Settings open); no-op guard keeps the per-frame call cheap
+  _applyMusicGain() { if (this.musicGain) this.musicGain.gain.value = this.musicVolume * (this._musicDuck == null ? 1 : this._musicDuck) * (this._uiDuck == null ? 1 : this._uiDuck); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 1; }
 
   get t() { return this.ctx ? this.ctx.currentTime : 0; }

@@ -8,6 +8,22 @@ import { inThicket } from './foliage.js';
 import { skyPhase, isNight, keywordMinute, MINUTES_PER_DAY } from './worldclock.js';
 import { STRUCT_CAP, STRUCT_DEFS } from './economy.js';
 import { buildBarbedWire, buildBarricade, buildFieldRadio, buildSandbags, animateFieldRadio } from './props.js';
+import { buildSpec } from './props/voxel-interp.js';
+import { getSpec } from './props/registry-core.js';
+
+// Deployable R-105Д VOICE radio mesh — built FRESH from the courier's R-105D voxel spec on every placement.
+// NOT a cached-proto clone: a placed radio is a `prop`, so pickupR105 / removeR105Remote / _disposeMesh
+// deep-dispose its geometry+material — a shared clone would free the proto's buffers and corrupt every sibling
+// radio for the rest of the session. buildSpec() owns its own buffers and is cheap (radios cap at
+// STRUCT_DEFS.r105.max), mirroring buildFieldRadio() and enemies.js buildCourierPreview().
+// Falls back to the field-radio prop if the spec registry isn't ready.
+function buildR105Mesh() {
+  try {
+    const spec = getSpec('r105d');
+    if (spec) { const m = buildSpec(spec); m.scale.setScalar(1.0); return m; } // TODO: tune scale after visual review
+  } catch (e) { if (typeof console !== 'undefined') console.warn('[world] R-105 model build failed — field-radio fallback', e); }
+  return buildFieldRadio();
+}
 import { buildIndustrial } from './industrial.js';
 import { buildStrongpoint } from './strongpoint.js';
 import { buildAirfield } from './airfield.js';
@@ -618,6 +634,7 @@ export class BuildManager {
     this._geos = { sandbag: sg.geometry, wire: wg.geometry, wood: dg.geometry };
     sg.material.dispose(); wg.material.dispose(); dg.material.dispose();
     this._geos.radio = new THREE.BoxGeometry(STRUCT_DEFS.radio.w, STRUCT_DEFS.radio.h, STRUCT_DEFS.radio.d).translate(0, STRUCT_DEFS.radio.h / 2, 0);
+    this._geos.r105 = new THREE.BoxGeometry(STRUCT_DEFS.r105.w, STRUCT_DEFS.r105.h, STRUCT_DEFS.r105.d).translate(0, STRUCT_DEFS.r105.h / 2, 0); // placement ghost for the voice radio
     this.ghostMat = new THREE.MeshLambertMaterial({ color: 0x35d05a, emissive: 0x0a3a14, transparent: true, opacity: 0.5, depthWrite: false });
     this.ghost = new THREE.Mesh(this._geos.sandbag, this.ghostMat);
     this.ghost.visible = false; this.ghost.renderOrder = 5; this.ghost.frustumCulled = false;
@@ -698,7 +715,7 @@ export class BuildManager {
 
   placeStructure(kind, pos, yaw, id) {
     const sd = STRUCT_DEFS[kind];
-    const mesh = sd.prop ? buildFieldRadio() : new THREE.Mesh(this._geos[kind], voxelMaterial());
+    const mesh = kind === 'r105' ? buildR105Mesh() : (sd.prop ? buildFieldRadio() : new THREE.Mesh(this._geos[kind], voxelMaterial()));
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.position.set(pos.x, pos.y || 0, pos.z); mesh.rotation.y = yaw;
     this.scene.add(mesh);
@@ -709,6 +726,7 @@ export class BuildManager {
     if (sd.hard) { s.box = aabb({ struct: true, _ref: s }); this.game.world.boxes.push(s.box); this.game.world.grid.addBox(s.box); }
     else if (!sd.prop) { s.hazard = aabb({ ref: s }); } // props are NOT hazards; enemies ignore them
     this.structures.push(s);
+    if (kind === 'r105') { s.freq = 40.150; if (this.game.voice) this.game.voice.setSpeaker(s.id, s.pos.x, s.pos.y, s.pos.z, s.freq, false); } // register the loudspeaker (off until turned on)
     return s;
   }
 
@@ -763,6 +781,61 @@ export class BuildManager {
       else if (inp.wasPressed('ArrowLeft')) this.cycleRadioStation(best, -1);
       inp.down.delete('ArrowLeft'); inp.down.delete('ArrowRight'); // suppress strafe this frame while tuning
     }
+  }
+  // Look-target for a deployed R-105Д voice radio → E opens the control panel (radiopanel.js).
+  updateR105Target() {
+    this.r105Target = null;
+    if (this.game.state !== 'playing' || (this.game.mp && this.game.mp.frozen) || this.game._radioPanelOpen) return;
+    if (this.game.player.mountedGun) return;
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const o = this._tmpO.setFromMatrixPosition(cam.matrixWorld);
+    const f = this._tmpF.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    let best = null, bestD = 4.0;
+    for (const s of this.structures) {
+      if (s.kind !== 'r105') continue;
+      const dx = s.pos.x - o.x, dz = s.pos.z - o.z, along = dx * f.x + dz * f.z;
+      if (along <= 0 || along > bestD) continue;
+      const px = o.x + f.x * along, pz = o.z + f.z * along;
+      if (Math.hypot(s.pos.x - px, s.pos.z - pz) < 1.2) { best = s; bestD = along; }
+    }
+    this.r105Target = best;
+  }
+  // Pick a deployed R-105Д back into the backpack. (Solo/host for now; co-op client-pickup sync = TODO.)
+  pickupR105(s) {
+    if (!s) return false;
+    const mp = this.game.mp;
+    if (mp && mp.active && !mp.isHost) { this.game.hud && this.game.hud.toast && this.game.hud.toast('Only the host can pick up the radio', 0xd23a2a); return false; }
+    const i = this.structures.indexOf(s); if (i < 0) return false;
+    this.structures.splice(i, 1);
+    if (s.mesh) { this.scene.remove(s.mesh); try { s.mesh.traverse && s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); }); } catch (e) {} }
+    if (this.r105Target === s) this.r105Target = null;
+    if (this.game.radioPanel && this.game.radioPanel.struct === s) this.game.radioPanel.close(); // close the panel if it's open on this radio (idempotent)
+    if (this.game.voice) this.game.voice.removeSpeaker(s.id);
+    this.game.inventory.addItem('r105');
+    if (mp && mp.active && mp.isHost) mp.net.broadcast('struct_rm', { id: s.id });
+    return true;
+  }
+  // Operate a deployed R-105Д: set its freq/on → update the loudspeaker + sync to the squad.
+  setR105State(s, freq, on) {
+    if (!s) return;
+    if (freq != null) s.freq = freq;
+    if (on != null) s.on = !!on;
+    if (this.game.voice) this.game.voice.setSpeaker(s.id, s.pos.x, s.pos.y, s.pos.z, s.freq || 40.150, s.on);
+    const mp = this.game.mp;
+    if (mp && mp.active) { const d = { id: s.id, freq: s.freq, on: s.on }; if (mp.isHost) mp.net.broadcast('r105set', d); else mp.net.send('r105set', d); }
+  }
+  applyR105Set(d) {
+    const s = this.structures.find((x) => x.id === d.id && x.kind === 'r105'); if (!s) return;
+    if (d.freq != null) s.freq = d.freq; if (d.on != null) s.on = !!d.on;
+    if (this.game.voice) this.game.voice.setSpeaker(s.id, s.pos.x, s.pos.y, s.pos.z, s.freq || 40.150, s.on);
+  }
+  removeR105Remote(id) {
+    const s = this.structures.find((x) => x.id === id && x.kind === 'r105'); if (!s) return;
+    const i = this.structures.indexOf(s); if (i >= 0) this.structures.splice(i, 1);
+    if (s.mesh) { this.scene.remove(s.mesh); try { s.mesh.traverse && s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); }); } catch (e) {} }
+    if (this.game.voice) this.game.voice.removeSpeaker(id);
+    if (this.r105Target === s) this.r105Target = null;
+    if (this.game.radioPanel && this.game.radioPanel.struct === s) this.game.radioPanel.close(); // host/teammate removed this radio while our panel was open on it → close cleanly (no dangling struct)
   }
   toggleRadio(s) {
     if (!s) return;

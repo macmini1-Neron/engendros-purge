@@ -133,7 +133,7 @@ export class Player {
   // Dev fly-cam (noclip). Solo only; toggled with N or ?fly=1. Moves the eye directly in 3D, ignoring
   // collision/gravity/survival so the whole 500 m map can be inspected. `game.freecam` gates damage + spawns.
   _freecamUpdate(dt, input) {
-    const controlsPaused = this.game.mpMenuOpen;
+    const controlsPaused = this.game.mpMenuOpen || this.game._radioPanelOpen;
     if (!controlsPaused) {
       this.yaw -= input.mouseDX * this.sens;
       this.pitch -= input.mouseDY * this.sens;
@@ -174,7 +174,7 @@ export class Player {
     if (this.game.freecam || this.game.flyMode) return this._freecamUpdate(dt, input); // dev noclip freecam, or console /fly (sim keeps running)
     const mp = this.game.mp;
     const frozen = mp && mp.active && mp.frozen;
-    const controlsPaused = mp && mp.active && this.game.mpMenuOpen;
+    const controlsPaused = (mp && mp.active && this.game.mpMenuOpen) || this.game._radioPanelOpen;
     const lookScale = frozen ? 0.35 : 1;
     this.yaw -= input.mouseDX * this.sens * lookScale;
     this.pitch -= input.mouseDY * this.sens * lookScale;

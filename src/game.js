@@ -30,6 +30,8 @@ import { Fonoteka, GramophoneManager, ensureGramophoneSpec, placeGramophones } f
 import { PokerTable } from './poker-table.js';
 import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
+import { VoiceChat } from './voice.js';
+import { RadioPanel } from './radiopanel.js';
 import { Engine } from './engine.js';
 import { SimWorker } from './sim-worker-client.js';
 import { Input } from './input.js';
@@ -82,7 +84,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-07-01 10:59';
+const GAME_BUILD = '2026-07-02 00:06';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -186,6 +188,9 @@ class Game {
     this.items = itemBankFromMeta(this.meta); // account item ledger (source of truth for ownership); _saveMeta serialises it back. Phase-1: attached but no reader yet.
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
     this.mp = new MP(this); // multiplayer co-op (dormant until host/join)
+    this.voice = new VoiceChat(this); // co-op proximity voice (opt-in; dormant until enabled + in a run)
+    this.radioPanel = new RadioPanel(this); // deployed-radio control panel UI (Phase 2); dev-open: GAME.radioPanel.open()
+    this._settingsEl = document.getElementById('settings'); // cached for the per-frame radio-UI reconciliation (state-derived music duck)
     this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
     this._molTmp = new THREE.Vector3(); this._molTmp2 = new THREE.Vector3(); this._molTmp3 = new THREE.Vector3();
 
@@ -366,6 +371,7 @@ class Game {
 
   _wireInput() {
     this.input.on('key', (code, ev) => {
+      if (this._radioPanelOpen) return; // radio control panel open → it owns the keyboard (own listeners handle tune/close/pickup)
       // Esc toggles pause/resume in a live run. Under Keyboard Lock (Chromium fullscreen) the tapped Esc is
       // delivered here without dropping fullscreen, so we drive BOTH pause and resume from it. Handled before
       // the state/console guards so it also works while paused — but we never steal the dev-console's own Esc.
@@ -438,6 +444,7 @@ class Game {
           else if (this.nearestMortar()) { this.nearestMortar().mount(); } // 82-ПМ-37: man the indirect-fire station
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
+          else if (this.build.r105Target) { this.radioPanel.open(this.build.r105Target); } // deployed R-105Д voice radio → open the control panel
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
           else if (this.gramophone.target) { this.gramophone.toggle(this.gramophone.target); }
           else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
@@ -801,6 +808,19 @@ class Game {
     if (lockPointer && this.state === 'playing') this.input.requestLock();
   }
   _lobbyVisible() { const el = document.getElementById('lobby'); return !!(el && el.classList.contains('show')); }
+  // Single source of truth for the deployed-radio panel + its music duck, reconciled every frame in EVERY
+  // state (called from _frame). The panel is a custom body-level overlay (ui.hideAll can't reach it) that
+  // holds state='playing' while open, so any non-playing state means an outside transition (death/gameover/
+  // wipe→lobby/menu) left it stranded → force-close it. The UI music-duck is DERIVED from live UI state
+  // (panel open OR the Settings overlay is shown) so it can never get stuck (Esc-from-Settings → resume →
+  // ui.hideAll drops the 'show' class → this restores it next frame).
+  _reconcileRadioUi() {
+    if (this._radioPanelOpen && this.state !== 'playing' && this.radioPanel) this.radioPanel.close();
+    if (this.audio && this.audio.setUiMusicDuck) {
+      const settingsShown = !!(this._settingsEl && this._settingsEl.classList.contains('show'));
+      this.audio.setUiMusicDuck((this._radioPanelOpen || settingsShown) ? 0 : 1);
+    }
+  }
   toMenu() {
     if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();
@@ -823,7 +843,7 @@ class Game {
     return o;
   }
 
-  openAdmin() { this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // keep the jukebox running so the asset-viewer Music player controls it live
+  openAdmin() { this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // keep the jukebox running so the asset-viewer Music player controls it live (un-duck handled by _reconcileRadioUi)
   // ФОНОТЕКА — full-screen music screen (live 3D gramophone + genre browser), from the menu or the co-op lobby.
   openFonoteka(from) {
     this._fonoFrom = (from === 'lobby') ? 'lobby' : 'menu';
@@ -1183,6 +1203,7 @@ class Game {
     let dt = (t - this._last) / 1000; this._last = t;
     this._frameId = (this._frameId | 0) + 1;                   // per-frame id — rig matrices refresh at most once per frame in enemies.rayHit
     if (!(dt > 0)) dt = 0.0001;
+    this._reconcileRadioUi();                                  // radio panel + music-duck self-heal (runs in ALL states, so death/gameover/Esc-resume can't strand them)
     const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
     if (this._stressName) { // dev stress harness: sample RAW frame-time (pre-clamp) to catch hitches
       if (this._stressTick) { this._stressTick.acc += dt; if (this._stressTick.acc >= this._stressTick.every) { this._stressTick.acc = 0; this._stressTick.fn(); } }
@@ -1328,6 +1349,7 @@ class Game {
       }
       if (!this.mp.frozen && !(this.devconsole && this.devconsole.open) && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory — disabled while chat is open
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
+      this.build.updateR105Target(); // deployed R-105Д voice radio look-target → E opens the control panel
       this.gramophone.updateTarget(); // gramophone prop look-target + ←/→ song change (BEFORE player.update reads strafe)
       if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)
       if (this.world.updateDoorTarget) this.world.updateDoorTarget(this); // bunker гермодверь look-target (steppe only)
@@ -1353,6 +1375,7 @@ class Game {
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);
+    this.voice.update(dt); // proximity voice: listener+panner+occlusion (after mp.update so remote .pos is fresh)
     this._updateAdaptiveMusic();
     // World clock advances every frame in every mode. Host/solo = authoritative (advances the truth + fires timed
     // transitions via _stepMinute); clients predict locally for smooth HH:MM and reconcile to the host's 'night' push.
@@ -1422,6 +1445,8 @@ class Game {
       this.hud.setInteract('Press <b>E</b> to ' + (_open ? 'CLOSE' : 'OPEN') + ' the gate · ВОРОТА');
     } else if (this.world.doorTarget) {
       this.hud.setInteract('Press <b>E</b> to ' + (this.world.doorTarget.open ? 'ЗАКРЫТЬ' : 'ОТКРЫТЬ') + ' · ГЕРМОДВЕРЬ');
+    } else if (this.build.r105Target) {
+      this.hud.setInteract('Press <b>E</b> to operate the R-105Д radio');
     } else if (this.build.radioTarget) {
       const _r = this.build.radioTarget;
       this.hud.setInteract(_r.on ? '←/→ stanice · <b>E</b> vypnout rádio' : 'Press <b>E</b> to turn on radio');

@@ -364,16 +364,18 @@ const SETTINGS_VER = 1;
 // adaptiveRes + bloom default OFF: on high-refresh (144 Hz) displays the 60 fps-targeted adaptive resolution
 // churns the render-target size (stutter) and renders sub-native (blur), and bloom softens the crisp voxel look.
 // Both stay toggleable in Settings; the High/Medium presets can still switch bloom back on.
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, dmgNumbers: 1, pace: 1, setVer: SETTINGS_VER };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, dmgNumbers: 1, pace: 1,
+  voiceOn: 0, voiceVol: 1, micGain: 1, ptt: 0, vad: 0.5, echoCancel: 1, noiseSup: 1, autoGain: 1, selfMonitor: 0, pttKey: 'CapsLock', inDevId: '', outDevId: '', perPlayerVolume: {}, // co-op voice chat
+  setVer: SETTINGS_VER };
 
 export class Settings {
   constructor(game) {
     this.game = game;
     this.data = { ...SETTINGS_DEFAULTS };
     this.returnTo = 'menu';
-    this.load(); this._wire(); this.apply();
+    this.load(); this._wire(); this._wireVoice(); this.apply();
   }
-  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } const pv = new URLSearchParams(location.search).get('pace'); if (pv != null) this.data.pace = (pv !== '0') ? 1 : 0; } catch (e) {} } // ?pace=0/1 dev override seeds the saved frame-pacing pref so the menu toggle always matches reality
+  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (typeof s.pttKey === 'string') this.data.pttKey = s.pttKey; if (typeof s.inDevId === 'string') this.data.inDevId = s.inDevId; if (typeof s.outDevId === 'string') this.data.outDevId = s.outDevId; if (s.perPlayerVolume && typeof s.perPlayerVolume === 'object') this.data.perPlayerVolume = s.perPlayerVolume; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } const pv = new URLSearchParams(location.search).get('pace'); if (pv != null) this.data.pace = (pv !== '0') ? 1 : 0; } catch (e) {} } // ?pace=0/1 dev override seeds the saved frame-pacing pref so the menu toggle always matches reality
   save() { try { localStorage.setItem('engendros_settings', JSON.stringify(this.data)); } catch (e) {} }
   apply() {
     if (this.game.player) { this.game.player.sens = this.data.sens; this.game.player.nick = this.data.nick; }
@@ -392,6 +394,7 @@ export class Settings {
     this.game._pace = !!this.data.pace; // vsync-snap frame pacing (framepacing.js) — Settings owns the on/off
 
     const mpName = document.getElementById('mp-name'); if (mpName && !mpName.value) mpName.value = this.data.nick; // pre-fill the co-op lobby name
+    if (this.game.voice) this.game.voice.applySettings(this.data); // push voice prefs (gain/vad/ptt/devices) live
     this._refresh();
   }
   // One-click "performance mode" for the low-end-GPU notice: Low preset + adaptive resolution.
@@ -421,6 +424,7 @@ export class Settings {
     const gpv = document.getElementById('s-gfx'); if (gpv) gpv.textContent = String(this.data.gfxPreset).toUpperCase();
     setTog('s-adapt', this.data.adaptiveRes); setTog('s-showfps', this.data.showFps); setTog('s-aa', this.data.aa, 'ON (reload)', 'OFF');
     setTog('s-bloom', this.data.bloom); setTog('s-dmgnum', this.data.dmgNumbers); setTog('s-pace', this.data.pace);
+    this._refreshVoice();
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
@@ -442,7 +446,54 @@ export class Settings {
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }
-  open(from) { this.returnTo = from || 'menu'; this._refresh(); this.game.ui.show('settings'); }
+  // ---- co-op voice settings (voice.js) ----
+  _wireVoice() {
+    const g = this.game;
+    const applyV = () => { this.save(); if (g.voice) g.voice.applySettings(this.data); this._refreshVoice(); };
+    const en = document.getElementById('s-voice');
+    if (en) en.addEventListener('click', async () => {
+      if (!this.data.voiceOn) { const ok = g.voice && await g.voice.enable(); this.data.voiceOn = ok ? 1 : 0; if (ok) { g.voice.applySettings(this.data); this._populateDevices(); } }
+      else { g.voice && g.voice.disable(); this.data.voiceOn = 0; }
+      this.save(); this._refreshVoice();
+    });
+    const num = (id, key) => { const e = document.getElementById(id); if (e) e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); applyV(); }); };
+    num('s-voicevol', 'voiceVol'); num('s-micgain', 'micGain'); num('s-vad', 'vad');
+    const tog = (id, key) => { const e = document.getElementById(id); if (e) e.addEventListener('click', () => { this.data[key] = this.data[key] ? 0 : 1; applyV(); }); };
+    tog('s-ptt', 'ptt'); tog('s-echocancel', 'echoCancel'); tog('s-noisesup', 'noiseSup'); tog('s-autogain', 'autoGain'); tog('s-selfmon', 'selfMonitor');
+    const ind = document.getElementById('s-indev'); if (ind) ind.addEventListener('change', () => { this.data.inDevId = ind.value; applyV(); });
+    const outd = document.getElementById('s-outdev'); if (outd) outd.addEventListener('change', () => { this.data.outDevId = outd.value; applyV(); });
+    const pk = document.getElementById('s-pttkey');
+    if (pk) pk.addEventListener('click', () => { pk.textContent = 'press a key…'; const h = (ev) => { ev.preventDefault(); ev.stopPropagation(); this.data.pttKey = ev.code; window.removeEventListener('keydown', h, true); applyV(); }; window.addEventListener('keydown', h, true); });
+    const mt = document.getElementById('s-mictest'); if (mt) mt.addEventListener('click', () => { this._micTestOn ? this._stopMicTest() : this._startMicTest(); });
+  }
+  _refreshVoice() {
+    const d = this.data, g = this.game;
+    const setTog = (id, on, onTxt, offTxt) => { const e = document.getElementById(id); if (e) { e.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); e.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
+    const val = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    const txt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    setTog('s-voice', d.voiceOn, (g.voice && g.voice.micDenied) ? 'ON · no mic' : 'ON', 'OFF');
+    val('s-voicevol', d.voiceVol); txt('s-voicevol-v', Math.round(d.voiceVol * 100) + '%');
+    val('s-micgain', d.micGain); txt('s-micgain-v', Math.round(d.micGain * 100) + '%');
+    val('s-vad', d.vad); txt('s-vad-v', Math.round(d.vad * 100) + '%');
+    setTog('s-ptt', d.ptt, 'PUSH-TO-TALK', 'OPEN MIC'); setTog('s-echocancel', d.echoCancel); setTog('s-noisesup', d.noiseSup); setTog('s-autogain', d.autoGain); setTog('s-selfmon', d.selfMonitor);
+    txt('s-pttkey', this._prettyKey(d.pttKey));
+    const pkRow = document.getElementById('s-pttkey-row'); if (pkRow) pkRow.style.opacity = d.ptt ? '1' : '0.4';
+  }
+  async _populateDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    let devs; try { devs = await navigator.mediaDevices.enumerateDevices(); } catch (e) { return; }
+    const fill = (id, kind, cur) => { const el = document.getElementById(id); if (!el) return; el.innerHTML = '<option value="">Default device</option>'; for (const dv of devs) if (dv.kind === kind) { const o = document.createElement('option'); o.value = dv.deviceId; o.textContent = dv.label || (kind + ' ' + (dv.deviceId || '').slice(0, 6)); el.appendChild(o); } el.value = cur || ''; };
+    fill('s-indev', 'audioinput', this.data.inDevId); fill('s-outdev', 'audiooutput', this.data.outDevId);
+  }
+  _startMicTest() {
+    const g = this.game; if (!g.voice) return;
+    const begin = () => { this._micTestOn = true; if (g.voice.startMicTest) g.voice.startMicTest(); const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'STOP'; const bar = document.getElementById('s-miclevel'); const tick = () => { if (!this._micTestOn) return; if (bar) bar.style.width = Math.min(100, g.voice.getMicLevel() * 320).toFixed(0) + '%'; this._micRaf = requestAnimationFrame(tick); }; tick(); };
+    if (!g.voice.enabled) { g.voice.enable().then((ok) => { if (ok) { this.data.voiceOn = 1; this.save(); g.voice.applySettings(this.data); this._populateDevices(); this._refreshVoice(); begin(); } }); }
+    else begin();
+  }
+  _stopMicTest() { this._micTestOn = false; if (this.game.voice && this.game.voice.stopMicTest) this.game.voice.stopMicTest(); if (this._micRaf) cancelAnimationFrame(this._micRaf); const bar = document.getElementById('s-miclevel'); if (bar) bar.style.width = '0%'; const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'TEST MIC'; }
+  _prettyKey(code) { if (!code) return '—'; return String(code).replace(/^Key/, '').replace(/^Digit/, 'Digit ').replace(/^Arrow/, ''); }
+  open(from) { this.returnTo = from || 'menu'; this._refresh(); this._populateDevices(); this.game.ui.show('settings'); } // game music ducks while this overlay is shown, via game._reconcileRadioUi
   close() { this.game.ui.show(this.returnTo); }
 }
 
