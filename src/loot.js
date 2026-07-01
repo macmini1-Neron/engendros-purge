@@ -421,13 +421,14 @@ export class LootManager {
   // grant it to the KILLER (not the host). Returns the rolled bonus cash (0 unless the cash branch hit).
   dropCourier(pos) {
     this.spawnNetPickup('airbeacon', pos.x, pos.z, 1);
+    this.spawnNetPickup('r105', pos.x, pos.z, 1); // the R-105Д the courier wears → deployable voice radio
     const r = Math.random();
     let bonusCash = 0;
     if (r < 0.4) this.spawnNetPickup('medkit', pos.x, pos.z, 60);
     else if (r < 0.7) this.spawnNetPickup('ammo', pos.x, pos.z, 1);
     else if (r < 0.9) this.spawnNetPickup('armor', pos.x, pos.z, 60);
     else bonusCash = KEY_CASH;
-    this.game.hud.toast('📡 Vysílačka dropped! (press T)', 0x6fd0e8);
+    this.game.hud.toast('📻 R-105Д + 📡 Vysílačka dropped!', 0x6fd0e8);
     return bonusCash;
   }
 

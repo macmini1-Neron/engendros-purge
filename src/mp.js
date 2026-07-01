@@ -660,6 +660,8 @@ export class MP {
     n.on('vsdp', (d) => { if (g.voice) g.voice._onSdp(d); });
     n.on('vice', (d) => { if (g.voice) g.voice._onIce(d); });
     n.on('rstate', (d) => { if (g.voice) g.voice._onRadioState(d); }); // field-radio tuning/TX state (voice.js)
+    n.on('r105set', (d) => { g.build.applyR105Set(d); if (this.isHost) n.broadcast('r105set', d); }); // deployed-radio freq/on → loudspeaker
+    n.on('struct_rm', (d) => { if (d) g.build.removeR105Remote(d.id); }); // deployed radio picked up → remove for everyone
     n.onDisconnect = (pid) => {
       if (this.isHost) { this._dropPeer(pid); if (g.poker && g.poker.coop) g.poker.onPeerDisconnect(pid); } // host: bust the dropped poker seat
       else if (this.active) this._hostGone();
@@ -1345,6 +1347,7 @@ export class MP {
     if (snap.length) this.net.sendTo(pid, 'esnap', snap);                                   // immediate exact positions/HP (don't make the joiner wait ~80ms)
     for (const s of this.game.build.structures) this.net.sendTo(pid, 'struct', { id: s.id, kind: s.kind, x: s.pos.x, z: s.pos.z, yaw: s.yaw }); // late-join: existing fortifications
     for (const s of this.game.build.structures) if (s.kind === 'radio' && s.on) this.net.sendTo(pid, 'radioset', { id: s.id, on: true, station: s.station }); // late-join: tune newcomers into playing radios
+    for (const s of this.game.build.structures) if (s.kind === 'r105') this.net.sendTo(pid, 'r105set', { id: s.id, freq: s.freq, on: s.on }); // late-join: match deployed voice-radio loudspeakers
     if (this.game.gramophone) for (const p of this.game.gramophone.props) if (p.on) this.net.sendTo(pid, 'gramoset', { id: p.id, on: true, songIdx: p.songIdx }); // late-join: start newcomers' playing gramophones
     if (this.game.world._slideGate) this.net.sendTo(pid, 'gateset', { open: !!this.game.world._slideGate.open }); // late-join: current works-gate state
     if (this.game.world._doors) for (const dr of this.game.world._doors) this.net.sendTo(pid, 'doorset', { id: dr.id, open: !!dr.open }); // late-join: current bunker гермодверь states

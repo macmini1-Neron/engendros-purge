@@ -723,6 +723,7 @@ export class BuildManager {
     if (sd.hard) { s.box = aabb({ struct: true, _ref: s }); this.game.world.boxes.push(s.box); this.game.world.grid.addBox(s.box); }
     else if (!sd.prop) { s.hazard = aabb({ ref: s }); } // props are NOT hazards; enemies ignore them
     this.structures.push(s);
+    if (kind === 'r105') { s.freq = 40.150; if (this.game.voice) this.game.voice.setSpeaker(s.id, s.pos.x, s.pos.y, s.pos.z, s.freq, false); } // register the loudspeaker (off until turned on)
     return s;
   }
 
@@ -805,9 +806,31 @@ export class BuildManager {
     this.structures.splice(i, 1);
     if (s.mesh) { this.scene.remove(s.mesh); try { s.mesh.traverse && s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); }); } catch (e) {} }
     if (this.r105Target === s) this.r105Target = null;
+    if (this.game.voice) this.game.voice.removeSpeaker(s.id);
     this.game.inventory.addItem('r105');
-    if (mp && mp.active && mp.isHost) mp.net.broadcast('struct_rm', { id: s.id }); // TODO: client handler to remove remotely
+    if (mp && mp.active && mp.isHost) mp.net.broadcast('struct_rm', { id: s.id });
     return true;
+  }
+  // Operate a deployed R-105Д: set its freq/on → update the loudspeaker + sync to the squad.
+  setR105State(s, freq, on) {
+    if (!s) return;
+    if (freq != null) s.freq = freq;
+    if (on != null) s.on = !!on;
+    if (this.game.voice) this.game.voice.setSpeaker(s.id, s.pos.x, s.pos.y, s.pos.z, s.freq || 40.150, s.on);
+    const mp = this.game.mp;
+    if (mp && mp.active) { const d = { id: s.id, freq: s.freq, on: s.on }; if (mp.isHost) mp.net.broadcast('r105set', d); else mp.net.send('r105set', d); }
+  }
+  applyR105Set(d) {
+    const s = this.structures.find((x) => x.id === d.id && x.kind === 'r105'); if (!s) return;
+    if (d.freq != null) s.freq = d.freq; if (d.on != null) s.on = !!d.on;
+    if (this.game.voice) this.game.voice.setSpeaker(s.id, s.pos.x, s.pos.y, s.pos.z, s.freq || 40.150, s.on);
+  }
+  removeR105Remote(id) {
+    const s = this.structures.find((x) => x.id === id && x.kind === 'r105'); if (!s) return;
+    const i = this.structures.indexOf(s); if (i >= 0) this.structures.splice(i, 1);
+    if (s.mesh) { this.scene.remove(s.mesh); try { s.mesh.traverse && s.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); }); } catch (e) {} }
+    if (this.game.voice) this.game.voice.removeSpeaker(id);
+    if (this.r105Target === s) this.r105Target = null;
   }
   toggleRadio(s) {
     if (!s) return;

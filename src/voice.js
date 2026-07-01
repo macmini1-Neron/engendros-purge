@@ -44,6 +44,7 @@ export class VoiceChat {
     this.enabled = false; this.micDenied = false; this.voiceMuted = false;
     this.ptt = false; this.pttKey = 'CapsLock';
     this.radioOn = false; this.radioFreq = 40.150; this.radioTx = false; this.radioPttKey = 'KeyX'; // field-radio channel (Phase 2)
+    this.speakers = new Map();     // deployed-radio loudspeakers: structId -> { panner, bp, freq, on, taps:Map<peerId,gain> }
     this.vadThresh = SPEAK_RMS; this.localSpeaking = false; this._vadHang = 0;
     this._inCoop = false; this._occT = 0; this._micTest = false;
     // settings mirror (filled by applySettings)
@@ -229,6 +230,7 @@ export class VoiceChat {
     try { if (pv.kickEl) { pv.kickEl.pause(); pv.kickEl.srcObject = null; } } catch (e) {}
     const rp = this.game.mp && this.game.mp.remotes && this.game.mp.remotes.get(peerId);
     if (rp && rp.setSpeaking) rp.setSpeaking(false);
+    for (const sp of this.speakers.values()) { const t = sp.taps.get(peerId); if (t) { try { t.disconnect(); } catch (e) {} sp.taps.delete(peerId); } }
     this.peers.delete(peerId);
   }
 
@@ -270,6 +272,7 @@ export class VoiceChat {
         pv.radioGain.gain.value = damp(pv.radioGain.gain.value, rg, 12, dt);
       }
     }
+    this._updateSpeakers(dt);
   }
 
   _updateListener() {
@@ -351,6 +354,44 @@ export class VoiceChat {
   setRadioOn(on) { this.radioOn = !!on; this._announceRadio(); }
   _announceRadio() { const n = this._net; if (n) n.broadcast('rstate', { from: this.myId, rf: this.radioFreq, rt: this.radioTx, ro: this.radioOn }); }
   _onRadioState(d) { if (!d || d.from == null || d.from === this.myId) return; const pv = this.peers.get(d.from); if (pv) { pv.rf = d.rf; pv.rt = !!d.rt; pv.ro = !!d.ro; } }
+
+  // A deployed radio broadcasts its channel out loud at its ground position — nearby players hear
+  // whoever transmits on its freq WITHOUT their own radio. Called by world.js on place/tune/toggle.
+  setSpeaker(id, x, y, z, freq, on) {
+    if (!this.ctx) return;
+    let sp = this.speakers.get(id);
+    if (!sp) {
+      const ctx = this.ctx;
+      const panner = ctx.createPanner(); panner.panningModel = 'HRTF'; panner.distanceModel = 'inverse'; panner.refDistance = 3; panner.maxDistance = 45; panner.rolloffFactor = 1.4;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1650; bp.Q.value = 1.0;
+      bp.connect(panner); if (this.voiceMaster) panner.connect(this.voiceMaster);
+      sp = { id, panner, bp, freq, on: !!on, taps: new Map() };
+      this.speakers.set(id, sp);
+    }
+    sp.freq = freq; sp.on = !!on;
+    this._setPos(sp.panner, { x, y: (y || 0) + 0.7, z });
+  }
+  removeSpeaker(id) {
+    const sp = this.speakers.get(id); if (!sp) return;
+    for (const g of sp.taps.values()) { try { g.disconnect(); } catch (e) {} }
+    try { sp.bp.disconnect(); sp.panner.disconnect(); } catch (e) {}
+    this.speakers.delete(id);
+  }
+  _updateSpeakers(dt) {
+    for (const sp of this.speakers.values()) {
+      for (const [id, pv] of this.peers) {
+        if (!pv.srcNode) continue;
+        let g = 0;
+        if (sp.on && pv.rt && pv.ro && withinPassband(pv.rf, sp.freq)) {
+          const pen = detunePenalty(Math.abs((pv.rf - sp.freq) * 1e6));
+          g = 0.95 * (pen >= RADIO.DETUNE_K ? 0 : Math.max(0, 1 - pen / RADIO.DETUNE_K));
+        }
+        let tap = sp.taps.get(id);
+        if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; pv.srcNode.connect(tap); tap.connect(sp.bp); sp.taps.set(id, tap); }
+        if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
+      }
+    }
+  }
 
   // ---- settings + mic test ----------------------------------------------------------------
 

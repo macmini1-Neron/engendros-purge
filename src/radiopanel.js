@@ -52,9 +52,13 @@ export class RadioPanel {
 
   tune(deltaHz) {
     this.freq = clampFreq(snapReadout(this.freq + deltaHz / 1e6));
-    if (this.struct) this.struct.freq = this.freq;                                                   // persist per-radio
     this._refresh();
-    if (this.game.voice && this.game.voice.setRadioFreq) this.game.voice.setRadioFreq(this.freq);   // wired in the audio-routing step
+    this._pushState();
+  }
+  _pushState() {
+    const g = this.game;
+    if (this.struct && g.build && g.build.setR105State) g.build.setR105State(this.struct, this.freq, this.on); // deployed → loudspeaker + squad sync
+    else if (g.voice) { if (g.voice.setRadioFreq) g.voice.setRadioFreq(this.freq); if (g.voice.setRadioOn) g.voice.setRadioOn(this.on); } // carried → private reception
   }
 
   _pickup() {
@@ -62,14 +66,15 @@ export class RadioPanel {
     if (s && this.game.build && this.game.build.pickupR105) this.game.build.pickupR105(s);
   }
 
-  toggleOn() { this.on = !this.on; this._refresh(); if (this.game.voice && this.game.voice.setRadioOn) this.game.voice.setRadioOn(this.on); }
+  toggleOn() { this.on = !this.on; this._refresh(); this._pushState(); }
 
   open(struct) {
     this._build();
     this.struct = struct || null;
     if (this.struct && typeof this.struct.freq === 'number') this.freq = this.struct.freq;
+    if (this.struct && typeof this.struct.on === 'boolean') this.on = this.struct.on;
     this._refresh();
-    if (this.game.voice) { if (this.game.voice.setRadioFreq) this.game.voice.setRadioFreq(this.freq); if (this.game.voice.setRadioOn) this.game.voice.setRadioOn(this.on); }
+    this._pushState();
     if (this.open_) return;
     this.open_ = true;
     this.el.style.display = 'flex';
