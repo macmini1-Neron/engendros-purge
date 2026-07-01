@@ -63,6 +63,8 @@ const _registerModels = async () => {
   await load('wallclock-chasozbor'); // «ЧАСОЗБОР» analog wall clock (demobuilding hangs it lazily once registered)
   await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
   await load('lpr1');               // ЛПР-1 «Каралон-М» laser rangefinder (hand tool; admin viewer + world prop)
+  await load('r105d');              // R-105d field radio — the rare "courier" engendro wears it on its back (enemies.makeCourier)
+  await load('sn42');               // СН-42 steel breastplate — the "armored" engendro wears it on its chest (enemies.makeArmored)
   await load('mortar-82pm37');      // 82-ПМ-37 (БМ-37) co-op indirect-fire mortar (placed at the steppe strongpoint)
   await load('poker-table');        // round green-baize poker table — the hero prop of the 3D poker scene
   await load('poker-chip');         // composite "dice" poker chip (canonical model; in-game stacks mirror it per denom)
@@ -80,7 +82,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-30 23:28';
+const GAME_BUILD = '2026-07-01 10:27';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame

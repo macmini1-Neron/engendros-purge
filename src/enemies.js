@@ -11,10 +11,74 @@ import { segDist2 } from './geom.js';
 import { movementSlow, contactWeaken, applyEffect, removeEffect } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
 import { DISMEMBER, dismemberOn, buildRig, dressRig, animateRig, raycastRig, rigAABB, severCosmetic, gibPool, limbFlags, applyLimbFlags, updateGibs, clearGibs } from './engendro.js';
+import { rayCapsule } from './raycollide.js';
+import { buildSpec } from './props/voxel-interp.js';
+import { getSpec } from './props/registry-core.js';
+import { SN42, isArmorPiercing, resolveArmorHit } from './sn42-armor.js';
 
 const ENEMY_GRAVITY = 22;  // m/s² — pulls a mob off a ledge/roof once it walks past the edge (matches the player)
 const ENEMY_CLIMB = 3.0;   // m/s up a ladder zone toward a target above (player uses 3.7)
 const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steering snaps (flow cell-crossings, separation jostling, flow↔beeline flips) into turns instead of visible twitches
+
+// The rare "courier" engendro wears a detailed R-105d field radio on its back (models/r105d, registered
+// async in game.js). Build the spec ONCE into a prototype Group, then clone it per courier (cheap — clones
+// share geometry). Until the registry has loaded (or if the build throws) this returns null and makeCourier
+// falls back to the cheap canvas pack — the modelgen "consumer keeps a fallback for the async window" rule.
+const COURIER_RADIO_SCALE = 1.1;
+let _courierRadioProto = null;
+function _buildCourierRadio() {
+  if (_courierRadioProto) return _courierRadioProto.clone();
+  const spec = getSpec('r105d');
+  if (!spec) return null;                                  // registry not loaded yet
+  try { _courierRadioProto = buildSpec(spec); }
+  catch (e) { console.warn('[enemies] courier R-105d build failed — canvas-pack fallback:', e); return null; }
+  return _courierRadioProto.clone();
+}
+
+// The "armored" engendro wears a СН-42 steel cuirass (models/sn42, registered in game.js) on its chest.
+// Build-once-clone-per-spawn (like the courier radio). The plush body is a ~0.34-radius BALL, so a flat
+// plate floats off it at the edges — the model geometry is therefore CYLINDRICALLY BENT (in _buildArmorPlate)
+// to wrap the body's vertical axis at radius WRAP_R, then lifted to chest height by PLATE_Y. The bend is
+// baked into the shared proto geometry once; clones inherit it. PLATE_CAP is the 1:1 raycast capsule.
+const ARMOR_PLATE_SCALE = 1.05;
+const WRAP_R = 0.38;                          // radius the cuirass wraps the body ball around (×SCALE ≈ 0.40 > body surface ≈ 0.34 → the shell sits proud ON the body, edges still curl in)
+const PLATE_Y = 0.24;                         // lift the bent band onto the upper-lit chest (mesh-local)
+const PLATE_CAP = { ax: 0, ay: 0.34, az: 0.30, bx: 0, by: 0.70, bz: 0.30, r: 0.30 };  // chest-front capsule (1:1 hitbox)
+export const PLATE_PART = { name: 'plate', kind: 'plate', side: 0, severable: false };  // synthetic "part" rayHit returns on a cuirass strike (also imported by mp.js to re-tag a client's plate claim)
+const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pcol = new THREE.Vector3(), _pscratch = new THREE.Vector3();
+
+// Bend a flat plate group around the body's vertical (Y) axis at radius R so it wraps the round plush:
+// arc-length x → angle θ, the plate's own depth z stays a forward bulge, side edges curl back to the body.
+// The NORMALS are rotated by the same θ (NOT recomputed) so the model's crisp flat/layered shading survives
+// the bend — recomputing would smooth-average the facets and emissive would wash out the vertex-colour tones.
+function _bendCuirass(group, R) {
+  group.traverse((o) => {
+    const g = o.geometry, pos = g && g.attributes && g.attributes.position;
+    if (!pos) return;
+    const nor = g.attributes.normal;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const th = x / R, s = Math.sin(th), c = Math.cos(th), r = R + z;
+      pos.setX(i, r * s);
+      pos.setZ(i, r * c);                                  // y unchanged
+      if (nor) { const nx = nor.getX(i), nz = nor.getZ(i); nor.setX(i, nx * c + nz * s); nor.setZ(i, -nx * s + nz * c); } // rotate normal by θ (keeps flat shading)
+    }
+    pos.needsUpdate = true; if (nor) nor.needsUpdate = true;
+    g.computeBoundingBox(); g.computeBoundingSphere();
+  });
+}
+
+let _armorPlateProto = null;
+function _buildArmorPlate() {
+  if (_armorPlateProto) return _armorPlateProto.clone();
+  const spec = getSpec('sn42');
+  if (!spec) return null;                                  // registry not loaded yet
+  try {
+    _armorPlateProto = buildSpec(spec);
+    _bendCuirass(_armorPlateProto, WRAP_R);                // wrap the flat plate around the round body (keeps the layered shading)
+  } catch (e) { console.warn('[enemies] СН-42 cuirass build failed — box fallback:', e); return null; }
+  return _armorPlateProto.clone();
+}
 
 
 // ---------------------------------------------------------------------------
@@ -188,6 +252,7 @@ export const ENEMY_TYPES = {
   grunt:    { hp: 95,  speed: 2.0,  dmg: 9,  reward: 50,  scale: 1.0,  variant: 'normal' },
   charger:  { hp: 120, speed: 4.4,  dmg: 0,  reward: 130, scale: 1.0,  variant: 'charger', explode: true, charger: true, explodeDmg: 55, explodeRadius: 5.2 },
   exploder: { hp: 80,  speed: 2.4,  dmg: 8,  reward: 95,  scale: 1.0,  variant: 'exploder', explode: true, explodeDmg: 38, explodeRadius: 5.5 },
+  armored:  { hp: 140, speed: 1.7,  dmg: 12, reward: 100, scale: 1.1,  variant: 'normal', armored: true },  // СН-42 cuirass: chest-front shots ricochet — flank/head/heavy weapons only (makeArmored)
   brute:    { hp: 300, speed: 1.35, dmg: 20, reward: 130, scale: 1.6,  variant: 'normal' },
   titan:    { hp: 640, speed: 1.1,  dmg: 30, reward: 260, scale: 2.05, variant: 'normal' },
   minitolo: { hp: 45,  speed: 3.9,  dmg: 14, reward: 25,  scale: 0.6,  variant: 'normal' },
@@ -231,6 +296,7 @@ class Enemy {
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.noAI = false;    // console /summon {NoAI:1} dummy flag — reset here so a recycled pooled enemy never inherits it
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
+    this.armored = false; this.plateIntact = false; if (this._chestPlate) this._chestPlate.visible = false; // СН-42 cuirass flag/mesh reset (re-armed by makeArmored)
     // boss state (Tolo)
     this.phase = 1; this.laserCD = 3.2; this.charging = 0; this.addCD = 0; this.beamLife = 0;
     this.aim = new THREE.Vector3();
@@ -325,6 +391,7 @@ export class EnemyManager {
     e.id = ++this._idc;
     e.appearSeed = ((Math.random() * 0xffffffff) >>> 0) || 1;   // per-spawn appearance seed (colour/eyes/hair/size) — relayed to clients so looks match
     e.spawn(typeKey, def, col, name, pos, hp, speed);
+    if (def.armored) this.makeArmored(e);   // СН-42 cuirass mob — BEFORE onEnemySpawn so espawn relays the armored flag
     if (typeKey === 'boss' && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once Tolo arrives
     e.tagId = this.game._nextTagId++; e.tag = `${typeKey}#${e.tagId}`; // per-run debug tag — F3 labels + @e[type]/byName targeting
     this.active.push(e);
@@ -348,18 +415,93 @@ export class EnemyManager {
   makeCourier(e) {
     e.courier = true;
     if (!e._pack) {
-      const pb = new MeshBuilder();
-      pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
-      pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
-      pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
-      pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
-      pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
-      e._pack = new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 }));
-      e._pack.position.set(0, 1.05, 0.34); // on the back
+      const radio = _buildCourierRadio();
+      if (radio) {                                                   // detailed R-105d field radio, worn on the BACK
+        radio.scale.setScalar(COURIER_RADIO_SCALE);
+        radio.rotation.y = Math.PI / 2;                             // harness side (−X) → +Z, against the plush's back; panel/antenna face outward
+        radio.position.set(0.05, 0.7, -0.32);                       // upper back, behind the body (−Z = back; the old pack sat at +0.34 = the CHEST by mistake)
+        e._pack = radio;
+      } else {                                                      // registry async window / build fail → cheap canvas pack (also on the BACK now)
+        const pb = new MeshBuilder();
+        pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
+        pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
+        pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
+        pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
+        pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
+        e._pack = new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 }));
+        e._pack.position.set(0, 1.05, -0.30);                        // on the BACK (was +0.34 = front/chest)
+      }
       e.mesh.add(e._pack);
     }
     e._pack.visible = true;
     if (e.mat && e.mat.emissive) { e.mat.emissive.setHex(0x123a14); e.mat.emissiveIntensity = 0.55; } // teal glow so you spot it
+  }
+
+  // Mark an enemy as "armored" — wears the СН-42 steel cuirass on its chest. Front-chest hits from
+  // pistols/SMGs/buckshot ring off (no damage) until the plate shatters; rifle+/.50/RPG punch through.
+  // The plate's hitbox capsule (_plateCap) is raycast in rayHit so only shots that actually strike it block.
+  makeArmored(e) {
+    e.armored = true; e.plateIntact = true; e.plateHits = SN42.PLATE_HITS;
+    if (!e._chestPlate) {
+      const plate = _buildArmorPlate();
+      if (plate) {
+        plate.position.set(0, PLATE_Y, 0);                    // the wrap baked the forward depth into the geometry — just lift to chest height
+        e._chestPlate = plate; e.mesh.add(plate); e._plateCap = PLATE_CAP;
+        // give THIS mob its own material copies (so battle damage darkens only its plate) — colours unchanged (the original dark blued steel)
+        e._plateMats = [];
+        plate.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.userData = { base: o.material.color.clone() }; e._plateMats.push(o.material); } });
+      } else {                                                // registry async window / build fail → a simple green steel box on the chest
+        const pb = new MeshBuilder();
+        pb.box(0.34, 0.46, 0.10, 0, 0, 0, 0x70757a);          // plate body (blued steel)
+        pb.box(0.34, 0.05, 0.10, 0, 0.235, 0, 0x9aa0a6);      // lit top lip
+        const m = new THREE.Mesh(pb.build(), voxelMaterial());
+        m.position.set(0, 0.40, 0.30); m.material.userData = { base: m.material.color.clone() };
+        e._chestPlate = m; e.mesh.add(m); e._plateCap = PLATE_CAP; e._plateMats = [m.material];
+      }
+    } else {                                                  // pooled reuse: clear accumulated battle damage (restore steel colour + crumple)
+      e._chestPlate.rotation.set(0, 0, 0);
+      if (e._plateMats) for (const m of e._plateMats) { if (m.userData && m.userData.base) m.color.copy(m.userData.base); }
+      e._chestPlate.visible = true;
+    }
+    e._chestPlate.scale.setScalar(ARMOR_PLATE_SCALE);
+  }
+
+  // A pistol/SMG/buckshot round just rang off the plate: sparks + ping + VISIBLE battle damage — the steel
+  // progressively darkens (scorch/dents) toward shatter, plus a small crumple jolt. Reset on re-arm above.
+  _plateDent(e, hitPoint) {
+    if (hitPoint) this.game.effects.metalSpark(hitPoint, 5);
+    this.game.audio.armorPing();
+    const p = e._chestPlate;
+    if (!p) return;
+    const taken = SN42.PLATE_HITS - e.plateHits;              // hits the cuirass has soaked so far
+    const f = Math.max(0.4, 1 - taken * 0.13);                // darken the steel a step per hit (battered/scorched look)
+    if (e._plateMats) for (const m of e._plateMats) { if (m.userData && m.userData.base) m.color.copy(m.userData.base).multiplyScalar(f); }
+    p.rotation.z += (Math.random() - 0.5) * 0.06;             // small crumple on top of the darkening
+    p.scale.multiplyScalar(0.985);
+  }
+
+  // Knock the cuirass off — plate shatters, the mob is now vulnerable front-on. Host broadcasts to clients.
+  breakPlate(e, hitPoint) {
+    if (!e.plateIntact) return;
+    e.plateIntact = false;
+    if (e._chestPlate) e._chestPlate.visible = false;
+    const at = hitPoint || _pscratch.set(e.pos.x, e.pos.y + e.height * 0.55, e.pos.z);
+    this.game.effects.metalSpark(at, 12);
+    this.game.effects.stuffing(at, 0x6b7075, 8, 5);           // grey steel debris burst
+    this.game.audio.armorBreak();
+    const _mp = this.game.mp;
+    if (_mp && _mp.active && _mp.isHost) _mp.net.send('eplate', { id: e.id });  // tell clients to drop the plate
+  }
+
+  // Ray↔cuirass capsule (world space). Returns t if the plate is the closest thing hit (< maxT), else null.
+  // Mirrors raycastRig's capsule transform; e.mesh matrices are already refreshed by rayHit this frame.
+  _rayPlate(e, ox, oy, oz, dx, dy, dz, maxT) {
+    const c = e._plateCap, m = e.mesh.matrixWorld;
+    _pa.set(c.ax, c.ay, c.az).applyMatrix4(m);
+    _pb.set(c.bx, c.by, c.bz).applyMatrix4(m);
+    const scale = _pcol.setFromMatrixColumn(m, 0).length() || 1;
+    const t = rayCapsule(ox, oy, oz, dx, dy, dz, _pa.x, _pa.y, _pa.z, _pb.x, _pb.y, _pb.z, c.r * scale, null);
+    return (t !== null && t >= 0 && t < maxT) ? t : null;
   }
   get aliveCount() { return this.active.length; }
 
@@ -468,6 +610,7 @@ export class EnemyManager {
       if (e.noAI) { // {NoAI:1} dummy: stands still, no steering / contact damage / attacks — but still grounded, drawn, and killable (damage() is independent)
         e.vel.x = 0; e.vel.z = 0;
         e.pos.y = this.world.groundY(e.pos.x, e.pos.z);
+        if (e.squash > 0) e.squash -= dt;                            // decay the hit-squash here too — the normal path's decay (below) is skipped by the `continue`, else a shot dummy stays squashed/shrunk forever
         if (e.rig) { e.bob += dt * 6; animateRig(e, dt); }            // rigged dummy still wobbles + shows its parts
         else { e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z); e.mesh.scale.set(e.scale, e.scale, e.scale); e.mesh.rotation.set(0, e.mesh.rotation.y, 0); }
         continue;
@@ -1077,6 +1220,10 @@ export class EnemyManager {
         if (e._mwFrame !== fid) { e.mesh.updateMatrixWorld(true); e._mwFrame = fid; }
         const hit = raycastRig(e.rig, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best);
         if (hit) { best = hit.t; hitE = e; hitPart = hit.part; hp = hit.point; }
+        if (e.armored && e.plateIntact && e._plateCap) {           // СН-42 cuirass: a precise capsule on the chest
+          const tp = this._rayPlate(e, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best); // front — only a shot that
+          if (tp !== null) { best = tp; hitE = e; hitPart = PLATE_PART; hp = new THREE.Vector3(origin.x + dir.x * tp, origin.y + dir.y * tp, origin.z + dir.z * tp); } // actually strikes it rings off (1:1)
+        }
       } else {
         best = tb; hitE = e; hitPart = null; hp = new THREE.Vector3(origin.x + dir.x * tb, origin.y + dir.y * tb, origin.z + dir.z * tb);
       }
@@ -1110,6 +1257,26 @@ export class EnemyManager {
       const effective = onTarget || source === 'rocket';
       amount *= onTarget ? 1 : (source === 'rocket' ? 0.9 : 0.2);             // bullseye=1 · bazooka=0.9 · else=0.2
       this._bossHit(e, hitPoint, effective, attacker);                        // thunk + yellow crosshair, or weak tink
+    }
+    // СН-42 cuirass (host/solo; non-boss). rayHit tags a true chest-plate strike as part.kind==='plate'.
+    // Pistol/SMG/buckshot ('gun') rings off — sparks, no damage, the plate chips and finally shatters off;
+    // rifle+/.50/RPG ('ap'/blast) punches clean through (full damage) and wrecks the plate. A hit that
+    // missed the plate (head/flank/back/legs) never reaches here as 'plate' → normal damage, no sparks.
+    if (e.armored && e.plateIntact && part && part.kind === 'plate' && !e.def.boss) {
+      // One dent per shot: a shotgun fires 9–12 pellets in ONE frame — count them as a single plate chip
+      // (chip:0 for the extra pellets), else a single point-blank blast shatters the "rings-off" cuirass. AP
+      // rounds still punch through per-pellet. (Co-op: pellet claims usually batch into one host frame too.)
+      const firstThisShot = e._plateHitFrame !== this.game._frameId;
+      e._plateHitFrame = this.game._frameId;
+      const res = resolveArmorHit({ plateHit: true, plateHits: e.plateHits, amount, ap: isArmorPiercing(source), chip: firstThisShot ? 1 : 0 });
+      if (res.penetrate) { this.breakPlate(e, hitPoint); }   // plate wrecked; full damage falls through below
+      else {
+        e.plateHits = res.plateHitsLeft;
+        if (firstThisShot) this._plateDent(e, hitPoint);     // ricochet sparks + ping + crumple + progressive darken (once per shot)
+        else if (hitPoint) this.game.effects.metalSpark(hitPoint, 3);  // extra pellet off the same plate this frame: a few sparks, no second ping/chip
+        if (res.plateBreak) this.breakPlate(e, hitPoint);
+        return false;                                        // rang off — no body damage, no kill
+      }
     }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
     // Impact juice (host/solo path — the MP-client early-returns above). Gated to the LOCAL player's own

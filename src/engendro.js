@@ -30,7 +30,7 @@ export const DISMEMBER = {
   // gore-HP per severable part, as a fraction of the enemy's maxHp (KF2 dual-pool). Legs sturdiest.
   goreFrac: { head: 0.45, arm: 0.28, leg: 0.40 },
   // a hit only severs if its source can (knife can't decapitate; rifle/rocket/explosion can).
-  severSources: { gun: true, rocket: true, explosion: true, fire: false, melee: false, contact: false, wire: false, crush: true, console: true },
+  severSources: { gun: true, ap: true, rocket: true, explosion: true, fire: false, melee: false, contact: false, wire: false, crush: true, console: true },
   bigOverkillMult: 2.0,    // a single hit >= 2x body maxHp gibs everything (Doom rule)
   bleedChance: 0.25,       // % chance a sever starts a bleed (reuses EFFECTS.bleed)
   scatterOnDeath: true,    // death pops the remaining limbs as gibs (brutal plush explosion)

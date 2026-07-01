@@ -1,0 +1,488 @@
+{
+  "id": "sn42",
+  "category": "armor",
+  "target": "voxel",
+  "footprint": {
+    "w": 0.3673,
+    "h": 0.6403,
+    "d": 0.1247
+  },
+  "parts": [
+    {
+      "op": "bevelBox",
+      "id": "chest0",
+      "args": {
+        "w": 0.072,
+        "h": 0.39,
+        "d": 0.034
+      },
+      "at": [
+        -0.144,
+        0.415,
+        0.0098
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#upper_plate_dims_mm",
+      "rot": [
+        0,
+        -19.8552,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "chest1",
+      "args": {
+        "w": 0.072,
+        "h": 0.39,
+        "d": 0.034
+      },
+      "at": [
+        -0.096,
+        0.415,
+        0.0242
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#upper_plate_dims_mm",
+      "rot": [
+        0,
+        -13.5359,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "chest2",
+      "args": {
+        "w": 0.072,
+        "h": 0.34,
+        "d": 0.034
+      },
+      "at": [
+        -0.048,
+        0.39,
+        0.0329
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#upper_plate_dims_mm",
+      "rot": [
+        0,
+        -6.8637,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "chest3",
+      "args": {
+        "w": 0.072,
+        "h": 0.28,
+        "d": 0.034
+      },
+      "at": [
+        0,
+        0.36,
+        0.0358
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#upper_plate_dims_mm"
+    },
+    {
+      "op": "bevelBox",
+      "id": "chest4",
+      "args": {
+        "w": 0.072,
+        "h": 0.34,
+        "d": 0.034
+      },
+      "at": [
+        0.048,
+        0.39,
+        0.0329
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#upper_plate_dims_mm",
+      "rot": [
+        0,
+        6.8637,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "chest5",
+      "args": {
+        "w": 0.072,
+        "h": 0.39,
+        "d": 0.034
+      },
+      "at": [
+        0.096,
+        0.415,
+        0.0242
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#upper_plate_dims_mm",
+      "rot": [
+        0,
+        13.5359,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "chest6",
+      "args": {
+        "w": 0.072,
+        "h": 0.39,
+        "d": 0.034
+      },
+      "at": [
+        0.144,
+        0.415,
+        0.0098
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#upper_plate_dims_mm",
+      "rot": [
+        0,
+        19.8552,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "flap0",
+      "args": {
+        "w": 0.072,
+        "h": 0.305,
+        "d": 0.034
+      },
+      "at": [
+        -0.1,
+        0.1525,
+        0.0078
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#lower_plate_dims_mm",
+      "rot": [
+        0,
+        -23.7495,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "flap1",
+      "args": {
+        "w": 0.072,
+        "h": 0.305,
+        "d": 0.034
+      },
+      "at": [
+        -0.05,
+        0.1525,
+        0.0243
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#lower_plate_dims_mm",
+      "rot": [
+        0,
+        -12.4074,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "flap2",
+      "args": {
+        "w": 0.072,
+        "h": 0.305,
+        "d": 0.034
+      },
+      "at": [
+        0,
+        0.1525,
+        0.0298
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#lower_plate_dims_mm"
+    },
+    {
+      "op": "bevelBox",
+      "id": "flap3",
+      "args": {
+        "w": 0.072,
+        "h": 0.305,
+        "d": 0.034
+      },
+      "at": [
+        0.05,
+        0.1525,
+        0.0243
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#lower_plate_dims_mm",
+      "rot": [
+        0,
+        12.4074,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "flap4",
+      "args": {
+        "w": 0.072,
+        "h": 0.305,
+        "d": 0.034
+      },
+      "at": [
+        0.1,
+        0.1525,
+        0.0078
+      ],
+      "mat": "gunGrey",
+      "src": "dossier#lower_plate_dims_mm",
+      "rot": [
+        0,
+        23.7495,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "flapSeam0",
+      "args": {
+        "w": 0.215,
+        "h": 0.009,
+        "d": 0.03
+      },
+      "at": [
+        0,
+        0.105,
+        0.0438
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#shape_silhouette"
+    },
+    {
+      "op": "bevelBox",
+      "id": "flapSeam1",
+      "args": {
+        "w": 0.215,
+        "h": 0.009,
+        "d": 0.03
+      },
+      "at": [
+        0,
+        0.205,
+        0.0438
+      ],
+      "mat": "paintBlack",
+      "src": "dossier#shape_silhouette"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetWaist0",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        -0.12,
+        0.3,
+        0.0377
+      ],
+      "mat": "steel",
+      "src": "dossier#plate_connection"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetWaist1",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        -0.06,
+        0.3,
+        0.0513
+      ],
+      "mat": "steel",
+      "src": "dossier#plate_connection"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetWaist2",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        0,
+        0.3,
+        0.0558
+      ],
+      "mat": "steel",
+      "src": "dossier#plate_connection"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetWaist3",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        0.06,
+        0.3,
+        0.0513
+      ],
+      "mat": "steel",
+      "src": "dossier#plate_connection"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetWaist4",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        0.12,
+        0.3,
+        0.0377
+      ],
+      "mat": "steel",
+      "src": "dossier#plate_connection"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetShoulder0",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        -0.132,
+        0.56,
+        0.034
+      ],
+      "mat": "steel",
+      "src": "dossier#harness_straps"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetShoulder1",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        -0.094,
+        0.56,
+        0.0447
+      ],
+      "mat": "steel",
+      "src": "dossier#harness_straps"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetShoulder2",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        0.094,
+        0.56,
+        0.0447
+      ],
+      "mat": "steel",
+      "src": "dossier#harness_straps"
+    },
+    {
+      "op": "cylinder",
+      "id": "rivetShoulder3",
+      "args": {
+        "r": 0.0085,
+        "h": 0.013,
+        "axis": "z"
+      },
+      "at": [
+        0.132,
+        0.56,
+        0.034
+      ],
+      "mat": "steel",
+      "src": "dossier#harness_straps"
+    },
+    {
+      "op": "bevelBox",
+      "id": "shoulderStrap0",
+      "args": {
+        "w": 0.05,
+        "h": 0.12,
+        "d": 0.02
+      },
+      "at": [
+        -0.115,
+        0.6,
+        -0.0062
+      ],
+      "mat": "leather",
+      "src": "dossier#harness_straps",
+      "rot": [
+        -58,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "shoulderStrap1",
+      "args": {
+        "w": 0.05,
+        "h": 0.12,
+        "d": 0.02
+      },
+      "at": [
+        0.115,
+        0.6,
+        -0.0062
+      ],
+      "mat": "leather",
+      "src": "dossier#harness_straps",
+      "rot": [
+        -58,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "bevelBox",
+      "id": "waistBelt",
+      "args": {
+        "w": 0.285,
+        "h": 0.044,
+        "d": 0.05
+      },
+      "at": [
+        0,
+        0.25,
+        0.0278
+      ],
+      "mat": "leather",
+      "src": "dossier#harness_straps"
+    }
+  ]
+}

@@ -268,6 +268,18 @@ export class Effects {
     }
   }
 
+  // Sparks only — a round glancing off metal (the СН-42 cuirass ricochet); no brown dust plume.
+  metalSpark(pos, n = 6) {
+    const sp = this._mSpark || (this._mSpark = new THREE.Color(0xffe08a));
+    for (let i = 0; i < n; i++) {
+      this._spawn({
+        pos, vel: _v.set(randRange(-1, 1), randRange(0, 1.2), randRange(-1, 1)).multiplyScalar(randRange(2.5, 6)),
+        life: randRange(0.12, 0.34), size: randRange(0.03, 0.07),
+        grav: -16, drag: 1, color: sp, bounce: 0, floorY: -999,
+      });
+    }
+  }
+
   shell(pos, rightDir, opts = {}) {
     const onBounce = opts.sound === 'fiftyBrass'
       ? ((pt, impactVel, bounceIndex) => { if (this.game.audio && this.game.audio.fiftyBrassLand) this.game.audio.fiftyBrassLand(impactVel, bounceIndex); })
