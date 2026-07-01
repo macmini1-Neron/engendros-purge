@@ -81,6 +81,17 @@ async function peerSetup() {
   return { opts, mode };
 }
 
+// Shared ICE config for the voice mesh (voice.js): the *exact* same STUN/TURN + force-relay
+// policy the data plane uses, so voice NAT/TURN traversal matches data connectivity. Returns a
+// plain RTCConfiguration for `new RTCPeerConnection(await iceConfig())`.
+export async function iceConfig() {
+  try {
+    const setup = await peerSetup();
+    if (setup && setup.opts && setup.opts.config) return setup.opts.config;
+  } catch (e) {}
+  return { iceServers: DEFAULT_ICE_SERVERS };
+}
+
 function peerConnectionFor(conn) {
   if (!conn) return null;
   const direct = [conn.peerConnection, conn._peerConnection, conn.pc, conn._pc];
