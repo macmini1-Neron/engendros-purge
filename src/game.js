@@ -30,6 +30,7 @@ import { Fonoteka, GramophoneManager, ensureGramophoneSpec, placeGramophones } f
 import { PokerTable } from './poker-table.js';
 import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
+import { VoiceChat } from './voice.js';
 import { Engine } from './engine.js';
 import { SimWorker } from './sim-worker-client.js';
 import { Input } from './input.js';
@@ -186,6 +187,7 @@ class Game {
     this.items = itemBankFromMeta(this.meta); // account item ledger (source of truth for ownership); _saveMeta serialises it back. Phase-1: attached but no reader yet.
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
     this.mp = new MP(this); // multiplayer co-op (dormant until host/join)
+    this.voice = new VoiceChat(this); // co-op proximity voice (opt-in; dormant until enabled + in a run)
     this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
     this._molTmp = new THREE.Vector3(); this._molTmp2 = new THREE.Vector3(); this._molTmp3 = new THREE.Vector3();
 
@@ -1353,6 +1355,7 @@ class Game {
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);
+    this.voice.update(dt); // proximity voice: listener+panner+occlusion (after mp.update so remote .pos is fresh)
     this._updateAdaptiveMusic();
     // World clock advances every frame in every mode. Host/solo = authoritative (advances the truth + fires timed
     // transitions via _stepMinute); clients predict locally for smooth HH:MM and reconcile to the host's 'night' push.
