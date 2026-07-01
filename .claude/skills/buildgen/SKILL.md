@@ -1,30 +1,24 @@
 ---
 name: buildgen
-description: Use when designing, researching, or building ANY map building / structure / POI for the ENGENDROS PURGE open-world map — a Soviet factory hall (цех), ТЭЦ + chimneys + cooling tower, panelák / city block, school / admin block, airfield hangar, water tower, kolkhoz barn, ruins, bunker, watchtower, or any enterable or landmark structure. Drives the data-driven buildgen harness (sibling of modelgen) — mandatory player-intent questionnaire + reference-image vision-confirm gate, then sourced dossier → JSON spec → lint → viewer self-verify → IN-GAME verify → registry placement. SUPERSEDES voxel-building-modeling. Trigger even when the user just says "build the school / make a factory / add a tower" — not only when they say "skill" or "buildgen".
+description: Use when designing, researching, or building ANY map building / structure / POI for the ENGENDROS PURGE open-world map — a Soviet factory hall (цех), ТЭЦ + chimneys + cooling tower, panelák / city block, school / admin block, airfield hangar, water tower, kolkhoz barn, ruins, bunker, watchtower, or any enterable or landmark structure. Drives the data-driven buildgen harness (sibling of modelgen) — mandatory player-intent questionnaire + reference-image vision-confirm gate, then sourced dossier → JSON spec → lint → viewer self-verify → IN-GAME verify → placement. Also owns making buildings DESTRUCTIBLE — wiring them to the live voxel-cell + gravity-collapse destruction engine (BuildingDestruct, as shipped on ?map=forest) — so trigger on "make it destructible / the building should break / collapse" too. SUPERSEDES voxel-building-modeling. Trigger even when the user just says "build the school / make a factory / add a tower" — not only when they say "skill" or "buildgen".
 ---
 
 # buildgen — building harness (ENGENDROS PURGE)
 
 Build believable, real-referenced **Soviet structures** as data-driven specs, then self-verify
-them in a viewer AND in the running game. Harness: `tools/buildgen/` + `src/buildings/` +
-`buildings/<id>/`. **Design spec (source of truth for the harness itself):**
-`docs/superpowers/specs/2026-06-10-buildgen-harness-design.md`. Top layer of the modeling
-family: guns → `voxel-weapon-modeling`, room props → `modelgen`, buildings → **this**.
+them in a viewer AND in the running game. Harness (all LIVE on main): `tools/buildgen/` +
+`src/buildings/` + `buildings/<id>/`, plus the destruction runtime
+`src/destruct-lab/building-destruct.js` (see the Destruction section). **Design specs:**
+`docs/superpowers/specs/2026-06-10-buildgen-harness-design.md` (harness) and
+`docs/superpowers/specs/2026-06-20-destruct-demo-merge-design.md` (destruction model). Top
+layer of the modeling family: guns → `voxel-weapon-modeling`, room props → `modelgen`,
+buildings → **this**.
 
 **Scope split:** the harness owns the **exterior shell + skeleton + entrances + colliders**.
 Interiors are furnished by **composing modelgen props** (`propRef`) plus a few hand-coded
 interactive hooks (door/gate on E, behind `hostSim`). Golden references: `src/gatehouse.js`
 (interior composed object-by-object) and `src/airfield.js` (`glassPane` — real see-through
 windows that already ship).
-
-## ⚠ Bootstrap status (delete this block once the harness lands)
-
-As of 2026-06-10 the harness is **designed, not yet built**. If `tools/buildgen/lint.mjs` does
-not exist, the harness IS the first deliverable — implement it per the design spec's build
-order, prove it on the `buildings/_smoke/` fixture, and only then author the first real
-building. **Hand-building geometry in `world.js` as a "temporary" fallback is FORBIDDEN** —
-that is the exact failure mode (1-px walls, missing floors, stretched textures, open-top
-boxes) this harness exists to replace.
 
 ## The laws (validator/assert-enforced — author right the first time)
 
@@ -58,7 +52,8 @@ boxes) this harness exists to replace.
     props/interior walls must not make an "enterable" building impassable in practice.
 14. **Perf guard-rails (WARN; numbers provisional)** — 1 merged mesh per material; ≤ 8
     materials (12 landmark); ≤ 32 collider AABBs (64 large enterable); textures ≤ 512²;
-    triangles WARN > 8k / ERROR > 20k.
+    triangles WARN > 8k / ERROR > 20k. *(The collider cap governs the STATIC placement path;
+    a destructible building replaces plan colliders with per-cell AABBs — see Destruction.)*
 
 Diagnostics: **ERROR** blocks approval; **WARN** passes only with a one-line justification in
 `BUILD.md`; INFO is advisory. Gate everything with the pre-flight linter:
@@ -94,7 +89,9 @@ space; `face: "N"|"S"|"E"|"W"` resolves in local space **before** world `yaw`. `
 
 **Materials by name** (`src/buildings/palette.js`, extends the modelgen palette): tiled
 CanvasTextures `brickRed/brickGrey`, `concretePanel` (seam grid), `corrugatedTin`, `plaster`,
-plus glass. Raw hex in a spec is rejected. **Glass = the airfield recipe** (`glassPane`):
+plus glass. Raw hex in a spec is rejected. **The material also decides how the surface FIGHTS
+BACK** — each `mat` maps to a destruction tier (bullet chip vs breach vs shoot-through; see
+the Destruction section) — so choose it as level design, not just as paint. **Glass = the airfield recipe** (`glassPane`):
 `transparent: true, opacity ~0.3, DoubleSide, depthWrite: false`, separate pane mesh inside the
 window gap — `depthWrite:false` sidesteps sorting artefacts; keep panes few and coplanar-free.
 
@@ -150,6 +147,102 @@ missing its socle and cornice reads as a cardboard box no matter the texture.
 - Interiors get a grounding shadow band at wall/floor junctions (the layered-shading `slot`
   tone) and a ceiling lamp if enterable — gatehouse precedent.
 
+## Destruction — buildings break (the LIVE forest model)
+
+Every new building must decide how it breaks. The live engine is **`BuildingDestruct`**
+(`src/destruct-lab/building-destruct.js`) — the model shipped on `?map=forest` (PR #102/#103,
+the buildgen `_smoke` cottage + crates + colonnade in `src/forestscene.js` are the working
+reference). ⚠ The older breach-only engine from PR #104 (`src/buildings/destructible.js`) was
+**CLOSED unmerged — a dead end; never reference or resurrect it.**
+
+**How it works — "lazy split":** every solid `box` prim from `planBuild(spec).prims` is diced
+into a lattice of ~0.45 m **cells**, each tagged with the prim's `mat`. Idle cost is zero: the
+pristine `buildBuilding()` merged mesh renders until a material bucket takes its first damage;
+then only that bucket is rebuilt from its surviving cells with the SAME triplanar metric UVs +
+seeded CanvasTexture — the swap is seamless. Glass panes are hero parts (shatter burst + a
+clinging jagged remnant); the `sign` op keeps its lettered mesh and **detaches and tumbles**
+when the wall cells behind it die (< 40 % backing alive).
+
+**Materials are the damage model** (`MAT_MAP` in building-destruct.js → `MATERIALS` tiers in
+`src/destruct.js`):
+
+| spec `mat` | destruct material | tier | how it behaves under fire |
+|---|---|---|---|
+| `glassPane` | glass | 0 | any hit shatters; round passes through |
+| `wood`, `plaster` | wood | 1 | SMG/rifle chew through it; degradable soft cover |
+| `corrugatedTin` | sheetmetal | 2 | rifle chews slowly, HMG fast; shoot-through |
+| `brickRed`/`brickGrey` | brick | 3 | bullets only chip; **HE (bazooka) breaches** |
+| `concrete`/`concretePanel` | concrete | 4 | shrugs the bazooka; tier-4 blasts + APFSDS tunnel |
+| `reinforcedConcrete` | reinforcedConcrete | 6 | nothing in the current roster cracks it (bunker armour) |
+
+Weapon side: `PEN_BY_CLASS` (`weapons.js`) — pistol 0 · smg/rifle/shotgun 1 · sniper/hmg 2 ·
+launcher 4 · cannon 5. `pen < tier` ⇒ cosmetic chip; `pen ≥ tier` chews cell HP → carves it;
+on tier ≤ 2 the round carries on through the hole. HE removes every cell with `tier ≤
+blast.tier` inside r1 (default blast tier 3 = opens brick, not concrete); APFSDS drills a clean
+tunnel until it meets a cell with `tier > pen`. Per-building physics override via the `matMap`
+ctor option — a bunker passes `{ concrete: 'reinforcedConcrete' }` and keeps its visual
+material while upgrading the armour.
+
+**Gravity — nothing levitates:** after every event a support flood runs from grounded cells
+(bottom at local y ≈ 0) through the cell adjacency graph; anything unreached detaches as ONE
+textured tumbling chunk (slow heavy fall, rests ON the terrain). Shoot the walls out → the roof
+caves in; knock the columns out → the slab drops (the colonnade). Digging under a wall
+(`undermine`, via the shovel/craters deform field) kills the footing cells and the same cascade
+runs. Concrete breaks sprout rebar rods at the break faces.
+
+### Authoring rules for a destructible building
+
+- **Box massing only is fully destructible.** `_voxelize` dices only `kind:'box'` solids —
+  wedge/prism/cyl prims (gable/hip/sawtooth roofs, chimneys, cooling towers) get NO cells, so
+  on the destructible path they have neither collision nor damage. Until `_voxelize` learns
+  wedges/cyls: author destructible buildings as box massing (`shellBox` / `floorSlab` /
+  `flatRoof` / `parapet` / `column` — the `_smoke` cottage pattern); a gabled or cylindrical
+  landmark ships static, or the engine gets extended FIRST. **Never mix wedge + box prims in
+  one material on a destructible building** — the first damage to that bucket rebuilds it from
+  cells only and the wedge geometry silently VANISHES.
+- **Think in cells:** CELL = 0.45 m → the `_smoke` cottage ≈ 1200 cells ≈ 1200 grid-indexed
+  AABBs (fine). Cell count scales with wall area — a 60 m цех would mint tens of thousands.
+  Keep destructible massing small/medium; oversized landmarks stay static for now.
+- Walls ≤ ~0.45 m thick stay **one cell thick** → a breach goes clean through (desirable).
+- Compose materials as encounter design: the wood door players shoot through, the brick walls
+  a bazooka opens, the concrete core that survives the wave — that's level design now.
+- Fire: `MATERIALS` carry `fuel`, but BuildingDestruct cells do **not burn yet** — don't
+  promise molotov-breaching in an intent answer.
+
+### The two placement paths — pick exactly ONE per building
+
+- **Static** (indestructible): `placeBuilding(world, scene, id, x, z, yaw)` (`registry.js`) —
+  plan colliders as static AABBs, yaw ∈ {0, 90, 180, 270}. For background/landmark buildings.
+- **Destructible** (the forest pattern — `forestscene.js _placeCottage` is the reference):
+
+  ```js
+  const spec  = await (await fetch('buildings/<id>/spec.json', { cache: 'no-store' })).json();
+  const built = buildBuilding(spec, { skipPropCheck: true });
+  built.group.position.set(x, terrainMinUnderFootprint, z); scene.add(built.group);
+  const bd = new BuildingDestruct({ group: built.group, prims: planBuild(spec).prims,
+                                    scene, debris, seed: spec.seed, world, game });
+  bd.netId = '<unique-stable-id>'; forestScene.buildings.push(bd);
+  ```
+
+  Collision comes from the per-cell AABBs BuildingDestruct registers (`box.downer` routes
+  `weapons.js _destructHit` back; dead cells retire their boxes → you can WALK through a
+  breach). **Never also `placeBuilding` the same building** — double colliders. ⚠ **Yaw must
+  be 0 today**: the crush/undermine bridge assumes an unrotated group — extend that math before
+  rotating a destructible building. Seat the group on the terrain MIN under the footprint.
+  `eager: true` renders straight from cells — for prim-only structures without a buildgen spec
+  (crates, the colonnade).
+- On `?map=forest` register into `game.forestScene.buildings` — the scene is the
+  `world.demoBuilding` **facade** that fans `applyBlast`/`applyPenetration`/`applyCrush`/
+  `undermine` + `update(dt)` + co-op sync to every building. A destructible building on a
+  future map needs the same facade contract wired once.
+
+### Co-op
+
+Host authority is built in (`applyHit/applyBlast/applyPenetration` gate on `_hostSim`); the
+host streams `bdestroy {id, cells}` deltas and `netSnapshot()` covers late join. `bd.netId`
+must be unique AND identical on every peer — placement must be deterministic (fixed coords or
+the seeded layout rng, never `Math.random`). The 2-PC live test remains a manual gate.
+
 ## The pipeline — per building, in order
 
 ### Phase 0 — Scope exactly ONE building
@@ -159,9 +252,11 @@ Era + type precisely ("1950s brick zavod admin block", not "an office"). Never b
 Never start authoring before this. Standard set: enterable or façade-only? · furniture-ready
 interior? · real transparent windows? · roof access / verticality? · gameplay role
 (cover / landmark / loot-hub / hot-zone / through-route)? · entrances count + sides? ·
-destructible? · interior lighting day/night? Freeze answers into `spec.intent` (law 11
-enforces them). Question thresholds live in the player-friendly-building research doc — keep
-both in sync.
+**destructible?** · interior lighting day/night? Freeze answers into `spec.intent` (law 11
+enforces them). The destructible answer picks the placement path AND constrains the massing
+(box prims only, size budget, material damage-model — see Destruction); on terrain maps
+(`?map=forest`) destructible is the default expectation, so a "no" needs a reason. Question
+thresholds live in the player-friendly-building research doc — keep both in sync.
 
 ### Phase 2 — REFERENCE GATE (vision-confirm, mandatory)
 Owner drops reference images onto the viewer (upload endpoint saves to `buildings/<id>/ref/`)
@@ -194,30 +289,50 @@ open `tools/buildgen/viewer.html?model=<id>`, drive `window.VIEWER` via Playwrig
   `src/buildings/*.js` need a hard reload with a fresh `?cb=`.
 
 ### Phase 6 — IN-GAME verification (the viewer proves the model; only the game proves the building)
-Register + `placeBuilding` on the feature branch, serve fresh, then in the real game: fly the
-dev freecam (`Ctrl+F` / `N` / `?fly=1`) — **day AND night exterior**, the 300 m fog approach,
-and a **first-person interior walk with the real player controller** (collide with walls, climb
+Place it on the feature branch via its chosen path (static `placeBuilding` / destructible
+BuildingDestruct registration), serve fresh, then in the real game: fly the dev freecam
+(`Ctrl+F` / `N` / `?fly=1`) — **day AND night exterior**, the 300 m fog approach, and a
+**first-person interior walk with the real player controller** (collide with walls, climb
 the steps, use every exit). Console errors = 0; `GAME.world.boxes` delta sane; confirm the
 served `?v=` matches disk (stale-server trap).
 
+**Destructible buildings additionally** (on `?map=forest` the forced `DEMO_LOADOUT` — stg44 /
+bazooka / molotovs / apfsds — covers every damage class): rifle chips brick but chews wood ·
+bazooka breaches a brick wall and the player **walks through the hole** (collision retired) ·
+APFSDS tunnels a wall · shoot out enough wall that an orphaned roof section FALLS and rests on
+the terrain · the sign detaches when its backing wall dies · panes shatter · check
+`GAME.forestScene.buildings[i].stats()` (cells/carved/fallers) and 0 console errors throughout.
+
 ### Phase 7 — Approve + integrate
 Show the final renders + in-game shots, then **end with an AskUserQuestion proposing CONCRETE
-next steps** (named defects/`needs[]` items — never "anything else?"). On approval: `world.js`
-gains a single `placeBuilding(...)` call (never inline geometry), add an Admin viewer entry,
-hand interactive hooks (doors/gates on E) their `hostSim` guard, cache-bust ritual if it ships.
+next steps** (named defects/`needs[]` items — never "anything else?"). On approval: the world
+gains a single placement call — static `placeBuilding(...)` or the destructible
+BuildingDestruct registration in the map scene (never inline geometry) — add an Admin viewer
+entry, hand interactive hooks (doors/gates on E) their `hostSim` guard, cache-bust ritual if
+it ships.
 
 ## Definition of done
 
 Lint clean · tests green · canonical render set + ghost + collider + 300 m shot at the FINAL
 spec · in-game day/night/interior shots · 0 console errors · ≥ 2 walkable exits · **no readable
 texture repeat at q34/graze and the roof is not one flat pattern** (variation rules above) ·
-every PNG actually `Read` · `BUILD.md` updated · WARNs justified.
+if destructible: **breach + walk-through + orphan-collapse + sign/pane detach verified in-game**
+(Phase 6 list) and the co-op 2-PC gate is flagged as pending · every PNG actually `Read` ·
+`BUILD.md` updated · WARNs justified.
 
 ## Gotchas / red flags
 
 - **No building authored directly in `world.js`** — spec → lint → viewer → in-game → registry,
   always. This is the #1 anti-backslide rule.
 - **Batching** ("let's do the whole district") → stop; one building per cycle.
+- **Never double-place**: a building goes through `placeBuilding` OR BuildingDestruct, not
+  both — otherwise it has two collider sets and dead cells leave invisible walls.
+- **PR #104 (`src/buildings/destructible.js`) is a CLOSED dead end** — the live model is
+  `src/destruct-lab/building-destruct.js`. Don't copy patterns from the closed PR.
+- **Wedge/cyl prims on a destructible building** = invisible-to-bullets AND vanish on the
+  bucket's first rebuild (see Destruction) — box massing only until `_voxelize` is extended.
+- **Destructible + rotation don't mix yet** — yaw 0 only (crush/undermine bridge assumes an
+  unrotated group).
 - **Skipping a gate** (intent or reference) → generic building, redo. They are not optional.
 - **node --test on a bare dir FAILS on Node 25** → always the glob. No `package.json` anywhere;
   operator modules must NOT import `three`.
