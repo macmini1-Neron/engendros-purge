@@ -81,6 +81,7 @@ export class VoiceChat {
     this._buildCrackle();
     this._initStations();
     if (!this.micDenied) this._buildMicGraph();
+    this._rescanSpeakers();   // radios deployed before voice was enabled had a no-op setSpeaker (ctx was null) — register them now
     this.enabled = true;
     // if a run is already live, join the mesh now
     if (this.game.mp && this.game.mp.active) this._enterMesh();
@@ -399,6 +400,12 @@ export class VoiceChat {
     }
     sp.freq = freq; sp.on = !!on;
     this._setPos(sp.panner, { x, y: (y || 0) + 0.7, z });
+  }
+  // Register a loudspeaker for every already-deployed R-105Д — setSpeaker no-ops while ctx is null (voice off),
+  // so a radio placed before you opted into voice would otherwise never get a loudspeaker. Called from enable().
+  _rescanSpeakers() {
+    const b = this.game.build; if (!this.ctx || !b || !b.structures) return;
+    for (const s of b.structures) if (s.kind === 'r105') this.setSpeaker(s.id, s.pos.x, s.pos.y, s.pos.z, s.freq || 40.150, s.on);
   }
   removeSpeaker(id) {
     const sp = this.speakers.get(id); if (!sp) return;
