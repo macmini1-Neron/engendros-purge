@@ -122,7 +122,7 @@ export class RadioPanel {
   }
 
   _pickup() {
-    const s = this.struct; this.struct = null; this.close();
+    const s = this.struct; this.close();   // keep struct set so close() sees wasStruct → setRadioOn(false) (stops the in-ear channel monitor); pickupR105 removes the loudspeaker → radio is fully OFF in the backpack
     if (s && this.game.build && this.game.build.pickupR105) this.game.build.pickupR105(s);
   }
 
