@@ -39,6 +39,12 @@ export class RadioPanel {
         // side legend / log (status + controls)
         '<div class="rp-legend" style="position:absolute;top:50%;left:100%;transform:translateY(-50%);margin-left:26px;min-width:236px;font-family:\'Share Tech Mono\',\'Courier New\',monospace;color:#8fe6b0;background:linear-gradient(180deg,rgba(6,14,9,.93),rgba(4,10,7,.93));border:1px solid rgba(90,220,150,.28);border-radius:8px;padding:14px 16px;box-shadow:0 10px 40px rgba(0,0,0,.6),inset 0 0 22px rgba(0,30,15,.5);">' +
           '<div style="font-size:15px;font-weight:800;letter-spacing:3px;color:#c9ffe0;border-bottom:1px solid rgba(90,220,150,.25);padding-bottom:7px;margin-bottom:9px;">📻 Р-105Д «АСТРА»</div>' +
+          // live TX indicator — lights red while you hold radio-PTT (X); the bar shows your live mic level so you can see you're being picked up
+          '<div class="rp-tx" style="display:flex;align-items:center;justify-content:center;gap:9px;margin:3px 0 11px;padding:7px 10px;border-radius:6px;background:rgba(6,14,9,.7);border:1px solid rgba(90,220,150,.25);opacity:.5;transition:opacity .12s,background .12s,border-color .12s;">' +
+            '<span class="rp-tx-dot" style="width:10px;height:10px;border-radius:50%;background:#5a6a60;transition:background .1s,box-shadow .1s;"></span>' +
+            '<b class="rp-tx-label" style="font-size:13px;letter-spacing:2px;color:#8fe6b0;min-width:104px;text-align:center;">ПРИЁМ</b>' +
+            '<span style="width:64px;height:7px;background:rgba(0,0,0,.45);border-radius:4px;overflow:hidden;"><i class="rp-tx-level" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#45e0cf,#ff5a4a);transition:width .05s linear;"></i></span>' +
+          '</div>' +
           '<div style="' + row + '"><span style="opacity:.6">СТАТУС</span><b class="rp-status">○ ВЫП</b></div>' +
           '<div style="' + row + '"><span style="opacity:.6">ЧАСТОТА</span><b class="rp-lfreq" style="color:#7dffb0">40.150 MHz</b></div>' +
           '<div style="' + row + '"><span style="opacity:.6">ДИАПАЗОН</span><b style="opacity:.85">36.0–46.1</b></div>' +
@@ -56,6 +62,10 @@ export class RadioPanel {
     this.statusEl = wrap.querySelector('.rp-status');
     this.lfreqEl = wrap.querySelector('.rp-lfreq');
     this.signalEl = wrap.querySelector('.rp-signal');
+    this.txEl = wrap.querySelector('.rp-tx');
+    this.txDot = wrap.querySelector('.rp-tx-dot');
+    this.txLabel = wrap.querySelector('.rp-tx-label');
+    this.txLevel = wrap.querySelector('.rp-tx-level');
     this._refresh();
   }
 
@@ -67,17 +77,36 @@ export class RadioPanel {
     this.freqEl.style.textShadow = this.on ? '0 0 8px rgba(80,255,150,.8)' : 'none';
     if (this.lfreqEl) this.lfreqEl.textContent = f + ' MHz';
     if (this.statusEl) { this.statusEl.textContent = this.on ? '● ЗАП' : '○ ВЫП'; this.statusEl.style.color = this.on ? '#5dff9b' : '#c0554a'; }
-    if (this.signalEl) {                                                    // live signal readout — reads voice.js preset stations
-      let sig = '—', col = '#5a6a60';
-      if (this.on) {
-        const sts = (this.game.voice && this.game.voice.stations) || [];
-        let best = 999; for (const st of sts) best = Math.min(best, Math.abs(this.freq - st.freq) * 1000);
-        if (best < 8) { sig = '████ станция'; col = '#7dffb0'; }
-        else if (best < 25) { sig = '▓▒░ шум'; col = '#e0c060'; }
-        else { sig = '· · · тихо'; col = '#5a6a60'; }
-      }
-      this.signalEl.textContent = sig; this.signalEl.style.color = col;
+    this._refreshSignal();
+  }
+  _refreshSignal() {                                                        // live signal readout — reads voice.js preset stations
+    if (!this.signalEl) return;
+    let sig = '—', col = '#5a6a60';
+    if (this.on) {
+      const sts = (this.game.voice && this.game.voice.stations) || [];
+      let best = 999; for (const st of sts) best = Math.min(best, Math.abs(this.freq - st.freq) * 1000);
+      if (best < 8) { sig = '████ станция'; col = '#7dffb0'; }
+      else if (best < 25) { sig = '▓▒░ шум'; col = '#e0c060'; }
+      else { sig = '· · · тихо'; col = '#5a6a60'; }
     }
+    this.signalEl.textContent = sig; this.signalEl.style.color = col;
+  }
+  // Per-frame while the panel is open: live TX indicator + mic meter (your voice) + reception signal.
+  _startLive() { if (this._raf) return; const tick = () => { if (!this.open_) { this._raf = null; return; } this._refreshLive(); this._raf = requestAnimationFrame(tick); }; this._raf = requestAnimationFrame(tick); }
+  _stopLive() { if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; } }
+  _refreshLive() {
+    const v = this.game.voice;
+    const voiceOff = !(v && v.enabled), noMic = !!(v && v.enabled && v.micDenied);
+    const tx = !!(v && v.enabled && v.radioTx);                            // holding radio-PTT (X) with radio ON + mic
+    const lvl = (v && v.enabled && v.getMicLevel) ? v.getMicLevel() : 0;
+    if (this.txEl) { this.txEl.style.opacity = tx ? '1' : '.5'; this.txEl.style.background = tx ? 'rgba(60,12,10,.82)' : 'rgba(6,14,9,.7)'; this.txEl.style.borderColor = tx ? 'rgba(255,90,74,.6)' : 'rgba(90,220,150,.25)'; }
+    if (this.txDot) { this.txDot.style.background = tx ? '#ff5a4a' : '#5a6a60'; this.txDot.style.boxShadow = tx ? '0 0 9px 2px rgba(255,80,64,.9)' : 'none'; }
+    if (this.txLabel) {
+      this.txLabel.textContent = voiceOff ? 'голос выкл' : noMic ? 'нет микро' : tx ? '● ПЕРЕДАЧА' : 'ПРИЁМ';
+      this.txLabel.style.color = voiceOff || noMic ? '#7a8a80' : tx ? '#ff8a7a' : '#8fe6b0';
+    }
+    if (this.txLevel) this.txLevel.style.width = Math.min(100, lvl * 320).toFixed(0) + '%';
+    this._refreshSignal();
   }
 
   tune(deltaHz) {
@@ -110,17 +139,21 @@ export class RadioPanel {
     this.open_ = true;
     this.el.style.display = 'flex';
     this.game._radioPanelOpen = true;                       // freezes movement (player.controlsPaused) but the SIM keeps running → live tuning audio
+    if (this.game.audio && this.game.audio.setUiMusicDuck) this.game.audio.setUiMusicDuck(0); // silence other game music → the radio static/station/voice is heard cleanly
     this.game._intentionalUnlock = this.game.input.locked; this.game.input.exitLock(); // free the cursor WITHOUT the pause-on-unlock (mirrors the game's menu pattern)
     window.addEventListener('keydown', this._onKey, true);
     window.addEventListener('wheel', this._onWheel, { passive: false, capture: true });
+    this._startLive();   // live TX/mic/signal readout while open
   }
 
   close() {
     if (!this.open_) return;
     const wasStruct = !!this.struct;
     this.open_ = false; this.struct = null;
+    this._stopLive();
     if (this.el) this.el.style.display = 'none';
     this.game._radioPanelOpen = false;
+    if (this.game.audio && this.game.audio.setUiMusicDuck) this.game.audio.setUiMusicDuck(1); // restore game music
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('wheel', this._onWheel, true);
     if (wasStruct && this.game.voice && this.game.voice.setRadioOn) this.game.voice.setRadioOn(false); // deployed radio keeps broadcasting via its loudspeaker, not in your ear
