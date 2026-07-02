@@ -176,8 +176,10 @@ export class Forest {
       // Uniform candidates over the whole 2500 m map, accepted ∝ the forest biome weight; the massif
       // dieback zone grows NO live trees (snags/deadwood come with the massif zone pass), and nothing
       // roots on roads or parcel pads (zonaInfraClear).
+      const clip = this.world.zonaClip; // zone-isolation dev mode: nothing grows outside the zone
       for (let i = 0; i < 90000; i++) {
         const x = (rng() * 2 - 1) * (HALF - 8), z = (rng() * 2 - 1) * (HALF - 8);
+        if (clip && !clip.contains(x, z)) continue;
         const w = biomeWeightsAt(x, z);
         if (w.dead > 0.25) continue;
         if (rng() >= w.forest * 0.85) continue;
@@ -231,9 +233,11 @@ export class Forest {
     if (this.world.mapId === 'zona') {
       // biome-driven groundcover: grass tufts on the steppe + reed-reading tufts on the swamp fringe,
       // shrubs/bushes thicken the woods, flowers on open meadow. Same infra keep-out as trees.
+      const clip = this.world.zonaClip;
       const tryBiome = (kind, attempts, accept) => {
         for (let i = 0; i < attempts; i++) {
           const x = (rng() * 2 - 1) * (HALF - 6), z = (rng() * 2 - 1) * (HALF - 6);
+          if (clip && !clip.contains(x, z)) continue;
           const w = biomeWeightsAt(x, z);
           if (rng() >= accept(w)) continue;
           if (!zonaInfraClear(terr.seed, x, z, 1.2)) continue;

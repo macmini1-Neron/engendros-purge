@@ -114,10 +114,19 @@ class Game {
       const saved = localStorage.getItem('engendros_map');
       return (saved === 'steppe' || saved === 'demo' || saved === 'forest' || saved === 'zona') ? saved : 'arena';
     } catch (e) { return 'arena'; } })();
+    // DEV zone-isolation mode («ЗОНА 704» detailing): ?zone=N (or the /zone console command via
+    // localStorage) builds ONLY that working zone — void beyond. Forces the zona map + a fly start.
+    this.zonaZone = (() => { try {
+      const p = new URLSearchParams(location.search).get('zone');
+      const saved = localStorage.getItem('engendros_zone');
+      const n = parseInt(p != null ? p : saved, 10);
+      return (n >= 1 && n <= 9) ? n : 0;
+    } catch (e) { return 0; } })();
+    if (this.zonaZone) this.mapId = 'zona';
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
     this.freecam = false;
     this.flyMode = false; // console /fly — same free movement as freecam, but the sim keeps running (mobs/waves stay alive)
-    this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })();
+    this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })() || !!this.zonaZone;
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
@@ -164,6 +173,8 @@ class Game {
     this.dshkMountedGun = new MountedGun(this, dshkPos, dshkYaw, { variant: 'dshk', id: 'dshk' });
     this.mountedGuns = [this.m2MountedGun, this.dshkMountedGun];
     this.mountedGun = this.m2MountedGun; // compatibility alias for older .50-cal code paths; direct interactions use mountedGuns
+    // zone-isolation editor: hide the arena-anchored guns (objects stay alive — mp/inventory reference them)
+    if (this.zonaZone) for (const gun of this.mountedGuns) { if (gun.tripod) gun.tripod.visible = false; if (gun.gun) gun.gun.visible = false; }
     // ННП-23 «Резчик» observation post(s) — steppe: dug in beside the strongpoint НП tower,
     // objective laid ~N over the open steppe. Built lazily once the nnp23 spec registers.
     this.nightPosts = [];

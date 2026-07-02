@@ -34,6 +34,7 @@ import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, statio
 import { makeTerrain } from './terrain.js';
 import { TerrainChunks } from './terrain-chunks.js';
 import { buildZona, initZonaBiomeSplat } from './zona.js';
+import { ZONES, zoneRects, inZone } from './zona-plan.js';
 import { setBiomeSplat } from './terrain-tex.js';
 import { makeTerrainMaterial } from './terrain-tex.js';
 import { CaveVolume } from './cave/volume.js';
@@ -378,18 +379,30 @@ export class World {
   _buildZona() {
     this.HALF = 1250;
     this.scene.fog.near = 140; this.scene.fog.far = 1000; // big-world haze
+    // DEV zone-isolation: when game.zonaZone is set, ONLY that working zone gets built (terrain
+    // chunks, network, cadastre, vegetation) — void beyond. zonaClip is read by buildZona's
+    // builders and the forest scatter; the chunk filter carries a +125 m (one chunk) margin.
+    const zn = this.game.zonaZone ? ZONES.find(z => z.id === this.game.zonaZone) : null;
+    this.zonaClip = zn ? {
+      zone: zn,
+      contains: (x, z) => inZone(zn, x, z),
+      intersects: (minX, minZ, maxX, maxZ, m = 0) =>
+        zoneRects(zn).some(r => maxX >= r.x0 - m && minX <= r.x1 + m && maxZ >= r.z0 - m && minZ <= r.z1 + m),
+    } : null;
     initZonaBiomeSplat(this); // biome substrate splat — MUST precede the chunk build (materials capture it)
     this.chunks = new TerrainChunks(this.terrain, {
       extent: 1250, chunkSize: 125, resolutions: [48, 24, 12, 6],
       lodBands: [180, 400, 900], lodMargin: 30,
       scene: this.scene, simWorker: this.game.simWorker,
+      chunkFilter: this.zonaClip ? (c) => this.zonaClip.intersects(c.minX, c.minZ, c.maxX, c.maxZ, 125) : null,
     });
-    // spawn ring just north of КПП «ПРОХОДНАЯ» (P1) — the Act-1 start anchor
+    // spawn ring: the zone anchor in isolation mode, else just north of КПП «ПРОХОДНАЯ» (P1)
+    const [ax, az] = zn ? zn.anchor : [-1080, -1030];
     for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * TAU, x = -1080 + Math.cos(a) * 14, z = -1030 + Math.sin(a) * 10;
+      const a = (i / 12) * TAU, x = ax + Math.cos(a) * 14, z = az + Math.sin(a) * 10;
       this.spawns.push(new THREE.Vector3(x, this.terrain.terrainHeightAt(x, z), z));
     }
-    this.lootSpots.push(new THREE.Vector3(-1080, this.terrain.terrainHeightAt(-1080, -1060), -1060));
+    this.lootSpots.push(new THREE.Vector3(ax, this.terrain.terrainHeightAt(ax, az - 30), az - 30));
     buildZona(this); // network + cadastre + placeholder layers (grows through the M3–M4 tasks)
   }
 

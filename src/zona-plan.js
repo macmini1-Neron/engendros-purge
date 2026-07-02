@@ -214,6 +214,33 @@ export const BIOMES = [
   { kind: 'dry', shape: 'disc', x: -950, z: -920, r: 70 },
 ];
 
+// ── working zones (DEV) — the 9 owner-agreed detailing areas for the iterative dressing passes.
+// `?zone=N` / the in-game `/zone N` command builds ONLY that zone (terrain chunks, network, cadastre,
+// vegetation) with void beyond — a focused editor view. Rects overlap on purpose (margins); zone 9 is
+// the border ring (4 rects). anchor = spawn point inside the zone.
+export const ZONES = [
+  { id: 1, name: 'START JZ',        x0: -1250, z0: -1250, x1: -250,  z1: -830,  anchor: [-1080, -1060] },
+  { id: 2, name: 'ROZCESTÍ+ŘEKA',   x0: -800,  z0: -800,  x1: 0,     z1: -100,  anchor: [-340, -540] },
+  { id: 3, name: 'MASIV «РАНА»',    x0: -700,  z0: -450,  x1: 650,   z1: 650,   anchor: [50, 20] },
+  { id: 4, name: 'LETIŠTĚ',         x0: -350,  z0: 400,   x1: 450,   z1: 850,   anchor: [50, 630] },
+  { id: 5, name: 'SZ KAPSA',        x0: -1250, z0: 100,   x1: -300,  z1: 1250,  anchor: [-700, 320] },
+  { id: 6, name: 'JV BAŽINA',       x0: -100,  z0: -1250, x1: 900,   z1: -550,  anchor: [50, -840] },
+  { id: 7, name: 'KOMBINÁT',        x0: 400,   z0: -550,  x1: 1250,  z1: 420,   anchor: [680, 60] },
+  { id: 8, name: 'SV FINÁLE',       x0: 400,   z0: 350,   x1: 1250,  z1: 1250,  anchor: [960, 1020] },
+  { id: 9, name: 'OKRAJE',          rects: [
+      { x0: -1250, z0: -1250, x1: -1050, z1: 1250 }, { x0: 1050, z0: -1250, x1: 1250, z1: 1250 },
+      { x0: -1250, z0: 1050,  x1: 1250,  z1: 1250 }, { x0: -1250, z0: -1250, x1: 1250, z1: -1050 },
+    ], anchor: [-1130, -350] },
+];
+
+// zone → list of rects (zone 9 is multi-rect; the rest normalize to one)
+export function zoneRects(zone) {
+  return zone.rects || [{ x0: zone.x0, z0: zone.z0, x1: zone.x1, z1: zone.z1 }];
+}
+export function inZone(zone, x, z) {
+  return zoneRects(zone).some(r => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+}
+
 // ── lint — fail-loud plan validation (run at zona boot + in node tests).
 export function lintPlan() {
   const errors = [], warnings = [];

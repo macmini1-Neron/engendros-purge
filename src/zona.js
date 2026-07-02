@@ -127,11 +127,14 @@ function buildRibbon(world, road, opts = {}) {
     pos = []; colr = []; idx = []; row = -1;
   };
 
+  const clip = world.zonaClip; // zone-isolation dev mode: ribbons end cleanly at the zone boundary
   for (let s = 0; s <= total + 0.001; s += step) {
     const sc = Math.min(s, total);
     if (inGap(gaps, sc)) { flush(); lastS = null; continue; }      // bridge hole — restart strip after it
+    const [pcx, pcz] = pointAtArc(road.pts, cum, sc);
+    if (clip && !clip.contains(pcx, pcz)) { flush(); lastS = null; continue; }
     if (lastS != null && sc - lastS > CHUNK_ARC) flush();          // chunk the strip for culling
-    const [cx, cz] = pointAtArc(road.pts, cum, sc);
+    const [cx, cz] = [pcx, pcz];
     const [nx, nz] = pointAtArc(road.pts, cum, Math.min(sc + 1, total));
     let dx = nx - cx, dz = nz - cz; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     const px = -dz, pz = dx; // left-hand perpendicular
@@ -172,8 +175,10 @@ function buildRail(world, road) {
     m.receiveShadow = true; world.scene.add(m); if (world.addCullable) world.addCullable(m);
     b = new MeshBuilder(); emitted = 0;
   };
+  const clip = world.zonaClip;
   for (let s = 0; s <= total; s += 2.4) {
     const [cx, cz] = pointAtArc(road.pts, cum, s);
+    if (clip && !clip.contains(cx, cz)) continue;
     const [nx, nz] = pointAtArc(road.pts, cum, Math.min(s + 1, total));
     const ry = Math.atan2(nx - cx, nz - cz);
     b.box(2.0, 0.12, 0.24, cx, T(cx, cz) + LIFT + 0.08, cz, 0x4a3c2c, { ry });
@@ -200,10 +205,20 @@ function buildRiver(world) {
     const src = ys.slice();
     for (let i = 0; i < ys.length; i++) { let sum = 0, cnt = 0; for (let k = -3; k <= 3; k++) { const ii = i + k; if (ii >= 0 && ii < src.length) { sum += src[ii]; cnt++; } } ys[i] = sum / cnt; }
   }
-  const pos = [], idx = [];
-  let row = 0;
+  const clip = world.zonaClip;
+  let pos = [], idx = [], row = 0;
+  const flush = () => {
+    if (row < 2) { pos = []; idx = []; row = 0; return; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, waterMaterial(0x2b5a66, 0.72));
+    world.scene.add(m); if (world.addCullable) world.addCullable(m);
+    pos = []; idx = []; row = 0;
+  };
   for (let s = 0, i = 0; s <= total; s += STEP, i++) {
     const [cx, cz] = pointAtArc(r.pts, cum, s);
+    if (clip && !clip.contains(cx, cz)) { flush(); continue; } // zone boundary cuts the river too
     const [nx2, nz2] = pointAtArc(r.pts, cum, Math.min(s + 1, total));
     let dx = nx2 - cx, dz = nz2 - cz; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     const px = -dz, pz = dx;
@@ -211,14 +226,11 @@ function buildRiver(world) {
     if (row > 0) { const a = (row - 1) * 2, b = row * 2; idx.push(a, a + 1, b, a + 1, b + 1, b); }
     row++;
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, waterMaterial(0x2b5a66, 0.72));
-  world.scene.add(m); if (world.addCullable) world.addCullable(m);
+  flush();
 }
 
 function buildStillWater(world, w, hex, opacity) {
+  if (world.zonaClip && !world.zonaClip.intersects(w.x - w.w / 2, w.z - w.d / 2, w.x + w.w / 2, w.z + w.d / 2)) return;
   const g = new THREE.PlaneGeometry(w.w, w.d);
   const m = new THREE.Mesh(g, waterMaterial(hex, opacity));
   m.rotation.x = -Math.PI / 2;
@@ -231,6 +243,7 @@ function buildStillWater(world, w, hex, opacity) {
 function buildBridge(world) {
   const road = ROADS.find(r => r.id === 'R1');
   const b = road.bridges[0];
+  if (world.zonaClip && !world.zonaClip.contains(b.at[0], b.at[1])) return;
   const T = makeMeshHeight(world);
   const cum = cumArc(road.pts), s0 = polylineProject(road.pts, b.at[0], b.at[1]).s;
   const [ax, az] = pointAtArc(road.pts, cum, s0 - b.halfLen - 2);
@@ -262,6 +275,7 @@ function buildBridge(world) {
 function buildGates(world) {
   const T = makeMeshHeight(world);
   for (const gate of GATES) {
+    if (world.zonaClip && !world.zonaClip.contains(gate.x, gate.z)) continue;
     const road = ROADS.find(r => r.id === gate.roadId);
     const pr = polylineProject(road.pts, gate.x, gate.z);
     const cum = cumArc(road.pts);
@@ -335,6 +349,7 @@ function buildLEP(world) {
     for (let s = SPACING / 2; s < total; s += SPACING) {
       if (inGap(gaps, s)) { prevTop = null; continue; } // no pole mid-river; wire run restarts past it
       const [cx, cz] = pointAtArc(road.pts, cum, s);
+      if (world.zonaClip && !world.zonaClip.contains(cx, cz)) { prevTop = null; continue; }
       const [nx2, nz2] = pointAtArc(road.pts, cum, Math.min(s + 1, total));
       let dx = nx2 - cx, dz = nz2 - cz; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
       const px = -dz, pz = dx; // pole line rides the LEFT verge
@@ -390,6 +405,7 @@ function signTexture(title, name, sub, accent) {
 }
 
 function buildSign(world, x, z, yaw, title, name, sub, accent) {
+  if (world.zonaClip && !world.zonaClip.contains(x, z)) return;
   const T = makeMeshHeight(world);
   const g = T(x, z);
   const b = new MeshBuilder();
