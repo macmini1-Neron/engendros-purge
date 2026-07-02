@@ -106,15 +106,20 @@ function polyAABB(pts, pad) {
 }
 
 // prepare TERRAIN_FEATURES + the river channel into grid-indexed evaluators
+// organic stamps (ridges + delta bowls) evaluate at DOMAIN-WARPED coordinates — nature is not regular,
+// so their silhouettes wobble by ±WARP.amp. Surveyed shapes stay EXACT: abs plateaus/bowls must align
+// with the parcel pads sitting on them, and the river channel must align with the water polyline.
+export const WARP = { amp: 28, fbm: { octaves: 2, freq: 1 / 170, lacunarity: 2, gain: 0.5 } };
+
 function prepareStamps() {
   const grid = makeGrid();
   for (const f of TERRAIN_FEATURES) {
     if (f.kind === 'ridge') {
       const prep = { type: 'ridge', pts: f.pts, cum: cumArc(f.pts), halfW: f.halfW };
-      const [a, b, c, d] = polyAABB(f.pts, f.halfW);
+      const [a, b, c, d] = polyAABB(f.pts, f.halfW + WARP.amp);
       gridInsert(grid.add, a, b, c, d, prep);
     } else if (f.kind === 'plateau' || f.kind === 'bowl') {
-      const reach = (f.r != null ? f.r : Math.max(f.w, f.d) / 2) + f.skirt;
+      const reach = (f.r != null ? f.r : Math.max(f.w, f.d) / 2) + f.skirt + (f.abs ? 0 : WARP.amp);
       const prep = { type: f.abs ? 'abs' : 'delta', f };
       gridInsert(f.abs ? grid.abs : grid.add, f.x - reach, f.z - reach, f.x + reach, f.z + reach, prep);
     } else if (f.kind === 'channel') {
@@ -130,7 +135,7 @@ function prepareStamps() {
 
 // evaluate the stamp layers at (x,z) given the base height — shared by the public field and by the
 // corridor-profile precompute (which must read stamps WITHOUT corridors).
-function stampedHeight(grid, x, z, base) {
+function stampedHeight(grid, x, z, wx, wz, base) {
   let h = base;
   const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
   const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
@@ -138,10 +143,10 @@ function stampedHeight(grid, x, z, base) {
   const adds = grid.add.get(k);
   if (adds) for (const p of adds) {
     if (p.type === 'ridge') {
-      const { d, s } = polylineProject(p.pts, x, z);
+      const { d, s } = polylineProject(p.pts, wx, wz);
       if (d < p.halfW) h += crestAt(p, s) * Math.pow(1 - smoothstep(d / p.halfW), 1.6);
     } else if (p.type === 'delta') {
-      const d = distToShape(p.f, x, z);
+      const d = distToShape(p.f, wx, wz);
       if (d < p.f.skirt) h += p.f.h * (1 - smoothstep(d / p.f.skirt));
     } else if (p.type === 'channel') {
       const { d } = polylineProject(p.pts, x, z);
@@ -310,8 +315,12 @@ function build(seed) {
   if (_cache.has(seed)) return _cache.get(seed);
   const grid = prepareStamps();
   const tune = ZONA_TUNING;
-  const stamped = (x, z) => stampedHeight(grid, x, z,
-    tune.fbmAmplitude * fbm(x, z, seed, tune.fbm) + tune.micro.amplitude * fbm(x, z, seed + 7331, tune.micro.fbm));
+  const stamped = (x, z) => {
+    const wx = x + WARP.amp * fbm(x, z, seed + 551, WARP.fbm);
+    const wz = z + WARP.amp * fbm(x, z, seed + 733, WARP.fbm);
+    return stampedHeight(grid, x, z, wx, wz,
+      tune.fbmAmplitude * fbm(x, z, seed, tune.fbm) + tune.micro.amplitude * fbm(x, z, seed + 7331, tune.micro.fbm));
+  };
   const corr = prepareCorridors(stamped);
   const corridorField = (x, z) => corridorHeight(corr, x, z, stamped(x, z));
   const pads = preparePads(corridorField);
@@ -377,7 +386,23 @@ export function biomeWeightsAt(x, z, h) {
   // wetness boost: anything below the swamp waterline reads as peat/marsh
   if (h != null) swamp = Math.max(swamp, (1 - smoothstep((h - (-9)) / 4)) * 0.9);
   forest *= (1 - dead); // the dieback gradient eats the green forest as you climb the massif
-  return { forest, swamp, dry, dead };
+  // ── waterline layers: sandy SHORE strips of random width along every water edge + WET ground
+  // under the surface (different substrate underwater — the river bed, swamp floor, reservoir floor).
+  let shore = 0, wet = 0;
+  const rp = polylineProject(WATER.river.pts, x, z);
+  const chHalf = WATER.river.width / 2 + 4;                       // carved channel reach
+  if (rp.d < chHalf + 26) {
+    wet = Math.max(wet, 1 - smoothstep((rp.d - (chHalf - 7)) / 7));       // in/near the channel bed
+    const band = 4 + 12 * valueNoise(x * 0.021, z * 0.021, 9182);         // random-width sandy strip
+    shore = Math.max(shore, 1 - smoothstep((rp.d - chHalf + 2) / band));
+  }
+  if (h != null && swamp > 0.05) {
+    wet = Math.max(wet, swamp * (1 - smoothstep((h + 10.6) / 0.9)));      // below the −11 waterline
+    const band = 0.8 + 1.6 * valueNoise(x * 0.03, z * 0.03, 5417);        // shoreline follows the contour
+    shore = Math.max(shore, swamp * (1 - smoothstep(Math.abs(h + 10.1) / band)));
+  }
+  shore *= (1 - wet * 0.85); // sand rings the water; the bed itself stays wet substrate
+  return { forest, swamp, dry, dead, shore, wet };
 }
 // per-road slope-clamped longitudinal profiles — zona.js drapes ribbons along these; tests assert slopes
 export function roadProfiles(seed) { return build(seed).profiles; }

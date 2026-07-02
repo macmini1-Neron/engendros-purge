@@ -82,13 +82,68 @@ function sandCanvas(S = 256) {
   x.globalAlpha = 1; return c;
 }
 
+// road surfaces — same procedural-canvas language as the ground, so ribbons share the terrain's vibe
+function asphaltCanvas(S = 256) {
+  const c = canvas(S), x = c.getContext('2d'), rnd = lcg(0xa5f17);
+  x.fillStyle = '#7e7e84'; x.fillRect(0, 0, S, S);                 // mid grey (vertex colors carry the tone)
+  speckle(x, rnd, S, '#6a6a70', 1600, 2);                          // aggregate
+  speckle(x, rnd, S, '#93939a', 1200, 1);
+  speckle(x, rnd, S, '#5c5c62', 500, 1);
+  for (let i = 0; i < 9; i++) {                                    // faint cracks + tar lines
+    let cx2 = rnd() * S, cy = rnd() * S; x.strokeStyle = rnd() < 0.5 ? '#5a5a60' : '#96969c'; x.globalAlpha = 0.35; x.lineWidth = 1.1;
+    x.beginPath(); x.moveTo(cx2, cy); for (let k = 0; k < 5; k++) { cx2 += (rnd() - 0.5) * S * 0.2; cy += (rnd() - 0.3) * S * 0.14; x.lineTo(cx2, cy); } x.stroke();
+  }
+  x.globalAlpha = 1; return c;
+}
+function concreteCanvas(S = 256) {
+  const c = canvas(S), x = c.getContext('2d'), rnd = lcg(0xc0dc7);
+  x.fillStyle = '#8a8a84'; x.fillRect(0, 0, S, S);
+  speckle(x, rnd, S, '#7a7a74', 1300, 2);
+  speckle(x, rnd, S, '#9a9a93', 1000, 1);
+  for (let i = 0; i < 14; i++) { x.strokeStyle = '#71716b'; x.globalAlpha = 0.3; x.lineWidth = 1; const bx = rnd() * S, by = rnd() * S, a = rnd() * 6.28; x.beginPath(); x.moveTo(bx, by); x.lineTo(bx + Math.cos(a) * 22, by + Math.sin(a) * 22); x.stroke(); } // hairline cracks
+  x.globalAlpha = 1; return c;
+}
+
 let _tex = null;
 export function terrainTextures() {
   if (_tex) return _tex;
   const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; };
   _tex = { grass: mk(grassCanvas()), dirt: mk(dirtCanvas()), rock: mk(rockCanvas()),
-           forest: mk(forestFloorCanvas()), peat: mk(peatCanvas()), sand: mk(sandCanvas()) };
+           forest: mk(forestFloorCanvas()), peat: mk(peatCanvas()), sand: mk(sandCanvas()),
+           asphalt: mk(asphaltCanvas()), concrete: mk(concreteCanvas()) };
   return _tex;
+}
+
+// ── road-ribbon material — vertex colors carry the tone/ruts, a triplanar GRAIN layer gives the same
+// procedural-texture vibe as the ground (grayscale modulation so hues stay authored). One shared
+// instance per surface class; zona ribbons are never disposed before map teardown.
+const _ribbonMats = new Map();
+export function ribbonMaterial(kind) {
+  if (_ribbonMats.has(kind)) return _ribbonMats.get(kind);
+  const tex = terrainTextures();
+  const map = kind === 'asphalt' ? tex.asphalt : kind === 'panels' ? tex.concrete : tex.dirt;
+  const scale = kind === 'asphalt' ? 0.30 : kind === 'panels' ? 0.34 : 0.42;
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uRib = { value: map };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n vWPos = (modelMatrix * vec4(transformed,1.0)).xyz;\n vWNrm = normalize(mat3(modelMatrix) * objectNormal);');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', [
+        '#include <common>', 'varying vec3 vWPos;', 'varying vec3 vWNrm;', 'uniform sampler2D uRib;',
+        'vec3 triColR(sampler2D t, vec3 wp, vec3 bw, float s){ vec3 cx=texture2D(t, wp.zy*s).rgb; vec3 cy=texture2D(t, wp.xz*s).rgb; vec3 cz=texture2D(t, wp.xy*s).rgb; return cx*bw.x+cy*bw.y+cz*bw.z; }',
+      ].join('\n'))
+      .replace('#include <color_fragment>', [
+        '#include <color_fragment>',
+        '{ vec3 n=normalize(vWNrm); vec3 bw=pow(abs(n), vec3(4.0)); bw/=(bw.x+bw.y+bw.z+1e-4);',
+        `  float dl=dot(triColR(uRib, vWPos, bw, ${scale.toFixed(2)}), vec3(0.333));`,
+        '  diffuseColor.rgb *= (0.42 + dl*1.18); }', // grayscale grain around 1.0 (canvas mid ≈ 0.5)
+      ].join('\n'));
+  };
+  mat.customProgramCacheKey = () => 'engendrosRibbon_' + kind;
+  _ribbonMats.set(kind, mat);
+  return mat;
 }
 
 // ── optional biome splat layer (zona map) — a world-XZ biome-weight texture (R=forest, G=swamp,
@@ -96,7 +151,7 @@ export function terrainTextures() {
 // chunks build (world._buildZona → setBiomeSplat); maps that never set it get the exact original
 // material (separate program cache key), so arena/steppe/demo/forest stay byte-identical.
 let _biome = null;
-export function setBiomeSplat(mapTexture, extent) { _biome = mapTexture ? { map: mapTexture, extent } : null; }
+export function setBiomeSplat(mapTexture, extent, map2 = null) { _biome = mapTexture ? { map: mapTexture, extent, map2 } : null; }
 
 // A fresh MeshLambert per chunk (so per-chunk dispose is safe) that shares the texture singletons and one
 // compiled program. World-space triplanar so it drops onto any heightfield/isosurface with NO UVs.
@@ -113,6 +168,7 @@ export function makeTerrainMaterial() {
       shader.uniforms.uPeat = { value: tex.peat };
       shader.uniforms.uSand = { value: tex.sand };
       shader.uniforms.uBiome = { value: biome.map };
+      shader.uniforms.uBiome2 = { value: biome.map2 || biome.map };
       shader.uniforms.uBExtent = { value: biome.extent };
     }
     shader.vertexShader = shader.vertexShader
@@ -123,7 +179,7 @@ export function makeTerrainMaterial() {
         '#include <common>',
         'varying vec3 vWPos;', 'varying vec3 vWNrm;',
         'uniform sampler2D uGrass;', 'uniform sampler2D uDirt;', 'uniform sampler2D uRock;',
-        ...(biome ? ['uniform sampler2D uForestF;', 'uniform sampler2D uPeat;', 'uniform sampler2D uSand;', 'uniform sampler2D uBiome;', 'uniform float uBExtent;'] : []),
+        ...(biome ? ['uniform sampler2D uForestF;', 'uniform sampler2D uPeat;', 'uniform sampler2D uSand;', 'uniform sampler2D uBiome;', 'uniform sampler2D uBiome2;', 'uniform float uBExtent;'] : []),
         'vec3 triCol(sampler2D t, vec3 wp, vec3 bw, float s){ vec3 cx=texture2D(t, wp.zy*s).rgb; vec3 cy=texture2D(t, wp.xz*s).rgb; vec3 cz=texture2D(t, wp.xy*s).rgb; return cx*bw.x+cy*bw.y+cz*bw.z; }',
         // cheap value-noise for MACRO tonal variation (breaks the flat uniform green into drier/greener patches)
         'float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }',
@@ -152,13 +208,16 @@ export function makeTerrainMaterial() {
         '  g*=(0.96+0.26*macro);',                                     // large-scale light/dark mottling (lifted floor → cold MEADOW, not dark mud)
         ...(biome ? [
           // ── biome SUBSTRATE splat (zona): the region map switches what "gentle ground" is made of.
-          '  vec4 bio=texture2D(uBiome,(vWPos.xz+vec2(uBExtent))/(2.0*uBExtent));',
+          '  vec2 bUV=(vWPos.xz+vec2(uBExtent))/(2.0*uBExtent);',
+          '  vec4 bio=texture2D(uBiome,bUV);',
+          '  vec4 bio2=texture2D(uBiome2,bUV);',                       // R=sandy shore, G=underwater/wet
           '  vec3 ff=triCol(uForestF,vWPos,bw,0.24);',                 // dark humus + needle litter
           '  vec3 pt=triCol(uPeat,vWPos,bw,0.20);',                    // wet peat/marsh floor
           '  vec3 sd=triCol(uSand,vWPos,bw,0.22);',                    // worn hardpan/sand
           '  g=mix(g, ff*(0.92+0.16*macro), bio.r);',                  // forest floor under the woods
           '  g=mix(g, pt*(0.88+0.14*macro), bio.g);',                  // peat in the swamp basin
           '  g=mix(g, sd*(0.94+0.12*macro), bio.b*0.9);',              // traffic-worn aprons/strips
+          '  g=mix(g, sd*vec3(1.04,1.0,0.88)*(0.95+0.12*macro), bio2.r);', // sandy shore strips along water
           '  float ash=bio.a;',                                        // massif dieback: ashen dead ground
           '  g=mix(g, vec3(dot(g,vec3(0.333)))*vec3(0.88,0.86,0.80), ash*0.75);',
           '  d=mix(d, vec3(dot(d,vec3(0.333)))*vec3(0.92,0.90,0.86), ash*0.55);',
@@ -167,6 +226,11 @@ export function makeTerrainMaterial() {
         '  rk*=0.92+0.08*sin(vWPos.y*0.8 + vnoise(vWPos.xz*0.06)*5.0);', // SUBTLE wavy strata (noise-broken, not ruler-straight contour lines across the mountain)
         '  rk*=(0.88+0.14*vnoise(vWPos.xz*0.12+vWPos.y*0.1));',        // rock blotching = the main variation now
         '  vec3 terr=g*gW+d*dW+rk*rW;',
+        ...(biome ? [
+          // underwater/wet ground: darken + cool the WHOLE substrate below the waterline (bed reads
+          // as a different, submerged material through the translucent water sheet)
+          '  terr=mix(terr, terr*vec3(0.40,0.46,0.50)+vec3(0.015,0.03,0.04), bio2.g*0.85);',
+        ] : []),
         // FRESNEL rim-light on steep faces → cliff silhouette pops against the sky (BotW/Horizon legibility)
         '  vec3 V=normalize(cameraPosition-vWPos); float fres=pow(1.0-clamp(dot(V,n),0.0,1.0),3.2);',
         '  terr += rW*fres*vec3(0.10,0.105,0.12);',

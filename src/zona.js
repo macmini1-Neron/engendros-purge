@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { MeshBuilder, makeRNG, voxelMaterial } from './util.js';
 import { ROADS, GATES, WATER, PARCELS, lintPlan } from './zona-plan.js';
 import { polylineProject, biomeWeightsAt } from './zona-terrain.js';
-import { setBiomeSplat } from './terrain-tex.js';
+import { setBiomeSplat, ribbonMaterial } from './terrain-tex.js';
 import { seatBox } from './terrain-place.js';
 
 // ── biome-map bake — a 512² RGBA world-XZ texture (R=forest, G=swamp, B=dry, A=deadwood) sampled by
@@ -21,9 +21,8 @@ import { seatBox } from './terrain-place.js';
 // the map's TerrainChunks build (world._buildZona) so every chunk material captures the splat config.
 export function initZonaBiomeSplat(world) {
   const S = 512, EXT = 1250;
-  const cv = document.createElement('canvas'); cv.width = cv.height = S;
-  const ctx = cv.getContext('2d');
-  const img = ctx.createImageData(S, S);
+  const mk = () => { const cv = document.createElement('canvas'); cv.width = cv.height = S; const ctx = cv.getContext('2d'); return { cv, ctx, img: ctx.createImageData(S, S) }; };
+  const a = mk(), b = mk(); // A: forest/swamp/dry/dead · B: shore/wet (waterline layers)
   const T = (x, z) => world.terrain.terrainHeightAt(x, z);
   for (let pz = 0; pz < S; pz++) {
     for (let px = 0; px < S; px++) {
@@ -31,18 +30,26 @@ export function initZonaBiomeSplat(world) {
       const z = -EXT + ((pz + 0.5) / S) * EXT * 2;
       const w = biomeWeightsAt(x, z, T(x, z));
       const i = (pz * S + px) * 4;
-      img.data[i] = Math.min(255, w.forest * 255) | 0;
-      img.data[i + 1] = Math.min(255, w.swamp * 255) | 0;
-      img.data[i + 2] = Math.min(255, w.dry * 255) | 0;
-      img.data[i + 3] = Math.min(255, w.dead * 255) | 0;
+      a.img.data[i] = Math.min(255, w.forest * 255) | 0;
+      a.img.data[i + 1] = Math.min(255, w.swamp * 255) | 0;
+      a.img.data[i + 2] = Math.min(255, w.dry * 255) | 0;
+      a.img.data[i + 3] = Math.min(255, w.dead * 255) | 0;
+      b.img.data[i] = Math.min(255, w.shore * 255) | 0;
+      b.img.data[i + 1] = Math.min(255, w.wet * 255) | 0;
+      b.img.data[i + 2] = 0;
+      b.img.data[i + 3] = 255;
     }
   }
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(cv);
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.minFilter = tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = false; // data map — mips would bleed biomes across the whole card
-  setBiomeSplat(tex, EXT);
+  const finish = (m) => {
+    m.ctx.putImageData(m.img, 0, 0);
+    const tex = new THREE.CanvasTexture(m.cv);
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false; // data map — mips would bleed biomes across the whole card
+    tex.flipY = false;           // canvas row 0 = z=−EXT; default flipY would Z-MIRROR the whole biome map
+    return tex;
+  };
+  setBiomeSplat(finish(a), EXT, finish(b));
 }
 
 // ── per-surface ribbon styling: cross-section half-offsets (fractions of width) + tone per lane ────
@@ -120,7 +127,8 @@ function buildRibbon(world, road, opts = {}) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const m = new THREE.Mesh(g, voxelMaterial(RIBBON_MAT_OPTS));
+    // roads carry the same procedural-grain vibe as the ground; plain steel strips (rails) opt out
+    const m = new THREE.Mesh(g, opts.plain ? voxelMaterial(RIBBON_MAT_OPTS) : ribbonMaterial(road.surface));
     m.receiveShadow = true;
     world.scene.add(m); if (world.addCullable) world.addCullable(m);
     meshes.push(m);
@@ -164,7 +172,7 @@ function buildRibbon(world, road, opts = {}) {
 function buildRail(world, road) {
   buildRibbon(world, road); // ballast bed
   for (const side of [-0.75, 0.75]) {
-    buildRibbon(world, road, { width: 0.09, lateral: side, lift: LIFT + 0.18, lanes: [-0.5, 0.5], tones: [0x8f9299, 0x8f9299], jitter: 0.02 });
+    buildRibbon(world, road, { width: 0.09, lateral: side, lift: LIFT + 0.18, lanes: [-0.5, 0.5], tones: [0x8f9299, 0x8f9299], jitter: 0.02, plain: true });
   }
   const T = makeMeshHeight(world);
   const cum = cumArc(road.pts), total = cum[cum.length - 1];
@@ -197,14 +205,16 @@ function buildRiver(world) {
   const T = makeMeshHeight(world);
   const r = WATER.river;
   const cum = cumArc(r.pts), total = cum[cum.length - 1];
-  const STEP = 6, half = r.width / 2 + 2; // a touch wider than the carve so banks read wet
-  // centreline surface heights, smoothed so the water doesn't ripple with the fbm
-  const ys = [];
-  for (let s = 0; s <= total; s += STEP) { const [x, z] = pointAtArc(r.pts, cum, s); ys.push(T(x, z) + r.surfaceOffset); }
+  const STEP = 6, half = r.width / 2 + 4; // wider than the carve core so the sheet reaches both banks
+  // centreline surface heights, smoothed so the water doesn't ripple with the fbm — but NEVER below
+  // the local bed (a smoothed dip used to sink the sheet under humps → dry-looking channel stretches)
+  const beds = [], ys = [];
+  for (let s = 0; s <= total; s += STEP) { const [x, z] = pointAtArc(r.pts, cum, s); const bed = T(x, z); beds.push(bed); ys.push(bed + r.surfaceOffset); }
   for (let pass = 0; pass < 3; pass++) {
     const src = ys.slice();
     for (let i = 0; i < ys.length; i++) { let sum = 0, cnt = 0; for (let k = -3; k <= 3; k++) { const ii = i + k; if (ii >= 0 && ii < src.length) { sum += src[ii]; cnt++; } } ys[i] = sum / cnt; }
   }
+  for (let i = 0; i < ys.length; i++) ys[i] = Math.max(ys[i], beds[i] + 0.35);
   const clip = world.zonaClip;
   let pos = [], idx = [], row = 0;
   const flush = () => {
@@ -212,7 +222,7 @@ function buildRiver(world) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx); g.computeVertexNormals();
-    const m = new THREE.Mesh(g, waterMaterial(0x2b5a66, 0.72));
+    const m = new THREE.Mesh(g, waterMaterial(0x2e6270, 0.6)); // translucent enough to read the wet bed
     world.scene.add(m); if (world.addCullable) world.addCullable(m);
     pos = []; idx = []; row = 0;
   };
