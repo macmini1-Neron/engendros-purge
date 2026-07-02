@@ -27,7 +27,13 @@ function fbm(x, z, seed, { octaves, freq, lacunarity, gain }) {
   }
   return sum / norm;
 }
-export const ZONA_TUNING = { fbmAmplitude: 4.0, fbm: { octaves: 5, freq: 1 / 220, lacunarity: 2.05, gain: 0.5 } };
+export const ZONA_TUNING = {
+  fbmAmplitude: 4.0, fbm: { octaves: 5, freq: 1 / 220, lacunarity: 2.05, gain: 0.5 },
+  // micro-relief: a short-wavelength dusting (~±0.5 m @ 45 m) so open steppe isn't billiard-flat.
+  // Kept SMALL: corridors re-clamp roads through it, pads flatten over it, and the T5 walkability
+  // margin (38° test) survives the ~2° it adds to local slopes.
+  micro: { amplitude: 0.55, fbm: { octaves: 2, freq: 1 / 45, lacunarity: 2.2, gain: 0.55 } },
+};
 
 const smoothstep = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
 
@@ -304,7 +310,8 @@ function build(seed) {
   if (_cache.has(seed)) return _cache.get(seed);
   const grid = prepareStamps();
   const tune = ZONA_TUNING;
-  const stamped = (x, z) => stampedHeight(grid, x, z, tune.fbmAmplitude * fbm(x, z, seed, tune.fbm));
+  const stamped = (x, z) => stampedHeight(grid, x, z,
+    tune.fbmAmplitude * fbm(x, z, seed, tune.fbm) + tune.micro.amplitude * fbm(x, z, seed + 7331, tune.micro.fbm));
   const corr = prepareCorridors(stamped);
   const corridorField = (x, z) => corridorHeight(corr, x, z, stamped(x, z));
   const pads = preparePads(corridorField);

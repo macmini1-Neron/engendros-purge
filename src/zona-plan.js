@@ -175,6 +175,12 @@ export const TERRAIN_FEATURES = [
   { kind: 'ridge', id: 'BALKA1', halfW: 30, pts: [[-900, -300, -6], [-780, -180, -7], [-660, -100, -5]] },
   { kind: 'ridge', id: 'BALKA2', halfW: 26, pts: [[-980, 100, -5], [-860, 180, -6], [-760, 240, -4]] },
   { kind: 'ridge', id: 'UVOZ', halfW: 14, pts: [[-740, -120, -4], [-700, -80, -4.5], [-640, -30, -4]] },
+  // ── ZONE 1 (START JZ) detail — shallow drainage gullies toward the river's south course + a
+  // hummock cluster NW of the strongpoint (micro-landmarks for the tutorial foothold fights)
+  { kind: 'ridge', id: 'Z1_GULLY1', halfW: 22, pts: [[-1020, -780, -2.5], [-800, -880, -3], [-620, -960, -2]] },
+  { kind: 'ridge', id: 'Z1_GULLY2', halfW: 16, pts: [[-900, -1050, -2], [-760, -1100, -2.5], [-640, -1120, -1.5]] },
+  { kind: 'ridge', id: 'Z1_HUM1', halfW: 20, pts: [[-1010, -850, 2.5], [-990, -835, 2.5]] },
+  { kind: 'ridge', id: 'Z1_HUM2', halfW: 16, pts: [[-1040, -900, 2], [-1024, -892, 2]] },
   // river channel (bed = terrain − depth along course; the water plane rides bed + surfaceOffset)
   { kind: 'channel', id: 'TIHAYA', ref: 'river' },
 ];
