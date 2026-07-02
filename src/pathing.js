@@ -54,6 +54,17 @@ export function buildNavGrid(world, opts = {}) {
       if (terr.terrainSlopeAt(x, z) > lim) blocked[i] = 1;
     }
   }
+  // The MASSIF is a density-field rock body (not in the heightfield), so mark its standing-rock footprint blocked
+  // — the horde routes AROUND it. The cave mouth/tunnel stays passable so mobs can follow the player inside.
+  if (world.cave) {
+    const cave = world.cave;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (blocked[i]) continue;
+      const x = originX + (c + 0.5) * cell, z = originZ + (r + 0.5) * cell;
+      if (cave.contains(x, z) && cave.insideAt(x, z) <= 0.05 && cave.mountRise(x, z) > 1.2) blocked[i] = 1;
+    }
+  }
   return { cell, cols, rows, originX, originZ, blocked };
 }
 

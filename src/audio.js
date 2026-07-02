@@ -141,6 +141,23 @@ export class AudioManager {
   _applyMusicGain() { if (this.musicGain) this.musicGain.gain.value = this.musicVolume * (this._musicDuck == null ? 1 : this._musicDuck); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 1; }
 
+  // A soft "descending into the mine" confirm — a low tone gliding down + a filtered airy draft. Diegetic cue
+  // that you crossed into the underground (paired with the vignette in game._swapMine). Guarded on ctx.
+  mineDescend() {
+    if (!this.ctx) return;
+    const t = this.t, dst = this.sfxGain || this.master;
+    const o = this.ctx.createOscillator(), og = this.ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(210, t); o.frequency.exponentialRampToValueAtTime(46, t + 0.85);
+    og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.5, t + 0.05); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    o.connect(og); og.connect(dst); o.start(t); o.stop(t + 0.95);
+    const n = this.ctx.createBufferSource(), buf = this.ctx.createBuffer(1, (this.ctx.sampleRate * 0.9) | 0, this.ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    n.buffer = buf;
+    const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(650, t); lp.frequency.exponentialRampToValueAtTime(120, t + 0.85);
+    const ng = this.ctx.createGain(); ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.16, t + 0.07); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    n.connect(lp); lp.connect(ng); ng.connect(dst); n.start(t); n.stop(t + 0.95);
+  }
+
   get t() { return this.ctx ? this.ctx.currentTime : 0; }
 
   _loadSample(path) {

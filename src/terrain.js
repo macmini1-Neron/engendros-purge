@@ -129,14 +129,19 @@ export const FOREST_TUNING = {
   overlook: { x: -52, z: 50, h: 12, sigma: 30 },       // broad walkable sniper rise (grass — legibly "you CAN go up")
   hummock:  { x: 50, z: 20, h: 8, sigma: 20 },         // gentle wooded hummock (E)
   dell:     { x: 38, z: 44, h: -5, sigma: 18 },        // gentle wooded hollow (SE) — negative ⇒ depression
-  // STEEP rocky massif (N edge): TALL plateau core (r≤r0), cliff falloff r0→r1 (short band ⇒ steep wall). Hosts
-  // the cave. Tall + craggy so it TOWERS over the treeline as a landmark (not a soft hump).
-  massif:   { x: -10, z: -60, h: 37, r0: 7, r1: 23, jag: 3.2 },
-  // the sunken CAVE CORRIDOR (slot canyon) cut into the massif's south flank → the cave mouth. SHARED with CaveVolume.
-  // starts OUT in gentle ground (gentle walk-in, no steep lip) and stops BEFORE the centre (a tall rock back-wall remains).
-  corridor: { ax: -10, az: -34, bx: -10, bz: -52, halfW: 4.0, floorMouth: 2.5, floorInner: 0.6, rim: 7.0 },
+  // DATA ONLY — the rocky MASSIF is NOT in this heightfield. These params are read by the density body
+  // (src/cave/volume.js CaveVolume), which owns the mountain's render AND collision as one field. Compact
+  // craggy peak: plateau core (r≤r0), steep cliff falloff (r0→r1), height h, silhouette warp `jag`.
+  massif:   { x: -10, z: -55, h: 34, r0: 5, r1: 15, jag: 4.0 },
+  // the cave TUNNEL line the density body carves out of the rock → the mouth. (bx/bz = mouth-ward end used as the
+  // tunnel's back reference in CaveVolume; ax/az the outer end.) Data only; not applied to the heightfield.
+  corridor: { ax: -10, az: -34, bx: -10, bz: -50, halfW: 4.2, floorMouth: 2.5, floorInner: 0.6, rim: 7.5 },
 };
 
+// forestHeight — the GENTLE forest heightfield only (rolling base + soft landforms). The rocky MASSIF and its
+// cave are NOT in the heightfield: they are one self-contained density body (src/cave/volume.js) that owns the
+// mountain's render AND collision. So terrainHeightAt is just the walkable ground the rock stands on (and the
+// cave-floor level). The FOREST_TUNING.massif/corridor data below is read by that density module, not here.
 function forestHeight(x, z, seed, tune) {
   // gentle rolling base — walkable everywhere
   let h = tune.base.amp * fbm(x, z, seed, tune.base.fbm);
@@ -147,28 +152,6 @@ function forestHeight(x, z, seed, tune) {
   h += _gauss(x, z, tune.overlook);
   h += _gauss(x, z, tune.hummock);
   h += _gauss(x, z, tune.dell);
-  // STEEP rocky massif — plateau core (r≤r0) at full height, steep cliff falloff to 0 by r1. The flanks get
-  // HIGH-FREQUENCY RIDGED relief so the silhouette is jagged ROCK, not a smooth "dirt-pudding" lump.
-  const m = tune.massif, mdx = x - m.x, mdz = z - m.z, md = Math.hypot(mdx, mdz);
-  if (md < m.r1) {
-    const mt = md <= m.r0 ? 1 : 1 - _smooth01((md - m.r0) / (m.r1 - m.r0));
-    const jag = m.jag * (valueNoise(x * 0.06 + 7.1, z * 0.06 + 2.3, (seed ^ 0x51a3) | 0) * 2 - 1);
-    h += (m.h + jag) * mt;
-    // ridged fracture detail concentrated on the flank (mt·(1−mt) peaks mid-slope) → broken, cliffy profile
-    const flank = mt * (1 - mt) * 4;
-    if (flank > 0.02) {
-      const r1n = 1 - Math.abs(valueNoise(x * 0.19 + 3.3, z * 0.19 + 9.1, (seed ^ 0x6c1f) | 0) * 2 - 1);
-      const r2n = 1 - Math.abs(valueNoise(x * 0.41 + 1.7, z * 0.41 + 4.4, (seed ^ 0x2adb) | 0) * 2 - 1);
-      h += (r1n * 5.0 + r2n * 2.6) * flank;        // craggier vertical fracture relief on the cliff
-    }
-  }
-  // CAVE CORRIDOR — cut a flat-floored slot into the massif flank (walls stay high ⇒ a slot canyon to the mouth)
-  const c = tune.corridor, pd = _segPD(x, z, c.ax, c.az, c.bx, c.bz);
-  if (pd.d < c.rim) {
-    const floor = c.floorMouth + (c.floorInner - c.floorMouth) * pd.t;
-    const w = pd.d <= c.halfW ? 1 : 1 - _smooth01((pd.d - c.halfW) / (c.rim - c.halfW));
-    if (h > floor) h = floor + (h - floor) * (1 - w);                  // lower the massif to the slot floor, tapering to full wall at the rim
-  }
   return h;
 }
 
@@ -222,23 +205,16 @@ export function makeTerrain(opts = {}) {
   const EPS = 0.5;
   function terrainNormalAt(x, z) {
     if (isFlat) return { x: 0, y: 1, z: 0 };
-    const hl = terrainHeightAt(x - EPS, z);
-    const hr = terrainHeightAt(x + EPS, z);
-    const hd = terrainHeightAt(x, z - EPS);
-    const hu = terrainHeightAt(x, z + EPS);
-    // surface (x, H, z): tangents → normal = (-dH/dx, 1, -dH/dz)
-    const nx = -(hr - hl) / (2 * EPS);
-    const nz = -(hu - hd) / (2 * EPS);
-    const ny = 1;
+    const hl = terrainHeightAt(x - EPS, z), hr = terrainHeightAt(x + EPS, z);
+    const hd = terrainHeightAt(x, z - EPS), hu = terrainHeightAt(x, z + EPS);
+    const nx = -(hr - hl) / (2 * EPS), nz = -(hu - hd) / (2 * EPS), ny = 1;
     const inv = 1 / Math.hypot(nx, ny, nz);
     return { x: nx * inv, y: ny * inv, z: nz * inv };
   }
-
   function terrainSlopeAt(x, z) {
     if (isFlat) return 0;
     const n = terrainNormalAt(x, z);
-    // angle of the normal from vertical (+Y). n already normalized.
-    return Math.acos(Math.min(1, Math.max(-1, n.y)));
+    return Math.acos(Math.min(1, Math.max(-1, n.y)));       // angle of the normal from vertical (+Y)
   }
 
   function isPlaceable(x, z, radius = 0, kind = null) {

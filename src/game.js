@@ -1210,7 +1210,54 @@ class Game {
     for (let i = 0; i < list.length; i++) { const e = list[i]; if (e.alive) stepEffects(e, ctx); }
   }
 
+  // ── Underground mine — seamless "GTA-SA interior" portal ──────────────────────────────────────────────
+  // Crossing the seam plane (in the dark back of the cave) swaps the LOCAL player surface↔mine by the pocket
+  // offset (pure Y shift; velocity + yaw untouched → continuous). Per-client: the surface sim / enemy grounding
+  // are never routed through the mine, so the host keeps simulating the surface even while its player is down.
+  _checkMineSeam(prevZ) {
+    const itr = this.world.interior; if (!itr) return false;
+    const p = this.player.pos;
+    if (!this.world.interiorActive) {
+      if (prevZ >= itr.SEAM_Z && p.z < itr.SEAM_Z && Math.abs(p.x - itr.EX) < 5.5) { this._swapMine(true); return true; }   // ENTER (walk north)
+    } else if (prevZ <= itr.SEAM_Z && p.z > itr.SEAM_Z) { this._swapMine(false); return true; }                            // EXIT (walk south)
+    return false;
+  }
+  _swapMine(enter) {
+    const itr = this.world.interior;
+    this.player.pos.y += enter ? itr.dy : -itr.dy;    // ±1000 m; vel + yaw preserved → seamless continuation
+    this.world.interiorActive = enter;
+    this.player.space = enter ? 1 : 0;                // co-op: broadcast so peers hide cross-space + host untargets
+    this._applyMineFog();
+    if (this.audio) this.audio.mineDescend();          // soft "descend/ascend" confirm (diegetic, no HUD marker)
+    this._mineVignette();                              // brief edge-darken vignette (center stays clear → not a fade)
+  }
+  // A quick radial vignette pulse (dark edges, clear centre) as the seam swaps — the "you crossed" confirm without
+  // a full fade. Created once, animated via CSS opacity.
+  _mineVignette() {
+    let el = this._mineVig;
+    if (!el) {
+      el = document.createElement('div'); el.id = 'mineVignette';
+      el.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:55;opacity:0;background:radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,0.9) 100%);';
+      document.body.appendChild(el); this._mineVig = el;
+    }
+    el.style.transition = 'opacity .09s ease-out'; el.style.opacity = '0.85';
+    clearTimeout(this._mineVigT);
+    this._mineVigT = setTimeout(() => { el.style.transition = 'opacity .5s ease-in'; el.style.opacity = '0'; }, 95);
+  }
+  // dark, close fog while underground (hides the 1000 m-distant surface + occludes the swap); restore the
+  // daynight surface fog on exit. Mutates the existing THREE.Fog. Re-asserted each frame after dayNight.renderFrom.
+  _applyMineFog() {
+    const f = this.engine.scene.fog; if (!f) return;
+    if (this.world.interiorActive) {
+      if (!this._fogSave) this._fogSave = { c: f.color.getHex(), n: f.near, fr: f.far };
+      f.color.setHex(0x08080b); f.near = 2; f.far = 40;
+    } else if (this._fogSave) {
+      f.color.setHex(this._fogSave.c); f.near = this._fogSave.n; f.far = this._fogSave.fr; this._fogSave = null;
+    }
+  }
+
   _updatePlaying(dt) {
+    const _minePrevZ = this.player.pos.z;              // mine-seam crossing test (below, after player.update)
     const hostSim = !this.mp.active || this.mp.isHost; // clients don't simulate enemies/waves
     const sim = hostSim && !this.freecam;              // fly-cam = pure observation: no countdown/spawns/enemies
     if (sim && this._startCountdown > 0) { this._startCountdown -= dt; if (this._startCountdown <= 0) this.waves.startWave(this.waves.wave + 1); }
@@ -1248,6 +1295,7 @@ class Game {
       if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)
       if (this.world.updateDoorTarget) this.world.updateDoorTarget(this); // bunker гермодверь look-target (steppe only)
       this.player.update(dt);
+      this._checkMineSeam(_minePrevZ); // seamless mine portal: crossing the seam swaps surface↔mine (per-local-player)
       this.weapons.update(dt);
       this.inventory.update(dt); // throwable (molotov/grenade) state-machine tick
     }
@@ -1259,8 +1307,9 @@ class Game {
     this.build.update(dt); // build ghost preview (shows only while a builder is held, on foot)
     if (this.forest) this.forest.update(dt); // advance any felled-tree FallingBodies + debris (demo forest)
     if (this.demoBuilding && this.demoBuilding.update) this.demoBuilding.update(dt); // advance building destruction debris (demo)
-    if (this.forestAtmos) this.forestAtmos.update(dt, this.player.pos, isNight(this._worldClock.minuteOfDay())); // ?map=forest motes
+    if (this.forestAtmos && !this.world.interiorActive) this.forestAtmos.update(dt, this.player.pos, isNight(this._worldClock.minuteOfDay())); // ?map=forest motes (not underground)
     if (this.world.cave) this.world.cave.update(dt); // forest cave: torch flicker
+    if (this.world.interior) this.world.interior.update(dt); // underground mine: torch flicker
     WIND.update(dt); // global gusting wind: drives fire-spread bias + mote drift + windsock HUD
     updateGrassWind(dt); // tick the groundcover sway shader (grass bends downwind)
     // TREMOR telegraph: a heavy boss announces itself through the ground (a building rumble) before you see
@@ -1286,6 +1335,7 @@ class Game {
     else this._worldClock.advance(dt);
     if (this.mode === 'longnight' && hostSim) this._surviveTime += dt; // run-duration record for the game-over screen (longnight only)
     this.dayNight.renderFrom(this._worldClock); // sky from minute-of-day + alpha (host + client)
+    if (this.world.interiorActive) this._applyMineFog(); // underground: override the daynight fog to dark+close (hides the far surface + the swap)
     this.hud.setClock(this.dayNight.info(), this._worldClock);
     if (this.player.nightPost) this.player.nightPost.lateLight(); // AFTER DayNight applied its frame values: intensifier gain lifts the night scene
     this._updateFlares(dt);       // flare is a deployable gadget in EVERY mode → tick gravity/burn/smoke unconditionally (mirrors _updateMolotovPools), else a flare thrown in purge hangs in mid-air

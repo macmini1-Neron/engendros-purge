@@ -572,7 +572,7 @@ export class EnemyManager {
       // A box TOP within step-up (with headroom) is a SURFACE to stand on — stairs/ledges/roofs; anything
       // taller is a WALL to push out of. Enemies now match the player's STEP_UP; gravity drops them off edges.
       const reach = e.pos.y + STEP_UP;
-      let supp = this.world.groundY(e.pos.x, e.pos.z); // terrain baseline under the feet
+      let supp = this.world.groundY(e.pos.x, e.pos.z, reach); // topmost solid ≤ feet+step (cave floor / mountain), not the peak
       const _cr = e.radius + 1.5; // query window (radius + slack); whole-cell results over-cover the small push-out
       const _cands = this.world.grid.queryAABB(e.pos.x - _cr, e.pos.z - _cr, e.pos.x + _cr, e.pos.z + _cr);
       for (const b of _cands) {

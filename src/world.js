@@ -18,6 +18,7 @@ import { makeTerrain } from './terrain.js';
 import { TerrainChunks } from './terrain-chunks.js';
 import { makeTerrainMaterial } from './terrain-tex.js';
 import { CaveVolume } from './cave/volume.js';
+import { Interior } from './interior.js';
 import { seatProp } from './terrain-place.js';
 
 // ─── T2 WALKABLE-TERRAIN feel knobs (Phase 4) — owner-tunable ──────────────────
@@ -338,6 +339,13 @@ export class World {
     // the heightfield (no sink); the cave adds a density rock roof you walk under. Player-only retreat/ambush.
     try { this.cave = new CaveVolume(this).build(makeTerrainMaterial()); }
     catch (e) { console.warn('[forest] cave volume failed — continuing without it', e); this.cave = null; }
+
+    // UNDERGROUND MINE — a "GTA-SA interior" pocket at ΔY=−1000, reached seamlessly from the dark back of the cave.
+    // While the LOCAL player is inside, `interiorActive` routes collision to the mine floor/walls (see collide).
+    // Built (its wall boxes pushed) BEFORE the SpatialGrid is built so they're indexed.
+    this.interiorActive = false;
+    try { this.interior = new Interior(this).build(); }
+    catch (e) { console.warn('[forest] mine interior failed — continuing without it', e); this.interior = null; }
   }
 
   _buildDemo() {
@@ -387,10 +395,40 @@ export class World {
   }
 
   collide(pos, vel, r, h, dt) {
+    // When the LOCAL player is inside the mine pocket, collide against the mine floor/walls instead of the
+    // terrain (per-client flag — the surface sim / enemy grounding never use this path).
+    if (this.interiorActive && this.interior) return this._collideInterior(pos, vel, r, h, dt);
     // Single collision path. Flat maps carry a 'flat' terrain (height 0); _collideTerrain's only
     // terrain-specific extra — the ground-follow re-seat — is gated on hasTerrain (Edit 4), so on
     // flat maps this is byte-identical to the old y=0 floor.
     return this._collideTerrain(pos, vel, r, h, dt);
+  }
+
+  // Mine-pocket collision: same shape as _collideTerrain but the ground is `interior.floorAt` (not the terrain/
+  // rock) and there is no ±HALF clamp. The mine's wall AABBs live in `this.boxes` at pocket Y, so the shared
+  // `_moveAxis`/box step-up handles walls; surface boxes (cave boulders etc.) are gated out by the Y-overlap test.
+  _collideInterior(pos, vel, r, h, dt) {
+    const itr = this.interior;
+    let onGround = false;
+    pos.y += vel.y * dt;
+    let fl = itr.floorAt(pos.x, pos.z);
+    if (pos.y <= fl) { pos.y = fl; if (vel.y < 0) vel.y = 0; onGround = true; }
+    for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
+      if (b.foliage) continue;
+      if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
+      if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
+      const feet = pos.y, head = pos.y + h;
+      if (head <= b.min.y || feet >= b.max.y) continue;                  // Y-gate: surface boxes never match here
+      const penTop = b.max.y - feet, penBot = head - b.min.y;
+      if (penTop < penBot && vel.y <= 0.01) { pos.y = b.max.y; vel.y = 0; onGround = true; }
+      else if (vel.y > 0) { pos.y = b.min.y - h; vel.y = 0; }
+    }
+    this._moveAxis(pos, vel, r, h, 'x', vel.x * dt);
+    this._moveAxis(pos, vel, r, h, 'z', vel.z * dt);
+    fl = itr.floorAt(pos.x, pos.z);
+    if (pos.y < fl) { pos.y = fl; if (vel.y < 0) vel.y = 0; onGround = true; }
+    else if (onGround && pos.y - fl <= TERRAIN_GROUND_FOLLOW_STEP) { pos.y = fl; if (vel.y < 0) vel.y = 0; onGround = true; }
+    return onGround;
   }
 
   // Terrain-aware collide (only when hasTerrain). Walkable ground height under the
@@ -404,9 +442,10 @@ export class World {
     // face or a dug ditch wall blocks the mob but you can still climb out. Falls back to the legacy limit.
     const slopeLimit = (terr.playerSlopeLimit != null) ? terr.playerSlopeLimit : ((terr.slopeLimit != null) ? terr.slopeLimit : (Math.PI * 35) / 180);
 
-    // VERTICAL — gravity, terrain floor under the player, then man-made box tops/bottoms.
+    // VERTICAL — gravity, then the topmost solid surface under the player (heightfield OR the rock density field
+    // inside the massif — one query). fromY = feet + step + this frame's fall so a fast descent can't tunnel.
     pos.y += vel.y * dt;
-    let gy = terr.terrainHeightAt(pos.x, pos.z);
+    let gy = this.groundY(pos.x, pos.z, pos.y + STEP_UP - Math.min(0, vel.y * dt));
     if (pos.y <= gy) { pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true; }
     for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
       if (b.foliage) continue;                                   // foliage (soft cover) never blocks movement — only slows (foliageSlowAt)
@@ -427,9 +466,13 @@ export class World {
     const lim = this.HALF - r;
     pos.x = clamp(pos.x, -lim, lim); pos.z = clamp(pos.z, -lim, lim);
 
+    // ROCK WALLS — the mountain is a density field, not an AABB: if the body walked INTO rock (steep face / cave
+    // wall), eject it horizontally along the field gradient before re-seating the feet.
+    if (this.cave && this.cave.contains(pos.x, pos.z)) this._pushOutRock(pos, vel, r, h);
+
     // GROUND-FOLLOW — after moving, re-seat the feet on the (now possibly different)
     // terrain height so ascents/descents are smooth and never fall-through.
-    gy = terr.terrainHeightAt(pos.x, pos.z);
+    gy = this.groundY(pos.x, pos.z, pos.y + STEP_UP);
     // Gated on hasTerrain: on FLAT maps this down-snap would clip the player off man-made ledges
     // ≤ TERRAIN_GROUND_FOLLOW_STEP (0.6 m), so flat maps keep the old "stay on the box top" behavior.
     if (this.hasTerrain) {
@@ -439,12 +482,29 @@ export class World {
         pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
       }
     }
-    // CAVE CEILING — head can't pop through the rock roof (floor is still the heightfield → never fall through).
-    if (this.cave) {
-      const clamped = this.cave.clampHead(pos.x, pos.z, pos.y, h);
-      if (clamped < pos.y) { pos.y = clamped; if (vel.y > 0) vel.y = 0; }
+    // CAVE CEILING — head can't pop through the rock roof (same density field; groundY already put the feet on
+    // the cave floor / mountain surface, so the body can never fall through the rock).
+    if (this.cave && this.cave.contains(pos.x, pos.z)) {
+      const roof = this.cave.ceilingAbove(pos.x, pos.z, pos.y + 0.1);
+      if (roof != null) { const maxFeet = roof - h - 0.05; if (pos.y > maxFeet) { pos.y = maxFeet; if (vel.y > 0) vel.y = 0; } }
     }
     return onGround;
+  }
+
+  // Eject the player capsule out of the rock density field along the horizontal gradient (walls / steep faces).
+  // The field is ~signed-distance near the surface, so |density| ≈ penetration depth; 2 iterations converge.
+  _pushOutRock(pos, vel, r, h) {
+    const cave = this.cave;
+    for (let iter = 0; iter < 2; iter++) {
+      let deepest = 0, gx = 0, gz = 0;
+      for (const dy of [0.3, 0.9, 1.5]) {
+        const y = pos.y + dy, d = cave.densityAt(pos.x, y, pos.z);
+        if (d < deepest) { deepest = d; const g = cave.gradient(pos.x, y, pos.z); gx = g.x; gz = g.z; }
+      }
+      if (deepest >= 0) break;                              // not inside rock → done
+      const hl = Math.hypot(gx, gz) || 1, push = -deepest + 0.05;
+      pos.x += (gx / hl) * push; pos.z += (gz / hl) * push; vel.x = 0; vel.z = 0;
+    }
   }
 
   // Box collision + step-up for one axis (delegates to _moveAxis), then enforce the
@@ -495,7 +555,16 @@ export class World {
   // Ground height under (x,z): the terrain surface on the heightfield demo slice, else the
   // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
   // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
-  groundY(x, z) { return this.terrain.terrainHeightAt(x, z); }
+  groundY(x, z, fromY = Infinity) {
+    const base = this.terrain.terrainHeightAt(x, z);
+    // Inside the massif footprint the rock is a density field: the topmost solid ≤ fromY is the mountain surface
+    // (standing on it) or, in the cave, the rock floor (≈ base). Elsewhere / by default → the heightfield.
+    if (this.cave && this.cave.contains(x, z)) {
+      const gy = this.cave.groundY(x, z, fromY);
+      if (gy != null && gy > base) return gy;
+    }
+    return base;
+  }
 
   // Soft-cover slow: the horizontal-speed multiplier for a body pushing through ground-level foliage
   // (bush / sapling / fallen crown — `thicket` boxes). 1 otherwise. A tall tree's overhead canopy is
