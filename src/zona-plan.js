@@ -149,6 +149,10 @@ export const TERRAIN_FEATURES = [
   { kind: 'ridge', id: 'W_SCARP', halfW: 140, pts: [[-1250, -500, 60], [-1220, -100, 80], [-1230, 400, 90], [-1250, 800, 70]] },
   { kind: 'ridge', id: 'E_RANGE', halfW: 160, pts: [[1250, -600, 70], [1200, -200, 90], [1230, 300, 110], [1250, 700, 90]] },
   { kind: 'ridge', id: 'N_RANGE', halfW: 220, pts: [[-1000, 1050, 70], [-600, 980, 110], [-320, 1000, 130], [0, 950, 100], [300, 900, 90]] },
+  // AUTHORED: rail-tunnel approach notch — the E05 tunnel portal must sit at TRACK level, so the rail
+  // pierces the E range through a deep cutting instead of the corridor raising a 12 m embankment over
+  // the P5 yard (3% rail from a +100 crest is otherwise infeasible; portal floor lands at ~+40).
+  { kind: 'ridge', id: 'RAIL_NOTCH', halfW: 26, pts: [[1080, -28, -3], [1160, -24, -14], [1250, -16, -36]] },
   // airfield shelf, industrial terrace, mine bench, bunker saddle (abs plateaus under the pads)
   { kind: 'plateau', id: 'SHELF_P3', x: 50, z: 630, w: 460, d: 220, h: 60, skirt: 90, abs: true },
   { kind: 'plateau', id: 'TERR_P5', x: 680, z: 60, w: 360, d: 320, h: 30, skirt: 70, abs: true },
