@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXTENT, PARCELS, ROADS, GATES, WATER, lintPlan } from '../../src/zona-plan.js';
+import { EXTENT, PARCELS, ROADS, GATES, WATER, ZONES, zoneRects, inZone, lintPlan } from '../../src/zona-plan.js';
+
+test('ZONES: 9 zones, rects in bounds, anchor inside its own zone', () => {
+  assert.equal(ZONES.length, 9);
+  for (const zn of ZONES) {
+    for (const r of zoneRects(zn)) {
+      assert.ok(r.x0 < r.x1 && r.z0 < r.z1, `${zn.id} degenerate rect`);
+      for (const v of [r.x0, r.x1, r.z0, r.z1]) assert.ok(Math.abs(v) <= EXTENT, `${zn.id} rect out of bounds`);
+    }
+    assert.ok(inZone(zn, zn.anchor[0], zn.anchor[1]), `${zn.id} anchor outside zone`);
+  }
+});
 
 test('registry counts match master plan v1.2', () => {
   assert.equal(EXTENT, 1250);

@@ -32,6 +32,25 @@ export class DevConsole {
     this.reg.register('help', { args: [], run: () => 'Commands: /' + this.reg.names().join('  /') });
     this.reg.register('pos', { args: [], run: () => { const p = g.player.pos; return `x ${p.x.toFixed(1)}  y ${p.y.toFixed(1)}  z ${p.z.toFixed(1)}`; } });
     this.reg.register('seed', { args: [], run: () => `seed ${g.world.terrain ? g.world.terrain.seed ?? 1337 : 'flat'} (map ${g.mapId})` });
+
+    // /zone N | /zone off — «ЗОНА 704» zone-isolation editor: rebuilds the world with ONLY that
+    // working zone (void beyond). Needs a fresh World → persists the pick and reloads the page
+    // (exit guard disarmed first, or the browser pops a leave-confirm on our own reload).
+    this.reg.register('zone', {
+      args: [{ name: 'zone', type: 'enum', choices: ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'off'] }],
+      run: (a) => {
+        const v = String(a.zone);
+        try {
+          if (v === 'off') localStorage.removeItem('engendros_zone');
+          else if (!(+v >= 1 && +v <= 9)) return 'Usage: /zone 1-9 | off';
+          else { localStorage.setItem('engendros_zone', v); localStorage.setItem('engendros_map', 'zona'); }
+        } catch (e) { return 'localStorage unavailable'; }
+        g._setUnloadGuard(false);
+        const url = new URL(location.href); url.searchParams.delete('zone'); // localStorage is the truth after /zone
+        setTimeout(() => location.assign(url.toString()), 150);
+        return v === 'off' ? 'Rebuilding the FULL map…' : `Rebuilding zone ${v} only…`;
+      },
+    });
     this.reg.register('clear', { args: [], run: () => { const n = g.inventory.slots.filter(Boolean).length; g.inventory.reset(); g.inventory._holdNothing(); if (g.hud) g.hud.setWeapon(g.weapons); return n ? `Cleared inventory (${n} item${n === 1 ? '' : 's'})` : 'Inventory already empty'; } }); // Minecraft /clear = wipe items INCLUDING what's in hand (reset only hides item models; _holdNothing also holsters the weapon viewmodel). Console scrollback is cleared with F3+D
 
     this.reg.register('tp', {

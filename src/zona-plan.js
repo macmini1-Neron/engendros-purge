@@ -77,8 +77,11 @@ export const ROADS = [
   { id: 'QUARRY', name: 'КАРЬЕРНАЯ СПОЙКА', surface: 'dirt', width: 4, maxSlope: 0.12, pts: [
     [-300, -200], [-200, -240], [-140, -260], [-120, -440], [-100, -600], [-80, -780],
   ] },
+  // AUTHORED: line ends at the P5 terrace FOOT (900,−40, beside the S15 water tower) instead of the
+  // plan's (820,−40) — the mid-course is natural lowland (~0 m), and a 3% line can neither climb the
+  // +30 terrace edge nor honestly embank 30 m; the seřadiště sits at the plant's foot. Flag for v1.3.
   { id: 'RAIL', name: 'ЖЕЛЕЗНАЯ ДОРОГА', surface: 'rail', width: 3, maxSlope: 0.03, pts: [
-    [1250, -20], [1180, -20], [1050, -30], [920, -40], [820, -40],
+    [1250, -20], [1180, -20], [1050, -30], [980, -35], [900, -40],
   ] },
   { id: 'SERP', name: 'СЕРПАНТИН', surface: 'gravel', width: 4, maxSlope: 0.14, pts: [
     [800, 200], [940, 370], [1000, 560], [980, 760], [1040, 880], [1000, 990], [960, 1020], [1060, 1120],
@@ -149,6 +152,10 @@ export const TERRAIN_FEATURES = [
   { kind: 'ridge', id: 'W_SCARP', halfW: 140, pts: [[-1250, -500, 60], [-1220, -100, 80], [-1230, 400, 90], [-1250, 800, 70]] },
   { kind: 'ridge', id: 'E_RANGE', halfW: 160, pts: [[1250, -600, 70], [1200, -200, 90], [1230, 300, 110], [1250, 700, 90]] },
   { kind: 'ridge', id: 'N_RANGE', halfW: 220, pts: [[-1000, 1050, 70], [-600, 980, 110], [-320, 1000, 130], [0, 950, 100], [300, 900, 90]] },
+  // AUTHORED: rail-tunnel approach notch — the E05 tunnel portal must sit at TRACK level, so the rail
+  // pierces the E range through a deep cutting instead of the corridor raising a 12 m embankment over
+  // the P5 yard (3% rail from a +100 crest is otherwise infeasible; portal floor lands at ~+40).
+  { kind: 'ridge', id: 'RAIL_NOTCH', halfW: 26, pts: [[1080, -28, -3], [1160, -24, -14], [1250, -16, -36]] },
   // airfield shelf, industrial terrace, mine bench, bunker saddle (abs plateaus under the pads)
   { kind: 'plateau', id: 'SHELF_P3', x: 50, z: 630, w: 460, d: 220, h: 60, skirt: 90, abs: true },
   { kind: 'plateau', id: 'TERR_P5', x: 680, z: 60, w: 360, d: 320, h: 30, skirt: 70, abs: true },
@@ -168,9 +175,71 @@ export const TERRAIN_FEATURES = [
   { kind: 'ridge', id: 'BALKA1', halfW: 30, pts: [[-900, -300, -6], [-780, -180, -7], [-660, -100, -5]] },
   { kind: 'ridge', id: 'BALKA2', halfW: 26, pts: [[-980, 100, -5], [-860, 180, -6], [-760, 240, -4]] },
   { kind: 'ridge', id: 'UVOZ', halfW: 14, pts: [[-740, -120, -4], [-700, -80, -4.5], [-640, -30, -4]] },
+  // ── ZONE 1 (START JZ) detail — shallow drainage gullies toward the river's south course + a
+  // hummock cluster NW of the strongpoint (micro-landmarks for the tutorial foothold fights)
+  { kind: 'ridge', id: 'Z1_GULLY1', halfW: 22, pts: [[-1020, -780, -2.5], [-800, -880, -3], [-620, -960, -2]] },
+  { kind: 'ridge', id: 'Z1_GULLY2', halfW: 16, pts: [[-900, -1050, -2], [-760, -1100, -2.5], [-640, -1120, -1.5]] },
+  { kind: 'ridge', id: 'Z1_HUM1', halfW: 20, pts: [[-1010, -850, 2.5], [-990, -835, 2.5]] },
+  { kind: 'ridge', id: 'Z1_HUM2', halfW: 16, pts: [[-1040, -900, 2], [-1024, -892, 2]] },
   // river channel (bed = terrain − depth along course; the water plane rides bed + surfaceOffset)
   { kind: 'channel', id: 'TIHAYA', ref: 'river' },
 ];
+
+// ── biomes (plan layer «Biomy+voda») — ground SUBSTRATE + vegetation regions. Weights blend in
+// zona-terrain.biomeWeightsAt; kinds: 'forest' (dark humus/litter floor + trees), 'swamp' (peat/mud
+// + reeds), 'dry' (worn straw/sand), plus PROCEDURAL deadwood (massif flanks — derived from the RANA
+// ridge in code, not authored here). AUTHORED: shapes read off the plan's biome layer; les 27 % ve 3
+// hustotách — density 1=háj (grove), 2=les, 3=ЧАЩА (thicket, 3–10 m sightlines).
+export const BIOMES = [
+  // NW pocket — the big woods around hájovna/pila/starica (plan's largest forest focus)
+  { kind: 'forest', density: 2, shape: 'disc', x: -700, z: 300, r: 190 },
+  { kind: 'forest', density: 3, shape: 'disc', x: -770, z: 430, r: 90 },   // чаща at the sawmill river bend
+  { kind: 'forest', density: 1, shape: 'disc', x: -580, z: 140, r: 90 },   // starica grove fringe
+  // W band along the lesní okruh (between the loop road and the massif foot)
+  { kind: 'forest', density: 2, shape: 'disc', x: -560, z: -260, r: 130 },
+  { kind: 'forest', density: 1, shape: 'disc', x: -430, z: -80, r: 100 },
+  // alder чаща at the poachers' camp (S14) + kolchoz shelter belts
+  { kind: 'forest', density: 3, shape: 'disc', x: 180, z: -520, r: 80 },
+  { kind: 'forest', density: 1, shape: 'disc', x: -40, z: -760, r: 70 },
+  // NE mine slopes (spruce band under the bench)
+  { kind: 'forest', density: 2, shape: 'disc', x: 540, z: 700, r: 110 },
+  // ZONE-1 calibration: small grove NE of the strongpoint + roadside scrub by the КПП
+  { kind: 'forest', density: 1, shape: 'disc', x: -880, z: -860, r: 60 },
+  // swamp substrate mirrors the SWAMP bowl + the sunken church island fringe
+  { kind: 'swamp', shape: 'disc', x: 470, z: -850, r: 360 },
+  { kind: 'swamp', shape: 'disc', x: 380, z: -980, r: 90 },
+  // dry/worn ground: the КПП apron, ПуСО vehicle yard, perimeter strip (traffic-worn steppe)
+  { kind: 'dry', shape: 'rect', x: -1080, z: -1060, w: 90, d: 70 },
+  { kind: 'dry', shape: 'rect', x: -370, z: -1040, w: 70, d: 90 },
+  { kind: 'dry', shape: 'disc', x: -950, z: -920, r: 70 },
+];
+
+// ── working zones (DEV) — the 9 owner-agreed detailing areas for the iterative dressing passes.
+// `?zone=N` / the in-game `/zone N` command builds ONLY that zone (terrain chunks, network, cadastre,
+// vegetation) with void beyond — a focused editor view. Rects overlap on purpose (margins); zone 9 is
+// the border ring (4 rects). anchor = spawn point inside the zone.
+export const ZONES = [
+  { id: 1, name: 'START JZ',        x0: -1250, z0: -1250, x1: -250,  z1: -830,  anchor: [-1080, -1060] },
+  { id: 2, name: 'ROZCESTÍ+ŘEKA',   x0: -800,  z0: -800,  x1: 0,     z1: -100,  anchor: [-340, -540] },
+  { id: 3, name: 'MASIV «РАНА»',    x0: -700,  z0: -450,  x1: 650,   z1: 650,   anchor: [50, 20] },
+  { id: 4, name: 'LETIŠTĚ',         x0: -350,  z0: 400,   x1: 450,   z1: 850,   anchor: [50, 630] },
+  { id: 5, name: 'SZ KAPSA',        x0: -1250, z0: 100,   x1: -300,  z1: 1250,  anchor: [-700, 320] },
+  { id: 6, name: 'JV BAŽINA',       x0: -100,  z0: -1250, x1: 900,   z1: -550,  anchor: [50, -840] },
+  { id: 7, name: 'KOMBINÁT',        x0: 400,   z0: -550,  x1: 1250,  z1: 420,   anchor: [680, 60] },
+  { id: 8, name: 'SV FINÁLE',       x0: 400,   z0: 350,   x1: 1250,  z1: 1250,  anchor: [960, 1020] },
+  { id: 9, name: 'OKRAJE',          rects: [
+      { x0: -1250, z0: -1250, x1: -1050, z1: 1250 }, { x0: 1050, z0: -1250, x1: 1250, z1: 1250 },
+      { x0: -1250, z0: 1050,  x1: 1250,  z1: 1250 }, { x0: -1250, z0: -1250, x1: 1250, z1: -1050 },
+    ], anchor: [-1130, -350] },
+];
+
+// zone → list of rects (zone 9 is multi-rect; the rest normalize to one)
+export function zoneRects(zone) {
+  return zone.rects || [{ x0: zone.x0, z0: zone.z0, x1: zone.x1, z1: zone.z1 }];
+}
+export function inZone(zone, x, z) {
+  return zoneRects(zone).some(r => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+}
 
 // ── lint — fail-loud plan validation (run at zona boot + in node tests).
 export function lintPlan() {

@@ -87,7 +87,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-07-02 15:41';
+const GAME_BUILD = '2026-07-02 16:20';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -114,10 +114,19 @@ class Game {
       const saved = localStorage.getItem('engendros_map');
       return (saved === 'steppe' || saved === 'demo' || saved === 'forest' || saved === 'zona') ? saved : 'arena';
     } catch (e) { return 'arena'; } })();
+    // DEV zone-isolation mode («ЗОНА 704» detailing): ?zone=N (or the /zone console command via
+    // localStorage) builds ONLY that working zone — void beyond. Forces the zona map + a fly start.
+    this.zonaZone = (() => { try {
+      const p = new URLSearchParams(location.search).get('zone');
+      const saved = localStorage.getItem('engendros_zone');
+      const n = parseInt(p != null ? p : saved, 10);
+      return (n >= 1 && n <= 9) ? n : 0;
+    } catch (e) { return 0; } })();
+    if (this.zonaZone) this.mapId = 'zona';
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
     this.freecam = false;
     this.flyMode = false; // console /fly — same free movement as freecam, but the sim keeps running (mobs/waves stay alive)
-    this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })();
+    this._flyStart = (() => { try { return new URLSearchParams(location.search).get('fly') === '1'; } catch (e) { return false; } })() || !!this.zonaZone;
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
@@ -157,13 +166,20 @@ class Game {
     // walls/trees/props. Wires its DeformField into world.terrain; harmless on maps without terrain
     // (empty field fast-returns 0). MUST follow forest/build/demoBuilding (its SupportScan reads them).
     this.digManager = new DigManager(this);
-    const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
-    const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
-    const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
-    this.m2MountedGun = new MountedGun(this, m2Pos, 0, { variant: 'm2hb', id: 'm2hb' });
-    this.dshkMountedGun = new MountedGun(this, dshkPos, dshkYaw, { variant: 'dshk', id: 'dshk' });
-    this.mountedGuns = [this.m2MountedGun, this.dshkMountedGun];
-    this.mountedGun = this.m2MountedGun; // compatibility alias for older .50-cal code paths; direct interactions use mountedGuns
+    if (this.mapId !== 'zona') {
+      const m2Pos = new THREE.Vector3(0, 3.4, 46);     // south bunker roof
+      const dshkPos = new THREE.Vector3(42, 6.8, 30);  // warehouse roof
+      const dshkYaw = Math.atan2(dshkPos.x, dshkPos.z);
+      this.m2MountedGun = new MountedGun(this, m2Pos, 0, { variant: 'm2hb', id: 'm2hb' });
+      this.dshkMountedGun = new MountedGun(this, dshkPos, dshkYaw, { variant: 'dshk', id: 'dshk' });
+      this.mountedGuns = [this.m2MountedGun, this.dshkMountedGun];
+      this.mountedGun = this.m2MountedGun; // compatibility alias for older .50-cal code paths; direct interactions use mountedGuns
+    } else {
+      // «ЗОНА 704»: the arena-anchored .50-cals would float mid-air near the origin — the map gets its
+      // own emplacements later, at plan positions. Consumers (mp/inventory/_mountedGunList) null-check.
+      this.m2MountedGun = this.dshkMountedGun = this.mountedGun = null;
+      this.mountedGuns = [];
+    }
     // ННП-23 «Резчик» observation post(s) — steppe: dug in beside the strongpoint НП tower,
     // objective laid ~N over the open steppe. Built lazily once the nnp23 spec registers.
     this.nightPosts = [];
@@ -188,7 +204,10 @@ class Game {
     const _cc = document.getElementById('crateCanvas'); // «Посылка» lootbox ceremony (own renderer, gated on state==='crate')
     try { this.crate = _cc ? new CrateCeremony(this) : null; } catch (e) { console.warn('[crate] ceremony init failed — crates disabled', e); this.crate = null; } // a WebGL/context failure must not brick boot (openCrate guards null)
     this.fonoteka = new Fonoteka(this); ensureGramophoneSpec(); // ФОНОТЕКА music screen + preload the gramophone model
-    this.gramophone = new GramophoneManager(this); placeGramophones(this.gramophone, this.engine.scene, this.mapId); // in-world gramophone props (genre per prop, E + ◀/▶)
+    this.gramophone = new GramophoneManager(this);
+    // zona gets NO gramophones yet — the arena/steppe spots float in the open steppe; they return at
+    // proper POI interiors with the buildgen passes (fonoteka UI itself stays available)
+    if (this.mapId !== 'zona') placeGramophones(this.gramophone, this.engine.scene, this.mapId); // in-world gramophone props (genre per prop, E + ◀/▶)
     this.poker = new PokerTable(this); // secret poker den — Texas Hold'em (renderer mounts lazily on first open)
     // inject the 3D table renderer (THREE) here so poker-table.js stays node-testable; ?poker2d=1 keeps the 2D fallback
     if (!/[?&]poker2d=1/.test(location.search)) this.poker.RendererClass = PokerSceneRenderer;

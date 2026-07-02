@@ -32,7 +32,8 @@ export class TerrainChunks {
     this._inv = new THREE.Matrix4();
     this._sphere = new THREE.Sphere();
 
-    const list = planChunks(this.extent, this.chunkSize);
+    let list = planChunks(this.extent, this.chunkSize);
+    if (opts.chunkFilter) list = list.filter(opts.chunkFilter); // zone-isolation dev mode builds a sub-rect only
     const sw = this.simWorker;
     const useWorker = !!(sw && sw.ok && sw.terrainInit({
       profile: terrain.profile, seed: terrain.seed, slopeLimit: terrain.slopeLimit, tuning: terrain.tuning, reserved: terrain.reserved,

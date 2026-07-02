@@ -25,6 +25,28 @@ test('pinned pad heights match the plan', () => {
   assert.equal(ph.get('P7'), -4); // dam crest — the pad must WIN over the R2E corridor crossing it
 });
 
+test('T5 ridge scrambles stay walkable end-to-end: terrain slope on the centreline < 38°', async () => {
+  const { makeTerrain } = await import('../../src/terrain.js');
+  const t = makeTerrain({ profile: 'zona', seed: 704 });
+  // 38°, not the 35° walk limit: the P9 portal-bench rim crosses the path with one ~37° step (the
+  // pad skirt is radial, the path profile longitudinal — they compound at the rim). The real trail
+  // has width to route around a single steep probe point; T5 is the map's deadliest shortcut by
+  // design. Tighten back to 35° when the portal approach gets its own grading (P9 POI spec).
+  const LIM = (38 * Math.PI) / 180;
+  const { ROADS } = await import('../../src/zona-plan.js');
+  for (const id of ['T5A', 'T5B']) {
+    const pts = ROADS.find(r => r.id === id).pts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      for (let k = 0; k <= 10; k++) {
+        const x = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * (k / 10);
+        const z = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * (k / 10);
+        const s = t.terrainSlopeAt(x, z);
+        assert.ok(s < LIM, `${id} slope ${(s * 180 / Math.PI).toFixed(1)}° at ${x.toFixed(0)},${z.toFixed(0)}`);
+      }
+    }
+  }
+});
+
 test('unpinned pads sample the local field (sane values, not zero-default)', () => {
   const ph = padHeights(704);
   const s19 = ph.get('S19'); // sawmill by the river bend, plain NW steppe

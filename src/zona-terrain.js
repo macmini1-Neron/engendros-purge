@@ -5,7 +5,7 @@
 // Layer order (later wins): base fbm → stamps (ridge/plateau/bowl) → river channel → road corridors
 // (Task 4) → parcel pads (Task 5). Every primitive clamps its own influence radius; the composed
 // function is total (no NaN) and pure for a fixed seed.
-import { EXTENT, TERRAIN_FEATURES, WATER, ROADS, PARCELS } from './zona-plan.js';
+import { EXTENT, TERRAIN_FEATURES, WATER, ROADS, PARCELS, BIOMES } from './zona-plan.js';
 
 // ── self-contained value-noise fbm (mirror of terrain.js's; kept local so this module imports only plan data)
 function hash2(ix, iz, seed) {
@@ -27,7 +27,13 @@ function fbm(x, z, seed, { octaves, freq, lacunarity, gain }) {
   }
   return sum / norm;
 }
-export const ZONA_TUNING = { fbmAmplitude: 4.0, fbm: { octaves: 5, freq: 1 / 220, lacunarity: 2.05, gain: 0.5 } };
+export const ZONA_TUNING = {
+  fbmAmplitude: 4.0, fbm: { octaves: 5, freq: 1 / 220, lacunarity: 2.05, gain: 0.5 },
+  // micro-relief: a short-wavelength dusting (~±0.5 m @ 45 m) so open steppe isn't billiard-flat.
+  // Kept SMALL: corridors re-clamp roads through it, pads flatten over it, and the T5 walkability
+  // margin (38° test) survives the ~2° it adds to local slopes.
+  micro: { amplitude: 0.55, fbm: { octaves: 2, freq: 1 / 45, lacunarity: 2.2, gain: 0.55 } },
+};
 
 const smoothstep = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
 
@@ -100,15 +106,20 @@ function polyAABB(pts, pad) {
 }
 
 // prepare TERRAIN_FEATURES + the river channel into grid-indexed evaluators
+// organic stamps (ridges + delta bowls) evaluate at DOMAIN-WARPED coordinates — nature is not regular,
+// so their silhouettes wobble by ±WARP.amp. Surveyed shapes stay EXACT: abs plateaus/bowls must align
+// with the parcel pads sitting on them, and the river channel must align with the water polyline.
+export const WARP = { amp: 28, fbm: { octaves: 2, freq: 1 / 170, lacunarity: 2, gain: 0.5 } };
+
 function prepareStamps() {
   const grid = makeGrid();
   for (const f of TERRAIN_FEATURES) {
     if (f.kind === 'ridge') {
       const prep = { type: 'ridge', pts: f.pts, cum: cumArc(f.pts), halfW: f.halfW };
-      const [a, b, c, d] = polyAABB(f.pts, f.halfW);
+      const [a, b, c, d] = polyAABB(f.pts, f.halfW + WARP.amp);
       gridInsert(grid.add, a, b, c, d, prep);
     } else if (f.kind === 'plateau' || f.kind === 'bowl') {
-      const reach = (f.r != null ? f.r : Math.max(f.w, f.d) / 2) + f.skirt;
+      const reach = (f.r != null ? f.r : Math.max(f.w, f.d) / 2) + f.skirt + (f.abs ? 0 : WARP.amp);
       const prep = { type: f.abs ? 'abs' : 'delta', f };
       gridInsert(f.abs ? grid.abs : grid.add, f.x - reach, f.z - reach, f.x + reach, f.z + reach, prep);
     } else if (f.kind === 'channel') {
@@ -124,7 +135,7 @@ function prepareStamps() {
 
 // evaluate the stamp layers at (x,z) given the base height — shared by the public field and by the
 // corridor-profile precompute (which must read stamps WITHOUT corridors).
-function stampedHeight(grid, x, z, base) {
+function stampedHeight(grid, x, z, wx, wz, base) {
   let h = base;
   const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
   const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
@@ -132,10 +143,10 @@ function stampedHeight(grid, x, z, base) {
   const adds = grid.add.get(k);
   if (adds) for (const p of adds) {
     if (p.type === 'ridge') {
-      const { d, s } = polylineProject(p.pts, x, z);
+      const { d, s } = polylineProject(p.pts, wx, wz);
       if (d < p.halfW) h += crestAt(p, s) * Math.pow(1 - smoothstep(d / p.halfW), 1.6);
     } else if (p.type === 'delta') {
-      const d = distToShape(p.f, x, z);
+      const d = distToShape(p.f, wx, wz);
       if (d < p.f.skirt) h += p.f.h * (1 - smoothstep(d / p.f.skirt));
     } else if (p.type === 'channel') {
       const { d } = polylineProject(p.pts, x, z);
@@ -168,6 +179,11 @@ function pointAtArc(pts, cum, s) {
 function prepareCorridors(stamped) {
   const grid = new Map(); // cellKey → road preps (per-SEGMENT insertion, deduped at eval by query id)
   const profiles = new Map();
+  const corrSoFar = { grid, profiles };
+  // ITERATIVE: road N's profile samples the field ALREADY conditioned by roads 0..N−1 (the registry
+  // orders trunks before their spurs), so a spur branching off a trunk's cutting starts AT the cut
+  // height instead of hanging a wall over the junction.
+  const fieldSoFar = (x, z) => corridorHeight(corrSoFar, x, z, stamped(x, z));
   for (const road of ROADS) {
     const cum = cumArc(road.pts);
     const total = cum[cum.length - 1];
@@ -176,26 +192,18 @@ function prepareCorridors(stamped) {
     for (let j = 0; j < n; j++) {
       const s = Math.min(j * CORR_STEP, total);
       const p = pointAtArc(road.pts, cum, s);
-      arc.push(s); pos.push(p); h.push(stamped(p[0], p[1]));
+      arc.push(s); pos.push(p); h.push(fieldSoFar(p[0], p[1]));
     }
-    // smooth: two passes of centred moving average (window 5)
-    for (let pass = 0; pass < 2; pass++) {
-      const src = h.slice();
-      for (let i = 0; i < n; i++) {
-        let sum = 0, cnt = 0;
-        for (let k = -2; k <= 2; k++) { const ii = i + k; if (ii >= 0 && ii < n) { sum += src[ii]; cnt++; } }
-        h[i] = sum / cnt;
-      }
-    }
-    // slope clamp: EXACT Lipschitz envelopes (O(n), deterministic). minEnv = tightest L-Lipschitz
-    // function ≤ profile (pure cut), maxEnv = tightest ≥ profile (pure fill); their average is again
-    // L-Lipschitz and balances cut vs fill — ridges become cuttings, ravines become embankments.
+    // slope clamp: the LOWER Lipschitz envelope (O(n), exact, deterministic) — the LARGEST
+    // L-Lipschitz function ≤ the sampled ground. Pure CUT: ridges/bumps get benched down, dips are
+    // kept (roads grade through hollows), and endpoints anchor at their true ground. (Do NOT average
+    // with the upper envelope and do NOT pre-smooth: both back-propagate a big climb's height into
+    // the low endpoint — a massif scramble then hovers ~17 m over the trunk road it branches from,
+    // and its corridor builds a levee across the steppe.)
     {
       const L = road.maxSlope;
-      const lo = h.slice(), hi = h.slice();
-      for (let i = 1; i < n; i++) { const ds = arc[i] - arc[i - 1]; lo[i] = Math.min(lo[i], lo[i - 1] + L * ds); hi[i] = Math.max(hi[i], hi[i - 1] - L * ds); }
-      for (let i = n - 2; i >= 0; i--) { const ds = arc[i + 1] - arc[i]; lo[i] = Math.min(lo[i], lo[i + 1] + L * ds); hi[i] = Math.max(hi[i], hi[i + 1] - L * ds); }
-      for (let i = 0; i < n; i++) h[i] = (lo[i] + hi[i]) / 2;
+      for (let i = 1; i < n; i++) { const ds = arc[i] - arc[i - 1]; h[i] = Math.min(h[i], h[i - 1] + L * ds); }
+      for (let i = n - 2; i >= 0; i--) { const ds = arc[i + 1] - arc[i]; h[i] = Math.min(h[i], h[i + 1] + L * ds); }
     }
     // bridge gap windows in arc space (corridor weight → 0 inside, so the channel survives under the deck)
     const gaps = (road.bridges || []).map(b => {
@@ -226,31 +234,35 @@ function profileAt(prep, s) {
 }
 
 let _query = 0;
+// weighted blend of EVERY corridor in range — nearest-wins is discontinuous exactly at junctions
+// (two roads, two different clamped profiles, tied lateral distance ⇒ a step wall ACROSS the spur).
+// A convex blend of slope-clamped profiles stays continuous everywhere and both ribbons drape the
+// blended surface, so junctions meet seamlessly.
 function corridorHeight(corr, x, z, h) {
   const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
   const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
   const list = corr.grid.get(cellKey(cx, cz));
   if (!list) return h;
   const q = ++_query;
-  let best = null, bestD = Infinity;
+  let wSum = 0, hSum = 0, wMax = 0;
   for (const prep of list) {
     if (prep._q === q) continue; prep._q = q; // dedupe (a prep spans several segments → cells)
     const pr = polylineProject(prep.pts, x, z);
-    if (pr.d < bestD) { bestD = pr.d; best = { prep, s: pr.s }; }
-  }
-  if (!best) return h;
-  const { prep, s } = best;
-  const hp = profileAt(prep, s);
-  const shoulder = prep.baseShoulder + Math.min(40, Math.abs(hp - h) * 1.3); // adaptive: deep cuts widen
-  if (bestD >= prep.halfW + shoulder) return h;
-  let w = bestD <= prep.halfW ? 1 : 1 - smoothstep((bestD - prep.halfW) / shoulder);
-  for (const g of prep.gaps) { // bridge window: fade the pull to 0 inside the gap
-    if (s > g.s0 - g.feather && s < g.s1 + g.feather) {
-      const edge = Math.min((s - (g.s0 - g.feather)) / g.feather, ((g.s1 + g.feather) - s) / g.feather);
-      w *= 1 - Math.max(0, Math.min(1, edge));
+    const hp = profileAt(prep, pr.s);
+    const shoulder = prep.baseShoulder + Math.min(40, Math.abs(hp - h) * 1.3); // adaptive: deep cuts widen
+    if (pr.d >= prep.halfW + shoulder) continue;
+    let w = pr.d <= prep.halfW ? 1 : 1 - smoothstep((pr.d - prep.halfW) / shoulder);
+    for (const g of prep.gaps) { // bridge window: fade the pull to 0 inside the gap
+      if (pr.s > g.s0 - g.feather && pr.s < g.s1 + g.feather) {
+        const edge = Math.min((pr.s - (g.s0 - g.feather)) / g.feather, ((g.s1 + g.feather) - pr.s) / g.feather);
+        w *= 1 - Math.max(0, Math.min(1, edge));
+      }
     }
+    if (w <= 0) continue;
+    wSum += w; hSum += hp * w; if (w > wMax) wMax = w;
   }
-  return hp * w + h * (1 - w);
+  if (wSum <= 0) return h;
+  return (hSum / wSum) * wMax + h * (1 - wMax);
 }
 
 // ── parcel pads — the cadastre layer, applied LAST (pads win over roads win over stamps). Inside the
@@ -287,8 +299,13 @@ function padHeight(pads, x, z, h) {
     const d = distToShape(prep.f, x, z);
     if (d < bestD || (d === bestD && best && prep.half < best.half)) { bestD = d; best = prep; }
   }
-  if (!best || bestD >= best.skirt) return h;
-  const w = 1 - smoothstep(bestD / best.skirt); // d=0 (inside the footprint) ⇒ w=1 ⇒ dead flat
+  if (!best) return h;
+  // adaptive skirt (same trick as corridor shoulders): a pad pinned far above/below its surroundings
+  // widens its blend so the rim is a walkable slope, not a cliff (e.g. the P9 portal bench, +26 m
+  // over the massif flank — a fixed 10 m skirt there is an 80° wall ACROSS the T5A scramble).
+  const skirt = best.skirt + Math.min(70, Math.abs(best.padH - h) * 2.0);
+  if (bestD >= skirt) return h;
+  const w = 1 - smoothstep(bestD / skirt); // d=0 (inside the footprint) ⇒ w=1 ⇒ dead flat
   return best.padH * w + h * (1 - w);
 }
 
@@ -298,16 +315,95 @@ function build(seed) {
   if (_cache.has(seed)) return _cache.get(seed);
   const grid = prepareStamps();
   const tune = ZONA_TUNING;
-  const stamped = (x, z) => stampedHeight(grid, x, z, tune.fbmAmplitude * fbm(x, z, seed, tune.fbm));
+  const stamped = (x, z) => {
+    const wx = x + WARP.amp * fbm(x, z, seed + 551, WARP.fbm);
+    const wz = z + WARP.amp * fbm(x, z, seed + 733, WARP.fbm);
+    return stampedHeight(grid, x, z, wx, wz,
+      tune.fbmAmplitude * fbm(x, z, seed, tune.fbm) + tune.micro.amplitude * fbm(x, z, seed + 7331, tune.micro.fbm));
+  };
   const corr = prepareCorridors(stamped);
   const corridorField = (x, z) => corridorHeight(corr, x, z, stamped(x, z));
   const pads = preparePads(corridorField);
   const fn = (x, z) => padHeight(pads, x, z, corridorField(x, z));
-  const built = { fn, profiles: corr.profiles, padHeights: pads.heights };
+  // infrastructure keep-out for scatter systems (vegetation must not grow on roads / parcel pads)
+  const infraClear = (x, z, margin = 2) => {
+    const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
+    const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
+    const k = cellKey(cx, cz);
+    const roads = corr.grid.get(k);
+    if (roads) { const q = ++_query; for (const prep of roads) {
+      if (prep._q === q) continue; prep._q = q;
+      if (polylineProject(prep.pts, x, z).d < prep.halfW + margin) return false;
+    } }
+    const padList = pads.grid.get(k);
+    if (padList) for (const prep of padList) if (distToShape(prep.f, x, z) < margin) return false;
+    return true;
+  };
+  const built = { fn, profiles: corr.profiles, padHeights: pads.heights, infraClear };
   _cache.set(seed, built);
   return built;
 }
+// scatter keep-out — true when (x,z) is clear of roads (± margin) and parcel pads (vegetation gate)
+export function zonaInfraClear(seed, x, z, margin = 2) { return build(seed).infraClear(x, z, margin); }
 export function makeZonaHeightFn(seed) { return build(seed).fn; }
+
+// ── biome weights — pure (x,z) → {forest, swamp, dry, dead} in [0,1]. Drives BOTH the ground
+// substrate (zona.js bakes a biome-map texture the triplanar material samples) AND vegetation
+// scatter, so what you see underfoot is what grows there. Authored BIOMES shapes blend by smooth
+// falloff; deadwood is PROCEDURAL: the massif «РАНА» flanks by ridge proximity (dead forest →
+// bare crest per the plan), and swamp gains weight below the waterline regardless of shape.
+let _bgrid = null;
+function biomeGrid() {
+  if (_bgrid) return _bgrid;
+  _bgrid = new Map();
+  for (const b of BIOMES) {
+    const reach = (b.shape === 'disc' ? b.r : Math.max(b.w, b.d) / 2) + 40;
+    gridInsert(_bgrid, b.x - reach, b.z - reach, b.x + reach, b.z + reach, b);
+  }
+  return _bgrid;
+}
+const RANA = TERRAIN_FEATURES.find(f => f.id === 'RANA');
+export function biomeWeightsAt(x, z, h) {
+  // h optional (pass the ground height when you have it — saves a field eval for the wet boost)
+  const grid = biomeGrid();
+  const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
+  const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
+  const list = grid.get(cellKey(cx, cz));
+  let forest = 0, swamp = 0, dry = 0;
+  if (list) for (const b of list) {
+    const half = b.shape === 'disc' ? b.r : Math.max(b.w, b.d) / 2;
+    const d = b.shape === 'disc'
+      ? Math.max(0, Math.hypot(x - b.x, z - b.z) - b.r)
+      : Math.hypot(Math.max(0, Math.abs(x - b.x) - b.w / 2), Math.max(0, Math.abs(z - b.z) - b.d / 2));
+    const w = 1 - smoothstep(d / Math.max(24, half * 0.35)); // soft fringe ~1/3 of the patch size
+    if (b.kind === 'forest') forest = Math.max(forest, w * (0.55 + 0.15 * (b.density || 2)));
+    else if (b.kind === 'swamp') swamp = Math.max(swamp, w);
+    else if (b.kind === 'dry') dry = Math.max(dry, w);
+  }
+  // procedural deadwood: massif flanks (near the RANA crest line, above the meadow foot)
+  const pr = polylineProject(RANA.pts, x, z);
+  const dead = (1 - smoothstep(pr.d / (RANA.halfW * 1.05))) * 0.9;
+  // wetness boost: anything below the swamp waterline reads as peat/marsh
+  if (h != null) swamp = Math.max(swamp, (1 - smoothstep((h - (-9)) / 4)) * 0.9);
+  forest *= (1 - dead); // the dieback gradient eats the green forest as you climb the massif
+  // ── waterline layers: sandy SHORE strips of random width along every water edge + WET ground
+  // under the surface (different substrate underwater — the river bed, swamp floor, reservoir floor).
+  let shore = 0, wet = 0;
+  const rp = polylineProject(WATER.river.pts, x, z);
+  const chHalf = WATER.river.width / 2 + 4;                       // carved channel reach
+  if (rp.d < chHalf + 26) {
+    wet = Math.max(wet, 1 - smoothstep((rp.d - (chHalf - 7)) / 7));       // in/near the channel bed
+    const band = 4 + 12 * valueNoise(x * 0.021, z * 0.021, 9182);         // random-width sandy strip
+    shore = Math.max(shore, 1 - smoothstep((rp.d - chHalf + 2) / band));
+  }
+  if (h != null && swamp > 0.05) {
+    wet = Math.max(wet, swamp * (1 - smoothstep((h + 10.6) / 0.9)));      // below the −11 waterline
+    const band = 0.8 + 1.6 * valueNoise(x * 0.03, z * 0.03, 5417);        // shoreline follows the contour
+    shore = Math.max(shore, swamp * (1 - smoothstep(Math.abs(h + 10.1) / band)));
+  }
+  shore *= (1 - wet * 0.85); // sand rings the water; the bed itself stays wet substrate
+  return { forest, swamp, dry, dead, shore, wet };
+}
 // per-road slope-clamped longitudinal profiles — zona.js drapes ribbons along these; tests assert slopes
 export function roadProfiles(seed) { return build(seed).profiles; }
 // parcelId → resolved pad height — zona.js seats signs/gates on these; buildgen seats buildings later
