@@ -1275,6 +1275,7 @@ export class MP {
   _applyPState(d) {
     const g = this.game;
     if (d.id === this.myId) {
+      const wasDown = this._localDown; // pstate edge → audible down/revive cue (state-derived, no extra message)
       g.player.hp = d.hp; g.player.armor = d.armor;
       g.hud.setHealth(d.hp, d.maxHp); g.hud.setArmor(d.armor, g.player.armorMax);
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
@@ -1285,7 +1286,19 @@ export class MP {
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
       else { this.spectateTarget = null; this._incomingRevive = null; g.hud.setBleed(-1); }
-    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); } } // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
+      if (g.audio && g.audio.downCue) {
+        if (d.down && !wasDown) g.audio.downCue();
+        else if (!d.down && wasDown && !d.dead && !d.waiting) g.audio.reviveCue();
+      }
+    } else { const rp = this._remote(d.id); if (rp) {
+      const wasDown = rp.down;
+      rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
+      const a = g.audio; // teammate down/revive → positional cue at their body (derived from the same pstate every client already gets)
+      if (a && a.downCue) {
+        if (d.down && !wasDown) { if (a.playAt) a.playAt(rp.pos, () => a.downCue()); else a.downCue(); }
+        else if (!d.down && wasDown && !d.dead && !d.waiting) { if (a.playAt) a.playAt(rp.pos, () => a.reviveCue()); else a.reviveCue(); }
+      }
+    } }
   }
   // Fire-and-forget positional sound for the squad ('snd' registry key + world pos). Culled at the
   // SENDER: skip the broadcast when no living player is within earshot. No-op solo / not connected.

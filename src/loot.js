@@ -413,8 +413,11 @@ export class LootManager {
     inv.addItem(kind, value);
     const label = WEAPONS[kind] ? WEAPONS[kind].name : (ITEM_DEFS[kind] ? ITEM_DEFS[kind].icon + ' ' + ITEM_DEFS[kind].name : kind);
     this.game.audio.buy(); this.game.hud.toast('Picked up ' + label, 0x7fd06a);
+    this._pickupBlip();
     return true;
   }
+  // teammates hear your pickup as a soft positional blip (cosmetic, client-origin)
+  _pickupBlip() { const mp = this.game.mp; if (mp && mp.active && mp.sound) mp.sound('pickup', this.game.player.pos); }
 
   // Backpack courier death → a radio + one configurable bonus. Items are shared in co-op (host-authoritative
   // via spawnNetPickup, so the radio reaches everyone); the cash-bonus branch is RETURNED so the caller can
@@ -616,6 +619,7 @@ export class LootManager {
     inv.addItem(pu.kind, pu.value);
     const label = WEAPONS[pu.kind] ? WEAPONS[pu.kind].name : (ITEM_DEFS[pu.kind] ? ITEM_DEFS[pu.kind].icon + ' ' + ITEM_DEFS[pu.kind].name : pu.kind);
     this.game.audio.buy(); this.game.hud.toast('Picked up ' + label, 0x7fd06a);
+    this._pickupBlip();
     this._removePickup(pu);
     this.nearPickup = null;
     return true;

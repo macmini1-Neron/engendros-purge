@@ -741,6 +741,9 @@ export class AudioManager {
 
   hitMarker() { this.tone(1400, 0.04, 'square', 0.2); }
   headshot() { this.tone(2000, 0.05, 'square', 0.3); this.tone(2600, 0.05, 'square', 0.2); }
+  // squad life-state cues — derived from pstate edges in mp.js (no extra network message)
+  downCue() { if (!this.ctx) return; this.tone(320, 0.28, 'sawtooth', 0.28); this.tone(196, 0.5, 'sawtooth', 0.24); this.noise(0.35, 0.15, 'lowpass', 520, 0.8); } // low somber drop
+  reviveCue() { if (!this.ctx) return; this.tone(523, 0.14, 'triangle', 0.28); this.tone(784, 0.2, 'triangle', 0.24); this.tone(1046, 0.28, 'sine', 0.18); }       // bright rising chord
   // Effective hit on boss Tolo (bullseye-in-window or bazooka) — a meaty thunk + bright ding.
   bossHit() { this.tone(180, 0.09, 'sawtooth', 0.32); this.tone(880, 0.07, 'triangle', 0.26); this.tone(1320, 0.06, 'sine', 0.2); }
 
