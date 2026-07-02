@@ -321,6 +321,14 @@ export class VoiceChat {
       if (this._helloT <= 0) { this._helloT = 2; this._announce(true); this._reconcileRoster(); }
     }
 
+    // Output bus reconcile: the voice bus finally obeys the game master mute (M) on top of its own
+    // mute/volume, and a suspended-tab pause of the output element self-heals (autoplay/resume).
+    if (this.voiceMaster) {
+      const want = (this.voiceMuted || this.game.audio.muted) ? 0 : this._s.voiceVol;
+      if (this.voiceMaster.gain.value !== want) this.voiceMaster.gain.value = want;
+    }
+    if (this.voiceOutEl && this.voiceOutEl.paused) this.voiceOutEl.play().catch(() => {});
+
     this._updateListener();
     this._updateLocalGate(dt);
 
@@ -437,7 +445,7 @@ export class VoiceChat {
   setPeerMuted(peerId, m) { const pv = this.peers.get(peerId); if (pv) { pv.muted = !!m; if (pv.gain) pv.gain.gain.value = this._peerVol(peerId); } }
   isPeerMuted(peerId) { const pv = this.peers.get(peerId); return !!(pv && pv.muted); }
 
-  toggleVoiceMute() { this.voiceMuted = !this.voiceMuted; if (this.voiceMaster) this.voiceMaster.gain.value = this.voiceMuted ? 0 : this._s.voiceVol; return this.voiceMuted; }
+  toggleVoiceMute() { this.voiceMuted = !this.voiceMuted; return this.voiceMuted; } // gain applied by the per-frame output-bus reconcile in update()
 
   // ---- field radio (Phase 2): tuning state is synced; audibility is computed locally (radiosim) ----
   setRadioFreq(f) { this.radioFreq = f; this._announceRadio(); }
@@ -602,8 +610,7 @@ export class VoiceChat {
     this.ptt = !!data.ptt; this.pttKey = data.pttKey || this.pttKey;
     this.vadThresh = lerp(0.06, 0.004, clamp(num(data.vad, 0.5), 0, 1));   // higher sensitivity -> lower threshold
     if (!this.enabled) return;
-    if (this.voiceMaster && !this.voiceMuted) this.voiceMaster.gain.value = s.voiceVol;
-    if (this.micGainNode) this.micGainNode.gain.value = s.micGain;
+    if (this.micGainNode) this.micGainNode.gain.value = s.micGain; // voiceMaster gain is reconciled per frame in update()
     if (prev.outDevId !== s.outDevId) this._applySink();
     this._applySelfMonitor();
     // audio-processing constraints changed -> re-apply live; input DEVICE change needs a fresh capture

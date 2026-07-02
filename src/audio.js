@@ -78,6 +78,16 @@ export class AudioManager {
     this._primeMosinSamples();
     if (!this.music) this.music = new MusicDirector(this);
     if (this._pendingScene) { this.music.setScene(this._pendingScene); this._pendingScene = null; }
+    // PERSISTENT resume hooks (the menu's _primeMusic is one-shot): a tab-switch can suspend the
+    // context mid-session and nothing brought it back until the next explicit init() call. Any
+    // return-to-tab or input now resumes it — a cheap state check, no-op while running.
+    if (!this._resumeHooked) {
+      this._resumeHooked = true;
+      const tryResume = () => { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {}); };
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) tryResume(); });
+      window.addEventListener('pointerdown', tryResume, true);
+      window.addEventListener('keydown', tryResume, true);
+    }
   }
 
   // Load the real recorded crew-radio line and route it through a telephone/radio band
