@@ -14,12 +14,16 @@ test('polylineProject returns arc-length position', () => {
   assert.ok(r.d < 1);
 });
 
-test('pinned plan heights (stamps only — corridors/pads come later)', () => {
+test('pinned plan heights (probe points sit in stamp cores, OFF the road corridors)', () => {
   const h = makeZonaHeightFn(704);
-  assert.ok(Math.abs(h(50, 630) - 60) < 3, `P3 shelf ${h(50, 630)}`);          // abs plateau
-  assert.ok(Math.abs(h(1000, 1060) - 200) < 5, `P8 saddle ${h(1000, 1060)}`);
+  assert.ok(Math.abs(h(50, 630) - 60) < 3, `P3 shelf ${h(50, 630)}`);            // abs plateau
+  // (930,1120): saddle plateau core, ~90 m off the serpentine. PLAN TENSION (flag for the master-plan
+  // bump): a 14% serpentine of ~1 km from the +30 terrace tops out at ~+176, so it cuts a wide bench
+  // through the +200 saddle — the P8 parcel pad itself is re-pinned to 200 by the pad layer.
+  assert.ok(Math.abs(h(930, 1120) - 200) < 5, `P8 saddle ${h(930, 1120)}`);
   assert.ok(Math.abs(h(470, -850) - (-12)) < 1, `swamp ${h(470, -850)}`);
-  assert.ok(Math.abs(h(-140, -260) - (-25)) < 3, `quarry ${h(-140, -260)}`);
+  // (−170,−300): quarry floor, ~34 m off the quarry access road (whose ramp re-grades the bowl centre)
+  assert.ok(Math.abs(h(-170, -300) - (-25)) < 3, `quarry ${h(-170, -300)}`);
   assert.ok(h(-50, 60) > 100, `massif crest ${h(-50, 60)}`); // ridge ~+150 minus fbm wobble
 });
 

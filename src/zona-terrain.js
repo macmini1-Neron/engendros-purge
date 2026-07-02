@@ -5,7 +5,7 @@
 // Layer order (later wins): base fbm → stamps (ridge/plateau/bowl) → river channel → road corridors
 // (Task 4) → parcel pads (Task 5). Every primitive clamps its own influence radius; the composed
 // function is total (no NaN) and pure for a fixed seed.
-import { EXTENT, TERRAIN_FEATURES, WATER } from './zona-plan.js';
+import { EXTENT, TERRAIN_FEATURES, WATER, ROADS } from './zona-plan.js';
 
 // ── self-contained value-noise fbm (mirror of terrain.js's; kept local so this module imports only plan data)
 function hash2(ix, iz, seed) {
@@ -150,16 +150,122 @@ function stampedHeight(grid, x, z, base) {
   return h;
 }
 
+// ── road corridors — each road gets a slope-clamped longitudinal profile computed ONCE from the
+// STAMPED field (base+stamps, never from itself); at runtime the terrain inside the corridor is
+// pulled to the profile (cut AND fill), blending back across an ADAPTIVE shoulder (deep cuts widen
+// into ravines instead of vertical slots). Bridge windows keep the river channel open underneath.
+const CORR_STEP = 10; // profile resample step (m)
+
+// point on a polyline at arc position s (walks segments; s clamped to [0, total])
+function pointAtArc(pts, cum, s) {
+  const total = cum[cum.length - 1];
+  s = Math.max(0, Math.min(total, s));
+  let i = 1; while (i < cum.length - 1 && cum[i] < s) i++;
+  const t = (s - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
+  return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t];
+}
+
+function prepareCorridors(stamped) {
+  const grid = new Map(); // cellKey → road preps (per-SEGMENT insertion, deduped at eval by query id)
+  const profiles = new Map();
+  for (const road of ROADS) {
+    const cum = cumArc(road.pts);
+    const total = cum[cum.length - 1];
+    const n = Math.max(2, Math.ceil(total / CORR_STEP) + 1);
+    const arc = [], pos = [], h = [];
+    for (let j = 0; j < n; j++) {
+      const s = Math.min(j * CORR_STEP, total);
+      const p = pointAtArc(road.pts, cum, s);
+      arc.push(s); pos.push(p); h.push(stamped(p[0], p[1]));
+    }
+    // smooth: two passes of centred moving average (window 5)
+    for (let pass = 0; pass < 2; pass++) {
+      const src = h.slice();
+      for (let i = 0; i < n; i++) {
+        let sum = 0, cnt = 0;
+        for (let k = -2; k <= 2; k++) { const ii = i + k; if (ii >= 0 && ii < n) { sum += src[ii]; cnt++; } }
+        h[i] = sum / cnt;
+      }
+    }
+    // slope clamp: EXACT Lipschitz envelopes (O(n), deterministic). minEnv = tightest L-Lipschitz
+    // function ≤ profile (pure cut), maxEnv = tightest ≥ profile (pure fill); their average is again
+    // L-Lipschitz and balances cut vs fill — ridges become cuttings, ravines become embankments.
+    {
+      const L = road.maxSlope;
+      const lo = h.slice(), hi = h.slice();
+      for (let i = 1; i < n; i++) { const ds = arc[i] - arc[i - 1]; lo[i] = Math.min(lo[i], lo[i - 1] + L * ds); hi[i] = Math.max(hi[i], hi[i - 1] - L * ds); }
+      for (let i = n - 2; i >= 0; i--) { const ds = arc[i + 1] - arc[i]; lo[i] = Math.min(lo[i], lo[i + 1] + L * ds); hi[i] = Math.max(hi[i], hi[i + 1] - L * ds); }
+      for (let i = 0; i < n; i++) h[i] = (lo[i] + hi[i]) / 2;
+    }
+    // bridge gap windows in arc space (corridor weight → 0 inside, so the channel survives under the deck)
+    const gaps = (road.bridges || []).map(b => {
+      const s = polylineProject(road.pts, b.at[0], b.at[1]).s;
+      return { s0: s - b.halfLen, s1: s + b.halfLen, feather: 8 };
+    });
+    const prep = {
+      id: road.id, pts: road.pts, halfW: road.width / 2 + 1, baseShoulder: road.width * 1.5,
+      arc, h, pos, gaps, step: CORR_STEP, total, vertArc: cum, surface: road.surface, width: road.width,
+      _q: -1,
+    };
+    profiles.set(road.id, prep);
+    // per-segment grid insertion (a whole-polyline AABB would blanket half the map for R1)
+    const pad = prep.halfW + prep.baseShoulder + 40; // + adaptive-shoulder headroom
+    for (let i = 0; i < road.pts.length - 1; i++) {
+      const [ax, az] = road.pts[i], [bx, bz] = road.pts[i + 1];
+      gridInsert(grid, Math.min(ax, bx) - pad, Math.min(az, bz) - pad, Math.max(ax, bx) + pad, Math.max(az, bz) + pad, prep);
+    }
+  }
+  return { grid, profiles };
+}
+
+function profileAt(prep, s) {
+  const i = Math.max(1, Math.min(prep.h.length - 1, Math.ceil(s / prep.step)));
+  const s0 = prep.arc[i - 1], s1 = prep.arc[i];
+  const t = Math.max(0, Math.min(1, (s - s0) / Math.max(1e-6, s1 - s0)));
+  return prep.h[i - 1] + (prep.h[i] - prep.h[i - 1]) * t;
+}
+
+let _query = 0;
+function corridorHeight(corr, x, z, h) {
+  const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
+  const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
+  const list = corr.grid.get(cellKey(cx, cz));
+  if (!list) return h;
+  const q = ++_query;
+  let best = null, bestD = Infinity;
+  for (const prep of list) {
+    if (prep._q === q) continue; prep._q = q; // dedupe (a prep spans several segments → cells)
+    const pr = polylineProject(prep.pts, x, z);
+    if (pr.d < bestD) { bestD = pr.d; best = { prep, s: pr.s }; }
+  }
+  if (!best) return h;
+  const { prep, s } = best;
+  const hp = profileAt(prep, s);
+  const shoulder = prep.baseShoulder + Math.min(40, Math.abs(hp - h) * 1.3); // adaptive: deep cuts widen
+  if (bestD >= prep.halfW + shoulder) return h;
+  let w = bestD <= prep.halfW ? 1 : 1 - smoothstep((bestD - prep.halfW) / shoulder);
+  for (const g of prep.gaps) { // bridge window: fade the pull to 0 inside the gap
+    if (s > g.s0 - g.feather && s < g.s1 + g.feather) {
+      const edge = Math.min((s - (g.s0 - g.feather)) / g.feather, ((g.s1 + g.feather) - s) / g.feather);
+      w *= 1 - Math.max(0, Math.min(1, edge));
+    }
+  }
+  return hp * w + h * (1 - w);
+}
+
 // ── public factory — cached per seed (main thread + worker each build once) ─────────────────────────
 const _cache = new Map();
-export function makeZonaHeightFn(seed) {
+function build(seed) {
   if (_cache.has(seed)) return _cache.get(seed);
   const grid = prepareStamps();
   const tune = ZONA_TUNING;
-  const fn = (x, z) => {
-    const base = tune.fbmAmplitude * fbm(x, z, seed, tune.fbm);
-    return stampedHeight(grid, x, z, base);
-  };
-  _cache.set(seed, fn);
-  return fn;
+  const stamped = (x, z) => stampedHeight(grid, x, z, tune.fbmAmplitude * fbm(x, z, seed, tune.fbm));
+  const corr = prepareCorridors(stamped);
+  const fn = (x, z) => corridorHeight(corr, x, z, stamped(x, z));
+  const built = { fn, profiles: corr.profiles };
+  _cache.set(seed, built);
+  return built;
 }
+export function makeZonaHeightFn(seed) { return build(seed).fn; }
+// per-road slope-clamped longitudinal profiles — zona.js drapes ribbons along these; tests assert slopes
+export function roadProfiles(seed) { return build(seed).profiles; }

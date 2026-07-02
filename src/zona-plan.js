@@ -50,7 +50,9 @@ export const PARCELS = [
 // ── roads (plan section D, polylines verbatim) — maxSlope = longitudinal clamp (fraction). The gated
 // trunk routes are split at their gates (R1/R1N/R1E, R2/R2E/R2N) exactly as the plan writes them.
 export const ROADS = [
-  { id: 'R1', name: 'ТРАССА', surface: 'asphalt', width: 7.5, maxSlope: 0.08, pts: [
+  // bridges: corridor conditioning opens a GAP window there (the river channel passes under; the
+  // Task-7 bridge deck spans it). S04 is deliberately the map's ONLY bridge — dirt roads ford the river.
+  { id: 'R1', name: 'ТРАССА', surface: 'asphalt', width: 7.5, maxSlope: 0.08, bridges: [{ at: [-470, -620], halfLen: 14 }], pts: [
     [-1080, -1060], [-950, -920], [-760, -760], [-600, -660], [-470, -620], [-340, -540], [-330, -380], [-300, -200],
     [-340, -20], [-440, 140], [-560, 240], [-660, 320], [-700, 480], [-720, 560], [-690, 720], [-520, 690], [-300, 670], [-140, 630],
   ] },
