@@ -705,6 +705,59 @@
     #mortarpanel #m-mils { color: var(--gold); }
     #mortarpanel #m-load { margin-top: 4px; font-size: 11px; color: var(--gold-2); letter-spacing: 2px; opacity: 0; }
     #mortarpanel.loading #m-load { opacity: 1; }
+    #shilka-panel {
+      position: fixed; inset: 6vh 5vw 5vh; z-index: 28; display: none; pointer-events: auto;
+      font-family: var(--font-mono); color: #8eff9b; text-shadow: 0 0 7px rgba(69,224,207,.3);
+      background:
+        linear-gradient(180deg, rgba(32,44,36,.96), rgba(8,14,12,.97)),
+        repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 4px);
+      border: 2px solid #1c1207; box-shadow: 0 26px 90px rgba(0,0,0,.76), inset 0 0 0 3px rgba(216,176,102,.22);
+      image-rendering: pixelated;
+    }
+    #shilka-panel.show { display: grid; grid-template-columns: 1.1fr .95fr .8fr; gap: 14px; padding: 16px; }
+    #shilka-panel.aiming { cursor: none; }
+    .shilka-bezel {
+      position: relative; border: 2px solid #111; background: #152018;
+      box-shadow: inset 0 0 0 2px rgba(216,176,102,.14), inset 0 0 28px rgba(0,0,0,.65);
+      padding: 12px; min-width: 0; overflow: hidden;
+    }
+    .shilka-title { display:flex; justify-content:space-between; gap:10px; margin-bottom:10px; color:#d8b066; font-family:var(--font-display); letter-spacing:1px; font-size:14px; }
+    .shilka-scope {
+      position: relative; aspect-ratio: 1 / 1; border-radius: 50%; border: 3px solid #263a2d; margin: 0 auto;
+      width: min(100%, 48vh); background:
+        radial-gradient(circle, rgba(87,255,126,.12) 0 1px, transparent 2px 100%),
+        repeating-radial-gradient(circle, rgba(130,255,154,.18) 0 1px, transparent 1px 18%),
+        linear-gradient(90deg, transparent 49.5%, rgba(130,255,154,.25) 50%, transparent 50.5%),
+        linear-gradient(0deg, transparent 49.5%, rgba(130,255,154,.25) 50%, transparent 50.5%),
+        #07100a;
+      overflow:hidden; box-shadow: inset 0 0 38px rgba(88,255,120,.28), 0 0 16px rgba(69,224,207,.12); cursor: crosshair;
+    }
+    .shilka-sweep { position:absolute; inset:50% 50% auto auto; width:48%; height:2px; background:linear-gradient(90deg, rgba(120,255,140,.85), transparent); transform-origin:100% 50%; animation:shilkaSweep 3.4s linear infinite; }
+    @keyframes shilkaSweep { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+    .shilka-dot { position:absolute; width:10px; height:10px; transform:translate(-50%,-50%); background:#9cff9c; box-shadow:0 0 10px #7dff7d; }
+    .shilka-dot.lock { background:#ffd45a; box-shadow:0 0 12px #ffd45a; }
+    .shilka-rangebar { position:relative; height:54px; margin-top:20px; border:2px solid #263a2d; background:repeating-linear-gradient(90deg, rgba(130,255,154,.16) 0 1px, transparent 1px 40px), #07100a; cursor: crosshair; }
+    .shilka-rangebar::after { content:''; position:absolute; left:0; right:0; top:50%; height:2px; background:rgba(130,255,154,.3); }
+    #shilka-c-dot { position:absolute; top:10px; width:7px; height:34px; transform:translateX(-50%); background:#9cff9c; box-shadow:0 0 10px #7dff7d; }
+    #shilka-c-dot.lock { background:#ffd45a; }
+    .shilka-readouts { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .shilka-readout { min-height:48px; padding:7px 8px; border:1px solid rgba(216,176,102,.22); background:rgba(0,0,0,.28); }
+    .shilka-readout span { display:block; color:#ad9f7e; font-family:var(--font-display); font-size:10px; letter-spacing:1px; }
+    .shilka-readout b { display:block; color:#eaffd8; font-size:15px; font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .shilka-switches { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-top:10px; }
+    .shilka-btn {
+      height:36px; border:2px solid #0b0907; color:#dac48f; background:linear-gradient(180deg, #4a3b22, #1c160d);
+      font-family:var(--font-display); font-weight:800; letter-spacing:.8px; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 3px 0 #050403;
+    }
+    .shilka-btn:active { transform:translateY(2px); box-shadow:inset 0 1px 0 rgba(255,255,255,.1), 0 1px 0 #050403; }
+    .shilka-btn.on, .shilka-btn.ready { color:#061008; background:linear-gradient(180deg, #b9ff8b, #57a85e); }
+    #shilka-panel.ready #shilka-fire { color:#150900; background:linear-gradient(180deg, #ffd45a, #d86b36); }
+    .shilka-wide { grid-column:1 / -1; }
+    #shilka-help { position:absolute; left:16px; right:16px; bottom:10px; color:#d8b066; font-family:var(--font-display); font-size:12px; letter-spacing:1px; text-align:center; }
+    @media (max-width: 900px) {
+      #shilka-panel.show { inset:2vh 2vw; grid-template-columns:1fr; overflow:auto; }
+      .shilka-scope { width:min(78vw, 42vh); }
+    }
     #spotcall { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); padding: 6px 16px; background: var(--glass); border: 1px solid var(--gold-deep); border-radius: var(--r-sm); color: var(--gold); font-size: 14px; letter-spacing: 1px; opacity: 0; transition: opacity .25s; pointer-events: none; }
     #spotcall.show { opacity: 1; }
     #heatbar .hl { font-size: 11px; letter-spacing: 2px; opacity: .85; margin-bottom: 3px; text-shadow: 0 2px 0 rgba(0,0,0,.55); }
@@ -1026,6 +1079,39 @@
     .hero-np input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
       background: var(--brass); border: 1px solid #3a2a0e; box-shadow: 0 0 6px rgba(216,176,102,.5); cursor: pointer; }
     .hero-np input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--brass); border: 1px solid #3a2a0e; cursor: pointer; }
+    #shilka-drive-hud{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:none;
+      background:rgba(8,12,16,.82);border:1px solid #2c3a44;border-radius:8px;padding:8px 14px;
+      font:14px/1.3 'Russo One',monospace;color:#cfe;z-index:40;gap:16px;align-items:center}
+    #shilka-drive-hud.show{display:flex}
+    #shilka-drive-hud .dh-row{display:flex;gap:6px;align-items:baseline}
+    #shilka-drive-hud .dh-k{color:#7fa6b8;font-size:11px}
+    #shilka-drive-hud #shilka-dh-gear{color:#ffd16a;font-size:18px;min-width:1.2em;text-align:center}
+    #shilka-drive-hud.stall #shilka-dh-rpm{color:#ff5a4a}
+    #shilka-drive-hud .dh-readouts{display:flex;gap:16px;align-items:center}
+    #shilka-drive-hud .dh-hint{color:#8fb0bf;font-size:10px;border-left:1px solid #2c3a44;padding-left:12px;max-width:230px}
+    #shilka-drive-hud .dh-hint b{color:#ffd16a}
+    /* H-gate selector diagram */
+    #shilka-gate{flex:0 0 auto;border-right:1px solid #2c3a44;padding-right:12px;overflow:visible}
+    #shilka-gate .gate-rails path{fill:none;stroke:#3a4d57;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}
+    #shilka-gate .gate-labels text{fill:#6f93a3;font:bold 12px 'Russo One',monospace;text-anchor:middle;dominant-baseline:middle}
+    #shilka-gate .gate-labels text.on{fill:#fff}  /* active slot: white reads clearly over the brass lever dot */
+    #shilka-gate #shilka-gate-lever{fill:#ffd16a;stroke:#1a1206;stroke-width:1.5;transition:cx .05s linear,cy .05s linear}
+    #shilka-drive-hud.shifting #shilka-gate-lever{fill:#7fe0c8;r:7.5}
+    #shilka-drive-hud.grind #shilka-gate-lever{fill:#ff5a4a;animation:gate-rattle .09s linear infinite}
+    #shilka-drive-hud.grind #shilka-gate .gate-rails path{stroke:#ff5a4a}
+    @keyframes gate-rattle{0%,100%{transform:translateX(-1px)}50%{transform:translateX(1px)}}
+    /* buttoned-up driver periscope: screen goes PURE black, world seen through one long fixed glass slit */
+    #shilka-periscope-mask{position:fixed;inset:0;z-index:34;display:none;pointer-events:none}
+    #shilka-periscope-mask.show{display:block}
+    #shilka-periscope-mask .pv{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+      width:64vw;height:19vh;border-radius:7px;
+      box-shadow:0 0 0 100vmax #000, inset 0 0 22px 3px rgba(0,0,0,.5);
+      border:3px solid #070806;outline:2px solid #14170e}
+    /* glass: ONE clean see-through pane — just a faint sheen so it still reads as glass but you see the world */
+    #shilka-periscope-mask .glass{position:absolute;inset:0;border-radius:5px;mix-blend-mode:screen;
+      background:radial-gradient(ellipse at 50% 45%, rgba(150,205,200,.04), transparent 78%)}
+    #shilka-periscope-mask .glare{position:absolute;left:9%;top:8%;width:24%;height:34%;border-radius:50%;
+      background:radial-gradient(ellipse, rgba(200,235,230,.08), transparent 70%);filter:blur(6px)}
   </style>
 </head>
 <body>
@@ -1091,6 +1177,76 @@
       <div class="mrow"><span>ROUNDS</span><b id="m-ammo">12</b></div>
       <div id="m-load">RELOADING…</div>
     </div>
+    <div id="shilka-panel" aria-label="ZSU-23-4 Shilka fire-control panel">
+      <section class="shilka-bezel">
+        <div class="shilka-title"><b>X · УГЛЫ</b><span id="shilka-mode-read">OFF</span></div>
+        <div class="shilka-scope">
+          <i class="shilka-sweep"></i>
+          <i id="shilka-x-dot" class="shilka-dot"></i>
+        </div>
+        <div class="shilka-readouts" style="margin-top:12px">
+          <div class="shilka-readout"><span>AZ</span><b id="shilka-az">00-00</b></div>
+          <div class="shilka-readout"><span>EL</span><b id="shilka-el">0.0°</b></div>
+          <div class="shilka-readout"><span>TARGET</span><b id="shilka-target">NO TARGET</b></div>
+          <div class="shilka-readout"><span>SIGNAL</span><b id="shilka-signal">0%</b></div>
+        </div>
+      </section>
+      <section class="shilka-bezel">
+        <div class="shilka-title"><b>C · ДАЛЬНОСТЬ</b><span id="shilka-role-read">X УГЛЫ</span></div>
+        <div class="shilka-rangebar"><i id="shilka-c-dot"></i></div>
+        <div class="shilka-readouts" style="margin-top:14px">
+          <div class="shilka-readout"><span>RANGE</span><b id="shilka-range">----</b></div>
+          <div class="shilka-readout"><span>GATE</span><b id="shilka-gate">1000m</b></div>
+          <div class="shilka-readout"><span>LEAD</span><b id="shilka-lead">--</b></div>
+          <div class="shilka-readout"><span>QUALITY</span><b id="shilka-quality">0%</b></div>
+        </div>
+        <div class="shilka-readout" style="margin-top:10px"><span>PHASE</span><b id="shilka-phase">POWER OFF</b></div>
+      </section>
+      <section class="shilka-bezel">
+        <div class="shilka-title"><b>ЗСУ-23-4В1</b><span>SHILKA</span></div>
+        <div class="shilka-switches">
+          <button id="shilka-sw-power54v" class="shilka-btn">1 · 54V</button>
+          <button id="shilka-sw-gyroUnlocked" class="shilka-btn">2 · ГАГ</button>
+          <button id="shilka-sw-hydroDrive" class="shilka-btn">3 · ГИДРО</button>
+          <button id="shilka-sw-radarFilament" class="shilka-btn">4 · НАКАЛ</button>
+          <button id="shilka-sw-radarAnode" class="shilka-btn">5 · АНОД</button>
+          <button id="shilka-sw-radarHighVoltage" class="shilka-btn">6 · ВН</button>
+          <button id="shilka-sw-radarOnAir" class="shilka-btn">7 · РАДАР</button>
+          <button id="shilka-start" class="shilka-btn ready">AUTO START</button>
+          <button id="shilka-role" class="shilka-btn">TAB ROLE</button>
+          <button id="shilka-search" class="shilka-btn">R SEARCH</button>
+          <button id="shilka-lock" class="shilka-btn">RMB LOCK</button>
+          <button id="shilka-drop" class="shilka-btn">X DROP</button>
+          <button id="shilka-fire" class="shilka-btn shilka-wide">LMB / FIRE BURST</button>
+        </div>
+        <div class="shilka-readouts" style="margin-top:12px">
+          <div class="shilka-readout"><span>AMMO</span><b id="shilka-ammo">2000/2000</b></div>
+          <div class="shilka-readout"><span>HEAT</span><b id="shilka-heat">0%</b></div>
+        </div>
+      </section>
+      <div id="shilka-help">MOUSE AIM · RMB LOCK · TAB ROLE · E EXIT</div>
+    </div>
+    <div id="shilka-drive-hud">
+      <!-- ГМ-575 double-H shift gate: 3 rails + neutral channel; lever dot driven by shilka.js (gx,gy) -->
+      <svg id="shilka-gate" viewBox="0 0 100 76" width="100" height="76" aria-label="shift gate">
+        <g class="gate-rails"><path d="M18 12 V60 M50 12 V60 M82 12 V60 M18 36 H82"/></g>
+        <!-- lever first, labels after → slot labels always render ON TOP of the dot (stay readable) -->
+        <circle id="shilka-gate-lever" cx="50" cy="36" r="6.5"/>
+        <g class="gate-labels">
+          <text id="shilka-gl-5" x="18" y="7">5</text><text id="shilka-gl-4" x="18" y="74">4</text>
+          <text id="shilka-gl-3" x="50" y="7">3</text><text id="shilka-gl-2" x="50" y="74">2</text>
+          <text id="shilka-gl-R" x="82" y="7" font-size="10">ЗХ</text><text id="shilka-gl-1" x="82" y="74">1</text>
+          <text id="shilka-gl-N" x="93" y="39">N</text>
+        </g>
+      </svg>
+      <div class="dh-readouts">
+        <div class="dh-row"><span class="dh-k">GEAR</span><span id="shilka-dh-gear">N</span></div>
+        <div class="dh-row"><span class="dh-k">SPD</span><span id="shilka-dh-speed">0 km/h</span></div>
+        <div class="dh-row"><span class="dh-k">ENG</span><span id="shilka-dh-rpm">600 rpm</span></div>
+        <div class="dh-hint">W/S plyn·brzda · A/D páky · <b>SPACE = spojka + myší řadíš</b> · <b>rozjezd na 2.</b> · 1–5/R/0 zkratka · ENTER startér · E ven</div>
+      </div>
+    </div>
+    <div id="shilka-periscope-mask"><div class="pv"><div class="glass"></div><div class="glare"></div></div></div>
     <div id="spotcall"></div>
     <div id="msg"></div>
   </div>
@@ -1665,6 +1821,6 @@
       }
     })();
   </script>
-  <script type="module" src="./src/game.js?v=346"></script>
+  <script type="module" src="./src/game.js?v=347"></script>
 </body>
 </html>

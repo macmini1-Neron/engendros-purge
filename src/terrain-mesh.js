@@ -8,6 +8,7 @@
 // module) so lighting has no seam at chunk borders.
 import * as THREE from 'three';
 import { computeChunkArrays, SKIRT_DEPTH } from './terrain-mesh-arrays.js';
+import { makeTerrainMaterial } from './terrain-tex.js';
 
 export { SKIRT_DEPTH }; // re-exported for any existing importer
 
@@ -22,7 +23,9 @@ export function assembleChunkMesh(arrays, chunk, segs) {
   geo.setAttribute('normal', new THREE.BufferAttribute(arrays.normals, 3));
   geo.setIndex(new THREE.BufferAttribute(arrays.indices, 1));
   geo.computeBoundingSphere(); // used by frustum culling in TerrainChunks
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // Procedural metric-triplanar splat (grass/dirt/rock by slope) — the legibility material. Shared textures,
+  // fresh material per chunk (terrain-chunks disposes per-chunk materials) sharing one compiled program.
+  const mat = makeTerrainMaterial();
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(chunk.centerX, 0, chunk.centerZ);
   mesh.receiveShadow = true;

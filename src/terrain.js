@@ -104,26 +104,54 @@ function demoHeight(x, z, seed, tune) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// 'forest' profile tuning — its OWN hilly heightfield (distinct from 'demo'), used by ?map=forest.
-// More relief + a list of Gaussian hills incl. a shallow DELL (negative height) for a wooded valley.
+// 'forest' profile — DECLARATIVE ANALYTIC LANDFORMS (the "logical terrain" rewrite for ?map=forest).
+// A gentle WALKABLE rolling base + a steep rocky MASSIF (an impassable cliff that HOSTS the cave) +
+// a walkable OVERLOOK ridge + a sunken CAVE CORRIDOR (slot canyon) into the massif + a wooded DELL/hummock.
+// Pure fn(x,z) → co-op-deterministic (host & client agree bit-for-bit; the cave volume reads the SAME
+// massif+corridor spec). Legibility invariant: steep faces (>~40°) auto-render bare ROCK (triplanar
+// splat) AND auto-block movement (slope-limit) — a face that LOOKS like a wall IS a wall (BotW/Horizon).
+// The playable arena is ±world.HALF (70), so every landform sits inside ~±70; the massif rides the N edge.
 // ───────────────────────────────────────────────────────────────────────────
+const _smooth01 = (t) => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+
+// perpendicular distance `d` + clamped normalized position `t` of (x,z) along segment A→B. Pure.
+function _segPD(x, z, ax, az, bx, bz) {
+  const abx = bx - ax, abz = bz - az, ab2 = abx * abx + abz * abz || 1e-6;
+  let t = ((x - ax) * abx + (z - az) * abz) / ab2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const cx = ax + abx * t, cz = az + abz * t, dx = x - cx, dz = z - cz;
+  return { t, d: Math.hypot(dx, dz) };
+}
+const _gauss = (x, z, c) => { const dx = x - c.x, dz = z - c.z; return c.h * Math.exp(-(dx * dx + dz * dz) / (2 * c.sigma * c.sigma)); };
+
 export const FOREST_TUNING = {
-  fbmAmplitude: 5.4,                                    // wooded rolling hills — a touch more relief than demo
-  fbm: { octaves: 5, freq: 1 / 50, lacunarity: 2.1, gain: 0.52 },
-  hills: [
-    { x: -54, z: 46, height: 14, sigma: 40 },          // broad walkable overlook (a sniper rise)
-    { x: 44, z: 30, height: 9, sigma: 24 },            // a second wooded hummock
-    { x: 20, z: -42, height: 9, sigma: 4.5 },          // a STEEP knoll — a wall-face you bump into
-    { x: -30, z: -34, height: -4, sigma: 18 },         // a shallow dell / hollow (negative ⇒ depression)
-  ],
+  base: { amp: 3.0, fbm: { octaves: 5, freq: 1 / 62, lacunarity: 2.05, gain: 0.5 } }, // gentle walkable rolling forest
+  calm: { r0: 6, r1: 27, floor: 0.4 },                 // calm the relief near origin so spawn + cottage/crates/colonnade sit flat
+  overlook: { x: -52, z: 50, h: 12, sigma: 30 },       // broad walkable sniper rise (grass — legibly "you CAN go up")
+  hummock:  { x: 50, z: 20, h: 8, sigma: 20 },         // gentle wooded hummock (E)
+  dell:     { x: 38, z: 44, h: -5, sigma: 18 },        // gentle wooded hollow (SE) — negative ⇒ depression
+  // DATA ONLY — the rocky MASSIF is NOT in this heightfield. These params are read by the density body
+  // (src/cave/volume.js CaveVolume), which owns the mountain's render AND collision as one field. Compact
+  // craggy peak: plateau core (r≤r0), steep cliff falloff (r0→r1), height h, silhouette warp `jag`.
+  massif:   { x: -10, z: -55, h: 34, r0: 5, r1: 15, jag: 4.0 },
+  // the cave TUNNEL line the density body carves out of the rock → the mouth. (bx/bz = mouth-ward end used as the
+  // tunnel's back reference in CaveVolume; ax/az the outer end.) Data only; not applied to the heightfield.
+  corridor: { ax: -10, az: -34, bx: -10, bz: -50, halfW: 4.2, floorMouth: 2.5, floorInner: 0.6, rim: 7.5 },
 };
 
+// forestHeight — the GENTLE forest heightfield only (rolling base + soft landforms). The rocky MASSIF and its
+// cave are NOT in the heightfield: they are one self-contained density body (src/cave/volume.js) that owns the
+// mountain's render AND collision. So terrainHeightAt is just the walkable ground the rock stands on (and the
+// cave-floor level). The FOREST_TUNING.massif/corridor data below is read by that density module, not here.
 function forestHeight(x, z, seed, tune) {
-  let h = tune.fbmAmplitude * fbm(x, z, seed, tune.fbm);
-  for (const hl of tune.hills) {
-    const dx = x - hl.x, dz = z - hl.z;
-    h += hl.height * Math.exp(-(dx * dx + dz * dz) / (2 * hl.sigma * hl.sigma));
-  }
+  // gentle rolling base — walkable everywhere
+  let h = tune.base.amp * fbm(x, z, seed, tune.base.fbm);
+  // calm the central basin (spawn + buildings): scale base relief up from `floor` as you leave the origin
+  const d0 = Math.hypot(x, z), cm = _smooth01((d0 - tune.calm.r0) / (tune.calm.r1 - tune.calm.r0));
+  h *= tune.calm.floor + (1 - tune.calm.floor) * cm;
+  // gentle WALKABLE landforms (added after calm so they keep full height)
+  h += _gauss(x, z, tune.overlook);
+  h += _gauss(x, z, tune.hummock);
+  h += _gauss(x, z, tune.dell);
   return h;
 }
 
@@ -152,6 +180,11 @@ export function makeTerrain(opts = {}) {
   const profile = opts.profile || 'flat';
   const seed = (opts.seed != null ? opts.seed : 1337) | 0;
   const slopeLimit = opts.slopeLimit != null ? opts.slopeLimit : (Math.PI * 35) / 180;
+  // EARTHWORKS asymmetry (Valheim moat meta): the horde gives up on a gentler slope than the player can
+  // scramble, so a steep natural face — or a player-DUG ditch wall — is an impassable horde-wall you can
+  // still climb out of. Pure fn of slope → co-op-deterministic. Both default off the base slopeLimit.
+  const enemySlopeLimit = opts.enemySlopeLimit != null ? opts.enemySlopeLimit : (Math.PI * 29) / 180;
+  const playerSlopeLimit = opts.playerSlopeLimit != null ? opts.playerSlopeLimit : (Math.PI * 43) / 180;
   const tune = { ...(profile === 'forest' ? FOREST_TUNING : DEMO_TUNING), ...(opts.tuning || {}) };
   const reserved = opts.reserved || [];
   const isFlat = profile === 'flat';                   // every non-'flat' profile ('demo' / 'forest') is hilly
@@ -172,23 +205,16 @@ export function makeTerrain(opts = {}) {
   const EPS = 0.5;
   function terrainNormalAt(x, z) {
     if (isFlat) return { x: 0, y: 1, z: 0 };
-    const hl = terrainHeightAt(x - EPS, z);
-    const hr = terrainHeightAt(x + EPS, z);
-    const hd = terrainHeightAt(x, z - EPS);
-    const hu = terrainHeightAt(x, z + EPS);
-    // surface (x, H, z): tangents → normal = (-dH/dx, 1, -dH/dz)
-    const nx = -(hr - hl) / (2 * EPS);
-    const nz = -(hu - hd) / (2 * EPS);
-    const ny = 1;
+    const hl = terrainHeightAt(x - EPS, z), hr = terrainHeightAt(x + EPS, z);
+    const hd = terrainHeightAt(x, z - EPS), hu = terrainHeightAt(x, z + EPS);
+    const nx = -(hr - hl) / (2 * EPS), nz = -(hu - hd) / (2 * EPS), ny = 1;
     const inv = 1 / Math.hypot(nx, ny, nz);
     return { x: nx * inv, y: ny * inv, z: nz * inv };
   }
-
   function terrainSlopeAt(x, z) {
     if (isFlat) return 0;
     const n = terrainNormalAt(x, z);
-    // angle of the normal from vertical (+Y). n already normalized.
-    return Math.acos(Math.min(1, Math.max(-1, n.y)));
+    return Math.acos(Math.min(1, Math.max(-1, n.y)));       // angle of the normal from vertical (+Y)
   }
 
   function isPlaceable(x, z, radius = 0, kind = null) {
@@ -215,6 +241,8 @@ export function makeTerrain(opts = {}) {
     profile,
     seed,
     slopeLimit,
+    enemySlopeLimit,
+    playerSlopeLimit,
     tuning: tune,
     reserved,
     terrainHeightAt,

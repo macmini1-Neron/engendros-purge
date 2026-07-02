@@ -33,6 +33,9 @@ import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 import { makeTerrain } from './terrain.js';
 import { TerrainChunks } from './terrain-chunks.js';
+import { makeTerrainMaterial } from './terrain-tex.js';
+import { CaveVolume } from './cave/volume.js';
+import { Interior } from './interior.js';
 import { seatProp } from './terrain-place.js';
 
 // ─── T2 WALKABLE-TERRAIN feel knobs (Phase 4) — owner-tunable ──────────────────
@@ -350,6 +353,18 @@ export class World {
     seatProp(this, 12, -14, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 0.6 });
     seatProp(this, -14, 11, () => buildBarricade(), { w: 2.4, d: 1.2, h: 1.4, yaw: -0.4 });
     seatProp(this, 22, 16, buildSandbags, { w: 2.2, d: 0.8, h: 1.0, yaw: 1.3 });
+
+    // TRUE 3D cave (real overhangs) carved under the steep massif over the sunken corridor. The floor stays
+    // the heightfield (no sink); the cave adds a density rock roof you walk under. Player-only retreat/ambush.
+    try { this.cave = new CaveVolume(this).build(makeTerrainMaterial()); }
+    catch (e) { console.warn('[forest] cave volume failed — continuing without it', e); this.cave = null; }
+
+    // UNDERGROUND MINE — a "GTA-SA interior" pocket at ΔY=−1000, reached seamlessly from the dark back of the cave.
+    // While the LOCAL player is inside, `interiorActive` routes collision to the mine floor/walls (see collide).
+    // Built (its wall boxes pushed) BEFORE the SpatialGrid is built so they're indexed.
+    this.interiorActive = false;
+    try { this.interior = new Interior(this).build(); }
+    catch (e) { console.warn('[forest] mine interior failed — continuing without it', e); this.interior = null; }
   }
 
   _buildDemo() {
@@ -399,10 +414,40 @@ export class World {
   }
 
   collide(pos, vel, r, h, dt) {
+    // When the LOCAL player is inside the mine pocket, collide against the mine floor/walls instead of the
+    // terrain (per-client flag — the surface sim / enemy grounding never use this path).
+    if (this.interiorActive && this.interior) return this._collideInterior(pos, vel, r, h, dt);
     // Single collision path. Flat maps carry a 'flat' terrain (height 0); _collideTerrain's only
     // terrain-specific extra — the ground-follow re-seat — is gated on hasTerrain (Edit 4), so on
     // flat maps this is byte-identical to the old y=0 floor.
     return this._collideTerrain(pos, vel, r, h, dt);
+  }
+
+  // Mine-pocket collision: same shape as _collideTerrain but the ground is `interior.floorAt` (not the terrain/
+  // rock) and there is no ±HALF clamp. The mine's wall AABBs live in `this.boxes` at pocket Y, so the shared
+  // `_moveAxis`/box step-up handles walls; surface boxes (cave boulders etc.) are gated out by the Y-overlap test.
+  _collideInterior(pos, vel, r, h, dt) {
+    const itr = this.interior;
+    let onGround = false;
+    pos.y += vel.y * dt;
+    let fl = itr.floorAt(pos.x, pos.z);
+    if (pos.y <= fl) { pos.y = fl; if (vel.y < 0) vel.y = 0; onGround = true; }
+    for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
+      if (b.foliage) continue;
+      if (pos.x + r <= b.min.x || pos.x - r >= b.max.x) continue;
+      if (pos.z + r <= b.min.z || pos.z - r >= b.max.z) continue;
+      const feet = pos.y, head = pos.y + h;
+      if (head <= b.min.y || feet >= b.max.y) continue;                  // Y-gate: surface boxes never match here
+      const penTop = b.max.y - feet, penBot = head - b.min.y;
+      if (penTop < penBot && vel.y <= 0.01) { pos.y = b.max.y; vel.y = 0; onGround = true; }
+      else if (vel.y > 0) { pos.y = b.min.y - h; vel.y = 0; }
+    }
+    this._moveAxis(pos, vel, r, h, 'x', vel.x * dt);
+    this._moveAxis(pos, vel, r, h, 'z', vel.z * dt);
+    fl = itr.floorAt(pos.x, pos.z);
+    if (pos.y < fl) { pos.y = fl; if (vel.y < 0) vel.y = 0; onGround = true; }
+    else if (onGround && pos.y - fl <= TERRAIN_GROUND_FOLLOW_STEP) { pos.y = fl; if (vel.y < 0) vel.y = 0; onGround = true; }
+    return onGround;
   }
 
   // Terrain-aware collide (only when hasTerrain). Walkable ground height under the
@@ -412,11 +457,14 @@ export class World {
   _collideTerrain(pos, vel, r, h, dt) {
     let onGround = false;
     const terr = this.terrain;
-    const slopeLimit = (terr.slopeLimit != null) ? terr.slopeLimit : (Math.PI * 35) / 180;
+    // EARTHWORKS: the player scrambles steeper than the horde (playerSlopeLimit > enemySlopeLimit) → a steep
+    // face or a dug ditch wall blocks the mob but you can still climb out. Falls back to the legacy limit.
+    const slopeLimit = (terr.playerSlopeLimit != null) ? terr.playerSlopeLimit : ((terr.slopeLimit != null) ? terr.slopeLimit : (Math.PI * 35) / 180);
 
-    // VERTICAL — gravity, terrain floor under the player, then man-made box tops/bottoms.
+    // VERTICAL — gravity, then the topmost solid surface under the player (heightfield OR the rock density field
+    // inside the massif — one query). fromY = feet + step + this frame's fall so a fast descent can't tunnel.
     pos.y += vel.y * dt;
-    let gy = terr.terrainHeightAt(pos.x, pos.z);
+    let gy = this.groundY(pos.x, pos.z, pos.y + STEP_UP - Math.min(0, vel.y * dt));
     if (pos.y <= gy) { pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true; }
     for (const b of this.grid.queryAABB(pos.x - r, pos.z - r, pos.x + r, pos.z + r)) {
       if (b.foliage) continue;                                   // foliage (soft cover) never blocks movement — only slows (foliageSlowAt)
@@ -437,9 +485,13 @@ export class World {
     const lim = this.HALF - r;
     pos.x = clamp(pos.x, -lim, lim); pos.z = clamp(pos.z, -lim, lim);
 
+    // ROCK WALLS — the mountain is a density field, not an AABB: if the body walked INTO rock (steep face / cave
+    // wall), eject it horizontally along the field gradient before re-seating the feet.
+    if (this.cave && this.cave.contains(pos.x, pos.z)) this._pushOutRock(pos, vel, r, h);
+
     // GROUND-FOLLOW — after moving, re-seat the feet on the (now possibly different)
     // terrain height so ascents/descents are smooth and never fall-through.
-    gy = terr.terrainHeightAt(pos.x, pos.z);
+    gy = this.groundY(pos.x, pos.z, pos.y + STEP_UP);
     // Gated on hasTerrain: on FLAT maps this down-snap would clip the player off man-made ledges
     // ≤ TERRAIN_GROUND_FOLLOW_STEP (0.6 m), so flat maps keep the old "stay on the box top" behavior.
     if (this.hasTerrain) {
@@ -449,7 +501,29 @@ export class World {
         pos.y = gy; if (vel.y < 0) vel.y = 0; onGround = true;
       }
     }
+    // CAVE CEILING — head can't pop through the rock roof (same density field; groundY already put the feet on
+    // the cave floor / mountain surface, so the body can never fall through the rock).
+    if (this.cave && this.cave.contains(pos.x, pos.z)) {
+      const roof = this.cave.ceilingAbove(pos.x, pos.z, pos.y + 0.1);
+      if (roof != null) { const maxFeet = roof - h - 0.05; if (pos.y > maxFeet) { pos.y = maxFeet; if (vel.y > 0) vel.y = 0; } }
+    }
     return onGround;
+  }
+
+  // Eject the player capsule out of the rock density field along the horizontal gradient (walls / steep faces).
+  // The field is ~signed-distance near the surface, so |density| ≈ penetration depth; 2 iterations converge.
+  _pushOutRock(pos, vel, r, h) {
+    const cave = this.cave;
+    for (let iter = 0; iter < 2; iter++) {
+      let deepest = 0, gx = 0, gz = 0;
+      for (const dy of [0.3, 0.9, 1.5]) {
+        const y = pos.y + dy, d = cave.densityAt(pos.x, y, pos.z);
+        if (d < deepest) { deepest = d; const g = cave.gradient(pos.x, y, pos.z); gx = g.x; gz = g.z; }
+      }
+      if (deepest >= 0) break;                              // not inside rock → done
+      const hl = Math.hypot(gx, gz) || 1, push = -deepest + 0.05;
+      pos.x += (gx / hl) * push; pos.z += (gz / hl) * push; vel.x = 0; vel.z = 0;
+    }
   }
 
   // Box collision + step-up for one axis (delegates to _moveAxis), then enforce the
@@ -500,7 +574,16 @@ export class World {
   // Ground height under (x,z): the terrain surface on the heightfield demo slice, else the
   // hard-zero floor on flat maps. The single gate that keeps every projectile/flare/felled-tree
   // ground test terrain-aware on ?map=demo while leaving arena/steppe byte-identical (groundY≡0).
-  groundY(x, z) { return this.terrain.terrainHeightAt(x, z); }
+  groundY(x, z, fromY = Infinity) {
+    const base = this.terrain.terrainHeightAt(x, z);
+    // Inside the massif footprint the rock is a density field: the topmost solid ≤ fromY is the mountain surface
+    // (standing on it) or, in the cave, the rock floor (≈ base). Elsewhere / by default → the heightfield.
+    if (this.cave && this.cave.contains(x, z)) {
+      const gy = this.cave.groundY(x, z, fromY);
+      if (gy != null && gy > base) return gy;
+    }
+    return base;
+  }
 
   // Soft-cover slow: the horizontal-speed multiplier for a body pushing through ground-level foliage
   // (bush / sapling / fallen crown — `thicket` boxes). 1 otherwise. A tall tree's overhead canopy is
@@ -555,11 +638,21 @@ export class World {
       const tg = this._rayTerrain(origin, dir, best); // march vs the heightfield (feet placement / decals / aim-down)
       if (tg != null && tg > 0 && tg < best) { best = tg; hitBox = 'ground'; }
     } else if (dir.y < -1e-6) { const tg = -origin.y / dir.y; if (tg > 0 && tg < best) { best = tg; hitBox = 'ground'; } }
+    if (this.cave) {
+      // the MOUNTAIN is a density body, NOT in the heightfield — test it too or bullets/decals/LOS/throwables
+      // sail straight through the visible rock (hitbox must ≡ render; both read the same field).
+      const tc = this.cave.rayHit(origin, dir, best);
+      if (tc != null && tc > 0 && tc < best) { best = tc; hitBox = 'rock'; }
+    }
     if (best >= maxDist) return null;
     const point = new THREE.Vector3(origin.x + dir.x * best, origin.y + dir.y * best, origin.z + dir.z * best);
     const normal = new THREE.Vector3(0, 1, 0);
     if (hitBox === 'ground' && this.hasTerrain) {       // real terrain surface normal at the hit
       const n = this.terrain.terrainNormalAt(point.x, point.z); normal.set(n.x, n.y, n.z);
+    }
+    if (hitBox === 'rock') {                            // rock surface normal = density-field gradient
+      const n = this.cave.gradient(point.x, point.y, point.z); normal.set(n.x, n.y, n.z);
+      hitBox = 'ground';                                // downstream treats it like terrain (decals, no box ref)
     }
     if (hitBox && hitBox !== 'ground') {
       if (hitBox.cap && refineBoxHit(hitBox, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best, this._exN) != null) {
@@ -939,10 +1032,15 @@ export class BuildManager {
 
 // Forest map sky/fog palette (ported from the forest-destruct demo). DayNight._apply re-tints over the
 // global desert SKYC when mapId === 'forest' (runs last → wins). Day = green-tan mist, night = dark green.
+// Cold, desaturated OVERCAST grade — the world is raw/brutal (only the plush enemies are cute), so the
+// forest reads cold & watchful, not a sunny park. The light model = a FLAT overcast: weak warm sun +
+// dominant cool sky-fill, FLOORED so it holds the same cold mood across the whole day (no dusk-dip, no
+// noon candy-park) and stays readable. Bright cool-grey sky/haze.
 const FOREST_SKY = {
-  dFog: new THREE.Color(0x9cb37a), nFog: new THREE.Color(0x141d16),
-  dHemiG: new THREE.Color(0x3a4a24), nHemiG: new THREE.Color(0x0e1610),
-  sun: new THREE.Color(0xffe6b0),
+  dFog: new THREE.Color(0x9aa6ab), nFog: new THREE.Color(0x121a14),     // bright cool-grey overcast haze + dome tint
+  dHemiG: new THREE.Color(0x4c5046), nHemiG: new THREE.Color(0x0d140f), // cool up-bounce off the forest floor
+  hemiSky: new THREE.Color(0x9aa6ab),                                   // the dominant overcast sky-fill
+  sun: new THREE.Color(0xeae0c8),                                       // weak, low-saturation sun
 };
 
 export class DayNight {
@@ -1076,16 +1174,26 @@ export class DayNight {
     // ── ?map=forest: re-tint the world GREEN over the desert SKYC blend (runs LAST, so it wins) ──
     if (this.game.world && this.game.world.mapId === 'forest') {
       const t = clamp(L, 0, 1);
-      e.scene.fog.color.copy(FOREST_SKY.nFog).lerp(FOREST_SKY.dFog, t);    // green-tan mist by day → dark green at night
-      e.scene.fog.near = 12 + t * 50; e.scene.fog.far = 50 + t * 300;      // tighter, mistier than the open maps
-      // tint the whole sky DOME green so the haze reads green EVERYWHERE (matches the demo's green bg),
-      // strongest at the horizon where it dissolves into the fog. Only by day (t), so night stays starry.
-      u.top.value.lerp(FOREST_SKY.dFog, 0.45 * t);
-      u.mid.value.lerp(FOREST_SKY.dFog, 0.72 * t);
-      u.bot.value.lerp(FOREST_SKY.dFog, 0.9 * t);
+      const dn = clamp((L - 0.05) / 0.28, 0, 1);                          // "day-ness": 0 deep night → 1 once it's properly day
+      e.scene.fog.color.copy(FOREST_SKY.nFog).lerp(FOREST_SKY.dFog, t);   // cool-grey mist by day → near-black at night
+      e.scene.fog.near = 16 + t * 44; e.scene.fog.far = 62 + t * 205;     // atmospheric perspective (distant massif/trees desaturate & read MASSIVE)
+      // sky DOME → flat grey OVERCAST driven by day-ness (not the sun-elevation t), so the sky reads the same
+      // cold grey at dawn AND noon (round-2 bug: noon snapped back to a cheerful blue). Night (dn→0) stays starry.
+      u.top.value.lerp(FOREST_SKY.dFog, 0.72 * dn);
+      u.mid.value.lerp(FOREST_SKY.dFog, 0.88 * dn);
+      u.bot.value.lerp(FOREST_SKY.dFog, 0.97 * dn);
       e.scene.background.copy(u.mid.value);
-      e.hemi.groundColor.copy(FOREST_SKY.nHemiG).lerp(FOREST_SKY.dHemiG, t); // green up-bounce off the forest floor
-      if (day) e.sun.color.copy(FOREST_SKY.sun);                           // warm sun filtered through the canopy
+      // FLAT OVERCAST light model — OVERRIDE the desert curve: weak warm sun (soft shadows) + a dominant cool
+      // sky-fill, both floored so the same cold mood holds dawn→dusk (no dusk-dip, no noon candy-park).
+      e.sun.intensity = L * 2.1 * 0.58;                                   // cut the key hard (overcast has weak direct sun)
+      if (day) e.sun.color.copy(FOREST_SKY.sun);
+      e.hemi.intensity = 0.44 + 0.52 * dn;                               // cool sky-fill is the MAIN light (floored → readable dawn)
+      e.hemi.color.copy(FOREST_SKY.hemiSky);
+      e.hemi.groundColor.copy(FOREST_SKY.nHemiG).lerp(FOREST_SKY.dHemiG, t);
+      e.ambient.intensity = 0.10 + 0.10 * dn;
+      // no stars during overcast DAY (round-2: "DAY" showed a starfield) — fade them out HARD just after dawn
+      const sf = 1 - clamp((L - 0.04) / 0.12, 0, 1);
+      this.stars.material.opacity *= sf; this.cstars.material.opacity *= sf; this.clines.material.opacity *= sf;
     }
   }
 }

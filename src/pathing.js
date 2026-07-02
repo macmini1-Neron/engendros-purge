@@ -45,12 +45,24 @@ export function buildNavGrid(world, opts = {}) {
   }
   if (slopeAware && world.hasTerrain && world.terrain) {       // block too-steep terrain cells
     const terr = world.terrain;
-    const lim = terr.slopeLimit != null ? terr.slopeLimit : (Math.PI * 35) / 180;
+    // EARTHWORKS: nav uses the stricter HORDE slope limit so the flow-field routes mobs AROUND steep faces / dug walls the player can still climb.
+    const lim = terr.enemySlopeLimit != null ? terr.enemySlopeLimit : (terr.slopeLimit != null ? terr.slopeLimit : (Math.PI * 35) / 180);
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
       if (blocked[i]) continue;
       const x = originX + (c + 0.5) * cell, z = originZ + (r + 0.5) * cell;
       if (terr.terrainSlopeAt(x, z) > lim) blocked[i] = 1;
+    }
+  }
+  // The MASSIF is a density-field rock body (not in the heightfield), so mark its standing-rock footprint blocked
+  // — the horde routes AROUND it. The cave mouth/tunnel stays passable so mobs can follow the player inside.
+  if (world.cave) {
+    const cave = world.cave;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (blocked[i]) continue;
+      const x = originX + (c + 0.5) * cell, z = originZ + (r + 0.5) * cell;
+      if (cave.contains(x, z) && cave.insideAt(x, z) <= 0.05 && cave.mountRise(x, z) > 1.2) blocked[i] = 1;
     }
   }
   return { cell, cols, rows, originX, originZ, blocked };

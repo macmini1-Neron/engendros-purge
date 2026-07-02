@@ -20,6 +20,10 @@ export const smoothDamp = (cur, target, vel, smooth, dt) => {
 export const damp = (cur, target, lambda, dt) => lerp(cur, target, 1 - Math.exp(-lambda * dt));
 export const TAU = Math.PI * 2;
 export const deg = (d) => (d * Math.PI) / 180;
+// Cheap continuous 1-D pseudo-noise in ~[-1,1] (sum of incommensurate sines). Smooth and
+// frame-rate-independent — use for shudder/shake instead of per-frame Math.random() (which reads
+// as static). Pass a time-ish x (scale it by the desired frequency); offset the phase per channel.
+export const snoise = (x) => 0.5 * Math.sin(2.1 * x) + 0.3 * Math.sin(4.7 * x + 1.3) + 0.2 * Math.sin(9.1 * x + 2.9);
 
 // Deterministic-ish RNG (mulberry32). Seeded so the world is stable per run.
 export function makeRNG(seed = 1337) {

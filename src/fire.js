@@ -34,6 +34,8 @@ import { makeRNG } from './util.js';
 import { MATERIALS, rayAABB } from './destruct.js';
 import { makeClock } from './simclock.js';
 import { nearestIgnitable } from './fire-spread.js';
+import { WIND } from './wind.js';
+const _windArg = () => ({ x: WIND.vx, z: WIND.vz, speed: WIND.speed }); // fire reaches downwind / crawls upwind (host-only spread → co-op-safe)
 
 // ── tunables ──────────────────────────────────────────────────────────────────────
 const TICK_HZ        = 10;          // fire sim rate (fixed step)
@@ -130,7 +132,7 @@ export class FireManager {
     if (!this.active) return null;
     const p = v3(at);
     const cands = this._candidates();
-    const target = nearestIgnitable(p, cands, radius, (c) => this._wallBetween(p[0], p[2], c.cx, c.cz, p[1] + 0.5));
+    const target = nearestIgnitable(p, cands, radius, (c) => this._wallBetween(p[0], p[2], c.cx, c.cz, p[1] + 0.5), _windArg());
     if (!target) return null;
     return this.ignite(target.part, seed, startY == null ? p[1] : startY);
   }
@@ -308,7 +310,7 @@ export class FireManager {
       if (this.rng() < k.chance) {
         if (!cands) cands = this._candidates();
         const from = [f.cx, f.midY, f.cz];
-        const target = nearestIgnitable(from, cands, k.radius, (c) => this._wallBetween(f.cx, f.cz, c.cx, c.cz, f.midY));
+        const target = nearestIgnitable(from, cands, k.radius, (c) => this._wallBetween(f.cx, f.cz, c.cx, c.cz, f.midY), _windArg());
         if (target) { const r = this.ignite(target.part, (f.seed * 1664525 + 1013904223) >>> 0); if (r) { target.taken = true; } }
       }
 
