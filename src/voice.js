@@ -51,7 +51,7 @@ export class VoiceChat {
     this.speakers = new Map();     // deployed-radio loudspeakers: structId -> { panner, bp, freq, on, taps:Map<peerId,gain> }
     this.stations = [];            // preset RADIO_STATIONS: a local asset "always broadcasting" on a fixed freq — tune in to hear it (single-machine testable)
     this.vadThresh = SPEAK_RMS; this.localSpeaking = false; this._vadHang = 0;
-    this._inCoop = false; this._occT = 0; this._micTest = false;
+    this._inCoop = false; this._occT = 0; this._micTest = false; this._helloT = 0;
     // settings mirror (filled by applySettings)
     this._s = { voiceVol: 1, micGain: 1, echoCancel: 1, noiseSup: 1, autoGain: 1,
                 inDevId: '', outDevId: '', selfMonitor: 0 };
@@ -203,7 +203,8 @@ export class VoiceChat {
   _enterMesh() { if (this.enabled) this._announce(true); }
   _exitMesh() { for (const id of [...this.peers.keys()]) this._dropPeer(id); this._voiceOn.clear(); }
 
-  _announce(on) { const n = this._net; if (n) n.broadcast('vhello', { from: this.myId, on: on !== false }); }
+  // Presence — carries the radio tuning state too, so a beacon alone fully (re)syncs a peer.
+  _announce(on) { const n = this._net; if (n) n.broadcast('vhello', { from: this.myId, on: on !== false, rf: this.radioFreq, rt: this.radioTx, ro: this.radioOn }); }
   _sig(type, to, extra) { const n = this._net; if (n) n.broadcast(type, Object.assign({ to, from: this.myId }, extra)); }
 
   // presence: someone announced their voice on/off  (read d.from, NOT the relayed fromId)
@@ -280,6 +281,14 @@ export class VoiceChat {
     pv.srcNode.connect(pv.radioBP); pv.radioBP.connect(pv.radioGain); pv.radioGain.connect(this.voiceMaster);
   }
 
+  // Drop mesh/presence entries for players who are no longer in the co-op roster — covers
+  // crash/leave races where the 'vhello off' or playerLeft path never reached us.
+  _reconcileRoster() {
+    const mp = this.game.mp; if (!mp || !mp.active || !mp.roster) return;
+    for (const id of [...this.peers.keys()]) if (!mp.roster.has(id)) { this._voiceOn.delete(id); this._dropPeer(id); }
+    for (const id of [...this._voiceOn]) if (!mp.roster.has(id)) this._voiceOn.delete(id);
+  }
+
   _dropPeer(peerId) {
     const pv = this.peers.get(peerId); if (!pv) return;
     try { pv.pc && pv.pc.close(); } catch (e) {}
@@ -299,6 +308,14 @@ export class VoiceChat {
     const inCoop = !!(this.game.mp && this.game.mp.active);
     if (inCoop !== this._inCoop) { this._inCoop = inCoop; if (inCoop) this._enterMesh(); else this._exitMesh(); }
     if (!this.enabled || !this.ctx) return;
+
+    // Presence BEACON + roster reconcile (state-derived mesh): the one-shot vhello could be lost
+    // in a join race and the mesh never formed OR never healed. Re-announcing every 2s (with the
+    // radio state riding along) makes a lost packet cost at most one beacon interval.
+    if (this._inCoop) {
+      this._helloT -= dt;
+      if (this._helloT <= 0) { this._helloT = 2; this._announce(true); this._reconcileRoster(); }
+    }
 
     this._updateListener();
     this._updateLocalGate(dt);

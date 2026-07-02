@@ -1288,6 +1288,10 @@ class Game {
       this._updatePlaying(frameDt * simScale);               // OFF / non-fixed path (default) — hit-stop scales the sim dt
     }
 
+    // Voice runs in ALL states (was inside _updatePlaying): the presence beacon, mesh enter/exit
+    // edges, mute reconcile and station upkeep must keep ticking through lobby/menu/death — a
+    // wipe-to-lobby otherwise froze the mesh in whatever state the last playing frame left it.
+    if (this.voice) this.voice.update(frameDt);
     if (this.digManager) this.digManager.update();          // flush dug chunks → one re-mesh each (before chunks.update picks LODs)
     if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera); // uses TRUE sim cam pos
     this.engine.updateAdaptive(this._frameMs);
@@ -1478,7 +1482,6 @@ class Game {
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);
-    this.voice.update(dt); // proximity voice: listener+panner+occlusion (after mp.update so remote .pos is fresh)
     this._updateAdaptiveMusic();
     // World clock advances every frame in every mode. Host/solo = authoritative (advances the truth + fires timed
     // transitions via _stepMinute); clients predict locally for smooth HH:MM and reconcile to the host's 'night' push.
