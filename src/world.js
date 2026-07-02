@@ -619,11 +619,21 @@ export class World {
       const tg = this._rayTerrain(origin, dir, best); // march vs the heightfield (feet placement / decals / aim-down)
       if (tg != null && tg > 0 && tg < best) { best = tg; hitBox = 'ground'; }
     } else if (dir.y < -1e-6) { const tg = -origin.y / dir.y; if (tg > 0 && tg < best) { best = tg; hitBox = 'ground'; } }
+    if (this.cave) {
+      // the MOUNTAIN is a density body, NOT in the heightfield — test it too or bullets/decals/LOS/throwables
+      // sail straight through the visible rock (hitbox must ≡ render; both read the same field).
+      const tc = this.cave.rayHit(origin, dir, best);
+      if (tc != null && tc > 0 && tc < best) { best = tc; hitBox = 'rock'; }
+    }
     if (best >= maxDist) return null;
     const point = new THREE.Vector3(origin.x + dir.x * best, origin.y + dir.y * best, origin.z + dir.z * best);
     const normal = new THREE.Vector3(0, 1, 0);
     if (hitBox === 'ground' && this.hasTerrain) {       // real terrain surface normal at the hit
       const n = this.terrain.terrainNormalAt(point.x, point.z); normal.set(n.x, n.y, n.z);
+    }
+    if (hitBox === 'rock') {                            // rock surface normal = density-field gradient
+      const n = this.cave.gradient(point.x, point.y, point.z); normal.set(n.x, n.y, n.z);
+      hitBox = 'ground';                                // downstream treats it like terrain (decals, no box ref)
     }
     if (hitBox && hitBox !== 'ground') {
       const ex = Math.min(Math.abs(point.x - hitBox.min.x), Math.abs(point.x - hitBox.max.x));

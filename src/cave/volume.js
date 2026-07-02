@@ -16,6 +16,11 @@ import { FOREST_TUNING } from '../terrain.js';
 import { MeshBuilder, voxelMaterial } from '../util.js';
 
 const smooth01 = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+// smooth |v| (rounded with radius ~k) + smooth-crested ridge in [0,1] — the "no-teeth" fold. A raw 1−|n|
+// ridge has a slope discontinuity at every crest, which the mesh renders as literal sawteeth; this keeps the
+// ridge line but weathers the crest into a rounded rock spine.
+const sabs = (v, k) => Math.sqrt(v * v + k * k) - k;
+const ridge = (n, k = 0.3) => 1 - sabs(n, k) / (Math.sqrt(1 + k * k) - k);
 function segPD(x, z, ax, az, bx, bz) {
   const abx = bx - ax, abz = bz - az, ab2 = abx * abx + abz * abz || 1e-6;
   let t = ((x - ax) * abx + (z - az) * abz) / ab2; t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -57,10 +62,15 @@ export class CaveVolume {
     if (md >= m.r1) return 0;
     const mt = md <= m.r0 ? 1 : 1 - smooth01(m.r0, m.r1, md);
     let rise = (m.h + m.jag * N.simplex2(x * 0.06 + 7.1, z * 0.06 + 2.3)) * mt;
-    const r1n = 1 - Math.abs(N.simplex2(x * 0.11 + 3.3, z * 0.11 + 9.1));   // ridged (craggy faces)
-    const r2n = 1 - Math.abs(N.simplex2(x * 0.21 + 1.7, z * 0.21 + 4.4));
-    rise += (r1n * 7.0 + r2n * 4.0) * mt;
-    rise += N.simplex2(x * 0.34 + 5.2, z * 0.34 + 2.9) * 3.2 * mt * (1 - mt) * 4;   // broken mid-slope ledges
+    // REALISM ("no-teeth" pass): ridge relief uses the SMOOTH fold (never raw 1−|n| — that's a knife edge at
+    // every crest), calm amplitudes, and it concentrates MID-SLOPE (mt·(1−mt): quiet crest line, sculpted
+    // flanks — how real weathered rock reads). Wavelengths stay ≥ ~9 m: finer fracture is the triplanar rock
+    // shading's job, not the silhouette's. Same rules apply when building the ЗОНА-704 «ХРЕБЕТ» massif.
+    const spur = ridge(N.simplex2(x * 0.08 + 3.3, z * 0.08 + 9.1), 0.30);     // λ≈12 m — spurs & gullies
+    const rib  = ridge(N.simplex2(x * 0.14 + 1.7, z * 0.14 + 4.4), 0.35);     // λ≈7 m — secondary ribs
+    const mid = mt * (1 - mt) * 4;                       // 0 at the grass line AND the crest, 1 mid-flank
+    rise += (spur * 2.2 + rib * 0.8) * mt                // massif-wide relief, calm amplitude
+          + (spur * 4.6 + rib * 2.2) * mid;              // spur/gully sculpting concentrated on the flanks
     return rise > 0 ? rise : 0;
   }
 
@@ -139,6 +149,43 @@ export class CaveVolume {
       prev = cur;
     }
     return null;
+  }
+
+  // ray vs the rock body — so bullets/decals/LOS/throwables STOP on the visible mountain exactly like
+  // collision does (same field ⇒ hitbox ≡ render). Clips the ray to the AABB, marches the density for an
+  // air→solid crossing, bisects tight. Returns t (distance along dir) or null. Rays that start inside
+  // rock (shouldn't happen in play) return t0.
+  rayHit(o, d, maxT) {
+    const a = this.aabb;
+    // slab-clip [t0,t1] against the AABB so we only march near the mountain
+    let t0 = 0, t1 = maxT;
+    const axes = [['x', a.minX, a.maxX], ['y', a.minY, a.maxY], ['z', a.minZ, a.maxZ]];
+    for (const [k, mn, mx] of axes) {
+      const ok = o[k], dk = d[k];
+      if (Math.abs(dk) < 1e-9) { if (ok < mn || ok > mx) return null; continue; }
+      let ta = (mn - ok) / dk, tb = (mx - ok) / dk;
+      if (ta > tb) { const tmp = ta; ta = tb; tb = tmp; }
+      if (ta > t0) t0 = ta;
+      if (tb < t1) t1 = tb;
+      if (t0 > t1) return null;
+    }
+    const step = 0.35;
+    let tPrev = t0;
+    let prev = this.densityAt(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0);
+    if (prev <= 0) return t0;
+    for (let t = Math.min(t0 + step, t1); ; t = Math.min(t + step, t1)) {
+      const cur = this.densityAt(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t);
+      if (cur <= 0) {                                   // air → solid: surface in (tPrev, t)
+        let lo = tPrev, hi = t;
+        for (let it = 0; it < 10; it++) {
+          const m = (lo + hi) * 0.5;
+          (this.densityAt(o.x + d.x * m, o.y + d.y * m, o.z + d.z * m) <= 0) ? (hi = m) : (lo = m);
+        }
+        return (lo + hi) * 0.5;
+      }
+      if (t >= t1) return null;
+      tPrev = t;
+    }
   }
 
   // outward normal (= +∇f since the field grows toward air) for wall/ceiling push-out.
