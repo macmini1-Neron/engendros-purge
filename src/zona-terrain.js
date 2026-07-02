@@ -5,7 +5,7 @@
 // Layer order (later wins): base fbm → stamps (ridge/plateau/bowl) → river channel → road corridors
 // (Task 4) → parcel pads (Task 5). Every primitive clamps its own influence radius; the composed
 // function is total (no NaN) and pure for a fixed seed.
-import { EXTENT, TERRAIN_FEATURES, WATER, ROADS, PARCELS } from './zona-plan.js';
+import { EXTENT, TERRAIN_FEATURES, WATER, ROADS, PARCELS, BIOMES } from './zona-plan.js';
 
 // ── self-contained value-noise fbm (mirror of terrain.js's; kept local so this module imports only plan data)
 function hash2(ix, iz, seed) {
@@ -314,6 +314,48 @@ function build(seed) {
   return built;
 }
 export function makeZonaHeightFn(seed) { return build(seed).fn; }
+
+// ── biome weights — pure (x,z) → {forest, swamp, dry, dead} in [0,1]. Drives BOTH the ground
+// substrate (zona.js bakes a biome-map texture the triplanar material samples) AND vegetation
+// scatter, so what you see underfoot is what grows there. Authored BIOMES shapes blend by smooth
+// falloff; deadwood is PROCEDURAL: the massif «РАНА» flanks by ridge proximity (dead forest →
+// bare crest per the plan), and swamp gains weight below the waterline regardless of shape.
+let _bgrid = null;
+function biomeGrid() {
+  if (_bgrid) return _bgrid;
+  _bgrid = new Map();
+  for (const b of BIOMES) {
+    const reach = (b.shape === 'disc' ? b.r : Math.max(b.w, b.d) / 2) + 40;
+    gridInsert(_bgrid, b.x - reach, b.z - reach, b.x + reach, b.z + reach, b);
+  }
+  return _bgrid;
+}
+const RANA = TERRAIN_FEATURES.find(f => f.id === 'RANA');
+export function biomeWeightsAt(x, z, h) {
+  // h optional (pass the ground height when you have it — saves a field eval for the wet boost)
+  const grid = biomeGrid();
+  const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
+  const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
+  const list = grid.get(cellKey(cx, cz));
+  let forest = 0, swamp = 0, dry = 0;
+  if (list) for (const b of list) {
+    const half = b.shape === 'disc' ? b.r : Math.max(b.w, b.d) / 2;
+    const d = b.shape === 'disc'
+      ? Math.max(0, Math.hypot(x - b.x, z - b.z) - b.r)
+      : Math.hypot(Math.max(0, Math.abs(x - b.x) - b.w / 2), Math.max(0, Math.abs(z - b.z) - b.d / 2));
+    const w = 1 - smoothstep(d / Math.max(24, half * 0.35)); // soft fringe ~1/3 of the patch size
+    if (b.kind === 'forest') forest = Math.max(forest, w * (0.55 + 0.15 * (b.density || 2)));
+    else if (b.kind === 'swamp') swamp = Math.max(swamp, w);
+    else if (b.kind === 'dry') dry = Math.max(dry, w);
+  }
+  // procedural deadwood: massif flanks (near the RANA crest line, above the meadow foot)
+  const pr = polylineProject(RANA.pts, x, z);
+  const dead = (1 - smoothstep(pr.d / (RANA.halfW * 1.05))) * 0.9;
+  // wetness boost: anything below the swamp waterline reads as peat/marsh
+  if (h != null) swamp = Math.max(swamp, (1 - smoothstep((h - (-9)) / 4)) * 0.9);
+  forest *= (1 - dead); // the dieback gradient eats the green forest as you climb the massif
+  return { forest, swamp, dry, dead };
+}
 // per-road slope-clamped longitudinal profiles — zona.js drapes ribbons along these; tests assert slopes
 export function roadProfiles(seed) { return build(seed).profiles; }
 // parcelId → resolved pad height — zona.js seats signs/gates on these; buildgen seats buildings later

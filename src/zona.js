@@ -11,8 +11,39 @@
 import * as THREE from 'three';
 import { MeshBuilder, makeRNG, voxelMaterial } from './util.js';
 import { ROADS, GATES, WATER, PARCELS, lintPlan } from './zona-plan.js';
-import { polylineProject } from './zona-terrain.js';
+import { polylineProject, biomeWeightsAt } from './zona-terrain.js';
+import { setBiomeSplat } from './terrain-tex.js';
 import { seatBox } from './terrain-place.js';
+
+// ── biome-map bake — a 512² RGBA world-XZ texture (R=forest, G=swamp, B=dry, A=deadwood) sampled by
+// the triplanar material to switch ground SUBSTRATE per region (~4.9 m/px; biome fringes are ≥24 m so
+// the resolution never shows). DATA texture: linear color space, clamped, bilinear. MUST run before
+// the map's TerrainChunks build (world._buildZona) so every chunk material captures the splat config.
+export function initZonaBiomeSplat(world) {
+  const S = 512, EXT = 1250;
+  const cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(S, S);
+  const T = (x, z) => world.terrain.terrainHeightAt(x, z);
+  for (let pz = 0; pz < S; pz++) {
+    for (let px = 0; px < S; px++) {
+      const x = -EXT + ((px + 0.5) / S) * EXT * 2;
+      const z = -EXT + ((pz + 0.5) / S) * EXT * 2;
+      const w = biomeWeightsAt(x, z, T(x, z));
+      const i = (pz * S + px) * 4;
+      img.data[i] = Math.min(255, w.forest * 255) | 0;
+      img.data[i + 1] = Math.min(255, w.swamp * 255) | 0;
+      img.data[i + 2] = Math.min(255, w.dry * 255) | 0;
+      img.data[i + 3] = Math.min(255, w.dead * 255) | 0;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.minFilter = tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false; // data map — mips would bleed biomes across the whole card
+  setBiomeSplat(tex, EXT);
+}
 
 // ── per-surface ribbon styling: cross-section half-offsets (fractions of width) + tone per lane ────
 const SURFACES = {

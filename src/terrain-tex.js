@@ -48,23 +48,73 @@ function rockCanvas(S = 256) {
   x.globalAlpha = 1; return c;
 }
 
+// forest floor — dark humus + rusty needle litter + leaf flecks + twigs (reads as "under trees")
+function forestFloorCanvas(S = 256) {
+  const c = canvas(S), x = c.getContext('2d'), rnd = lcg(0x4f3a2);
+  x.fillStyle = '#3d3226'; x.fillRect(0, 0, S, S);
+  speckle(x, rnd, S, '#2e2419', 1500, 2);
+  speckle(x, rnd, S, '#4d4030', 1100, 2);
+  speckle(x, rnd, S, '#6b4f2a', 700, 1);                       // needle litter (rusty)
+  speckle(x, rnd, S, '#7d6a3c', 260, 1);                       // dry leaf flecks
+  speckle(x, rnd, S, '#54683a', 220, 1);                       // moss dots
+  x.strokeStyle = '#2a2015'; x.lineWidth = 1.2;                 // twigs
+  for (let i = 0; i < 26; i++) { x.globalAlpha = 0.5; x.beginPath(); const bx = rnd() * S, by = rnd() * S, a = rnd() * 6.28; x.moveTo(bx, by); x.lineTo(bx + Math.cos(a) * (4 + rnd() * 8), by + Math.sin(a) * (4 + rnd() * 8)); x.stroke(); }
+  x.globalAlpha = 1; return c;
+}
+// swamp peat — near-black wet earth + sedge-green wisps + oily sheen blotches
+function peatCanvas(S = 256) {
+  const c = canvas(S), x = c.getContext('2d'), rnd = lcg(0x77e21);
+  x.fillStyle = '#2c2b20'; x.fillRect(0, 0, S, S);
+  speckle(x, rnd, S, '#211f16', 1400, 2);
+  speckle(x, rnd, S, '#3a3a26', 1000, 2);
+  speckle(x, rnd, S, '#4c5a30', 520, 1);                       // sedge / algae green
+  for (let i = 0; i < 30; i++) { x.fillStyle = rnd() < 0.5 ? '#1c1b13' : '#3f4434'; x.globalAlpha = 0.18 + rnd() * 0.2; const r = S * (0.04 + rnd() * 0.1); x.beginPath(); x.arc(rnd() * S, rnd() * S, r, 0, 6.283); x.fill(); } // wet blotches
+  x.globalAlpha = 1; return c;
+}
+// worn dry ground — pale straw/sand hardpan + fine grit + pebbles (yards, aprons, traffic strips)
+function sandCanvas(S = 256) {
+  const c = canvas(S), x = c.getContext('2d'), rnd = lcg(0xc4d13);
+  x.fillStyle = '#9a8d68'; x.fillRect(0, 0, S, S);
+  speckle(x, rnd, S, '#8a7d5a', 1300, 2);
+  speckle(x, rnd, S, '#ab9f7c', 1000, 2);
+  speckle(x, rnd, S, '#7a6e50', 500, 1);
+  for (let i = 0; i < 160; i++) { x.fillStyle = rnd() < 0.5 ? '#847a66' : '#6d6450'; x.globalAlpha = 0.6 + rnd() * 0.4; const r = 1 + rnd() * 2; x.beginPath(); x.arc(rnd() * S, rnd() * S, r, 0, 6.283); x.fill(); }
+  x.globalAlpha = 1; return c;
+}
+
 let _tex = null;
 export function terrainTextures() {
   if (_tex) return _tex;
   const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; };
-  _tex = { grass: mk(grassCanvas()), dirt: mk(dirtCanvas()), rock: mk(rockCanvas()) };
+  _tex = { grass: mk(grassCanvas()), dirt: mk(dirtCanvas()), rock: mk(rockCanvas()),
+           forest: mk(forestFloorCanvas()), peat: mk(peatCanvas()), sand: mk(sandCanvas()) };
   return _tex;
 }
+
+// ── optional biome splat layer (zona map) — a world-XZ biome-weight texture (R=forest, G=swamp,
+// B=dry, A=deadwood) switches the ground SUBSTRATE per region. Configured ONCE before the map's
+// chunks build (world._buildZona → setBiomeSplat); maps that never set it get the exact original
+// material (separate program cache key), so arena/steppe/demo/forest stay byte-identical.
+let _biome = null;
+export function setBiomeSplat(mapTexture, extent) { _biome = mapTexture ? { map: mapTexture, extent } : null; }
 
 // A fresh MeshLambert per chunk (so per-chunk dispose is safe) that shares the texture singletons and one
 // compiled program. World-space triplanar so it drops onto any heightfield/isosurface with NO UVs.
 export function makeTerrainMaterial() {
   const tex = terrainTextures();
+  const biome = _biome; // captured at material creation (chunks build after setBiomeSplat)
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uGrass = { value: tex.grass };
     shader.uniforms.uDirt = { value: tex.dirt };
     shader.uniforms.uRock = { value: tex.rock };
+    if (biome) {
+      shader.uniforms.uForestF = { value: tex.forest };
+      shader.uniforms.uPeat = { value: tex.peat };
+      shader.uniforms.uSand = { value: tex.sand };
+      shader.uniforms.uBiome = { value: biome.map };
+      shader.uniforms.uBExtent = { value: biome.extent };
+    }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n vWPos = (modelMatrix * vec4(transformed,1.0)).xyz;\n vWNrm = normalize(mat3(modelMatrix) * objectNormal);');
@@ -73,6 +123,7 @@ export function makeTerrainMaterial() {
         '#include <common>',
         'varying vec3 vWPos;', 'varying vec3 vWNrm;',
         'uniform sampler2D uGrass;', 'uniform sampler2D uDirt;', 'uniform sampler2D uRock;',
+        ...(biome ? ['uniform sampler2D uForestF;', 'uniform sampler2D uPeat;', 'uniform sampler2D uSand;', 'uniform sampler2D uBiome;', 'uniform float uBExtent;'] : []),
         'vec3 triCol(sampler2D t, vec3 wp, vec3 bw, float s){ vec3 cx=texture2D(t, wp.zy*s).rgb; vec3 cy=texture2D(t, wp.xz*s).rgb; vec3 cz=texture2D(t, wp.xy*s).rgb; return cx*bw.x+cy*bw.y+cz*bw.z; }',
         // cheap value-noise for MACRO tonal variation (breaks the flat uniform green into drier/greener patches)
         'float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }',
@@ -84,7 +135,9 @@ export function makeTerrainMaterial() {
         '  float slope=1.0-clamp(n.y,0.0,1.0);',                       // 0 flat → 1 vertical
         '  float gW=1.0-smoothstep(0.08,0.22,slope);',                 // grass <~25°
         '  float rW=smoothstep(0.26,0.40,slope);',                     // rock  >~42°
-        '  float alt=smoothstep(16.0,26.0,vWPos.y);',                  // ALTITUDE → rock: the massif top is bare rock + lichen, not a grass cap
+        biome
+          ? '  float alt=smoothstep(60.0,95.0,vWPos.y);'               // zona: rock-line rides the massif scale (the forest tune bares 16 m knolls)
+          : '  float alt=smoothstep(16.0,26.0,vWPos.y);',              // ALTITUDE → rock: the massif top is bare rock + lichen, not a grass cap
         '  gW*=(1.0-alt*0.80); rW=max(rW, alt*0.72);',
         '  float dW=clamp(1.0-gW-rW,0.0,1.0);',                        // dirt/scree shoulder
         // MACRO variation: two-octave low-freq noise → drier/greener patches (kills the flat uniform green)
@@ -97,6 +150,19 @@ export function makeTerrainMaterial() {
         '  g=mix(g, d*0.95, smoothstep(0.28,0.06,macro)*0.40);',       // dirt bleeds into worn patches (lighter touch → not muddy)
         '  g=mix(g, g*vec3(0.92,0.94,0.70), dry);',                    // dry/dead-grass patches (muted olive, NOT orange)
         '  g*=(0.96+0.26*macro);',                                     // large-scale light/dark mottling (lifted floor → cold MEADOW, not dark mud)
+        ...(biome ? [
+          // ── biome SUBSTRATE splat (zona): the region map switches what "gentle ground" is made of.
+          '  vec4 bio=texture2D(uBiome,(vWPos.xz+vec2(uBExtent))/(2.0*uBExtent));',
+          '  vec3 ff=triCol(uForestF,vWPos,bw,0.24);',                 // dark humus + needle litter
+          '  vec3 pt=triCol(uPeat,vWPos,bw,0.20);',                    // wet peat/marsh floor
+          '  vec3 sd=triCol(uSand,vWPos,bw,0.22);',                    // worn hardpan/sand
+          '  g=mix(g, ff*(0.92+0.16*macro), bio.r);',                  // forest floor under the woods
+          '  g=mix(g, pt*(0.88+0.14*macro), bio.g);',                  // peat in the swamp basin
+          '  g=mix(g, sd*(0.94+0.12*macro), bio.b*0.9);',              // traffic-worn aprons/strips
+          '  float ash=bio.a;',                                        // massif dieback: ashen dead ground
+          '  g=mix(g, vec3(dot(g,vec3(0.333)))*vec3(0.88,0.86,0.80), ash*0.75);',
+          '  d=mix(d, vec3(dot(d,vec3(0.333)))*vec3(0.92,0.90,0.86), ash*0.55);',
+        ] : []),
         '  vec3 rk=triCol(uRock,vWPos,bw,0.13);',
         '  rk*=0.92+0.08*sin(vWPos.y*0.8 + vnoise(vWPos.xz*0.06)*5.0);', // SUBTLE wavy strata (noise-broken, not ruler-straight contour lines across the mountain)
         '  rk*=(0.88+0.14*vnoise(vWPos.xz*0.12+vWPos.y*0.1));',        // rock blotching = the main variation now
@@ -109,6 +175,6 @@ export function makeTerrainMaterial() {
         '  diffuseColor.rgb*=terr*1.10; }',
       ].join('\n'));
   };
-  mat.customProgramCacheKey = () => 'engendrosTerrainTriplanar';
+  mat.customProgramCacheKey = () => (biome ? 'engendrosTerrainTriplanarBiome' : 'engendrosTerrainTriplanar');
   return mat;
 }

@@ -179,6 +179,35 @@ export const TERRAIN_FEATURES = [
   { kind: 'channel', id: 'TIHAYA', ref: 'river' },
 ];
 
+// ── biomes (plan layer «Biomy+voda») — ground SUBSTRATE + vegetation regions. Weights blend in
+// zona-terrain.biomeWeightsAt; kinds: 'forest' (dark humus/litter floor + trees), 'swamp' (peat/mud
+// + reeds), 'dry' (worn straw/sand), plus PROCEDURAL deadwood (massif flanks — derived from the RANA
+// ridge in code, not authored here). AUTHORED: shapes read off the plan's biome layer; les 27 % ve 3
+// hustotách — density 1=háj (grove), 2=les, 3=ЧАЩА (thicket, 3–10 m sightlines).
+export const BIOMES = [
+  // NW pocket — the big woods around hájovna/pila/starica (plan's largest forest focus)
+  { kind: 'forest', density: 2, shape: 'disc', x: -700, z: 300, r: 190 },
+  { kind: 'forest', density: 3, shape: 'disc', x: -770, z: 430, r: 90 },   // чаща at the sawmill river bend
+  { kind: 'forest', density: 1, shape: 'disc', x: -580, z: 140, r: 90 },   // starica grove fringe
+  // W band along the lesní okruh (between the loop road and the massif foot)
+  { kind: 'forest', density: 2, shape: 'disc', x: -560, z: -260, r: 130 },
+  { kind: 'forest', density: 1, shape: 'disc', x: -430, z: -80, r: 100 },
+  // alder чаща at the poachers' camp (S14) + kolchoz shelter belts
+  { kind: 'forest', density: 3, shape: 'disc', x: 180, z: -520, r: 80 },
+  { kind: 'forest', density: 1, shape: 'disc', x: -40, z: -760, r: 70 },
+  // NE mine slopes (spruce band under the bench)
+  { kind: 'forest', density: 2, shape: 'disc', x: 540, z: 700, r: 110 },
+  // ZONE-1 calibration: small grove NE of the strongpoint + roadside scrub by the КПП
+  { kind: 'forest', density: 1, shape: 'disc', x: -880, z: -860, r: 60 },
+  // swamp substrate mirrors the SWAMP bowl + the sunken church island fringe
+  { kind: 'swamp', shape: 'disc', x: 470, z: -850, r: 360 },
+  { kind: 'swamp', shape: 'disc', x: 380, z: -980, r: 90 },
+  // dry/worn ground: the КПП apron, ПуСО vehicle yard, perimeter strip (traffic-worn steppe)
+  { kind: 'dry', shape: 'rect', x: -1080, z: -1060, w: 90, d: 70 },
+  { kind: 'dry', shape: 'rect', x: -370, z: -1040, w: 70, d: 90 },
+  { kind: 'dry', shape: 'disc', x: -950, z: -920, r: 70 },
+];
+
 // ── lint — fail-loud plan validation (run at zona boot + in node tests).
 export function lintPlan() {
   const errors = [], warnings = [];

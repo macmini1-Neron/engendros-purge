@@ -33,7 +33,8 @@ import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 import { makeTerrain } from './terrain.js';
 import { TerrainChunks } from './terrain-chunks.js';
-import { buildZona } from './zona.js';
+import { buildZona, initZonaBiomeSplat } from './zona.js';
+import { setBiomeSplat } from './terrain-tex.js';
 import { makeTerrainMaterial } from './terrain-tex.js';
 import { CaveVolume } from './cave/volume.js';
 import { Interior } from './interior.js';
@@ -89,6 +90,7 @@ export class World {
     });
     this.hasTerrain = this.terrain.profile !== 'flat';
     this.chunks = null;
+    setBiomeSplat(null); // module-global splat config: cleared per-map so a zona→forest run in one session can't leak
     if (this.mapId === 'steppe') {
       this._buildSteppe();
     } else if (this.mapId === 'demo') {
@@ -376,6 +378,7 @@ export class World {
   _buildZona() {
     this.HALF = 1250;
     this.scene.fog.near = 140; this.scene.fog.far = 1000; // big-world haze
+    initZonaBiomeSplat(this); // biome substrate splat — MUST precede the chunk build (materials capture it)
     this.chunks = new TerrainChunks(this.terrain, {
       extent: 1250, chunkSize: 125, resolutions: [48, 24, 12, 6],
       lodBands: [180, 400, 900], lodMargin: 30,
