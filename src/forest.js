@@ -40,6 +40,7 @@ import { makePart, MATERIALS, makeHinge, stepBody, rayAABB, resolveHit, FRAGILE_
 import { DebrisPool } from './destruct-debris.js';
 import { hasModel, getSpec } from './props/registry.js';
 import { buildSpec } from './props/voxel-interp.js';
+import { biomeWeightsAt, zonaInfraClear } from './zona-terrain.js'; // pure (plan-data) — drives the zona biome scatter
 
 // Live (foliated) species placed in the wood. The damage-state snags ('deadBroken',
 // 'burntCharred') are reached only via the damage override on fell/char, not scattered.
@@ -170,15 +171,30 @@ export class Forest {
       mark(x, z);
     };
     // dense inside stands…
-    for (const cl of clusters) {
-      const target = Math.round(cl.r * cl.r * 0.05 * cl.dens);
-      for (let i = 0; i < target * 3; i++) {
-        const g = this._gauss(rng) * cl.r * 0.6, a = rng() * TAU;
-        tryTree(cl.x + Math.cos(a) * Math.abs(g), cl.z + Math.sin(a) * Math.abs(g));
+    if (this.world.mapId === 'zona') {
+      // ── ЗОНА 704: the master plan's BIOMES drive the woods (zona-plan.js), not random clusters.
+      // Uniform candidates over the whole 2500 m map, accepted ∝ the forest biome weight; the massif
+      // dieback zone grows NO live trees (snags/deadwood come with the massif zone pass), and nothing
+      // roots on roads or parcel pads (zonaInfraClear).
+      for (let i = 0; i < 90000; i++) {
+        const x = (rng() * 2 - 1) * (HALF - 8), z = (rng() * 2 - 1) * (HALF - 8);
+        const w = biomeWeightsAt(x, z);
+        if (w.dead > 0.25) continue;
+        if (rng() >= w.forest * 0.85) continue;
+        if (!zonaInfraClear(terr.seed, x, z, 2.5)) continue;
+        tryTree(x, z);
       }
+    } else {
+      for (const cl of clusters) {
+        const target = Math.round(cl.r * cl.r * 0.05 * cl.dens);
+        for (let i = 0; i < target * 3; i++) {
+          const g = this._gauss(rng) * cl.r * 0.6, a = rng() * TAU;
+          tryTree(cl.x + Math.cos(a) * Math.abs(g), cl.z + Math.sin(a) * Math.abs(g));
+        }
+      }
+      // …and a light sprinkle of lone trees everywhere.
+      for (let i = 0; i < 140; i++) tryTree((rng() * 2 - 1) * (HALF - 8), (rng() * 2 - 1) * (HALF - 8));
     }
-    // …and a light sprinkle of lone trees everywhere.
-    for (let i = 0; i < 140; i++) tryTree((rng() * 2 - 1) * (HALF - 8), (rng() * 2 - 1) * (HALF - 8));
 
     // 4. Build the tree InstancedMeshes + destructible records, grouped by (species,variant).
     const groups = new Map();
@@ -212,13 +228,31 @@ export class Forest {
       placeCover.push({ x, y: terr.terrainHeightAt(x, z), z, kind, variant: Math.floor(rng() * ck.variants), scale: ck.scale[0] + rng() * (ck.scale[1] - ck.scale[0]) });
       mark(x, z);
     };
-    const coverTargets = { grass: 300, shrub: 64, flower: 30, bush: 18 };
-    for (const ck of COVER_KINDS) {
-      const n = coverTargets[ck.key];
-      for (let i = 0; i < n; i++) {
-        // 70% biased toward a random stand, 30% open ground.
-        if (rng() < 0.7) { const cl = clusters[Math.floor(rng() * clusters.length)]; const a = rng() * TAU, d = Math.abs(this._gauss(rng)) * cl.r; tryCover(cl.x + Math.cos(a) * d, cl.z + Math.sin(a) * d, ck.key); }
-        else tryCover((rng() * 2 - 1) * (HALF - 6), (rng() * 2 - 1) * (HALF - 6), ck.key);
+    if (this.world.mapId === 'zona') {
+      // biome-driven groundcover: grass tufts on the steppe + reed-reading tufts on the swamp fringe,
+      // shrubs/bushes thicken the woods, flowers on open meadow. Same infra keep-out as trees.
+      const tryBiome = (kind, attempts, accept) => {
+        for (let i = 0; i < attempts; i++) {
+          const x = (rng() * 2 - 1) * (HALF - 6), z = (rng() * 2 - 1) * (HALF - 6);
+          const w = biomeWeightsAt(x, z);
+          if (rng() >= accept(w)) continue;
+          if (!zonaInfraClear(terr.seed, x, z, 1.2)) continue;
+          tryCover(x, z, kind);
+        }
+      };
+      tryBiome('grass', 42000, (w) => 0.10 + 0.45 * w.forest + 0.40 * w.swamp - 0.6 * w.dead);
+      tryBiome('shrub', 12000, (w) => 0.02 + 0.30 * w.forest - 0.5 * w.dead);
+      tryBiome('flower', 4000, (w) => 0.025 + 0.06 * w.forest - w.swamp - w.dead);
+      tryBiome('bush', 6000, (w) => 0.015 + 0.25 * w.forest - 0.5 * w.dead);
+    } else {
+      const coverTargets = { grass: 300, shrub: 64, flower: 30, bush: 18 };
+      for (const ck of COVER_KINDS) {
+        const n = coverTargets[ck.key];
+        for (let i = 0; i < n; i++) {
+          // 70% biased toward a random stand, 30% open ground.
+          if (rng() < 0.7) { const cl = clusters[Math.floor(rng() * clusters.length)]; const a = rng() * TAU, d = Math.abs(this._gauss(rng)) * cl.r; tryCover(cl.x + Math.cos(a) * d, cl.z + Math.sin(a) * d, ck.key); }
+          else tryCover((rng() * 2 - 1) * (HALF - 6), (rng() * 2 - 1) * (HALF - 6), ck.key);
+        }
       }
     }
     const cgroups = new Map();

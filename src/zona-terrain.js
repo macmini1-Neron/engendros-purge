@@ -309,10 +309,26 @@ function build(seed) {
   const corridorField = (x, z) => corridorHeight(corr, x, z, stamped(x, z));
   const pads = preparePads(corridorField);
   const fn = (x, z) => padHeight(pads, x, z, corridorField(x, z));
-  const built = { fn, profiles: corr.profiles, padHeights: pads.heights };
+  // infrastructure keep-out for scatter systems (vegetation must not grow on roads / parcel pads)
+  const infraClear = (x, z, margin = 2) => {
+    const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
+    const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
+    const k = cellKey(cx, cz);
+    const roads = corr.grid.get(k);
+    if (roads) { const q = ++_query; for (const prep of roads) {
+      if (prep._q === q) continue; prep._q = q;
+      if (polylineProject(prep.pts, x, z).d < prep.halfW + margin) return false;
+    } }
+    const padList = pads.grid.get(k);
+    if (padList) for (const prep of padList) if (distToShape(prep.f, x, z) < margin) return false;
+    return true;
+  };
+  const built = { fn, profiles: corr.profiles, padHeights: pads.heights, infraClear };
   _cache.set(seed, built);
   return built;
 }
+// scatter keep-out — true when (x,z) is clear of roads (± margin) and parcel pads (vegetation gate)
+export function zonaInfraClear(seed, x, z, margin = 2) { return build(seed).infraClear(x, z, margin); }
 export function makeZonaHeightFn(seed) { return build(seed).fn; }
 
 // ── biome weights — pure (x,z) → {forest, swamp, dry, dead} in [0,1]. Drives BOTH the ground
