@@ -87,7 +87,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-07-02 10:30';
+const GAME_BUILD = '2026-07-02 14:49';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -858,6 +858,10 @@ class Game {
       this.audio.setUiMusicDuck((this._radioPanelOpen || settingsShown) ? 0 : 1);
     }
   }
+  // Shared world clock in SECONDS (world minutes × real seconds per minute). Host-synced in co-op
+  // (~1s reconcile), so radio stations can seek to (worldSeconds % duration) and every client
+  // hears the SAME point of the broadcast.
+  worldSeconds() { const wc = this._worldClock; return (wc.total + (wc.alpha || 0)) * (WORLD_DAY_SEC / MINUTES_PER_DAY); }
   toMenu() {
     if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();
@@ -1006,11 +1010,27 @@ class Game {
     this.mp._renderRelayMode();
     this.mp._renderModeSel();
     this.mp._renderRoomBrowser();
+    this._maybeAutoEnableVoice(); // persisted voiceOn=1 → arm the mic now (lobby entry is a click, so getUserMedia is allowed)
     if (this.audio.music) this.audio.music.setPlaylist('soviet'); // lobby plays the shuffled song jukebox
+  }
+  // Voice opt-in is persisted (settings voiceOn) but getUserMedia never ran again after a reload —
+  // the toggle said ON while the mic stayed off, and the mesh never formed (the live 2-PC failure).
+  // Lobby entry and run start are click-driven, so re-arm voice there: co-op voice "just works".
+  _maybeAutoEnableVoice() {
+    const v = this.voice, st = this.settings;
+    if (!v || v.enabled || this._voiceAutoBusy || !st || !st.data.voiceOn) return;
+    this._voiceAutoBusy = true;
+    v.enable().then((ok) => {
+      this._voiceAutoBusy = false;
+      if (ok) { v.applySettings(st.data); if (v.micDenied && this.hud && this.hud.toast) this.hud.toast('VOICE: no microphone — receive-only', 0xe0b050); }
+      else if (this.hud && this.hud.toast) this.hud.toast('VOICE: enable failed — check mic permission', 0xff7050); // keep voiceOn=1: retry on the next lobby/run entry
+      if (st._refreshVoice) st._refreshVoice();
+    }).catch(() => { this._voiceAutoBusy = false; });
   }
   _enterMP(mode) {
     this.mode = (mode === 'longnight') ? 'longnight' : 'purge';
     this.audio.init(); this.audio.music.setScene('gameplay'); this._intentionalUnlock = false;
+    this._maybeAutoEnableVoice(); // covers the auto-rejoin/client 'start' path too (lobby entry may have been skipped)
     this._setUnloadGuard(true); // arm the "leave site?" net for the co-op run too
     this.mpMenuOpen = false;
     if (this.mp) { this.mp._spilledLoot = false; this.mp.spectateTarget = null; } // fresh run → loot can spill again on the next real death
@@ -1288,6 +1308,14 @@ class Game {
       this._updatePlaying(frameDt * simScale);               // OFF / non-fixed path (default) — hit-stop scales the sim dt
     }
 
+    // Voice runs in ALL states (was inside _updatePlaying): the presence beacon, mesh enter/exit
+    // edges, mute reconcile and station upkeep must keep ticking through lobby/menu/death — a
+    // wipe-to-lobby otherwise froze the mesh in whatever state the last playing frame left it.
+    if (this.voice) {
+      this.voice.update(frameDt);
+      const v = this.voice;
+      if (this.hud && this.hud.setVoice) this.hud.setVoice(!v.enabled ? null : { speak: v.localSpeaking, tx: v.radioTx, freq: v.radioFreq, nomic: v.micDenied });
+    }
     if (this.digManager) this.digManager.update();          // flush dug chunks → one re-mesh each (before chunks.update picks LODs)
     if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera); // uses TRUE sim cam pos
     this.engine.updateAdaptive(this._frameMs);
@@ -1478,7 +1506,6 @@ class Game {
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);
-    this.voice.update(dt); // proximity voice: listener+panner+occlusion (after mp.update so remote .pos is fresh)
     this._updateAdaptiveMusic();
     // World clock advances every frame in every mode. Host/solo = authoritative (advances the truth + fires timed
     // transitions via _stepMinute); clients predict locally for smooth HH:MM and reconcile to the host's 'night' push.

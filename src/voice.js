@@ -43,6 +43,7 @@ export class VoiceChat {
     // mesh
     this.peers = new Map();        // sessionPeerId -> PeerVoice
     this._voiceOn = new Set();     // peers who announced voice ON (presence)
+    this._peerRadio = new Map();   // sessionPeerId -> {rf,rt,ro} — synced radio state, kept OUTSIDE the peer object so an rstate arriving before the peer exists (join race) is never lost
     this._ice = null;              // RTCConfiguration (shared with the data plane)
     // state
     this.enabled = false; this.micDenied = false; this.voiceMuted = false;
@@ -51,7 +52,7 @@ export class VoiceChat {
     this.speakers = new Map();     // deployed-radio loudspeakers: structId -> { panner, bp, freq, on, taps:Map<peerId,gain> }
     this.stations = [];            // preset RADIO_STATIONS: a local asset "always broadcasting" on a fixed freq — tune in to hear it (single-machine testable)
     this.vadThresh = SPEAK_RMS; this.localSpeaking = false; this._vadHang = 0;
-    this._inCoop = false; this._occT = 0; this._micTest = false;
+    this._inCoop = false; this._occT = 0; this._micTest = false; this._helloT = 0;
     // settings mirror (filled by applySettings)
     this._s = { voiceVol: 1, micGain: 1, echoCancel: 1, noiseSup: 1, autoGain: 1,
                 inDevId: '', outDevId: '', selfMonitor: 0 };
@@ -108,6 +109,7 @@ export class VoiceChat {
     try { if (this.voiceOutEl) { this.voiceOutEl.pause(); this.voiceOutEl.srcObject = null; } } catch (e) {}
     this.voiceMaster = this.voiceSink = this.voiceOutEl = null;
     this.enabled = false; this.micDenied = false; this.localSpeaking = false;
+    this.radioTx = false; this.radioOn = false; this._peerRadio.clear(); // radio can't stay keyed/on across a disable (peers clear us via the vhello off broadcast above)
   }
 
   _micConstraints() {
@@ -158,9 +160,32 @@ export class VoiceChat {
     try { src.start(); } catch (e) {}
     this._crackleSrc = src; this._crackleGain = g;
   }
-  _applySink() {
-    const el = this.voiceOutEl, id = this._s.outDevId;
-    if (el && id && el.setSinkId) el.setSinkId(id).catch(() => {});
+  // Apply the persisted output device — VALIDATED. A stale outDevId (unplugged headset / another
+  // machine's id) used to reject inside a swallowed .catch and leave the voice element aimed at a
+  // nonexistent sink → total silence while every flag reported OK. Now a missing/failing device
+  // falls back to the default sink, CLEARS the bad persisted id, and surfaces a warning.
+  async _applySink() {
+    const el = this.voiceOutEl; if (!el || !el.setSinkId) return;
+    const id = this._s.outDevId;
+    if (!id) { try { await el.setSinkId(''); } catch (e) {} this.lastWarn = ''; return; }
+    let known = true;                                    // blank/failed device list = inconclusive → let setSinkId itself decide
+    try {
+      const outs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput' && d.deviceId);
+      if (outs.length && !outs.some((d) => d.deviceId === id)) known = false;
+    } catch (e) {}
+    if (known) {
+      try { await el.setSinkId(id); this.lastWarn = ''; return; } catch (e) {}
+    }
+    this._sinkFallback();
+  }
+  _sinkFallback() {
+    this._s.outDevId = '';
+    const st = this.game.settings;
+    if (st && st.data && st.data.outDevId) { st.data.outDevId = ''; st.save(); if (st._refreshVoice) st._refreshVoice(); }
+    try { this.voiceOutEl.setSinkId('').catch(() => {}); } catch (e) {}
+    this.lastWarn = 'saved output device not found — using default';
+    if (this.game.hud && this.game.hud.toast) this.game.hud.toast('VOICE: saved output device not found — using default', 0xe0b050);
+    if (typeof console !== 'undefined') console.warn('[voice] output sink fallback → default');
   }
 
   _applySelfMonitor() {
@@ -178,9 +203,10 @@ export class VoiceChat {
   // ---- mesh + signalling ------------------------------------------------------------------
 
   _enterMesh() { if (this.enabled) this._announce(true); }
-  _exitMesh() { for (const id of [...this.peers.keys()]) this._dropPeer(id); this._voiceOn.clear(); }
+  _exitMesh() { for (const id of [...this.peers.keys()]) this._dropPeer(id); this._voiceOn.clear(); this._peerRadio.clear(); }
 
-  _announce(on) { const n = this._net; if (n) n.broadcast('vhello', { from: this.myId, on: on !== false }); }
+  // Presence — carries the radio tuning state too, so a beacon alone fully (re)syncs a peer.
+  _announce(on) { const n = this._net; if (n) n.broadcast('vhello', { from: this.myId, on: on !== false, rf: this.radioFreq, rt: this.radioTx, ro: this.radioOn }); }
   _sig(type, to, extra) { const n = this._net; if (n) n.broadcast(type, Object.assign({ to, from: this.myId }, extra)); }
 
   // presence: someone announced their voice on/off  (read d.from, NOT the relayed fromId)
@@ -189,9 +215,10 @@ export class VoiceChat {
     if (d.on) {
       const isNew = !this._voiceOn.has(d.from);
       this._voiceOn.add(d.from);
-      if (this.enabled) { if (isNew) this._announce(true); this._ensurePeer(d.from); this._announceRadio(); }
+      if ('ro' in d) this._peerRadio.set(d.from, { rf: d.rf, rt: !!d.rt, ro: !!d.ro }); // beacon carries the radio state → no separate rstate needed to (re)sync
+      if (this.enabled) { if (isNew) this._announce(true); this._ensurePeer(d.from); }
     } else {
-      this._voiceOn.delete(d.from); this._dropPeer(d.from);
+      this._voiceOn.delete(d.from); this._peerRadio.delete(d.from); this._dropPeer(d.from);
     }
   }
 
@@ -257,6 +284,15 @@ export class VoiceChat {
     pv.srcNode.connect(pv.radioBP); pv.radioBP.connect(pv.radioGain); pv.radioGain.connect(this.voiceMaster);
   }
 
+  // Drop mesh/presence entries for players who are no longer in the co-op roster — covers
+  // crash/leave races where the 'vhello off' or playerLeft path never reached us.
+  _reconcileRoster() {
+    const mp = this.game.mp; if (!mp || !mp.active || !mp.roster) return;
+    for (const id of [...this.peers.keys()]) if (!mp.roster.has(id)) { this._voiceOn.delete(id); this._dropPeer(id); }
+    for (const id of [...this._voiceOn]) if (!mp.roster.has(id)) this._voiceOn.delete(id);
+    for (const id of [...this._peerRadio.keys()]) if (!mp.roster.has(id)) this._peerRadio.delete(id);
+  }
+
   _dropPeer(peerId) {
     const pv = this.peers.get(peerId); if (!pv) return;
     try { pv.pc && pv.pc.close(); } catch (e) {}
@@ -276,6 +312,22 @@ export class VoiceChat {
     const inCoop = !!(this.game.mp && this.game.mp.active);
     if (inCoop !== this._inCoop) { this._inCoop = inCoop; if (inCoop) this._enterMesh(); else this._exitMesh(); }
     if (!this.enabled || !this.ctx) return;
+
+    // Presence BEACON + roster reconcile (state-derived mesh): the one-shot vhello could be lost
+    // in a join race and the mesh never formed OR never healed. Re-announcing every 2s (with the
+    // radio state riding along) makes a lost packet cost at most one beacon interval.
+    if (this._inCoop) {
+      this._helloT -= dt;
+      if (this._helloT <= 0) { this._helloT = 2; this._announce(true); this._reconcileRoster(); }
+    }
+
+    // Output bus reconcile: the voice bus finally obeys the game master mute (M) on top of its own
+    // mute/volume, and a suspended-tab pause of the output element self-heals (autoplay/resume).
+    if (this.voiceMaster) {
+      const want = (this.voiceMuted || this.game.audio.muted) ? 0 : this._s.voiceVol;
+      if (this.voiceMaster.gain.value !== want) this.voiceMaster.gain.value = want;
+    }
+    if (this.voiceOutEl && this.voiceOutEl.paused) this.voiceOutEl.play().catch(() => {});
 
     this._updateListener();
     this._updateLocalGate(dt);
@@ -299,7 +351,12 @@ export class VoiceChat {
       }
       if (tick && pv.analyser) {
         const spk = this._rms(pv.analyser, pv._buf) > SPEAK_RMS;
-        if (spk !== pv.speaking) { pv.speaking = spk; if (rp && rp.setSpeaking) rp.setSpeaking(spk); if (this.onSpeaking) this.onSpeaking(id, spk); }
+        const viaRadio = spk && !!(pv.radioGain && pv.radioGain.gain.value > 0.05); // their voice is arriving over the R-105 channel → amber dot
+        if (spk !== pv.speaking || viaRadio !== pv.spkRadio) {
+          pv.speaking = spk; pv.spkRadio = viaRadio;
+          if (rp && rp.setSpeaking) rp.setSpeaking(spk, viaRadio);
+          if (this.onSpeaking) this.onSpeaking(id, spk);
+        }
       }
     }
     this._updateRadioReception(dt);
@@ -388,13 +445,15 @@ export class VoiceChat {
   setPeerMuted(peerId, m) { const pv = this.peers.get(peerId); if (pv) { pv.muted = !!m; if (pv.gain) pv.gain.gain.value = this._peerVol(peerId); } }
   isPeerMuted(peerId) { const pv = this.peers.get(peerId); return !!(pv && pv.muted); }
 
-  toggleVoiceMute() { this.voiceMuted = !this.voiceMuted; if (this.voiceMaster) this.voiceMaster.gain.value = this.voiceMuted ? 0 : this._s.voiceVol; return this.voiceMuted; }
+  toggleVoiceMute() { this.voiceMuted = !this.voiceMuted; return this.voiceMuted; } // gain applied by the per-frame output-bus reconcile in update()
 
   // ---- field radio (Phase 2): tuning state is synced; audibility is computed locally (radiosim) ----
   setRadioFreq(f) { this.radioFreq = f; this._announceRadio(); }
   setRadioOn(on) { this.radioOn = !!on; this._announceRadio(); }
   _announceRadio() { const n = this._net; if (n) n.broadcast('rstate', { from: this.myId, rf: this.radioFreq, rt: this.radioTx, ro: this.radioOn }); }
-  _onRadioState(d) { if (!d || d.from == null || d.from === this.myId) return; const pv = this.peers.get(d.from); if (pv) { pv.rf = d.rf; pv.rt = !!d.rt; pv.ro = !!d.ro; } }
+  // rstate is the FAST edge (PTT must gate RX in <100 ms); the 2s vhello beacon is the reconciler.
+  // State lands in _peerRadio (not the peer object), so it buffers even before the peer exists.
+  _onRadioState(d) { if (!d || d.from == null || d.from === this.myId) return; this._peerRadio.set(d.from, { rf: d.rf, rt: !!d.rt, ro: !!d.ro }); }
 
   // A deployed radio broadcasts its channel out loud at its ground position — nearby players hear
   // whoever transmits on its freq WITHOUT their own radio. Called by world.js on place/tune/toggle.
@@ -443,7 +502,7 @@ export class VoiceChat {
         let g = 0;
         if (rx && withinPassband(sp.freq, st.freq)) g = 0.85 * quality(channelSnr(sp.freq - st.freq), RADIO.SQUELCH_DB).clarity;
         let tap = sp.stationTaps.get(st);
-        if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; st.srcNode.connect(tap); tap.connect(sp.bp); sp.stationTaps.set(st, tap); if (st.el.paused) st.el.play().catch(() => {}); }
+        if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; st.srcNode.connect(tap); tap.connect(sp.bp); sp.stationTaps.set(st, tap); if (st.el.paused) { st.el.play().catch(() => {}); this._syncStation(st, true); } }
         if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
       }
     }
@@ -452,9 +511,10 @@ export class VoiceChat {
   // subtracts from every candidate's SNR (underground/roofed receiver = worse reception).
   _resolveChannel(freq, enclosureDb) {
     const cands = [];
-    for (const [id, pv] of this.peers) {
-      if (!pv.rt || !pv.ro || !withinPassband(pv.rf, freq)) continue;
-      const snr = channelSnr(pv.rf - freq, enclosureDb);
+    for (const id of this.peers.keys()) {
+      const r = this._peerRadio.get(id);                     // synced state lives in _peerRadio — a peer created before its radio state arrived is no longer silently skipped forever
+      if (!r || !r.rt || !r.ro || !withinPassband(r.rf, freq)) continue;
+      const snr = channelSnr(r.rf - freq, enclosureDb);
       cands.push({ id, snr });
     }
     return resolveReception(cands, RADIO.SQUELCH_DB);
@@ -499,8 +559,25 @@ export class VoiceChat {
     catch (e) { if (typeof console !== 'undefined') console.warn('[voice] station load failed', url, e); return; }
     const cgain = ctx.createGain(); cgain.gain.value = 0;
     srcNode.connect(cgain); cgain.connect(this.voiceMaster);       // carried/private reception path
+    const st = { freq, el, srcNode, cgain, _syncT: 0 };
+    this.stations.push(st);
     el.play().catch(() => {});
-    this.stations.push({ freq, el, srcNode, cgain });
+    this._syncStation(st, true);
+  }
+  // A station "always broadcasts": seek its element to the shared clock so every client hears the
+  // SAME point of the song. Co-op → the host-synced world clock; solo → wall clock (deterministic
+  // across machines either way, since the audibility model itself is already deterministic).
+  _syncStation(st, force) {
+    const el = st.el, dur = el.duration;
+    if (!isFinite(dur) || dur <= 0) {
+      if (!st._metaHook) { st._metaHook = true; el.addEventListener('loadedmetadata', () => this._syncStation(st, true), { once: true }); }
+      return;
+    }
+    const g = this.game;
+    const clk = (g.mp && g.mp.active && g.worldSeconds) ? g.worldSeconds() : Date.now() / 1000;
+    const want = clk % dur;
+    let diff = Math.abs(el.currentTime - want); diff = Math.min(diff, dur - diff); // circular (loop=true)
+    if (force || diff > 1.75) { try { el.currentTime = want; } catch (e) {} }
   }
   _updateStations(dt) {
     for (const st of this.stations) {
@@ -511,7 +588,13 @@ export class VoiceChat {
         g = 0.9 * q.clarity;
         this._recvClarity = Math.max(this._recvClarity || 0, q.clarity);  // station clarity ramps the static DOWN as you tune in
       }
-      if (g > 0.02 && st.el.paused) st.el.play().catch(() => {});
+      if (g > 0.02 && st.el.paused) { st.el.play().catch(() => {}); this._syncStation(st, true); }
+      // drift-correct an audible station against the synced clock (re-seek only past 1.75s so
+      // normal playback never stutters); co-op only — solo has nobody to disagree with
+      if (g > 0.05 && this.game.mp && this.game.mp.active && this.game.state === 'playing') {
+        st._syncT -= dt;
+        if (st._syncT <= 0) { st._syncT = 5; this._syncStation(st, false); }
+      }
       if (st.cgain) st.cgain.gain.value = damp(st.cgain.gain.value, g, 12, dt);
     }
   }
@@ -527,8 +610,7 @@ export class VoiceChat {
     this.ptt = !!data.ptt; this.pttKey = data.pttKey || this.pttKey;
     this.vadThresh = lerp(0.06, 0.004, clamp(num(data.vad, 0.5), 0, 1));   // higher sensitivity -> lower threshold
     if (!this.enabled) return;
-    if (this.voiceMaster && !this.voiceMuted) this.voiceMaster.gain.value = s.voiceVol;
-    if (this.micGainNode) this.micGainNode.gain.value = s.micGain;
+    if (this.micGainNode) this.micGainNode.gain.value = s.micGain; // voiceMaster gain is reconciled per frame in update()
     if (prev.outDevId !== s.outDevId) this._applySink();
     this._applySelfMonitor();
     // audio-processing constraints changed -> re-apply live; input DEVICE change needs a fresh capture
@@ -552,6 +634,23 @@ export class VoiceChat {
         if (sender && this.micTrack) sender.replaceTrack(this.micTrack).catch(() => {});
       }
     } catch (e) { if (typeof console !== 'undefined') console.warn('[voice] reacquire mic failed', e && e.name); }
+  }
+
+  // One-call live diagnostic — paste `GAME.voice.status()` into the console on BOTH machines
+  // during a co-op session; it answers every "is it the mesh / the mic / the sink / the radio?"
+  status() {
+    const peers = [...this.peers.values()].map((pv) => ({
+      id: pv.id, conn: pv.pc ? pv.pc.connectionState : '-', ice: pv.pc ? pv.pc.iceConnectionState : '-',
+      track: !!pv.srcNode, speaking: !!pv.speaking, radio: this._peerRadio.get(pv.id) || null,
+    }));
+    return {
+      enabled: this.enabled, micDenied: this.micDenied, muted: this.voiceMuted,
+      ctx: this.ctx ? this.ctx.state : null, sink: this._s.outDevId || 'default', warn: this.lastWarn || '',
+      micLevel: +this.getMicLevel().toFixed(3), speaking: this.localSpeaking,
+      radio: { on: this.radioOn, freq: this.radioFreq, tx: this.radioTx },
+      voiceOn: [...this._voiceOn], peers,
+      stations: this.stations.map((st) => ({ freq: st.freq, t: +st.el.currentTime.toFixed(1), gain: +st.cgain.gain.value.toFixed(2), paused: st.el.paused })),
+    };
   }
 
   // level 0..1 for the settings mic-test meter

@@ -1,0 +1,12 @@
+{
+  "name": "engendros-voice-harness",
+  "private": true,
+  "type": "module",
+  "description": "Scripted 2-Chrome co-op voice/radio verification harness (fake mic + LAN relay on localhost)",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.45.0"
+  }
+}

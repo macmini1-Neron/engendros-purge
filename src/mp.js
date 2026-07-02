@@ -74,7 +74,14 @@ class RemotePlayer {
   } // pstate is authoritative; xf mirrors down/dead/waiting as an immediate visual fallback for host/self state.
   setHP(hp, maxHp) { this.hp = hp; if (maxHp) this.maxHp = maxHp; }
   setBurn(t) { this.burnT = t; }
-  setSpeaking(b) { b = !!b; if (this._speaking === b) return; this._speaking = b; if (this.label) this.label.classList.toggle('speaking', b); } // voice.js drives this from the remote's audio level
+  // voice.js drives this from the remote's audio level; radio=true tints the dot amber (their
+  // voice is arriving over the R-105 channel, not proximity).
+  setSpeaking(b, radio) {
+    b = !!b; radio = !!(b && radio);
+    if (this._speaking === b && this._spkRadio === radio) return;
+    this._speaking = b; this._spkRadio = radio;
+    if (this.label) { this.label.classList.toggle('speaking', b); this.label.classList.toggle('radio', radio); }
+  }
   update(dt, cam) {
     const k = 1 - Math.exp(-15 * dt);
     this.pos.lerp(this.tpos, k);

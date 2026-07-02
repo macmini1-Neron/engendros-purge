@@ -56,9 +56,16 @@ export class Input {
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.dom;
       this._emit(this.locked ? 'lock' : 'unlock');
-      if (!this.locked) { this.down.clear(); this.buttons = [false, false, false]; }
+      if (!this.locked) this._releaseAll();
     });
+    // Losing window focus/visibility eats the keyup: an alt-tab while holding radio-PTT (X) left
+    // radioTx stuck true → half-duplex deafness + a permanently open mic. The radio panel runs
+    // UNLOCKED, so the pointer-lock clear above never covered it — clear held state here too.
+    window.addEventListener('blur', () => this._releaseAll());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this._releaseAll(); });
   }
+
+  _releaseAll() { this.down.clear(); this.buttons = [false, false, false]; }
 
   requestLock() {
     if (!this.locked && this.dom.requestPointerLock) this.dom.requestPointerLock();
