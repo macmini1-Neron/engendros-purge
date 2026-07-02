@@ -33,6 +33,7 @@ import { buildOpenWorld } from './openworld.js';
 import { RADIO_STATIONS, GHOST_STATION, radioAttenuation, stationByIndex, stationLabel } from './radio.js';
 import { makeTerrain } from './terrain.js';
 import { TerrainChunks } from './terrain-chunks.js';
+import { buildZona } from './zona.js';
 import { makeTerrainMaterial } from './terrain-tex.js';
 import { CaveVolume } from './cave/volume.js';
 import { Interior } from './interior.js';
@@ -77,14 +78,14 @@ export class World {
     this._refine = (b, ox, oy, oz, dx, dy, dz, t) => refineBoxHit(b, ox, oy, oz, dx, dy, dz, t, null); // narrowphase during the walk (no normal needed yet)
     this.spawns = [];
     this.lootSpots = [];
-    this.mapId = (game.mapId === 'steppe') ? 'steppe' : (game.mapId === 'demo') ? 'demo' : (game.mapId === 'forest') ? 'forest' : 'arena';
+    this.mapId = (game.mapId === 'steppe') ? 'steppe' : (game.mapId === 'demo') ? 'demo' : (game.mapId === 'forest') ? 'forest' : (game.mapId === 'zona') ? 'zona' : 'arena';
     // Every map has a terrain. Flat maps use the 'flat' profile (height 0 everywhere) so the unified
     // collision path degenerates to the old y=0 floor. `hasTerrain` now means "non-flat elevation".
     // 'forest' is its own hilly profile (distinct seed) — the forest kit + destructible building auto-run
     // on any non-flat map (they gate on hasTerrain), so ?map=forest gets trees + destruction for free.
     this.terrain = makeTerrain({
-      profile: this.mapId === 'demo' ? 'demo' : this.mapId === 'forest' ? 'forest' : 'flat',
-      seed: this.mapId === 'forest' ? 2025 : 1337,
+      profile: this.mapId === 'demo' ? 'demo' : this.mapId === 'forest' ? 'forest' : this.mapId === 'zona' ? 'zona' : 'flat',
+      seed: this.mapId === 'forest' ? 2025 : this.mapId === 'zona' ? 704 : 1337,
     });
     this.hasTerrain = this.terrain.profile !== 'flat';
     this.chunks = null;
@@ -94,6 +95,8 @@ export class World {
       this._buildDemo();
     } else if (this.mapId === 'forest') {
       this._buildForest();
+    } else if (this.mapId === 'zona') {
+      this._buildZona();
     } else {
       this.scene.fog.near = 95; this.scene.fog.far = 640; // wider haze for the larger compound
       this._build();
@@ -365,6 +368,26 @@ export class World {
     this.interiorActive = false;
     try { this.interior = new Interior(this).build(); }
     catch (e) { console.warn('[forest] mine interior failed — continuing without it', e); this.interior = null; }
+  }
+
+  // ?map=zona — the «ЗОНА 704» 2500×2500 master-map skeleton. Terrain shaped by the plan registry
+  // (zona-plan.js stamps + road corridors + parcel pads via profile 'zona'); the network/cadastre
+  // meshes (roads, rail, water, gates, ЛЭП, signs) are built by buildZona (zona.js). Spawn = P1 КПП.
+  _buildZona() {
+    this.HALF = 1250;
+    this.scene.fog.near = 140; this.scene.fog.far = 1000; // big-world haze
+    this.chunks = new TerrainChunks(this.terrain, {
+      extent: 1250, chunkSize: 125, resolutions: [48, 24, 12, 6],
+      lodBands: [180, 400, 900], lodMargin: 30,
+      scene: this.scene, simWorker: this.game.simWorker,
+    });
+    // spawn ring just north of КПП «ПРОХОДНАЯ» (P1) — the Act-1 start anchor
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU, x = -1080 + Math.cos(a) * 14, z = -1030 + Math.sin(a) * 10;
+      this.spawns.push(new THREE.Vector3(x, this.terrain.terrainHeightAt(x, z), z));
+    }
+    this.lootSpots.push(new THREE.Vector3(-1080, this.terrain.terrainHeightAt(-1080, -1060), -1060));
+    buildZona(this); // network + cadastre + placeholder layers (grows through the M3–M4 tasks)
   }
 
   _buildDemo() {
@@ -1171,6 +1194,13 @@ export class DayNight {
     if (!day) this.moonMesh.material.color.copy(blood ? SKYC.blood : SKYC.moonCol);
     const sa = clamp((0.32 - L) / 0.32, 0, 1);
     this.stars.material.opacity = sa * 0.9; this.cstars.material.opacity = sa; this.clines.material.opacity = sa * 0.5;
+    // ── ?map=zona: the 2500 m master map needs REAL vistas — push the fog envelope out so the
+    // massif/routes read from across the steppe (default desert curve tops out at 640 m). Same
+    // per-frame override slot as the forest branch below (DayNight rewrites fog every frame).
+    if (this.game.world && this.game.world.mapId === 'zona') {
+      e.scene.fog.near = 24 + L * 156;   // day: ~180
+      e.scene.fog.far = 150 + L * 1250;  // day: ~1400
+    }
     // ── ?map=forest: re-tint the world GREEN over the desert SKYC blend (runs LAST, so it wins) ──
     if (this.game.world && this.game.world.mapId === 'forest') {
       const t = clamp(L, 0, 1);

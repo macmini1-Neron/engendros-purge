@@ -110,9 +110,9 @@ class Game {
     // Priority: ?map= URL override (dev) -> the menu's saved pick (localStorage) -> 'arena' default.
     this.mapId = (() => { try {
       const p = new URLSearchParams(location.search).get('map');
-      if (p === 'steppe' || p === 'arena' || p === 'demo' || p === 'forest') return p; // 'demo' = dev testbed; 'forest' = playable forest map
+      if (p === 'steppe' || p === 'arena' || p === 'demo' || p === 'forest' || p === 'zona') return p; // 'demo' = dev testbed; 'forest' = playable forest map; 'zona' = «ЗОНА 704» master-map skeleton
       const saved = localStorage.getItem('engendros_map');
-      return (saved === 'steppe' || saved === 'demo' || saved === 'forest') ? saved : 'arena';
+      return (saved === 'steppe' || saved === 'demo' || saved === 'forest' || saved === 'zona') ? saved : 'arena';
     } catch (e) { return 'arena'; } })();
     // Dev fly-cam (noclip). `freecam` must exist before the first player.update below. ?fly=1 auto-enters on startGame.
     this.freecam = false;
