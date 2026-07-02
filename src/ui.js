@@ -35,7 +35,10 @@ export class HUD {
       firevig: $('firevig'), firepov: $('firepov'), molotov: $('molotovhud'),
       buildmats: $('buildmats'), hotbar: $('hotbar'),
       mortarpanel: $('mortarpanel'), mElev: $('m-elev'), mRange: $('m-range'), mMils: $('m-mils'), mAmmo: $('m-ammo'), spotcall: $('spotcall'),
+      voicestat: $('voicestat'),
     };
+    this._voiceTxt = this.el.voicestat ? this.el.voicestat.querySelector('.vs-txt') : null;
+    this._voiceKey = '';
     this._hitT = 0; this._msgT = 0; this._spotT = 0;
     this._initDamageNumbers();
   }
@@ -324,6 +327,16 @@ export class HUD {
     this.el.toast.appendChild(d); setTimeout(() => d.remove(), 3000);
   }
   setInteract(text) { if (text) { this.el.interact.innerHTML = text; this.el.interact.classList.add('show'); } else this.el.interact.classList.remove('show'); }
+  // Self mic/TX indicator — "am I transmitting right now?": st = null (voice off) or
+  // { speak, tx, freq, nomic }. Change-guarded class/text writes (called every frame).
+  setVoice(st) {
+    const el = this.el.voicestat; if (!el) return;
+    const key = !st ? '' : `${st.nomic ? 1 : 0}|${st.tx ? 1 : 0}|${st.speak ? 1 : 0}|${st.tx ? st.freq : ''}`;
+    if (key === this._voiceKey) return; this._voiceKey = key;
+    if (!st) { el.className = ''; return; }
+    el.className = 'on' + (st.tx ? ' tx' : st.speak ? ' speak' : '') + (st.nomic ? ' nomic' : '');
+    if (this._voiceTxt) this._voiceTxt.textContent = st.nomic ? 'NO MIC' : st.tx ? 'TX ' + st.freq.toFixed(3) : 'MIC';
+  }
   update(dt) {
     // crosshair bloom/movement reactivity: drive the arm gap from the weapon's bloom + player speed + recent fire
     // (the #cross arms already CSS-transition .05s, so this reads as a smooth bloom). Static crosshair → legible spread.

@@ -343,7 +343,12 @@ export class VoiceChat {
       }
       if (tick && pv.analyser) {
         const spk = this._rms(pv.analyser, pv._buf) > SPEAK_RMS;
-        if (spk !== pv.speaking) { pv.speaking = spk; if (rp && rp.setSpeaking) rp.setSpeaking(spk); if (this.onSpeaking) this.onSpeaking(id, spk); }
+        const viaRadio = spk && !!(pv.radioGain && pv.radioGain.gain.value > 0.05); // their voice is arriving over the R-105 channel → amber dot
+        if (spk !== pv.speaking || viaRadio !== pv.spkRadio) {
+          pv.speaking = spk; pv.spkRadio = viaRadio;
+          if (rp && rp.setSpeaking) rp.setSpeaking(spk, viaRadio);
+          if (this.onSpeaking) this.onSpeaking(id, spk);
+        }
       }
     }
     this._updateRadioReception(dt);

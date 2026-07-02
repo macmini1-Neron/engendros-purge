@@ -337,6 +337,17 @@
     .mp-label.down .mp-name { color: #ff7a6a; } .mp-label.down .mp-hp { background: #b03a2a; }
     .mp-label .mp-spk { display: none; width: 8px; height: 8px; border-radius: 50%; background: #7fd06a; box-shadow: 0 0 7px 1px rgba(127,208,106,.9); margin-right: 5px; vertical-align: middle; }
     .mp-label.speaking .mp-spk { display: inline-block; } .mp-label.speaking .mp-name { color: #bff0a0; }
+    .mp-label.speaking.radio .mp-spk { background: #ffb84a; box-shadow: 0 0 7px 1px rgba(255,184,74,.95); } /* voice arriving over the R-105 channel, not proximity */
+    .mp-label.speaking.radio .mp-name { color: #ffd9a0; }
+    /* self mic/TX indicator (bottom-left, above the vitals panel) — am I transmitting right now? */
+    #voicestat { position: absolute; left: 26px; bottom: 158px; display: none; align-items: center; gap: 7px; padding: 4px 11px; border-radius: var(--r-sm); background: var(--glass); border: 1px solid var(--concrete-3); font-family: var(--font-display); font-size: 11px; letter-spacing: 2px; color: #8a9a90; backdrop-filter: blur(5px); }
+    #voicestat.on { display: flex; opacity: .55; }
+    #voicestat .vs-dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6a60; }
+    #voicestat.speak { opacity: 1; border-color: rgba(127,208,106,.55); color: #bff0a0; }
+    #voicestat.speak .vs-dot { background: #7fd06a; box-shadow: 0 0 8px 2px rgba(127,208,106,.85); }
+    #voicestat.tx { opacity: 1; border-color: rgba(255,90,74,.6); color: #ffb0a0; }
+    #voicestat.tx .vs-dot { background: #ff5a4a; box-shadow: 0 0 9px 2px rgba(255,80,64,.9); }
+    #voicestat.nomic { opacity: .8; color: #e0b050; border-color: rgba(224,176,80,.4); }
     #lobby .card { width: min(96vw, 980px); max-width: 980px; padding: 32px 36px; }
     .mp-lobby-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr); gap: 18px; align-items: start; text-align: left; }
     .mp-col { min-width: 0; }
@@ -1167,6 +1178,7 @@
 
     <div id="hotbar"></div>
 
+    <div id="voicestat"><i class="vs-dot"></i><b class="vs-txt">MIC</b></div>
     <div id="interact"></div>
     <div id="bleedbar"><div class="bl">BLEEDING OUT</div><div class="bb"><div id="bleedfill"></div></div></div>
     <div id="heatbar"><div class="hl" id="heatlabel">BARREL HEAT</div><div class="hb"><div id="heatfill"></div></div></div>

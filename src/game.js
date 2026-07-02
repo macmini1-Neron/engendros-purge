@@ -1311,7 +1311,11 @@ class Game {
     // Voice runs in ALL states (was inside _updatePlaying): the presence beacon, mesh enter/exit
     // edges, mute reconcile and station upkeep must keep ticking through lobby/menu/death — a
     // wipe-to-lobby otherwise froze the mesh in whatever state the last playing frame left it.
-    if (this.voice) this.voice.update(frameDt);
+    if (this.voice) {
+      this.voice.update(frameDt);
+      const v = this.voice;
+      if (this.hud && this.hud.setVoice) this.hud.setVoice(!v.enabled ? null : { speak: v.localSpeaking, tx: v.radioTx, freq: v.radioFreq, nomic: v.micDenied });
+    }
     if (this.digManager) this.digManager.update();          // flush dug chunks → one re-mesh each (before chunks.update picks LODs)
     if (this.world && this.world.chunks) this.world.chunks.update(this.engine.camera); // uses TRUE sim cam pos
     this.engine.updateAdaptive(this._frameMs);
