@@ -624,6 +624,23 @@ export class VoiceChat {
     } catch (e) { if (typeof console !== 'undefined') console.warn('[voice] reacquire mic failed', e && e.name); }
   }
 
+  // One-call live diagnostic — paste `GAME.voice.status()` into the console on BOTH machines
+  // during a co-op session; it answers every "is it the mesh / the mic / the sink / the radio?"
+  status() {
+    const peers = [...this.peers.values()].map((pv) => ({
+      id: pv.id, conn: pv.pc ? pv.pc.connectionState : '-', ice: pv.pc ? pv.pc.iceConnectionState : '-',
+      track: !!pv.srcNode, speaking: !!pv.speaking, radio: this._peerRadio.get(pv.id) || null,
+    }));
+    return {
+      enabled: this.enabled, micDenied: this.micDenied, muted: this.voiceMuted,
+      ctx: this.ctx ? this.ctx.state : null, sink: this._s.outDevId || 'default', warn: this.lastWarn || '',
+      micLevel: +this.getMicLevel().toFixed(3), speaking: this.localSpeaking,
+      radio: { on: this.radioOn, freq: this.radioFreq, tx: this.radioTx },
+      voiceOn: [...this._voiceOn], peers,
+      stations: this.stations.map((st) => ({ freq: st.freq, t: +st.el.currentTime.toFixed(1), gain: +st.cgain.gain.value.toFixed(2), paused: st.el.paused })),
+    };
+  }
+
   // level 0..1 for the settings mic-test meter
   getMicLevel() { return this._rms(this.micAnalyser, this._micBuf); }
   startMicTest() { this._micTest = true; this._applySelfMonitor(); }   // (meter is polled by the UI; monitor stays off unless the user opts in)
