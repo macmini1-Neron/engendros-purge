@@ -5,7 +5,7 @@
 // Layer order (later wins): base fbm → stamps (ridge/plateau/bowl) → river channel → road corridors
 // (Task 4) → parcel pads (Task 5). Every primitive clamps its own influence radius; the composed
 // function is total (no NaN) and pure for a fixed seed.
-import { EXTENT, TERRAIN_FEATURES, WATER, ROADS } from './zona-plan.js';
+import { EXTENT, TERRAIN_FEATURES, WATER, ROADS, PARCELS } from './zona-plan.js';
 
 // ── self-contained value-noise fbm (mirror of terrain.js's; kept local so this module imports only plan data)
 function hash2(ix, iz, seed) {
@@ -253,6 +253,45 @@ function corridorHeight(corr, x, z, h) {
   return hp * w + h * (1 - w);
 }
 
+// ── parcel pads — the cadastre layer, applied LAST (pads win over roads win over stamps). Inside the
+// parcel footprint the ground is a dead-flat pad at the plan height (or, unpinned, at the corridor-field
+// height sampled at the anchor); a smoothstep skirt blends back out. buildgen later seats buildings here.
+function preparePads(corridorField) {
+  const grid = new Map();   // cellKey → pad preps
+  const heights = new Map(); // parcelId → resolved pad height
+  const list = PARCELS.filter(p => !p.noPad);
+  // resolve pinned pads first; an unpinned pad NESTED inside another parcel inherits that pad's height
+  // (the plan nests e.g. the S12 elevator "v parcele P4"), else it samples the corridor field.
+  for (const p of list) if (p.h != null) heights.set(p.id, p.h);
+  for (const p of list) {
+    if (p.h != null) continue;
+    const host = list.find(q => q !== p && heights.has(q.id) && distToShape(q, p.x, p.z) === 0);
+    heights.set(p.id, host ? heights.get(host.id) : corridorField(p.x, p.z));
+  }
+  for (const p of list) {
+    const half = p.kind === 'disc' ? p.r : Math.max(p.w, p.d) / 2;
+    const skirt = Math.max(8, Math.min(20, (half * 2) / 6));
+    const reach = half + skirt;
+    gridInsert(grid, p.x - reach, p.z - reach, p.x + reach, p.z + reach, { f: p, padH: heights.get(p.id), skirt, half });
+  }
+  return { grid, heights };
+}
+
+function padHeight(pads, x, z, h) {
+  const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
+  const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
+  const list = pads.grid.get(cellKey(cx, cz));
+  if (!list) return h;
+  let best = null, bestD = Infinity; // nearest-core pad wins where skirts overlap; nested cores tie → smaller parcel
+  for (const prep of list) {
+    const d = distToShape(prep.f, x, z);
+    if (d < bestD || (d === bestD && best && prep.half < best.half)) { bestD = d; best = prep; }
+  }
+  if (!best || bestD >= best.skirt) return h;
+  const w = 1 - smoothstep(bestD / best.skirt); // d=0 (inside the footprint) ⇒ w=1 ⇒ dead flat
+  return best.padH * w + h * (1 - w);
+}
+
 // ── public factory — cached per seed (main thread + worker each build once) ─────────────────────────
 const _cache = new Map();
 function build(seed) {
@@ -261,11 +300,15 @@ function build(seed) {
   const tune = ZONA_TUNING;
   const stamped = (x, z) => stampedHeight(grid, x, z, tune.fbmAmplitude * fbm(x, z, seed, tune.fbm));
   const corr = prepareCorridors(stamped);
-  const fn = (x, z) => corridorHeight(corr, x, z, stamped(x, z));
-  const built = { fn, profiles: corr.profiles };
+  const corridorField = (x, z) => corridorHeight(corr, x, z, stamped(x, z));
+  const pads = preparePads(corridorField);
+  const fn = (x, z) => padHeight(pads, x, z, corridorField(x, z));
+  const built = { fn, profiles: corr.profiles, padHeights: pads.heights };
   _cache.set(seed, built);
   return built;
 }
 export function makeZonaHeightFn(seed) { return build(seed).fn; }
 // per-road slope-clamped longitudinal profiles — zona.js drapes ribbons along these; tests assert slopes
 export function roadProfiles(seed) { return build(seed).profiles; }
+// parcelId → resolved pad height — zona.js seats signs/gates on these; buildgen seats buildings later
+export function padHeights(seed) { return build(seed).padHeights; }

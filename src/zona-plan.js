@@ -144,9 +144,11 @@ export const TERRAIN_FEATURES = [
   { kind: 'ridge', id: 'NE_RANGE', halfW: 260, pts: [
     [300, 900, 90], [560, 860, 140], [800, 900, 170], [980, 1080, 210], [1160, 1200, 180],
   ] },
-  // honest edges: W scarp + E range (plan pillar «poctivé hranice»)
+  // honest edges: W scarp + E range + N range (plan pillar «poctivé hranice»; Тесная брана S10 is the
+  // choke between the W scarp («jizva») and the N mountains; E03 meteostation sits on the N range)
   { kind: 'ridge', id: 'W_SCARP', halfW: 140, pts: [[-1250, -500, 60], [-1220, -100, 80], [-1230, 400, 90], [-1250, 800, 70]] },
   { kind: 'ridge', id: 'E_RANGE', halfW: 160, pts: [[1250, -600, 70], [1200, -200, 90], [1230, 300, 110], [1250, 700, 90]] },
+  { kind: 'ridge', id: 'N_RANGE', halfW: 220, pts: [[-1000, 1050, 70], [-600, 980, 110], [-320, 1000, 130], [0, 950, 100], [300, 900, 90]] },
   // airfield shelf, industrial terrace, mine bench, bunker saddle (abs plateaus under the pads)
   { kind: 'plateau', id: 'SHELF_P3', x: 50, z: 630, w: 460, d: 220, h: 60, skirt: 90, abs: true },
   { kind: 'plateau', id: 'TERR_P5', x: 680, z: 60, w: 360, d: 320, h: 30, skirt: 70, abs: true },
