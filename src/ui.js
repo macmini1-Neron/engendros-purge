@@ -452,8 +452,11 @@ export class Settings {
     const applyV = () => { this.save(); if (g.voice) g.voice.applySettings(this.data); this._refreshVoice(); };
     const en = document.getElementById('s-voice');
     if (en) en.addEventListener('click', async () => {
-      if (!this.data.voiceOn) { const ok = g.voice && await g.voice.enable(); this.data.voiceOn = ok ? 1 : 0; if (ok) { g.voice.applySettings(this.data); this._populateDevices(); } }
-      else { g.voice && g.voice.disable(); this.data.voiceOn = 0; }
+      // Key the click off the LIVE state, not the persisted flag: with voiceOn=1 saved but voice
+      // not yet enabled (fresh reload), the first click must ENABLE — not "turn off" a dead toggle.
+      const live = !!(g.voice && g.voice.enabled);
+      if (!live) { const ok = g.voice && await g.voice.enable(); this.data.voiceOn = ok ? 1 : 0; if (ok) { g.voice.applySettings(this.data); this._populateDevices(); } }
+      else { g.voice.disable(); this.data.voiceOn = 0; }
       this.save(); this._refreshVoice();
     });
     const num = (id, key) => { const e = document.getElementById(id); if (e) e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); applyV(); }); };
@@ -471,7 +474,17 @@ export class Settings {
     const setTog = (id, on, onTxt, offTxt) => { const e = document.getElementById(id); if (e) { e.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); e.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
     const val = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
     const txt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-    setTog('s-voice', d.voiceOn, (g.voice && g.voice.micDenied) ? 'ON · no mic' : 'ON', 'OFF');
+    // The voice toggle renders the LIVE state (voice.enabled), never the persisted flag alone —
+    // after a reload voiceOn=1 used to show "ON" while voice was actually off (the 2-PC killer).
+    const vEl = document.getElementById('s-voice');
+    if (vEl) {
+      const live = !!(g.voice && g.voice.enabled);
+      if (live) { vEl.textContent = g.voice.micDenied ? 'ON · no mic' : 'ON'; vEl.style.color = 'var(--neon,#45e0cf)'; }
+      else if (d.voiceOn) { vEl.textContent = 'AUTO · enables in co-op'; vEl.style.color = '#e0b050'; }
+      else { vEl.textContent = 'OFF'; vEl.style.color = '#888'; }
+    }
+    const warn = document.getElementById('s-voice-warn');
+    if (warn) { const w = (g.voice && g.voice.lastWarn) || ''; warn.textContent = w ? '⚠ ' + w : ''; warn.style.display = w ? 'block' : 'none'; }
     val('s-voicevol', d.voiceVol); txt('s-voicevol-v', Math.round(d.voiceVol * 100) + '%');
     val('s-micgain', d.micGain); txt('s-micgain-v', Math.round(d.micGain * 100) + '%');
     val('s-vad', d.vad); txt('s-vad-v', Math.round(d.vad * 100) + '%');
