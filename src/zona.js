@@ -10,8 +10,9 @@
 // which haze hides (skeleton tolerance, noted in the plan).
 import * as THREE from 'three';
 import { MeshBuilder, makeRNG, voxelMaterial } from './util.js';
-import { ROADS, lintPlan } from './zona-plan.js';
+import { ROADS, GATES, WATER, lintPlan } from './zona-plan.js';
 import { polylineProject } from './zona-terrain.js';
+import { seatBox } from './terrain-place.js';
 
 // ── per-surface ribbon styling: cross-section half-offsets (fractions of width) + tone per lane ────
 const SURFACES = {
@@ -150,6 +151,135 @@ function buildRail(world, road) {
   flush();
 }
 
+// ── water: translucent static planes, NO mechanics, walk-through (spec §4). The river surface rides
+// the carved channel bed; swamp/reservoir are flat sheets at their plan levels.
+function waterMaterial(hex, opacity) {
+  return new THREE.MeshLambertMaterial({ color: hex, transparent: true, opacity, depthWrite: false });
+}
+
+function buildRiver(world) {
+  const T = makeMeshHeight(world);
+  const r = WATER.river;
+  const cum = cumArc(r.pts), total = cum[cum.length - 1];
+  const STEP = 6, half = r.width / 2 + 2; // a touch wider than the carve so banks read wet
+  // centreline surface heights, smoothed so the water doesn't ripple with the fbm
+  const ys = [];
+  for (let s = 0; s <= total; s += STEP) { const [x, z] = pointAtArc(r.pts, cum, s); ys.push(T(x, z) + r.surfaceOffset); }
+  for (let pass = 0; pass < 3; pass++) {
+    const src = ys.slice();
+    for (let i = 0; i < ys.length; i++) { let sum = 0, cnt = 0; for (let k = -3; k <= 3; k++) { const ii = i + k; if (ii >= 0 && ii < src.length) { sum += src[ii]; cnt++; } } ys[i] = sum / cnt; }
+  }
+  const pos = [], idx = [];
+  let row = 0;
+  for (let s = 0, i = 0; s <= total; s += STEP, i++) {
+    const [cx, cz] = pointAtArc(r.pts, cum, s);
+    const [nx2, nz2] = pointAtArc(r.pts, cum, Math.min(s + 1, total));
+    let dx = nx2 - cx, dz = nz2 - cz; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    const px = -dz, pz = dx;
+    pos.push(cx - px * half, ys[i], cz - pz * half, cx + px * half, ys[i], cz + pz * half);
+    if (row > 0) { const a = (row - 1) * 2, b = row * 2; idx.push(a, a + 1, b, a + 1, b + 1, b); }
+    row++;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, waterMaterial(0x2b5a66, 0.72));
+  world.scene.add(m); if (world.addCullable) world.addCullable(m);
+}
+
+function buildStillWater(world, w, hex, opacity) {
+  const g = new THREE.PlaneGeometry(w.w, w.d);
+  const m = new THREE.Mesh(g, waterMaterial(hex, opacity));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(w.x, w.level, w.z);
+  world.scene.add(m); if (world.addCullable) world.addCullable(m);
+}
+
+// ── S04 bridge — the map's ONLY river bridge: a stepped concrete deck spanning the R1 corridor gap
+// (the channel survives underneath). 6 chained slabs stair the profile drop; parapets both sides.
+function buildBridge(world) {
+  const road = ROADS.find(r => r.id === 'R1');
+  const b = road.bridges[0];
+  const T = makeMeshHeight(world);
+  const cum = cumArc(road.pts), s0 = polylineProject(road.pts, b.at[0], b.at[1]).s;
+  const [ax, az] = pointAtArc(road.pts, cum, s0 - b.halfLen - 2);
+  const [bx, bz] = pointAtArc(road.pts, cum, s0 + b.halfLen + 2);
+  const hA = T(ax, az) + LIFT, hB = T(bx, bz) + LIFT;
+  const mb = new MeshBuilder();
+  const N = 6, len = Math.hypot(bx - ax, bz - az) / N;
+  for (let i = 0; i < N; i++) {
+    const t = (i + 0.5) / N;
+    const cx = ax + (bx - ax) * t, cz = az + (bz - az) * t;
+    const top = hA + (hB - hA) * t;
+    const ry = Math.atan2(bx - ax, bz - az);
+    mb.box(9, 0.7, len + 0.4, cx, top - 0.35, cz, 0x8d8a80, { ry, tint: 0.04 });          // deck slab
+    mb.box(0.35, 0.9, len + 0.4, cx + Math.cos(ry) * 4.5, top + 0.45, cz - Math.sin(ry) * 4.5, 0x7c796f, { ry }); // parapet L
+    mb.box(0.35, 0.9, len + 0.4, cx - Math.cos(ry) * 4.5, top + 0.45, cz + Math.sin(ry) * 4.5, 0x7c796f, { ry }); // parapet R
+    // stepped AABB collider chain (walkable via step-up; AABB approximates the diagonal deck)
+    world.boxes.push({
+      min: new THREE.Vector3(cx - len / 2 - 1, top - 3, cz - len / 2 - 1),
+      max: new THREE.Vector3(cx + len / 2 + 1, top, cz + len / 2 + 1),
+    });
+  }
+  const m = new THREE.Mesh(mb.build(), voxelMaterial());
+  m.castShadow = true; m.receiveShadow = true;
+  world.scene.add(m); if (world.addCullable) world.addCullable(m);
+}
+
+// ── gates G1–G5 — physical placeholder blockades WITH colliders (spec §4); no opening logic.
+// Each reads as its plan kind: steel gate / rockfall / Tolo nest / flooded sluice / derailed wagons.
+function buildGates(world) {
+  const T = makeMeshHeight(world);
+  for (const gate of GATES) {
+    const road = ROADS.find(r => r.id === gate.roadId);
+    const pr = polylineProject(road.pts, gate.x, gate.z);
+    const cum = cumArc(road.pts);
+    const [nx2, nz2] = pointAtArc(road.pts, cum, pr.s + 2);
+    const [px2, pz2] = pointAtArc(road.pts, cum, Math.max(0, pr.s - 2));
+    const ry = Math.atan2(nx2 - px2, nz2 - pz2); // road direction → blockade runs perpendicular
+    const g = T(gate.x, gate.z);
+    const mb = new MeshBuilder();
+    const rng = makeRNG(0x704 + gate.id.charCodeAt(1));
+    if (gate.kind === 'steelGate') {
+      mb.box(1.2, 5.4, 1.2, gate.x + Math.cos(ry) * 5.6, g + 2.7, gate.z - Math.sin(ry) * 5.6, 0x6f6a60, { ry, tint: 0.05 });
+      mb.box(1.2, 5.4, 1.2, gate.x - Math.cos(ry) * 5.6, g + 2.7, gate.z + Math.sin(ry) * 5.6, 0x6f6a60, { ry, tint: 0.05 });
+      mb.box(10.5, 4.6, 0.35, gate.x, g + 2.5, gate.z, 0x3a3f45, { ry, tint: 0.04 });      // steel leaf
+      mb.box(10.5, 0.5, 0.42, gate.x, g + 4.6, gate.z, 0x8a2f2a, { ry });                  // red warning band
+      seatBox(world, gate.x, gate.z, 12.5, 2.2, 5.4);
+    } else if (gate.kind === 'rockfall') {
+      for (let i = 0; i < 8; i++) {
+        const off = (rng() - 0.5) * 10, up = rng() * 3.4, fwd = (rng() - 0.5) * 3;
+        const s = 2.2 + rng() * 2.6;
+        mb.box(s, s * (0.7 + rng() * 0.5), s, gate.x + Math.cos(ry) * off + Math.sin(ry) * fwd, g + up + s * 0.3, gate.z - Math.sin(ry) * off + Math.cos(ry) * fwd, i % 2 ? 0x6f6a60 : 0x7d7872, { ry: rng() * 0.8, tint: 0.06 });
+      }
+      seatBox(world, gate.x, gate.z, 13, 5, 6.5);
+    } else if (gate.kind === 'nest') {
+      for (let i = 0; i < 9; i++) {
+        const off = (rng() - 0.5) * 12, up = rng() * 2.2, fwd = (rng() - 0.5) * 5;
+        const s = 1.8 + rng() * 2.4;
+        mb.box(s, s * 0.7, s, gate.x + Math.cos(ry) * off + Math.sin(ry) * fwd, g + up + s * 0.2, gate.z - Math.sin(ry) * off + Math.cos(ry) * fwd, i % 3 ? 0xa8615c : 0x7a4a3c, { ry: rng() * 1.2, tint: 0.08 });
+      }
+      seatBox(world, gate.x, gate.z, 14, 6, 4.2);
+    } else if (gate.kind === 'floodedGat') {
+      mb.box(4.2, 3.4, 3.2, gate.x, g + 1.7, gate.z, 0x8d8a80, { ry, tint: 0.04 });        // sluice hut on the dam
+      mb.box(1.6, 1.6, 0.4, gate.x, g + 2.2, gate.z + 1.8, 0x3a3f45, { ry });              // sluice wheel plate
+      // the actual blocker is WATER — skeleton stand-in: a low invisible wall so nobody wades the gať
+      world.boxes.push({
+        min: new THREE.Vector3(gate.x - 9, g - 2, gate.z - 4), max: new THREE.Vector3(gate.x + 9, g + 2.4, gate.z + 4),
+      });
+    } else if (gate.kind === 'derailed') {
+      for (const [off, skew] of [[-3.4, 0.5], [3.6, -0.35]]) {
+        mb.box(3.1, 3.4, 8.2, gate.x + Math.cos(ry) * off, g + 1.9, gate.z - Math.sin(ry) * off, 0x7a4a38, { ry: ry + skew, tint: 0.05 }); // toppled wagon
+        mb.box(3.3, 0.6, 8.6, gate.x + Math.cos(ry) * off, g + 3.75, gate.z - Math.sin(ry) * off, 0x5c3a2c, { ry: ry + skew });
+      }
+      seatBox(world, gate.x, gate.z, 13, 9, 4.6);
+    }
+    const m = new THREE.Mesh(mb.build(), voxelMaterial());
+    m.castShadow = true; m.receiveShadow = true;
+    world.scene.add(m); if (world.addCullable) world.addCullable(m);
+  }
+}
+
 export function buildZona(world) {
   // fail-loud plan validation at boot (spec §7): errors mean the registry drifted from the master plan.
   const { errors, warnings } = lintPlan();
@@ -161,4 +291,11 @@ export function buildZona(world) {
     if (road.surface === 'rail') buildRail(world, road);
     else buildRibbon(world, road);
   }
+
+  // ── placeholder layers: water, the S04 bridge, gate blockades ──
+  buildRiver(world);
+  buildStillWater(world, WATER.swamp, 0x374f42, 0.8);
+  buildStillWater(world, WATER.reservoir, 0x2b5a66, 0.72);
+  buildBridge(world);
+  buildGates(world);
 }
