@@ -858,6 +858,10 @@ class Game {
       this.audio.setUiMusicDuck((this._radioPanelOpen || settingsShown) ? 0 : 1);
     }
   }
+  // Shared world clock in SECONDS (world minutes × real seconds per minute). Host-synced in co-op
+  // (~1s reconcile), so radio stations can seek to (worldSeconds % duration) and every client
+  // hears the SAME point of the broadcast.
+  worldSeconds() { const wc = this._worldClock; return (wc.total + (wc.alpha || 0)) * (WORLD_DAY_SEC / MINUTES_PER_DAY); }
   toMenu() {
     if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();

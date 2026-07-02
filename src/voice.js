@@ -489,7 +489,7 @@ export class VoiceChat {
         let g = 0;
         if (rx && withinPassband(sp.freq, st.freq)) g = 0.85 * quality(channelSnr(sp.freq - st.freq), RADIO.SQUELCH_DB).clarity;
         let tap = sp.stationTaps.get(st);
-        if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; st.srcNode.connect(tap); tap.connect(sp.bp); sp.stationTaps.set(st, tap); if (st.el.paused) st.el.play().catch(() => {}); }
+        if (!tap && g > 0) { tap = this.ctx.createGain(); tap.gain.value = 0; st.srcNode.connect(tap); tap.connect(sp.bp); sp.stationTaps.set(st, tap); if (st.el.paused) { st.el.play().catch(() => {}); this._syncStation(st, true); } }
         if (tap) tap.gain.value = damp(tap.gain.value, g, 12, dt);
       }
     }
@@ -546,8 +546,25 @@ export class VoiceChat {
     catch (e) { if (typeof console !== 'undefined') console.warn('[voice] station load failed', url, e); return; }
     const cgain = ctx.createGain(); cgain.gain.value = 0;
     srcNode.connect(cgain); cgain.connect(this.voiceMaster);       // carried/private reception path
+    const st = { freq, el, srcNode, cgain, _syncT: 0 };
+    this.stations.push(st);
     el.play().catch(() => {});
-    this.stations.push({ freq, el, srcNode, cgain });
+    this._syncStation(st, true);
+  }
+  // A station "always broadcasts": seek its element to the shared clock so every client hears the
+  // SAME point of the song. Co-op → the host-synced world clock; solo → wall clock (deterministic
+  // across machines either way, since the audibility model itself is already deterministic).
+  _syncStation(st, force) {
+    const el = st.el, dur = el.duration;
+    if (!isFinite(dur) || dur <= 0) {
+      if (!st._metaHook) { st._metaHook = true; el.addEventListener('loadedmetadata', () => this._syncStation(st, true), { once: true }); }
+      return;
+    }
+    const g = this.game;
+    const clk = (g.mp && g.mp.active && g.worldSeconds) ? g.worldSeconds() : Date.now() / 1000;
+    const want = clk % dur;
+    let diff = Math.abs(el.currentTime - want); diff = Math.min(diff, dur - diff); // circular (loop=true)
+    if (force || diff > 1.75) { try { el.currentTime = want; } catch (e) {} }
   }
   _updateStations(dt) {
     for (const st of this.stations) {
@@ -558,7 +575,13 @@ export class VoiceChat {
         g = 0.9 * q.clarity;
         this._recvClarity = Math.max(this._recvClarity || 0, q.clarity);  // station clarity ramps the static DOWN as you tune in
       }
-      if (g > 0.02 && st.el.paused) st.el.play().catch(() => {});
+      if (g > 0.02 && st.el.paused) { st.el.play().catch(() => {}); this._syncStation(st, true); }
+      // drift-correct an audible station against the synced clock (re-seek only past 1.75s so
+      // normal playback never stutters); co-op only — solo has nobody to disagree with
+      if (g > 0.05 && this.game.mp && this.game.mp.active && this.game.state === 'playing') {
+        st._syncT -= dt;
+        if (st._syncT <= 0) { st._syncT = 5; this._syncStation(st, false); }
+      }
       if (st.cgain) st.cgain.gain.value = damp(st.cgain.gain.value, g, 12, dt);
     }
   }
