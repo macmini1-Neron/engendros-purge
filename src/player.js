@@ -134,7 +134,7 @@ export class Player {
   // Dev fly-cam (noclip). Solo only; toggled with N or ?fly=1. Moves the eye directly in 3D, ignoring
   // collision/gravity/survival so the whole 500 m map can be inspected. `game.freecam` gates damage + spawns.
   _freecamUpdate(dt, input) {
-    const controlsPaused = this.game.mpMenuOpen;
+    const controlsPaused = this.game.mpMenuOpen || this.game._radioPanelOpen;
     if (!controlsPaused) {
       this.yaw -= input.mouseDX * this.sens;
       this.pitch -= input.mouseDY * this.sens;
@@ -175,7 +175,7 @@ export class Player {
     if (this.game.freecam || this.game.flyMode) return this._freecamUpdate(dt, input); // dev noclip freecam, or console /fly (sim keeps running)
     const mp = this.game.mp;
     const frozen = mp && mp.active && mp.frozen;
-    const controlsPaused = mp && mp.active && this.game.mpMenuOpen;
+    const controlsPaused = (mp && mp.active && this.game.mpMenuOpen) || this.game._radioPanelOpen;
     const lookScale = frozen ? 0.35 : 1;
     this.yaw -= input.mouseDX * this.sens * lookScale;
     this.pitch -= input.mouseDY * this.sens * lookScale;
@@ -230,7 +230,7 @@ export class Player {
     const wasAir = !this.onGround;
     this.onGround = this.game.world.collide(this.pos, this.vel, this.radius, this.height, dt);
     if (!onLadder && this.onGround && wasAir && this._fallVel < -6) this.game.audio.land(this._fallVel < -12);
-    if (!onLadder && this.onGround && wasAir && this._fallVel < FALL_SAFE) {
+    if (!onLadder && this.onGround && wasAir && this._fallVel < FALL_SAFE && !(this.game.rules && this.game.rules.fallDamage === false)) { // /gamerule fallDamage false → no fall trauma / no leg break
       let dmg = ((-this._fallVel) - (-FALL_SAFE)) * FALL_DMG_PER_VY; // HP per m/s beyond the safe threshold
       if (this._fallVel <= FALL_LETHAL) dmg += FALL_DMG_BONUS_AT_LETHAL;
       if (this._fallVel <= LEG_BREAK_VY && !this.legBroken) this.breakLeg();

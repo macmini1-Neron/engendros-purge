@@ -69,7 +69,7 @@ export class SupportScan {
     // a DOWNED log/chunk whose ground was dug out from under it → drop it onto the new (lower) terrain.
     if (box.tree && box.downer && box.downer.fallen && forest && typeof forest.regroundLog === 'function') {
       const log = box.downer;
-      return { footprint: this._fp(box), baseY: box.min.y, collapse: () => forest.regroundLog(log) };
+      return { footprint: this._fp(box), baseY: box.min.y, collapse: () => forest.regroundLog(log, true) }; // emit → clients re-ground the same log (dig has no deterministic client replay)
     }
     if (box.prop && box.downer && !box.downer.dead && forest && typeof forest.destroyProp === 'function') {
       const rec = box.downer;

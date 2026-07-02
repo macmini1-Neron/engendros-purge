@@ -58,6 +58,7 @@ test('host rejects an action from the wrong player and accepts the actor', () =>
   const { game } = hostStub();
   const pk = new PokerTable(game);
   pk.startCoop(500); anteAll(pk);
+  pk._hold = 0;                                                     // clear the deal-in presentation hold (tested separately) so this exercises pure authority
   const actor = legalActions(pk.hand).seat;
   const wrong = ['host', 'c1', 'c2'].find((id) => id !== actor);
   const potBefore = pk.hand.seats.reduce((a, s) => a + s.committed, 0);
@@ -65,6 +66,19 @@ test('host rejects an action from the wrong player and accepts the actor', () =>
   assert.equal(pk.hand.seats.find((s) => s.id === wrong).folded, false);
   assert.equal(pk.hand.seats.reduce((a, s) => a + s.committed, 0), potBefore);
   pk.hostClientAct(actor, { type: 'fold' });                       // the actor's fold lands
+  assert.equal(pk.hand.seats.find((s) => s.id === actor).folded, true);
+});
+
+test('host ignores a client action during the presentation hold (deal/street/fold freeze)', () => {
+  const { game } = hostStub();
+  const pk = new PokerTable(game);
+  pk.startCoop(500); anteAll(pk);
+  assert.ok(pk._hold > 0, 'a fresh deal sets a presentation hold');
+  const actor = legalActions(pk.hand).seat;                        // the seat to act
+  pk.hostClientAct(actor, { type: 'fold' });                       // even the right actor is rejected mid-hold
+  assert.equal(pk.hand.seats.find((s) => s.id === actor).folded, false, 'no action applies while _hold > 0');
+  pk._hold = 0;
+  pk.hostClientAct(actor, { type: 'fold' });                       // hold over → the same action now lands
   assert.equal(pk.hand.seats.find((s) => s.id === actor).folded, true);
 });
 

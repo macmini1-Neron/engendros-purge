@@ -16,6 +16,9 @@ import { yawToMils } from './bearing.js';
 // cosmetic chip. glass=0/wood=1/sheetmetal=trunk=2/brick=3/concrete=4/steel=5. So pistols
 // pop glass; rifles/SMGs also break the wood door & fences; nothing under HE breaches brick.
 const PEN_BY_CLASS = { pistol: 0, smg: 1, rifle: 1, sniper: 2, shotgun: 1, hmg: 2, launcher: 4, cannon: 5 };
+// Per-shot trauma — RESTRAINT: only the heavy classes get a screen-kick; rifles/SMGs/pistols are sold
+// by the recoil model alone (shaking on every AK round would burn the dynamic range we're reserving).
+const FIRE_TRAUMA = { sniper: 0.34, shotgun: 0.30, launcher: 0.40, cannon: 0.42 };
 // Forced demo loadout so a tester needs no shop: an auto rifle (glass+door+enemies), the
 // BAZOOKA (HE breach + fire), two MOLOTOVs (ignite trees), the debug APFSDS cannon, + a knife.
 export const DEMO_LOADOUT = ['stg44', 'bazooka', 'molotov', 'molotov', 'apfsds', 'knife'];
@@ -185,6 +188,13 @@ export const WEAPONS = {
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
 export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'apfsds', 'mosin', 'kar98', 'flashlight', 'binoculars', 'lpr1', 'bussole'];
+
+// Which weapons defeat the СН-42 steel cuirass (worn by the "armored" engendro). Realistic to the 2 mm
+// 36СГН plate: pistol/SMG/buckshot fire rings off it, but full-power rifle rounds (and bigger) punch
+// through. So rifles/snipers/MGs/launchers/cannon + the .44 magnum fire as source 'ap' (the enemy
+// damage() path treats 'ap' as armor-piercing); everything else stays 'gun' (rings off a plate strike).
+const CUIRASS_AP_CLASS = { rifle: true, sniper: true, launcher: true, cannon: true };
+export function cuirassSource(d) { return (d && (CUIRASS_AP_CLASS[d.class] || d.shape === 'magnum')) ? 'ap' : 'gun'; }
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
@@ -1529,15 +1539,17 @@ export class WeaponSystem {
   }
 
   _fire(d) {
-    this.mag[this.cur]--; this.cooldown = 60 / d.rpm;
+    if (!(this.game.rules && this.game.rules.infiniteAmmo)) this.mag[this.cur]--; // /gamerule infiniteAmmo true → mag never depletes (no reload, unlimited)
+    this.cooldown = 60 / d.rpm;
+    const _ft = FIRE_TRAUMA[d.class]; if (_ft) this.game.engine.addTrauma(_ft); // heavy-class fire kick (sniper/shotgun/launcher/cannon)
     if (d.enBloc && this.mag[this.cur] <= 0) this.game.audio.garandPing(); // empty clip ejects with the iconic ping
     const _climb = 1 + this._recoilStreak * (d.recoilClimb || 0);
     this.bloom = Math.min(this.bloom + d.bloom * _climb, 0.09);
     const cam = this.game.engine.camera; cam.updateMatrixWorld();
-    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const origin = (this._sOrigin || (this._sOrigin = new THREE.Vector3())).setFromMatrixPosition(cam.matrixWorld);
     const fwd = this._tmp.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
     const right = this._tmp2.set(1, 0, 0).applyQuaternion(cam.quaternion).normalize();
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
+    const up = (this._sUp || (this._sUp = new THREE.Vector3())).set(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
     const muzzle = origin.clone().addScaledVector(fwd, 1.0).addScaledVector(right, 0.16).addScaledVector(up, -0.1);
     this.game.effects.muzzleFlash(muzzle, fwd, d.class === 'shotgun' || d.class === 'launcher' ? 1.6 : 1);
     if (d.class !== 'launcher' && !d.boltAction) this.game.effects.shell(muzzle.clone().addScaledVector(right, -0.08), right);
@@ -1567,7 +1579,7 @@ export class WeaponSystem {
     const spread = (d.spread + this.bloom) * (this.ads ? 0.4 : 1);
     const mult = this.effMult(this.cur);
     for (let p = 0; p < d.pellets; p++) {
-      const dir = fwd.clone();
+      const dir = (this._sDir || (this._sDir = new THREE.Vector3())).copy(fwd);   // scratch — consumed synchronously in _marchPellet
       dir.x += rr(-spread, spread); dir.y += rr(-spread, spread); dir.z += rr(-spread, spread);
       dir.normalize();
       this._marchPellet(muzzle, dir, d, mult);
@@ -1607,7 +1619,7 @@ export class WeaponSystem {
       }
       if (eHit && (!wHit || eHit.dist <= wHit.dist)) {     // a body always stops the round
         const hs = eHit.head && !eHit.enemy.def.boss;      // no headshot cheese on the boss — head = body
-        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), 'gun', eHit.point);
+        const killed = this.game.enemies.damage(eHit.enemy, dmg * (hs ? 2.0 : 1.0), cuirassSource(d), eHit.point, 'host', hs, eHit.part);
         this.game.effects.tracer(muzzle, eHit.point, d.accent);
         if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
         else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
@@ -1617,10 +1629,12 @@ export class WeaponSystem {
         const box = wHit.box;
         if (box && box.downer && this._softPenetrable(box, d) && (box.foliage || soft < SOFT_BUDGET)) {
           if (box.foliage) {
-            // FOLIAGE = a free, DAMAGE-FREE pass: leaves just react (green puff), never absorb the round,
-            // never fell the tree, never cost energy/budget — so the round ALWAYS reaches the solid trunk
-            // behind. No _destructHit (only the trunk/log takes damage) and NO crosshair hit-marker.
+            // FOLIAGE = a free, DAMAGE-FREE pass for tree CANOPY / fallen CROWN: leaves just react (green puff),
+            // never absorb the round, never fell the tree, never cost energy/budget — so the round ALWAYS reaches
+            // the solid trunk behind. A BUSH, though, is a destructible foliage PROP (~10 HP, "a shot clears it"),
+            // so still resolve its damage while keeping the pass-through. Tree foliage (box.tree) never takes a hit.
             this.game.effects.impact(wHit.point, wHit.normal, 'leaf');
+            if (box.prop && !box.tree) this._destructHit(wHit, dir, d, dmg / (d.dmg || 1)); // the bush IS the destructible
           } else {
             // building soft cover (glass / wood / sheet-metal): carve it, sap energy (glass is the free pass)
             this._destructHit(wHit, dir, d, dmg / (d.dmg || 1));
@@ -1639,7 +1653,7 @@ export class WeaponSystem {
       }
       break;                                              // nothing left on the ray
     }
-    this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);   // spent / edge round → range end
+    this.game.effects.tracer(muzzle, (this._sEnd || (this._sEnd = new THREE.Vector3())).copy(muzzle).addScaledVector(dir, d.range), d.accent);   // spent / edge round → range end (scratch end-point; tracer copies it)
   }
 
   // A world box is soft cover a round punches THROUGH (vs stops at): a destructible whose material is
@@ -1704,7 +1718,7 @@ export class WeaponSystem {
   _fireAPFSDS(origin, dir, d) {
     this.game.effects.tracer(origin, origin.clone().addScaledVector(dir, d.range), d.accent);
     const eHit = this.game.enemies.rayHit(origin, dir, d.range);
-    if (eHit) { const k = this.game.enemies.damage(eHit.enemy, d.dmg, 'gun', eHit.point); this.game.hud.hitmarker(k); }
+    if (eHit) { const k = this.game.enemies.damage(eHit.enemy, d.dmg, 'ap', eHit.point, 'host', false, eHit.part); this.game.hud.hitmarker(k); } // APFSDS long-rod punches straight through the СН-42 cuirass
     const hostSim = !this.game.mp.active || this.game.mp.isHost;
     if (!hostSim) return;                                   // host-authoritative destruction
     const w = CALIBERS.apfsds;
@@ -2870,7 +2884,7 @@ export class MountedGun {
     } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
       const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss
       const dmg = this.dmg * (hs ? 1.6 : 1) * this.game.player.damageMult;
-      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
+      const killed = this.game.enemies.damage(eHit.enemy, dmg, 'ap', eHit.point, 'host', hs, eHit.part); // .50-cal/DShK tears through the СН-42 cuirass
       end = eHit.point;
       this.game.effects.tracer(muzzleFx, end, tracerColor);
       if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); } else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }

@@ -180,3 +180,48 @@ test('clampSkinsTo surplus: house exhausted → spills into the remaining skins 
   // real wants one 100; ledger has house 1 + marx 2 = 3 → trim house first (1), then marx (1) to hit the target
   assert.deepEqual(clampSkinsTo({ [HOUSE_SKIN]: { 100: 1 }, marx: { 100: 2 } }, { 100: 1 }, 'lenin'), { marx: { 100: 1 } });
 });
+
+// ---- reskin preserves won-chip provenance (co-op _beginHand regression) ----
+// In co-op the host calls chipbank.reskin(rosterSkins) at EVERY hand boundary to pick up a lobby skin
+// change. It must NOT wipe the multi-skin provenance of chips you won from other players (the КАТРАН
+// "see how many you won from whom" look). Solo never reskins, so this only ever bit co-op.
+
+function winMixedPot() {
+  const cb = new ChipBank();
+  const ids = ['you', 'b0', 'b1'];
+  cb.dealStart(ids, { 500: 1, 100: 6, 50: 4, 20: 5, 10: 5, 5: 10 }, { 100: 10, 50: 10, 20: 20, 10: 30, 5: 60 },
+    { you: 'dice', b0: 'casino', b1: 'lenin' });
+  for (const id of ids) cb.postBet(id, 100);   // each contributes its own-skin chips
+  cb.collectBetsToPot();                        // pot = mix of dice/casino/lenin
+  cb.awardToWinners({ you: value(cb.pot) }, ids); // YOU win the whole pot
+  return cb;
+}
+const stackSkins = (cb, id) => Object.keys(cb.skinsAt.stacks[id] || {}).sort();
+
+test('reskin with UNCHANGED skins preserves won-chip provenance (the co-op per-hand refresh)', () => {
+  const cb = winMixedPot();
+  const won = stackSkins(cb, 'you');
+  assert.deepEqual(won, ['casino', 'dice', 'lenin'], 'winner stack holds its own + the two losers\' skins');
+  cb.reskin({ you: 'dice', b0: 'casino', b1: 'lenin' });   // host re-applies the SAME roster skins next hand
+  assert.deepEqual(stackSkins(cb, 'you'), won, 'provenance preserved — NOT collapsed to just the owner skin');
+  assert.ok(cb.verify() && cb.verifySkins(), 'conservation + ledger still reconcile');
+});
+
+test('reskin on a REAL skin change moves only the owner\'s own chips, keeps won chips', () => {
+  const cb = winMixedPot();                                 // you=dice + won casino + lenin
+  const ownDiceValue = value(cb.skinsAt.stacks.you.dice);
+  cb.reskin({ you: 'star' });                               // you change dice → star
+  const after = stackSkins(cb, 'you');
+  assert.deepEqual(after, ['casino', 'lenin', 'star'], 'own chips became star; won casino/lenin untouched');
+  assert.equal(value(cb.skinsAt.stacks.you.star), ownDiceValue, 'the moved own-skin value is exactly what was dice');
+  assert.ok(!cb.skinsAt.stacks.you.dice, 'no dice bucket left');
+  assert.ok(cb.verify() && cb.verifySkins());
+});
+
+test('reskin is a value-neutral no-op on the chip stacks themselves', () => {
+  const cb = winMixedPot();
+  const before = value(cb.stacks.you);
+  cb.reskin({ you: 'star', b0: 'marx' });
+  assert.equal(value(cb.stacks.you), before, 'reskin never changes a stack\'s value');
+  assert.ok(cb.verify());
+});

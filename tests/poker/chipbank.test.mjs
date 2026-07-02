@@ -298,3 +298,23 @@ test('conservation invariant holds across a long random op sequence', () => {
     }
   }
 });
+
+test('reconcile flags an off-engine-parity stack (starved float) in _underfilled, conservation still holds', () => {
+  const bank = new ChipBank();
+  bank.dealStart(['a'], { 500: 1 }, {});                  // one 500, EMPTY float → the 500 can never be broken
+  const warn = console.warn; console.warn = () => {};     // silence the expected dev warning
+  try { bank.reconcile([{ id: 'a', stack: 50 }]); } finally { console.warn = warn; }
+  assert.equal(bank._underfilled.length, 1, 'the unbreakable 500 can\'t reach a 50 target → flagged');
+  assert.equal(bank._underfilled[0].id, 'a');
+  assert.equal(bank._underfilled[0].target, 50);
+  bank.verify();                                          // conservation STILL holds — the gap is dimensioning, not minting
+});
+
+test('reconcile leaves _underfilled empty when the float can dimension every target', () => {
+  const bank = new ChipBank();
+  bank.dealStart(['a', 'b'], { 50: 2 }, { 50: 4, 20: 5, 10: 5, 5: 10 });
+  bank.reconcile([{ id: 'a', stack: 75 }, { id: 'b', stack: 125 }]);
+  assert.equal(bank._underfilled.length, 0, 'healthy float → exact engine parity, nothing flagged');
+  assert.equal(bank.stackValue('a'), 75);
+  assert.equal(bank.stackValue('b'), 125);
+});

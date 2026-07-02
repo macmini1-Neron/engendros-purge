@@ -78,6 +78,20 @@ test('incomplete all-in does not reopen betting for a player who already acted',
   assert.equal(la.callAmount, 50);              // 150 - 100 already in
 });
 
+test('a capped player\'s all-in coerces to an all-in CALL instead of throwing', () => {
+  // same incomplete-all-in setup → U is capped (noRaise), facing a 50 call with 900 behind.
+  const s = startHand({ players: [P('U', 1000), P('S', 150), P('B', 1000)], button: 0, sb: 10, bb: 20, rng: seed() });
+  applyAction(s, { type: 'raise', to: 100 });   // U to 100 (900 behind)
+  applyAction(s, { type: 'allin' });            // S all-in to 150 (incomplete → caps U)
+  applyAction(s, { type: 'fold' });             // B folds → U to act, capped
+  assert.equal(legalActions(s).canRaise, false);
+  const before = s.seats[0].stack;              // U has 900 behind
+  assert.doesNotThrow(() => applyAction(s, { type: 'allin' }), 'a capped all-in must coerce, not throw');
+  assert.equal(s.seats[0].committed, 150, 'U matched the bet to 150 (called the 50)');
+  assert.equal(s.seats[0].stack, before - 50, 'only the call left the stack — a capped player keeps the excess');
+  assert.equal(s.seats[0].allIn, false, 'a capped "all-in" that only calls does not actually go all-in');
+});
+
 test('full hand checked down splits a board-playing royal flush (chop + odd-chip path)', () => {
   const deck = ['2c', '3d', '4h', '5c', '6d', 'As', 'Ks', 'Qs', '7d', 'Js', '8d', 'Ts'].map(parseCard);
   const s = startHand({ players: [P('A', 1000), P('B', 1000)], button: 0, sb: 10, bb: 20, deck });

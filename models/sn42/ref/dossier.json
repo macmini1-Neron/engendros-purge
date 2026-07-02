@@ -1,0 +1,126 @@
+{
+  "id": "sn42",
+  "title": "Стальной нагрудник СН-42 (Stalnoi Nagrudnik obr. 1942) — Soviet WWII steel breastplate / bib-cuirass, worn by assault engineer-sappers (ШИСБр)",
+  "era": "designed 1942 by НИИ-48 (TsNII-48); began reaching the Red Army in 1942; issued to штурмовые инженерно-сапёрные бригады (ШISBr) — 'armoured infantry' — through WWII",
+  "sources": {
+    "enwiki": "https://en.wikipedia.org/wiki/Stalnoi_Nagrudnik — canonical EN article: 'two pressed steel plates that protected the front torso and groin'; SN-42 '2 mm steel 36SGN, tolerances 1.8 to 2.2 mm', weight '3.3 to 3.5' kg, protected area '0.2 m² (2.2 sq ft)'; 'supplied to SHISBr (assault engineers)'; vs MP 40 close range, useless vs 7.92×57 Mauser; 'roughly equivalent to a Class II vest'",
+    "ruwiki_sn42": "https://ru.wikipedia.org/wiki/СН-42 — RU article СН-42: 'выполнен из 2-мм стали 36СГН, в допусках 1,8 — 2,2 мм'; 'масса нагрудника 3,3 — 3,5 кг'; 'Площадь защиты 0,2 м²'; withstood pistol/SMG bullets and small fragments; 9-мм at point-blank without injury",
+    "ruwiki_nagrudnik": "https://ru.wikipedia.org/wiki/Стальной_нагрудник — RU article 'Стальной нагрудник': protection from MP-38/40 at 10 m, Gewehr 41 at 100–150 m only if tangential; designed vs 'удара штыком, мелких осколков и 9-мм пистолетных пуль со свинцовым сердечником'; '≈ бронежилету II класса'",
+    "museum_pobedy": "https://ar.culture.ru/ru/subject/sn-42 — Музей Победы exhibit (culture.ru/Artefact): PLATE DIMENSIONS 'Верхняя часть - 43х34 см, нижняя часть - 32х25 см'; 'выполнено из стали марки 36 СГН толщиной 1,8–2,2 мм при общей массе 3,3–3,5 кг'; 'состоял из трех стальных пластин, скрепленных кожаными ремнями, с изгибом в районе пояса'; designed by НИИ №48 with a fabric lining ('тканевую подкладку'); right shoulder left open to brace the weapon; smoothness of steel deflected rifle bullets and bayonet",
+    "museum_kkkm": "https://www.kkkm.ru/o-muzee/kollekcii/istoriya-odnogo-eksponata/proekt-chto-rasskazhet-nam-predmet-stalnoj-nagrudnik-sn-42 — Krasnoyarsk Regional Museum exhibit: 'выполнен из 2-мм стали 36СГН (две пластины)'; mass 3,3–3,5 кг; area 0,2 кв. м; issued mainly to инженерно-штурмовые бригады (from 1942); 'На музейном экспонате отсутствует нижняя пластина, есть повреждения от пуль' (their exhibit is missing the lower plate, has bullet damage) — independent confirmation of the TWO-plate design",
+    "wartime": "https://war-time.ru/item/stalnoi-nagrudnik-sn-40-sn-40a-sn-42 — war-time.ru SN-40/40A/42 review: 'состоял из двух бронещитов, соединяющихся с помощью металлической петли и брезентовых ремней'; SN-42 received a second metal loop ('вторую металлическую петлю') for easier carry/fold; cites an alt SN-42 steel '34Х2ГС2 в 2 мм с допуском 0,2 мм'; SN-42 pierced by rifle bullets at 200–300 m",
+    "enot": "https://udachnyj-enot.com.ua/sn-stalnoj-nagrudnik-sovetskoj-armii/ — ЕНОТ journal: 'Нагрудник представлял собой пять стальных пластин, соединённых кожаными или тесьмяными ремешками'; SN-42 added a 'вторая вертикальная наплечная лямка' (second vertical shoulder strap); upper (chest) + lower (abdomen) sections; protected from SMG/pistol >50 m, light rifle bullets safe >600 m; worn over a padded jacket",
+    "warhistory": "https://www.warhistoryonline.com/world-war-ii/steel-bib-soviet-wwii-body-armor.html — War History Online: 'two pressed steel plates which covered the torso and groin'; 'plates were 2 mm thick and weighed about 3.5 kg'; stops a 9 mm lead-core bullet at 100–150 m; single 7.92×57 Mauser only if tangential; issued to SHISBr, nicknamed the 'Armored Infantry'; too robust to crawl in",
+    "photo_front": "Wikimedia Commons File:Stalynoi_Nagrudnik.JPG (https://upload.wikimedia.org/wikipedia/commons/2/2b/Stalynoi_Nagrudnik.JPG) — SN-42 displayed at Kamianets-Podilskyi Castle museum; saved locally as ref/sn42_front_kamianets.jpg. VISUAL SOURCE for silhouette: deep concave U-shaped neck cutout, raised left/right shoulder 'wings', strongly domed/dished curvature, rolled/turned perimeter edges, two paired strap rivets (2+2) high on the chest + a horizontal rivet row across the waist, dark blued/oxidized (near black-brown) finish; an inset period photo shows the segmented abdominal flap as worn",
+    "photo_worn": "https://rarehistoricalphotos.com/soviet-soldier-sn-42-body-armor-1944/ — 'Captured Soviet soldier dressed in SN-42 body armor, 1944'; saved locally as ref/sn42_worn_pow_1944.jpg. VISUAL SOURCE for the worn 3/4 view: upper chest plate + the lower, transversely segmented abdominal flap articulating at the waist, shoulder + waist webbing routing"
+  },
+  "specifications": {
+    "plate_count": {
+      "value": 2,
+      "layout": "upper (chest/thorax) plate + lower (abdominal/groin) flap, articulated at the waist",
+      "src": "enwiki",
+      "quote": "'consisted of two pressed steel plates that protected the front torso and groin' (enwiki); independently '(две пластины)' (museum_kkkm). NOTE source divergence on the count: museum_pobedy says 'трех стальных пластин' (3) and enot 'пять стальных пластин' (5) — these count the transversely segmented abdominal flap (visible in photo_worn) as separate sub-plates. Primary = TWO main plates, matching the two dimension pairs in museum_pobedy."
+    },
+    "upper_plate_dims_mm": {
+      "height": 430,
+      "width": 340,
+      "src": "museum_pobedy",
+      "quote": "'Верхняя часть - 43х34 см' (Музей Победы). Read as height 43 cm × width 34 cm = 430 × 340 mm — the wider/taller chest plate covering thorax to upper abdomen. SINGLE-SOURCED (one museum exhibit); multiple size variants ('ростовки') existed, so treat as a representative size."
+    },
+    "lower_plate_dims_mm": {
+      "height": 320,
+      "width": 250,
+      "src": "museum_pobedy",
+      "quote": "'нижняя часть - 32х25 см' (Музей Победы). Read as height 32 cm × width 25 cm = 320 × 250 mm — the narrower abdominal/groin flap that hinges below the chest plate. SINGLE-SOURCED; size variants existed."
+    },
+    "thickness_mm": {
+      "value": 2.0,
+      "tolerance_min": 1.8,
+      "tolerance_max": 2.2,
+      "steel_grade": "36СГН (36SGN)",
+      "src": "ruwiki_sn42",
+      "quote": "'выполнен из 2-мм стали 36СГН, в допусках 1,8 — 2,2 мм' (ruwiki_sn42); cross-confirmed by enwiki ('2 mm steel 36SGN, tolerances 1.8 to 2.2 mm'), museum_pobedy ('сталь марки 36 СГН толщиной 1,8–2,2 мм') and museum_kkkm. DISCREPANCY: wartime alone cites grade '34Х2ГС2' for SN-42 — minority claim, see needs[]."
+    },
+    "mass_kg": {
+      "min": 3.3,
+      "max": 3.5,
+      "src": "ruwiki_sn42",
+      "quote": "'масса нагрудника 3,3 — 3,5 кг' (ruwiki_sn42); cross-confirmed by museum_pobedy ('общей массе 3,3–3,5 кг'), enwiki ('3.3 to 3.5'), warhistory ('about 3.5 kg')"
+    },
+    "protection_area_m2": {
+      "value": 0.2,
+      "src": "ruwiki_sn42",
+      "quote": "'Площадь защиты 0,2 м²' (ruwiki_sn42); also enwiki '0.2 m² (2.2 sq ft)' and museum_kkkm '0,2 кв. м'"
+    },
+    "shape_silhouette": {
+      "curvature": "both plates are pressed/dished (NOT flat) into a strong forward dome that wraps the torso; the chest plate has a pronounced central bulge",
+      "neck_cutout": "deep concave U-shaped neck cutout at the top centre of the chest plate",
+      "shoulders": "the chest plate flares up into raised left/right shoulder 'wings' flanking the neck cutout; the RIGHT shoulder is left open/uncovered specifically so the wearer can shoulder/brace a weapon when aiming",
+      "edges": "rolled / turned-back perimeter lip around the plate outline (stiffening + safe edge), visible all round in photo_front",
+      "waist_bend": "the assembly bends/kinks at the waist line ('с изгибом в районе пояса') where the abdominal flap articulates",
+      "src": "photo_front",
+      "quote": "domed shell, U neck cutout, shoulder wings, rolled edges all read directly off photo_front (Kamianets-Podilskyi exhibit) + the segmented worn flap in photo_worn; 'изгиб в районе пояса' and the open right shoulder ('Правое плечо... оставалось открытым — специально для удобства упора оружия при прицеливании') are from museum_pobedy. Textual confirmation of the rolled-edge PURPOSE is not found — see needs[]."
+    },
+    "plate_connection": {
+      "method": "the lower abdominal flap is joined to the chest plate at the waist by a metal hinge/loop ('металлическая петля') plus leather (or canvas/tape) straps, riveted through the steel; this hinge lets the wearer bend forward",
+      "src": "wartime",
+      "quote": "'двух бронещитов, соединяющихся с помощью металлической петли и брезентовых ремней'; SN-42 got 'вторую металлическую петлю' (wartime). museum_pobedy: 'скрепленных кожаными ремнями, с изгибом в районе пояса'. enot: 'соединённых кожаными или тесьмяными ремешками'. The horizontal rivet row across the waist in photo_front is this joint."
+    },
+    "harness_straps": {
+      "shoulder": "two over-the-shoulder straps from the top of the chest plate to the back; SN-42 added a second vertical shoulder strap for easier carrying",
+      "waist": "a waist/belt strap closing the assembly around the lower torso",
+      "material": "leather, or woven canvas/tape webbing ('кожаные / тесьмяные / брезентовые ремни') — sources differ; both attested",
+      "rivets": "strap anchor points are domed rivets through the plate — photo_front shows two paired rivets (2+2) high on the chest (shoulder-strap anchors) and the rivet row at the waist",
+      "src": "enot",
+      "quote": "'вторая вертикальная наплечная лямка, которая обеспечивала более лёгкое ношение' + straps 'кожаными или тесьмяными ремешками' (enot); 'брезентовых ремней' (wartime); 'кожаными ремнями' (museum_pobedy); rivet pattern from photo_front. Exact buckle hardware/routing not documented — see needs[]."
+    },
+    "lining": {
+      "value": "fabric/cloth lining fixed to the inner face; worn over a padded jacket (фуфайка-ватник) for shock absorption",
+      "src": "museum_pobedy",
+      "quote": "'Конструкторы НИИ № 48 под нагрудник прикрепили тканевую подкладку' (museum_pobedy); 'обрезанную фуфайку-ватник... «потник»' worn under it (wartime); worn over a padded jacket (enot)"
+    },
+    "finish_colour": {
+      "value": "dark blued / oxidized steel — reads near black-brown on the surviving exhibit; smooth (un-textured) so rounds glance off",
+      "src": "photo_front",
+      "quote": "dark blued/patinated steel surface in photo_front; 'Гладкость стали позволяла отклонять винтовочные пули и удары штыком' (museum_pobedy). A factory PAINT standard (commonly cited as dark green/khaki on repro/field examples) is not textually confirmed for SN-42 — see needs[]."
+    },
+    "markings": {
+      "value": "no factory stamp, size mark, or stencil legible on the exhibit photo; none described in the consulted text sources",
+      "src": "photo_front",
+      "quote": "no Cyrillic stamp/stencil visible in photo_front; size variants ('ростовки') are mentioned to exist (search corpus) but no specific size-stamp text is documented — see needs[]."
+    },
+    "protection_level": {
+      "stops": "bayonet thrusts, small shell/grenade fragments, and 9 mm lead-core pistol/SMG bullets (e.g. MP 38/40)",
+      "smg_range": "MP-38/40 at 10 m (ruwiki) to 100–150 m (warhistory); 9 mm at point-blank survivable",
+      "rifle": "ineffective vs full-power rifle rounds (7.92×57 Mauser) except a glancing/tangential hit; pierced by rifle fire at ~200–300 m",
+      "modern_equiv": "≈ Class II soft-armour vest by modern standards",
+      "src": "ruwiki_nagrudnik",
+      "quote": "'защиты от поражения из пистолета-пулемёта MP-38/40 с расстояния 10 м'; 'с расстояния 100—150 м выдержали выстрел из винтовки Gewehr 41... пуля шла по касательной'; 'удара штыком, мелких осколков и 9-мм пистолетных пуль'; '≈ бронежилету II класса' (ruwiki_nagrudnik). enwiki: useless vs rifle. wartime: pierced by rifle at 200–300 m. warhistory: stops 9 mm at 100–150 m."
+    }
+  },
+  "derivation": {
+    "total_worn_height_mm": {
+      "value": 650,
+      "formula": "upper_plate_height + lower_plate_height − waist_overlap = 430 + 320 − ~100",
+      "inputs": "upper_plate_dims_mm.height (430, museum_pobedy), lower_plate_dims_mm.height (320, museum_pobedy), overlap estimated ~80–120 mm at the hinged waist joint",
+      "value_range_mm": "630–670",
+      "note": "The abdominal flap hinges behind/below the chest plate and overlaps it by roughly one hand's width at the waist, so the worn vertical coverage is less than 430+320=750. Lands in the prompt's '~600+ mm' ballpark. Overlap is photo-estimated, not measured — total worn height itself is NOT directly sourced."
+    },
+    "plate_curvature_arc": {
+      "value": "chest plate cross-section is a shallow circular arc; sagitta (dome depth) ≈ 30–45 mm over the 340 mm width",
+      "formula": "photo-proportional read of the dome bulge in photo_front against the 340 mm sourced plate width",
+      "inputs": "upper_plate_dims_mm.width (340, museum_pobedy), shape_silhouette.curvature (photo_front)",
+      "note": "Dome depth is photo-derived for the voxel build only; no source gives a press radius or sagitta — kept out of specifications, flagged in needs[]."
+    }
+  },
+  "needs": [
+    "Second independent source for the plate dimensions — upper 430×340 / lower 320×250 mm is single-sourced to one Музей Победы exhibit; size variants ('ростовки') existed so the canonical/GOST size set is unconfirmed",
+    "Steel-grade conflict: 36СГН (enwiki, ruwiki, both museums) vs 34Х2ГС2 (war-time.ru only) for SN-42 — primary kept as 36СГН",
+    "Plate-count wording divergence across sources (2 vs 3 vs 5) — resolved to 2 main plates (chest + segmented abdominal flap), but the exact number of abdominal sub-segments is not pinned to a measured source",
+    "Press geometry — exact dome radius / sagitta and the rolled-edge lip width/profile are photo-estimated (plate_curvature_arc derivation), not sourced",
+    "Harness specifics — buckle type, strap widths, and exact routing of the shoulder/waist straps are not documented; materials attested as leather and/or canvas (sources differ)",
+    "Factory paint standard / colour code — exhibit reads as blued/oxidized dark steel; a documented green/khaki factory finish for SN-42 was not found",
+    "Factory stamp / size-mark Cyrillic text — no legible stamp on the exhibit photo and none described in text sources; exact characters unknown",
+    "war-time.ru piercing figure (rifle at 200–300 m) and the 9 mm effective range (10 m vs 100–150 m across sources) are inconsistent — recorded both, neither cross-validated to a primary ballistic trial"
+  ]
+}

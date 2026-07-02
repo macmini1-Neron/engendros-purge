@@ -37,6 +37,57 @@ export class HUD {
       mortarpanel: $('mortarpanel'), mElev: $('m-elev'), mRange: $('m-range'), mMils: $('m-mils'), mAmmo: $('m-ammo'), spotcall: $('spotcall'),
     };
     this._hitT = 0; this._msgT = 0; this._spotT = 0;
+    this._initDamageNumbers();
+  }
+  // Floating damage numbers — a fixed pool of reused <div>s (no per-hit DOM alloc, in the spirit of the
+  // particle/ring pools). popDamage() world-anchors one; tickDamage() integrates a little arc and projects
+  // world→screen with a single scratch Vector3 each frame. Toggle via settings.data.dmgNumbers.
+  _initDamageNumbers() {
+    const c = document.createElement('div');
+    c.id = 'dmgnums';
+    c.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:24;overflow:hidden';
+    document.body.appendChild(c);
+    this._dmgC = c; this._dmgPool = []; this._dmgScratch = new THREE.Vector3();
+    for (let i = 0; i < 30; i++) {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:absolute;left:0;top:0;will-change:transform,opacity;opacity:0;font-weight:800;letter-spacing:.5px;white-space:nowrap;text-shadow:0 2px 5px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.95);transform:translate(-9999px,-9999px)';
+      c.appendChild(d);
+      this._dmgPool.push({ el: d, active: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, life: 0, max: 1 });
+    }
+  }
+  popDamage(world, amount, opts = {}) {
+    if (!this._dmgPool || !world) return;
+    const st = this.game.settings; if (st && st.data && st.data.dmgNumbers === 0) return;
+    let slot = null;
+    for (const s of this._dmgPool) if (!s.active) { slot = s; break; }
+    if (!slot) { slot = this._dmgPool[0]; for (const s of this._dmgPool) if (s.life < slot.life) slot = s; } // all busy → recycle the most-faded
+    const crit = !!opts.crit, kill = !!opts.kill;
+    slot.active = true;
+    slot.x = world.x; slot.y = world.y + 0.5; slot.z = world.z;
+    slot.vx = (Math.random() * 2 - 1) * 0.7; slot.vy = 1.8 + Math.random() * 0.6;
+    slot.max = slot.life = kill ? 1.0 : 0.7;
+    slot.el.style.color = kill ? '#ff4d2e' : (crit ? '#ffd23f' : '#fff3e0');
+    slot.el.style.fontSize = (kill || crit ? 30 : 20) + 'px';
+    slot.el.textContent = Math.max(1, Math.round(amount)) + (crit ? '!' : '');
+  }
+  clearDamage() { if (!this._dmgPool) return; for (const s of this._dmgPool) { if (!s.active) continue; s.active = false; s.el.style.opacity = '0'; s.el.style.transform = 'translate(-9999px,-9999px)'; } }
+  tickDamage(dt) {
+    if (!this._dmgPool) return;
+    if (this.game.state !== 'playing') { this.clearDamage(); return; } // never leave numbers floating over the death screen / menu (tick runs in every state)
+    const cam = this.game.engine && this.game.engine.camera; if (!cam) return;
+    const v = this._dmgScratch, W = window.innerWidth, H = window.innerHeight;
+    for (const s of this._dmgPool) {
+      if (!s.active) continue;
+      s.life -= dt;
+      if (s.life <= 0) { s.active = false; s.el.style.opacity = '0'; s.el.style.transform = 'translate(-9999px,-9999px)'; continue; }
+      s.x += s.vx * dt; s.y += s.vy * dt; s.vy -= 2.2 * dt;     // gentle upward arc, gravity-eased
+      v.set(s.x, s.y, s.z).project(cam);
+      if (v.z > 1) { s.el.style.opacity = '0'; continue; }      // behind the camera
+      const sx = (v.x * 0.5 + 0.5) * W, sy = (-v.y * 0.5 + 0.5) * H;
+      const t = s.life / s.max;                                 // 1 → 0 over its life
+      s.el.style.transform = `translate(${sx}px,${sy}px) translate(-50%,-50%) scale(${(1.3 - (1 - t) * 0.5).toFixed(3)})`;
+      s.el.style.opacity = String(Math.min(1, t * 2.4));        // pop in, fade over the last ~40%
+    }
   }
   show(on) { this.el.hud.classList.toggle('show', on); }
   setHealth(hp, max) { const f = clamp(hp / max, 0, 1); this.el.hpfill.style.width = (f * 100) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.el.vignette.style.boxShadow = `inset 0 0 200px 40px rgba(200,30,20,${(1 - f) * 0.5})`; }
@@ -62,6 +113,7 @@ export class HUD {
   }
   setWeapon(w) {
     const key = w.cur, d = WEAPONS[key];
+    this.el.ammonum.classList.remove('low'); // reset low-ammo tint (re-added below only for a near-empty gun mag)
     this.setCompass(null); // tear the буссоль overlay down on any held-item change (switch / death-reset)
     this.el.wepname.textContent = d.name.toUpperCase();
     this.el.wepname.style.color = 'var(--gold)';
@@ -77,7 +129,15 @@ export class HUD {
     const mode = d.melee ? '' : (d.auto ? (w.semi[key] ? ' · SEMI' : ' · AUTO') : ' · SEMI');
     this.el.wepclass.textContent = `${d.class}${slot ? ' · slot ' + slot : ''}${mode}`;
     if (d.melee) this.el.ammonum.innerHTML = `<span style="font-size:22px">MELEE</span>`;
-    else { const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`; }
+    else {
+      const res = w.reserve[key] === Infinity ? '∞' : w.reserve[key]; this.el.ammonum.innerHTML = `${w.mag[key]}<span class="res"> / ${res}</span>${w.reloading > 0 ? ' ⟳' : ''}`;
+      // low-ammo telegraph: tint the mag count red at ≤25%, with a soft click the moment it crosses (firing the SAME gun
+      // down — not a weapon switch, where the key changes, nor a reload, which refills above the threshold and re-arms it)
+      const low = w.reloading <= 0 && (d.mag || 0) > 0 && w.mag[key] / d.mag <= 0.25;
+      if (low) this.el.ammonum.classList.add('low');
+      if (low && !this._lowAmmo && this._lowAmmoKey === key && this.game.audio) this.game.audio.uiClick();
+      this._lowAmmo = low; this._lowAmmoKey = key;
+    }
     if (this.el.molotov) { const mc = this.game.inventory ? this.game.inventory.count('molotov') : 0; this.el.molotov.innerHTML = mc > 0 ? `${icon('molotov')} ×${mc}` : ''; }
   }
   setMountedGun(ammo = 0, maxAmmo = 250, label = '.50 CAL M2HB') { // shown in the weapon slot while manning a fixed heavy MG
@@ -265,6 +325,14 @@ export class HUD {
   }
   setInteract(text) { if (text) { this.el.interact.innerHTML = text; this.el.interact.classList.add('show'); } else this.el.interact.classList.remove('show'); }
   update(dt) {
+    // crosshair bloom/movement reactivity: drive the arm gap from the weapon's bloom + player speed + recent fire
+    // (the #cross arms already CSS-transition .05s, so this reads as a smooth bloom). Static crosshair → legible spread.
+    if (this.el.cross) {
+      const w = this.game.weapons, p = this.game.player;
+      const spd = p && p.vel ? Math.hypot(p.vel.x, p.vel.z) : 0;
+      const gap = 3.2 + (w ? w.bloom * 130 : 0) + Math.min(spd, 8) * 0.6 + (w && w.cooldown > 0 ? 3 : 0);
+      this.el.cross.style.setProperty('--cross-gap', gap.toFixed(1) + 'px');
+    }
     if (this._hitT > 0) { this._hitT -= dt; if (this._hitT <= 0) { this.el.hitmarker.style.transition = 'opacity .25s'; this.el.hitmarker.style.opacity = '0'; this.el.hitmarker.classList.remove('boss'); } }
     if (this._msgT > 0) { this._msgT -= dt; if (this._msgT <= 0) this.el.msg.classList.remove('show'); }
     if (this._spotT > 0) { this._spotT -= dt; if (this._spotT <= 0 && this.el.spotcall) this.el.spotcall.classList.remove('show'); }
@@ -296,16 +364,18 @@ const SETTINGS_VER = 1;
 // adaptiveRes + bloom default OFF: on high-refresh (144 Hz) displays the 60 fps-targeted adaptive resolution
 // churns the render-target size (stutter) and renders sub-native (blur), and bloom softens the crisp voxel look.
 // Both stay toggleable in Settings; the High/Medium presets can still switch bloom back on.
-const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, setVer: SETTINGS_VER };
+const SETTINGS_DEFAULTS = { sens: 0.0022, sfx: 0.8, music: 0.5, fov: 80, nick: 'Player', pokerOdds: 1, gfxPreset: 'High', adaptiveRes: 0, shadowQ: 2048, drawDist: 0, renderScale: 1, aa: 0, showFps: 0, bloom: 0, exposure: 1.05, dmgNumbers: 1, pace: 1,
+  voiceOn: 0, voiceVol: 1, micGain: 1, ptt: 0, vad: 0.5, echoCancel: 1, noiseSup: 1, autoGain: 1, selfMonitor: 0, pttKey: 'CapsLock', inDevId: '', outDevId: '', perPlayerVolume: {}, // co-op voice chat
+  setVer: SETTINGS_VER };
 
 export class Settings {
   constructor(game) {
     this.game = game;
     this.data = { ...SETTINGS_DEFAULTS };
     this.returnTo = 'menu';
-    this.load(); this._wire(); this.apply();
+    this.load(); this._wire(); this._wireVoice(); this.apply();
   }
-  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } } catch (e) {} }
+  load() { try { const s = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); for (const k in this.data) if (typeof s[k] === 'number') this.data[k] = s[k]; if (typeof s.nick === 'string' && s.nick.trim()) this.data.nick = s.nick.trim().slice(0, 14); if (typeof s.gfxPreset === 'string') this.data.gfxPreset = s.gfxPreset; if (typeof s.pttKey === 'string') this.data.pttKey = s.pttKey; if (typeof s.inDevId === 'string') this.data.inDevId = s.inDevId; if (typeof s.outDevId === 'string') this.data.outDevId = s.outDevId; if (s.perPlayerVolume && typeof s.perPlayerVolume === 'object') this.data.perPlayerVolume = s.perPlayerVolume; if (s.setVer !== SETTINGS_VER) { this.data.adaptiveRes = SETTINGS_DEFAULTS.adaptiveRes; this.data.bloom = SETTINGS_DEFAULTS.bloom; this.data.renderScale = SETTINGS_DEFAULTS.renderScale; this.data.setVer = SETTINGS_VER; this.save(); } const pv = new URLSearchParams(location.search).get('pace'); if (pv != null) this.data.pace = (pv !== '0') ? 1 : 0; } catch (e) {} } // ?pace=0/1 dev override seeds the saved frame-pacing pref so the menu toggle always matches reality
   save() { try { localStorage.setItem('engendros_settings', JSON.stringify(this.data)); } catch (e) {} }
   apply() {
     if (this.game.player) { this.game.player.sens = this.data.sens; this.game.player.nick = this.data.nick; }
@@ -321,8 +391,21 @@ export class Settings {
     this.game._drawDist = this.data.drawDist | 0;
     this.game._showFps = !!this.data.showFps;
     if (!this.data.showFps) { const f = document.getElementById('fps'); if (f) f.style.display = 'none'; }
+    this.game._pace = !!this.data.pace; // vsync-snap frame pacing (framepacing.js) — Settings owns the on/off
+
     const mpName = document.getElementById('mp-name'); if (mpName && !mpName.value) mpName.value = this.data.nick; // pre-fill the co-op lobby name
+    if (this.game.voice) this.game.voice.applySettings(this.data); // push voice prefs (gain/vad/ptt/devices) live
     this._refresh();
+  }
+  // One-click "performance mode" for the low-end-GPU notice: Low preset + adaptive resolution.
+  // Reuses the exact preset/apply path the Settings UI uses, so it persists like any manual change.
+  applyPerformanceMode() {
+    this.data.gfxPreset = 'Low';
+    const c = presetConfig('Low');
+    this.data.shadowQ = c.shadowQ; this.data.drawDist = c.drawDist;
+    this.data.renderScale = c.renderScale; this.data.aa = c.aa; this.data.bloom = c.bloom;
+    this.data.adaptiveRes = 1;
+    this.apply(); this.save(); this._refresh();
   }
   _refresh() {
     const txt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -340,7 +423,8 @@ export class Settings {
     const setTog = (id, on, onTxt, offTxt) => { const el = document.getElementById(id); if (el) { el.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); el.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
     const gpv = document.getElementById('s-gfx'); if (gpv) gpv.textContent = String(this.data.gfxPreset).toUpperCase();
     setTog('s-adapt', this.data.adaptiveRes); setTog('s-showfps', this.data.showFps); setTog('s-aa', this.data.aa, 'ON (reload)', 'OFF');
-    setTog('s-bloom', this.data.bloom);
+    setTog('s-bloom', this.data.bloom); setTog('s-dmgnum', this.data.dmgNumbers); setTog('s-pace', this.data.pace);
+    this._refreshVoice();
   }
   _wire() {
     const bind = (id, key) => { const e = document.getElementById(id); if (!e) return; e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); this.apply(); this.save(); }); };
@@ -355,12 +439,61 @@ export class Settings {
     });
     const ar = document.getElementById('s-adapt'); if (ar) ar.addEventListener('click', () => { this.data.adaptiveRes = this.data.adaptiveRes ? 0 : 1; this.apply(); this.save(); this._refresh(); });
     const sfps = document.getElementById('s-showfps'); if (sfps) sfps.addEventListener('click', () => { this.data.showFps = this.data.showFps ? 0 : 1; this.apply(); this.save(); this._refresh(); });
+    const dn = document.getElementById('s-dmgnum'); if (dn) dn.addEventListener('click', () => { this.data.dmgNumbers = this.data.dmgNumbers ? 0 : 1; this.save(); this._refresh(); }); // floating damage numbers toggle
     const aaEl = document.getElementById('s-aa'); if (aaEl) aaEl.addEventListener('click', () => { this.data.aa = this.data.aa ? 0 : 1; this.save(); this._refresh(); }); // MSAA applies on reload
     const bl = document.getElementById('s-bloom'); if (bl) bl.addEventListener('click', () => { this.data.bloom = this.data.bloom ? 0 : 1; this.apply(); this.save(); this._refresh(); });
+    const pc = document.getElementById('s-pace'); if (pc) pc.addEventListener('click', () => { this.data.pace = this.data.pace ? 0 : 1; this.apply(); this.save(); this._refresh(); }); // vsync-snap frame pacing (also F9 live A/B)
     const fs = document.getElementById('s-fullscreen'); if (fs) fs.addEventListener('click', () => this.game.toggleFullscreen());
     const back = document.getElementById('s-back'); if (back) back.addEventListener('click', () => this.close());
   }
-  open(from) { this.returnTo = from || 'menu'; this._refresh(); this.game.ui.show('settings'); }
+  // ---- co-op voice settings (voice.js) ----
+  _wireVoice() {
+    const g = this.game;
+    const applyV = () => { this.save(); if (g.voice) g.voice.applySettings(this.data); this._refreshVoice(); };
+    const en = document.getElementById('s-voice');
+    if (en) en.addEventListener('click', async () => {
+      if (!this.data.voiceOn) { const ok = g.voice && await g.voice.enable(); this.data.voiceOn = ok ? 1 : 0; if (ok) { g.voice.applySettings(this.data); this._populateDevices(); } }
+      else { g.voice && g.voice.disable(); this.data.voiceOn = 0; }
+      this.save(); this._refreshVoice();
+    });
+    const num = (id, key) => { const e = document.getElementById(id); if (e) e.addEventListener('input', () => { this.data[key] = parseFloat(e.value); applyV(); }); };
+    num('s-voicevol', 'voiceVol'); num('s-micgain', 'micGain'); num('s-vad', 'vad');
+    const tog = (id, key) => { const e = document.getElementById(id); if (e) e.addEventListener('click', () => { this.data[key] = this.data[key] ? 0 : 1; applyV(); }); };
+    tog('s-ptt', 'ptt'); tog('s-echocancel', 'echoCancel'); tog('s-noisesup', 'noiseSup'); tog('s-autogain', 'autoGain'); tog('s-selfmon', 'selfMonitor');
+    const ind = document.getElementById('s-indev'); if (ind) ind.addEventListener('change', () => { this.data.inDevId = ind.value; applyV(); });
+    const outd = document.getElementById('s-outdev'); if (outd) outd.addEventListener('change', () => { this.data.outDevId = outd.value; applyV(); });
+    const pk = document.getElementById('s-pttkey');
+    if (pk) pk.addEventListener('click', () => { pk.textContent = 'press a key…'; const h = (ev) => { ev.preventDefault(); ev.stopPropagation(); this.data.pttKey = ev.code; window.removeEventListener('keydown', h, true); applyV(); }; window.addEventListener('keydown', h, true); });
+    const mt = document.getElementById('s-mictest'); if (mt) mt.addEventListener('click', () => { this._micTestOn ? this._stopMicTest() : this._startMicTest(); });
+  }
+  _refreshVoice() {
+    const d = this.data, g = this.game;
+    const setTog = (id, on, onTxt, offTxt) => { const e = document.getElementById(id); if (e) { e.textContent = on ? (onTxt || 'ON') : (offTxt || 'OFF'); e.style.color = on ? 'var(--neon,#45e0cf)' : '#888'; } };
+    const val = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    const txt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    setTog('s-voice', d.voiceOn, (g.voice && g.voice.micDenied) ? 'ON · no mic' : 'ON', 'OFF');
+    val('s-voicevol', d.voiceVol); txt('s-voicevol-v', Math.round(d.voiceVol * 100) + '%');
+    val('s-micgain', d.micGain); txt('s-micgain-v', Math.round(d.micGain * 100) + '%');
+    val('s-vad', d.vad); txt('s-vad-v', Math.round(d.vad * 100) + '%');
+    setTog('s-ptt', d.ptt, 'PUSH-TO-TALK', 'OPEN MIC'); setTog('s-echocancel', d.echoCancel); setTog('s-noisesup', d.noiseSup); setTog('s-autogain', d.autoGain); setTog('s-selfmon', d.selfMonitor);
+    txt('s-pttkey', this._prettyKey(d.pttKey));
+    const pkRow = document.getElementById('s-pttkey-row'); if (pkRow) pkRow.style.opacity = d.ptt ? '1' : '0.4';
+  }
+  async _populateDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    let devs; try { devs = await navigator.mediaDevices.enumerateDevices(); } catch (e) { return; }
+    const fill = (id, kind, cur) => { const el = document.getElementById(id); if (!el) return; el.innerHTML = '<option value="">Default device</option>'; for (const dv of devs) if (dv.kind === kind) { const o = document.createElement('option'); o.value = dv.deviceId; o.textContent = dv.label || (kind + ' ' + (dv.deviceId || '').slice(0, 6)); el.appendChild(o); } el.value = cur || ''; };
+    fill('s-indev', 'audioinput', this.data.inDevId); fill('s-outdev', 'audiooutput', this.data.outDevId);
+  }
+  _startMicTest() {
+    const g = this.game; if (!g.voice) return;
+    const begin = () => { this._micTestOn = true; if (g.voice.startMicTest) g.voice.startMicTest(); const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'STOP'; const bar = document.getElementById('s-miclevel'); const tick = () => { if (!this._micTestOn) return; if (bar) bar.style.width = Math.min(100, g.voice.getMicLevel() * 320).toFixed(0) + '%'; this._micRaf = requestAnimationFrame(tick); }; tick(); };
+    if (!g.voice.enabled) { g.voice.enable().then((ok) => { if (ok) { this.data.voiceOn = 1; this.save(); g.voice.applySettings(this.data); this._populateDevices(); this._refreshVoice(); begin(); } }); }
+    else begin();
+  }
+  _stopMicTest() { this._micTestOn = false; if (this.game.voice && this.game.voice.stopMicTest) this.game.voice.stopMicTest(); if (this._micRaf) cancelAnimationFrame(this._micRaf); const bar = document.getElementById('s-miclevel'); if (bar) bar.style.width = '0%'; const mt = document.getElementById('s-mictest'); if (mt) mt.textContent = 'TEST MIC'; }
+  _prettyKey(code) { if (!code) return '—'; return String(code).replace(/^Key/, '').replace(/^Digit/, 'Digit ').replace(/^Arrow/, ''); }
+  open(from) { this.returnTo = from || 'menu'; this._refresh(); this._populateDevices(); this.game.ui.show('settings'); } // game music ducks while this overlay is shown, via game._reconcileRadioUi
   close() { this.game.ui.show(this.returnTo); }
 }
 

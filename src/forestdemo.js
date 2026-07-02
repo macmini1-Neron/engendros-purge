@@ -165,7 +165,7 @@ export class ForestDemo {
   _buildTrunkBands(rec, yHi, nb) {
     const x = rec.x, y = rec.baseY, z = rec.z, yaw = rec.yaw, trunkR = rec.trunkR, mat = rec.mat, felTier = rec.felTier, id = rec.id, spine = rec.spine, fullH = rec.fullH || rec.height;
     const cos = Math.cos(yaw), sin = Math.sin(yaw);
-    const push = (mn, mx) => { const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id, felTier }; rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b); };
+    const push = (mn, mx, cap) => { const b = { min: new THREE.Vector3(...mn), max: new THREE.Vector3(...mx), downer: rec, tree: true, dmat: mat, dpart: id, felTier }; if (cap) b.cap = cap; rec.boxes.push(b); this.world.boxes.push(b); this.world.grid.addBox(b); };
     if (spine && spine.length) {
       const cl = (yt) => {
         if (yt <= spine[0][1]) return [spine[0][0], spine[0][2]];
@@ -179,13 +179,18 @@ export class ForestDemo {
         const e0 = cl(y0), e1 = cl(y1); add(e0[0], e0[1]); add(e1[0], e1[1]);
         for (const p of spine) if (p[1] > y0 && p[1] < y1) add(p[0], p[2]);
         const rad = trunkR * (1 - 0.6 * (y0 / fullH)) + 0.1;
-        push([x + mnx - rad, y + y0, z + mnz - rad], [x + mxx + rad, y + y1, z + mxz + rad]);
+        // capsule along the leaning centreline for this band (world space) → round trunk hit
+        const cax = x + (e0[0] * cos + e0[1] * sin), caz = z + (-e0[0] * sin + e0[1] * cos);
+        const cbx = x + (e1[0] * cos + e1[1] * sin), cbz = z + (-e1[0] * sin + e1[1] * cos);
+        push([x + mnx - rad, y + y0, z + mnz - rad], [x + mxx + rad, y + y1, z + mxz + rad],
+             { ax: cax, ay: y + y0, az: caz, bx: cbx, by: y + y1, bz: cbz, r: rad });
       }
       const collarR = trunkR * 1.25 + 0.05, collarH = Math.min(0.5, fullH * 0.12);
       push([x - collarR, y, z - collarR], [x + collarR, y + collarH, z + collarR]);
     } else {
       const half = trunkR + 0.12;
-      push([x - half, y, z - half], [x + half, y + yHi, z + half]);
+      push([x - half, y, z - half], [x + half, y + yHi, z + half],
+           { ax: x, ay: y, az: z, bx: x, by: y + yHi, bz: z, r: trunkR + 0.05 });
     }
   }
 
@@ -300,7 +305,8 @@ export class ForestDemo {
     for (const b of grid.queryAABB(minx, minz, maxx, maxz)) {
       if (b.foliage) continue;                                 // leaves never stop a fall
       if (b.downer === rec) continue;                          // our own stump/bole bands
-      if (!(b.tree || b.struct || b.building || b.prop)) continue;
+      if (b.tree) continue;                                    // DETERMINISM: a neighbour's standing trunk is dynamic (felled in peer-varying order) → its presence in the obstacle set would diverge the settle pose between peers. Settle only against STATIC obstacles + terrain.
+      if (!(b.struct || b.building || b.prop)) continue;
       out.push({ min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] });
       if (out.length >= 40) break;
     }
@@ -345,6 +351,7 @@ export class ForestDemo {
     const logFelTier = felTierFor((rec && rec.trunkR) || 0.25);  // caliber to chop this downed log apart (by its bole thickness)
     f.pivot.updateWorldMatrix(true, true);                       // settle pose is baked → world verts are final
     const axis2 = [b.dirXZ[0], b.dirXZ[1]], org2 = [ax, az];
+    const a3x = s * b.dirXZ[0], a3y = c, a3z = s * b.dirXZ[1];   // log's 3-D heading (unit): butt→tip
     // helper: tight WORLD collision boxes for a mesh's verts, tagged with the given seg/flags
     const collide = (mesh, opts, binLen, maxBins, crossBins) => {
       const a = mesh.geometry && mesh.geometry.attributes, pos = a && a.position; if (!pos) return [];
@@ -354,6 +361,14 @@ export class ForestDemo {
                       max: new THREE.Vector3(bb.max[0] + 0.06, bb.max[1] + 0.06, bb.max[2] + 0.06),
                       downer: log, tree: true, dmat: matName, dpart: opts.dpart, felTier: logFelTier };
         if (opts.foliage) box.foliage = true; if (opts.thicket) box.thicket = true; if (opts.seg) box.seg = opts.seg;
+        if (!opts.foliage) {                                   // round log chunk: capsule along the log heading, inside this bin AABB
+          const cX = (box.min.x + box.max.x) / 2, cY = (box.min.y + box.max.y) / 2, cZ = (box.min.z + box.max.z) / 2;
+          const sX = box.max.x - box.min.x, sY = box.max.y - box.min.y, sZ = box.max.z - box.min.z;
+          const half = 0.5 * (sX * Math.abs(a3x) + sY * Math.abs(a3y) + sZ * Math.abs(a3z));  // bin extent along the log
+          const rad = Math.max(0.12, 0.5 * Math.min(sX, sY, sZ));                              // tight cross radius
+          const hl = Math.max(0, half - rad);                                                  // shrink so caps fit inside the bin
+          box.cap = { ax: cX - a3x * hl, ay: cY - a3y * hl, az: cZ - a3z * hl, bx: cX + a3x * hl, by: cY + a3y * hl, bz: cZ + a3z * hl, r: rad };
+        }
         made.push(box); log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
       }
       return made;
@@ -413,18 +428,30 @@ export class ForestDemo {
   // Drop a fallen log/chunk so its lowest point rests ON the current terrain — no levitation, whether on a
   // slope at settle-time or after a dig removed the soil under it (grid is XZ-only, so a Y shift needs no
   // re-bucketing). Lowers the mesh group (carrying its child chunk meshes), the collision boxes, and the parts.
-  regroundLog(log) {
+  regroundLog(log, emit = false) {
     if (!log || log.consumed || !log.boxes || !log.boxes.length) return;
     let lowest = Infinity, lx = 0, lz = 0;
     for (const bx of log.boxes) { if (bx.min.y < lowest) { lowest = bx.min.y; lx = (bx.min.x + bx.max.x) / 2; lz = (bx.min.z + bx.max.z) / 2; } }
     const terr = this.world.terrain ? this.world.terrain.terrainHeightAt(lx, lz) : 0;
     const drop = lowest - terr;
     if (drop <= 0.1) return;                                   // already resting (or below) the ground
+    this._applyLogDrop(log, drop);
+    // Dig path (support.js) is host-only with NO deterministic client replay — clients lower the terrain but never
+    // re-ground the log → broadcast the exact host drop so clients drop the same log. The fall-settle caller
+    // (_registerFallenLog) leaves emit=false: clients replay the fall and re-ground locally. _emitForest is host-gated.
+    if (emit) this._emitForest('reground', log.id, { d: +drop.toFixed(3) });
+  }
+  // Lower a fallen log (mesh group + collision boxes + fire parts/segments) by `drop` so it rests on the terrain.
+  _applyLogDrop(log, drop) {
+    if (!log || !(drop > 0)) return;
     if (log.mesh) log.mesh.position.y -= drop;
-    for (const bx of log.boxes) { bx.min.y -= drop; bx.max.y -= drop; }
+    for (const bx of (log.boxes || [])) { bx.min.y -= drop; bx.max.y -= drop; if (bx.cap) { bx.cap.ay -= drop; bx.cap.by -= drop; } } // keep the precise shooting capsule aligned with the dropped AABB (else a regrounded log is unshootable)
     if (log.part) { log.part.min[1] -= drop; log.part.max[1] -= drop; }
     for (const seg of (log.segs || [])) { if (seg.part) { seg.part.min[1] -= drop; seg.part.max[1] -= drop; } }
   }
+  // Co-op client mirror of a host dig-reground: apply the host's exact drop to the matching downed log
+  // (ordering-independent vs the separate terrain `deform` message — no terrain re-query needed).
+  regroundLogById(id, drop) { const l = this.logs.find((x) => x.id === id); if (l) this._applyLogDrop(l, drop); }
 
   // ── FLAT-FALL ──────────────────────────────────────────────────────────────────────────────────────
   // Once a felled top has SETTLED on its stump, decide — SEEDED off the fell seed, so host + every client
@@ -557,7 +584,7 @@ export class ForestDemo {
   breakLogSegById(id, sids) {                                   // co-op client mirror (host already ran the cascade)
     const log = this.logs.find((l) => l.id === id); if (!log || !log.segs) return;
     for (const sid of (sids || [])) { const seg = log.segs.find((s) => s.sid === sid && !s.dead); if (seg) this._killSeg(log, seg, (sid >>> 0) || 1); }
-    if (log.segs.length && log.segs.every((s) => s.dead) && !log.consumed) { log.consumed = true; this._fading.delete(log); if (log.part) log.part.dead = true; if (this.game.fire) this.game.fire.retire(log.part); }
+    if (log.segs.length && log.segs.every((s) => s.dead) && !log.consumed) this._consumeLog(log, (id * 2654435761) >>> 0, true); // FULL tidy on the client too — the old inline cleanup left the crown's foliage boxes in world.grid + the mesh floating (the host's later propdie then no-ops on `consumed`). _consumeLog removes the boxes + sinks the mesh; its emit is host-gated so no echo.
   }
 
   consumeProp(rec) {                                                                              // FireManager burnout consumes a prop
@@ -677,6 +704,9 @@ export class ForestDemo {
     const log = { fallen: true, prop: true, id, part, mesh, leafMesh: null, trunkR: r, cls: 2, height: 2 * r, burntOut: !!charred, consumed: false, boxes: [] };
     part.downer = log;
     const box = { min: new THREE.Vector3(...minA), max: new THREE.Vector3(...maxA), downer: log, tree: true, dmat: matName, dpart: id, felTier: felTierFor(r) };
+    // Decor log lies horizontally at y+r. Axis endpoints are the two log ends in 3-D; radius = log cross radius.
+    // Caps sit exactly at the AABB XZ boundary (AABB has ±r padding matching the hemisphere reach).
+    box.cap = { ax, ay: y + r, az, bx, by: y + r, bz, r };
     log.boxes.push(box); this.world.boxes.push(box); this.world.grid.addBox(box);
     this.logs.push(log);
     return log;

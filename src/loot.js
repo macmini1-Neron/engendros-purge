@@ -18,14 +18,16 @@ const SUPPLY_DROP_FALL_SPEED = 3.4; // unchanged from the old Su-24 era — the 
 // Survival inventory items — held things that are NOT weapons (consumables/throwables/materials/callables).
 // Kept PARALLEL to WEAPONS so the weapon pipe (WEAPON_ORDER / ownedOrder / refillAll) stays clean.
 // `mesh` reuses LootManager._pickupMesh(kind); the molotov/flare reuse their own builders.
+// `value` = Armory price (account item ledger). Only items WITH a value appear in the Armory catalog and
+// are buyable/sellable/wagerable; the rest stay run-scavenged (no account ownership) for now.
 export const ITEM_DEFS = {
-  medkit:  { name: 'Medkit',       class: 'consumable', icon: '🩺', mesh: 'medkit', heal: 35 },
-  food:    { name: 'Field Ration', class: 'consumable', icon: '🥫', mesh: 'food',   food: 40 },
-  armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50 },
-  ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo' },
+  medkit:  { name: 'Medkit',       class: 'consumable', icon: '🩺', mesh: 'medkit', heal: 35, value: 120 },
+  food:    { name: 'Field Ration', class: 'consumable', icon: '🥫', mesh: 'food',   food: 40, value: 60 },
+  armor:   { name: 'Armor Plate',  class: 'consumable', icon: '🛡', mesh: 'armor',  armor: 50, value: 150 },
+  ammo:    { name: 'Ammo Box',     class: 'consumable', icon: '📦', mesh: 'ammo', value: 80 },
   dshkammo: { name: 'DShK Ammo Box', class: 'consumable', icon: '🟦', mesh: 'dshkammo' },
   fiftyammo: { name: '12.7mm Ammo Can', class: 'consumable', icon: '🟩', mesh: 'fiftyammo' }, // resupplies the rooftop heavy MG — used at the gun, not on hand weapons
-  splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint' },
+  splint:  { name: 'Field Splint', class: 'consumable', icon: '🩹', mesh: 'splint', value: 50 },
   airbeacon: { name: 'Vysílačka',  class: 'callable',   icon: '📡', mesh: 'airbeacon' },
   flare:   { name: 'Signal Flare', class: 'callable',   icon: '🔆', mesh: 'flare' },
   grenade: { name: 'Frag Grenade', class: 'throwable',  icon: '💣', mesh: 'grenade', fuse: 1.6 },
@@ -34,6 +36,7 @@ export const ITEM_DEFS = {
   wire:    { name: 'Barbed Wire',  class: 'material',   icon: '🔩', build: 'wire' },
   wood:    { name: 'Barricade',    class: 'material',   icon: '🪵', build: 'wood' },
   radio:   { name: 'Radio',        class: 'material',   icon: '📻', build: 'radio' },
+  r105:    { name: 'R-105Д',       class: 'material',   icon: '📻', build: 'r105' }, // deployable voice radio → control panel on E
 };
 
 // ---------------------------------------------------------------------------
@@ -418,13 +421,14 @@ export class LootManager {
   // grant it to the KILLER (not the host). Returns the rolled bonus cash (0 unless the cash branch hit).
   dropCourier(pos) {
     this.spawnNetPickup('airbeacon', pos.x, pos.z, 1);
+    this.spawnNetPickup('r105', pos.x, pos.z, 1); // the R-105Д the courier wears → deployable voice radio
     const r = Math.random();
     let bonusCash = 0;
     if (r < 0.4) this.spawnNetPickup('medkit', pos.x, pos.z, 60);
     else if (r < 0.7) this.spawnNetPickup('ammo', pos.x, pos.z, 1);
     else if (r < 0.9) this.spawnNetPickup('armor', pos.x, pos.z, 60);
     else bonusCash = KEY_CASH;
-    this.game.hud.toast('📡 Vysílačka dropped! (press T)', 0x6fd0e8);
+    this.game.hud.toast('📻 R-105Д + 📡 Vysílačka dropped!', 0x6fd0e8);
     return bonusCash;
   }
 

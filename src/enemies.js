@@ -1,6 +1,6 @@
 // enemies.js — extracted from game.js during the module split (mechanical move, no logic changes).
 import * as THREE from 'three';
-import { MeshBuilder, TAU, chc, clamp, pick, randRange, rayAABB, rr, shade, voxelMaterial } from './util.js';
+import { MeshBuilder, TAU, chc, clamp, makeRNG, pick, randRange, rayAABB, rr, shade, voxelMaterial } from './util.js';
 import { ENEMY_BURN_SLOW, STEP_UP } from './tuning.js';
 import { STRUCT_DEFS } from './economy.js';
 import { buildNavGrid, findPath, lineBlocked } from './pathing.js';
@@ -8,12 +8,98 @@ import { buildFlowField, flowDirAt } from './flowfield.js';
 import { buildNavGraph, buildSurfaceFlow, surfaceDirAt } from './navgraph.js';
 import { buildSwarmGrid, eachNeighbor } from './swarmgrid.js';
 import { segDist2 } from './geom.js';
-import { movementSlow, contactWeaken } from './effects-status.js';
+import { movementSlow, contactWeaken, applyEffect, removeEffect } from './effects-status.js';
 import { slopeBlocks } from './terrain.js';
+import { DISMEMBER, dismemberOn, buildRig, dressRig, animateRig, raycastRig, rigAABB, severCosmetic, gibPool, limbFlags, applyLimbFlags, updateGibs, clearGibs } from './engendro.js';
+import { rayCapsule } from './raycollide.js';
+import { buildSpec } from './props/voxel-interp.js';
+import { getSpec } from './props/registry-core.js';
+import { SN42, isArmorPiercing, resolveArmorHit } from './sn42-armor.js';
 
 const ENEMY_GRAVITY = 22;  // m/s² — pulls a mob off a ledge/roof once it walks past the edge (matches the player)
 const ENEMY_CLIMB = 3.0;   // m/s up a ladder zone toward a target above (player uses 3.7)
 const HEADING_LAMBDA = 10; // 1/s heading low-pass — smooths per-frame steering snaps (flow cell-crossings, separation jostling, flow↔beeline flips) into turns instead of visible twitches
+
+// The rare "courier" engendro wears a detailed R-105d field radio on its back (models/r105d, registered
+// async in game.js). Build the spec ONCE into a prototype Group, then clone it per courier (cheap — clones
+// share geometry). Until the registry has loaded (or if the build throws) this returns null and makeCourier
+// falls back to the cheap canvas pack — the modelgen "consumer keeps a fallback for the async window" rule.
+const COURIER_RADIO_SCALE = 1.1;
+let _courierRadioProto = null;
+function _buildCourierRadio() {
+  if (_courierRadioProto) return _courierRadioProto.clone();
+  const spec = getSpec('r105d');
+  if (!spec) return null;                                  // registry not loaded yet
+  try { _courierRadioProto = buildSpec(spec); }
+  catch (e) { console.warn('[enemies] courier R-105d build failed — canvas-pack fallback:', e); return null; }
+  return _courierRadioProto.clone();
+}
+// Mount the R-105d on a courier's back — SHARED by makeCourier (gameplay) and the admin
+// asset-viewer preview (buildCourierPreview) so the two mounts can never drift.
+function _mountCourierRadio(radio) {
+  radio.scale.setScalar(COURIER_RADIO_SCALE);
+  radio.rotation.y = Math.PI / 2;        // harness side (−X) → +Z, against the plush's back; panel + antenna face out
+  radio.position.set(0.05, 0.7, -0.32);  // upper back, behind the body
+  return radio;
+}
+// A courier engendro (plush + worn R-105d radio) for the admin asset viewer. Just the
+// plush if the radio spec hasn't registered yet (same async-window rule as makeCourier).
+// The radio is built FRESH here (NOT the cached _courierRadioProto clone makeCourier uses):
+// the viewer's clear() disposes whatever it shows, and a proto-clone shares its geometry +
+// material with the proto AND every live courier's pack — disposing it would corrupt them all.
+// A fresh buildSpec owns its own buffers, so it's safe to dispose (cf. the IL-76 entry's cache:false).
+export function buildCourierPreview(col = ENGENDRO_COLORS[0]) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(buildEngendro(col, 'normal'), voxelMaterial()));
+  const spec = getSpec('r105d');
+  if (spec) { try { g.add(_mountCourierRadio(buildSpec(spec))); } catch (e) { /* spec build failed → plush only */ } }
+  return g;
+}
+
+// The "armored" engendro wears a СН-42 steel cuirass (models/sn42, registered in game.js) on its chest.
+// Build-once-clone-per-spawn (like the courier radio). The plush body is a ~0.34-radius BALL, so a flat
+// plate floats off it at the edges — the model geometry is therefore CYLINDRICALLY BENT (in _buildArmorPlate)
+// to wrap the body's vertical axis at radius WRAP_R, then lifted to chest height by PLATE_Y. The bend is
+// baked into the shared proto geometry once; clones inherit it. PLATE_CAP is the 1:1 raycast capsule.
+const ARMOR_PLATE_SCALE = 1.05;
+const WRAP_R = 0.38;                          // radius the cuirass wraps the body ball around (×SCALE ≈ 0.40 > body surface ≈ 0.34 → the shell sits proud ON the body, edges still curl in)
+const PLATE_Y = 0.24;                         // lift the bent band onto the upper-lit chest (mesh-local)
+const PLATE_CAP = { ax: 0, ay: 0.34, az: 0.30, bx: 0, by: 0.70, bz: 0.30, r: 0.30 };  // chest-front capsule (1:1 hitbox)
+export const PLATE_PART = { name: 'plate', kind: 'plate', side: 0, severable: false };  // synthetic "part" rayHit returns on a cuirass strike (also imported by mp.js to re-tag a client's plate claim)
+const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pcol = new THREE.Vector3(), _pscratch = new THREE.Vector3();
+
+// Bend a flat plate group around the body's vertical (Y) axis at radius R so it wraps the round plush:
+// arc-length x → angle θ, the plate's own depth z stays a forward bulge, side edges curl back to the body.
+// The NORMALS are rotated by the same θ (NOT recomputed) so the model's crisp flat/layered shading survives
+// the bend — recomputing would smooth-average the facets and emissive would wash out the vertex-colour tones.
+function _bendCuirass(group, R) {
+  group.traverse((o) => {
+    const g = o.geometry, pos = g && g.attributes && g.attributes.position;
+    if (!pos) return;
+    const nor = g.attributes.normal;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const th = x / R, s = Math.sin(th), c = Math.cos(th), r = R + z;
+      pos.setX(i, r * s);
+      pos.setZ(i, r * c);                                  // y unchanged
+      if (nor) { const nx = nor.getX(i), nz = nor.getZ(i); nor.setX(i, nx * c + nz * s); nor.setZ(i, -nx * s + nz * c); } // rotate normal by θ (keeps flat shading)
+    }
+    pos.needsUpdate = true; if (nor) nor.needsUpdate = true;
+    g.computeBoundingBox(); g.computeBoundingSphere();
+  });
+}
+
+let _armorPlateProto = null;
+function _buildArmorPlate() {
+  if (_armorPlateProto) return _armorPlateProto.clone();
+  const spec = getSpec('sn42');
+  if (!spec) return null;                                  // registry not loaded yet
+  try {
+    _armorPlateProto = buildSpec(spec);
+    _bendCuirass(_armorPlateProto, WRAP_R);                // wrap the flat plate around the round body (keeps the layered shading)
+  } catch (e) { console.warn('[enemies] СН-42 cuirass build failed — box fallback:', e); return null; }
+  return _armorPlateProto.clone();
+}
 
 
 // ---------------------------------------------------------------------------
@@ -187,6 +273,7 @@ export const ENEMY_TYPES = {
   grunt:    { hp: 95,  speed: 2.0,  dmg: 9,  reward: 50,  scale: 1.0,  variant: 'normal' },
   charger:  { hp: 120, speed: 4.4,  dmg: 0,  reward: 130, scale: 1.0,  variant: 'charger', explode: true, charger: true, explodeDmg: 55, explodeRadius: 5.2 },
   exploder: { hp: 80,  speed: 2.4,  dmg: 8,  reward: 95,  scale: 1.0,  variant: 'exploder', explode: true, explodeDmg: 38, explodeRadius: 5.5 },
+  armored:  { hp: 140, speed: 1.7,  dmg: 12, reward: 100, scale: 1.1,  variant: 'normal', armored: true },  // СН-42 cuirass: chest-front shots ricochet — flank/head/heavy weapons only (makeArmored)
   brute:    { hp: 300, speed: 1.35, dmg: 20, reward: 130, scale: 1.6,  variant: 'normal' },
   titan:    { hp: 640, speed: 1.1,  dmg: 30, reward: 260, scale: 2.05, variant: 'normal' },
   minitolo: { hp: 45,  speed: 3.9,  dmg: 14, reward: 25,  scale: 0.6,  variant: 'normal' },
@@ -198,12 +285,18 @@ export const ENEMY_TYPES = {
 // ---------------------------------------------------------------------------
 class Enemy {
   constructor(geo, geoKey) {
-    this.mesh = new THREE.Mesh(geo, voxelMaterial());
-    // Tolo's ~8,400-tri mesh is by far the heaviest shadow-caster — it's re-rendered into the
-    // shadow map EVERY frame. Skip casting for the boss (it's dramatic enough without a ground
-    // shadow); keep the small mobs' shadows. Big, safe win against the boss-fight stutter.
-    this.mesh.castShadow = (geoKey !== 'boss');
     this.geoKey = geoKey;
+    this.mat = voxelMaterial();           // one material per enemy (burn / courier emissive)
+    if (geoKey === 'boss') {
+      // BOSS TOLO keeps the heavy single merged mesh + its phase system (not rigged/dismemberable).
+      this.mesh = new THREE.Mesh(geo, this.mat);
+      this.mesh.castShadow = false;       // Tolo's ~8,400-tri mesh is the heaviest shadow-caster — skip it (boss-fight stutter win)
+      this.rig = null;
+    } else {
+      // Regular enemies = part-rigged plush (head/torso/arms/legs as separate meshes) so limbs detach.
+      this.rig = buildRig(this.mat);
+      this.mesh = this.rig.root;
+    }
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
     this.alive = false;
@@ -213,14 +306,18 @@ class Enemy {
     this.type = typeKey; this.def = def; this.col = col; this.name = name;
     this.pos.copy(pos); this.vel.set(0, 0, 0);
     this.hp = this.maxHp = hp; this.speed = speed;
-    this.scale = def.scale; this.radius = 0.55 * def.scale; this.height = 2.2 * def.scale;
-    this.headY = 1.18 * def.scale;
+    // seeded ±size jitter per spawn (rigged non-boss only) so a horde varies; deterministic → co-op matches.
+    let sm = 1;
+    if (this.rig) { sm = randRange(0.85, 1.18, makeRNG(((this.appearSeed || 1) ^ 0x5bf03d9b) >>> 0)); }
+    this.scale = def.scale * sm; this.radius = 0.55 * this.scale; this.height = 2.2 * this.scale;
+    this.headY = 1.18 * this.scale;
     this.alive = true; this.attackCD = rr(0.3, 0.9); this.growlCD = rr(2, 6); this.squash = 0; this.burnT = 0; if (this.effects) this.effects.clear(); else this.effects = new Map(); // effects map: clear on pool reuse / init on first spawn
     this.stuck = 0; this._px = pos.x; this._pz = pos.z;
     this._climb = null; this._climbT = 0; // latched stair/ladder link traversal (layered nav) — {x,z,y} target + timeout
     this.isElite = false; // cleared on every (re)spawn so pooled enemies don't keep a stale mini-boss flag
     this.noAI = false;    // console /summon {NoAI:1} dummy flag — reset here so a recycled pooled enemy never inherits it
     this.courier = false; if (this._pack) this._pack.visible = false; // backpack courier flag/mesh reset
+    this.armored = false; this.plateIntact = false; if (this._chestPlate) this._chestPlate.visible = false; // СН-42 cuirass flag/mesh reset (re-armed by makeArmored)
     // boss state (Tolo)
     this.phase = 1; this.laserCD = 3.2; this.charging = 0; this.addCD = 0; this.beamLife = 0;
     this.aim = new THREE.Vector3();
@@ -229,7 +326,14 @@ class Enemy {
     this.shotsLeft = 0; this.shotCD = 0; this._chargeDur = 0.85; // phase-1 blaster burst
     this.sweepT = 0; this.sweepActive = false; this.sweepBase = 0; this.sweepPass = 0; // phase-2/3 sweep (later step)
     this._path = null; this._pathIdx = 0; this._pathT = 0; // boss grid-A* nav state (Tolo)
-    if (this.mesh.material && this.mesh.material.emissive) { this.mesh.material.emissive.setHex(0x000000); this.mesh.material.emissiveIntensity = 1; }
+    // DISMEMBERMENT state — reset on every (re)spawn so a pooled enemy never inherits stale limb loss.
+    this.crawling = false; this._legsLost = 0; this._armsLost = 0; this._biteOnly = false; this.blind = false;
+    this.headless = false; this._bleedoutT = null; this._enraged = false; this._wanderT = 0; this._crawlRoll = 0; // M6 extra + crawl state reset
+    if (this.rig) {
+      dressRig(this.rig, col.body, this.appearSeed || (this.appearSeed = (this.id || 1) * 2654435761 >>> 0), def.variant);
+      for (const p of this.rig.parts) if (p.severable) { p.goreMax = Math.max(1, hp * (DISMEMBER.goreFrac[p.kind] || 0.3)); p.goreHp = p.goreMax; }
+    }
+    if (this.mat && this.mat.emissive) { this.mat.emissive.setHex(0x000000); this.mat.emissiveIntensity = 1; }
     this.mesh.visible = true; this.mesh.scale.setScalar(def.scale); this.mesh.position.copy(pos);
   }
 }
@@ -237,6 +341,7 @@ class Enemy {
 export class EnemyManager {
   constructor(game) {
     this.game = game; this.world = game.world;
+    game.dismember = DISMEMBER; // expose the dismemberment config for live console tuning (GAME.dismember.extras.X = true)
     this.geos = {}; // geoKey -> geometry
     this.pool = {};  // geoKey -> Enemy[]
     this.active = []; this._idc = 0;
@@ -290,7 +395,7 @@ export class EnemyManager {
   _get(geoKey, col, variant) {
     const list = (this.pool[geoKey] ||= []);
     let e = list.find((x) => !x.alive);
-    if (!e) { e = new Enemy(this._geo(geoKey, col, variant), geoKey); this.game.engine.scene.add(e.mesh); list.push(e); }
+    if (!e) { e = new Enemy(geoKey === 'boss' ? this._geo(geoKey, col, variant) : null, geoKey); this.game.engine.scene.add(e.mesh); list.push(e); }
     return e;
   }
   spawn(typeKey, pos, hp, speed) {
@@ -304,9 +409,11 @@ export class EnemyManager {
     else if (typeKey === 'charger') { col = { body: 0x8a2b2b, name: 'Boomer' }; geoKey = 'charger'; name = 'Boomer'; }
     else { col = pick(ENGENDRO_COLORS); geoKey = 'c' + col.body; name = col.name; }
     const e = this._get(geoKey, col, variant);
-    e.spawn(typeKey, def, col, name, pos, hp, speed);
-    if (typeKey === 'boss' && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once Tolo arrives
     e.id = ++this._idc;
+    e.appearSeed = ((Math.random() * 0xffffffff) >>> 0) || 1;   // per-spawn appearance seed (colour/eyes/hair/size) — relayed to clients so looks match
+    e.spawn(typeKey, def, col, name, pos, hp, speed);
+    if (def.armored) this.makeArmored(e);   // СН-42 cuirass mob — BEFORE onEnemySpawn so espawn relays the armored flag
+    if (typeKey === 'boss' && !this._navGrid) this._navGrid = buildNavGrid(this.world); // build the A* grid once Tolo arrives
     e.tagId = this.game._nextTagId++; e.tag = `${typeKey}#${e.tagId}`; // per-run debug tag — F3 labels + @e[type]/byName targeting
     this.active.push(e);
     this.game.audio.enemyGrowl();
@@ -314,12 +421,13 @@ export class EnemyManager {
     return e;
   }
   // CLIENT-side: build a non-AI replica enemy from a host snapshot (id from the host).
-  spawnGhost(id, typeKey, geoKey, colBody, variant, name, scale) {
+  spawnGhost(id, typeKey, geoKey, colBody, variant, name, scale, seed) {
     const def = ENEMY_TYPES[typeKey] || ENEMY_TYPES.grunt;
     const col = { body: colBody, name: name };
     const e = this._get(geoKey, col, variant);
-    e.spawn(typeKey, def, col, name, new THREE.Vector3(0, 0, 0), def.hp, def.speed);
     e.id = id; e._ghost = true;
+    e.appearSeed = (seed >>> 0) || 1;                            // match the host's randomized look (from espawn)
+    e.spawn(typeKey, def, col, name, new THREE.Vector3(0, 0, 0), def.hp, def.speed);
     e.tagId = this.game._nextTagId++; e.tag = `${typeKey}#${e.tagId}`; // local debug tag (host tag sync = Phase 2)
     this.active.push(e);
     return e;
@@ -328,18 +436,90 @@ export class EnemyManager {
   makeCourier(e) {
     e.courier = true;
     if (!e._pack) {
-      const pb = new MeshBuilder();
-      pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
-      pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
-      pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
-      pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
-      pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
-      e._pack = new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 }));
-      e._pack.position.set(0, 1.05, 0.34); // on the back
+      const radio = _buildCourierRadio();
+      if (radio) {                                                   // detailed R-105d field radio, worn on the BACK
+        e._pack = _mountCourierRadio(radio);                        // shared mount → admin preview can't drift from gameplay
+      } else {                                                      // registry async window / build fail → cheap canvas pack (also on the BACK now)
+        const pb = new MeshBuilder();
+        pb.box(0.5, 0.6, 0.34, 0, 0, 0, 0x3a4a2c, { tint: 0.05 });   // canvas pack body
+        pb.box(0.54, 0.16, 0.42, 0, 0.18, 0, 0x8a6a2a);              // top flap
+        pb.box(0.08, 0.52, 0.06, -0.16, 0, -0.2, 0x1c1a14);          // strap L
+        pb.box(0.08, 0.52, 0.06, 0.16, 0, -0.2, 0x1c1a14);           // strap R
+        pb.box(0.12, 0.16, 0.1, 0.0, 0.12, 0.2, 0xffcf5c);           // glinting buckle
+        e._pack = new THREE.Mesh(pb.build(), voxelMaterial({ emissive: 0x1a3a10, emissiveIntensity: 0.7 }));
+        e._pack.position.set(0, 1.05, -0.30);                        // on the BACK (was +0.34 = front/chest)
+      }
       e.mesh.add(e._pack);
     }
     e._pack.visible = true;
-    if (e.mesh.material.emissive) { e.mesh.material.emissive.setHex(0x123a14); e.mesh.material.emissiveIntensity = 0.55; } // teal glow so you spot it
+    if (e.mat && e.mat.emissive) { e.mat.emissive.setHex(0x123a14); e.mat.emissiveIntensity = 0.55; } // teal glow so you spot it
+  }
+
+  // Mark an enemy as "armored" — wears the СН-42 steel cuirass on its chest. Front-chest hits from
+  // pistols/SMGs/buckshot ring off (no damage) until the plate shatters; rifle+/.50/RPG punch through.
+  // The plate's hitbox capsule (_plateCap) is raycast in rayHit so only shots that actually strike it block.
+  makeArmored(e) {
+    e.armored = true; e.plateIntact = true; e.plateHits = SN42.PLATE_HITS;
+    if (!e._chestPlate) {
+      const plate = _buildArmorPlate();
+      if (plate) {
+        plate.position.set(0, PLATE_Y, 0);                    // the wrap baked the forward depth into the geometry — just lift to chest height
+        e._chestPlate = plate; e.mesh.add(plate); e._plateCap = PLATE_CAP;
+        // give THIS mob its own material copies (so battle damage darkens only its plate) — colours unchanged (the original dark blued steel)
+        e._plateMats = [];
+        plate.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.userData = { base: o.material.color.clone() }; e._plateMats.push(o.material); } });
+      } else {                                                // registry async window / build fail → a simple green steel box on the chest
+        const pb = new MeshBuilder();
+        pb.box(0.34, 0.46, 0.10, 0, 0, 0, 0x70757a);          // plate body (blued steel)
+        pb.box(0.34, 0.05, 0.10, 0, 0.235, 0, 0x9aa0a6);      // lit top lip
+        const m = new THREE.Mesh(pb.build(), voxelMaterial());
+        m.position.set(0, 0.40, 0.30); m.material.userData = { base: m.material.color.clone() };
+        e._chestPlate = m; e.mesh.add(m); e._plateCap = PLATE_CAP; e._plateMats = [m.material];
+      }
+    } else {                                                  // pooled reuse: clear accumulated battle damage (restore steel colour + crumple)
+      e._chestPlate.rotation.set(0, 0, 0);
+      if (e._plateMats) for (const m of e._plateMats) { if (m.userData && m.userData.base) m.color.copy(m.userData.base); }
+      e._chestPlate.visible = true;
+    }
+    e._chestPlate.scale.setScalar(ARMOR_PLATE_SCALE);
+  }
+
+  // A pistol/SMG/buckshot round just rang off the plate: sparks + ping + VISIBLE battle damage — the steel
+  // progressively darkens (scorch/dents) toward shatter, plus a small crumple jolt. Reset on re-arm above.
+  _plateDent(e, hitPoint) {
+    if (hitPoint) this.game.effects.metalSpark(hitPoint, 5);
+    this.game.audio.armorPing();
+    const p = e._chestPlate;
+    if (!p) return;
+    const taken = SN42.PLATE_HITS - e.plateHits;              // hits the cuirass has soaked so far
+    const f = Math.max(0.4, 1 - taken * 0.13);                // darken the steel a step per hit (battered/scorched look)
+    if (e._plateMats) for (const m of e._plateMats) { if (m.userData && m.userData.base) m.color.copy(m.userData.base).multiplyScalar(f); }
+    p.rotation.z += (Math.random() - 0.5) * 0.06;             // small crumple on top of the darkening
+    p.scale.multiplyScalar(0.985);
+  }
+
+  // Knock the cuirass off — plate shatters, the mob is now vulnerable front-on. Host broadcasts to clients.
+  breakPlate(e, hitPoint) {
+    if (!e.plateIntact) return;
+    e.plateIntact = false;
+    if (e._chestPlate) e._chestPlate.visible = false;
+    const at = hitPoint || _pscratch.set(e.pos.x, e.pos.y + e.height * 0.55, e.pos.z);
+    this.game.effects.metalSpark(at, 12);
+    this.game.effects.stuffing(at, 0x6b7075, 8, 5);           // grey steel debris burst
+    this.game.audio.armorBreak();
+    const _mp = this.game.mp;
+    if (_mp && _mp.active && _mp.isHost) _mp.net.send('eplate', { id: e.id });  // tell clients to drop the plate
+  }
+
+  // Ray↔cuirass capsule (world space). Returns t if the plate is the closest thing hit (< maxT), else null.
+  // Mirrors raycastRig's capsule transform; e.mesh matrices are already refreshed by rayHit this frame.
+  _rayPlate(e, ox, oy, oz, dx, dy, dz, maxT) {
+    const c = e._plateCap, m = e.mesh.matrixWorld;
+    _pa.set(c.ax, c.ay, c.az).applyMatrix4(m);
+    _pb.set(c.bx, c.by, c.bz).applyMatrix4(m);
+    const scale = _pcol.setFromMatrixColumn(m, 0).length() || 1;
+    const t = rayCapsule(ox, oy, oz, dx, dy, dz, _pa.x, _pa.y, _pa.z, _pb.x, _pb.y, _pb.z, c.r * scale, null);
+    return (t !== null && t >= 0 && t < maxT) ? t : null;
   }
   get aliveCount() { return this.active.length; }
 
@@ -448,9 +628,9 @@ export class EnemyManager {
       if (e.noAI) { // {NoAI:1} dummy: stands still, no steering / contact damage / attacks — but still grounded, drawn, and killable (damage() is independent)
         e.vel.x = 0; e.vel.z = 0;
         e.pos.y = this.world.groundY(e.pos.x, e.pos.z);
-        e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z);
-        e.mesh.scale.set(e.scale, e.scale, e.scale);   // pooled mesh may carry a stale scale/squash
-        e.mesh.rotation.set(0, e.mesh.rotation.y, 0);
+        if (e.squash > 0) e.squash -= dt;                            // decay the hit-squash here too — the normal path's decay (below) is skipped by the `continue`, else a shot dummy stays squashed/shrunk forever
+        if (e.rig) { e.bob += dt * 6; animateRig(e, dt); }            // rigged dummy still wobbles + shows its parts
+        else { e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z); e.mesh.scale.set(e.scale, e.scale, e.scale); e.mesh.rotation.set(0, e.mesh.rotation.y, 0); }
         continue;
       }
       let tgt = pp, tgtId = 'host'; const _mp = this.game.mp; if (_mp && _mp.active && _mp.isHost) { const _np = _mp.nearestPlayer(e.pos.x, e.pos.z); if (_np) { tgt = _np.pos; tgtId = _np.id; } } e._tgtId = tgtId;
@@ -549,7 +729,13 @@ export class EnemyManager {
       // Heading low-pass: damp the smoothed heading (e._hx,e._hz) toward this frame's desired direction so
       // the residual per-frame snapping (separation jostling, flow↔beeline flips) becomes a smooth turn. The
       // flow direction itself is already continuous (bilinear flowDirAt); this also covers the rest.
-      const _dhx = wx / wl, _dhz = wz / wl;
+      let _dhx = wx / wl, _dhz = wz / wl;
+      if (e.blind) { // blinded (M6): lose precise tracking → slow random heading drift (Alien:Isolation-ish search)
+        e._wanderT = (e._wanderT || 0) - dt;
+        if (e._wanderT <= 0) { e._wanderT = rr(0.5, 1.2); e._wanderA = rr(-1.3, 1.3); }
+        const a = e._wanderA || 0, c = Math.cos(a), s = Math.sin(a);
+        const rx = _dhx * c - _dhz * s, rz = _dhx * s + _dhz * c; _dhx = rx; _dhz = rz;
+      }
       if (e._hx === undefined) { e._hx = _dhx; e._hz = _dhz; }
       else { const _k = 1 - Math.exp(-HEADING_LAMBDA * dt); e._hx += (_dhx - e._hx) * _k; e._hz += (_dhz - e._hz) * _k; }
       const _hl = Math.hypot(e._hx, e._hz) || 1;
@@ -629,11 +815,16 @@ export class EnemyManager {
       e.bob += dt * (6 + spd);
       if (e.squash > 0) e.squash -= dt;
       if (e.burnT > 0) { e.burnT -= dt; if (Math.random() < 0.16) this.game.effects.firePool(e.pos, 0.45, 0.4); }
-      const sq = e.squash > 0 ? 1 - e.squash * 1.6 : 1;
-      e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
-      e.mesh.rotation.y = Math.atan2(e._hx, e._hz); // face the smoothed movement heading (no twitchy snap)
-      e.mesh.rotation.z = Math.sin(e.bob) * 0.08;
-      e.mesh.scale.set(e.scale, e.scale * sq, e.scale);
+      if (e.headless && e._bleedoutT != null) { e._bleedoutT -= dt; if (e._bleedoutT <= 0 && this.damage(e, e.hp + 9999, 'bleed')) continue; } // headless-wander (M6): bleed out after a few seconds
+      if (e.rig) {
+        animateRig(e, dt);                                            // rigged plush: root pose (upright/crawl) + loose per-part wobble
+      } else {
+        const sq = e.squash > 0 ? 1 - e.squash * 1.6 : 1;            // boss single-mesh transform (unchanged)
+        e.mesh.position.set(e.pos.x, e.pos.y + Math.abs(Math.sin(e.bob)) * 0.08, e.pos.z);
+        e.mesh.rotation.y = Math.atan2(e._hx, e._hz);
+        e.mesh.rotation.z = Math.sin(e.bob) * 0.08;
+        e.mesh.scale.set(e.scale, e.scale * sq, e.scale);
+      }
 
       // mini-boss elites borrow the boss bar (no laser / no phase-2)
       if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);
@@ -641,6 +832,7 @@ export class EnemyManager {
     }
     this._updateBossBolts(dt);
     this._updateBossFires(dt);
+    updateGibs(dt);                  // tick falling/settling severed limbs (host)
   }
 
   // Boss laser: a thick red beam from the belly target along the locked aim; hits the player if near the line.
@@ -1007,6 +1199,7 @@ export class EnemyManager {
   }
   // Advance all client visual effects — called for NON-host from _updatePlaying (must NOT run on the host).
   updateGhostFx(dt) {
+    updateGibs(dt);                  // tick falling/settling severed limbs (client — gibs arrive via 'elimbsever')
     // traveling bolts
     for (let i = this._ghostBolts.length - 1; i >= 0; i--) {
       const b = this._ghostBolts[i];
@@ -1026,17 +1219,38 @@ export class EnemyManager {
     }
   }
 
+  // Precise per-part hit. Broadphase: a generous per-enemy AABB cull (encloses the prone crawl pose);
+  // narrowphase: ray↔capsule against each alive body part (raycastRig, via raycollide's rayCapsule), so
+  // the hit is 1:1 with the visible pose AND identifies WHICH limb was hit (for dismemberment). The boss
+  // keeps the single coarse AABB. Returns { enemy, dist, point, head, part }. `part` is null for the boss.
   rayHit(origin, dir, maxDist) {
-    let best = maxDist, hitE = null, hp = null;
+    let best = maxDist, hitE = null, hitPart = null, hp = null;
     for (const e of this.active) {
       if (!e.alive) continue;
-      this._min.set(e.pos.x - e.radius, e.pos.y, e.pos.z - e.radius);
-      this._max.set(e.pos.x + e.radius, e.pos.y + e.height, e.pos.z + e.radius);
-      const t = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, this._min, this._max);
-      if (t !== null && t < best) { best = t; hitE = e; hp = new THREE.Vector3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t); }
+      let aabbR, aabbH;
+      if (e.rig) { const ab = rigAABB(e, this._rigAabb || (this._rigAabb = { r: 0, h: 0 })); aabbR = ab.r; aabbH = ab.h; }
+      else { aabbR = e.radius; aabbH = e.height; }
+      const minY = e.crawling ? e.pos.y - 0.3 * e.scale : e.pos.y;   // crawl pose sinks parts below pos.y → drop the cull floor so a grazing shot isn't culled before narrowphase
+      this._min.set(e.pos.x - aabbR, minY, e.pos.z - aabbR);
+      this._max.set(e.pos.x + aabbR, e.pos.y + aabbH, e.pos.z + aabbR);
+      const tb = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, this._min, this._max);
+      if (tb === null || tb >= best) continue;                  // AABB entry t is a lower bound on any part hit → cull
+      if (e.rig) {
+        const fid = this.game._frameId;                         // refresh pivot world matrices ONCE per frame — a shotgun fires N pellets through the same static pose
+        if (e._mwFrame !== fid) { e.mesh.updateMatrixWorld(true); e._mwFrame = fid; }
+        const hit = raycastRig(e.rig, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best);
+        if (hit) { best = hit.t; hitE = e; hitPart = hit.part; hp = hit.point; }
+        if (e.armored && e.plateIntact && e._plateCap) {           // СН-42 cuirass: a precise capsule on the chest
+          const tp = this._rayPlate(e, origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, best); // front — only a shot that
+          if (tp !== null) { best = tp; hitE = e; hitPart = PLATE_PART; hp = new THREE.Vector3(origin.x + dir.x * tp, origin.y + dir.y * tp, origin.z + dir.z * tp); } // actually strikes it rings off (1:1)
+        }
+      } else {
+        best = tb; hitE = e; hitPart = null; hp = new THREE.Vector3(origin.x + dir.x * tb, origin.y + dir.y * tb, origin.z + dir.z * tb);
+      }
     }
     if (!hitE) return null;
-    return { enemy: hitE, dist: best, point: hp, head: hp.y >= hitE.pos.y + hitE.headY };
+    const head = hitPart ? (hitPart.kind === 'head') : (hp.y >= hitE.pos.y + hitE.headY);
+    return { enemy: hitE, dist: best, point: hp, head, part: hitPart };
   }
 
   // Heal an enemy (used by the radiation effect — radiation HEALS Engendros). Clamps to maxHp.
@@ -1046,10 +1260,10 @@ export class EnemyManager {
     if (e.isElite) this.game.hud.setBoss(e.hp / e.maxHp, e.name);   // refresh the boss/elite bar
   }
 
-  damage(e, amount, source = 'gun', hitPoint = null, attacker = 'host') {
+  damage(e, amount, source = 'gun', hitPoint = null, attacker = 'host', crit = false, part = null) {
     if (!e.alive) return false;
     const _mp = this.game.mp;
-    if (_mp && _mp.active && !_mp.isHost) { _mp.claimHit(e, amount, source); return false; }
+    if (_mp && _mp.active && !_mp.isHost) { _mp.claimHit(e, amount, source, part ? part.name : null); return false; }
     // BOSS TOLO: no hard immunity (except brief phase-change i-frames). A bullseye hit while it
     // charges = full damage; the bazooka ('rocket') = near-full (0.9×, the one anti-Tolo weapon);
     // everything else only chips (0.2×). Headshot ×2 is suppressed on the boss in weapons.js.
@@ -1064,9 +1278,44 @@ export class EnemyManager {
       amount *= onTarget ? 1 : (source === 'rocket' ? 0.9 : 0.2);             // bullseye=1 · bazooka=0.9 · else=0.2
       this._bossHit(e, hitPoint, effective, attacker);                        // thunk + yellow crosshair, or weak tink
     }
+    // СН-42 cuirass (host/solo; non-boss). rayHit tags a true chest-plate strike as part.kind==='plate'.
+    // Pistol/SMG/buckshot ('gun') rings off — sparks, no damage, the plate chips and finally shatters off;
+    // rifle+/.50/RPG ('ap'/blast) punches clean through (full damage) and wrecks the plate. A hit that
+    // missed the plate (head/flank/back/legs) never reaches here as 'plate' → normal damage, no sparks.
+    if (e.armored && e.plateIntact && part && part.kind === 'plate' && !e.def.boss) {
+      // One dent per shot: a shotgun fires 9–12 pellets in ONE frame — count them as a single plate chip
+      // (chip:0 for the extra pellets), else a single point-blank blast shatters the "rings-off" cuirass. AP
+      // rounds still punch through per-pellet. (Co-op: pellet claims usually batch into one host frame too.)
+      const firstThisShot = e._plateHitFrame !== this.game._frameId;
+      e._plateHitFrame = this.game._frameId;
+      const res = resolveArmorHit({ plateHit: true, plateHits: e.plateHits, amount, ap: isArmorPiercing(source), chip: firstThisShot ? 1 : 0 });
+      if (res.penetrate) { this.breakPlate(e, hitPoint); }   // plate wrecked; full damage falls through below
+      else {
+        e.plateHits = res.plateHitsLeft;
+        if (firstThisShot) this._plateDent(e, hitPoint);     // ricochet sparks + ping + crumple + progressive darken (once per shot)
+        else if (hitPoint) this.game.effects.metalSpark(hitPoint, 3);  // extra pellet off the same plate this frame: a few sparks, no second ping/chip
+        if (res.plateBreak) this.breakPlate(e, hitPoint);
+        return false;                                        // rang off — no body damage, no kill
+      }
+    }
     e.hp -= amount; e.squash = Math.max(e.squash, 0.16);
+    // Impact juice (host/solo path — the MP-client early-returns above). Gated to the LOCAL player's own
+    // actions (attacker==='host' is the host's local-player sentinel): otherwise the host would pop numbers,
+    // shake, and hit-stop for EVERY other player's relayed hits/kills (each client gets its own juice via
+    // claimHit/_clientEnemyDie). Solo (!mp.active) always juices. Skip DoT / instakill-bury (number/punch spam).
+    const _juice = (!_mp || !_mp.active || attacker === 'host')
+      && source !== 'crush' && source !== 'fire' && source !== 'burn' && source !== 'radiation' && amount < 900;
+    // DISMEMBERMENT (host/solo, rigged non-boss, still alive): a limb hit drains that part's gore-HP;
+    // crossing it (or a big-overkill hit) detaches the limb → gib + stump + gameplay consequence + bleed.
+    let severedHead = false;
+    if (e.hp > 0 && dismemberOn() && e.rig && !e.def.boss) {
+      const k = this._trySever(e, amount, source, hitPoint, part);
+      if (k === 'head' && DISMEMBER.headSeverKills && !DISMEMBER.extras.headlessWander) { e.hp = 0; severedHead = true; } // head off = dead (unless headless-wander extra)
+    }
     if (e.hp <= 0) {
-      e.alive = false; e.mesh.visible = false;
+      e.alive = false;
+      if (dismemberOn() && e.rig && !e.def.boss && DISMEMBER.scatterOnDeath) this._scatterLimbs(e, hitPoint, severedHead); // brutal plush burst: pop the limbs still attached
+      e.mesh.visible = false;
       const top = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
       this.game.effects.stuffing(top, e.col.body, e.def.boss ? 44 : (e.isElite ? 30 : 16), e.def.boss ? 9 : (e.isElite ? 8 : 6));
       this.game.audio.enemyDie();
@@ -1083,12 +1332,90 @@ export class EnemyManager {
       if (e.def.boss && this._bossBlob) this._bossBlob.visible = false; // hide the blob shadow on boss death
       this.game.onEnemyKilled(e, attacker);
       if (_mp && _mp.active && _mp.isHost) _mp.onEnemyDie(e, attacker);
+      if (_juice) {
+        this.game.hud.popDamage(top, amount, { crit, kill: true });
+        const eng = this.game.engine, big = e.def.boss || e.isElite;
+        if (eng) eng.addTrauma(big ? 0.5 : (source === 'rocket' || source === 'explosion' ? 0.32 : 0.16)); // kill micro-punch; bosses/elites wallop, the rest just thump
+        if (big) this.game.hitStop(0.09);                  // hit-stop reserved for the low-frequency player-driven kills (boss/elite,
+        else if (crit || source === 'melee') this.game.hitStop(0.05); // headshot, melee) — never on every trash mob → keeps the dynamic range
+      }
       return true;
     }
-    const hpv = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.6, e.pos.z);
+    // scratch (not `new Vector3`) — this non-kill hit path fires on EVERY chip hit, and an AoE blast in a
+    // horde routes N of them through one frame; stuffing() reads pos synchronously (copied in _spawn), no re-entry.
+    const hpv = (this._hitPuff || (this._hitPuff = new THREE.Vector3())).set(e.pos.x, e.pos.y + e.height * 0.6, e.pos.z);
     this.game.effects.stuffing(hpv, e.col.body, 4, 3);
+    if (_juice) this.game.hud.popDamage(hitPoint || hpv, amount, { crit });
     if (source !== 'explosion') this.game.audio.enemyHurt();
     return false;
+  }
+
+  // --- Dismemberment (host/solo authoritative; clients replay via mp 'elimbsever') ---------------
+  // Drain the hit part's gore-HP; sever when it crosses 0 (or a big-overkill hit). Returns the kind
+  // severed ('head'|'arm'|'leg') or null. Only severs from sources that can (caliber-gated like trees).
+  _trySever(e, amount, source, hitPoint, part) {
+    if (!part || !part.severable || !part.alive) return null;
+    if (!DISMEMBER.severSources[source]) return null;
+    if (e.isElite && part.kind === 'head') return null;   // elites/minibosses: no head-sever → no instakill snapping the boss bar from ~half to dead (they still lose arms/legs + die on HP)
+    const overkill = amount >= e.maxHp * DISMEMBER.bigOverkillMult;
+    part.goreHp -= amount;
+    if (part.goreHp > 0 && !overkill) return null;
+    this._severPart(e, part, this._severDir(e, part, hitPoint), source);
+    return part.kind;
+  }
+
+  // Impulse direction for a flying limb: outward from the body centre toward the hit (mostly horizontal + up).
+  _severDir(e, part, hitPoint) {
+    const v = this._sv || (this._sv = new THREE.Vector3());
+    if (hitPoint) v.set(hitPoint.x - e.pos.x, 0, hitPoint.z - e.pos.z);
+    else v.set(part.side || (Math.random() - 0.5), 0, 0.2);
+    if (v.lengthSq() < 1e-4) v.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+    v.normalize(); v.y = 0.5; v.normalize();
+    return v;
+  }
+
+  // Detach a part: cosmetic detach (runs everywhere) + gameplay consequence + bleed roll + co-op broadcast.
+  _severPart(e, part, dir, source) {
+    severCosmetic(this.game, e, part, dir);
+    this._onLimbLost(e, part);
+    const _mp = this.game.mp;
+    if (_mp && _mp.active && _mp.isHost) _mp.onLimbSever(e, part.name, dir);
+  }
+
+  // Gameplay fallout of losing a limb: legs→limp/crawl, arms→weaken/bite-only; small bleed chance.
+  _onLimbLost(e, part) {
+    const ctx = this.game._fxCtx;
+    if (part.kind === 'leg') {
+      e._legsLost = (e._legsLost || 0) + 1;
+      if (!e.crawling) { applyEffect(e, 'legless', Infinity, ctx); e._crawlRoll = (part.side || 0) * 0.18; this._enterCrawl(e); } // crawl on the FIRST leg; 2nd leg = no change
+    } else if (part.kind === 'arm') {
+      e._armsLost = (e._armsLost || 0) + 1;
+      applyEffect(e, 'maimed', Infinity, ctx);
+      if (e._armsLost >= 2) e._biteOnly = true;
+    } else if (part.kind === 'head') {
+      if (DISMEMBER.extras.headlessWander) { e.blind = true; e.headless = true; e._bleedoutT = DISMEMBER.extras.bleedoutSecs; } // keep shambling blind, bleed out over a few seconds
+    }
+    if (Math.random() < DISMEMBER.bleedChance) applyEffect(e, 'bleed', null, ctx);
+  }
+
+  // Switch an enemy to the prone crawl state (both legs gone): low, slow, face lifted (pose in animateRig).
+  _enterCrawl(e) {
+    e.crawling = true;
+    e.height = 0.85 * e.scale; e.headY = 0.5 * e.scale;   // low profile so the AI/cull box hugs the prone body
+    if (DISMEMBER.extras.enragedCrawler && Math.random() < DISMEMBER.extras.enrageChance) { // KF crawler: a chance it ENRAGES → fast scuttle, no crawl-slow
+      e._enraged = true; removeEffect(e, 'legless', this.game._fxCtx); e.speed *= 1.7;
+    }
+  }
+
+  // Death scatter: pop every limb still attached as a gib (brutal plush explosion). Cosmetic-only.
+  _scatterLimbs(e, hitPoint, skipHead) {
+    if (!e.rig) return;
+    e.mesh.updateMatrixWorld(true);
+    for (const p of e.rig.parts) {
+      if (!p.severable || !p.alive) continue;
+      if (skipHead && p.kind === 'head') continue;
+      severCosmetic(this.game, e, p, this._severDir(e, p, hitPoint));
+    }
   }
 
   damageInRadius(center, radius, dmg, except = null, source = 'explosion', attacker = 'host') {
@@ -1114,7 +1441,7 @@ export class EnemyManager {
     return n;
   }
 
-  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; if (this._bossBlob) this._bossBlob.visible = false; }
+  clearAll() { for (const e of this.active) { e.alive = false; e.mesh.visible = false; if (e._beam) e._beam.visible = false; } this.active.length = 0; if (this.game.hud) this.game.hud.hideBoss(); if (this.bossBolts) { for (const b of this.bossBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this.bossBolts.length = 0; } if (this.bossFires) this.bossFires.length = 0; if (this._ghostBolts) { for (const b of this._ghostBolts) if (b.mesh && b.mesh.parent) b.mesh.parent.remove(b.mesh); this._ghostBolts.length = 0; } if (this._ghostBeam) this._ghostBeam.visible = false; if (this._ghostFires) this._ghostFires.length = 0; if (this._ghostAimRing) this._ghostAimRing.material.opacity = 0; if (this._bossBlob) this._bossBlob.visible = false; clearGibs(); }
   // Despawn lingering non-boss enemies (LONG NIGHT anti-hunt failsafe). Bosses stay.
   despawnStragglers() { let n = 0; for (const e of this.active) { if (e.alive && !e.def.boss) { e.alive = false; e.mesh.visible = false; n++; } } return n; }
 }

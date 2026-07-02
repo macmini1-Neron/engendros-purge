@@ -23,6 +23,7 @@ import { installArenaClocks } from './arenaclocks.js';
 import { FireManager } from './fire.js';
 import { DigManager } from './dig-manager.js';
 import { Inventory, Shop, LOADOUT_SLOTS } from './inventory.js';
+import { migrateItemBank, itemBankFromMeta } from './itembank.js';
 import { WaveManager } from './waves.js';
 import { HUD, Settings, UI, WeaponPreview } from './ui.js';
 import { Admin } from './admin.js';
@@ -31,6 +32,8 @@ import { Fonoteka, GramophoneManager, ensureGramophoneSpec, placeGramophones } f
 import { PokerTable } from './poker-table.js';
 import { PokerSceneRenderer } from './poker-scene.js';
 import { MP } from './mp.js';
+import { VoiceChat } from './voice.js';
+import { RadioPanel } from './radiopanel.js';
 import { Engine } from './engine.js';
 import { SimWorker } from './sim-worker-client.js';
 import { Input } from './input.js';
@@ -45,8 +48,11 @@ import { installStress } from './stress.js';
 import { bearingMils, rangeMeters, formatUglomer } from './bearing.js';
 import { DevConsole } from './console.js';
 import { makeClock } from './simclock.js';
+import { makeFramePacer } from './framepacing.js';
 import { makeWorldClock, MINUTES_PER_DAY, isNight } from './worldclock.js';
 import { EFFECT_TPS, stepEffects } from './effects-status.js';
+import { classifyRenderer } from './gpucheck.js';
+import { makeGpuNotice } from './gpunotice.js';
 
 // Register modelgen prop specs (fire-and-forget; consumers keep a fallback mesh).
 // Specs are authored in METRES — never compensate a wrong-sized spec with a
@@ -62,6 +68,8 @@ const _registerModels = async () => {
   await load('wallclock-chasozbor'); // «ЧАСОЗБОР» analog wall clock (demobuilding hangs it lazily once registered)
   await load('nnp23');              // ННП-23 «Резчик» night observation device (placed at the steppe strongpoint)
   await load('lpr1');               // ЛПР-1 «Каралон-М» laser rangefinder (hand tool; admin viewer + world prop)
+  await load('r105d');              // R-105d field radio — the rare "courier" engendro wears it on its back (enemies.makeCourier)
+  await load('sn42');               // СН-42 steel breastplate — the "armored" engendro wears it on its chest (enemies.makeArmored)
   await load('mortar-82pm37');      // 82-ПМ-37 (БМ-37) co-op indirect-fire mortar (placed at the steppe strongpoint)
   await load('poker-table');        // round green-baize poker table — the hero prop of the 3D poker scene
   await load('poker-chip');         // composite "dice" poker chip (canonical model; in-game stacks mirror it per denom)
@@ -79,7 +87,7 @@ _registerModels();
 // the build the browser actually loaded. GAME_BUILD is the release time (local, to the minute) —
 // bump it together with index.html's ?v= on every deploy.
 const GAME_VERSION = (() => { try { const m = String(import.meta.url).match(/[?&]v=(\d+)/); return m ? 'v' + m[1] : 'dev'; } catch (e) { return 'dev'; } })();
-const GAME_BUILD = '2026-06-23 16:41';
+const GAME_BUILD = '2026-07-02 10:30';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
@@ -113,10 +121,11 @@ class Game {
     this.world = new World(this);
     this.player = new Player(this);
     this.enemies = new EnemyManager(this);
-    this.rules = { god: false, doMobSpawning: true, sendCommandFeedback: true };  // «ПОЛИГОН» gamerules
+    this.rules = { god: false, doMobSpawning: true, doDaylightCycle: true, infiniteAmmo: false, fallDamage: true, sendCommandFeedback: true };  // «ПОЛИГОН» gamerules
     this.gameVersion = GAME_VERSION; this.gameBuild = GAME_BUILD; // surfaced on the instance for the F3 overlay
     this.devconsole = new DevConsole(this);
     this.f3 = false; this._fps = 0; this._frameMs = 0; // smoothed, fed each frame for the F3 readout
+    this._hitStopT = 0; this._hitStopCd = 0;           // hit-stop timer + re-arm cooldown (real seconds); see hitStop() + _frame
     this.dbgHitboxes = false; // F3+B collision-hitbox overlay toggle (see debughitbox.js)
     this.hitch = new HitchLogger(); installStress(this); // dev perf stress harness (GAME.stress) — never auto-runs
     this._stressName = null;
@@ -185,16 +194,28 @@ class Game {
     if (!/[?&]poker2d=1/.test(location.search)) this.poker.RendererClass = PokerSceneRenderer;
     this.settings = new Settings(this); // loads localStorage + applies sens/volume/sharpness/fov
     this.meta = this._loadMeta(); // persistent best-wave / lifetime stats
+    this.items = itemBankFromMeta(this.meta); // account item ledger (source of truth for ownership); _saveMeta serialises it back. Phase-1: attached but no reader yet.
     this.dayNight = new DayNight(this); // day/night + sky + flashlight (drives THE LONG NIGHT)
     this.mp = new MP(this); // multiplayer co-op (dormant until host/join)
+    this.voice = new VoiceChat(this); // co-op proximity voice (opt-in; dormant until enabled + in a run)
+    this.radioPanel = new RadioPanel(this); // deployed-radio control panel UI (Phase 2); dev-open: GAME.radioPanel.open()
+    this._settingsEl = document.getElementById('settings'); // cached for the per-frame radio-UI reconciliation (state-derived music duck)
     this.mode = 'purge'; this.flares = []; this.molotovPools = []; this._surviveTime = 0;
     this._molTmp = new THREE.Vector3(); this._molTmp2 = new THREE.Vector3(); this._molTmp3 = new THREE.Vector3();
 
     this.state = 'menu'; this.score = 0; this.kills = 0; this.mpMenuOpen = false;
     this._intentionalUnlock = false; this._waveBreak = 0; this._startCountdown = 0;
-    this._last = 0; this._bound = this._frame.bind(this);
+    this._last = 0; this._frameId = 0; this._bound = this._frame.bind(this);
     this._fixedStep = (() => { try { return new URLSearchParams(location.search).get('fixed') === '1'; } catch (e) { return false; } })(); // M4 fixed-timestep: ?fixed=1 URL opt-in or F8 toggle (default OFF)
     this._acc = 0; this._camPrev = new THREE.Vector3(); this._camCur = new THREE.Vector3(); // render-time camera interpolation state
+    // Frame-pacing: snap the jittery rAF dt to the display's vsync grid so movement reads
+    // smooth on platforms (Chrome/Windows) that deliver wobbly frame timestamps. No-op on a
+    // clean cadence (macOS) and on VRR panels. See framepacing.js.
+    this._pacer = makeFramePacer();
+    // The on/off (_pace) is owned by Settings ('Frame pacing', default ON) — already set by
+    // Settings.apply() above (constructed ~line 180), with ?pace=0 a dev override seed (Settings.load).
+    // F9 toggles it live and writes back to Settings. Fallback ON if Settings somehow left it unset.
+    if (typeof this._pace !== 'boolean') this._pace = true;
 
     // --- status effects (src/effects-status.js) ---
     this._fxClock = makeClock({ step: 1 / EFFECT_TPS, maxDt: 0.05 });   // 10 ticks/s, same primitive as fire.js
@@ -213,8 +234,22 @@ class Game {
     };
 
     this._wireUI(); this._wireInput(); this._showMenuBest(); this._wireMapPick(); this._maybeAutoRejoin();
+    this._initGpuNotice(); // low-end-GPU helper banner (gpucheck.js classifier + gpunotice.js DOM)
     this.player.update(0.0001); this.engine.render();
     requestAnimationFrame((t) => { this._last = t; requestAnimationFrame(this._bound); });
+  }
+
+  // Read the unmasked WebGL renderer once at boot, classify it, and wire the low-end-GPU banner.
+  // No-op (inert handle) on a discrete/unknown GPU, so this is safe to always call.
+  _initGpuNotice() {
+    let str = '';
+    try {
+      const gl = this.engine.renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbg) str = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '';
+    } catch (e) { /* masked / no extension → classifyRenderer returns 'unknown' → no banner */ }
+    this.gpuInfo = classifyRenderer(str);
+    this.gpuNotice = makeGpuNotice({ info: this.gpuInfo, onApplyPerfMode: () => this.settings.applyPerformanceMode() });
   }
 
   // Main-menu map picker (Arena/Steppe). The world is built once at boot from this.mapId,
@@ -256,7 +291,14 @@ class Game {
   }
 
   _wireUI() {
-    const click = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('click', fn); };
+    // Every menu/flow button bound through this helper now speaks: a click tone (the first click also
+    // unlocks WebAudio — init() is idempotent) + a hover blip. Fixes the mute entry doors (DEPLOY / PURGE /
+    // pause / TRY-AGAIN had no sound or hover). Inventory/Armory buttons keep their own sounds (not via this).
+    const click = (id, fn) => {
+      const e = document.getElementById(id); if (!e) return;
+      e.addEventListener('click', (ev) => { try { this.audio.init(); } catch (_) {} if (this.audio.uiClick) this.audio.uiClick(); fn(ev); });
+      e.addEventListener('mouseenter', () => { if (this.audio.uiHover) this.audio.uiHover(); });
+    };
     // build version + release time (to the minute), shown in both the main menu and the co-op lobby corner
     const verHTML = `ENGENDROS PURGE <b>${GAME_VERSION}</b> (${GAME_BUILD})`;
     for (const id of ['lobby-version', 'menu-version']) { const e = document.getElementById(id); if (e) e.innerHTML = verHTML; }
@@ -343,6 +385,7 @@ class Game {
 
   _wireInput() {
     this.input.on('key', (code, ev) => {
+      if (this._radioPanelOpen) return; // radio control panel open → it owns the keyboard (own listeners handle tune/close/pickup)
       // Esc toggles pause/resume in a live run. Under Keyboard Lock (Chromium fullscreen) the tapped Esc is
       // delivered here without dropping fullscreen, so we drive BOTH pause and resume from it. Handled before
       // the state/console guards so it also works while paused — but we never steal the dev-console's own Esc.
@@ -351,6 +394,11 @@ class Game {
       if (code === 'Escape' && this.state === 'playing' && this.player && this.player.shilka) {
         if (ev) ev.preventDefault();
         this.player.shilka._setCursorMode(true);
+        return;
+      }
+      if (code === 'Escape' && !(this.devconsole && this.devconsole.open) && this.state === 'poker') {
+        if (ev) ev.preventDefault();
+        this.closePoker();                                          // Esc leaves the poker den (same path as the on-screen LEAVE button)
         return;
       }
       if (code === 'Escape' && !(this.devconsole && this.devconsole.open) && (this.state === 'playing' || this.state === 'paused')) {
@@ -391,6 +439,7 @@ class Game {
       if (code === 'Backquote' || code === 'KeyT' || code === 'Slash') { if (ev) ev.preventDefault(); this.devconsole.openConsole(code === 'Slash' ? '/' : ''); return; } // preventDefault so the opening key itself isn't typed into the freshly-focused input // T / ` open chat empty; / pre-fills the slash (Minecraft)
       if (code === 'F3') { this.f3 = !this.f3; return; }
       if (code === 'F8') { this._fixedStep = !this._fixedStep; this._acc = 0; const _fs = this._fixedStep; this.hud.bigMessage('FIXED-STEP ' + (_fs ? 'ON · 60Hz' : 'OFF')); console.log('[fixed-step] ' + (_fs ? 'ON (60 Hz sim + camera interp)' : 'OFF (variable dt)')); return; } // M4 dev toggle (mirrors ?fixed=1)
+      if (code === 'F9') { this._pace = !this._pace; const _p = this._pace; if (this.settings) { this.settings.data.pace = _p ? 1 : 0; this.settings.save(); this.settings._refresh(); } this.hud.bigMessage('FRAME-PACING ' + (_p ? 'ON' : 'OFF')); console.log('[frame-pacing] ' + (_p ? 'ON' : 'OFF') + ' — ' + (this._pacer.hz || '…') + 'Hz · raw jitter ' + this._pacer.jitterMs.toFixed(2) + 'ms vs smoothed ' + this._pacer.outJitterMs.toFixed(2) + 'ms'); return; } // live A/B toggle; writes back to the Settings 'Frame pacing' toggle + persists; pacer always measures while playing
       if (code === 'KeyD' && this.input.isDown('F3')) { this.devconsole.clearLog(); this.f3 = !this.f3; return; } // F3+D clears the console scrollback (Minecraft); toggle back so the combo doesn't flip the overlay
       if (code === 'KeyB' && this.input.isDown('F3')) { this.dbgHitboxes = !this.dbgHitboxes; this.f3 = !this.f3; this.hud.bigMessage('HITBOXY ' + (this.dbgHitboxes ? 'ON' : 'OFF')); return; } // F3+B toggles the collision-hitbox overlay (Minecraft); toggle f3 back so the chord doesn't flip the text overlay (and B doesn't change fire-mode)
       // dev fly-cam toggle (solo only): N, or Ctrl+F
@@ -425,6 +474,7 @@ class Game {
           else if (this.nearestShilka()) { this.nearestShilka().mountNearest(this.player.pos); } // ЗСУ-23-4: board the nearest seat (driver hatch / turret)
           else if (this.world.gateTarget) { this.world.toggleGate(this); } // booth console: open/close the works gate
           else if (this.world.doorTarget) { this.world.toggleDoor(this, this.world.doorTarget); } // bunker гермодверь: swing open/closed
+          else if (this.build.r105Target) { this.radioPanel.open(this.build.r105Target); } // deployed R-105Д voice radio → open the control panel
           else if (this.build.radioTarget) { this.build.toggleRadio(this.build.radioTarget); }
           else if (this.gramophone.target) { this.gramophone.toggle(this.gramophone.target); }
           else if (this.loot.tryPickupNearby()) { /* grabbed a ground item into the backpack */ }
@@ -688,11 +738,20 @@ class Game {
     if (this.mp.active && this.mp.isHost) this.mp.net.send('firepool', { x: pos.x, y: pos.y, z: pos.z });
   }
   _fxBeam(from, dir) { // transient red boss-laser beam for clients (visual only — damage is host-authoritative)
-    const len = 70, end = from.clone().addScaledVector(dir, len);
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
-    beam.renderOrder = 998; beam.position.copy(from).add(end).multiplyScalar(0.5); beam.scale.set(0.4, 0.4, len); beam.lookAt(end);
-    this.engine.scene.add(beam);
-    setTimeout(() => { this.engine.scene.remove(beam); beam.geometry.dispose(); beam.material.dispose(); }, 180);
+    const len = 70;
+    if (!this._beamPool) { // pool the beam mesh: was a fresh BoxGeometry+Material per beam (alloc+dispose = GC churn during a boss laser barrage)
+      this._beamGeo = new THREE.BoxGeometry(1, 1, 1);
+      this._beamMat = new THREE.MeshBasicMaterial({ color: 0xff2436, transparent: true, opacity: 0.95, depthWrite: false, fog: false });
+      this._beamPool = []; this._beamEnd = new THREE.Vector3();
+    }
+    const end = this._beamEnd.copy(from).addScaledVector(dir, len);
+    let beam = null;
+    for (const b of this._beamPool) if (!b.visible) { beam = b; break; }
+    if (!beam) { beam = new THREE.Mesh(this._beamGeo, this._beamMat); beam.renderOrder = 998; this.engine.scene.add(beam); this._beamPool.push(beam); }
+    beam.visible = true;
+    beam.position.copy(from).add(end).multiplyScalar(0.5); beam.scale.set(0.4, 0.4, len); beam.lookAt(end);
+    const tok = (beam.userData._tok = (beam.userData._tok || 0) + 1); // guard: a re-borrowed beam mustn't be hidden by a stale timer
+    setTimeout(() => { if (beam.userData._tok === tok) beam.visible = false; }, 180);
   }
   _disposeMolotovPool(p) { if (p) this.engine.releaseFxLight(p.lightH); if (this.fire && p && p._emitter) this.fire.removeEmitter(p._emitter); }
   _clearMolotovPools() { if (this.molotovPools) { for (const p of this.molotovPools) this._disposeMolotovPool(p); this.molotovPools.length = 0; } }
@@ -786,6 +845,19 @@ class Game {
     if (lockPointer && this.state === 'playing') this.input.requestLock();
   }
   _lobbyVisible() { const el = document.getElementById('lobby'); return !!(el && el.classList.contains('show')); }
+  // Single source of truth for the deployed-radio panel + its music duck, reconciled every frame in EVERY
+  // state (called from _frame). The panel is a custom body-level overlay (ui.hideAll can't reach it) that
+  // holds state='playing' while open, so any non-playing state means an outside transition (death/gameover/
+  // wipe→lobby/menu) left it stranded → force-close it. The UI music-duck is DERIVED from live UI state
+  // (panel open OR the Settings overlay is shown) so it can never get stuck (Esc-from-Settings → resume →
+  // ui.hideAll drops the 'show' class → this restores it next frame).
+  _reconcileRadioUi() {
+    if (this._radioPanelOpen && this.state !== 'playing' && this.radioPanel) this.radioPanel.close();
+    if (this.audio && this.audio.setUiMusicDuck) {
+      const settingsShown = !!(this._settingsEl && this._settingsEl.classList.contains('show'));
+      this.audio.setUiMusicDuck((this._radioPanelOpen || settingsShown) ? 0 : 1);
+    }
+  }
   toMenu() {
     if (this.state === 'playing' || this.state === 'paused') { this._bankRunMoney(); this._saveMeta(); } // leaving a live run banks its money
     if (this.mp && this.mp.active) this.mp.leave();
@@ -809,7 +881,7 @@ class Game {
     return o;
   }
 
-  openAdmin() { this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // keep the jukebox running so the asset-viewer Music player controls it live
+  openAdmin() { this.state = 'admin'; if (this.audio.music && !this.audio.music.playlist) this.audio.music.setPlaylist('soviet'); if (this.admin) this.admin.open(); } // keep the jukebox running so the asset-viewer Music player controls it live (un-duck handled by _reconcileRadioUi)
   // ФОНОТЕКА — full-screen music screen (live 3D gramophone + genre browser), from the menu or the co-op lobby.
   openFonoteka(from) {
     this._fonoFrom = (from === 'lobby') ? 'lobby' : 'menu';
@@ -882,6 +954,16 @@ class Game {
     if (this.audio.music) this.audio.music.stop({ fade: 0.6 }); // co-op poker room: hush the lobby jukebox too
     this.ui.show('poker');
     if (this.poker) this.poker.enterCoopClient(d);
+  }
+
+  _resyncCoopPoker(d) { // client side — reconnected to a LIVE table (reload/blip); re-attach WITHOUT re-paying
+    this._pokerFrom = 'lobby';
+    this.state = 'poker';
+    this._intentionalUnlock = this.input.locked; this.input.exitLock();
+    this.audio.init();
+    if (this.audio.music) this.audio.music.stop({ fade: 0.6 });
+    this.ui.show('poker');
+    if (this.poker) this.poker.enterCoopResync(d);
   }
   // «Посылка» lootbox — open one owned crate. The roll is COMMITTED + saved BEFORE any
   // animation so an Esc/refresh/crash mid-ceremony can never re-roll or lose the reward.
@@ -1099,10 +1181,11 @@ class Game {
     if (m.loadout.every((k) => !k)) m.loadout[0] = 'knife';                       // cold start / empty → knife in slot 0
     for (const k of m.loadout) { if (k && !m.unlocked.includes(k)) m.unlocked.push(k); } // anything equipped is owned (catalog ownership derives from m.unlocked)
     for (const k of ['crates', 'crateOpens', 'pityEpic', 'pityLegend']) if (typeof m[k] !== 'number' || !(m[k] >= 0)) m[k] = 0; // «Посылка» lootbox: stock + pity counters
+    migrateItemBank(m); // build the conserved account item ledger (meta.items) from legacy unlocked+loadout; idempotent, runs AFTER loadout fold-in so unlock keys are complete
     if (!m.playerId) { m.playerId = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); try { localStorage.setItem('engendros_meta', JSON.stringify(m)); } catch (e) {} } // stable per-device co-op identity — persist immediately so it survives reloads
     return m;
   }
-  _saveMeta() { try { localStorage.setItem('engendros_meta', JSON.stringify(this.meta)); } catch (e) {} }
+  _saveMeta() { try { if (this.items) this.meta.items = this.items.toJSON(); localStorage.setItem('engendros_meta', JSON.stringify(this.meta)); } catch (e) {} } // keep meta.items in sync with the live ledger before persisting
   // Deposit this run's money into the persistent bank — once per run (guarded by _banked, reset in reset()).
   _bankRunMoney() {
     if (this._banked) return; this._banked = true;
@@ -1143,10 +1226,24 @@ class Game {
     m.setStress(Math.max(0, Math.min(1, (0.35 - hpFrac) / 0.35)));
   }
 
+  // Freeze-frame on impact. Caller passes a duration in seconds; we keep the LONGEST pending request
+  // (overlapping kills don't stack into a lag-spike) and hard-cap it so it can never read as a stutter.
+  // Skipped on the authoritative co-op host: simScale (see _frame) scales the WHOLE _updatePlaying, so a
+  // host freeze would stall enemies/waves AND pause the esnap/pstate broadcast for every client. A re-arm
+  // cooldown keeps a headshot/melee streak from chaining into continuous slow-mo (judder).
+  hitStop(sec) {
+    if (this.mp && this.mp.active && this.mp.isHost) return;
+    if (this._hitStopCd > 0) return;
+    this._hitStopT = Math.min(0.12, Math.max(this._hitStopT || 0, sec));
+    this._hitStopCd = 0.2;
+  }
+
   _frame(t) {
     requestAnimationFrame(this._bound);
     let dt = (t - this._last) / 1000; this._last = t;
+    this._frameId = (this._frameId | 0) + 1;                   // per-frame id — rig matrices refresh at most once per frame in enemies.rayHit
     if (!(dt > 0)) dt = 0.0001;
+    this._reconcileRadioUi();                                  // radio panel + music-duck self-heal (runs in ALL states, so death/gameover/Esc-resume can't strand them)
     const _rf = 1 / dt; if (_rf > 1 && _rf < 1000) { this._fps = this._fps ? this._fps * 0.9 + _rf * 0.1 : _rf; this._frameMs = this._frameMs ? this._frameMs * 0.9 + dt * 1000 * 0.1 : dt * 1000; } // smoothed FPS + frame-ms for F3 (raw delta, before the sim clamp)
     if (this._stressName) { // dev stress harness: sample RAW frame-time (pre-clamp) to catch hitches
       if (this._stressTick) { this._stressTick.acc += dt; if (this._stressTick.acc >= this._stressTick.every) { this._stressTick.acc = 0; this._stressTick.fn(); } }
@@ -1159,12 +1256,24 @@ class Game {
         this._stressName = null; this._stressTick = null;
       }
     }
-    const frameDt = Math.min(dt, 0.05);
+    // Frame-pacing: while playing, ALWAYS measure (so the F3/console jitter readout stays live
+    // even with pacing off — that's the diagnostic) but only APPLY the vsync-snapped dt when
+    // enabled. Snapping is a no-op on a clean cadence (macOS), so it can't hurt smooth machines.
+    // Reset off-playing so a menu/pause gap can't poison the estimate. _fps/_frameMs stay on RAW dt.
+    let sdt = dt;
+    if (this.state === 'playing') { const sm = this._pacer.smooth(dt); if (this._pace) sdt = sm; }
+    else this._pacer.reset();
+    const frameDt = Math.min(sdt, 0.05);
     if (this.audio.music) this.audio.music.update(frameDt); // score smoothing runs in every state
+    // Hit-stop: near-freeze the SIM (not the render) for a few ms after a meaty kill so the impact
+    // reads as weight. The timer drains in REAL wall-clock dt; simScale throttles only what the sim sees.
+    if (this._hitStopT > 0) this._hitStopT -= dt;
+    if (this._hitStopCd > 0) this._hitStopCd -= dt;     // re-arm cooldown drains in real time (I2: prevents chain-headshot judder)
+    const simScale = this._hitStopT > 0 ? 0.04 : 1;
 
     let interp = false, alpha = 0;
     if (this.state === 'playing' && this._fixedStep) {
-      this._acc += Math.min(dt, 0.25);                       // larger cap than the sim clamp; bounds catch-up
+      this._acc += Math.min(dt, 0.25) * simScale;            // larger cap than the sim clamp; bounds catch-up
       let n = 0;
       while (this._acc >= FIXED_STEP && n < MAX_SUBSTEPS && this.state === 'playing') { // re-check state: a sub-step (death/wipe) can leave 'playing'
         this._camPrev.copy(this.engine.camera.position);     // capture BEFORE each step → after the loop, _camPrev is exactly ONE step before _camCur (correct interp interval even when N>1)
@@ -1176,7 +1285,7 @@ class Game {
       if (n > 0) { this._camCur.copy(this.engine.camera.position); alpha = Math.min(this._acc / FIXED_STEP, 1); interp = true; } // clamp alpha so lerpVectors interpolates, never extrapolates
       // n === 0: no sim this frame → camera unchanged; edges NOT consumed (carry to next frame)
     } else if (this.state === 'playing') {
-      this._updatePlaying(frameDt);                          // OFF / non-fixed path = unchanged
+      this._updatePlaying(frameDt * simScale);               // OFF / non-fixed path (default) — hit-stop scales the sim dt
     }
 
     if (this.digManager) this.digManager.update();          // flush dug chunks → one re-mesh each (before chunks.update picks LODs)
@@ -1187,6 +1296,7 @@ class Game {
     if (this._showFps) { const el = this._fpsEl || (this._fpsEl = document.getElementById('fps')); if (el) { el.style.display = 'block'; el.textContent = Math.round(this._fps || 0) + ' FPS'; } }
     if (interp) this.engine.camera.position.lerpVectors(this._camPrev, this._camCur, alpha); // smooth between ticks
     if (this.hitboxDebug) this.hitboxDebug.update(this, this.dbgHitboxes && this.state === 'playing'); // F3+B collision overlay
+    if (this.hud && this.hud.tickDamage) this.hud.tickDamage(frameDt); // floating damage numbers — project against the TRUE sim camera, before the shake offset is applied in render()
     this.engine.update(frameDt); this.engine.render();
     if (interp) this.engine.camera.position.copy(this._camCur); // restore TRUE pos for F3/devconsole/raycasts/next prev
     { const _ri = this.engine.renderer.info.render; this._draws = _ri.calls; this._tris = _ri.triangles; } // F3 stats — read post-render (Three.js resets info per render)
@@ -1197,7 +1307,46 @@ class Game {
     if (this.state === 'crate' && this.crate) this.crate.render(frameDt);
     else if (this.crate && this.crate.active) this.crate.abort(); // state hijacked (e.g. co-op host start) — reward already granted+saved
     if (this.state === 'poker' && this.poker) { this.poker.update(frameDt); this.poker.render(frameDt); }
+    if (this.gpuNotice) this.gpuNotice.syncState(this.state); // low-end-GPU banner: visible only on menu/lobby (guarded, no per-frame DOM churn)
     if (!(this._fixedStep && this.state === 'playing')) this.input.endFrame(); // fixed path clears inside the loop (or carries when n===0)
+  }
+
+  // One-shot perf/GPU diagnostic. Run `GAME.diag()` in the DevTools console in each browser
+  // and compare — the `gpu` field (unmasked WebGL renderer) reveals which physical GPU the
+  // browser actually uses, which is the usual culprit when one Chromium build stutters and
+  // another doesn't on the same machine. Pure read of existing state + one WebGL query.
+  diag() {
+    const r = this.engine && this.engine.renderer;
+    const d = {
+      build: GAME_BUILD, version: GAME_VERSION, state: this.state,
+      fps: Math.round(this._fps || 0), frameMs: +(this._frameMs || 0).toFixed(2),
+      pacing: this._pace ? 'ON' : 'OFF',
+      refreshHz: this._pacer ? this._pacer.hz : 0,
+      rawJitterMs: this._pacer ? +this._pacer.jitterMs.toFixed(2) : 0,
+      smoothJitterMs: this._pacer ? +this._pacer.outJitterMs.toFixed(2) : 0,
+      dpr: window.devicePixelRatio, cores: navigator.hardwareConcurrency || 0,
+      draws: this._draws || 0, tris: this._tris || 0,
+      bloom: !!(this.engine && this.engine._bloomOn),
+      adaptiveRes: !!(this.engine && this.engine._adaptive),
+      renderScale: this.engine ? this.engine._renderScale : 1,
+      coop: !!(this.mp && this.mp.active),
+      gpu: '(unknown)', glVendor: '(unknown)', webgl2: false, drawBuffer: '',
+    };
+    try {
+      const gl = r && r.getContext();
+      if (gl) {
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        d.gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '(masked)';
+        d.glVendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : '(masked)';
+        d.webgl2 = (typeof WebGL2RenderingContext !== 'undefined') && (gl instanceof WebGL2RenderingContext);
+        const b = r.getDrawingBufferSize(new THREE.Vector2());
+        d.drawBuffer = (b.x | 0) + 'x' + (b.y | 0);
+      }
+    } catch (e) { d.gpu = 'ERR ' + (e && e.message); }
+    try { d.settings = JSON.parse(localStorage.getItem('engendros_settings') || '{}'); } catch (e) { /* ignore */ }
+    console.log('%c[ENGENDROS DIAG] copy this whole object ↓', 'color:#7CFC00;font-weight:bold');
+    console.log(JSON.stringify(d, null, 2));
+    return d;
   }
 
   // One fixed effect tick: advance the player + every alive enemy by one step.
@@ -1291,6 +1440,7 @@ class Game {
       }
       if (!this.mp.frozen && !(this.devconsole && this.devconsole.open) && this.input.wheel !== 0) { const _shift = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight'); if (this.inventory.heldMaterial() && _shift) this.build.rotateGhost(this.input.wheel > 0 ? 1 : -1); else this.weapons.cycle(this.input.wheel > 0 ? 1 : -1); } // Shift+wheel rotates a held material's ghost; plain wheel scrolls the inventory — disabled while chat is open
       this.build.updateRadioTarget(); // radio look-target + ←/→ tuning, BEFORE player.update reads strafe
+      this.build.updateR105Target(); // deployed R-105Д voice radio look-target → E opens the control panel
       this.gramophone.updateTarget(); // gramophone prop look-target + ←/→ song change (BEFORE player.update reads strafe)
       if (this.world.updateGateConsole) this.world.updateGateConsole(this); // booth gate-control console look-target (steppe only)
       if (this.world.updateDoorTarget) this.world.updateDoorTarget(this); // bunker гермодверь look-target (steppe only)
@@ -1328,11 +1478,14 @@ class Game {
     if (!hostSim) this.enemies.updateGhostFx(dt); // clients advance host-relayed boss/tank attack visuals (they don't tick enemies.update)
     if (sim) this.waves.update(dt);
     this.mp.update(dt);
+    this.voice.update(dt); // proximity voice: listener+panner+occlusion (after mp.update so remote .pos is fresh)
     this._updateAdaptiveMusic();
     // World clock advances every frame in every mode. Host/solo = authoritative (advances the truth + fires timed
     // transitions via _stepMinute); clients predict locally for smooth HH:MM and reconcile to the host's 'night' push.
-    if (hostSim) this._worldClock.advance(dt, this._stepMinute);
-    else this._worldClock.advance(dt);
+    if (this.rules.doDaylightCycle !== false) {            // /gamerule doDaylightCycle false freezes the day/night clock (time of day stays put, like MC's doDaylightCycle)
+      if (hostSim) this._worldClock.advance(dt, this._stepMinute);
+      else this._worldClock.advance(dt);
+    }
     if (this.mode === 'longnight' && hostSim) this._surviveTime += dt; // run-duration record for the game-over screen (longnight only)
     this.dayNight.renderFrom(this._worldClock); // sky from minute-of-day + alpha (host + client)
     if (this.world.interiorActive) this._applyMineFog(); // underground: override the daynight fog to dark+close (hides the far surface + the swap)
@@ -1401,6 +1554,8 @@ class Game {
       this.hud.setInteract('Press <b>E</b> to ' + (_open ? 'CLOSE' : 'OPEN') + ' the gate · ВОРОТА');
     } else if (this.world.doorTarget) {
       this.hud.setInteract('Press <b>E</b> to ' + (this.world.doorTarget.open ? 'ЗАКРЫТЬ' : 'ОТКРЫТЬ') + ' · ГЕРМОДВЕРЬ');
+    } else if (this.build.r105Target) {
+      this.hud.setInteract('Press <b>E</b> to operate the R-105Д radio');
     } else if (this.build.radioTarget) {
       const _r = this.build.radioTarget;
       this.hud.setInteract(_r.on ? '←/→ stanice · <b>E</b> vypnout rádio' : 'Press <b>E</b> to turn on radio');

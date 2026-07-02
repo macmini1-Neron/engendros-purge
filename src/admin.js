@@ -4,7 +4,7 @@ import { clamp, voxelMaterial } from './util.js';
 import { buildBarbedWire, buildBarricade, buildChuteRig, buildFieldRadio, buildFlare, buildSandbags, buildSupplyCrate } from './props.js';
 import { buildGramophone } from './fonoteka.js';
 import { WEAPONS, WEAPON_ORDER, buildMag, buildViewmodel } from './weapons.js';
-import { ENGENDRO_COLORS, buildEngendro, buildTolo } from './enemies.js';
+import { ENGENDRO_COLORS, buildEngendro, buildTolo, buildCourierPreview } from './enemies.js';
 import { getSpec } from './props/registry-core.js';
 import { buildSpec } from './props/voxel-interp.js';
 import { buildIl76AirdropFallback, buildIl76AirdropModel, preloadIl76AirdropModel } from './aircraft.js';
@@ -105,6 +105,7 @@ export class Admin {
       list.push({ name: 'mini Tolo', sub: 'phase-2 add', make: () => new THREE.Mesh(buildEngendro({ body: 0xede7df, name: 'mini' }, 'normal'), voxelMaterial()) });
       list.push({ name: 'Mitri (exploder)', sub: 'exploder', make: () => new THREE.Mesh(buildEngendro(ENGENDRO_COLORS[5 % ENGENDRO_COLORS.length], 'exploder'), voxelMaterial()) });
       list.push({ name: 'Boomer (charger)', sub: 'kamikaze', make: () => new THREE.Mesh(buildEngendro({ body: 0x8a2b2b, name: 'Boomer' }, 'charger'), voxelMaterial()) });
+      list.push({ name: 'Courier (R-105d on back)', sub: 'backpack courier — radio worn on the back', make: () => buildCourierPreview(ENGENDRO_COLORS[0]) });
       return list;
     }
     if (this.tab === 'props') return [
@@ -120,6 +121,8 @@ export class Admin {
       { name: 'Часы «ЧАСОЗБОР»', sub: 'wall clock (modelgen, live in demo)', make: () => { const s = getSpec('wallclock-chasozbor'); return s ? buildSpec(s) : null; } },
       { name: 'ННП-23 «Резчик» (1ПН54)', sub: 'night obs post (modelgen)', make: () => { const s = getSpec('nnp23'); return s ? buildSpec(s) : null; } },
       { name: 'ЛПР-1 «Каралон-М» (1Д13)', sub: 'laser rangefinder (modelgen)', make: () => { const s = getSpec('lpr1'); return s ? buildSpec(s) : null; } },
+      { name: 'Radiostanice R-105d', sub: 'courier backpack radio (modelgen)', make: () => { const s = getSpec('r105d'); return s ? buildSpec(s) : null; } },
+      { name: 'СН-42 нагрудник', sub: 'armored-engendro steel cuirass (modelgen)', make: () => { const s = getSpec('sn42'); return s ? buildSpec(s) : null; } },
       { name: 'Armor plate', sub: 'pickup', make: () => g.loot._pickupMesh('armor') },
       { name: 'Field splint', sub: 'pickup', make: () => g.loot._pickupMesh('splint') },
       { name: 'Ration tin', sub: 'pickup', make: () => g.loot._pickupMesh('food') },

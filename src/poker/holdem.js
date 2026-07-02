@@ -125,8 +125,10 @@ export function applyAction(state, action) {
     commit(s, Math.min(legal.callAmount, s.stack));
     s.acted = true;
   } else if (type === 'raise' || type === 'allin') {
-    if (type === 'allin' && legal.maxRaiseTo <= state.currentBet) {
-      // can't actually raise (stack only covers a call) → treat as an all-in call
+    if (type === 'allin' && (legal.maxRaiseTo <= state.currentBet || !legal.canRaise)) {
+      // can't actually raise — stack only covers a call, OR the seat is capped (noRaise) after an
+      // incomplete all-in. Coerce an 'allin' to an all-in call instead of throwing (a capped player's
+      // All-in button / a co-op packet must do the legal thing, not error).
       commit(s, Math.min(legal.callAmount, s.stack));
       s.acted = true;
     } else {

@@ -5,8 +5,8 @@
 import { describeHand } from './poker/handeval.js';
 import { equity, outs } from './poker/odds.js';
 import { clampRaise, presetRaiseTo, presetRaiseToBB, raiseBreakdown } from './poker/betsizing.js';
-import { CHIP_SKIN_LIST, CHIP_SKINS, drawChip } from './poker/chipskins.js'; // pure (no THREE) — safe for the node-tested DOM renderer
-import { CARD_BACK_LIST, CARD_BACKS, drawCardBack } from './poker/cardbacks.js'; // pure — card-back swatch picker
+import { actionButtons } from './poker/actionui.js'; // pure legality→button mapping (node-tested)
+import { mountChipSkinPicker, mountCardBackPicker } from './poker/skinpicker.js'; // shared cosmetic pickers (also used by the co-op ROOM lobby in mp.js)
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RCH = { 10: 'T', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -102,6 +102,8 @@ const CSS = `
 .pk-btn.raise { background:linear-gradient(180deg,#cf9c41,#7c5a22); border-color:var(--brass-hi,#f3d999); color:#1c1206; text-shadow:0 1px 0 rgba(255,255,255,.25); }
 .pk-btn.allin { background:linear-gradient(180deg,#b23a2a,#6a160e); border-color:var(--red-2,#f5604c); color:#ffe2d8; }
 .pk-btn.allin.armed { background:linear-gradient(180deg,#ff7a4f,#a01c0c); color:#fff; border-color:var(--brass-hi,#f3d999); }
+.pk-btn.muted { opacity:.5; filter:grayscale(.45); }
+.pk-btn.armed { background:linear-gradient(180deg,#b23a2a,#6a160e); border-color:var(--red-2,#f5604c); color:#ffe2d8; opacity:1; filter:none; }
 .pk-btn.go { background:linear-gradient(180deg,var(--go,#5cae8c),#2c6b4f); color:#fff; border-color:var(--brass,#d8b066); }
 .pk-raise { display:flex; flex-direction:column; align-items:center; gap:6px; }
 .pk-presets { display:flex; gap:6px; }
@@ -183,6 +185,9 @@ export class PokerDomRenderer {
 
   mount() {
     if (this._built) return;
+    // NOTE: the .pk-skinbtn/.pk-skinrow/.pk-skinhint picker rules are MIRRORED in index.html's main
+    // <style> — the co-op ROOM lobby (mp.js) mounts the shared skinpicker WITHOUT this renderer, so
+    // pk-style is absent there. Keep both copies in sync if you restyle the pickers.
     if (!document.getElementById('pk-style')) {
       const st = document.createElement('style'); st.id = 'pk-style'; st.textContent = CSS;
       document.head.appendChild(st);
@@ -318,60 +323,14 @@ export class PokerDomRenderer {
     this.el.lobby.querySelector('#pk-coopleave').addEventListener('click', () => this.cb.onLeave && this.cb.onLeave());
   }
 
-  // Chip-skin picker: a row of canvas swatches (drawn via the pure drawChip). Local cosmetic — on click
-  // it highlights + fires onChipSkin(id); poker-table persists it to meta + applies it to the 3D chips.
-  // `available` = ids the player owns (free + unlocked); the rest render locked (🔒, not selectable).
+  // Chip-skin + card-back pickers now live in the shared ./poker/skinpicker.js module (reused by the
+  // co-op ROOM lobby in mp.js). These thin delegators keep the renderer's onChipSkin/onCardBack cb wiring.
   _chipSkinPicker(container, current, available, hintEl) {
-    if (!container) return;
-    const avail = Array.isArray(available) ? available : CHIP_SKIN_LIST; // back-compat: all available
-    let sel = (CHIP_SKINS[current] && avail.includes(current)) ? current : 'dice';
-    const draw = () => {
-      container.innerHTML = '';
-      for (const id of CHIP_SKIN_LIST) {
-        const locked = !avail.includes(id);
-        const btn = document.createElement('button');
-        btn.className = 'pk-skinbtn' + (id === sel ? ' sel' : '') + (locked ? ' locked' : '');
-        btn.title = locked ? 'Locked — unlock from the Supply Crate' : CHIP_SKINS[id].label;
-        const cv = document.createElement('canvas'); cv.width = cv.height = 44;
-        drawChip(cv.getContext('2d'), 44, 20, id);              // representative $20 (red) chip
-        const lab = document.createElement('span'); lab.textContent = (locked ? '🔒 ' : '') + CHIP_SKINS[id].label;
-        btn.appendChild(cv); btn.appendChild(lab);
-        if (locked) {
-          btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CHIP_SKINS[id].label}” is locked — unlock it from the Supply Crate.`; });
-        } else {
-          btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onChipSkin && this.cb.onChipSkin(id); });
-        }
-        container.appendChild(btn);
-      }
-    };
-    draw();
+    mountChipSkinPicker(container, { current, available, hintEl, onPick: (id) => this.cb.onChipSkin && this.cb.onChipSkin(id) });
   }
 
-  // Card-back picker — same machinery as the chip-skin picker, drawn at card aspect via drawCardBack.
   _cardBackPicker(container, current, available, hintEl) {
-    if (!container) return;
-    const avail = Array.isArray(available) ? available : CARD_BACK_LIST;
-    let sel = (CARD_BACKS[current] && avail.includes(current)) ? current : 'default';
-    const draw = () => {
-      container.innerHTML = '';
-      for (const id of CARD_BACK_LIST) {
-        const locked = !avail.includes(id);
-        const btn = document.createElement('button');
-        btn.className = 'pk-skinbtn back' + (id === sel ? ' sel' : '') + (locked ? ' locked' : '');
-        btn.title = locked ? 'Locked — unlock from the Supply Crate' : CARD_BACKS[id].label;
-        const cv = document.createElement('canvas'); cv.width = 76; cv.height = 106;   // 2× card aspect, CSS-scaled
-        drawCardBack(cv.getContext('2d'), 76, 106, id);
-        const lab = document.createElement('span'); lab.textContent = (locked ? '🔒 ' : '') + CARD_BACKS[id].label;
-        btn.appendChild(cv); btn.appendChild(lab);
-        if (locked) {
-          btn.addEventListener('click', () => { if (hintEl) hintEl.textContent = `“${CARD_BACKS[id].label}” is locked — unlock it from the Supply Crate.`; });
-        } else {
-          btn.addEventListener('click', () => { sel = id; draw(); if (hintEl) hintEl.textContent = ''; this.cb.onCardBack && this.cb.onCardBack(id); });
-        }
-        container.appendChild(btn);
-      }
-    };
-    draw();
+    mountCardBackPicker(container, { current, available, hintEl, onPick: (id) => this.cb.onCardBack && this.cb.onCardBack(id) });
   }
 
   showTable() {
@@ -402,11 +361,14 @@ export class PokerDomRenderer {
     const meSeat = v.seats.find((s) => s.id === p.youId);
     // header live-drains to the would-be REMAINING stack while you're SIZING a raise (the 3D stack columns
     // drain in lockstep via _updateBetPreview), so the number you watch always reconciles with the table and
-    // with the "leaves $" readout; at rest (slider at the minimum) it shows your full behind-stack.
+    // with the "leaves $" readout — INCLUDING at the resting min-raise (a min-raise still has a cost, so the
+    // old "drain only above the minimum" gate left the header showing the full stack while the readout showed
+    // less). Clamp a possibly-stale _raiseTo into THIS turn's legal range so the first frame can't flicker.
     let myStack = meSeat ? meSeat.stack : 0;
     const Lh = p.legal;
-    if (meSeat && p.yourTurn && Lh && Lh.canRaise && (this._raiseTo | 0) > (Lh.minRaiseTo | 0)) {
-      myStack = raiseBreakdown(this._raiseTo, meSeat.roundBet, meSeat.stack).leaves;
+    if (meSeat && p.yourTurn && Lh && Lh.canRaise) {
+      const to = clampRaise((this._raiseTo | 0) || Lh.minRaiseTo, Lh);
+      myStack = raiseBreakdown(to, meSeat.roundBet, meSeat.stack).leaves;
     }
     this.el.mybank.textContent = '$' + myStack;
 
@@ -560,7 +522,8 @@ export class PokerDomRenderer {
       a.innerHTML = `<div class="pk-wait">${p.phase === 'handresult' ? 'Next hand…' : (who ? who + ' to act…' : '…')}</div>`;
       return;
     }
-    const callLabel = L.canCheck ? 'CHECK' : ('CALL ' + L.callAmount);
+    const ab = actionButtons(L);                                   // pure legality→buttons (label / fold-confirm / raise-available)
+    const callLabel = ab.callcheck.label;
     // hybrid raise control (research-backed): preset buttons + slider(snap 5) + numeric + ± steppers + wheel/keys
     const v = p.view, bb = (v && v.bb) || (p.tour && p.tour.bb) || 20;
     const ctx = { pot: (v && v.pot) || 0, callAmount: L.callAmount, currentBet: (v && v.currentBet) || 0, minRaiseTo: L.minRaiseTo, maxRaiseTo: L.maxRaiseTo, bb };
@@ -577,7 +540,7 @@ export class PokerDomRenderer {
     a.innerHTML = `
       <button class="pk-btn" id="pk-fold">FOLD</button>
       <button class="pk-btn call" id="pk-callcheck">${callLabel}</button>
-      ${L.canRaise ? `<div class="pk-raise">
+      ${ab.raise.available ? `<div class="pk-raise">
         <div class="pk-presets">
           <button class="pk-preset" data-min="1">MIN</button>
           ${presets.map((q, i) => `<button class="pk-preset" data-p="${i}">${q[0]}</button>`).join('')}
@@ -592,9 +555,21 @@ export class PokerDomRenderer {
         </div>
         <div class="pk-raiseleft" id="pk-raiseleft" style="font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;text-align:center;margin-top:3px">${fmtLeft(this._raiseTo)}</div>
       </div>` : ''}`;
-    a.querySelector('#pk-fold').addEventListener('click', () => this.cb.onAct({ type: 'fold' }));
+    const fold = a.querySelector('#pk-fold');
+    if (ab.fold.confirm) {
+      // CHECK is free → guard FOLD behind a visual demote + arm→confirm so a misclick can't throw a free hand
+      fold.classList.add('muted');
+      fold.title = 'You can check for free — click again to fold anyway';
+      fold.addEventListener('click', () => {
+        if (fold.dataset.armed) { this.cb.onAct({ type: 'fold' }); return; }
+        fold.dataset.armed = '1'; fold.textContent = 'FOLD?'; fold.classList.remove('muted'); fold.classList.add('armed');
+        setTimeout(() => { if (fold.isConnected) { fold.dataset.armed = ''; fold.textContent = 'FOLD'; fold.classList.remove('armed'); fold.classList.add('muted'); } }, 2500);
+      });
+    } else {
+      fold.addEventListener('click', () => this.cb.onAct({ type: 'fold' })); // facing a bet → folding is a normal one-click action
+    }
     a.querySelector('#pk-callcheck').addEventListener('click', () => this.cb.onAct(L.canCheck ? { type: 'check' } : { type: 'call' }));
-    if (L.canRaise) {
+    if (ab.raise.available) {
       const rng = a.querySelector('#pk-raiserng'), num = a.querySelector('#pk-raisenum'), btn = a.querySelector('#pk-raise');
       const left = a.querySelector('#pk-raiseleft');
       const setRaise = (val) => {                                 // one shared amount; everything snaps to 5 + clamps to legal
@@ -603,9 +578,9 @@ export class PokerDomRenderer {
         btn.textContent = 'RAISE → ' + this._raiseTo;
         if (left) left.textContent = fmtLeft(this._raiseTo); // real-time: cost + what stays, reconciled with the header
       };
-      if (rng) rng.addEventListener('input', () => setRaise(+rng.value));
+      if (rng) rng.addEventListener('input', () => setRaise((L.maxRaiseTo - (+rng.value)) < 5 ? L.maxRaiseTo : +rng.value)); // the slider's top step lands short of an odd all-in max → snap the very top to the exact all-in
       num.addEventListener('change', () => setRaise(+num.value));
-      num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } });
+      num.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.repeat) { setRaise(+num.value); this.cb.onAct({ type: 'raise', to: this._raiseTo }); } }); // !e.repeat: holding Enter must not auto-repeat the raise
       a.querySelector('#pk-rminus').addEventListener('click', () => setRaise(this._raiseTo - bb));
       a.querySelector('#pk-rplus').addEventListener('click', () => setRaise(this._raiseTo + bb));
       a.querySelectorAll('.pk-preset').forEach((b) => b.addEventListener('click', () => setRaise(b.dataset.min ? L.minRaiseTo : presets[+b.dataset.p][1]())));

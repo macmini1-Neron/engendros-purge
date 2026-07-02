@@ -16,4 +16,6 @@ export const STRUCT_DEFS = {
              slow: 0.35, dot: 14, trample: 35 },
   radio:   { hp: 200, w: 1.25, h: 0.9, d: 0.7, hard: false, prop: true, audio: true,
              rotStep: Math.PI / 12, label: 'Radio', max: 4 }, // diegetic music prop; enemies ignore it (hard:false)
+  r105:    { hp: 200, w: 1.1, h: 1.4, d: 0.9, hard: false, prop: true, voice: true,
+             rotStep: Math.PI / 12, label: 'R-105Д', max: 4 }, // deployable field VOICE radio (E opens the control panel); model = courier R-105D
 };

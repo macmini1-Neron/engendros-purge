@@ -12,7 +12,7 @@ export const DEFAULT_SCHEDULE = [
 ].map(([sb, bb]) => ({ sb, bb }));
 
 export class Tournament {
-  // cfg: { players:[{id}], buyIn, rng, startStack?, schedule?, handsPerLevel? }
+  // cfg: { players:[{id}], buyIn, rng, startStack?, schedule?, handsPerLevel?, prizePool? }
   constructor(cfg) {
     this.buyIn = cfg.buyIn || 0;
     this.startStack = cfg.startStack || DEFAULT_START_STACK;
@@ -20,7 +20,9 @@ export class Tournament {
     this.handsPerLevel = cfg.handsPerLevel || HANDS_PER_LEVEL;
     this.rng = cfg.rng;
     this.entrants = cfg.players.length;
-    this.prizePool = this.buyIn * this.entrants;
+    // Money prize pool. Default = uniform buyIn × entrants; asymmetric item-wager baskets pass an explicit
+    // prizePool = Σ(basket.money) since each seat can ante a different amount (or none, items-only).
+    this.prizePool = (cfg.prizePool != null) ? (cfg.prizePool | 0) : this.buyIn * this.entrants;
     // fixed clockwise seat ring; place stays null until busted (1 = winner)
     this.players = cfg.players.map((p) => ({ id: p.id, stack: this.startStack, place: null }));
     this.button = 0;
@@ -34,6 +36,11 @@ export class Tournament {
   isAlive(p) { return p.stack > 0; } // has chips = still in (busted players sit at 0)
   alivePlayers() { return this.players.filter((p) => this.isAlive(p)); }
 
+  // Casual-SNG button: moves to the next SURVIVING seat (no "dead button" / dead-SB bookkeeping). Across a
+  // bust this can make blind rotation slightly irregular (a seat may skip or repeat a blind), but it never
+  // mis-pays a hand — the pot is always correct for the seats that posted. A strict dead-button rule is
+  // deliberately out of scope here (it's a positional-fairness nicety with zero money impact in a winner-
+  // takes-all den); revisit only if this becomes a ranked-stakes tournament.
   advanceButton() {
     const n = this.players.length;
     for (let k = 1; k <= n; k++) {
@@ -74,13 +81,17 @@ export class Tournament {
       if (p) p.stack = s.stack;
     }
 
-    // players who hit zero this hand bust now; if several bust together, the one who had more
-    // chips in front of them finishes higher (better place).
+    // players who hit zero this hand bust now; if several bust together, the one who had more chips in
+    // front of them finishes higher (better place). On an EXACT-commit tie the tied players SHARE the place
+    // (a true chop for that finishing position) instead of being ordered arbitrarily by array index.
     const busted = this.players
       .filter((p) => p.place === null && p.stack === 0)
       .sort((a, b) => (committed[b.id] || 0) - (committed[a.id] || 0));
     const aliveAfter = this.players.filter((p) => p.place === null && p.stack > 0).length;
-    busted.forEach((p, i) => { p.place = aliveAfter + 1 + i; }); // most-committed (i=0) finishes highest
+    busted.forEach((p) => {
+      const ahead = busted.filter((q) => (committed[q.id] || 0) > (committed[p.id] || 0)).length; // strictly more committed
+      p.place = aliveAfter + 1 + ahead; // tied-commit bustouts get the SAME place
+    });
 
     const eliminated = busted.map((p) => p.id);
 

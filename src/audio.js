@@ -11,6 +11,7 @@ export class AudioManager {
     this.volume = 0.8;
     this.musicVolume = 0.5;
     this._musicDuck = 1;
+    this._uiDuck = 1;       // independent UI duck (radio panel / Settings open) — composes with _musicDuck so a nearby gramophone/radio's per-frame proximity duck can't fight it
     this.muted = false;
     this._musicTimer = null;
     this._started = false;
@@ -138,7 +139,8 @@ export class AudioManager {
   setVolume(v) { this.volume = v; if (this.sfxGain) this.sfxGain.gain.value = v; }
   setMusicVolume(v) { this.musicVolume = v; this._applyMusicGain(); }
   setMusicDuck(d) { this._musicDuck = Math.max(0, Math.min(1, d)); this._applyMusicGain(); } // 1 = full, ~0.15 = radio nearby
-  _applyMusicGain() { if (this.musicGain) this.musicGain.gain.value = this.musicVolume * (this._musicDuck == null ? 1 : this._musicDuck); }
+  setUiMusicDuck(d) { d = Math.max(0, Math.min(1, d)); if (d === this._uiDuck) return; this._uiDuck = d; this._applyMusicGain(); } // derived per-frame from UI state (radio panel / Settings open); no-op guard keeps the per-frame call cheap
+  _applyMusicGain() { if (this.musicGain) this.musicGain.gain.value = this.musicVolume * (this._musicDuck == null ? 1 : this._musicDuck) * (this._uiDuck == null ? 1 : this._uiDuck); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 1; }
 
   // A soft "descending into the mine" confirm — a low tone gliding down + a filtered airy draft. Diegetic cue
@@ -399,6 +401,18 @@ export class AudioManager {
   reloadIn() { this.tone(180, 0.08, 'square', 0.25); this.noise(0.05, 0.25, 'lowpass', 500, 1); }
   boltCycle() { this.noise(0.05, 0.28, 'bandpass', 1700, 4); setTimeout(() => { this.noise(0.06, 0.32, 'bandpass', 2200, 5); this.tone(150, 0.05, 'square', 0.14); }, 130); } // bolt lift-pull then push-lock
   garandPing() { this.tone(2300, 0.55, 'triangle', 0.30); this.tone(3100, 0.45, 'sine', 0.16); this.tone(1750, 0.5, 'triangle', 0.10); } // en-bloc clip "ping"
+  armorPing() { // small-arms round glancing off the СН-42 steel cuirass — bright metallic ricochet
+    if (!this.ctx) return; const t = this.ctx.currentTime;
+    this._metalPing(t, 3200 + Math.random() * 1400, 0.06, 0.09);
+    this._metalPing(t + 0.018, 5200 + Math.random() * 1800, 0.038, 0.06);
+    this._burst(t, 0.03, 0.05, 'highpass', 5000, 0.8);              // sharp spark zip
+  }
+  armorBreak() { // the cuirass shatters off the mob — heavy steel clank + a debris rattle
+    if (!this.ctx) return; const t = this.ctx.currentTime;
+    this._clank(t, 0.5, 230);
+    this._metalPing(t + 0.05, 2600, 0.08, 0.18);
+    this._burst(t + 0.02, 0.18, 0.08, 'bandpass', 1300, 1.6);
+  }
   shellInsert() { this.noise(0.05, 0.3, 'lowpass', 600, 1); this.tone(210, 0.05, 'square', 0.16); } // a single shell pressed into the tube
   dryFire() { this.noise(0.03, 0.25, 'bandpass', 3200, 4); }
 

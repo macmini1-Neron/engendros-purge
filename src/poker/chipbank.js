@@ -367,18 +367,51 @@ export class ChipBank {
     // ledger: clamp every stack (corrective shuffle → own skin) + the float to the corrected reality
     for (const id in this.stacks) this._skClamp('stacks', id);
     this._skClampPool('float');
+    // ENGINE-PARITY backstop: verify() only proves conservation (no chips minted/lost), NOT that each
+    // physical stack reached its engine target — a starved float can leave value(stack)+dust off-target
+    // and slip past verify(). Record + warn so that physical/money desync surfaces (money is engine-truth;
+    // only the chip RENDER is wrong). Empty under the default float tuning (the integration SNG asserts it).
+    this._underfilled = [];
+    for (const id in this.stacks) {
+      const t = targets[id] | 0, got = value(this.stacks[id]) + (this.dust[id] | 0);
+      if (got !== t) this._underfilled.push({ id, physical: got, target: t });
+    }
+    if (this._underfilled.length && typeof console !== 'undefined' && console.warn) {
+      console.warn('[poker] chip reconcile off engine parity (float can\'t dimension it; money is engine-truth, chip render is off):', this._underfilled);
+    }
   }
 
-  // Re-mint the cosmetic ledger to the CURRENT chip state for a fresh per-seat skin map — provenance only,
-  // NO value re-deal (so it's safe mid-hand). Pot/bet provenance is reset to house (acceptable: used by the
-  // dev skin hook + as a clean re-skin). Each stack becomes its owner's single skin; the float is house.
+  // Apply a fresh per-seat skin choice WITHOUT touching values (safe mid-hand). PRESERVES won-chip
+  // provenance: only a seat's OWN-skin chips move to its newly chosen skin; chips it won from others keep
+  // the loser's skin (the КАТРАН "see how many you won from whom" look compounds across hands). A no-op
+  // for any seat whose skin didn't change — so the co-op per-hand refresh in _beginHand never wipes the
+  // multi-skin mix. Pot/bets are normally empty at the hand boundary where this runs, and chips already in
+  // play keep their skin ("mid-hand frozen"), so neither is collapsed here.
   reskin(skinsById) {
-    this.skins = { ...this.skins, ...(skinsById || {}) };
-    this.skinsAt = { stacks: {}, bets: {}, pot: {}, float: {} };
-    for (const id in this.stacks) this.skinsAt.stacks[id] = sigOf(this.stacks[id]) ? { [this.skins[id] || HOUSE_SKIN]: cloneSet(this.stacks[id]) } : {};
-    for (const id in this.bets) this.skinsAt.bets[id] = sigOf(this.bets[id]) ? { [this.skins[id] || HOUSE_SKIN]: cloneSet(this.bets[id]) } : {};
-    if (sigOf(this.pot)) this.skinsAt.pot = { [HOUSE_SKIN]: cloneSet(this.pot) };
-    if (sigOf(this.float)) this.skinsAt.float = { [HOUSE_SKIN]: cloneSet(this.float) };
+    const next = { ...this.skins, ...(skinsById || {}) };
+    for (const id in next) {
+      const oldSkin = this.skins[id] || HOUSE_SKIN, newSkin = next[id] || HOUSE_SKIN;
+      if (newSkin === oldSkin) continue;                          // unchanged → leave ALL provenance intact
+      for (const loc of ['stacks', 'bets']) {                     // move only this seat's OWN-skin chips old→new
+        const at = this.skinsAt[loc] && this.skinsAt[loc][id];
+        if (!at || !at[oldSkin]) continue;
+        at[newSkin] = at[newSkin] ? addSet(at[newSkin], at[oldSkin]) : at[oldSkin];
+        delete at[oldSkin];
+      }
+    }
+    this.skins = next;
+    for (const id in this.stacks) this._skClamp('stacks', id);    // keep the ledger reconciled to the real sets (defensive; the move above is value-neutral)
+    for (const id in this.bets) this._skClamp('bets', id);
+  }
+
+  // Re-key one player's per-seat ledgers from oldId → newId (co-op reconnect: a returning player gets a
+  // new peer id). Pure rename — moves stack/bet/dust + provenance, no value created or destroyed. No-op if
+  // oldId is absent or newId already exists (caller must apply at a safe boundary, e.g. between hands).
+  rekey(oldId, newId) {
+    if (oldId === newId || !(oldId in this.stacks) || (newId in this.stacks)) return false;
+    for (const m of [this.stacks, this.bets, this.dust, this.skins]) { if (oldId in m) { m[newId] = m[oldId]; delete m[oldId]; } }
+    for (const loc of ['stacks', 'bets']) { const m = this.skinsAt[loc]; if (m && oldId in m) { m[newId] = m[oldId]; delete m[oldId]; } }
+    return true;
   }
 
   // test-only oracle: the cosmetic ledger sums (per location, per denom) to the real ChipSets, no negatives.
