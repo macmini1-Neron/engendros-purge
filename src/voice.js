@@ -158,9 +158,32 @@ export class VoiceChat {
     try { src.start(); } catch (e) {}
     this._crackleSrc = src; this._crackleGain = g;
   }
-  _applySink() {
-    const el = this.voiceOutEl, id = this._s.outDevId;
-    if (el && id && el.setSinkId) el.setSinkId(id).catch(() => {});
+  // Apply the persisted output device — VALIDATED. A stale outDevId (unplugged headset / another
+  // machine's id) used to reject inside a swallowed .catch and leave the voice element aimed at a
+  // nonexistent sink → total silence while every flag reported OK. Now a missing/failing device
+  // falls back to the default sink, CLEARS the bad persisted id, and surfaces a warning.
+  async _applySink() {
+    const el = this.voiceOutEl; if (!el || !el.setSinkId) return;
+    const id = this._s.outDevId;
+    if (!id) { try { await el.setSinkId(''); } catch (e) {} this.lastWarn = ''; return; }
+    let known = true;                                    // blank/failed device list = inconclusive → let setSinkId itself decide
+    try {
+      const outs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput' && d.deviceId);
+      if (outs.length && !outs.some((d) => d.deviceId === id)) known = false;
+    } catch (e) {}
+    if (known) {
+      try { await el.setSinkId(id); this.lastWarn = ''; return; } catch (e) {}
+    }
+    this._sinkFallback();
+  }
+  _sinkFallback() {
+    this._s.outDevId = '';
+    const st = this.game.settings;
+    if (st && st.data && st.data.outDevId) { st.data.outDevId = ''; st.save(); if (st._refreshVoice) st._refreshVoice(); }
+    try { this.voiceOutEl.setSinkId('').catch(() => {}); } catch (e) {}
+    this.lastWarn = 'saved output device not found — using default';
+    if (this.game.hud && this.game.hud.toast) this.game.hud.toast('VOICE: saved output device not found — using default', 0xe0b050);
+    if (typeof console !== 'undefined') console.warn('[voice] output sink fallback → default');
   }
 
   _applySelfMonitor() {
