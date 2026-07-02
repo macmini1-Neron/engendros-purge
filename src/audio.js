@@ -344,7 +344,7 @@ export class AudioManager {
   // PannerNode at `pos` — every connect(this.sfxGain) inside fn lands on the panner, so ANY
   // existing procedural sound becomes positional with zero per-sound changes. Pool dry → play
   // flat (never drop a sound). NEVER wrap loop-starters (dshkSustain etc.): the panner is
-  // reclaimed after ~2.5s and would drag a still-running loop to the next sound's position.
+  // reclaimed after ~1s and would drag a still-running loop to the next sound's position.
   playAt(pos, fn) {
     if (!this.ctx || !pos || this._outSwap) { fn(); return; }
     const p = this._acquirePanner();
@@ -352,7 +352,7 @@ export class AudioManager {
     const n = p.node;
     if (n.positionX) { n.positionX.value = pos.x; n.positionY.value = pos.y || 0; n.positionZ.value = pos.z; }
     else n.setPosition(pos.x, pos.y || 0, pos.z);
-    p.freeAt = this.ctx.currentTime + 2.5;                    // past the longest wrapped one-shot tail
+    p.freeAt = this.ctx.currentTime + 1.0;                    // just past the longest wrapped one-shot tail (~0.7s explosion) — short hold so a burst of combat SFX doesn't exhaust the 32-panner pool and fall back to flat
     const real = this.sfxGain;
     this.sfxGain = n; this._outSwap = true;
     try { fn(); } finally { this.sfxGain = real; this._outSwap = false; }
