@@ -10,6 +10,7 @@
 //   3. the remote nameplate lights its "speaking" dot
 //   4. radio: A keys PTT on 40.150 → B (tuned to the channel) receives (radioGain opens)
 //   5. secret station 44.100: both clients play the SAME position in the song (synced clock)
+//   6. world audio: the generic 'snd' event (host growl relay) reaches B and plays positionally
 //
 // Usage:  node scripts/voice-harness/run.mjs        (from the repo root or anywhere)
 // Exit 0 = all green. Non-zero = at least one assert failed (details on stdout).
@@ -201,6 +202,18 @@ async function main() {
       drift = Math.abs(ta - tb);
     }
     report('5. station 44.100 position synced (<1.75s)', s1 && s2 && drift < 1.75, `audible A:${s1} B:${s2} drift=${isFinite(drift) ? drift.toFixed(2) + 's' : '-'}`);
+
+    // ---- assert 6: generic positional sound event ('snd') -----------------------------------
+    // enemyGrowl on a CLIENT is only ever reachable through the 'snd' registry (the growl loop is
+    // host-only), so counting growl invocations on B proves message → registry → playAt end-to-end.
+    await B.evaluate(() => {
+      window.__growls = 0;
+      const a = window.GAME.audio, orig = a.enemyGrowl.bind(a);
+      a.enemyGrowl = () => { window.__growls++; return orig(); };
+    });
+    await A.evaluate(() => { const g = window.GAME; g.mp.sound('egrowl', { x: g.player.pos.x + 3, y: 1, z: g.player.pos.z }); });
+    const snd = await poll(B, () => window.__growls > 0, { timeout: 8000 });
+    report('6. world-audio snd event host→client (registry+playAt)', snd);
   }
 
   await browser.close();
