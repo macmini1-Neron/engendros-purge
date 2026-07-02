@@ -15,6 +15,8 @@ export class AudioManager {
     this.muted = false;
     this._musicTimer = null;
     this._started = false;
+    this._panners = [];      // pooled PannerNodes for positional one-shots (playAt)
+    this._outSwap = false;   // true while sfxGain is temporarily swapped to a panner (playAt reentrancy guard)
     this.music = null; // MusicDirector, created in init() once ctx exists
     this._pendingScene = null; // scene requested before init() (no ctx yet)
     // real recorded crew-radio line (assets/crew-lines.mp3), wired through a comms-band filter in init()
@@ -324,6 +326,50 @@ export class AudioManager {
     g.setValueAtTime(0.0001, t0);
     g.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + attack);
     g.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
+  }
+
+  // ---- positional one-shots (co-op world audio) --------------------------------------------
+  // The listener follows the game camera (driven from game._frame every frame, all states).
+  // Raw numbers, not THREE — audio.js stays dependency-free.
+  updateListener(px, py, pz, fx, fy, fz) {
+    if (!this.ctx) return;
+    const L = this.ctx.listener;
+    if (L.positionX) {
+      L.positionX.value = px; L.positionY.value = py; L.positionZ.value = pz;
+      L.forwardX.value = fx; L.forwardY.value = fy; L.forwardZ.value = fz;
+      L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0;
+    } else { L.setPosition(px, py, pz); L.setOrientation(fx, fy, fz, 0, 1, 0); }
+  }
+  // playAt(pos, fn): run a ONE-SHOT sound builder with the SFX bus temporarily swapped to a pooled
+  // PannerNode at `pos` — every connect(this.sfxGain) inside fn lands on the panner, so ANY
+  // existing procedural sound becomes positional with zero per-sound changes. Pool dry → play
+  // flat (never drop a sound). NEVER wrap loop-starters (dshkSustain etc.): the panner is
+  // reclaimed after ~1s and would drag a still-running loop to the next sound's position.
+  playAt(pos, fn) {
+    if (!this.ctx || !pos || this._outSwap) { fn(); return; }
+    const p = this._acquirePanner();
+    if (!p) { fn(); return; }
+    const n = p.node;
+    if (n.positionX) { n.positionX.value = pos.x; n.positionY.value = pos.y || 0; n.positionZ.value = pos.z; }
+    else n.setPosition(pos.x, pos.y || 0, pos.z);
+    p.freeAt = this.ctx.currentTime + 1.0;                    // just past the longest wrapped one-shot tail (~0.7s explosion) — short hold so a burst of combat SFX doesn't exhaust the 32-panner pool and fall back to flat
+    const real = this.sfxGain;
+    this.sfxGain = n; this._outSwap = true;
+    try { fn(); } finally { this.sfxGain = real; this._outSwap = false; }
+  }
+  _acquirePanner() {
+    const now = this.ctx.currentTime;
+    let p = this._panners.find((x) => x.freeAt <= now);
+    if (!p) {
+      if (this._panners.length >= 32) return null;
+      const node = this.ctx.createPanner();
+      node.panningModel = 'equalpower'; node.distanceModel = 'inverse';        // cheap; voice keeps HRTF
+      node.refDistance = 4; node.maxDistance = 120; node.rolloffFactor = 1.0;  // gunshot at 60 m ≈ 7% — audible, clearly distant
+      node.connect(this.sfxGain);                                              // the REAL bus (pool grows outside any swap)
+      p = { node, freeAt: 0 };
+      this._panners.push(p);
+    }
+    return p;
   }
 
   // ---- generic one-shots ----
@@ -695,6 +741,9 @@ export class AudioManager {
 
   hitMarker() { this.tone(1400, 0.04, 'square', 0.2); }
   headshot() { this.tone(2000, 0.05, 'square', 0.3); this.tone(2600, 0.05, 'square', 0.2); }
+  // squad life-state cues — derived from pstate edges in mp.js (no extra network message)
+  downCue() { if (!this.ctx) return; this.tone(320, 0.28, 'sawtooth', 0.28); this.tone(196, 0.5, 'sawtooth', 0.24); this.noise(0.35, 0.15, 'lowpass', 520, 0.8); } // low somber drop
+  reviveCue() { if (!this.ctx) return; this.tone(523, 0.14, 'triangle', 0.28); this.tone(784, 0.2, 'triangle', 0.24); this.tone(1046, 0.28, 'sine', 0.18); }       // bright rising chord
   // Effective hit on boss Tolo (bullseye-in-window or bazooka) — a meaty thunk + bright ding.
   bossHit() { this.tone(180, 0.09, 'sawtooth', 0.32); this.tone(880, 0.07, 'triangle', 0.26); this.tone(1320, 0.06, 'sine', 0.2); }
 

@@ -13,7 +13,6 @@
 // relayed message's transport `fromId` is the HOST, so we always read the ORIGINAL sender from
 // `d.from`, never the handler's fromId argument.
 
-import * as THREE from 'three';
 import { clamp, lerp, damp } from './util.js';
 import { iceConfig } from './net.js';
 import { RADIO, withinPassband, channelSnr, quality, resolveReception } from './radiosim.js';
@@ -288,9 +287,17 @@ export class VoiceChat {
   // crash/leave races where the 'vhello off' or playerLeft path never reached us.
   _reconcileRoster() {
     const mp = this.game.mp; if (!mp || !mp.active || !mp.roster) return;
-    for (const id of [...this.peers.keys()]) if (!mp.roster.has(id)) { this._voiceOn.delete(id); this._dropPeer(id); }
-    for (const id of [...this._voiceOn]) if (!mp.roster.has(id)) this._voiceOn.delete(id);
-    for (const id of [...this._peerRadio.keys()]) if (!mp.roster.has(id)) this._peerRadio.delete(id);
+    for (const id of [...this.peers.keys()]) {
+      const pv = this.peers.get(id);
+      if (mp.roster.has(id)) { if (pv) pv._rosterMiss = 0; continue; }
+      // A just-joined peer's vhello can arrive a beat before their roster entry propagates. Require
+      // TWO consecutive misses (~4s) before tearing the connection down, so that join race can't
+      // drop a live peer for ~2s; a genuinely-departed player stays missing and is dropped next tick.
+      if (pv && (pv._rosterMiss = (pv._rosterMiss || 0) + 1) < 2) continue;
+      this._voiceOn.delete(id); this._peerRadio.delete(id); this._dropPeer(id);
+    }
+    for (const id of [...this._voiceOn]) if (!mp.roster.has(id) && !this.peers.has(id)) this._voiceOn.delete(id);   // orphan presence (no peer yet) — safe to prune only when roster agrees they're gone
+    for (const id of [...this._peerRadio.keys()]) if (!mp.roster.has(id) && !this.peers.has(id)) this._peerRadio.delete(id);
   }
 
   _dropPeer(peerId) {
@@ -312,6 +319,7 @@ export class VoiceChat {
     const inCoop = !!(this.game.mp && this.game.mp.active);
     if (inCoop !== this._inCoop) { this._inCoop = inCoop; if (inCoop) this._enterMesh(); else this._exitMesh(); }
     if (!this.enabled || !this.ctx) return;
+    // (the shared ctx.listener is driven by game._frame → audio.updateListener — one owner)
 
     // Presence BEACON + roster reconcile (state-derived mesh): the one-shot vhello could be lost
     // in a join race and the mesh never formed OR never healed. Re-announcing every 2s (with the
@@ -329,7 +337,6 @@ export class VoiceChat {
     }
     if (this.voiceOutEl && this.voiceOutEl.paused) this.voiceOutEl.play().catch(() => {});
 
-    this._updateListener();
     this._updateLocalGate(dt);
 
     // throttle the raycast + meters to OCC_HZ
@@ -371,20 +378,6 @@ export class VoiceChat {
       staticTarget = Math.max(staticTarget, this._garble || 0);   // doubling on one channel = extra mush
     }
     if (this._crackleGain) this._crackleGain.gain.value = damp(this._crackleGain.gain.value, staticTarget * STATIC_OUT, STATIC_LAMBDA, dt);
-  }
-
-  _updateListener() {
-    const cam = this.game.engine && this.game.engine.camera; if (!cam) return;
-    const L = this.ctx.listener;
-    cam.getWorldDirection(_fwd);
-    if (L.positionX) {
-      L.positionX.value = cam.position.x; L.positionY.value = cam.position.y; L.positionZ.value = cam.position.z;
-      L.forwardX.value = _fwd.x; L.forwardY.value = _fwd.y; L.forwardZ.value = _fwd.z;
-      L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0;
-    } else {
-      L.setPosition(cam.position.x, cam.position.y, cam.position.z);
-      L.setOrientation(_fwd.x, _fwd.y, _fwd.z, 0, 1, 0);
-    }
   }
 
   _setPos(panner, p) {
@@ -660,6 +653,3 @@ export class VoiceChat {
 }
 
 function num(v, d) { return (typeof v === 'number' && isFinite(v)) ? v : d; }
-
-// scratch (module-local; the game loop is single-threaded)
-const _fwd = new THREE.Vector3();

@@ -91,6 +91,7 @@ const GAME_BUILD = '2026-07-02 14:49';
 
 const FIXED_STEP = 1 / 60;              // fixed-timestep sim tick (60 Hz) when this._fixedStep is ON
 const MAX_SUBSTEPS = 5;                 // spiral-of-death guard: cap sim sub-steps per render frame
+const _lsnFwd = new THREE.Vector3();    // scratch: camera forward for the shared Web Audio listener
 
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position (module-private, mirrors the copies in mp.js/loot.js; was dropped from game.js during the module split)
 
@@ -1308,6 +1309,12 @@ class Game {
       this._updatePlaying(frameDt * simScale);               // OFF / non-fixed path (default) — hit-stop scales the sim dt
     }
 
+    // ONE owner for the shared Web Audio listener (positional SFX + voice panners live in the same
+    // ctx): follow the camera every frame in every state.
+    if (this.audio && this.audio.updateListener && this.engine) {
+      const _c = this.engine.camera; _c.getWorldDirection(_lsnFwd);
+      this.audio.updateListener(_c.position.x, _c.position.y, _c.position.z, _lsnFwd.x, _lsnFwd.y, _lsnFwd.z);
+    }
     // Voice runs in ALL states (was inside _updatePlaying): the presence beacon, mesh enter/exit
     // edges, mute reconcile and station upkeep must keep ticking through lobby/menu/death — a
     // wipe-to-lobby otherwise froze the mesh in whatever state the last playing frame left it.

@@ -34,6 +34,14 @@ const MP_SKINS = [
 ];
 const DOWN_SECONDS = 30;
 const REVIVE_CLICKS = 30;
+// Registry for the generic positional sound event ('snd'): key → one-shot on the AudioManager.
+// Receivers play it through audio.playAt at the carried world position. Add keys here, never
+// eval arbitrary method names off the wire (room codes are public → untrusted peers).
+const SND = {
+  egrowl: (a) => a.enemyGrowl(),
+  ehurt: (a) => a.enemyHurt(),
+  pickup: (a) => a.buy(),
+};
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
@@ -772,14 +780,17 @@ export class MP {
     n.on('doorset', (d) => { if (d && g.world.applyDoorSet) g.world.applyDoorSet(d.id, d.open); });                   // authoritative bunker гермодверь open/closed (host → clients)
     n.on('doorreq', (d, from) => { if (this.isHost && d && g.world.applyDoorSet) { g.world.applyDoorSet(d.id, d.open); n.broadcast('doorset', { id: d.id, open: !!d.open }); } }); // client asks host to swing a blast door
     n.on('edie', (d) => this._clientEnemyDie(d));
+    n.on('snd', (d) => { if (!d || d.pid === this.myId || !d.k || !SND[d.k]) return; const a = g.audio; if (!a) return; // generic positional one-shot from a teammate/host
+      const p = (Array.isArray(d.p) && d.p.length >= 3 && d.p.every(Number.isFinite)) ? { x: +d.p[0], y: +d.p[1], z: +d.p[2] } : null;
+      if (p && a.playAt) a.playAt(p, () => SND[d.k](a, d)); else SND[d.k](a, d); });
     n.on('elimbsever', (d) => { if (this.isHost) return; const e = this.ghosts.get(d.id); if (e && e.rig) { const p = e.rig.byName[d.p]; if (p && p.alive) severCosmetic(g, e, p, d.d ? new THREE.Vector3(d.d[0], d.d[1], d.d[2]) : null); } }); // replay host limb detach + gib
     n.on('eplate', (d) => { if (this.isHost) return; const e = this.ghosts.get(d.id); if (e && e.plateIntact) this.game.enemies.breakPlate(e, null); }); // replay host СН-42 cuirass shatter (FX + drop plate)
-    n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
-      if (d.e === 'expl') { const bp = V(d.p); eff.explosion(bp, d.s || 3); if (g.engine.shake) { const dist = bp.distanceTo(g.player.pos); if (dist < 18) g.engine.shake(Math.max(0.08, 0.5 * (1 - dist / 18))); } } // distance-scaled shake so a teammate's blast also rattles the viewer
-      else if (d.e === 'laser') { const from = V(d.p), dir = V(d.d); eff.muzzleFlash(from, dir, 2.6); g.audio.tone(1300, 0.08, 'square', 0.35); g.audio.noise(0.16, 0.35, 'highpass', 1400, 0.8); g._fxBeam(from, dir); } });
+    n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound (audio rides playAt → positional)
+      if (d.e === 'expl') { const bp = V(d.p); g.audio.playAt(bp, () => eff.explosion(bp, d.s || 3)); if (g.engine.shake) { const dist = bp.distanceTo(g.player.pos); if (dist < 18) g.engine.shake(Math.max(0.08, 0.5 * (1 - dist / 18))); } } // distance-scaled shake so a teammate's blast also rattles the viewer
+      else if (d.e === 'laser') { const from = V(d.p), dir = V(d.d); eff.muzzleFlash(from, dir, 2.6); g.audio.playAt(from, () => { g.audio.tone(1300, 0.08, 'square', 0.35); g.audio.noise(0.16, 0.35, 'highpass', 1400, 0.8); }); g._fxBeam(from, dir); } });
     n.on('bossfx', (d) => { if (this.isHost || !d || !d.k) return; const V = (a) => new THREE.Vector3(a[0], a[1], a[2]); const em = g.enemies; // host-relayed boss/tank attack VISUALS (clients don't run EnemyManager.update) — visual-only, NO damage
       switch (d.k) {
-        case 'bolt': em.spawnGhostBolt(V(d.p), V(d.d), d.col); break;
+        case 'bolt': { const bo = V(d.p); em.spawnGhostBolt(bo, V(d.d), d.col); g.audio.playAt(bo, () => g.audio.tone(1300, 0.07, 'square', 0.3)); break; } // fire tone was host-only — clients saw a silent bolt
         case 'sweepStart': em.ghostSweepStart(d.ph); break;
         case 'sweep': em.ghostSweepUpdate(V(d.p), d.a, d.len, d.th, d.ph); break;
         case 'sweepEnd': em.ghostSweepEnd(); break;
@@ -787,8 +798,8 @@ export class MP {
         case 'glow': { const gh = this.ghosts.get(d.id); if (gh && gh.pos) { const belly = new THREE.Vector3(gh.pos.x, gh.pos.y + 0.6 * (gh.scale || 1), gh.pos.z + 0.4 * (gh.scale || 1)); g.effects.firePool({ x: belly.x, y: belly.y, z: belly.z }, 0.6, 1.2); } break; }
         case 'banner': g.hud.bigMessage(d.title || '', d.sub || ''); g.audio.tone(200, 0.5, 'sawtooth', 0.4); break;
         case 'aimring': em.ghostAimMarker(d.x, d.z); break;
-        case 'mg': g.effects.tracer(V(d.o), V(d.e), 0xfff1a0); g.audio.tone(180, 0.03, 'square', 0.10); break;
-        case 'shell': g.effects.explosion(V(d.p), d.s || 4); if (g.engine.shake) g.engine.shake(0.4); break;
+        case 'mg': { const mo = V(d.o); g.effects.tracer(mo, V(d.e), 0xfff1a0); g.audio.playAt(mo, () => g.audio.tone(180, 0.03, 'square', 0.10)); break; }
+        case 'shell': { const shp = V(d.p); g.audio.playAt(shp, () => g.effects.explosion(shp, d.s || 4)); if (g.engine.shake) g.engine.shake(0.4); break; }
         case 'shake': if (g.engine.shake) g.engine.shake(d.a || 0.2); break;
       }
     });
@@ -798,18 +809,23 @@ export class MP {
       g.effects.muzzleFlash(muzzle, dir, (d.cls === 'shotgun' || d.cls === 'launcher') ? 1.6 : 1);
       const wh = g.world.rayHit(muzzle, dir, 120); const end = wh ? wh.point : muzzle.clone().addScaledVector(dir, 120);
       g.effects.tracer(muzzle, end, d.col != null ? d.col : 0xffd27f);
-      if (d.w === 'mosin' && g.audio && typeof g.audio.mosinShot === 'function') g.audio.mosinShot();
-      else g.audio.gunshot(SOUND_BY_CLASS[d.cls] || SOUND_BY_CLASS.pistol); });
-    n.on('weaponfoley', (d) => { if (!d || d.pid === this.myId || d.w !== 'mosin') return; // teammate Mosin bolt/reload foley
+      g.audio.playAt(muzzle, () => { // teammate shots come from THEIR muzzle, not "inside your head"
+        if (d.w === 'mosin' && typeof g.audio.mosinShot === 'function') g.audio.mosinShot();
+        else g.audio.gunshot(SOUND_BY_CLASS[d.cls] || SOUND_BY_CLASS.pistol);
+      }); });
+    n.on('weaponfoley', (d) => { if (!d || d.pid === this.myId || d.w !== 'mosin') return; // teammate Mosin bolt/reload foley — positional at their avatar
       const a = g.audio; if (!a) return;
-      if (d.k === 'boltOpen' && typeof a.mosinBoltOpen === 'function') a.mosinBoltOpen();
-      else if (d.k === 'boltClose' && typeof a.mosinBoltClose === 'function') a.mosinBoltClose();
-      else if (d.k === 'caseEject' && typeof a.mosinCaseEject === 'function') a.mosinCaseEject();
-      else if (d.k === 'reloadStart' && typeof a.mosinReloadStart === 'function') a.mosinReloadStart();
-      else if (d.k === 'clipLoad' && typeof a.mosinClipLoad === 'function') a.mosinClipLoad();
-      else if (d.k === 'roundInsert' && typeof a.mosinRoundInsert === 'function') a.mosinRoundInsert();
-      else if (d.k === 'reloadFinish' && typeof a.mosinReloadFinish === 'function') a.mosinReloadFinish();
-      else if (typeof a.reloadClick === 'function') a.reloadClick(); });
+      const rp = this.remotes.get(d.pid);
+      a.playAt(rp ? rp.pos : null, () => {
+        if (d.k === 'boltOpen' && typeof a.mosinBoltOpen === 'function') a.mosinBoltOpen();
+        else if (d.k === 'boltClose' && typeof a.mosinBoltClose === 'function') a.mosinBoltClose();
+        else if (d.k === 'caseEject' && typeof a.mosinCaseEject === 'function') a.mosinCaseEject();
+        else if (d.k === 'reloadStart' && typeof a.mosinReloadStart === 'function') a.mosinReloadStart();
+        else if (d.k === 'clipLoad' && typeof a.mosinClipLoad === 'function') a.mosinClipLoad();
+        else if (d.k === 'roundInsert' && typeof a.mosinRoundInsert === 'function') a.mosinRoundInsert();
+        else if (d.k === 'reloadFinish' && typeof a.mosinReloadFinish === 'function') a.mosinReloadFinish();
+        else if (typeof a.reloadClick === 'function') a.reloadClick();
+      }); });
     // ---- rooftop fixed heavy MGs: seat claim + fire FX + barrel slew ----
     n.on('fiftyclaim', (d, from) => { if (this.isHost && d) this._hostFiftyClaim(d.want, from, d.g); });           // client → host: request mount/dismount
     n.on('fiftystate', (d) => { if (!this.isHost && d) this._applyFiftyState(d); });                              // host → clients: who owns the seat now
@@ -822,12 +838,15 @@ export class MP {
       g.effects.muzzleFlash(o, dir, (gun && gun.muzzleFlashScale) || 2.2);
       g.effects.tracer(o, e, d.c != null ? d.c : 0xffe08a);
       if (d.s && d.r) g.effects.shell(V(d.s), V(d.r).normalize(), { mesh: 'fiftyCase', size: 1, color: 0xcaa64a, sound: 'fiftyBrass', life: 5, bounce: 0.48, maxBounceSounds: 3, bounceSoundMinVel: 1.4, sideMin: 2.8, sideMax: 4.4, upMin: 1.2, upMax: 2.1, seed: d.rs });
-      if (gun && gun.variant === 'dshk' && g.audio && typeof g.audio.dshkShot === 'function') g.audio.dshkShot();
-      else if (g.audio && typeof g.audio.fiftyShot === 'function') g.audio.fiftyShot(); else if (g.audio && typeof g.audio.gunshot === 'function') g.audio.gunshot(SOUND_BY_CLASS.fiftycal); });
+      if (g.audio) g.audio.playAt(o, () => { // teammate heavy MG fires from the GUN's muzzle
+        if (gun && gun.variant === 'dshk' && typeof g.audio.dshkShot === 'function') g.audio.dshkShot();
+        else if (typeof g.audio.fiftyShot === 'function') g.audio.fiftyShot(); else if (typeof g.audio.gunshot === 'function') g.audio.gunshot(SOUND_BY_CLASS.fiftycal);
+      }); });
     n.on('fiftysound', (d) => { if (!d || d.pid === this.myId || !d.k) return; // non-shot .50cal foley: charging handle / overheat should be audible to nearby peers too
       const gun = g.mountedGunById ? g.mountedGunById(d.g) : g.mountedGun;
-      if (d.k === 'charge') { if (gun && typeof gun.animateCharge === 'function') gun.animateCharge(); if (g.audio && typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (g.audio && typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }
-      else if (d.k === 'overheat') { if (g.audio && typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (g.audio && typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); } });
+      const rp = this.remotes.get(d.pid); const at = rp ? rp.pos : null; // operator stands at the gun
+      if (d.k === 'charge') { if (gun && typeof gun.animateCharge === 'function') gun.animateCharge(); if (g.audio) g.audio.playAt(at, () => { if (typeof g.audio.fiftyCharge === 'function') g.audio.fiftyCharge(); else if (typeof g.audio.reloadIn === 'function') g.audio.reloadIn(); }); }
+      else if (d.k === 'overheat') { if (g.audio) g.audio.playAt(at, () => { if (typeof g.audio.fiftyOverheat === 'function') g.audio.fiftyOverheat(); else if (typeof g.audio.tone === 'function') g.audio.tone(100, 0.25, 'sawtooth', 0.25); }); } });
     n.on('fiftyaim', (d) => { if (!d || d.pid === this.myId) return; const gun = g.mountedGunById ? g.mountedGunById(d.g) : g.mountedGun; if (gun && gun.occupant === d.pid && gun.gun) { gun.gun.rotation.set(d.pitch, d.yaw, 0); if (typeof gun.updateCollisionBoxes === 'function') gun.updateCollisionBoxes(); } if (gun && d.heat != null) gun.heat = d.heat; if (gun && Number.isFinite(d.ammo) && typeof gun.setAmmo === 'function') gun.setAmmo(d.ammo); }); // slew the barrel + mirror heat/ammo so everyone sees the glow/smoke/empty box
     n.on('fiftyrefill', (d, from) => { if (this.isHost) this._hostFiftyRefill(from, d && d.g); }); // client → host: reload the host-owned fixed MG from a carried can
     // ── 82-ПМ-37 co-op mortar (host-authoritative seat + ammo + impact; clients render visual-only arcs) ──
@@ -1149,7 +1168,8 @@ export class MP {
     const col = (d.col != null) ? d.col : e.col.body;
     if (e.rig) { e.mesh.updateMatrixWorld(true); for (const p of e.rig.parts) if (p.severable && p.alive) severCosmetic(this.game, e, p, null); } // brutal plush burst: scatter the limbs still attached
     this.game.effects.stuffing(top, col, d.bs ? 44 : (d.el ? 30 : 16), d.bs ? 9 : (d.el ? 8 : 6)); // boss/elite get the bigger burst
-    if (d.ex) this.game.effects.explosion(top, d.ex); else this.game.audio.enemyDie();              // exploder death blast (explosion() plays its own boom)
+    const _ea = this.game.audio; // death audio positional at the body (explosion() plays its own boom through the same panner)
+    if (d.ex) _ea.playAt(top, () => this.game.effects.explosion(top, d.ex)); else _ea.playAt(top, () => _ea.enemyDie());
     if (d.k === this.myId) { // I scored this kill → local kill-punch + hit-stop (mirrors the solo/host path in enemies.damage; runs for ALL clients so the killer gate is essential)
       const big = !!d.bs || !!d.el;
       if (this.game.engine) this.game.engine.addTrauma(big ? 0.5 : 0.16);
@@ -1264,6 +1284,7 @@ export class MP {
   _applyPState(d) {
     const g = this.game;
     if (d.id === this.myId) {
+      const wasDown = this._localDown; // pstate edge → audible down/revive cue (state-derived, no extra message)
       g.player.hp = d.hp; g.player.armor = d.armor;
       g.hud.setHealth(d.hp, d.maxHp); g.hud.setArmor(d.armor, g.player.armorMax);
       this._localDown = d.down; this._localDead = d.dead; this._localWaiting = d.waiting;
@@ -1274,7 +1295,27 @@ export class MP {
       else if (d.down) g.hud.bigMessage('DOWNED', 'a teammate can revive you');
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
       else { this.spectateTarget = null; this._incomingRevive = null; g.hud.setBleed(-1); }
-    } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); } } // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
+      if (g.audio && g.audio.downCue) {
+        if (d.down && !wasDown) g.audio.downCue();
+        else if (!d.down && wasDown && !d.dead && !d.waiting) g.audio.reviveCue();
+      }
+    } else { const rp = this._remote(d.id); if (rp) {
+      const wasDown = rp.down;
+      rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
+      const a = g.audio; // teammate down/revive → positional cue at their body (derived from the same pstate every client already gets)
+      if (a && a.downCue) {
+        if (d.down && !wasDown) { if (a.playAt) a.playAt(rp.pos, () => a.downCue()); else a.downCue(); }
+        else if (!d.down && wasDown && !d.dead && !d.waiting) { if (a.playAt) a.playAt(rp.pos, () => a.reviveCue()); else a.reviveCue(); }
+      }
+    } }
+  }
+  // Fire-and-forget positional sound for the squad ('snd' registry key + world pos). Culled at the
+  // SENDER: skip the broadcast when no living player is within earshot. No-op solo / not connected.
+  sound(k, pos, range = 55) {
+    if (!this.active || !this.net || !pos) return;
+    const np = this.nearestPlayer(pos.x, pos.z);
+    if (!np || np.dist > range) return;
+    try { this.net.broadcast('snd', { pid: this.myId, k, p: [+pos.x.toFixed(1), +(pos.y || 0).toFixed(1), +pos.z.toFixed(1)] }); } catch (e) {}
   }
   nearestPlayer(x, z) {
     let best = Infinity, id = null, pos = null;

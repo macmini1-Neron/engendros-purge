@@ -809,7 +809,13 @@ export class EnemyManager {
         e.attackCD = 0.8; e.squash = 0.18; this.game.build.attackStructure(e._blockStruct, e.def.dmg, e);
       }
       e.growlCD -= dt;
-      if (e.growlCD <= 0) { e.growlCD = rr(3, 8); if (dist < 32) this.game.audio.enemyGrowl(); }
+      if (e.growlCD <= 0) {
+        e.growlCD = rr(3, 8);
+        const _ga = this.game.audio;
+        if (dist < 32) { if (_ga.playAt) _ga.playAt(e.pos, () => _ga.enemyGrowl()); else _ga.enemyGrowl(); }
+        const _gmp = this.game.mp; // squad-wide: clients never run this host loop → relay the growl
+        if (_gmp && _gmp.active && _gmp.isHost && _gmp.sound) _gmp.sound('egrowl', e.pos);
+      }
 
       // anim
       e.bob += dt * (6 + spd);
@@ -974,7 +980,7 @@ export class EnemyManager {
     a.x += rr(-spread, spread); a.y += rr(-spread * 0.4, spread * 0.4); a.z += rr(-spread, spread);
     a.normalize();
     this._spawnBolt(e, a);
-    this.game.audio.tone(1300, 0.07, 'square', 0.3);
+    { const _ba = this.game.audio; if (_ba.playAt) _ba.playAt(e.pos, () => _ba.tone(1300, 0.07, 'square', 0.3)); else _ba.tone(1300, 0.07, 'square', 0.3); }
     if (e.shotsLeft <= 0) e._tolGlow.material.opacity = 0;
   }
 
@@ -1318,7 +1324,7 @@ export class EnemyManager {
       e.mesh.visible = false;
       const top = new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
       this.game.effects.stuffing(top, e.col.body, e.def.boss ? 44 : (e.isElite ? 30 : 16), e.def.boss ? 9 : (e.isElite ? 8 : 6));
-      this.game.audio.enemyDie();
+      { const _da = this.game.audio; if (_da.playAt) _da.playAt(top, () => _da.enemyDie()); else _da.enemyDie(); }
       if (e.def.explode) {
         // enemies take 1.2× the blast, players take 1.0× (enemyDmg vs dmg). harmPlayers gated on the
         // chain guard: only the triggering kill harms the player; chained exploders don't double-dip.
@@ -1346,7 +1352,14 @@ export class EnemyManager {
     const hpv = (this._hitPuff || (this._hitPuff = new THREE.Vector3())).set(e.pos.x, e.pos.y + e.height * 0.6, e.pos.z);
     this.game.effects.stuffing(hpv, e.col.body, 4, 3);
     if (_juice) this.game.hud.popDamage(hitPoint || hpv, amount, { crit });
-    if (source !== 'explosion') this.game.audio.enemyHurt();
+    if (source !== 'explosion') {
+      const _ha = this.game.audio;
+      if (_ha.playAt) _ha.playAt(hpv, () => _ha.enemyHurt()); else _ha.enemyHurt();
+      // squad-wide hurt confirm (finally audible to the client SHOOTER too — their local damage()
+      // early-returns into claimHit above); per-enemy 90ms debounce keeps AoE bursts sane
+      const _now = performance.now();
+      if (_mp && _mp.active && _mp.isHost && _mp.sound && (!e._hurtSndAt || _now - e._hurtSndAt > 90)) { e._hurtSndAt = _now; _mp.sound('ehurt', e.pos); }
+    }
     return false;
   }
 
