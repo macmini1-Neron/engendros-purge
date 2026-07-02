@@ -34,6 +34,14 @@ const MP_SKINS = [
 ];
 const DOWN_SECONDS = 30;
 const REVIVE_CLICKS = 30;
+// Registry for the generic positional sound event ('snd'): key → one-shot on the AudioManager.
+// Receivers play it through audio.playAt at the carried world position. Add keys here, never
+// eval arbitrary method names off the wire (room codes are public → untrusted peers).
+const SND = {
+  egrowl: (a) => a.enemyGrowl(),
+  ehurt: (a) => a.enemyHurt(),
+  pickup: (a) => a.buy(),
+};
 const _v3a = new THREE.Vector3();
 const _mpMin = new THREE.Vector3(), _mpMax = new THREE.Vector3();
 const _flareWP = new THREE.Vector3();   // scratch: flare flame world-position
@@ -772,6 +780,9 @@ export class MP {
     n.on('doorset', (d) => { if (d && g.world.applyDoorSet) g.world.applyDoorSet(d.id, d.open); });                   // authoritative bunker гермодверь open/closed (host → clients)
     n.on('doorreq', (d, from) => { if (this.isHost && d && g.world.applyDoorSet) { g.world.applyDoorSet(d.id, d.open); n.broadcast('doorset', { id: d.id, open: !!d.open }); } }); // client asks host to swing a blast door
     n.on('edie', (d) => this._clientEnemyDie(d));
+    n.on('snd', (d) => { if (!d || d.pid === this.myId || !d.k || !SND[d.k]) return; const a = g.audio; if (!a) return; // generic positional one-shot from a teammate/host
+      const p = (Array.isArray(d.p) && d.p.length >= 3 && d.p.every(Number.isFinite)) ? { x: +d.p[0], y: +d.p[1], z: +d.p[2] } : null;
+      if (p && a.playAt) a.playAt(p, () => SND[d.k](a, d)); else SND[d.k](a, d); });
     n.on('elimbsever', (d) => { if (this.isHost) return; const e = this.ghosts.get(d.id); if (e && e.rig) { const p = e.rig.byName[d.p]; if (p && p.alive) severCosmetic(g, e, p, d.d ? new THREE.Vector3(d.d[0], d.d[1], d.d[2]) : null); } }); // replay host limb detach + gib
     n.on('eplate', (d) => { if (this.isHost) return; const e = this.ghosts.get(d.id); if (e && e.plateIntact) this.game.enemies.breakPlate(e, null); }); // replay host СН-42 cuirass shatter (FX + drop plate)
     n.on('fx', (d) => { if (!d || !d.e) return; const eff = g.effects, V = (a) => new THREE.Vector3(a[0], a[1], a[2]); // host-relayed one-shot particle+sound
@@ -1275,6 +1286,14 @@ export class MP {
       else if (d.waiting) g.hud.bigMessage('WAITING', 'respawn at the next wave');
       else { this.spectateTarget = null; this._incomingRevive = null; g.hud.setBleed(-1); }
     } else { const rp = this._remote(d.id); if (rp) { rp.setHP(d.hp, d.maxHp); rp.down = d.down; rp.waiting = d.waiting; rp.dead = d.dead; rp.setBurn(d.burn ? PLAYER_BURN_DUR : 0); } } // setBurn here is a backup to the xf bf flag (primary remote-flame driver)
+  }
+  // Fire-and-forget positional sound for the squad ('snd' registry key + world pos). Culled at the
+  // SENDER: skip the broadcast when no living player is within earshot. No-op solo / not connected.
+  sound(k, pos, range = 55) {
+    if (!this.active || !this.net || !pos) return;
+    const np = this.nearestPlayer(pos.x, pos.z);
+    if (!np || np.dist > range) return;
+    try { this.net.broadcast('snd', { pid: this.myId, k, p: [+pos.x.toFixed(1), +(pos.y || 0).toFixed(1), +pos.z.toFixed(1)] }); } catch (e) {}
   }
   nearestPlayer(x, z) {
     let best = Infinity, id = null, pos = null;
