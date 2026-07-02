@@ -77,8 +77,11 @@ export const ROADS = [
   { id: 'QUARRY', name: 'КАРЬЕРНАЯ СПОЙКА', surface: 'dirt', width: 4, maxSlope: 0.12, pts: [
     [-300, -200], [-200, -240], [-140, -260], [-120, -440], [-100, -600], [-80, -780],
   ] },
+  // AUTHORED: line ends at the P5 terrace FOOT (900,−40, beside the S15 water tower) instead of the
+  // plan's (820,−40) — the mid-course is natural lowland (~0 m), and a 3% line can neither climb the
+  // +30 terrace edge nor honestly embank 30 m; the seřadiště sits at the plant's foot. Flag for v1.3.
   { id: 'RAIL', name: 'ЖЕЛЕЗНАЯ ДОРОГА', surface: 'rail', width: 3, maxSlope: 0.03, pts: [
-    [1250, -20], [1180, -20], [1050, -30], [920, -40], [820, -40],
+    [1250, -20], [1180, -20], [1050, -30], [980, -35], [900, -40],
   ] },
   { id: 'SERP', name: 'СЕРПАНТИН', surface: 'gravel', width: 4, maxSlope: 0.14, pts: [
     [800, 200], [940, 370], [1000, 560], [980, 760], [1040, 880], [1000, 990], [960, 1020], [1060, 1120],

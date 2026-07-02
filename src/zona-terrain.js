@@ -168,6 +168,11 @@ function pointAtArc(pts, cum, s) {
 function prepareCorridors(stamped) {
   const grid = new Map(); // cellKey → road preps (per-SEGMENT insertion, deduped at eval by query id)
   const profiles = new Map();
+  const corrSoFar = { grid, profiles };
+  // ITERATIVE: road N's profile samples the field ALREADY conditioned by roads 0..N−1 (the registry
+  // orders trunks before their spurs), so a spur branching off a trunk's cutting starts AT the cut
+  // height instead of hanging a wall over the junction.
+  const fieldSoFar = (x, z) => corridorHeight(corrSoFar, x, z, stamped(x, z));
   for (const road of ROADS) {
     const cum = cumArc(road.pts);
     const total = cum[cum.length - 1];
@@ -176,26 +181,18 @@ function prepareCorridors(stamped) {
     for (let j = 0; j < n; j++) {
       const s = Math.min(j * CORR_STEP, total);
       const p = pointAtArc(road.pts, cum, s);
-      arc.push(s); pos.push(p); h.push(stamped(p[0], p[1]));
+      arc.push(s); pos.push(p); h.push(fieldSoFar(p[0], p[1]));
     }
-    // smooth: two passes of centred moving average (window 5)
-    for (let pass = 0; pass < 2; pass++) {
-      const src = h.slice();
-      for (let i = 0; i < n; i++) {
-        let sum = 0, cnt = 0;
-        for (let k = -2; k <= 2; k++) { const ii = i + k; if (ii >= 0 && ii < n) { sum += src[ii]; cnt++; } }
-        h[i] = sum / cnt;
-      }
-    }
-    // slope clamp: EXACT Lipschitz envelopes (O(n), deterministic). minEnv = tightest L-Lipschitz
-    // function ≤ profile (pure cut), maxEnv = tightest ≥ profile (pure fill); their average is again
-    // L-Lipschitz and balances cut vs fill — ridges become cuttings, ravines become embankments.
+    // slope clamp: the LOWER Lipschitz envelope (O(n), exact, deterministic) — the LARGEST
+    // L-Lipschitz function ≤ the sampled ground. Pure CUT: ridges/bumps get benched down, dips are
+    // kept (roads grade through hollows), and endpoints anchor at their true ground. (Do NOT average
+    // with the upper envelope and do NOT pre-smooth: both back-propagate a big climb's height into
+    // the low endpoint — a massif scramble then hovers ~17 m over the trunk road it branches from,
+    // and its corridor builds a levee across the steppe.)
     {
       const L = road.maxSlope;
-      const lo = h.slice(), hi = h.slice();
-      for (let i = 1; i < n; i++) { const ds = arc[i] - arc[i - 1]; lo[i] = Math.min(lo[i], lo[i - 1] + L * ds); hi[i] = Math.max(hi[i], hi[i - 1] - L * ds); }
-      for (let i = n - 2; i >= 0; i--) { const ds = arc[i + 1] - arc[i]; lo[i] = Math.min(lo[i], lo[i + 1] + L * ds); hi[i] = Math.max(hi[i], hi[i + 1] - L * ds); }
-      for (let i = 0; i < n; i++) h[i] = (lo[i] + hi[i]) / 2;
+      for (let i = 1; i < n; i++) { const ds = arc[i] - arc[i - 1]; h[i] = Math.min(h[i], h[i - 1] + L * ds); }
+      for (let i = n - 2; i >= 0; i--) { const ds = arc[i + 1] - arc[i]; h[i] = Math.min(h[i], h[i + 1] + L * ds); }
     }
     // bridge gap windows in arc space (corridor weight → 0 inside, so the channel survives under the deck)
     const gaps = (road.bridges || []).map(b => {
@@ -226,31 +223,35 @@ function profileAt(prep, s) {
 }
 
 let _query = 0;
+// weighted blend of EVERY corridor in range — nearest-wins is discontinuous exactly at junctions
+// (two roads, two different clamped profiles, tied lateral distance ⇒ a step wall ACROSS the spur).
+// A convex blend of slope-clamped profiles stays continuous everywhere and both ribbons drape the
+// blended surface, so junctions meet seamlessly.
 function corridorHeight(corr, x, z, h) {
   const cx = Math.max(0, Math.min(NCELL - 1, Math.floor((x + EXTENT) / CELL)));
   const cz = Math.max(0, Math.min(NCELL - 1, Math.floor((z + EXTENT) / CELL)));
   const list = corr.grid.get(cellKey(cx, cz));
   if (!list) return h;
   const q = ++_query;
-  let best = null, bestD = Infinity;
+  let wSum = 0, hSum = 0, wMax = 0;
   for (const prep of list) {
     if (prep._q === q) continue; prep._q = q; // dedupe (a prep spans several segments → cells)
     const pr = polylineProject(prep.pts, x, z);
-    if (pr.d < bestD) { bestD = pr.d; best = { prep, s: pr.s }; }
-  }
-  if (!best) return h;
-  const { prep, s } = best;
-  const hp = profileAt(prep, s);
-  const shoulder = prep.baseShoulder + Math.min(40, Math.abs(hp - h) * 1.3); // adaptive: deep cuts widen
-  if (bestD >= prep.halfW + shoulder) return h;
-  let w = bestD <= prep.halfW ? 1 : 1 - smoothstep((bestD - prep.halfW) / shoulder);
-  for (const g of prep.gaps) { // bridge window: fade the pull to 0 inside the gap
-    if (s > g.s0 - g.feather && s < g.s1 + g.feather) {
-      const edge = Math.min((s - (g.s0 - g.feather)) / g.feather, ((g.s1 + g.feather) - s) / g.feather);
-      w *= 1 - Math.max(0, Math.min(1, edge));
+    const hp = profileAt(prep, pr.s);
+    const shoulder = prep.baseShoulder + Math.min(40, Math.abs(hp - h) * 1.3); // adaptive: deep cuts widen
+    if (pr.d >= prep.halfW + shoulder) continue;
+    let w = pr.d <= prep.halfW ? 1 : 1 - smoothstep((pr.d - prep.halfW) / shoulder);
+    for (const g of prep.gaps) { // bridge window: fade the pull to 0 inside the gap
+      if (pr.s > g.s0 - g.feather && pr.s < g.s1 + g.feather) {
+        const edge = Math.min((pr.s - (g.s0 - g.feather)) / g.feather, ((g.s1 + g.feather) - pr.s) / g.feather);
+        w *= 1 - Math.max(0, Math.min(1, edge));
+      }
     }
+    if (w <= 0) continue;
+    wSum += w; hSum += hp * w; if (w > wMax) wMax = w;
   }
-  return hp * w + h * (1 - w);
+  if (wSum <= 0) return h;
+  return (hSum / wSum) * wMax + h * (1 - wMax);
 }
 
 // ── parcel pads — the cadastre layer, applied LAST (pads win over roads win over stamps). Inside the
@@ -287,8 +288,13 @@ function padHeight(pads, x, z, h) {
     const d = distToShape(prep.f, x, z);
     if (d < bestD || (d === bestD && best && prep.half < best.half)) { bestD = d; best = prep; }
   }
-  if (!best || bestD >= best.skirt) return h;
-  const w = 1 - smoothstep(bestD / best.skirt); // d=0 (inside the footprint) ⇒ w=1 ⇒ dead flat
+  if (!best) return h;
+  // adaptive skirt (same trick as corridor shoulders): a pad pinned far above/below its surroundings
+  // widens its blend so the rim is a walkable slope, not a cliff (e.g. the P9 portal bench, +26 m
+  // over the massif flank — a fixed 10 m skirt there is an 80° wall ACROSS the T5A scramble).
+  const skirt = best.skirt + Math.min(70, Math.abs(best.padH - h) * 2.0);
+  if (bestD >= skirt) return h;
+  const w = 1 - smoothstep(bestD / skirt); // d=0 (inside the footprint) ⇒ w=1 ⇒ dead flat
   return best.padH * w + h * (1 - w);
 }
 

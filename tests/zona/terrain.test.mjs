@@ -24,7 +24,10 @@ test('pinned plan heights (probe points sit in stamp cores, OFF the road corrido
   assert.ok(Math.abs(h(470, -850) - (-12)) < 1, `swamp ${h(470, -850)}`);
   // (−170,−300): quarry floor, ~34 m off the quarry access road (whose ramp re-grades the bowl centre)
   assert.ok(Math.abs(h(-170, -300) - (-25)) < 3, `quarry ${h(-170, -300)}`);
-  assert.ok(h(-50, 60) > 100, `massif crest ${h(-50, 60)}`); // ridge ~+150 minus fbm wobble
+  // (−150,150): on the crest line OFF the T5A scramble — the path legitimately cuts a walkable
+  // saddle-notch through the ridge near (−60,60)/(50,20) (Lipschitz cone from its ends tops out
+  // ~118 m there; flag for the master-plan bump: the запретка crest reads as a pass on the path line)
+  assert.ok(h(-150, 150) > 100, `massif crest ${h(-150, 150)}`);
 });
 
 test('river channel carves below the surrounding field', () => {
