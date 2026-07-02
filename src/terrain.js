@@ -28,6 +28,13 @@
 //                     because the ground-follow re-seat is gated off via hasTerrain.
 //   profile 'demo'  → gentle rolling fBm hills (~±4 m) + one larger broad hill
 //                     (~11 m), tuned so most slopes are walkable with a few steep faces.
+//   profile 'zona'  → the 2500×2500 «ЗОНА 704» master map — plan-driven stamps + road
+//                     corridors + parcel pads, composed in src/zona-terrain.js (pure,
+//                     THREE-free, so this import keeps terrain.js node/worker-safe).
+//                     A NAMED profile (not an opts callback) on purpose: the sim-worker
+//                     rebuilds terrain from serialized {profile, seed, …} opts, and a
+//                     closure would not survive postMessage.
+import { makeZonaHeightFn } from './zona-terrain.js';
 
 // ───────────────────────────────────────────────────────────────────────────
 // Deterministic integer-lattice hash → [0,1).  No state, pure function of inputs.
@@ -196,8 +203,11 @@ export function makeTerrain(opts = {}) {
   let deform = opts.deformField || null;
 
   // height — the single source of truth. PURE (given a fixed seed + deform-field state).
+  const zonaFn = profile === 'zona' ? makeZonaHeightFn(seed) : null;
   function terrainHeightAt(x, z) {
-    const base = isFlat ? 0 : (profile === 'forest' ? forestHeight(x, z, seed, tune) : demoHeight(x, z, seed, tune));
+    const base = isFlat ? 0
+      : zonaFn ? zonaFn(x, z)
+      : (profile === 'forest' ? forestHeight(x, z, seed, tune) : demoHeight(x, z, seed, tune));
     return deform ? base + deform.deformAt(x, z) : base;   // + excavation offset (craters/pits), 0 when empty
   }
 
