@@ -287,9 +287,17 @@ export class VoiceChat {
   // crash/leave races where the 'vhello off' or playerLeft path never reached us.
   _reconcileRoster() {
     const mp = this.game.mp; if (!mp || !mp.active || !mp.roster) return;
-    for (const id of [...this.peers.keys()]) if (!mp.roster.has(id)) { this._voiceOn.delete(id); this._dropPeer(id); }
-    for (const id of [...this._voiceOn]) if (!mp.roster.has(id)) this._voiceOn.delete(id);
-    for (const id of [...this._peerRadio.keys()]) if (!mp.roster.has(id)) this._peerRadio.delete(id);
+    for (const id of [...this.peers.keys()]) {
+      const pv = this.peers.get(id);
+      if (mp.roster.has(id)) { if (pv) pv._rosterMiss = 0; continue; }
+      // A just-joined peer's vhello can arrive a beat before their roster entry propagates. Require
+      // TWO consecutive misses (~4s) before tearing the connection down, so that join race can't
+      // drop a live peer for ~2s; a genuinely-departed player stays missing and is dropped next tick.
+      if (pv && (pv._rosterMiss = (pv._rosterMiss || 0) + 1) < 2) continue;
+      this._voiceOn.delete(id); this._peerRadio.delete(id); this._dropPeer(id);
+    }
+    for (const id of [...this._voiceOn]) if (!mp.roster.has(id) && !this.peers.has(id)) this._voiceOn.delete(id);   // orphan presence (no peer yet) — safe to prune only when roster agrees they're gone
+    for (const id of [...this._peerRadio.keys()]) if (!mp.roster.has(id) && !this.peers.has(id)) this._peerRadio.delete(id);
   }
 
   _dropPeer(peerId) {
