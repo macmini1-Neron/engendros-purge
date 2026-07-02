@@ -43,6 +43,7 @@ export class VoiceChat {
     // mesh
     this.peers = new Map();        // sessionPeerId -> PeerVoice
     this._voiceOn = new Set();     // peers who announced voice ON (presence)
+    this._peerRadio = new Map();   // sessionPeerId -> {rf,rt,ro} — synced radio state, kept OUTSIDE the peer object so an rstate arriving before the peer exists (join race) is never lost
     this._ice = null;              // RTCConfiguration (shared with the data plane)
     // state
     this.enabled = false; this.micDenied = false; this.voiceMuted = false;
@@ -201,7 +202,7 @@ export class VoiceChat {
   // ---- mesh + signalling ------------------------------------------------------------------
 
   _enterMesh() { if (this.enabled) this._announce(true); }
-  _exitMesh() { for (const id of [...this.peers.keys()]) this._dropPeer(id); this._voiceOn.clear(); }
+  _exitMesh() { for (const id of [...this.peers.keys()]) this._dropPeer(id); this._voiceOn.clear(); this._peerRadio.clear(); }
 
   // Presence — carries the radio tuning state too, so a beacon alone fully (re)syncs a peer.
   _announce(on) { const n = this._net; if (n) n.broadcast('vhello', { from: this.myId, on: on !== false, rf: this.radioFreq, rt: this.radioTx, ro: this.radioOn }); }
@@ -213,9 +214,10 @@ export class VoiceChat {
     if (d.on) {
       const isNew = !this._voiceOn.has(d.from);
       this._voiceOn.add(d.from);
-      if (this.enabled) { if (isNew) this._announce(true); this._ensurePeer(d.from); this._announceRadio(); }
+      if ('ro' in d) this._peerRadio.set(d.from, { rf: d.rf, rt: !!d.rt, ro: !!d.ro }); // beacon carries the radio state → no separate rstate needed to (re)sync
+      if (this.enabled) { if (isNew) this._announce(true); this._ensurePeer(d.from); }
     } else {
-      this._voiceOn.delete(d.from); this._dropPeer(d.from);
+      this._voiceOn.delete(d.from); this._peerRadio.delete(d.from); this._dropPeer(d.from);
     }
   }
 
@@ -287,6 +289,7 @@ export class VoiceChat {
     const mp = this.game.mp; if (!mp || !mp.active || !mp.roster) return;
     for (const id of [...this.peers.keys()]) if (!mp.roster.has(id)) { this._voiceOn.delete(id); this._dropPeer(id); }
     for (const id of [...this._voiceOn]) if (!mp.roster.has(id)) this._voiceOn.delete(id);
+    for (const id of [...this._peerRadio.keys()]) if (!mp.roster.has(id)) this._peerRadio.delete(id);
   }
 
   _dropPeer(peerId) {
@@ -434,7 +437,9 @@ export class VoiceChat {
   setRadioFreq(f) { this.radioFreq = f; this._announceRadio(); }
   setRadioOn(on) { this.radioOn = !!on; this._announceRadio(); }
   _announceRadio() { const n = this._net; if (n) n.broadcast('rstate', { from: this.myId, rf: this.radioFreq, rt: this.radioTx, ro: this.radioOn }); }
-  _onRadioState(d) { if (!d || d.from == null || d.from === this.myId) return; const pv = this.peers.get(d.from); if (pv) { pv.rf = d.rf; pv.rt = !!d.rt; pv.ro = !!d.ro; } }
+  // rstate is the FAST edge (PTT must gate RX in <100 ms); the 2s vhello beacon is the reconciler.
+  // State lands in _peerRadio (not the peer object), so it buffers even before the peer exists.
+  _onRadioState(d) { if (!d || d.from == null || d.from === this.myId) return; this._peerRadio.set(d.from, { rf: d.rf, rt: !!d.rt, ro: !!d.ro }); }
 
   // A deployed radio broadcasts its channel out loud at its ground position — nearby players hear
   // whoever transmits on its freq WITHOUT their own radio. Called by world.js on place/tune/toggle.
@@ -492,9 +497,10 @@ export class VoiceChat {
   // subtracts from every candidate's SNR (underground/roofed receiver = worse reception).
   _resolveChannel(freq, enclosureDb) {
     const cands = [];
-    for (const [id, pv] of this.peers) {
-      if (!pv.rt || !pv.ro || !withinPassband(pv.rf, freq)) continue;
-      const snr = channelSnr(pv.rf - freq, enclosureDb);
+    for (const id of this.peers.keys()) {
+      const r = this._peerRadio.get(id);                     // synced state lives in _peerRadio — a peer created before its radio state arrived is no longer silently skipped forever
+      if (!r || !r.rt || !r.ro || !withinPassband(r.rf, freq)) continue;
+      const snr = channelSnr(r.rf - freq, enclosureDb);
       cands.push({ id, snr });
     }
     return resolveReception(cands, RADIO.SQUELCH_DB);
