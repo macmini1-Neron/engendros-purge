@@ -10,7 +10,7 @@
 // which haze hides (skeleton tolerance, noted in the plan).
 import * as THREE from 'three';
 import { MeshBuilder, makeRNG, voxelMaterial } from './util.js';
-import { ROADS, GATES, WATER, lintPlan } from './zona-plan.js';
+import { ROADS, GATES, WATER, PARCELS, lintPlan } from './zona-plan.js';
 import { polylineProject } from './zona-terrain.js';
 import { seatBox } from './terrain-place.js';
 
@@ -280,6 +280,130 @@ function buildGates(world) {
   }
 }
 
+// ── ЛЭП pole lines along the two trunk routes (Трасса + Бетонка incl. their gated continuations) —
+// terrain-aware rebuild of the steppe idiom: creosoted pole + crossarm + insulators, 3-piece wire
+// spans that follow the ground profile. Thin collider per pole.
+const cyl = (b, r, h, x, y, z, color, opts = {}) => { const g = new THREE.CylinderGeometry(r, r, h, opts.seg || 6); b.geo(g, x, y, z, color, opts); g.dispose(); };
+const WOOD = { hi: 0x6d5638, mid: 0x5a4630, lo: 0x463522 }, PORC = 0xcfd6d2, WIRE = 0x2a2a2a;
+
+function buildLEP(world) {
+  const T = makeMeshHeight(world);
+  const H = 7, SPACING = 45, OFFSET = 5.2;
+  for (const road of ROADS) {
+    if (road.surface !== 'asphalt' && road.surface !== 'panels') continue;
+    const cum = cumArc(road.pts), total = cum[cum.length - 1];
+    const gaps = gapWindows(road);
+    let b = new MeshBuilder(), emitted = 0, prevTop = null;
+    const flush = () => {
+      if (!emitted) return;
+      const m = new THREE.Mesh(b.build(), voxelMaterial());
+      m.castShadow = true; m.receiveShadow = true;
+      world.scene.add(m); if (world.addCullable) world.addCullable(m);
+      b = new MeshBuilder(); emitted = 0;
+    };
+    for (let s = SPACING / 2; s < total; s += SPACING) {
+      if (inGap(gaps, s)) { prevTop = null; continue; } // no pole mid-river; wire run restarts past it
+      const [cx, cz] = pointAtArc(road.pts, cum, s);
+      const [nx2, nz2] = pointAtArc(road.pts, cum, Math.min(s + 1, total));
+      let dx = nx2 - cx, dz = nz2 - cz; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      const px = -dz, pz = dx; // pole line rides the LEFT verge
+      const x = cx + px * (road.width / 2 + OFFSET), z = cz + pz * (road.width / 2 + OFFSET);
+      const g = T(x, z);
+      const wireAlongX = Math.abs(dx) > Math.abs(dz);
+      cyl(b, 0.16, H, x, g + H / 2, z, WOOD.mid, { seg: 6, tint: 0.05 });
+      cyl(b, 0.18, 0.5, x, g + H - 0.3, z, WOOD.lo, { seg: 6 });
+      if (wireAlongX) b.box(0.16, 0.16, 1.8, x, g + H - 0.55, z, WOOD.hi);
+      else b.box(1.8, 0.16, 0.16, x, g + H - 0.55, z, WOOD.hi);
+      for (const sd of [-1, 1]) {
+        const ix = wireAlongX ? 0 : sd, iz = wireAlongX ? sd : 0;
+        b.box(0.14, 0.34, 0.14, x + ix * 0.72, g + H - 0.28, z + iz * 0.72, PORC);
+      }
+      world.boxes.push({ min: new THREE.Vector3(x - 0.3, g, z - 0.3), max: new THREE.Vector3(x + 0.3, g + H, z + 0.3) });
+      // 3-piece wire span from the previous pole top (follows the ground profile approximately)
+      if (prevTop) {
+        const [ox, oy, oz] = prevTop, ny = g + H - 0.4;
+        for (let k = 0; k < 3; k++) {
+          const t0 = k / 3, t1 = (k + 1) / 3;
+          const wx0 = ox + (x - ox) * t0, wz0 = oz + (z - oz) * t0, wy0 = oy + (ny - oy) * t0;
+          const wx1 = ox + (x - ox) * t1, wz1 = oz + (z - oz) * t1, wy1 = oy + (ny - oy) * t1;
+          const len = Math.hypot(wx1 - wx0, wz1 - wz0), sag = k === 1 ? 0.35 : 0.18;
+          b.box(0.05, 0.05, len, (wx0 + wx1) / 2, (wy0 + wy1) / 2 - sag, (wz0 + wz1) / 2, WIRE, { ry: Math.atan2(wx1 - wx0, wz1 - wz0) });
+        }
+      }
+      prevTop = [x, g + H - 0.4, z];
+      if (++emitted >= 8) { flush(); } // keep merged batches small enough to cull
+    }
+    flush();
+  }
+}
+
+// ── cadastre signposts — one per parcel at the pad edge facing the nearest road (+ a red-banded
+// variant at each gate). CanvasTexture label: parcel ID + name + tier, white stencil on dark steel.
+function signTexture(title, name, sub, accent) {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 320;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#262b30'; c.fillRect(0, 0, 512, 320);
+  c.strokeStyle = '#161a1d'; c.lineWidth = 14; c.strokeRect(7, 7, 498, 306);
+  if (accent) { c.fillStyle = '#8a2f2a'; c.fillRect(20, 20, 472, 56); }
+  c.fillStyle = '#e8e4d8'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.font = 'bold 64px "Russo One", sans-serif';
+  c.fillText(title, 256, accent ? 118 : 84);
+  c.font = 'bold 40px "Russo One", sans-serif';
+  const lines = name.length > 20 ? [name.slice(0, name.lastIndexOf(' ', 20) > 0 ? name.lastIndexOf(' ', 20) : 20), name.slice(name.lastIndexOf(' ', 20) > 0 ? name.lastIndexOf(' ', 20) + 1 : 20)] : [name];
+  lines.forEach((ln, i) => c.fillText(ln, 256, (accent ? 190 : 160) + i * 46));
+  c.font = 'bold 34px "Russo One", sans-serif';
+  c.fillStyle = accent ? '#d8514a' : '#b8b29e';
+  c.fillText(sub, 256, 282);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return tex;
+}
+
+function buildSign(world, x, z, yaw, title, name, sub, accent) {
+  const T = makeMeshHeight(world);
+  const g = T(x, z);
+  const b = new MeshBuilder();
+  for (const sd of [-1, 1]) b.box(0.16, 2.6, 0.16, x + Math.cos(yaw) * 0.7 * sd, g + 1.3, z - Math.sin(yaw) * 0.7 * sd, 0x5a5f57, { ry: yaw, tint: 0.05 });
+  const posts = new THREE.Mesh(b.build(), voxelMaterial());
+  posts.castShadow = true;
+  world.scene.add(posts); if (world.addCullable) world.addCullable(posts);
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.2), new THREE.MeshLambertMaterial({ map: signTexture(title, name, sub, accent) }));
+  panel.position.set(x, g + 2.2, z); panel.rotation.y = yaw;
+  world.scene.add(panel); if (world.addCullable) world.addCullable(panel);
+  seatBox(world, x, z, 1.7, 0.3, 2.8);
+}
+
+function buildSigns(world) {
+  for (const p of PARCELS) {
+    // face the nearest road: cheapest honest heuristic for "the side a player arrives from"
+    let best = null, bestD = Infinity;
+    for (const road of ROADS) {
+      const pr = polylineProject(road.pts, p.x, p.z);
+      if (pr.d < bestD) { bestD = pr.d; best = { road, pr }; }
+    }
+    const cum = cumArc(best.road.pts);
+    const [rx, rz] = pointAtArc(best.road.pts, cum, best.pr.s);
+    const half = (p.kind === 'disc' ? p.r : Math.max(p.w, p.d) / 2);
+    if (bestD < half) {
+      // the road runs THROUGH the parcel — put the sign on the verge at the projection point, facing the road
+      const [fx, fz] = pointAtArc(best.road.pts, cum, Math.min(best.pr.s + 2, cum[cum.length - 1]));
+      let tx = fx - rx, tz = fz - rz; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      const off = best.road.width / 2 + 2.6;
+      buildSign(world, rx - tz * off, rz + tx * off, Math.atan2(tz, -tx), p.id, p.name, `СЕКТОР T${p.tier}`, false);
+    } else {
+      let dx = rx - p.x, dz = rz - p.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      buildSign(world, p.x + dx * (half + 3), p.z + dz * (half + 3), Math.atan2(dx, dz), p.id, p.name, `СЕКТОР T${p.tier}`, false);
+    }
+  }
+  for (const gate of GATES) {
+    const road = ROADS.find(r => r.id === gate.roadId);
+    const pr = polylineProject(road.pts, gate.x, gate.z);
+    const cum = cumArc(road.pts);
+    const [bx2, bz2] = pointAtArc(road.pts, cum, Math.max(0, pr.s - 10));
+    let dx = bx2 - gate.x, dz = bz2 - gate.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    buildSign(world, gate.x + dx * 9 - dz * 5, gate.z + dz * 9 + dx * 5, Math.atan2(dx, dz), gate.id, gate.name, 'СТОЙ! ПРОХОД ЗАКРЫТ', true);
+  }
+}
+
 export function buildZona(world) {
   // fail-loud plan validation at boot (spec §7): errors mean the registry drifted from the master plan.
   const { errors, warnings } = lintPlan();
@@ -298,4 +422,8 @@ export function buildZona(world) {
   buildStillWater(world, WATER.reservoir, 0x2b5a66, 0.72);
   buildBridge(world);
   buildGates(world);
+
+  // ── cadastre layer: ЛЭП along the trunk routes + a signpost per parcel/gate ──
+  buildLEP(world);
+  buildSigns(world);
 }
