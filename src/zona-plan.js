@@ -128,6 +128,46 @@ export const WATER = {
   reservoir: { x: 780, z: -590, w: 170, d: 160, level: -6 },    // held behind the dam (P7 crest −4)
 };
 
+// ── terrain features (plan section A anchors) — the stamp layer consumed by zona-terrain.js.
+// Vocabulary: 'ridge' (polyline pts [x,z,crestH] + halfW falloff; negative crestH = balka/úvoz carve),
+// 'plateau' (rect/disc + h + skirt; abs:true pins ABSOLUTE height), 'bowl' (disc; abs or delta),
+// 'channel' (river carve resolved against WATER[ref]). AUTHORED: exact polylines/extents authored from
+// plan anchors (P9 portal +40 face, запретка crest (+50,+20) ≈ +150, P6 mountains +140, P8 saddle +200).
+export const TERRAIN_FEATURES = [
+  // central massif NW→SE («ХРЕБЕТ РАНА», dead forest → rock, crest ~+150 near запретка)
+  { kind: 'ridge', id: 'RANA', halfW: 220, pts: [
+    [-620, 560, 60], [-430, 380, 100], [-220, 220, 130], [-50, 60, 150], [120, -40, 140], [300, -140, 120], [450, -330, 90], [560, -430, 50],
+  ] },
+  // NE edge range (mine bench + bunker saddle live in it)
+  { kind: 'ridge', id: 'NE_RANGE', halfW: 260, pts: [
+    [300, 900, 90], [560, 860, 140], [800, 900, 170], [980, 1080, 210], [1160, 1200, 180],
+  ] },
+  // honest edges: W scarp + E range (plan pillar «poctivé hranice»)
+  { kind: 'ridge', id: 'W_SCARP', halfW: 140, pts: [[-1250, -500, 60], [-1220, -100, 80], [-1230, 400, 90], [-1250, 800, 70]] },
+  { kind: 'ridge', id: 'E_RANGE', halfW: 160, pts: [[1250, -600, 70], [1200, -200, 90], [1230, 300, 110], [1250, 700, 90]] },
+  // airfield shelf, industrial terrace, mine bench, bunker saddle (abs plateaus under the pads)
+  { kind: 'plateau', id: 'SHELF_P3', x: 50, z: 630, w: 460, d: 220, h: 60, skirt: 90, abs: true },
+  { kind: 'plateau', id: 'TERR_P5', x: 680, z: 60, w: 360, d: 320, h: 30, skirt: 70, abs: true },
+  { kind: 'plateau', id: 'BENCH_P6', x: 640, z: 760, w: 120, d: 100, h: 140, skirt: 60, abs: true },
+  { kind: 'plateau', id: 'SEDLO_P8', x: 1000, z: 1060, w: 260, d: 220, h: 200, skirt: 80, abs: true },
+  // depressions
+  { kind: 'bowl', id: 'SWAMP', x: 470, z: -850, r: 330, h: -12, skirt: 120, abs: true },
+  { kind: 'bowl', id: 'QUARRY', x: -140, z: -260, r: 90, h: -25, skirt: 40, abs: true },
+  { kind: 'bowl', id: 'STARICA', x: -600, z: 180, r: 46, h: -3, skirt: 24 },
+  // micro-feature fields (deltas)
+  { kind: 'bowl', id: 'CRATER1', x: -520, z: 280, r: 16, h: -3.5, skirt: 8 },
+  { kind: 'bowl', id: 'CRATER2', x: -480, z: 330, r: 13, h: -3, skirt: 7 },
+  { kind: 'bowl', id: 'CRATER3', x: -540, z: 350, r: 11, h: -2.5, skirt: 6 },
+  { kind: 'ridge', id: 'KURGAN1', halfW: 18, pts: [[-470, -230, 5], [-455, -225, 5]] },
+  { kind: 'ridge', id: 'KURGAN2', halfW: 15, pts: [[-430, -270, 4], [-418, -262, 4]] },
+  { kind: 'ridge', id: 'KURGAN3', halfW: 16, pts: [[-490, -285, 4.5], [-478, -278, 4.5]] },
+  { kind: 'ridge', id: 'BALKA1', halfW: 30, pts: [[-900, -300, -6], [-780, -180, -7], [-660, -100, -5]] },
+  { kind: 'ridge', id: 'BALKA2', halfW: 26, pts: [[-980, 100, -5], [-860, 180, -6], [-760, 240, -4]] },
+  { kind: 'ridge', id: 'UVOZ', halfW: 14, pts: [[-740, -120, -4], [-700, -80, -4.5], [-640, -30, -4]] },
+  // river channel (bed = terrain − depth along course; the water plane rides bed + surfaceOffset)
+  { kind: 'channel', id: 'TIHAYA', ref: 'river' },
+];
+
 // ── lint — fail-loud plan validation (run at zona boot + in node tests).
 export function lintPlan() {
   const errors = [], warnings = [];
