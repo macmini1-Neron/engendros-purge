@@ -109,6 +109,7 @@ export class VoiceChat {
     try { if (this.voiceOutEl) { this.voiceOutEl.pause(); this.voiceOutEl.srcObject = null; } } catch (e) {}
     this.voiceMaster = this.voiceSink = this.voiceOutEl = null;
     this.enabled = false; this.micDenied = false; this.localSpeaking = false;
+    this.radioTx = false; this.radioOn = false; this._peerRadio.clear(); // radio can't stay keyed/on across a disable (peers clear us via the vhello off broadcast above)
   }
 
   _micConstraints() {
