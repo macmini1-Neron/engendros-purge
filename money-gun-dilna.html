@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8" />
+<title>MONEY GUN — dílna (animace + efekty)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0a0c; overflow: hidden; font-family: system-ui, sans-serif; color: #e8e8ee; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #ui { position: fixed; left: 16px; top: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10; width: 236px; max-height: calc(100vh - 32px); overflow-y: auto; padding-right: 4px; scrollbar-width: thin; }
+  details.card { border: 1px solid #2a2a33; border-radius: 8px; background: rgba(20,20,26,0.55); }
+  details.card > summary { cursor: pointer; padding: 7px 10px; font-size: 12px; font-weight: 600; color: #c9a227; letter-spacing: 0.5px; list-style: none; user-select: none; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary::before { content: '▸'; display: inline-block; margin-right: 6px; transition: transform .12s; }
+  details.card[open] > summary::before { transform: rotate(90deg); }
+  details.card[open] > summary { border-bottom: 1px solid #2a2a33; }
+  .cardbody { display: flex; flex-direction: column; gap: 9px; padding: 9px; }
+  .numctl button.rem { flex: 0 0 auto; padding: 1px 5px; font-size: 12px; color: #5a5a66; border-color: #2e2e38; }
+  .numctl button.rem.on { color: #ffd23a; border-color: #c9a227; }
+  #title { font-size: 13px; letter-spacing: 2px; color: #c9a227; font-weight: 700; }
+  #sub { font-size: 11px; color: #6a6a76; margin-top: -4px; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  button { background: #1b1b22; color: #d8d8e2; border: 1px solid #34343e; border-radius: 7px; padding: 9px 13px; font-size: 14px; cursor: pointer; flex: 1; }
+  button:hover { background: #26262f; }
+  button.on { background: #c9a227; color: #14140a; border-color: #e7c245; font-weight: 700; }
+  label { font-size: 12px; color: #9a9aa6; display: flex; justify-content: space-between; align-items: center; }
+  input[type=range] { width: 100%; }
+  .numctl { display: inline-flex; gap: 3px; align-items: center; }
+  .numctl input.num { width: 56px; background: #14141a; color: #e8e8ee; border: 1px solid #34343e; border-radius: 5px; padding: 2px 4px; font-size: 11px; text-align: right; }
+  .numctl button.step { flex: 0 0 auto; padding: 1px 7px; font-size: 13px; line-height: 1.15; border-radius: 5px; min-width: 0; }
+  #status { font-size: 11px; color: #6a6a76; min-height: 14px; }
+  #hint { position: fixed; right: 16px; bottom: 14px; font-size: 12px; color: #6a6a76; z-index: 10; }
+  #transport { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 11; display: flex; align-items: center; gap: 8px; background: rgba(20,20,26,0.82); border: 1px solid #34343e; border-radius: 10px; padding: 7px 12px; backdrop-filter: blur(4px); }
+  #transport button { flex: 0 0 auto; padding: 5px 11px; }
+  #transport input[type=range] { width: 340px; }
+  #transport input:disabled, #transport button:disabled { opacity: 0.4; cursor: default; }
+  #tpVal { font-size: 11px; color: #9a9aa6; min-width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="transport">
+  <button id="tpRew" title="Na začátek">⏮</button>
+  <button id="tpPlay" class="on" title="Přehrát / Pauza">⏸</button>
+  <input id="tpTl" type="range" min="0" max="1000" step="1" value="0" />
+  <span id="tpVal">0.00 / 0.00 s</span>
+  <button id="tpBake" title="Nahrát výstřel (scrub i efektů zpět)">⏺</button>
+  <button id="tpLive" class="on" title="Živě (volný běh)">↺</button>
+</div>
+<div id="ui">
+  <div id="title">MONEY GUN · DÍLNA</div>
+  <div id="sub">animace na loop · efekty</div>
+
+  <details class="card" open>
+    <summary>Přehrávání</summary>
+    <div class="cardbody">
+      <div class="row">
+        <button id="play" class="on">⏸ Pauza</button>
+        <button id="spin">⟳ Otáčet</button>
+      </div>
+      <div id="lblSlow" style="font-size:11px;color:#8a8a96">Slow-mo (zbraň + efekty)</div>
+      <div class="row">
+        <button class="slow on" data-s="1">1×</button>
+        <button class="slow" data-s="0.5">½×</button>
+        <button class="slow" data-s="0.25">¼×</button>
+        <button class="slow" data-s="0.1">⅒×</button>
+      </div>
+      <div>
+        <label><span>Rychlost animace</span><span id="spdVal">1.45×</span></label>
+        <input id="spd" type="range" min="0.1" max="4" step="0.01" value="1.45" />
+      </div>
+    </div>
+  </details>
+
+  <details class="card">
+    <summary>Přepínače efektů</summary>
+    <div class="cardbody">
+      <div id="lbl1" style="font-size:11px;color:#8a8a96">Zámek (pánvička)</div>
+      <div class="row">
+        <button id="sparks" class="on">✨ Jiskry</button>
+        <button id="fire" class="on">🔥 Oheň</button>
+        <button id="smoke" class="on">💨 Kouř</button>
+      </div>
+      <div id="lbl2" style="font-size:11px;color:#8a8a96">Výstřel z hlavně (černý prach)</div>
+      <div class="row">
+        <button id="mzFlash" class="on">💥 Záblesk</button>
+        <button id="mzFire" class="on">🔥 Oheň</button>
+        <button id="mzSmoke" class="on">💨 Kouř</button>
+      </div>
+      <div id="lbl3" style="font-size:11px;color:#8a8a96">Zásobník (sypání prachu do pánvičky)</div>
+      <div class="row">
+        <button id="pour" class="on">⚫ Sypání prachu</button>
+      </div>
+      <div class="row">
+        <button id="markers">⌖ Ústí + zámek</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="card">
+    <summary>Jiskry (zámek)</summary>
+    <div class="cardbody">
+      <div>
+        <label><span>Načasování jisker</span><span id="strikeVal">0.570</span></label>
+        <input id="strike" type="range" min="0.3" max="0.97" step="0.001" value="0.85" />
+      </div>
+      <div>
+        <label><span>Jiskry: rozestup vln</span><span id="sgapVal">0.07 s</span></label>
+        <input id="sgap" type="range" min="0" max="2.0" step="0.01" value="0.07" />
+      </div>
+    </div>
+  </details>
+
+  <details class="card">
+    <summary>Kouř &amp; výstřel</summary>
+    <div class="cardbody">
+      <div>
+        <label><span>Množství kouře</span><span id="smkVal">1.0×</span></label>
+        <input id="smkAmt" type="range" min="0.2" max="1.6" step="0.1" value="1" />
+      </div>
+      <div>
+        <label><span>Kužel (rozevření)</span><span id="sprVal">0.55</span></label>
+        <input id="spr" type="range" min="0.1" max="1.2" step="0.05" value="0.55" />
+      </div>
+      <div>
+        <label><span>Kouř u pánvičky: zpoždění</span><span id="psmkVal">0.30 s</span></label>
+        <input id="psmk" type="range" min="0" max="1.0" step="0.02" value="0.30" />
+      </div>
+      <div>
+        <label><span>Načasování výstřelu</span><span id="muzVal">0.73</span></label>
+        <input id="muz" type="range" min="0.4" max="0.98" step="0.001" value="0.90" />
+      </div>
+      <div>
+        <label><span>Prodleva: frizzen zavřen → výstřel</span><span id="dlyVal">0.00 s</span></label>
+        <input id="dly" type="range" min="0" max="1.2" step="0.02" value="0.00" />
+      </div>
+    </div>
+  </details>
+
+  <details class="card">
+    <summary>Časová osa (bake)</summary>
+    <div class="cardbody">
+      <div id="lblTl" style="font-size:11px;color:#8a8a96">Časová osa výstřelu (scrub + rewind)</div>
+      <div class="row">
+        <button id="bake">⏺ Bake výstřel</button>
+        <button id="live" class="on">↺ Live</button>
+      </div>
+      <div class="row">
+        <button id="tlBack" disabled>⏮ −1</button>
+        <button id="tlPlay" disabled>⏸</button>
+        <button id="tlFwd" disabled>+1 ⏭</button>
+      </div>
+      <input id="tl" type="range" min="0" max="100" step="1" value="0" disabled />
+      <div id="tlVal" style="font-size:11px;color:#6a6a76">live mód</div>
+    </div>
+  </details>
+
+  <details class="card">
+    <summary>★ Finále (zapamatované)</summary>
+    <div class="cardbody">
+      <div style="font-size:11px;color:#8a8a96">★ u hodnoty ji uloží (přežije F5). Export = čísla pro integraci do hry.</div>
+      <div class="row">
+        <button id="remExport">📋 Export do finále</button>
+      </div>
+      <div class="row">
+        <button id="remClear">✕ Vymazat ★</button>
+      </div>
+    </div>
+  </details>
+
+  <div id="status">načítám model…</div>
+</div>
+<div id="hint">táhni myší = orbit · kolečko = zoom</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { preloadLukaGun, buildLukaGun } from './src/lukagun.js';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16161b);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
+
+// lighting + env (gold reads right)
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0xb89b6a, 0.9));
+const key = new THREE.DirectionalLight(0xfff1d0, 2.2); key.position.set(4, 7, 5); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffe8c0, 1.0); rim.position.set(-5, 3, -4); scene.add(rim);
+scene.add(new THREE.AmbientLight(0xffffff, 0.16));
+(function env() {
+  const cv = document.createElement('canvas'); cv.width = 8; cv.height = 128;
+  const x = cv.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 128);
+  g.addColorStop(0, '#eaf4ff'); g.addColorStop(0.45, '#bfe3f2'); g.addColorStop(0.52, '#f6ecd2'); g.addColorStop(1, '#3a3024');
+  x.fillStyle = g; x.fillRect(0, 0, 8, 128);
+  const tex = new THREE.CanvasTexture(cv); tex.mapping = THREE.EquirectangularReflectionMapping; tex.colorSpace = THREE.SRGBColorSpace;
+  const es = new THREE.Scene();
+  es.add(new THREE.Mesh(new THREE.SphereGeometry(40, 24, 16), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide })));
+  const sd = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8), new THREE.MeshBasicMaterial({ color: 0xfff4d8 })); sd.position.set(16, 24, 12); es.add(sd);
+  const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.04).texture; pm.dispose(); tex.dispose();
+})();
+const grid = new THREE.GridHelper(8, 16, 0x3a3a44, 0x202026); grid.position.y = -0.6; scene.add(grid);
+
+// ── gun ──
+let gun = null, mixer = null, actions = [], muzzleMk = null, lockMk = null;
+const GUN_SCALE = 3.2; // big close-up for the workshop
+preloadLukaGun().then(() => {
+  const r = buildLukaGun(); if (!r) { document.getElementById('status').textContent = 'model se nenačetl'; return; }
+  gun = r.root;
+  gun.scale.setScalar(GUN_SCALE);
+  scene.add(gun);
+  mixer = new THREE.AnimationMixer(gun);
+  actions = r.clips.map(c => { const a = mixer.clipAction(c); a.setLoop(THREE.LoopRepeat, Infinity); a.timeScale = speed; a.play(); return a; });
+  // effect-anchor markers (where sparks / muzzle smoke will emit later)
+  const mk = (color, size) => { const m = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 8), new THREE.MeshBasicMaterial({ color })); m.visible = false; return m; };
+  const muzzle = gun.getObjectByName('muzzle'); if (muzzle) { muzzleMk = mk(0xffd23a, 0.02); muzzle.add(muzzleMk); }
+  const lock = gun.getObjectByName('Frizzen') || gun.getObjectByName('Pan') || gun.getObjectByName('Cock');
+  if (lock) { lockMk = mk(0xff4d3a, 0.02); lock.add(lockMk); }
+  document.getElementById('status').textContent = `klipy: ${r.clips.length} · cyklus ${(r.clips[0] ? r.clips[0].duration.toFixed(2) : '?')} s`;
+}).catch(() => { document.getElementById('status').textContent = 'chyba načítání'; });
+
+// ── controls ──
+let playing = true, spinning = false, speed = 1.45, slowmo = 1; // speed 1.45 = sjednoceno se sandboxem; slowmo scales the SIM dt → slows weapon anim AND every effect together
+document.getElementById('play').onclick = () => setPlaying(!playing);
+document.getElementById('spin').onclick = (e) => { spinning = !spinning; e.target.classList.toggle('on', spinning); };
+document.querySelectorAll('button.slow').forEach((btn) => { btn.onclick = () => { slowmo = +btn.dataset.s; document.querySelectorAll('button.slow').forEach((b) => b.classList.toggle('on', b === btn)); }; });
+// ── ready-pause: a tunable hold inserted at clip frame 13 (frizzen just closed) BEFORE the cock falls/fires ──
+const HOLD_FRAC = 44 / 60;          // clip frame 45 of 61 (frizzen zaklapnut, před pádem kohoutu; finální 61-fr cyklus s coin feederem, 2026-07-03)
+let fireDelaySec = 0.00;            // user-tunable delay between frizzen-closed and the trigger pull/fire (FINÁL: 0)
+let liveHolding = false, liveHoldRem = 0;
+document.getElementById('markers').onclick = (e) => { const on = !e.target.classList.contains('on'); e.target.classList.toggle('on', on); if (muzzleMk) muzzleMk.visible = on; if (lockMk) lockMk.visible = on; };
+const spd = document.getElementById('spd');
+spd.oninput = () => { speed = +spd.value; document.getElementById('spdVal').textContent = speed.toFixed(2) + '×'; for (const a of actions) a.timeScale = speed; };
+
+// ── FLINT SPARKS (same additive-bit style as the sandbox explodeBits / mfx) ──
+// Synced to the cock's strike on the frizzen (≈ frame 17 of the cycle = strikeFrac).
+const sparks = [];
+// strikeFrac/muzzleFrac = frakce klipu (1–30 fr). Frizzen zavřen f13, kohout padá f15–17, FLINT PRVNÍ
+// KONTAKT s frizzenem f17 → jiskry UŽ TADY (0.55). Frizzen se otvírá v páru f17–20, výstřel ~fr22 (0.72).
+const SPARK = { n: 24, strikeFrac: 0.85, faceDir: 1, faceOff: 0.03, muzzleFrac: 0.90, gap: 0.07 };  // ⭐ hodnoty pro finální 61-fr cyklus s coin feederem 2026-07-03 (nátah→nasyp→ZAVŘENÍ f45→nabito→výstřel): strikeFrac 0.85 = kontakt flint×frizzen ≈ f52; muzzleFrac 0.90 ≈ f55 (hlavní rána). Výstřel až po zavření zásobníku (prach zajištěn). (Dřív 0.84/0.89 pro 62-fr, 0.57/0.73 pro 30-fr klip.) · n = počet jisker (2 vlny) · gap 0.07 = rozestup vln
+let sparksOn = true, fireOn = true, smokeOn = true, prevClipT = 0, firedThisCycle = false, firedMuzzle = false;
+let flashOn = true, mFireOn = true, mSmokeOn = true; // výstřel z hlavně: záblesk / oheň (stream) / kouř — každý vlastní toggle
+let smokeAmt = 1; // live density knob (pánvičkový + ústní kouř) — viz posuvník „Množství kouře"
+const smkN = (base) => { const n = base * smokeAmt; return Math.floor(n) + (Math.random() < (n % 1) ? 1 : 0); }; // zlomkový počet
+const CONE = { angle: 0.55 }; // ústní kouř = KUŽEL: poloměrné rozevření kolem osy hlavně (0=úzký proud, víc=širší kužel)
+let igniteT = -1; const ignitePos = new THREE.Vector3();
+let spark2T = -1, spark2N = 0; const spark2Pos = new THREE.Vector3(), spark2Pan = new THREE.Vector3(); // druhá vlna jisker (flint dojede po frizzenu)
+let smokeIgniteT = -1;              // pan smoke timer — separate (LATER) than the fire
+let panSmokeDelay = 0.30;           // delay (s) of the pan smoke after the sparks (tunable; fire is at 0.16)
+let muzzleEmitT = -1, fireEmitT = -1; const muzzlePos = new THREE.Vector3(), muzzleDir = new THREE.Vector3();
+// emise muzzle streamů je RATE-BASED (puffů za SIM-sekundu) → hustota STEJNÁ při 1x i 1/10x (jinak slow-mo nahustí 10×)
+let SMOKE_RATE = 3200, FIRE_RATE = 1900, smokeCarry = 0, fireCarry = 0;
+const PMAX = 1400; // strop živých částic — pojistka proti hromadění (záškub při přetížení)
+const _tmp = new THREE.Vector3();
+const _zAxis = new THREE.Vector3(0, 0, 1), _vd = new THREE.Vector3(); // pro orientaci jiskro-čárek podél letu
+// ⚡ SDÍLENÉ geometrie částic — jedna instance pro VŠECHNY puffy daného druhu (jen .scale per částici)
+// → žádná alokace/GPU-upload geometrie per částici = pryč spawn-spike při výstřelu (kde se sype stovky puffů).
+const GEO_SMOKE = new THREE.SphereGeometry(1, 6, 5), GEO_FIRE = new THREE.SphereGeometry(1, 7, 6);
+const GEO_GRAIN = new THREE.BoxGeometry(1, 1, 1); // zrnka střelného prachu (sypání ze zásobníku)
+// SYPÁNÍ PRACHU: během otevřené fáze zásobníku (klip f20–32 = frakce ~0.31–0.51) padají z hubice zrnka do pánvičky
+const POUR = { start: 0.31, end: 0.51, rate: 332 }; // okno klipu + zrnek za SIM-sekundu (rate-based → stejné při slow-mo); navýšeno (130→195→332)
+const POUR_TARGET = new THREE.Vector3(0, 0, 0); // posun MÍSTA DOPADU prachu v pánvičce (world offset) — laditelné z konzole
+let pourOn = true, pourCarry = 0;
+
+// orchestrates one lock "shot": sparks now, then flame + smoke a beat later — each gated by its own toggle
+function triggerLockFX() {
+  const anchor = lockMk || (gun && gun.getObjectByName('Frizzen'));
+  if (!anchor) return;
+  const p = anchor.getWorldPosition(_tmp).clone();
+  const panNode = (gun && gun.getObjectByName('PanPowder')) || (gun && gun.getObjectByName('Pan')); // černý prach = povrch dopadu
+  const pan = panNode ? panNode.getWorldPosition(new THREE.Vector3()) : p.clone().add(new THREE.Vector3(-0.065, -0.057, 0));
+  if (sparksOn) {                                  // DVĚ vlny jisker (flint škrtá dolů po frizzenu), součet = SPARK.n
+    const n1 = Math.ceil(SPARK.n / 2), n2 = SPARK.n - n1;
+    emitSparks(p, pan, n1);                         // 1. sprška HNED při kontaktu
+    spark2Pos.copy(p); spark2Pan.copy(pan); spark2N = n2; spark2T = SPARK.gap; // 2. sprška o gap později
+  }
+  if (fireOn || smokeOn) ignitePos.copy(pan);
+  if (fireOn) igniteT = 0.16;            // jiskry → chvíli nic → AŽ POTOM oheň z pánvičky
+  if (smokeOn) smokeIgniteT = panSmokeDelay;  // kouř u pánvičky ještě POZDĚJI (vlastní lišta)
+}
+
+function emitSparks(p, pan, count) {
+  // pan-aware: the down stream showers INTO the priming pan (in front of / below the
+  // frizzen plate), so sparks land in the dish instead of clipping through the plate.
+  const panDir = pan.clone().sub(p).normalize(); // strike → pan
+  const reach = Math.max(0.05, p.distanceTo(pan) * 0.9); // vodorovný „chytací" poloměr misky
+  for (let i = 0; i < count; i++) {
+    const r = Math.random();                    // oranžová paleta (víc oranžová): 60% oranž, 25% jantar, 15% jasná
+    const c = r < 0.6 ? 0xff6a14 : (r < 0.85 ? 0xffa028 : 0xffe6a0);
+    // jiskra = TENKÝ OBDÉLNÍK (kvádr), protáhlý v ose Z → orientuje se podél směru letu = čárka/tracer
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.006, 1),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.position.copy(p).addScaledVector(panDir, SPARK.faceOff); // start just off the plate, on the pan side
+    scene.add(m);
+    const up = Math.random() < 0.18;            // jen pár jisker krátce vyskočí, zbytek míří rovnou do misky
+    let vx, vy, vz;
+    if (up) {                                   // malý výskok stočený k misce (arcne zpět dolů do ní)
+      vy = 0.45 + Math.random() * 0.45;
+      vx = panDir.x * (0.35 + Math.random() * 0.25);
+      vz = panDir.z * (0.35 + Math.random() * 0.25) + (Math.random() - 0.5) * 0.15;
+    } else {                                    // hlavní proud: SMĚŘUJE do misky, jen malý rozptyl (ne roztříštěné)
+      const sp = 0.5 + Math.random() * 0.4;     // pomalejší → nepřeletí misku
+      const spread = 0.14;
+      vx = panDir.x * sp + (Math.random() - 0.5) * spread;
+      vy = panDir.y * sp - (0.05 + Math.random() * 0.15);
+      vz = panDir.z * sp + (Math.random() - 0.5) * spread;
+    }
+    const sp = Math.hypot(vx, vy, vz) || 1;     // délka čárky podle rychlosti (rychlejší = delší tracer)
+    m.quaternion.setFromUnitVectors(_zAxis, _vd.set(vx / sp, vy / sp, vz / sp));
+    m.scale.set(1, 1, 0.03 + Math.min(0.07, sp * 0.04));
+    const life = 0.45 + Math.random() * 0.55;   // delší život → jiskry tam vydrží déle
+    sparks.push({ m, vx, vy, vz, life, max: life, kind: 'streak', pan: pan.clone(), panR: reach });
+  }
+  // (kulatý „flash in the pan" záblesk odebrán — u jisker jen obdélníkové čárky)
+}
+
+// the priming powder igniting — split so FIRE and SMOKE can fire at DIFFERENT times
+function emitPanFire(pan) {
+  if (!fireOn) return; // pronounced flash-in-the-pan: a bright core burst + bigger, brighter flame licks
+  const fc = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0c2, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+  fc.position.copy(pan); scene.add(fc);
+  sparks.push({ m: fc, kind: 'flashcore', vx: 0, vy: 0.35, vz: 0, life: 0.13, max: 0.13, grow: 1.9 });
+  for (let i = 0; i < 14; i++) {
+    const c = Math.random() < 0.45 ? 0xffe06a : (Math.random() < 0.72 ? 0xffb024 : 0xff6a12);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.022 + Math.random() * 0.042, 7, 6), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.98, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.position.copy(pan); m.position.x += (Math.random() - 0.5) * 0.045; m.position.y += (Math.random() - 0.5) * 0.02; m.position.z += (Math.random() - 0.5) * 0.045; scene.add(m);
+    sparks.push({ m, kind: 'fire', vx: (Math.random() - 0.5) * 0.22, vy: 0.42 + Math.random() * 0.7, vz: (Math.random() - 0.5) * 0.22, life: 0.18 + Math.random() * 0.24, max: 0.42 });
+  }
+}
+function emitPanSmoke(pan) {
+  if (!smokeOn) return; // pan ignition smoke — dense BRIGHT-WHITE billow (ref: black-powder flash in the pan)
+  for (let i = 0, ni = smkN(10); i < ni; i++) {
+    const w = 0.86 + Math.random() * 0.12; const col = new THREE.Color(w, w * 0.99, w * 0.97); // near-white, faintest warm at birth
+    const r0 = 0.032 + Math.random() * 0.05;
+    const m = new THREE.Mesh(GEO_SMOKE, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, depthWrite: false }));
+    m.position.copy(pan); m.position.x += (Math.random() - 0.5) * 0.05; m.position.y += 0.01 + Math.random() * 0.02; m.position.z += (Math.random() - 0.5) * 0.05; scene.add(m);
+    const sv = new THREE.Vector3((0.85 + Math.random() * 0.3) * r0, (0.85 + Math.random() * 0.3) * r0, (0.85 + Math.random() * 0.3) * r0);
+    sparks.push({ m, kind: 'smoke', vx: (Math.random() - 0.5) * 0.30, vy: 0.16 + Math.random() * 0.26, vz: (Math.random() - 0.5) * 0.30, life: 1.7 + Math.random() * 0.7, max: 2.4, grow: 1.9 + Math.random() * 2.0, drag: 1.2, buoy: 0.16, turb: 0.6, peak: 0.8, s0: 0.8, sv, c0: new THREE.Color(0.92, 0.92, 0.93), c1: new THREE.Color(0.80, 0.80, 0.84) });
+  }
+}
+function emitIgnition(pan) { emitPanFire(pan); emitPanSmoke(pan); }  // (kept for window.__gun compatibility)
+
+// ── MUZZLE DISCHARGE (realistic black-powder) — flash → forward smoke jet → billowing white
+//    cloud → lingering drift, emitted as a stream over time. ~50% of black powder doesn't burn
+//    → copious WHITE smoke; under-oxidised gas burns in air → orange fireball + glowing embers.
+function triggerMuzzle() {
+  const mk = gun && gun.getObjectByName('muzzle'); if (!mk) return;
+  mk.getWorldPosition(muzzlePos);  // marker now sits on the TOP barrel (set in lukagun.js)
+  muzzleDir.set(1, 0, 0).transformDirection(gun.matrixWorld).normalize(); // gun forward (+X)
+  if (flashOn) emitMuzzleFlash();   // punchy instant flash + forward fireball teardrop
+  fireEmitT = 0.12;   // fire STREAM okno — KRATŠÍ = rychlejší/dynamičtější výšleh
+  muzzleEmitT = 0.18; // smoke cone burst okno
+  smokeCarry = fireCarry = 0;
+}
+// the pronounced flash: a white-hot core bloom + a forward lance of fire + a jagged radial star
+// of streaks + glowing unburnt-powder embers. All instant, very short — this is the "punch".
+function emitMuzzleFlash() {
+  // 1) bright white-hot core bloom right at the muzzle
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 9), new THREE.MeshBasicMaterial({ color: 0xfff6df, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+  core.position.copy(muzzlePos).addScaledVector(muzzleDir, 0.03); scene.add(core);
+  sparks.push({ m: core, kind: 'flashcore', vx: muzzleDir.x * 0.6, vy: muzzleDir.y * 0.6, vz: muzzleDir.z * 0.6, life: 0.085, max: 0.085, grow: 1.7 });
+  // 2) forward FIREBALL teardrop — protáhlé elipsoidy podél vývrtu, žhavé bílé jádro u ústí → oranžová → rudá ke špičce
+  //    (ref: černoprachový výstřel vrcholí jako velká směrová oranžová kapka letící dopředu)
+  const tear = [[0.09, 0.085, 0xfff2cc, 2.4], [0.20, 0.07, 0xffbe48, 3.4], [0.32, 0.052, 0xff6a1e, 3.2]];
+  for (const seg of tear) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(seg[1], 10, 8), new THREE.MeshBasicMaterial({ color: seg[2], transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+    e.position.copy(muzzlePos).addScaledVector(muzzleDir, seg[0]);
+    e.quaternion.setFromUnitVectors(_zAxis, muzzleDir); e.scale.set(1, 1, seg[3]); scene.add(e);
+    sparks.push({ m: e, kind: 'flashlance', vx: muzzleDir.x * 2.6, vy: muzzleDir.y * 2.6, vz: muzzleDir.z * 2.6, life: 0.10 + Math.random() * 0.05, max: 0.15, lz: seg[3] });
+  }
+  // 3) jagged star — streaks radiating sideways from the muzzle (blackpowder flash is irregular)
+  const s1 = new THREE.Vector3(0, 1, 0).cross(muzzleDir).normalize(), s2 = muzzleDir.clone().cross(s1).normalize();
+  for (let i = 0; i < 8; i++) {
+    const ang = Math.random() * Math.PI * 2, spread = 0.3 + Math.random() * 0.7;
+    const dir = muzzleDir.clone().addScaledVector(s1, Math.cos(ang) * spread).addScaledVector(s2, Math.sin(ang) * spread).normalize();
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.022 + Math.random() * 0.03, 6, 5), new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xffe89a : 0xffae3a, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.position.copy(muzzlePos).addScaledVector(muzzleDir, 0.03); scene.add(m);
+    const sp = 3.0 + Math.random() * 4.0;
+    sparks.push({ m, kind: 'mspike', vx: dir.x * sp, vy: dir.y * sp, vz: dir.z * sp, life: 0.07 + Math.random() * 0.06, max: 0.13 });
+  }
+  // 4) embers: unburnt powder grains thrown forward, glowing, gravity, short
+  for (let i = 0; i < 22; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.008 + Math.random() * 0.012, 5, 4), new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xffd24a : 0xff7a1e, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.position.copy(muzzlePos);
+    const v = muzzleDir.clone().multiplyScalar(2.2 + Math.random() * 4.5).add(new THREE.Vector3((Math.random() - 0.5) * 1.0, (Math.random() - 0.5) * 1.0, (Math.random() - 0.5) * 1.0));
+    sparks.push({ m, kind: 'member', vx: v.x, vy: v.y, vz: v.z, life: 0.15 + Math.random() * 0.35, max: 0.5 });
+  }
+}
+// fire STREAM: forward-licking flame tongues out of the bore, hot orange, fast then dragged,
+// curling up at the end. Emitted over the fireEmitT window so it reads as a sustained jet.
+function emitMuzzleFire(frac, n) {
+  const s1 = new THREE.Vector3(0, 1, 0).cross(muzzleDir).normalize(), s2 = muzzleDir.clone().cross(s1).normalize();
+  for (let i = 0; i < n; i++) {
+    const c = Math.random() < 0.4 ? 0xfff0bc : (Math.random() < 0.65 ? 0xffa828 : 0xff5210); // žhavé bílo-žluté u ústí → oranž/rudá ven
+    const r0 = 0.035 + Math.random() * 0.06;
+    const m = new THREE.Mesh(GEO_FIRE, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.position.copy(muzzlePos).addScaledVector(muzzleDir, 0.02 + Math.random() * 0.06);
+    const ang = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * 0.26;          // těsný dopředný kužel
+    const dir = muzzleDir.clone().addScaledVector(s1, Math.cos(ang) * rad).addScaledVector(s2, Math.sin(ang) * rad).normalize();
+    const v = dir.multiplyScalar(6.5 + 7.0 * frac);                                            // RYCHLE dopředu (punchy jet)
+    scene.add(m);
+    sparks.push({ m, kind: 'mfire', r0, vx: v.x, vy: v.y + 0.05, vz: v.z, life: 0.10 + Math.random() * 0.13, max: 0.23 });
+  }
+}
+function emitMuzzleSmoke(frac, n) {
+  // CONE of smoke out of the muzzle: puffs fan out within a cone around the bore axis, launched
+  // forward, then handed to the SAME unified 'smoke' physics as the pan billow — they shoot out,
+  // bleed momentum, balloon and roil, then drift up and thin out (see the 'smoke' update branch).
+  const s1 = new THREE.Vector3(0, 1, 0).cross(muzzleDir).normalize(), s2 = muzzleDir.clone().cross(s1).normalize();
+  for (let k = 0; k < n; k++) {   // počet řízen rychlostí emise (per SIM-čas) → stejná hustota při 1x i 1/10x
+    const r0 = 0.027 + Math.random() * 0.036;     // o něco větší puffy (kompenzace za menší počet)
+    const m = new THREE.Mesh(GEO_SMOKE, new THREE.MeshBasicMaterial({ color: new THREE.Color(0.26, 0.25, 0.26), transparent: true, opacity: 0, depthWrite: false }));
+    m.position.copy(muzzlePos).addScaledVector(muzzleDir, 0.01 + Math.random() * 0.03);
+    m.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28); // náhodné natočení = nepravidelné
+    // r0 zapečené do sv (geometrie je jednotková koule r=1) → hrbolatý elipsoid, ne koule
+    const sv = new THREE.Vector3((0.75 + Math.random() * 0.6) * r0, (0.75 + Math.random() * 0.6) * r0, (0.75 + Math.random() * 0.6) * r0);
+    // direction within a cone around the bore axis (sqrt → fills the cone evenly)
+    const ang = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * CONE.angle;
+    const dir = muzzleDir.clone().addScaledVector(s1, Math.cos(ang) * rad).addScaledVector(s2, Math.sin(ang) * rad).normalize();
+    const v = dir.multiplyScalar(6.5 + 11.0 * frac);  // RYCHLE dopředu → silný drag = vystřelí a vzdouvá se
+    scene.add(m);
+    // dynamický černoprachový kouř: vystřelí, rychle ztratí hybnost, vzdouvá se a roluje;
+    // nízká průhlednost (peak 0.4) → puffy se SLIJÍ do oblaku. GRADIENT: TMAVÁ u hlavně (c0) → SVĚTLÁ ven (c1)
+    sparks.push({ m, kind: 'smoke', vx: v.x, vy: v.y, vz: v.z, life: 1.7 + Math.random() * 1.0, max: 2.7, grow: 3.2 + Math.random() * 3.2, drag: 2.7, buoy: 0.14, turb: 1.1, peak: 0.4, s0: 0.8, sv, spin: (Math.random() - 0.5) * 2.2, c0: new THREE.Color(0.26, 0.25, 0.26), c1: new THREE.Color(0.92, 0.92, 0.95) });
+  }
+}
+function updateSparks(dt) {
+  // second spark shower a beat after the first (flint scraping down the frizzen)
+  if (spark2T >= 0) { spark2T -= dt; if (spark2T < 0) emitSparks(spark2Pos, spark2Pan, spark2N); }
+  // powder catches a beat after the sparks → FIRE first, SMOKE later (separate timers)
+  if (igniteT >= 0) { igniteT -= dt; if (igniteT < 0) emitPanFire(ignitePos); }
+  if (smokeIgniteT >= 0) { smokeIgniteT -= dt; if (smokeIgniteT < 0) emitPanSmoke(ignitePos); }
+  // muzzle smoke STREAM: keep emitting puffs across the emission window
+  // muzzle STREAM emise je RATE-BASED (počet úměrný SIM-času dt) → STEJNÁ hustota při 1x i 1/10x slow-mo
+  if (muzzleEmitT >= 0) {
+    const frac = Math.max(0, muzzleEmitT / 0.18);
+    if (mSmokeOn) { smokeCarry += SMOKE_RATE * smokeAmt * dt; let nn = Math.floor(smokeCarry); smokeCarry -= nn; nn = Math.min(nn, PMAX - sparks.length); if (nn > 0) emitMuzzleSmoke(frac, nn); }
+    muzzleEmitT -= dt;
+  }
+  // fire STREAM: forward flame tongues across the window (hot at first, tapering off)
+  if (fireEmitT >= 0) {
+    const frac = Math.max(0, fireEmitT / 0.12);
+    if (mFireOn) { fireCarry += FIRE_RATE * (0.45 + 0.55 * frac) * dt; const nn = Math.floor(fireCarry); fireCarry -= nn; if (nn) emitMuzzleFire(frac, nn); }
+    fireEmitT -= dt;
+  }
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i]; s.life -= dt; const u = Math.max(0, s.life / s.max);
+    if (s.flash) { s.m.material.opacity = u * 0.9; s.m.scale.setScalar(1.5 - u); }
+    else if (s.kind === 'fire') { s.vy -= 0.5 * dt; s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt; s.m.material.opacity = u * 0.95; s.m.scale.setScalar(0.8 + (1 - u) * 1.5); }
+    else if (s.kind === 'smoke') { // UNIFIED powder smoke (pan + muzzle): momentum bleeds → buoyant lift → roils & balloons out → thins to nothing
+      const age = 1 - u;
+      s.vx *= (1 - dt * s.drag); s.vz *= (1 - dt * s.drag);            // forward/outward momentum bleeds off
+      s.vy = s.vy * (1 - dt * s.drag * 0.55) + s.buoy * dt;            // then it just lifts (hot-gas buoyancy)
+      s.vx += (Math.random() - 0.5) * s.turb * dt; s.vz += (Math.random() - 0.5) * s.turb * dt; // turbulent roil as it dissipates
+      s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt;
+      if (s.spin) { s.m.rotation.x += s.spin * dt; s.m.rotation.z += s.spin * 0.6 * dt; } // pomalé převalování = roiling, ne statická koule
+      s.m.material.color.copy(s.c0).lerp(s.c1, age);                   // per-puff gradient — muzzle: dense dark → light as it disperses; pan: bright → soft grey
+      s.m.material.opacity = Math.sin(Math.min(1, age * 1.18) * Math.PI) * s.peak; // bloom in, hold, fade out
+      const g = s.s0 + Math.pow(age, 0.6) * s.grow;                    // FRONT-LOADED expanze (rychlé rané rozpínání → snappy, ne líné)
+      if (s.sv) s.m.scale.set(s.sv.x * g, s.sv.y * g, s.sv.z * g); else s.m.scale.setScalar(g); // hrbolatý elipsoid (sv), jinak koule
+    }
+    else if (s.kind === 'flashcore') { s.vx *= (1 - dt * 6); s.vy *= (1 - dt * 6); s.vz *= (1 - dt * 6); s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt; s.m.material.opacity = u; s.m.scale.setScalar(0.6 + (1 - u) * s.grow); }
+    else if (s.kind === 'flashlance') { s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt; s.m.material.opacity = u * 0.95; s.m.scale.set(1 + (1 - u) * 0.5, 1 + (1 - u) * 0.5, s.lz * (1 + (1 - u) * 0.4)); }
+    else if (s.kind === 'mspike') { s.vx *= (1 - dt * 3); s.vy *= (1 - dt * 3); s.vz *= (1 - dt * 3); s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt; s.m.material.opacity = u; s.m.scale.setScalar(0.5 + u * 0.9); }
+    else if (s.kind === 'mfire') { s.vx *= (1 - dt * 3.5); s.vz *= (1 - dt * 3.5); s.vy = s.vy * (1 - dt * 2.0) + 0.4 * dt; s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt; s.m.material.opacity = u * 0.95; s.m.scale.setScalar(s.r0 * (0.7 + (1 - u) * 1.1)); }
+    else if (s.kind === 'member') { s.vy -= 3.0 * dt; s.vx *= (1 - dt * 1.5); s.vz *= (1 - dt * 1.5); s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt; s.m.material.opacity = u; s.m.scale.setScalar(0.5 + u * 0.6); }
+    else if (s.kind === 'streak') {           // jiskra-čárka: gravitace, natáčí se podél letu, dohasíná
+      if (!s.settled) {                       // letí (dokud nezapadne do misky)
+        s.vy -= 5.0 * dt;
+        s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt;
+        // dopad do pánvičky: klesá pod úroveň misky a je v jejím dosahu?
+        if (s.pan && s.vy < 0 && s.m.position.y <= s.pan.y) {
+          const dx = s.m.position.x - s.pan.x, dz = s.m.position.z - s.pan.z;
+          if (dx * dx + dz * dz < s.panR * s.panR) {
+            if (Math.random() < 0.75) {       // 75 % tam SKONČÍ — lehne si na černý prach a žhne 0,5 s
+              s.vx = s.vy = s.vz = 0; s.settled = true;
+              s.m.position.x = s.pan.x + (Math.random() - 0.5) * s.panR * 0.5; // rozprostře po misce
+              s.m.position.z = s.pan.z + (Math.random() - 0.5) * s.panR * 0.5;
+              s.m.position.y = s.pan.y + s.panR * 0.06;        // kousek NAD povrch, ať je shora vidět
+              const a = Math.random() * Math.PI * 2;           // lehne si naplocho, náhodné natočení
+              s.m.quaternion.setFromUnitVectors(_zAxis, _vd.set(Math.cos(a), 0, Math.sin(a)));
+              s.life = 0.5; s.max = 0.5;
+            } else {                          // 25 % ještě KOUSEK pokračuje (ztratí část energie, propadne dál)
+              s.vy = Math.abs(s.vy) * 0.15; s.vx *= 0.5; s.vz *= 0.5;
+              s.pan = null;                   // už podruhé nechytat
+            }
+          }
+        }
+      }
+      const sp = Math.hypot(s.vx, s.vy, s.vz);
+      if (sp > 0.01) s.m.quaternion.setFromUnitVectors(_zAxis, _vd.set(s.vx / sp, s.vy / sp, s.vz / sp)); // jen když se hýbe (jinak NaN; usazené si drží naplocho)
+      const len = s.settled ? 0.05 : 0.03 + Math.min(0.07, sp * 0.04);  // usazené = viditelná čárka na prachu
+      s.m.scale.set(0.5 + u * 0.5, 0.5 + u * 0.5, len);
+      // usazené na prachu: drží jas a zhasnou až na konci 0,5 s; letící lineárně dohasínají
+      s.m.material.opacity = s.settled ? Math.min(1, u * 3) : u;
+    }
+    else if (s.kind === 'grain') {            // zrnko prachu: padá z hubice, dopadne na prach v pánvičce, zhasne
+      s.vy -= s.grav * dt;
+      s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt;
+      if (s.pan && s.vy < 0 && s.m.position.y <= s.pan.y) { s.m.position.y = s.pan.y; s.vx *= 0.3; s.vz *= 0.3; s.vy = 0; if (s.life > 0.12) { s.life = 0.12; s.max = 0.12; } } // dosedlo na černý prach
+      s.m.material.opacity = Math.min(1, u * 2.4);
+      s.m.scale.setScalar(s.s0 * (0.85 + u * 0.15));
+    }
+    else { s.vy -= 4.2 * dt; s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt; s.m.material.opacity = u; s.m.scale.setScalar(0.5 + u * 0.7); }
+    if (s.life <= 0) { if (baking) s.m.visible = false; else scene.remove(s.m); sparks.splice(i, 1); }
+  }
+}
+// ── SYPÁNÍ PRACHU: zrnka padají z ÚSTÍ HUBICE zásobníku (feed_scoop, strana k mysce) do pánvičky (PanPowder) ──
+const _pourBox = new THREE.Box3(), _pourC = new THREE.Vector3(), _pourSz = new THREE.Vector3();
+function emitGrain(mouth, pan) {
+  const o = mouth.clone();
+  o.x += (Math.random() - 0.5) * _pourSz.x * 0.40; o.z += (Math.random() - 0.5) * _pourSz.z * 0.40; // rozptyl přes ústí hubice
+  const dir = pan.clone().sub(o);            // směr k pánvičce
+  const m = new THREE.Mesh(GEO_GRAIN, new THREE.MeshBasicMaterial({ color: 0x2a2a2e, transparent: true, opacity: 1, depthWrite: false })); // tmavě šedá = prach, ale viditelná
+  const s0 = 0.0030 + Math.random() * 0.0026; m.scale.set(s0, s0, s0); // VĚTŠÍ zrnka, ať jsou vidět
+  m.position.copy(o); scene.add(m);
+  sparks.push({ m, kind: 'grain', s0, grav: 3.0, pan: pan.clone(),
+    vx: dir.x * 1.8 + (Math.random() - 0.5) * 0.06, vy: -0.02, vz: dir.z * 1.8 + (Math.random() - 0.5) * 0.06,
+    life: 0.5 + Math.random() * 0.3, max: 0.8 });
+}
+let POUR_OFF = 0.82; // jak daleko ke kraji hubice (× poloměr zobáčku směrem k pánvičce) — u chřtánu/ústí (0.85 už přestřelovalo)
+let POUR_RISE = 0.025; // zvednutí emisního bodu (world) → prach padá z větší výšky — laditelné
+function tickPour(dt) {
+  if (!pourOn || !mixer || !playing || !actions.length) return;
+  const a = actions[0], dur = a.getClip().duration, f = (a.time % dur) / dur;
+  if (f < POUR.start || f > POUR.end) { pourCarry = 0; return; }
+  const scoop = gun && gun.getObjectByName('feed_scoop'); if (!scoop) return;
+  const panN = gun && (gun.getObjectByName('PanPowder') || gun.getObjectByName('Pan'));
+  _pourBox.setFromObject(scoop); _pourBox.getCenter(_pourC); _pourBox.getSize(_pourSz);
+  const pan = (panN ? panN.getWorldPosition(new THREE.Vector3()) : _pourC.clone().add(new THREE.Vector3(0, -0.05, 0))).add(POUR_TARGET); // + laditelný posun místa dopadu
+  const r = Math.max(_pourSz.x, _pourSz.y, _pourSz.z) * POUR_OFF;       // posun od středu k ústí hubice (ke mysce)
+  const mouth = _pourC.clone().addScaledVector(pan.clone().sub(_pourC).normalize(), r);
+  mouth.y += POUR_RISE;                                                 // padá z větší výšky
+  pourCarry += POUR.rate * dt;
+  let n = Math.floor(pourCarry); pourCarry -= n; n = Math.min(n, PMAX - sparks.length);
+  for (let k = 0; k < n; k++) emitGrain(mouth, pan);
+}
+
+// fire a spark burst at the lock when the animation crosses the strike beat each cycle
+function tickStrike() {
+  if (!mixer || !playing || !actions.length) return;
+  const a = actions[0], dur = a.getClip().duration, t = a.time % dur;
+  if (t < prevClipT) { firedThisCycle = false; firedMuzzle = false; }  // cycle wrapped
+  if (!firedThisCycle && t >= dur * SPARK.strikeFrac) { firedThisCycle = true; triggerLockFX(); }
+  if (!firedMuzzle && t >= dur * SPARK.muzzleFrac) { firedMuzzle = true; triggerMuzzle(); } // main charge fires
+  prevClipT = t;
+}
+
+document.getElementById('sparks').onclick = (e) => { sparksOn = !sparksOn; e.target.classList.toggle('on', sparksOn); };
+document.getElementById('fire').onclick = (e) => { fireOn = !fireOn; e.target.classList.toggle('on', fireOn); };
+document.getElementById('smoke').onclick = (e) => { smokeOn = !smokeOn; e.target.classList.toggle('on', smokeOn); };
+document.getElementById('mzFlash').onclick = (e) => { flashOn = !flashOn; e.target.classList.toggle('on', flashOn); };
+document.getElementById('mzFire').onclick = (e) => { mFireOn = !mFireOn; e.target.classList.toggle('on', mFireOn); };
+document.getElementById('mzSmoke').onclick = (e) => { mSmokeOn = !mSmokeOn; e.target.classList.toggle('on', mSmokeOn); };
+document.getElementById('pour').onclick = (e) => { pourOn = !pourOn; e.target.classList.toggle('on', pourOn); };
+const strike = document.getElementById('strike');
+strike.oninput = () => { SPARK.strikeFrac = +strike.value; document.getElementById('strikeVal').textContent = (+strike.value).toFixed(3); };
+const sgap = document.getElementById('sgap');
+sgap.oninput = () => { SPARK.gap = +sgap.value; document.getElementById('sgapVal').textContent = SPARK.gap.toFixed(2) + ' s'; };
+const psmk = document.getElementById('psmk');
+psmk.oninput = () => { panSmokeDelay = +psmk.value; document.getElementById('psmkVal').textContent = panSmokeDelay.toFixed(2) + ' s'; };
+const muz = document.getElementById('muz');
+muz.oninput = () => { SPARK.muzzleFrac = Math.max(+strike.value + 0.02, +muz.value); document.getElementById('muzVal').textContent = SPARK.muzzleFrac.toFixed(2); };
+const dly = document.getElementById('dly');
+dly.oninput = () => { fireDelaySec = +dly.value; document.getElementById('dlyVal').textContent = fireDelaySec.toFixed(2) + ' s'; };
+const smkAmt = document.getElementById('smkAmt');
+smkAmt.oninput = () => { smokeAmt = +smkAmt.value; document.getElementById('smkVal').textContent = smokeAmt.toFixed(1) + '×'; };
+const spr = document.getElementById('spr');
+spr.oninput = () => { CONE.angle = +spr.value; document.getElementById('sprVal').textContent = (+spr.value).toFixed(2); };
+
+// ── REMEMBER (★): persist a control's value so we can lift it into the game later ──
+// Each ★-marked value is saved to localStorage and re-applied on load; while marked, edits keep
+// updating the stored value. "Export do finále" dumps them all (console + clipboard).
+const REMEMBER_KEY = 'dilna_remember';
+let remembered = {};
+try { remembered = JSON.parse(localStorage.getItem(REMEMBER_KEY) || '{}'); } catch (e) { remembered = {}; }
+const saveRemember = () => localStorage.setItem(REMEMBER_KEY, JSON.stringify(remembered));
+// migrace: 54-fr cyklus (nasyp+nátah+výstřel) změnil délku klipu → staré zapamatované strike/muz/dly
+// fracs (tuněné na 30-fr klip) jsou neplatné. Jednorázově je zahoď, ostatní ★ hodnoty nech.
+if (!localStorage.getItem('dilna_sync54')) {
+  delete remembered.strike; delete remembered.muz; delete remembered.dly;
+  saveRemember(); localStorage.setItem('dilna_sync54', '1');
+}
+// migrace 2: finální 61-fr cyklus s coin feederem (2026-07-03) → stará ★ strike/muz/dly z 62-fr GLB zahodit.
+if (!localStorage.getItem('dilna_sync61')) {
+  delete remembered.strike; delete remembered.muz; delete remembered.dly;
+  saveRemember(); localStorage.setItem('dilna_sync61', '1');
+}
+
+// ── editable number field + −/+ steppers + ★ remember, for each tuning slider ──
+// Hides the read-only value span and drops in a typed <input type=number> with step buttons.
+// Everything routes through the slider's existing oninput (we just dispatch 'input' on it), so
+// SPARK.* / CONE.* / delays all stay wired with no extra handlers.
+function addStepper(rangeId, decimals) {
+  const range = document.getElementById(rangeId);
+  const label = range.previousElementSibling;            // the <label> above the slider
+  const valSpan = label && label.lastElementChild;       // the read-only xVal span
+  if (valSpan && /Val$/.test(valSpan.id)) valSpan.style.display = 'none';
+  const step = +range.step || 0.001, lo = +range.min, hi = +range.max;
+  const wrap = document.createElement('span'); wrap.className = 'numctl';
+  const minus = document.createElement('button'); minus.className = 'step'; minus.textContent = '−'; minus.type = 'button';
+  const num = document.createElement('input'); num.type = 'number'; num.className = 'num';
+  num.min = range.min; num.max = range.max; num.step = range.step; num.value = (+range.value).toFixed(decimals);
+  const plus = document.createElement('button'); plus.className = 'step'; plus.textContent = '+'; plus.type = 'button';
+  const star = document.createElement('button'); star.className = 'rem'; star.textContent = '★'; star.type = 'button'; star.title = 'Zapamatovat hodnotu do finále';
+  wrap.append(minus, num, plus, star); label.appendChild(wrap);
+  const apply = (v) => {
+    if (!isFinite(v)) return;
+    v = Math.min(hi, Math.max(lo, v));
+    range.value = v; range.dispatchEvent(new Event('input'));  // fire existing slider handler
+    num.value = (+range.value).toFixed(decimals);              // reflect any re-clamp (e.g. muz)
+  };
+  minus.onclick = () => apply(+range.value - step);
+  plus.onclick = () => apply(+range.value + step);
+  num.onchange = () => apply(+num.value);                      // commit typed value on Enter/blur
+  const refreshStar = () => star.classList.toggle('on', remembered[rangeId] != null);
+  star.onclick = () => { if (remembered[rangeId] != null) delete remembered[rangeId]; else remembered[rangeId] = +range.value; saveRemember(); refreshStar(); };
+  range.addEventListener('input', () => {
+    num.value = (+range.value).toFixed(decimals);              // keep synced when dragging
+    if (remembered[rangeId] != null) { remembered[rangeId] = +range.value; saveRemember(); } // ★ tracks latest
+  });
+  refreshStar();
+}
+[['spd', 1], ['smkAmt', 1], ['spr', 2], ['strike', 3], ['sgap', 2], ['psmk', 2], ['muz', 3], ['dly', 2]].forEach(([id, d]) => addStepper(id, d));
+
+// re-apply remembered values on load (restores the tuned setup across F5)
+for (const id in remembered) { const r = document.getElementById(id); if (r) { r.value = remembered[id]; r.dispatchEvent(new Event('input')); } }
+
+// export / clear the remembered set
+document.getElementById('remExport').onclick = () => {
+  const ids = Object.keys(remembered);
+  const lines = ids.map((id) => {
+    const r = document.getElementById(id), lbl = r && r.previousElementSibling && r.previousElementSibling.firstElementChild ? r.previousElementSibling.firstElementChild.textContent : id;
+    return `  ${id}: ${remembered[id]},   // ${lbl}`;
+  });
+  const txt = ids.length ? `// MONEY GUN dílna — zapamatované hodnoty pro finále\n{\n${lines.join('\n')}\n}` : '// (nic zapamatováno — klikni ★ u hodnot)';
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
+  console.log(txt);
+  document.getElementById('status').textContent = `★ ${ids.length} hodnot → konzole + schránka`;
+};
+document.getElementById('remClear').onclick = () => { remembered = {}; saveRemember(); document.querySelectorAll('.numctl button.rem.on').forEach((b) => b.classList.remove('on')); document.getElementById('status').textContent = '★ vymazáno'; };
+
+// ── minimal orbit ──
+let orbit = { az: 0.7, el: 0.18, rad: 2.6, ty: 0.05 };
+let drag = false, px = 0, py = 0;
+canvas.addEventListener('pointerdown', e => { drag = true; px = e.clientX; py = e.clientY; });
+addEventListener('pointerup', () => drag = false);
+addEventListener('pointermove', e => { if (!drag) return; orbit.az -= (e.clientX - px) * 0.01; orbit.el = Math.max(-1.3, Math.min(1.4, orbit.el + (e.clientY - py) * 0.01)); px = e.clientX; py = e.clientY; });
+canvas.addEventListener('wheel', e => { orbit.rad = Math.max(0.6, Math.min(12, orbit.rad + e.deltaY * 0.002 * orbit.rad)); e.preventDefault(); }, { passive: false });
+
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+// ── TIMELINE: bake one whole shot into per-frame snapshots, then scrub / rewind ──
+// Particles are stochastic (Math.random everywhere), so true rewind isn't possible on the
+// live sim. Instead we BAKE: step the sim at a fixed dt for one single shot, recording every
+// particle's transform + colour each frame. Playback then just poses the gun + shows the
+// recorded mesh states for the scrubbed frame — fully scrubbable both directions.
+const BAKE_FPS = 120;
+let mode = 'live';          // 'live' | 'baked'
+let baking = false;         // while true, dead particles are HIDDEN (kept) not removed
+let frames = [];            // [{ time, parts:[{m,px,py,pz,sx,sy,sz,r,g,b,op}] }]
+let bakeMeshes = [];        // every mesh that appeared during the take (for hide-all on playback)
+let playhead = 0, pbPlaying = true, pbTime = 0;
+const elTl = document.getElementById('tl'), elTlVal = document.getElementById('tlVal');
+const elTlPlay = document.getElementById('tlPlay'), elTlBack = document.getElementById('tlBack'), elTlFwd = document.getElementById('tlFwd');
+
+function snapshot(tSim) {
+  const parts = [];
+  for (const s of sparks) { const m = s.m, c = m.material.color;
+    parts.push({ m, px: m.position.x, py: m.position.y, pz: m.position.z, sx: m.scale.x, sy: m.scale.y, sz: m.scale.z, r: c ? c.r : 1, g: c ? c.g : 1, b: c ? c.b : 1, op: m.material.opacity });
+  }
+  return { time: tSim, parts };
+}
+function disposeBake() { for (const m of bakeMeshes) { scene.remove(m); if (m.geometry && m.geometry !== GEO_SMOKE && m.geometry !== GEO_FIRE) m.geometry.dispose(); if (m.material) m.material.dispose(); } bakeMeshes = []; frames = []; }
+
+function bake() {
+  if (!mixer || !actions.length) { elTlVal.textContent = 'model/animace nenačtena'; return; }
+  // clear previous take + any live particles
+  disposeBake();
+  for (const s of sparks) scene.remove(s.m); sparks.length = 0;
+  igniteT = smokeIgniteT = muzzleEmitT = fireEmitT = spark2T = -1; prevClipT = 0; firedThisCycle = firedMuzzle = false;
+  // gun anim → exactly one shot (no loop), so the take is a single clean discharge
+  mixer.stopAllAction();
+  // bake at 1× cycle speed so the take is independent of the anim-speed slider; stays LoopOnce/clamp
+  // for the whole baked session so playback pose holds at the end (goLive restores looping).
+  for (const a of actions) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.timeScale = 1; a.reset(); a.play(); }
+  mixer.setTime(0);
+  const clipDur = actions[0].getClip().duration || 1.25;
+  const holdT = HOLD_FRAC * clipDur;
+  const dur = clipDur + 3.0 + fireDelaySec;  // one shot + ready-pause + a tail long enough for the (now +1s) smoke to disperse
+  const step = 1 / BAKE_FPS;
+  baking = true;
+  let didHold = false;
+  for (let t = 0; t < dur; t += step) {
+    mixer.update(step); tickStrike(); tickPour(step); updateSparks(step); frames.push(snapshot(t + step));
+    if (!didHold && fireDelaySec > 0 && actions[0].time >= holdT) {   // freeze at frame 13 for the ready-pause (gun held, no fire yet)
+      didHold = true;
+      for (let k = 0, n = Math.round(fireDelaySec * BAKE_FPS); k < n; k++) { tickStrike(); updateSparks(step); frames.push(snapshot(t + step)); }
+    }
+  }
+  baking = false;
+  for (const a of actions) a.timeScale = speed;   // restore slider speed (only matters once we're back in live)
+  const set = new Set(); for (const f of frames) for (const p of f.parts) set.add(p.m); bakeMeshes = [...set];
+  mode = 'baked'; pbPlaying = true; pbTime = 0;
+  elTl.max = Math.max(0, frames.length - 1); elTl.disabled = false;
+  elTlPlay.disabled = elTlBack.disabled = elTlFwd.disabled = false; elTlPlay.textContent = '⏸';
+  document.getElementById('bake').classList.add('on'); document.getElementById('live').classList.remove('on');
+  liveScrub = false; tpBake.classList.add('on'); tpLive.classList.remove('on'); tpPlay.classList.add('on'); tpPlay.textContent = '⏸';
+  setPlayhead(0);
+}
+function goLive() {
+  disposeBake(); for (const s of sparks) scene.remove(s.m); sparks.length = 0;
+  mode = 'live';
+  mixer && mixer.stopAllAction();
+  for (const a of actions) { a.setLoop(THREE.LoopRepeat, Infinity); a.clampWhenFinished = false; a.reset(); a.play(); }
+  prevClipT = 0; firedThisCycle = firedMuzzle = false; igniteT = smokeIgniteT = muzzleEmitT = fireEmitT = spark2T = -1;
+  elTl.disabled = elTlPlay.disabled = elTlBack.disabled = elTlFwd.disabled = true;
+  elTlVal.textContent = 'live mód';
+  document.getElementById('live').classList.add('on'); document.getElementById('bake').classList.remove('on');
+  tpLive.classList.add('on'); tpBake.classList.remove('on'); tpPlay.classList.add('on'); tpPlay.textContent = '⏸';
+  clock.getDelta();
+}
+function renderBakedFrame(i) {
+  const f = frames[i]; if (!f) return;
+  if (mixer) mixer.setTime(f.time);
+  for (const m of bakeMeshes) m.visible = false;
+  for (const p of f.parts) { const m = p.m; m.visible = true; m.position.set(p.px, p.py, p.pz); m.scale.set(p.sx, p.sy, p.sz); m.material.opacity = p.op; if (m.material.color) m.material.color.setRGB(p.r, p.g, p.b); }
+}
+function setPlayhead(i, syncTime = true) {
+  if (!frames.length) return;
+  i = Math.max(0, Math.min(frames.length - 1, i | 0));
+  playhead = i; if (syncTime) pbTime = i / BAKE_FPS;   // manual scrub/step syncs the clock; auto-play must not (would quantise)
+  elTl.value = i; elTlVal.textContent = `${(i / BAKE_FPS).toFixed(2)} s · snímek ${i + 1}/${frames.length}`;
+  const tot = Math.max(1, frames.length - 1);                 // horní transport sleduje nahranou přehrávku
+  tpTl.value = (i / tot) * 1000; tpVal.textContent = `${(i / BAKE_FPS).toFixed(2)} / ${(tot / BAKE_FPS).toFixed(2)} s`;
+  renderBakedFrame(i);
+}
+document.getElementById('bake').onclick = bake;
+document.getElementById('live').onclick = goLive;
+elTlPlay.onclick = () => { pbPlaying = !pbPlaying; elTlPlay.textContent = pbPlaying ? '⏸' : '▶'; tpPlay.textContent = elTlPlay.textContent; tpPlay.classList.toggle('on', pbPlaying); };
+elTlBack.onclick = () => { pbPlaying = false; elTlPlay.textContent = '▶'; setPlayhead(playhead - 1); };
+elTlFwd.onclick = () => { pbPlaying = false; elTlPlay.textContent = '▶'; setPlayhead(playhead + 1); };
+elTl.oninput = () => { pbPlaying = false; elTlPlay.textContent = '▶'; setPlayhead(+elTl.value); };
+
+// ── HORNÍ TRANSPORT (master lišta): převíjení v REÁLNÉM ČASE ──
+// Dva režimy, jedna lišta:
+//  • ŽIVĚ (↺) — volný běh; scrubber napózuje ZBRAŇ na jakýkoli snímek (mixer.setTime). Efekty se
+//    živě zpět vracet nedají (jsou stochastické), jen běží dopředu.
+//  • NAHRÁNO (⏺) — „Bake" odsimuluje jeden celý výstřel (zbraň + VŠECHNY částice s dohasínáním) do
+//    snímků; scrubber pak posouvá zbraň I EFEKTY tam i zpět v reálném čase. ← tohle chce uživatel.
+let liveScrub = false;
+const tpTl = document.getElementById('tpTl'), tpVal = document.getElementById('tpVal');
+const tpPlay = document.getElementById('tpPlay'), tpRew = document.getElementById('tpRew');
+const tpBake = document.getElementById('tpBake'), tpLive = document.getElementById('tpLive');
+function setPlaying(v) {
+  playing = v;
+  const pb = document.getElementById('play');
+  pb.classList.toggle('on', v); pb.textContent = v ? '⏸ Pauza' : '▶ Přehrát';
+  if (mode === 'live') { tpPlay.classList.toggle('on', v); tpPlay.textContent = v ? '⏸' : '▶'; }
+}
+function liveSeek(frac) {
+  if (!mixer || !actions.length) return;
+  const dur = actions[0].getClip().duration || 1;
+  const t = Math.max(0, Math.min(dur, frac * dur));
+  mixer.setTime(t);                 // napózuje zbraň na tento snímek (resetne časy akcí a updatne na t)
+  prevClipT = t;                    // ať edge-detekce jisker/výstřelu sedí po seeku
+  tpTl.value = (t / dur) * 1000; tpVal.textContent = `${t.toFixed(2)} / ${dur.toFixed(2)} s`;
+}
+// scrubber: živě → pózuje zbraň; nahráno → posouvá nahraný snímek (gun + efekty)
+tpTl.addEventListener('pointerdown', () => { if (mode === 'live') liveScrub = true; });
+addEventListener('pointerup', () => { liveScrub = false; });
+tpTl.oninput = () => {
+  if (mode === 'baked') { pbPlaying = false; if (frames.length) setPlayhead(Math.round(+tpTl.value / 1000 * (frames.length - 1))); }
+  else { liveScrub = true; liveSeek(+tpTl.value / 1000); }
+};
+tpPlay.onclick = () => {
+  if (mode === 'baked') { pbPlaying = !pbPlaying; tpPlay.classList.toggle('on', pbPlaying); tpPlay.textContent = pbPlaying ? '⏸' : '▶'; elTlPlay.textContent = tpPlay.textContent; }
+  else setPlaying(!playing);
+};
+tpRew.onclick = () => { if (mode === 'baked') { pbPlaying = false; tpPlay.textContent = '▶'; tpPlay.classList.remove('on'); setPlayhead(0); } else { liveScrub = false; liveSeek(0); } };
+tpBake.onclick = () => bake();
+tpLive.onclick = () => goLive();
+
+const clock = new THREE.Clock();
+function frame() {
+  const rawDt = Math.min(0.05, clock.getDelta());
+  if (spinning) orbit.az += rawDt * 0.5;     // camera stays real-time so you can still orbit smoothly
+  if (mode === 'baked') {
+    if (pbPlaying && frames.length) {
+      pbTime += rawDt * slowmo;              // slow-mo also scales playback speed
+      const total = frames.length / BAKE_FPS;
+      if (pbTime >= total) pbTime -= total;  // loop the take for easy inspection
+      setPlayhead(Math.floor(pbTime * BAKE_FPS), false);
+    }
+  } else if (!liveScrub) {                    // liveScrub → zbraň zmražená na ručně scrubnutém snímku
+    const dt = rawDt * slowmo;                // SIM time — scaled by slow-mo so weapon anim + all FX slow together
+    if (mixer && playing && actions.length) {
+      const clipDur = actions[0].getClip().duration, holdT = HOLD_FRAC * clipDur;
+      if (liveHolding) { liveHoldRem -= dt; if (liveHoldRem <= 0) liveHolding = false; }   // frozen at frame 13
+      else {
+        const before = actions[0].time % clipDur;
+        mixer.update(dt);
+        const after = actions[0].time % clipDur;
+        if (fireDelaySec > 0 && before < holdT && after >= holdT) { liveHolding = true; liveHoldRem = fireDelaySec; }
+      }
+    } else if (mixer && playing) mixer.update(dt);
+    if (playing) { tickStrike(); tickPour(dt); updateSparks(dt); }   // pauza zmrazí i efekty (zůstanou viset tam, kde jsou)
+    if (mixer && actions.length) {                     // sync horní transport scrubber s živým časem klipu
+      const d = actions[0].getClip().duration || 1, t = ((actions[0].time % d) + d) % d;
+      tpTl.value = (t / d) * 1000; tpVal.textContent = `${t.toFixed(2)} / ${d.toFixed(2)} s`;
+    }
+  }
+  const ce = Math.cos(orbit.el);
+  camera.position.set(Math.sin(orbit.az) * ce * orbit.rad, orbit.ty + Math.sin(orbit.el) * orbit.rad, Math.cos(orbit.az) * ce * orbit.rad);
+  camera.lookAt(0, orbit.ty, 0);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+
+// expose for live tinkering / future effects work
+window.__gun = { get gun() { return gun; }, get mixer() { return mixer; }, get actions() { return actions; }, scene, THREE, SPARK, triggerLockFX, emitIgnition, triggerMuzzle, get lockMk() { return lockMk; }, orbit, get particles() { return sparks; }, get smokeAmt() { return smokeAmt; }, set smokeAmt(v) { smokeAmt = v; smkAmt.value = v; document.getElementById('smkVal').textContent = (+v).toFixed(1) + '×'; }, CONE, get SMOKE_RATE() { return SMOKE_RATE; }, set SMOKE_RATE(v) { SMOKE_RATE = v; }, get FIRE_RATE() { return FIRE_RATE; }, set FIRE_RATE(v) { FIRE_RATE = v; }, POUR, POUR_TARGET, get POUR_OFF() { return POUR_OFF; }, set POUR_OFF(v) { POUR_OFF = v; }, get POUR_RISE() { return POUR_RISE; }, set POUR_RISE(v) { POUR_RISE = v; } };
+</script>
+</body>
+</html>
