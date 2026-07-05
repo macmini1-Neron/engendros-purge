@@ -280,15 +280,38 @@ export class WeaponPreview {
     const w = this.canvas.clientWidth || 360, h = this.canvas.clientHeight || 200;
     this.renderer.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix();
   }
+  // PBR models (The Duelist's golden GLB) need an environment map or their metal reads near-black —
+  // a tiny PMREM scene (warm sun + floor bounce) is enough. Voxel Lambert materials ignore it entirely.
+  _ensureEnv() {
+    if (this._env) return;
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    const es = new THREE.Scene();
+    es.background = new THREE.Color(0x8a97a8);
+    const sun = new THREE.Mesh(new THREE.SphereGeometry(3, 16, 12), new THREE.MeshBasicMaterial({ color: 0xfff2cf }));
+    sun.position.set(12, 14, 8); es.add(sun);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshBasicMaterial({ color: 0x4a4136 }));
+    floor.rotation.x = -Math.PI / 2; floor.position.y = -6; es.add(floor);
+    this._env = pm.fromScene(es, 0.05).texture;
+    pm.dispose(); sun.geometry.dispose(); sun.material.dispose(); floor.geometry.dispose(); floor.material.dispose();
+    this.scene.environment = this._env;
+  }
   show(key) {
     if (this.cur === key) return; this.cur = key;
     while (this.holder.children.length) { const c = this.holder.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }
-    const m = buildViewmodel(WEAPONS[key]); m.material.depthTest = true; m.renderOrder = 0; this.holder.add(m);
+    const m = buildViewmodel(WEAPONS[key]);
+    if (m.material) { m.material.depthTest = true; m.renderOrder = 0; } // GLB viewmodels are Groups (no merged material) — their own materials are already correct
+    else this._ensureEnv();
+    this.holder.add(m);
     const sm = WEAPONS[key].spinMag; if (sm) { const mag = buildMag(sm); mag.material.depthTest = true; mag.renderOrder = 0; mag.position.set(sm.x, sm.y, sm.z); this.holder.add(mag); }
-    const box = new THREE.Box3().setFromObject(this.holder);
-    const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-    for (const c of this.holder.children) c.position.sub(ctr);
-    this.dist = Math.max(size.x, size.y, size.z) * 1.7 + 0.35;
+    const frame = () => { // centre + fit the camera — re-run for async GLB shells once the model lands (empty box = NaN camera otherwise)
+      const box = new THREE.Box3().setFromObject(this.holder);
+      if (box.isEmpty()) return;
+      const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+      for (const c of this.holder.children) c.position.sub(ctr);
+      this.dist = Math.max(size.x, size.y, size.z) * 1.7 + 0.35;
+    };
+    frame();
+    if (!m.material) m.userData.onGunReady = () => frame(); // this preview's own clone — safe to claim its ready hook
     this.spin = 0.6;
   }
   hide() { while (this.holder.children.length) { const c = this.holder.children.pop(); if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); } this.cur = null; } // clear the model (gadgets with no 3D viewmodel)

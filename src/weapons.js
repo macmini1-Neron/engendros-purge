@@ -4,6 +4,8 @@ import { MeshBuilder, TAU, clamp, damp, rayAABB, rr, shade, voxelMaterial, weigh
 import { MOLO_GRAV, MOLO_HAND_FUSE, MOLO_IGNITE_T, MOLO_MAX_FLIGHT, MOLO_PROJ_R, MOLO_THROW_CD, MOLO_THROW_LIFT, MOLO_THROW_SPEED, OCCLUSION_INSET, PLAYER_BURN_DUR, SOUND_BY_CLASS } from './tuning.js';
 import { _strut } from './props.js';
 import { WEAPON_LAYER } from './engine.js';
+import { buildLukaGun, preloadLukaGun } from './lukagun.js';
+import { LukaGunFX } from './lukagunfx.js';
 
 
 // ---------------------------------------------------------------------------
@@ -18,6 +20,12 @@ export const WEAPONS = {
   // --- pistols ---
   luger:    { name: 'Luger P08',  class: 'pistol', shape: 'pistol',  dmg: 28, rpm: 300, auto: false, mag: 8,  reserveMax: 32,       reload: 1.8, spread: 0.010, bloom: 0.012, pellets: 1, recoil: 0.7, range: 120, adsFov: 60, price: 400,  color: 0x33373d, accent: 0xd8c089 },
   revolver: { name: 'Peacemaker', class: 'pistol', shape: 'revolver',dmg: 70, rpm: 110, auto: false, mag: 6,  reserveMax: 30,       reload: 2.6, spread: 0.008, bloom: 0.010, pellets: 1, recoil: 1.5, range: 130, adsFov: 58, price: 900,  loot: 9, color: 0x4a3320, accent: 0xc9a04a },
+  // The Duelist — the golden 4-barrel flintlock (Luka's money gun, real Blender GLB viewmodel). A GENTLEMAN'S
+  // DUELING PIECE: one deliberate shot per full lock ritual (~2.5 s clip = cock → coin feed → frizzen → hammer
+  // fall → BANG ~0.4 s after the trigger — real flintlock lock time, hold your aim!). Smoothbore-terrible
+  // spread makes any duel a coin flip; one copper coin to the chest settles the argument (dmg ≥ player HP).
+  // rpm is only a safety net — the animation state machine is the true rate gate (see _mgTick).
+  moneygun: { name: 'The Duelist', class: 'pistol', shape: 'moneygun', dmg: 130, rpm: 24, auto: false, mag: 4, reserveMax: 20, reload: 3.6, spread: 0.055, bloom: 0, pellets: 1, recoil: 2.4, range: 80, adsFov: 58, price: 3000, color: 0xd4af37, accent: 0xcb5a1e },
   // --- SMGs ---
   thompson: { name: 'Thompson',   class: 'smg', shape: 'smg',  dmg: 20, rpm: 700, auto: true,  mag: 30, reserveMax: 150, reload: 2.4, spread: 0.024, bloom: 0.03, pellets: 1, recoil: 0.7,  range: 130, adsFov: 62, price: 1200, loot: 12, recoilClimb: 0.08, recoilYaw: 0.10, color: 0x3a2a1c, accent: 0x9c6a32 },
   ppsh:     { name: 'PPSh-41',    class: 'smg', shape: 'drum', dmg: 16, rpm: 1000, auto: true,  mag: 71, reserveMax: 142, reload: 3.2, spread: 0.028,  bloom: 0.022, pellets: 1, recoil: 0.45, range: 150, adsFov: 64, price: 1600, loot: 8,  recoilClimb: 0.04, recoilYaw: 0.55, color: 0x2f2218, accent: 0xb88a3a },
@@ -45,10 +53,23 @@ export const WEAPONS = {
   // --- fortification builders (held like weapons; LMB places, wheel rotates; material from supply drops only) ---
   // (builder weapons removed — fortifications are carried as inventory items; see ITEM_DEFS sandbag/wire/wood)
 };
-export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98', 'flashlight', 'binoculars'];
+export const WEAPON_ORDER = ['knife', 'axe', 'machete', 'cleaver', 'shovel', 'luger', 'magnum', 'revolver', 'moneygun', 'mp40', 'grease', 'thompson', 'ppsh', 'carbine', 'bar', 'dp28', 'garand', 'stg44', 'shotgun', 'sawed_off', 'bazooka', 'mosin', 'kar98', 'flashlight', 'binoculars'];
 const LOOT_WEAPONS = WEAPON_ORDER.filter((k) => WEAPONS[k].loot);
 export const FIREARM_KEYS = WEAPON_ORDER.filter((k) => ['pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'launcher'].includes(WEAPONS[k].class)); // guns only (no melee/tools) — air drops guarantee one
 const lootWeapon = () => weightedPick(LOOT_WEAPONS.map((k) => ({ v: k, w: WEAPONS[k].loot })));
+
+// The Duelist (moneygun) — viewmodel transform + the 61-fr GLB clip's beat fractions.
+// Source of truth = money-gun-dilna.html (finální 61-fr cyklus s coin feederem, 2026-07-03):
+//   HOLD 44/60  = the READY pose (coin fed, feeder closed, frizzen shut, hammer cocked — frame 45)
+//   STRIKE 0.85 = flint×frizzen contact ≈ f52 (sparks + pan ignition)
+//   MUZZLE 0.90 = the main charge fires ≈ f55 (hitscan resolves HERE with the aim at THAT moment — flintlock lock time)
+//   POUR 0.31–0.51 = feeder-open window during the re-cock (powder grains stream into the pan)
+// Firing plays HOLD→end (trigger→bang ≈ 0.42 s), wraps, then re-cocks 0→HOLD (barrels index 90°, next coin feeds).
+const MG = {
+  HOLD: 44 / 60, STRIKE: 0.85, MUZZLE: 0.90, POUR0: 0.31, POUR1: 0.51,
+  vmScale: 1.0, vmX: 0.05, vmY: -0.10, vmZ: -0.30,                    // camera-space placement (tuned against renders)
+  BOOM: { body: 110, crack: 0.15, vol: 0.66, hp: 1200, bp: 600 },     // black-powder thunder — deeper than shotgun, shy of the launcher
+};
 
 // ---------------------------------------------------------------------------
 // Viewmodels
@@ -803,6 +824,37 @@ export function buildViewmodel(def) {
       };
       break;
     }
+    case 'moneygun': { // The Duelist — the REAL golden 4-barrel flintlock GLB (lukagun.js), not a voxel build.
+      // buildViewmodel is sync but the GLB loads async → return a Group shell that self-populates when the
+      // template resolves. Each call clones fresh (viewmodel / shop preview / ground pickup all safe).
+      // Camera-space: GLB muzzle is +X → ry +90° points it down −Z; template is unit-length, bbox-centred.
+      // NOTE: layers are NOT set here (preview/pickups render on the default layer) — WeaponSystem tags
+      // WEAPON_LAYER via userData.onGunReady when its own instance lands.
+      const g = new THREE.Group();
+      g.renderOrder = 1000; g.frustumCulled = false;
+      g.userData.moneygun = null; // filled below; consumers must null-check until the GLB resolves
+      preloadLukaGun().then(() => {
+        const built = buildLukaGun(); if (!built) return;
+        const root = built.root;
+        root.rotation.y = Math.PI / 2;                       // muzzle +X → −Z (camera forward)
+        root.scale.setScalar(MG.vmScale);
+        root.position.set(MG.vmX, MG.vmY, MG.vmZ);
+        root.traverse(o => { if (o.isMesh) { o.renderOrder = 1000; o.frustumCulled = false; } });
+        g.add(root);
+        const mixer = new THREE.AnimationMixer(root);
+        const actions = (built.clips || []).map((cl) => { const a = mixer.clipAction(cl); a.setLoop(THREE.LoopRepeat, Infinity); a.play(); return a; });
+        const dur = actions.length ? (actions[0].getClip().duration || 1) : 1;
+        for (const a of actions) a.time = MG.HOLD * dur;     // freeze in the READY pose: loaded, frizzen shut, hammer cocked
+        mixer.update(0);
+        g.userData.moneygun = { root, mixer, actions, dur,
+          muzzle: root.getObjectByName('muzzle'),                                  // top-barrel tip (does not rotate with the cluster)
+          frizzen: root.getObjectByName('Frizzen'),
+          pan: root.getObjectByName('PanPowder') || root.getObjectByName('Pan'),   // spark/ignition anchor
+          scoop: root.getObjectByName('feed_scoop') };                             // powder-pour anchor (may be absent)
+        if (g.userData.onGunReady) g.userData.onGunReady(g.userData.moneygun);
+      }).catch(() => {}); // loader already console.warns; an empty group simply renders nothing
+      return g;
+    }
     case 'build_sandbag': {  // a single sandbag held in hand (the real preview is the world ghost)
       const m1 = 0xcdb887, h1 = 0xd8c79b, l1 = 0xb89a5e;
       b.box(0.36, 0.17, 0.24, 0, -0.03, -0.5, m1, { tint: 0.05 }); b.box(0.31, 0.08, 0.21, 0, 0.06, -0.5, h1); b.box(0.36, 0.05, 0.24, 0, -0.1, -0.5, l1);
@@ -906,6 +958,10 @@ export class WeaponSystem {
     for (const k of WEAPON_ORDER) { const sm = WEAPONS[k].spinMag; if (!sm) continue; const mm = buildMag(sm); mm.position.set(sm.x, sm.y, sm.z); mm.visible = false; mm._targetRot = 0; this.group.add(mm); this.magMeshes[k] = mm; }
     // Render the whole held viewmodel in the engine's 2nd (weapon) pass — tag every mesh onto WEAPON_LAYER.
     this.group.traverse(o => { if (o.isMesh) o.layers.set(WEAPON_LAYER); });
+    // The Duelist's GLB attaches async (after the traverse above) — tag its meshes onto the weapon layer when it lands.
+    this._mgPhase = 'idle'; this._mgPrev = MG.HOLD; this._mgFX = null; // moneygun lock-ritual state (see _mgTick)
+    { const mgm = this.models.moneygun;
+      if (mgm) mgm.userData.onGunReady = (mg) => { mg.root.traverse(o => { if (o.isMesh) o.layers.set(WEAPON_LAYER); }); }; }
     this.basePos = new THREE.Vector3(0.3, -0.27, -0.72);
     this.group.position.copy(this.basePos);
     game.engine.camera.add(this.group);
@@ -920,7 +976,7 @@ export class WeaponSystem {
     for (const g of this.projectiles) { this.game.engine.scene.remove(g.mesh); g.mesh.geometry.dispose(); g.mesh.material.dispose(); if (g.flame) { g.flame.geometry.dispose(); g.flame.material.dispose(); } }
     this.projectiles.length = 0;
     this.reloading = 0; this.cooldown = 0; this._boltLock = 0; this.grenadeCD = 0; this._swing = 0; this._bobT = 0;
-    this._clearMosinTransient();
+    this._mgCancel(); this._clearMosinTransient();
     this.bloom = 0; this.recoilKick = 0; this.recoilPitch = 0; this.recoilYawKick = 0; this._recoilStreak = 0; this.ads = false;
     this.fov = (this.game.settings && this.game.settings.data.fov) || 80;
     this.game.engine.setFov(this.fov);
@@ -964,6 +1020,7 @@ export class WeaponSystem {
     if (this.isThrowLocked()) return;
     if (!this.owns(key) || key === this.cur) return;
     this.reloading = 0; // switching weapons (incl. auto-equip of loot/shop buys) cancels an in-progress reload
+    this._mgCancel();   // holstering The Duelist mid-ritual aborts the shot (the coin is only spent at the muzzle beat)
     this._clearMosinTransient();
     this.models[this.cur].visible = false; if (this.magMeshes[this.cur]) this.magMeshes[this.cur].visible = false;
     this.cur = key;
@@ -1141,6 +1198,7 @@ export class WeaponSystem {
     const auto = d.auto && !this.semi[this.cur];
     if (!auto && edge !== 'press') return;
     if (this.mag[this.cur] <= 0) { if (edge === 'press') { this.game.audio.dryFire(); this.startReload(); } return; }
+    if (d.shape === 'moneygun') { this._mgBegin(d); return; } // The Duelist: the trigger COMMITS the lock ritual — the bang comes at the clip's muzzle beat
     this._fire(d);
   }
 
@@ -1240,6 +1298,89 @@ export class WeaponSystem {
     if (d.recoilYaw) this.recoilYawKick += (Math.random() < 0.5 ? -1 : 1) * d.recoil * d.recoilYaw * 0.004 * _climb;
     this._recoilStreak = Math.min(this._recoilStreak + 1, 30);
     if (d.boltCycle) { this._boltLock = d.boltCycle; this.game.audio.boltCycle(); }
+    this.game.hud.setWeapon(this);
+  }
+
+  // ── The Duelist (moneygun) — animation-driven lock ritual ─────────────────
+  // The 61-fr GLB clip IS the weapon's behavior: the gun idles frozen at the loaded HOLD pose;
+  // pulling the trigger plays HOLD→end (frizzen sparks at STRIKE, the ball leaves at MUZZLE —
+  // ~0.42 s of flintlock lock time during which you must HOLD YOUR AIM), then the clip wraps
+  // into the re-cock (hammer back, barrels index 90°, the coin feeder loads the next chamber)
+  // and re-freezes at HOLD. One full cycle ≈ 2.5 s — a gentleman does not hurry.
+  _mgData() { const g = this.models.moneygun; return (g && g.userData.moneygun) || null; }
+  _mgFXInst() { if (!this._mgFX) this._mgFX = new LukaGunFX(this.game.engine.scene); return this._mgFX; }
+  _mgBegin(d) {
+    const mg = this._mgData();
+    if (!mg) { this._fire(d); return; } // GLB failed/absent → degrade to a plain instant hitscan shot
+    if (this._mgPhase !== 'idle') return; // ritual already committed / re-cocking
+    this._mgPhase = 'firing'; this._mgPrev = MG.HOLD;
+    for (const a of mg.actions) a.time = MG.HOLD * mg.dur;
+    this.cooldown = 0.12; // debounce only — the clip is the true rate gate
+    this.game.audio.reloadClick(); // the sear releases — the ritual begins
+  }
+  _mgCancel() {
+    if (this._mgPhase === 'idle') return;
+    const mg = this._mgData();
+    if (mg) { for (const a of mg.actions) a.time = MG.HOLD * mg.dur; mg.mixer.update(0); }
+    this._mgPhase = 'idle'; this._mgPrev = MG.HOLD;
+  }
+  _mgTick(dt) {
+    if (this._mgFX) this._mgFX.update(dt); // world-scene particles keep drifting even after a weapon switch
+    if (this._mgPhase === 'idle') return;
+    const mg = this._mgData(); if (!mg) { this._mgPhase = 'idle'; return; }
+    mg.mixer.update(dt);
+    const f = (mg.actions[0].time / mg.dur) % 1;
+    const prev = this._mgPrev; this._mgPrev = f;
+    if (this._mgPhase === 'firing') {
+      if (prev < MG.STRIKE && f >= MG.STRIKE) this._mgStrikeFX(mg);            // flint bites the frizzen — sparks into the pan
+      if (prev < MG.MUZZLE && f >= MG.MUZZLE) this._mgBang(mg);                // the main charge — hitscan resolves NOW
+      if (f < prev) this._mgPhase = 'recock';                                   // clip wrapped → hammer back, barrels index, coin feeds
+    } else if (this._mgPhase === 'recock') {
+      if (f >= MG.POUR0 && f <= MG.POUR1 && mg.scoop && mg.pan) this._mgFXInst().pourTick(mg.scoop, mg.pan, dt); // powder streams into the pan
+      if (f >= MG.HOLD) { for (const a of mg.actions) a.time = MG.HOLD * mg.dur; mg.mixer.update(0); this._mgPrev = MG.HOLD; this._mgPhase = 'idle'; } // loaded — ready
+    }
+  }
+  _mgStrikeFX(mg) {
+    this.game.audio.reloadClick(); // the flint SNAPS
+    if (mg.frizzen && mg.pan) this._mgFXInst().lockBurst(mg.frizzen.getWorldPosition(new THREE.Vector3()), mg.pan.getWorldPosition(new THREE.Vector3()));
+  }
+  _mgBang(mg) {
+    const d = WEAPONS.moneygun, key = 'moneygun';
+    this.mag[key] = Math.max(0, (this.mag[key] || 0) - 1); // the coin is spent at the muzzle beat (a cancelled ritual costs nothing)
+    const cam = this.game.engine.camera; cam.updateMatrixWorld();
+    const origin = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const fwd = this._tmp.set(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+    const muzzle = mg.muzzle ? mg.muzzle.getWorldPosition(new THREE.Vector3()) : origin.clone().addScaledVector(fwd, 1.0);
+    this._mgFXInst().muzzleBlast(muzzle, fwd); // black-powder flash + ember spray + the signature smoke column
+    this.game.audio.gunshot(MG.BOOM);
+    { const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('shot', { pid: mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: 'shotgun', w: key, col: d.accent }); } // cls 'shotgun' = the deep boom on teammates' speakers
+    // Smoothbore duel ballistics: one copper coin, spread barely tamed by aiming — fate referees the duel.
+    const spread = (d.spread + this.bloom) * (this.ads ? 0.5 : 1);
+    const mult = this.effMult(key);
+    const dir = fwd.clone();
+    dir.x += rr(-spread, spread); dir.y += rr(-spread, spread); dir.z += rr(-spread, spread);
+    dir.normalize();
+    const eHit = this.game.enemies.rayHit(muzzle, dir, d.range);
+    const wHit = this.game.world.rayHit(muzzle, dir, d.range);
+    const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(muzzle, dir, d.range) : null;
+    if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
+      this.game.mp.claimPlayerHit(pHit.id, d.dmg * mult * (pHit.head ? 2.0 : 1.0)); // a duel settled
+      this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
+    } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
+      const hs = eHit.head && !eHit.enemy.def.boss;
+      const killed = this.game.enemies.damage(eHit.enemy, d.dmg * mult * (hs ? 2.0 : 1.0), 'gun', eHit.point);
+      this.game.effects.tracer(muzzle, eHit.point, d.accent);
+      if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
+      else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
+    } else if (wHit) {
+      this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
+      if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); }
+      else if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(wHit.box.explodable, d.dmg * mult, wHit.point); this.game.hud.hitmarker(false); }
+    } else {
+      this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
+    }
+    this.recoilKick = Math.min(this.recoilKick + d.recoil * 0.05, 0.35); // black-powder shove lands WITH the bang, not the trigger
+    this.recoilPitch += d.recoil * (0.6 + Math.random() * 0.5) * 0.01;
     this.game.hud.setWeapon(this);
   }
 
@@ -1488,6 +1629,7 @@ export class WeaponSystem {
     const flBtn = this.models.flashlight && this.models.flashlight.userData.flashBtn;
     if (flBtn) { const t = (this.game.dayNight && this.game.dayNight.flashOn) ? flBtn.userData.downY : flBtn.userData.upY; flBtn.position.y = damp(flBtn.position.y, t, 22, dt); }
     this._updateMosinAnim(dt);
+    this._mgTick(dt); // The Duelist: lock-ritual clip + black-powder FX
 
     // grenades
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
