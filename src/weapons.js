@@ -1197,6 +1197,7 @@ export class WeaponSystem {
     if (d.melee) { if (edge === 'press' || d.rate) this._melee(d); return; }
     const auto = d.auto && !this.semi[this.cur];
     if (!auto && edge !== 'press') return;
+    if (d.shape === 'moneygun' && this._mgPhase !== 'idle') return; // Duelist ritual mid-flight — the trigger is inert until it re-cocks (no reload started over the recock)
     if (this.mag[this.cur] <= 0) { if (edge === 'press') { this.game.audio.dryFire(); this.startReload(); } return; }
     if (d.shape === 'moneygun') { this._mgBegin(d); return; } // The Duelist: the trigger COMMITS the lock ritual — the bang comes at the clip's muzzle beat
     this._fire(d);
@@ -1269,26 +1270,7 @@ export class WeaponSystem {
       const dir = fwd.clone();
       dir.x += rr(-spread, spread); dir.y += rr(-spread, spread); dir.z += rr(-spread, spread);
       dir.normalize();
-      const eHit = this.game.enemies.rayHit(muzzle, dir, d.range);
-      const wHit = this.game.world.rayHit(muzzle, dir, d.range);
-      const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(muzzle, dir, d.range) : null;
-      if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
-        this.game.mp.claimPlayerHit(pHit.id, d.dmg * mult * (pHit.head ? 2.0 : 1.0));
-        this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
-      } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
-        const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss — head = body
-        const dmg = d.dmg * mult * (hs ? 2.0 : 1.0);
-        const killed = this.game.enemies.damage(eHit.enemy, dmg, 'gun', eHit.point);
-        this.game.effects.tracer(muzzle, eHit.point, d.accent);
-        if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
-        else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
-      } else if (wHit) {
-        this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
-        if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); } // shoot down fortifications
-        else if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(wHit.box.explodable, d.dmg * mult, wHit.point); this.game.hud.hitmarker(false); } // shoot the FAB-500 → detonate
-      } else {
-        this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
-      }
+      this._resolvePellet(muzzle, dir, d, mult);
     }
     // advance the feed magazine one round per shot (DP-28 pan indexes; full-auto = rapid steps)
     const sm = d.spinMag; if (sm && sm.step && this.magMeshes[this.cur]) this.magMeshes[this.cur]._targetRot += sm.step;
@@ -1299,6 +1281,31 @@ export class WeaponSystem {
     this._recoilStreak = Math.min(this._recoilStreak + 1, 30);
     if (d.boltCycle) { this._boltLock = d.boltCycle; this.game.audio.boltCycle(); }
     this.game.hud.setWeapon(this);
+  }
+
+  // One hitscan pellet: pick the NEAREST of teammate / enemy / world along `dir` and apply damage +
+  // tracer + hitmarker. Shared by _fire (looped d.pellets times) and _mgBang (the Duelist's single coin),
+  // so co-op hit priority, boss head-immunity, FAB/structure damage stay in ONE place.
+  _resolvePellet(muzzle, dir, d, mult) {
+    const eHit = this.game.enemies.rayHit(muzzle, dir, d.range);
+    const wHit = this.game.world.rayHit(muzzle, dir, d.range);
+    const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(muzzle, dir, d.range) : null;
+    if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
+      this.game.mp.claimPlayerHit(pHit.id, d.dmg * mult * (pHit.head ? 2.0 : 1.0));
+      this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
+    } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
+      const hs = eHit.head && !eHit.enemy.def.boss; // no headshot cheese on the boss — head = body
+      const killed = this.game.enemies.damage(eHit.enemy, d.dmg * mult * (hs ? 2.0 : 1.0), 'gun', eHit.point);
+      this.game.effects.tracer(muzzle, eHit.point, d.accent);
+      if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
+      else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
+    } else if (wHit) {
+      this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
+      if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); } // shoot down fortifications
+      else if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(wHit.box.explodable, d.dmg * mult, wHit.point); this.game.hud.hitmarker(false); } // shoot the FAB-500 → detonate
+    } else {
+      this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
+    }
   }
 
   // ── The Duelist (moneygun) — animation-driven lock ritual ─────────────────
@@ -1356,29 +1363,10 @@ export class WeaponSystem {
     { const mp = this.game.mp; if (mp && mp.active) mp.net.broadcast('shot', { pid: mp.myId, p: [muzzle.x, muzzle.y, muzzle.z], d: [fwd.x, fwd.y, fwd.z], cls: 'shotgun', w: key, col: d.accent }); } // cls 'shotgun' = the deep boom on teammates' speakers
     // Smoothbore duel ballistics: one copper coin, spread barely tamed by aiming — fate referees the duel.
     const spread = (d.spread + this.bloom) * (this.ads ? 0.5 : 1);
-    const mult = this.effMult(key);
     const dir = fwd.clone();
     dir.x += rr(-spread, spread); dir.y += rr(-spread, spread); dir.z += rr(-spread, spread);
     dir.normalize();
-    const eHit = this.game.enemies.rayHit(muzzle, dir, d.range);
-    const wHit = this.game.world.rayHit(muzzle, dir, d.range);
-    const pHit = this.game.mp.active ? this.game.mp.rayHitPlayers(muzzle, dir, d.range) : null;
-    if (pHit && (!eHit || pHit.dist <= eHit.dist) && (!wHit || pHit.dist <= wHit.dist)) {
-      this.game.mp.claimPlayerHit(pHit.id, d.dmg * mult * (pHit.head ? 2.0 : 1.0)); // a duel settled
-      this.game.effects.tracer(muzzle, pHit.point, d.accent); this.game.hud.hitmarker(false);
-    } else if (eHit && (!wHit || eHit.dist <= wHit.dist)) {
-      const hs = eHit.head && !eHit.enemy.def.boss;
-      const killed = this.game.enemies.damage(eHit.enemy, d.dmg * mult * (hs ? 2.0 : 1.0), 'gun', eHit.point);
-      this.game.effects.tracer(muzzle, eHit.point, d.accent);
-      if (hs) { this.game.audio.headshot(); this.game.hud.hitmarker(true); }
-      else { this.game.audio.hitMarker(); this.game.hud.hitmarker(killed); }
-    } else if (wHit) {
-      this.game.effects.tracer(muzzle, wHit.point, d.accent); this.game.effects.impact(wHit.point, wHit.normal, 'spark');
-      if (wHit.box && wHit.box.struct && wHit.box._ref) { this.game.build.playerDamage(wHit.box._ref, d.dmg * mult); this.game.hud.hitmarker(false); }
-      else if (wHit.box && wHit.box.explodable && this.game.world.hitFAB) { this.game.world.hitFAB(wHit.box.explodable, d.dmg * mult, wHit.point); this.game.hud.hitmarker(false); }
-    } else {
-      this.game.effects.tracer(muzzle, muzzle.clone().addScaledVector(dir, d.range), d.accent);
-    }
+    this._resolvePellet(muzzle, dir, d, this.effMult(key)); // shared hit ladder (co-op priority, boss head, FAB/structs)
     this.recoilKick = Math.min(this.recoilKick + d.recoil * 0.05, 0.35); // black-powder shove lands WITH the bang, not the trigger
     this.recoilPitch += d.recoil * (0.6 + Math.random() * 0.5) * 0.01;
     this.game.hud.setWeapon(this);
