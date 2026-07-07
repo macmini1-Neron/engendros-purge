@@ -56,7 +56,7 @@ Tyto pilíře jsou to, čím se hra odlišuje — ne textury, ale **chování a 
 ## 3. Svět: éra, místo, tón, art
 
 - **Éra:** alternativní **1980s–90s**, **plně funkční sovětský režim**. Svět venku je normální SSSR; *naše* oblast je utajená katastrofa.
-- **Místo:** **fiktivní sovětská oblast** — maximální tvůrčí volnost. Jedna **velká bezešvá mapa (1000×1000 od startu)** s biom-zónami: lesní step → průmysl (kombinát/ТЭЦ) → vesnice/kolchoz → mokřad → kopce. Stavíme na stávající stepi (`?map=steppe`, `src/openworld.js`, `src/grid.js`).
+- **Místo:** **fiktivní sovětská oblast** — maximální tvůrčí volnost. Jedna **velká bezešvá mapa (2500×2500 od startu)** s biom-zónami: lesní step → průmysl (kombinát/ТЭЦ) → vesnice/kolchoz → mokřad → kopce. Stavíme na stávající stepi (`?map=steppe`, `src/openworld.js`, `src/grid.js`).
 - **Tón:** **survival-horor.** Zdroje docházejí, smrt je blízko, jsi zranitelný. **ULTRA-těžké pořád** — žádná „denní úleva" fáze; **noc = jen snížená viditelnost** (tma), ne samostatný spawn-surge. Úleva je jen jemná (mezi střety / za vlastní fortifikací).
 - **Art direction:** **cute = JEN Engendros mobové.** Všechno ostatní (svět, prostředí, hráč, výbava) je **syrové, beznadějné, drsné**. Ta disonance (roztomilí plyšáci vs bezútěšný svět) JE motor hororu. Tíseň dělá světlo, tma, mlha, počasí, zvuk a *to, co ti ti roztomilí tvorové dělají*.
 - **Audio:** stávající procedurální Web-Audio základ + sovětská hudba (ФОНОТЕКА/gramofon) — diegetická hudba v kontrastu s hrůzou je silná.
@@ -98,7 +98,7 @@ Fikčně **zombie**: neúprosní, infekční, materiál „chce" se šířit. Ne
                 │ VÝSADEK (committed — z pole se do lobby     │ WIPE celého týmu
                 │  nevrací, dokud nepadne wipe)               │  → KOMPLETNÍ RESET SVĚTA
                 ▼                                             │  (rank + banka přežívá)
-┌──────────── PERZISTENTNÍ SVĚT (1000×1000 oblast, žije napříč sezeními) ───────┐
+┌──────────── PERZISTENTNÍ SVĚT (2500×2500 oblast, žije napříč sezeními) ───────┐
 │  Roam: sandbox (sběr, čištění hnízd) + kontrakty (rádio) + objevování pravdy │
 │  SBĚR všeho (munice/léky/palivo/díly/cennosti) — v poli se nekupuje          │
 │  BOSS-KOMPLEXY = bezešvé instancované interiéry → milníky (bossové + pravda) │
@@ -159,7 +159,7 @@ Den/noc (máme) + **dynamické počasí** (déšť/mlha/sníh/bouře) ovlivňuj�
 
 ## 8. Struktura světa & nekonečno
 
-- **Open world:** jedna **velká bezešvá oblast (1000×1000)**, biom-zóny + **síť POI**.
+- **Open world:** jedna **velká bezešvá oblast (2500×2500)**, biom-zóny + **síť POI**.
 - **Normální budovy:** **ultra-propracované interiéry přímo na mapě** (bezešvé, choditelné) — to je standard.
 - **Boss-komplexy = bezešvé instancované interiéry (à la GTA San Andreas), JEN na speciálních boss-místech:** vejdeš do dveří → **skrytý teleport** do mimo-mapové arény (např. podzemní komplex pod letištěm) → probojuješ se k bossovi → ven **jiným východem nebo zpět týmiž dveřmi** (dle level-designu). Hráč přechod nepozná. Důvody: kontrolovaný level-design pro boss fighty a **minihry**; reálné mega-interiéry by jinak byly neúnosné; **vozidlo se do boss fightu nedostane**. *(Instancing + level-design = vlastní spec.)*
 - **Náplň výprav (mix):** emergentní sandbox (sběr, čištění hnízd) **+ volitelné kontrakty velení** (rádio: znič X / přines Y / ubraň Z) **+ objevování** POI a pravdy o programu.
